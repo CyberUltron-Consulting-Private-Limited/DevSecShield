@@ -453,7 +453,7 @@ def test_assets_by_type_table_reconciles_with_appendix_b(text):
 def test_scanner_table_equals_the_registry_fixture_names_and_orders(text):
     two = section(text, 2)
     registry = _registry()["scanners"]
-    assert len(registry) == 18
+    assert len(registry) == 19
     crypto = [s["name"] for s in registry if s["name"].startswith("crypto_")]
     assert re.findall(r"\bcrypto_[a-z]+\b", two) == crypto
     assert "Scanner Order Discovers Evidence recorded" in two

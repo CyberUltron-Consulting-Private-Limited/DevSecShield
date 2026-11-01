@@ -36,7 +36,9 @@ Design (mirrors the AIBOM adapter; lanes intact):
 from __future__ import annotations
 
 import contextlib
+import logging
 import time
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -45,6 +47,9 @@ from aibom.cbom import crypto_kb
 from aibom.cbom.normalize import normalize_crypto
 from aibom.cbom.pipeline import analyze_cbom_document, scan_crypto
 from aibom.cbom.posture.safeio import SKIP_DIRS  # the directories the engine never reads (for size estimates)
+from aibom.cbom.redact import attach_snippets
+
+log = logging.getLogger("aibom.cbom")
 
 # Uploaded CBOM files larger than this are refused before parsing (the upload limit is 50 MB).
 MAX_CBOM_BYTES = 50 * 1024 * 1024
@@ -66,13 +71,26 @@ _ASSET_TYPE_TO_LEGACY = {
 _QUANTUM_NA_TYPES = frozenset({"certificate", "protocol", "key"})
 
 
+_CONFIG_TYPE_CODES = frozenset({"TLS_VERIFICATION_DISABLED", "UNENCRYPTED_AT_REST", "AT_REST_ENCRYPTION_WEAK",
+                                "UNENCRYPTED_IN_TRANSIT", "PLAINTEXT_LISTENER", "KNOWN_TLS_VULNERABILITY",
+                                "DOWNGRADE_PROTECTION_MISSING", "KMS_KEY_ROTATION_DISABLED",
+                                "KMS_KEY_DELETION_UNPROTECTED", "KMS_KEY_POLICY_PUBLIC"})
+
+
 def _legacy_algorithm_type(row: dict[str, Any]) -> str:
-    """Map the normalized ``asset_type`` to the dashboard ``algorithm_type``."""
+    """Map the normalized ``asset_type`` to the dashboard ``algorithm_type``. Rows that are not crypto assets
+    (a library from a manifest, a configuration fact) say so instead of "other"; these labels live on the row
+    only, never in the CycloneDX ``assetType`` enum."""
     asset_type = row.get("asset_type")
     if asset_type in _ASSET_TYPE_TO_LEGACY:
         return _ASSET_TYPE_TO_LEGACY[asset_type]
     if asset_type == "algorithm":
         return row.get("primitive") or "algorithm"
+    codes = set(row.get("finding_codes") or [])
+    if "VULNERABLE_CRYPTO_LIBRARY" in codes or row.get("role") == "library":
+        return "library"
+    if codes & _CONFIG_TYPE_CODES:
+        return "configuration"
     return "other"
 
 
@@ -222,8 +240,16 @@ def _fill_fact_locations(rows: list[dict[str, Any]], result: Any) -> None:
         props = props_by_ref.get(row.get("bom_ref")) or {}
         path = props.get("crypto:factPath")
         if path:
-            line = props.get("crypto:factLine")
-            row["location"] = f"{path}:{line}" if line else path
+            line = str(props.get("crypto:factLine") or "")
+            row["location"] = path  # bare path, like every other row; the line has its own field
+            if line.isdigit():
+                row["line"] = int(line)
+                row.setdefault("occurrences", [int(line)])
+                row.setdefault("occurrence_count", 1)
+            from aibom.cbom.occurrences import language_of
+            lang = language_of(path)
+            if lang:
+                row.setdefault("language", lang)
 
 
 def normalize_to_devsecshield(
@@ -254,6 +280,10 @@ def scan_crypto_to_devsecshield(
     result = scan_crypto(target, level=level)
     _report(progress, 80, "normalizing crypto findings")
     out = normalize_to_devsecshield(result, duration_of_scan=time.monotonic() - start)
+    # Code windows (redacted) are read here, while the checkout still exists, and only for this code-scan path:
+    # uploaded CBOMs (analyze_cbom_file_to_devsecshield) carry attacker-chosen paths and never read files.
+    stats = attach_snippets(out["results"], Path(target))
+    _log_summary(out, stats)
     _report(progress, 100, "scan complete")
     return out
 
@@ -294,9 +324,21 @@ def analyze_cbom_file_to_devsecshield(
     result, stats = analyze_cbom_document(doc, level=4)
     _report(progress, 80, "normalizing crypto findings")
     out = normalize_to_devsecshield(result, duration_of_scan=time.monotonic() - start)
+    # No code windows here: an uploaded file's paths are attacker-chosen, so nothing is ever read from disk.
+    _log_summary(out, {"snippets": 0})
     out["cbom_input"] = stats
     _report(progress, 100, "analysis complete")
     return out
+
+
+def _log_summary(run: dict[str, Any], snippet_stats: dict[str, int]) -> None:
+    """One line per scan for air-gapped debugging: rows, codes, located lines, snippets and redactions."""
+    with contextlib.suppress(Exception):  # logging must never fail a scan
+        rows = run.get("results") or []
+        codes = Counter(c for r in rows for c in (r.get("finding_codes") or []))
+        located = sum(1 for r in rows if r.get("line"))
+        log.info("cbom scan summary: rows=%d located=%d codes=%s snippets=%s kb=%s", len(rows), located,
+                 dict(sorted(codes.items())), snippet_stats, run.get("kb_version"))
 
 
 def _report(progress: ProgressCb | None, pct: int, message: str) -> None:

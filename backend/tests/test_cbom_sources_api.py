@@ -297,6 +297,36 @@ def test_connection_test_round_trip_with_lease_and_scrub(api, world):
     assert PASSWORD not in json.dumps(job) and "PRIVATE KEY" not in json.dumps(job)
 
 
+def _finish_test(api, token, src_id, samples):
+    job_id = api("POST", f"/1/cbom/sources/items/{src_id}/test").json()["job"]["id"]
+    hdr = {"X-ZS-Node-Token": token}
+    payload = api("POST", "/cbom/node/jobs/claim", None, headers=hdr).json()
+    assert payload["job"]["id"] == job_id
+    r = api("POST", f"/cbom/node/jobs/{job_id}/result", None, headers=hdr,
+            json={"lease_id": payload["job"]["lease_id"], "status": "success", "result": {"samples": samples}})
+    assert r.status_code == 200, r.text
+    return api("GET", f"/1/cbom/sources/items/{src_id}").json()["source"]
+
+
+def test_silent_range_samples_do_not_block_the_sweep(api, world):
+    """AWS lab: a /24 whose first addresses are cloud-reserved answered nothing and was skipped from every run."""
+    node_id, token, _ = enroll_node(api)
+    rng = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": "sparse", "node_id": node_id,
+                                                     "config": {"cidr": "10.60.20.0/24"}}).json()["source"]
+    silent = [{"target": f"10.60.20.{i}", "status": "unreachable", "note": "no answer on the listed ports"}
+              for i in range(1, 6)]
+    got = _finish_test(api, token, rng["id"], silent)
+    assert got["last_test_status"] == "partial" and "will be swept" in got["last_test_summary"]
+    est = api("POST", "/1/cbom/sources/estimate", json={"include": {"network": True}, "source_ids": [rng["id"]]}).json()
+    assert not [s for s in est.get("skipped") or [] if s["source_id"] == rng["id"]], est
+    # a range the node cannot route to at all is still a failure
+    no_route = [{"target": f"10.60.20.{i}", "status": "no_route"} for i in range(1, 6)]
+    assert _finish_test(api, token, rng["id"], no_route)["last_test_status"] == "failed"
+    # silence from a server list is not excused: the listed servers should answer
+    srv = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id, name="silent-servers")).json()["source"]
+    assert _finish_test(api, token, srv["id"], silent)["last_test_status"] == "failed"
+
+
 def test_expired_lease_requeues_then_fails(api, world):
     engine, _ = world
     node_id, token, _ = enroll_node(api)

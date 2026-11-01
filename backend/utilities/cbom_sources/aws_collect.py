@@ -107,6 +107,29 @@ def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certi
                       "source": "aws", "identity": arn}}
 
 
+_SECRET_NAME = re.compile(r"(private|secret|passw|pwd|token|api[-_]?key|credential|tls[-_]?key|ssh[-_]?key|"
+                          r"(^|[/_.-])key($|[/_.-]))", re.I)
+
+
+def _ssh_public_bits(public_key: str) -> int | None:
+    """RSA modulus size from an OpenSSH public key line ("ssh-rsa AAAA... comment")."""
+    import base64
+    import struct
+
+    try:
+        blob = base64.b64decode(public_key.split()[1])
+        parts, i = [], 0
+        while i < len(blob) and len(parts) < 3:
+            (n,) = struct.unpack(">I", blob[i:i + 4])
+            parts.append(blob[i + 4:i + 4 + n])
+            i += 4 + n
+        if parts[0] != b"ssh-rsa":
+            return None
+        return int.from_bytes(parts[2], "big").bit_length()
+    except Exception:
+        return None
+
+
 def _tls_protocol_names(values: list[str]) -> list[str]:
     out = []
     for value in values:
@@ -262,7 +285,35 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
                             "version": cluster.get("version")}})
         return "truncated" if truncated else None
 
+    def keypairs() -> str | None:
+        # Public half only (IncludePublicKey): the key type and RSA modulus size; private keys never leave AWS.
+        client = acct.client("ec2", region)
+        pairs = client.describe_key_pairs(IncludePublicKey=True).get("KeyPairs") or []
+        for pair in pairs[:PER_SERVICE_CAP]:
+            key_type = str(pair.get("KeyType") or "").lower()
+            bits = _ssh_public_bits(pair.get("PublicKey") or "") if key_type == "rsa" else (256 if key_type == "ed25519" else None)
+            emit({"type": "public_key", "target": label,
+                  "location": f"arn:aws:ec2:{region}:{acct.account}:key-pair/{pair.get('KeyName')}",
+                  "name": pair.get("KeyName"), "algorithm": "ED25519" if key_type == "ed25519" else "RSA", "key_size": bits,
+                  "facts": {"service": "ec2", "key_type": key_type, "bits": bits, "key_pair_id": pair.get("KeyPairId"),
+                            "created": _iso(pair.get("CreateTime")), "fingerprint": pair.get("KeyFingerprint")}})
+        return f"{len(pairs)} key pairs"
+
+    def ssm() -> str | None:
+        # DescribeParameters is metadata (name, type, KMS key); GetParameter is denied to the role and never called.
+        client = acct.client("ssm", region)
+        params, truncated = _paginate(client, "describe_parameters", "Parameters")
+        for param in params:
+            name = param.get("Name") or ""
+            emit({"type": "cloud_secret", "target": label,
+                  "location": f"arn:aws:ssm:{region}:{acct.account}:parameter/{name.lstrip('/')}", "name": name,
+                  "facts": {"service": "ssm", "parameter_type": param.get("Type"), "kms_key_id": param.get("KeyId"),
+                            "tier": param.get("Tier"), "last_modified": _iso(param.get("LastModifiedDate")),
+                            "secret_like_name": bool(_SECRET_NAME.search(name)), "identity": name}})
+        return f"{len(params)} parameters" + (" (truncated)" if truncated else "")
+
     for service, fn in (("kms", kms), ("acm", acm), ("acm-pca", pca), ("secretsmanager", secrets), ("ec2", ebs),
+                        ("ec2-keypairs", keypairs), ("ssm", ssm),
                         ("rds", rds), ("elasticloadbalancing", elbv2), ("apigateway", apigw), ("eks", eks)):
         run(service, fn)
     return rows

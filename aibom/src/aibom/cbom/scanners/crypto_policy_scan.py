@@ -72,7 +72,7 @@ def _slug(text: str) -> str:
 
 def _named_files(root: Path, names: frozenset[str]):
     for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.parts):
+        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
         if not p.is_file() or p.name.lower() not in names:
             continue

@@ -414,7 +414,7 @@ _GO_IMPORT = re.compile(r'"(?:crypto/|golang\.org/x/crypto)')
 
 def _iter_files(root: Path, exts: frozenset[str]):
     for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.parts):
+        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
         if not p.is_file() or p.suffix.lower() not in exts:
             continue

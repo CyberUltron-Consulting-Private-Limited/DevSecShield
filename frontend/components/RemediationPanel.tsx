@@ -27,6 +27,9 @@ interface RemediationPanelProps {
   findingId: string;
   existingRemediation?: RemediationData | null;
   onRemediationGenerated?: (data: RemediationData) => void;
+  /** CBOM: first line number of the stored code window and the reported line (for line numbers). */
+  snippetStart?: number | null;
+  line?: number | null;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -98,11 +101,32 @@ const difficultyColors: Record<string, string> = {
   expert: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
 };
 
-/** CBOM: remediation and proof of exposure come from the offline crypto knowledge base. They load by themselves,
- * cost nothing and involve no AI. A stored result is shown at once and then rebuilt, so a knowledge-base update (or
- * an older AI result) never stays on screen; views without a scan (the CI page) show what they were given. */
-function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation }: RemediationPanelProps) {
-  const stored = existingRemediation?.source === "knowledge_base" && existingRemediation.status === "completed";
+function CodeWithLines({ code, start, highlight, tone }: { code: string; start?: number | null; highlight?: number | null; tone: "red" | "green" | "zinc" }) {
+  const lines = code.replace(/\r/g, "").split("\n");
+  const first = start && start > 0 ? start : 1;
+  const bg = tone === "red" ? "bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800"
+    : tone === "green" ? "bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800"
+    : "bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700";
+  return (
+    <pre className={`text-xs ${bg} py-2 rounded-md overflow-x-auto font-mono text-zinc-800 dark:text-zinc-200 border`}>
+      {lines.map((l, i) => (
+        <div key={i} className={`flex ${highlight && first + i === highlight ? "bg-amber-200/40 dark:bg-amber-500/20" : ""}`}>
+          <span className="select-none w-10 shrink-0 pr-2 text-right text-zinc-400">{first + i}</span>
+          <span className="whitespace-pre-wrap break-all pr-2">{l || " "}</span>
+        </div>
+      ))}
+    </pre>
+  );
+}
+
+/** CBOM: fix code, diff, exploit demonstration and the knowledge-base details are all built in-house (rewrite
+ * rules + offline crypto knowledge base): no AI, no network, no credits. The panel always asks the backend to
+ * rebuild; a stored result is shown first only when it already has the current shape (engine stamp), and a failed
+ * rebuild is reported even when an older result is on screen. Views without a scan (the CI page) show what they
+ * were given. */
+function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line }: RemediationPanelProps) {
+  const stored = existingRemediation?.source === "knowledge_base" && existingRemediation.status === "completed"
+    && !!existingRemediation.engine;
   const canLoad = Number.isInteger(scanId) && scanId > 0 && !!findingId;
   const [data, setData] = useState<RemediationData | null>(stored ? existingRemediation! : null);
   const load = useMutation({
@@ -115,28 +139,152 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation }: 
     if (canLoad) load.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [findingId, scanId]);
+  useEffect(() => {
+    if (!canLoad && existingRemediation?.source === "knowledge_base") setData(existingRemediation);
+  }, [canLoad, existingRemediation]);
 
+  const fix = data?.code_fix;
+  const demo = data?.exploit_demo;
+  const defaultTab = fix?.available ? "fix" : demo ? "exploit" : "details";
   return (
     <div className="space-y-3 pt-2" data-testid="cbom-kb-panel">
       <div className="flex items-center gap-2">
         <Shield className="h-4 w-4 text-green-600 dark:text-green-400" />
-        <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Remediation and proof of exposure</span>
+        <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Remediation, fix code and exploit demo</span>
         {data?.kb_version && (
-          <Badge variant="outline" className="ml-auto text-[10px]" title="Built from the offline crypto knowledge base; no AI and no credits">
-            Knowledge base {data.kb_version} · no AI
+          <Badge variant="outline" className="ml-auto text-[10px]" title="Built in-house from rewrite rules and the offline crypto knowledge base; no AI, no network, no credits">
+            In-house · KB {data.kb_version} · no AI
           </Badge>
         )}
       </div>
       {load.isPending && !data && (
         <div className="flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
       )}
-      {load.isError && !data && canLoad && (
-        <Button variant="outline" size="sm" onClick={() => load.mutate()}>Retry</Button>
+      {load.isError && canLoad && (
+        <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400" data-testid="cbom-kb-error">
+          <AlertTriangle className="h-4 w-4" />
+          {data ? `Could not refresh; showing the result from ${data.generated_at?.slice(0, 19).replace("T", " ")} UTC.` : "Could not load the remediation."}
+          <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => load.mutate()}>Retry</Button>
+        </div>
       )}
       {!canLoad && !data && (
         <p className="text-xs text-zinc-500">The remediation for this item is on the scan&apos;s own results page.</p>
       )}
-      {data && <KbFindingDetails details={data.details ?? []} />}
+      {data && (
+        <Tabs defaultValue={defaultTab} key={defaultTab} className="w-full">
+          <TabsList className="w-full grid grid-cols-4">
+            <TabsTrigger value="fix" className="text-xs gap-1" data-testid="cbom-tab-fix"><Shield className="h-3 w-3" />Fix code</TabsTrigger>
+            <TabsTrigger value="diff" className="text-xs gap-1" data-testid="cbom-tab-diff" disabled={!data.diff}>Diff</TabsTrigger>
+            <TabsTrigger value="exploit" className="text-xs gap-1" data-testid="cbom-tab-exploit" disabled={!demo}><Zap className="h-3 w-3" />Exploit demo</TabsTrigger>
+            <TabsTrigger value="details" className="text-xs gap-1" data-testid="cbom-tab-details">Standards</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="fix" className="mt-3 space-y-3" data-testid="cbom-fix">
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">{fix?.summary || data.fix?.description}</p>
+            {fix?.available && fix.kind !== "dependency" && (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-zinc-500">Confidence (rule {fix.rules.join(", ")})</span>
+                <ConfidenceMeter confidence={fix.confidence} />
+              </div>
+            )}
+            {(fix?.warnings ?? []).map((w, i) => (
+              <div key={i} className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                <AlertTriangle className="h-4 w-4 shrink-0" />{w}
+              </div>
+            ))}
+            {fix?.original_code ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-red-600 dark:text-red-400">Vulnerable code{line ? ` (line ${line})` : ""}</span>
+                  <CopyButton text={fix.original_code} />
+                </div>
+                <CodeWithLines code={fix.original_code} start={snippetStart} highlight={line} tone="red" />
+              </div>
+            ) : null}
+            {fix?.available && fix.fixed_code ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-green-600 dark:text-green-400">Fixed code</span>
+                  <CopyButton text={fix.fixed_code} />
+                </div>
+                <CodeWithLines code={fix.fixed_code} start={snippetStart} highlight={line} tone="green" />
+              </div>
+            ) : null}
+            {(fix?.commands ?? []).length > 0 && (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-zinc-500">Run</span>
+                {fix!.commands.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-md bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100">
+                    <span className="break-all">{c}</span><CopyButton text={c} />
+                  </div>
+                ))}
+              </div>
+            )}
+            {!fix?.available && (
+              <p className="text-xs text-zinc-500">No automatic code change for this finding: follow the steps under Standards.</p>
+            )}
+            {(fix?.notes ?? []).length > 0 && (
+              <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                <span className="mb-1 flex items-center gap-1.5 font-semibold"><CheckCircle className="h-3.5 w-3.5" />Validation notes</span>
+                <ul className="list-disc space-y-1 pl-4">{fix!.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="diff" className="mt-3">
+            {data.diff ? <DiffViewer diff={data.diff} /> : <p className="text-xs text-zinc-500">No code change to show.</p>}
+          </TabsContent>
+
+          <TabsContent value="exploit" className="mt-3 space-y-3" data-testid="cbom-exploit">
+            {demo && (
+              <>
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>{demo.safety}</span>
+                </div>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{demo.description}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge className={difficultyColors[demo.difficulty] ?? difficultyColors.moderate}>{demo.difficulty}</Badge>
+                  <Badge variant="outline">{demo.attack_vector}</Badge>
+                  <Badge variant="outline" className="font-mono text-[10px]">{demo.family}</Badge>
+                </div>
+                {demo.poc ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                        Proof of concept ({demo.poc.language}; needs {demo.poc.requires.join(" + ")}; prints &quot;{demo.poc.expected_marker}&quot;)
+                      </span>
+                      <CopyButton text={demo.poc.script} />
+                    </div>
+                    <ScrollArea className="max-h-[320px]">
+                      <pre className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-md overflow-x-auto whitespace-pre font-mono text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700">{demo.poc.script}</pre>
+                    </ScrollArea>
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">No local script applies to this weakness; the read-only commands below confirm it on the real asset.</p>
+                )}
+                <div><h5 className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">Impact</h5><p className="text-xs text-zinc-600 dark:text-zinc-400">{demo.impact_demonstration}</p></div>
+                <div><h5 className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">Prerequisites</h5><p className="text-xs text-zinc-600 dark:text-zinc-400">{demo.prerequisites}</p></div>
+                {demo.verify.length > 0 && (
+                  <div className="space-y-1">
+                    <h5 className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Confirm on the real asset (read-only)</h5>
+                    {demo.verify.map((v, i) => (
+                      <div key={i} className="rounded-md bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-100">
+                        <div className="mb-0.5 font-sans text-[10px] text-zinc-400"># {v.label}</div>
+                        <div className="flex items-center justify-between gap-2"><span className="break-all">{v.command}</span><CopyButton text={v.command} /></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </TabsContent>
+
+          <TabsContent value="details" className="mt-3">
+            <KbFindingDetails details={data.details ?? []} />
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }

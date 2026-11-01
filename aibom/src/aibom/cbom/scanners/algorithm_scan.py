@@ -56,13 +56,14 @@ _MAX_BYTES = 2_000_000
 # facts it returns into ``crypto_asset`` components.
 
 _IMPORT_RE = re.compile(
-    r"^\s*(?:import|from|require|use|using|#include|require_once)\b", re.I
+    # also CommonJS "const crypto = require('crypto')" anywhere on the line (the usual Node.js form)
+    r"^\s*(?:import|from|require|use|using|#include|require_once)\b|\brequire\(\s*['\"`]", re.I
 )
 
 
 def _iter_source_files(root: Path):
     for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.parts):
+        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
         if not p.is_file() or p.suffix.lower() not in LANGUAGE_EXTENSIONS:
             continue
@@ -154,11 +155,14 @@ def _detect_assets(root: Path) -> list[_Asset]:
             refined = _refine_key(det.key, det.key_size)
             info = algo_info(refined) or {}
             resolved_ks = det.key_size or info.get("key_size")
-            name = _display_name(refined, det.key_size, det.mode, det.parameter)
+            # A mode of operation belongs to block ciphers only: "RSA/ECB/OAEP..." is a JCA naming quirk, and a
+            # mode seen elsewhere on the line must not turn HMAC or SHA-256 into "HMAC-CBC" / "SHA-256-CBC".
+            mode = det.mode if info.get("primitive") == "block-cipher" else None
+            name = _display_name(refined, det.key_size, mode, det.parameter)
             ident = (name, rel)
             if ident not in seen:
                 seen[ident] = _Asset(
-                    refined, name, resolved_ks, det.mode, det.curve,
+                    refined, name, resolved_ks, mode, det.curve,
                     det.padding, det.operation, det.parameter, info, rel
                 )
     return sorted(seen.values(), key=lambda a: (a.name, a.location))
@@ -269,7 +273,7 @@ def _detect_manifest_libraries(root: Path) -> list[tuple[str, str]]:
     """Crypto libraries DECLARED in non-Python manifests. -> (label, src)."""
     found: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in path.parts):
+        if any(part in _IGNORE_DIRS for part in path.relative_to(root).parts):
             continue
         if not path.is_file():
             continue
@@ -306,7 +310,7 @@ def _detect_libraries(root: Path) -> list[tuple[str, str]]:
 
     # 1) declared dependencies (requirements.txt / pyproject)
     for req in (*root.rglob("requirements*.txt"), *root.rglob("pyproject.toml")):
-        if any(part in _IGNORE_DIRS for part in req.parts):
+        if any(part in _IGNORE_DIRS for part in req.relative_to(root).parts):
             continue
         try:
             text = req.read_text(encoding="utf-8", errors="ignore")

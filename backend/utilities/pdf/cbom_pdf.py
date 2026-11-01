@@ -71,7 +71,9 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"cbom_scan_report_{timestamp}.pdf"
 
-    vulnerabilities = _normalize_results(scan_results)
+    from backend.utilities.cbom_sources.cbom_rows import display_row
+
+    vulnerabilities = [display_row(v) for v in _normalize_results(scan_results)]
     _inner, duration, raw = split_scan_payload(scan_results)
     total = len(vulnerabilities)
 

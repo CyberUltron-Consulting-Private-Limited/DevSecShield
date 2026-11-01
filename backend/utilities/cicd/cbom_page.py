@@ -20,7 +20,7 @@ def _display_row(row: dict) -> dict:
     return copied
 
 
-_KB_REMEDIATION_ROWS = 500
+_KB_REMEDIATION_ROWS = 200  # each row now also builds a code fix and an exploit demo
 
 
 def _kb_remediation(row: dict, index: int) -> dict | None:
@@ -32,7 +32,9 @@ def _kb_remediation(row: dict, index: int) -> dict | None:
 
 
 def _finding(row: dict, index: int) -> dict:
-    shown = _display_row(row)
+    from backend.utilities.cbom_sources.cbom_rows import display_row
+
+    shown = display_row(_display_row(row))
     return {
         "id": str(shown.get("bom_ref") or f"ci-{index}"),
         "bom_ref": shown.get("bom_ref") or None,
@@ -63,6 +65,13 @@ def _finding(row: dict, index: int) -> dict:
         "not_valid_after": shown.get("not_valid_after"),
         "self_signed": shown.get("self_signed"),
         "expired": shown.get("expired"),
+        "line": shown.get("line"),
+        "occurrences": shown.get("occurrences") or [],
+        "occurrence_count": shown.get("occurrence_count"),
+        "language": shown.get("language"),
+        "snippet_start": shown.get("snippet_start"),
+        "snippet_note": shown.get("snippet_note"),
+        "weak": bool(shown.get("weak")),
     }
 
 

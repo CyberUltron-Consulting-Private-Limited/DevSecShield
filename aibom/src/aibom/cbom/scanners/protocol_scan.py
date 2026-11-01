@@ -109,7 +109,9 @@ _IPSEC_CONFIG_NAMES = frozenset(
 )
 _IPSEC_USE = re.compile(
     r"\bstrongswan\b|\blibreswan\b|\bcharon\b|\bracoon\b|\bIKEv[12]\b|"
-    r"\bipsec\b|\bxfrm\b|\bsetkey\b|\bstroke\b",
+    # strongSwan's legacy "stroke" interface only as a command ("ipsec stroke ...", "stroke up|down|statusall"):
+    # a bare \bstroke\b matched every SVG/Recharts stroke= attribute in React charts.
+    r"\bipsec\b|\bxfrm\b|\bsetkey\b|\bipsec\s+stroke\b|\bstroke\s+(?:up|down|status|statusall|loglevel|listall)\b",
     _F,
 )
 # Negotiated IKE version: ``IKEv1`` / ``keyexchange=ikev2`` (bare token) — a
@@ -162,7 +164,7 @@ def _slug(text: str) -> str:
 
 def _iter_source_files(root: Path):
     for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.parts):
+        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
         if not p.is_file() or p.suffix.lower() not in LANGUAGE_EXTENSIONS:
             continue
@@ -181,7 +183,7 @@ def _iter_ipsec_configs(root: Path):
     IPsec lane reads them directly for the IKE version + transform proposals.
     """
     for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.parts):
+        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
         if not p.is_file() or p.name.lower() not in _IPSEC_CONFIG_NAMES:
             continue

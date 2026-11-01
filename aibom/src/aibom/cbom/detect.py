@@ -139,6 +139,7 @@ class Detection:
 # API surface. C2/C3 add the other ecosystems' tables under the same model.
 # --------------------------------------------------------------------------- #
 _PY = "python"
+_PYCRYPTODOME = "pycryptodome"
 _PYCA = "pyca/cryptography"
 _STDLIB = "hashlib (stdlib)"
 
@@ -186,6 +187,19 @@ PYTHON_RULES: tuple[CryptoRule, ...] = (
     CryptoRule(_PY, _PYCA, None, "Scrypt", "scrypt", ()),
     CryptoRule(_PY, _PYCA, None, "HKDF", "hkdf", ()),
     CryptoRule(_PY, _STDLIB, "hmac", "HMAC|new", "hmac", ()),
+    # --- PyCryptodome / PyCrypto: <Cipher>.new(key, <Cipher>.MODE_x, ...), RSA/DSA/ECC.generate(...) ---
+    # (the AST lane covers pyca + hashlib only; without these, AES.new(k, AES.MODE_ECB) produced no row)
+    CryptoRule(_PY, _PYCRYPTODOME, "AES", "new", "aes", (ROLE_MODE,)),
+    CryptoRule(_PY, _PYCRYPTODOME, "DES3", "new", "3des", (ROLE_MODE,)),
+    CryptoRule(_PY, _PYCRYPTODOME, "DES", "new", "des", (ROLE_MODE,)),
+    CryptoRule(_PY, _PYCRYPTODOME, "ARC4", "new", "rc4", ()),
+    CryptoRule(_PY, _PYCRYPTODOME, "ARC2", "new", "rc2", (ROLE_MODE,)),
+    CryptoRule(_PY, _PYCRYPTODOME, "Blowfish", "new", "blowfish", (ROLE_MODE,)),
+    CryptoRule(_PY, _PYCRYPTODOME, "ChaCha20", "new", "chacha20", ()),
+    CryptoRule(_PY, _PYCRYPTODOME, "ChaCha20_Poly1305", "new", "chacha20-poly1305", ()),
+    CryptoRule(_PY, _PYCRYPTODOME, "RSA", "generate", "rsa", (ROLE_KEY_SIZE,)),
+    CryptoRule(_PY, _PYCRYPTODOME, "DSA", "generate", "dsa", (ROLE_KEY_SIZE,)),
+    CryptoRule(_PY, _PYCRYPTODOME, "ECC", "generate", "ecdsa", (ROLE_CURVE,)),
 )
 
 # --------------------------------------------------------------------------- #
@@ -741,6 +755,27 @@ def _merge(into: Detection, other: Detection) -> None:
     into.receiver_bound = into.receiver_bound or other.receiver_bound
 
 
+_STR_LIT = re.compile(r"""(["'`])((?:\\.|(?!\1).)*)\1""")
+_JSX_TEXT = re.compile(r">([^<>{}]*)<")
+_WORD = re.compile(r"[A-Za-z]{3,}")
+
+
+def _is_prose(body: str) -> bool:
+    words = body.split()
+    return len(words) >= 3 and len(_WORD.findall(body)) >= 2 and not re.search(r"[/=;{}()]", body)
+
+
+def blank_prose(line: str, lang: str) -> str:
+    """``line`` with prose-like string literals (and JSX text in JS/TS) replaced by spaces of the same length."""
+    def blank(m: re.Match) -> str:
+        return m.group(1) + " " * len(m.group(2)) + m.group(1) if _is_prose(m.group(2)) else m.group(0)
+
+    out = _STR_LIT.sub(blank, line)
+    if lang == "javascript" and "<" in out:
+        out = _JSX_TEXT.sub(lambda m: ">" + " " * len(m.group(1)) + "<" if _is_prose(m.group(1)) else m.group(0), out)
+    return out
+
+
 def detect_crypto(text: str, lang: str) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
@@ -749,7 +784,9 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
     lane. Returns one :class:`Detection` per distinct algorithm per line.
     """
     stripped = strip_noncode(text)
-    raw_lines = stripped.splitlines()
+    # Split on "\n" only: splitlines() also breaks on \f, \v, \x1c-\x1e, \x85, U+2028/9 and would shift
+    # every reported line number after such a character (the occurrence pass uses the same rule).
+    raw_lines = stripped.split("\n")
     work_lines = [_strip_line_comment(ln, lang) for ln in raw_lines]
     symbols = build_symbols(work_lines)
     rules = RULES_BY_LANG.get(lang, ())
@@ -778,11 +815,15 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
                 break  # one detection per rule per line
 
         # --- literal lane (recall floor) ---
-        explicit_ks = extract_key_size(line)
-        mode = extract_mode(line)
-        curve = extract_curve(line)
+        # Prose inside string literals / JSX text ("AES-256 encryption at rest", "MD5 is not allowed") names an
+        # algorithm without using it: blank it for this lane only (API strings such as "AES/GCM/NoPadding" have
+        # no spaces and stay).
+        lit_line = blank_prose(line, lang)
+        explicit_ks = extract_key_size(lit_line)
+        mode = extract_mode(lit_line)
+        curve = extract_curve(lit_line)
         for key, pat in (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ())):
-            if not pat.search(line):
+            if not pat.search(lit_line):
                 continue
             lit = Detection(
                 key=key,

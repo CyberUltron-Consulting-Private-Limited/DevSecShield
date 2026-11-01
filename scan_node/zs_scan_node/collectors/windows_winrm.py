@@ -38,7 +38,33 @@ SCRIPTS = {
         "[pscustomobject]@{ Protocol=$p; Side=$side; Enabled=$v.Enabled; DisabledByDefault=$v.DisabledByDefault } } } } "
         "| ConvertTo-Json -Compress"
     ),
-    "cipher_suites": "Get-TlsCipherSuite | Select-Object -ExpandProperty Name | ConvertTo-Json -Compress",
+    # Effective TLS cipher suite order: the Group Policy list overrides the local one when it is set.  Windows
+    # PowerShell 5.1 writes Get-TlsCipherSuite's result as ONE List object, so it is unrolled with ForEach-Object
+    # (Select-Object -ExpandProperty Name fails on the list).
+    "cipher_suites": (
+        "& { $p='HKLM:\\SOFTWARE\\Policies\\Microsoft\\Cryptography\\Configuration\\SSL\\00010002'; "
+        "$f=(Get-ItemProperty $p -Name Functions -ErrorAction SilentlyContinue).Functions; "
+        "if ($f) { [pscustomobject]@{ Source='policy'; Suites=@((($f -join ',') -split ',') | Where-Object { $_ }) } } "
+        "else { [pscustomobject]@{ Source='local'; Suites=@(Get-TlsCipherSuite | ForEach-Object { $_ } | "
+        "ForEach-Object { $_.Name }) } } } | ConvertTo-Json -Compress -Depth 3"
+    ),
+    # SCHANNEL per-algorithm switches (Ciphers, Hashes, KeyExchangeAlgorithms); a missing key means the OS default.
+    "schannel_algorithms": (
+        "& { $b='HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\SCHANNEL'; "
+        "foreach ($kind in 'Ciphers','Hashes','KeyExchangeAlgorithms') { Get-ChildItem (Join-Path $b $kind) "
+        "-ErrorAction SilentlyContinue | ForEach-Object { $v=Get-ItemProperty $_.PSPath; [pscustomobject]@{ "
+        "Kind=$kind; Name=$_.PSChildName; Enabled=$v.Enabled; ServerMinKeyBitLength=$v.ServerMinKeyBitLength } } } } "
+        "| ConvertTo-Json -Compress"
+    ),
+    # .NET Framework TLS: SchUseStrongCrypto=0 lets .NET 4.x apps negotiate SSL 3.0/TLS 1.0 and RC4.
+    "dotnet": (
+        "& { foreach ($k in 'HKLM:\\SOFTWARE\\Microsoft\\.NETFramework\\v4.0.30319',"
+        "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\.NETFramework\\v4.0.30319',"
+        "'HKLM:\\SOFTWARE\\Microsoft\\.NETFramework\\v2.0.50727',"
+        "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\.NETFramework\\v2.0.50727') { if (Test-Path $k) { "
+        "$v=Get-ItemProperty $k; [pscustomobject]@{ Key=$k; SchUseStrongCrypto=$v.SchUseStrongCrypto; "
+        "SystemDefaultTlsVersions=$v.SystemDefaultTlsVersions } } } } | ConvertTo-Json -Compress"
+    ),
     "bitlocker": (
         "Get-BitLockerVolume -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ Mount=$_.MountPoint; "
         "Status=\"$($_.VolumeStatus)\"; Method=\"$($_.EncryptionMethod)\"; Protection=\"$($_.ProtectionStatus)\" } } "
@@ -48,7 +74,12 @@ SCRIPTS = {
         "Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' "
         "| Select-Object SecurityLayer,MinEncryptionLevel,UserAuthentication | ConvertTo-Json -Compress"
     ),
-    "os": "Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber | ConvertTo-Json -Compress",
+    # The registry, not WMI: a non-administrator has no "Remote Enable" on root\\cimv2, so Get-CimInstance is denied.
+    "os": (
+        "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' | Select-Object "
+        "@{n='Caption';e={$_.ProductName}},@{n='Version';e={\"10.0.$($_.CurrentBuild).$($_.UBR)\"}},"
+        "@{n='BuildNumber';e={$_.CurrentBuild}},DisplayVersion,EditionID | ConvertTo-Json -Compress"
+    ),
 }
 
 
@@ -106,6 +137,66 @@ def parse_bitlocker(text: str) -> list[dict[str, Any]]:
             out.append({"mount": printable(str(row.get("Mount") or ""), 40), "status": printable(str(row.get("Status") or ""), 40),
                         "method": printable(str(row.get("Method") or ""), 40),
                         "protection": printable(str(row.get("Protection") or ""), 40)})
+    return out
+
+
+def parse_cipher_suites(text: str) -> tuple[list[str], str | None]:
+    """{Source, Suites} from the cipher_suites script; a bare JSON list (older script) is the local order."""
+    text = (text or "").strip()
+    try:
+        data = json.loads(text) if text else None
+    except ValueError:
+        return [], None
+    if isinstance(data, dict):
+        suites, source = data.get("Suites"), str(data.get("Source") or "") or None
+    else:
+        suites, source = data, "local"
+    if isinstance(suites, str):  # ConvertTo-Json writes a one-element array as a scalar
+        suites = [suites]
+    if not isinstance(suites, list):
+        return [], source
+    return [printable(str(x).strip(), 80) for x in suites if isinstance(x, str) and x.strip()][:200], source
+
+
+_DWORD = 0xFFFFFFFF
+
+
+def _enabled(value: Any) -> bool | None:
+    """SCHANNEL 'Enabled' DWORD: 0 is off, anything else (1, 0xffffffff read as 4294967295 or -1) is on."""
+    if value is None or isinstance(value, bool):
+        return value
+    try:
+        return int(value) & _DWORD != 0
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_schannel_algorithms(text: str) -> dict[str, dict[str, Any]]:
+    """{'Ciphers/Triple DES 168': {'kind', 'name', 'enabled', 'server_min_key_bits'}} -- explicit registry switches."""
+    out: dict[str, dict[str, Any]] = {}
+    for row in _json_list(text):
+        if not isinstance(row, dict):
+            continue
+        kind, name = str(row.get("Kind") or ""), printable(str(row.get("Name") or ""), 60)
+        if kind not in ("Ciphers", "Hashes", "KeyExchangeAlgorithms") or not name:
+            continue
+        bits = row.get("ServerMinKeyBitLength")
+        out[f"{kind}/{name}"] = {"kind": kind, "name": name, "enabled": _enabled(row.get("Enabled")),
+                                 "server_min_key_bits": bits if isinstance(bits, int) else None}
+    return out
+
+
+def parse_dotnet(text: str) -> list[dict[str, Any]]:
+    out = []
+    for row in _json_list(text):
+        if not isinstance(row, dict):
+            continue
+        key = printable(str(row.get("Key") or ""), 120)
+        strong, sysdef = row.get("SchUseStrongCrypto"), row.get("SystemDefaultTlsVersions")
+        out.append({"key": key, "wow64": "WOW6432Node" in key,
+                    "framework": "v2.0.50727" if "v2.0" in key else "v4.0.30319",
+                    "sch_use_strong_crypto": strong if isinstance(strong, int) else None,
+                    "system_default_tls_versions": sysdef if isinstance(sysdef, int) else None})
     return out
 
 
@@ -190,10 +281,36 @@ def _session(target: Target, config: dict, password: str, ca_path: str | None = 
                          ca_trust_path=ca_path or "legacy_requests", read_timeout_sec=60, operation_timeout_sec=50)
 
 
+# WS-Management fault codes (Win32 error numbers) the server returns after a successful login
+_WSMAN_ACCESS_DENIED = 5
+SHELL_DENIED_HELP = (
+    "logged in, but Windows refused this account a WinRM shell (Access is denied). Membership of Remote Management "
+    "Users is not enough on its own: the account also needs Read and Execute on the WinRM service (RootSDDL). Run the "
+    "Windows setup script from the source's Privilege section on the server, then test again")
+
+
+def _fault(exc: Exception) -> "_Fail | None":
+    """A WS-Man fault means the server answered and the login worked; say what it refused instead of 'unreachable'."""
+    try:
+        from winrm.exceptions import WSManFaultError
+    except ImportError:  # pragma: no cover - pywinrm is a hard dependency of the node
+        return None
+    if not isinstance(exc, WSManFaultError):
+        return None
+    code = exc.wsman_fault_code
+    if code == _WSMAN_ACCESS_DENIED or "access is denied" in (exc.reason or "").lower():
+        return _Fail("winrm_denied", SHELL_DENIED_HELP)
+    reason = printable(" ".join(str(exc.reason or exc.message or "").split()), 200)
+    return _Fail("error", f"WinRM fault {code if code is not None else exc.fault_code or '?'}: {reason}")
+
+
 def _run(sess, name: str) -> tuple[int, str, str]:
     try:
         r = sess.run_ps(SCRIPTS[name])
     except Exception as exc:  # requests/winrm raise many types
+        fault = _fault(exc)
+        if fault is not None:
+            raise fault from None
         text = str(exc)
         if "CERTIFICATE_VERIFY_FAILED" in text or "SSLError" in text or "certificate verify failed" in text:
             raise _Fail("identity_unverified", "the WinRM certificate is not trusted for this server: upload the CA "
@@ -207,18 +324,37 @@ def _run(sess, name: str) -> tuple[int, str, str]:
     return r.status_code, r.std_out.decode("utf-8", "replace"), r.std_err.decode("utf-8", "replace")[:300]
 
 
+def _stderr(err: str) -> str:
+    """First error line of a PowerShell stderr stream (CLIXML progress records dropped)."""
+    text = " ".join((err or "").split())
+    if text.startswith("#< CLIXML"):
+        text = ""
+    return printable(text, 200)
+
+
 def collect_target(ctx: JobContext, target: Target, config: dict, password: str, ca_path: str | None = None) -> int:
     check_name(ctx, target)
     sess = _session(target, config, password, ca_path)
     loc = target.label
     n = 0
-    code, out, _err = _run(sess, "os")
+    code, out, err = _run(sess, "os")
     os_info = (_json_list(out) or [{}])[0] if code == 0 else {}
+    if code != 0:
+        ctx.coverage(loc, "Windows version", "error", _stderr(err) or "could not read the Windows version")
     facts: dict[str, Any] = {"os": os_info}
     code, out, err = _run(sess, "schannel")
     facts["schannel_protocols"] = parse_schannel(out) if code == 0 else None
+    code, out, err = _run(sess, "schannel_algorithms")
+    facts["schannel_algorithms"] = parse_schannel_algorithms(out) if code == 0 else None
     code, out, err = _run(sess, "cipher_suites")
-    facts["cipher_suites"] = [printable(str(s), 80) for s in _json_list(out)][:200] if code == 0 else None
+    suites, source = parse_cipher_suites(out)
+    # The output is used whenever it parses: PowerShell exits non-zero on any non-terminating error.
+    facts["cipher_suites"] = suites if (suites or code == 0) else None
+    facts["cipher_suite_source"] = source
+    if not suites and code != 0:
+        ctx.coverage(loc, "TLS cipher suites", "error", _stderr(err) or "could not read the cipher suite order")
+    code, out, err = _run(sess, "dotnet")
+    facts["dotnet"] = parse_dotnet(out) if code == 0 else None
     code, out, err = _run(sess, "rdp")
     facts["rdp"] = parse_rdp(out) if code == 0 else None
     code, out, err = _run(sess, "bitlocker")
@@ -227,10 +363,15 @@ def collect_target(ctx: JobContext, target: Target, config: dict, password: str,
             ctx.emit("disk_encryption", loc, f"bitlocker:{v['mount']}", name=v["mount"], algorithm=v["method"] or None,
                      facts={**v, "source": "bitlocker"})
             n += 1
+    elif "is not recognized" in err or "CommandNotFoundException" in err:
+        ctx.coverage(loc, "BitLocker", "not_supported", "BitLocker is not installed on this server")
     else:
-        ctx.coverage(loc, "BitLocker", "denied", err.strip()[:200] or "Get-BitLockerVolume needs administrator rights")
+        ctx.coverage(loc, "BitLocker", "denied", _stderr(err) or "Get-BitLockerVolume needs administrator rights")
     code, out, err = _run(sess, "certificates")
-    for c in parse_certificates(out) if code == 0 else []:
+    certs = parse_certificates(out)
+    if code != 0 and not certs:
+        ctx.coverage(loc, "Certificate stores", "error", _stderr(err) or "could not read the certificate stores")
+    for c in certs:
         ctx.emit("certificate", loc, f"cert:{c['store']}/{c['thumbprint']}", name=c["subject"], algorithm=c["key_alg"],
                  key_size=c["key_size"], facts=c)
         n += 1
@@ -304,8 +445,13 @@ def _test_one(ctx: JobContext, target: Target, config: dict, password: str, ca_p
     else:
         try:
             check_name(ctx, target)
-            code, out, _ = _run(_session(target, config, password, ca_path), "os")
-            sample.update(reachable=True, login=code == 0, note=printable(out.strip(), 160))
+            code, out, err = _run(_session(target, config, password, ca_path), "os")
+            # Any answer from the shell means the login worked; a failing read is a privilege note, not a login failure.
+            info = (_json_list(out) or [{}])[0] if code == 0 else {}
+            note = (f"{info.get('Caption') or 'Windows'} {info.get('Version') or ''}".strip() if code == 0
+                    else f"logged in; reading the Windows version failed: {_stderr(err) or 'exit ' + str(code)}")
+            sample.update(reachable=True, login=True, note=printable(note, 160))
         except _Fail as fail:
-            sample.update(status=fail.status, reachable=fail.status not in ("unreachable", "timeout"), note=fail.error)
+            sample.update(status=fail.status, reachable=fail.status not in ("unreachable", "timeout"),
+                          login=fail.status == "winrm_denied", note=fail.error)
     ctx.samples.append(sample)

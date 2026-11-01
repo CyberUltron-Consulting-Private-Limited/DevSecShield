@@ -715,6 +715,11 @@ function ServerForm({
     onSuccess: (text) => downloadText(text, "zs-cbom", "text/plain"),
     onError: () => toast.error("Could not download the sudoers file. Please try again."),
   });
+  const windowsSetup = useMutation({
+    mutationFn: () => getCbomTemplate(teamId, "windows-setup"),
+    onSuccess: (text) => downloadText(text, "zs-cbom-windows-setup.ps1", "text/plain"),
+    onError: () => toast.error("Could not download the Windows setup script. Please try again."),
+  });
 
   const save = useMutation({
     mutationFn: ({ body, test }: { body: CbomSourceWrite; test: boolean }) =>
@@ -1330,6 +1335,33 @@ function ServerForm({
                   <CommandList title="Tier 2 adds, through sudo" commands={TIER2_COMMANDS} />
                 </div>
               )}
+            </FormSection>
+          )}
+
+          {form.kind === "windows_servers" && (
+            <FormSection title="Privilege">
+              <div className="space-y-2 text-sm text-zinc-700 dark:text-zinc-300" data-testid="servers-windows-privilege">
+                <p>
+                  {login} does not need to be an administrator. It needs to be in Remote Management Users, and that group needs Read and
+                  Execute on the WinRM service: Windows only gives a WinRM shell to administrators unless this is granted.
+                </p>
+                <p className="text-xs text-zinc-500">
+                  Run the setup script once on each server in an elevated PowerShell. It adds the account to Remote Management Users, grants the
+                  group Read and Execute on WinRM, and checks for an HTTPS listener. It changes nothing else and is safe to run again.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="cursor-pointer"
+                disabled={windowsSetup.isPending}
+                onClick={() => windowsSetup.mutate()}
+                data-testid="servers-download-windows-setup"
+              >
+                {windowsSetup.isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Download className="h-4 w-4 mr-1.5" />}
+                Download Windows setup script
+              </Button>
             </FormSection>
           )}
 

@@ -196,9 +196,11 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
             })
     
     elif scan_type == "cbom":
+        from backend.utilities.cbom_sources.cbom_rows import display_row
+
         findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
         for finding in findings_fetched:
-            fd = finding.get("finding_data", {})
+            fd = display_row(finding.get("finding_data", {}))
             findings.append({
                 "id": str(finding["_id"]),
                 "jira_issue_key": _jira_issue_key(finding),
@@ -226,12 +228,23 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "cwe": fd.get("cwe") or [],
                 "cves": fd.get("cves") or [],
                 "asset_type": fd.get("asset_type"),
+                # where in the file (code scans from this release on): line, every occurrence, language and the
+                # redacted code window the fix engine rewrites
+                "line": fd.get("line"),
+                "occurrences": fd.get("occurrences") or [],
+                "occurrence_count": fd.get("occurrence_count"),
+                "language": fd.get("language"),
+                "snippet_start": fd.get("snippet_start"),
+                "snippet_note": fd.get("snippet_note"),
+                "weak": bool(fd.get("weak")),
             })
 
     elif scan_type == "ai_bom":
+        from backend.utilities.cbom_sources.cbom_rows import display_row
+
         findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
         for finding in findings_fetched:
-            fd = finding.get("finding_data", {})
+            fd = display_row(finding.get("finding_data", {}))
             findings.append({
                 "id": str(finding["_id"]),
                 "jira_issue_key": _jira_issue_key(finding),

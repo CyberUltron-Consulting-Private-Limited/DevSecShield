@@ -175,8 +175,55 @@ DB_READS = {
               "requirepass; the scan node never asks for those"],
 }
 
+# Run once per Windows server (elevated PowerShell).  Remote Management Users alone lets the account log in, but WinRM
+# hands out a shell (what the collector's read-only PowerShell runs in) only to principals on the service's RootSDDL,
+# which by default lists Administrators and nobody else.  This adds Read+Execute for Remote Management Users, so the
+# account stays a non-administrator.  Idempotent: re-running changes nothing.
+WINDOWS_SETUP = r"""# zs-cbom-windows-setup.ps1 -- ZeroShield CBOM collector account for WinRM (read-only)
+# Run in an elevated PowerShell on each Windows server. The account is NOT made an administrator.
+param(
+    [string]$Account = 'svc-zscbom',            # local account; for a domain account pass 'DOMAIN\svc-zscbom'
+    [switch]$CreateLocalAccount                  # create the local account (prompts for its password)
+)
+$ErrorActionPreference = 'Stop'
+
+if ($CreateLocalAccount -and $Account -notmatch '\\') {
+    if (-not (Get-LocalUser -Name $Account -ErrorAction SilentlyContinue)) {
+        $pw = Read-Host -AsSecureString "Password for $Account"
+        New-LocalUser -Name $Account -Password $pw -PasswordNeverExpires -AccountNeverExpires `
+            -Description 'ZeroShield CBOM collector (WinRM, read-only)' | Out-Null
+    }
+}
+
+# 1. Remote Management Users (S-1-5-32-580): may log in over WinRM
+$rmu = (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-580').Translate([System.Security.Principal.NTAccount]).Value
+if (-not (Get-LocalGroupMember -SID 'S-1-5-32-580' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*\$($Account.Split('\')[-1])" })) {
+    Add-LocalGroupMember -SID 'S-1-5-32-580' -Member $Account
+}
+
+# 2. Read + Execute on the WinRM service for Remote Management Users, so the account may open a shell
+$path = 'WSMan:\localhost\Service\RootSDDL'
+$sd = New-Object System.Security.AccessControl.CommonSecurityDescriptor($false, $false, (Get-Item $path).Value)
+$rmuSid = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-580'
+$mask = [int]0x80000000 -bor 0x20000000   # GENERIC_READ | GENERIC_EXECUTE
+$has = $sd.DiscretionaryAcl | Where-Object { $_.SecurityIdentifier -eq $rmuSid -and $_.AceQualifier -eq 'AccessAllowed' -and (($_.AccessMask -band $mask) -eq $mask) }
+if (-not $has) {
+    $sd.DiscretionaryAcl.AddAccess([System.Security.AccessControl.AccessControlType]::Allow, $rmuSid, $mask, 'None', 'None')
+    Set-Item $path -Value $sd.GetSddlForm('All') -Force
+}
+
+# 3. WinRM over HTTPS (5986). The collector never uses HTTP (5985): it checks the certificate before logging in.
+if (-not (Get-ChildItem WSMan:\localhost\Listener | Where-Object { $_.Keys -contains 'Transport=HTTPS' })) {
+    Write-Warning 'No WinRM HTTPS listener. Create one with a certificate whose name matches the server, e.g.:'
+    Write-Warning '  New-Item WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint <thumbprint> -Force'
+}
+
+Write-Output "OK: $Account is in $rmu and $rmu has Read+Execute on WinRM; the account is not an administrator."
+"""
+
 TEMPLATE_NAMES = {
     "sudoers": ("text/plain", "zs-cbom"),
+    "windows-setup": ("text/plain", "zs-cbom-windows-setup.ps1"),
     "k8s-tier1": ("application/yaml", "zs-cbom-tier1.yaml"),
     "k8s-tier2": ("application/yaml", "zs-cbom-tier2.yaml"),
     **{f"grant-{engine}": ("text/plain", f"zs-cbom-grant-{engine}.sql") for engine in DB_GRANTS},
@@ -186,6 +233,8 @@ TEMPLATE_NAMES = {
 def template_text(name: str) -> str | None:
     if name == "sudoers":
         return SUDOERS
+    if name == "windows-setup":
+        return WINDOWS_SETUP
     if name == "k8s-tier1":
         return K8S_TIER1
     if name == "k8s-tier2":

@@ -524,7 +524,7 @@ def iter_pins(root: Path) -> Iterator[Pin]:
     """Every version pin under ``root``, skipping dependency install trees."""
     go_direct: set[str] = set()
     for path in sorted(root.rglob("*")):
-        if any(part in _IGNORE for part in path.parts):
+        if any(part in _IGNORE for part in path.relative_to(root).parts):
             continue
         if not path.is_file():
             continue
@@ -545,7 +545,7 @@ def iter_pins(root: Path) -> Iterator[Pin]:
         if parser is not None:
             yield from parser(text, rel)
     for path in sorted(root.rglob("go.sum")):
-        if any(part in _IGNORE for part in path.parts):
+        if any(part in _IGNORE for part in path.relative_to(root).parts):
             continue
         text = _read(path)
         if text is None:

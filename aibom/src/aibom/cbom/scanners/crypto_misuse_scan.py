@@ -52,7 +52,7 @@ def _slug(text: str) -> str:
 
 def _iter_source_files(root: Path):
     for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.parts):
+        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
         if not p.is_file() or p.suffix.lower() not in LANGUAGE_EXTENSIONS:
             continue
@@ -111,6 +111,8 @@ class CryptoMisuseScanner(Scanner):
             "crypto:materialKind": fact.kind,
             "discovery:source": rel,
         }
+        if getattr(fact, "line", None):
+            props["crypto:line"] = str(fact.line)
         if fact.weak_rng:
             props["crypto:weakRng"] = "true"
             props["crypto:generatedBy"] = fact.weak_rng

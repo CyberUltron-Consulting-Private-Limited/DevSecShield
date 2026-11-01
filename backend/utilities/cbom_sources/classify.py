@@ -277,6 +277,27 @@ def _windows_rules(out: _Out, facts: dict[str, Any]) -> None:
             out.add("CBC_ACCEPTED", "Low", "Windows still enables CBC-mode cipher suites")
         else:
             out.add("CBC_ONLY", "Medium", "Windows enables only CBC-mode cipher suites (no AES-GCM or ChaCha20)")
+    algos = facts.get("schannel_algorithms")
+    if isinstance(algos, dict):
+        on = [v for v in algos.values() if isinstance(v, dict) and v.get("enabled") is True]
+        weak_ciphers = sorted({str(v.get("name")) for v in on if v.get("kind") == "Ciphers"
+                               and re.search(r"\b(RC4|RC2|DES|NULL)\b", str(v.get("name")), re.I)})
+        if weak_ciphers:
+            out.add("WEAK_CIPHER", "High", f"SCHANNEL explicitly enables {', '.join(weak_ciphers[:4])} (registry)")
+        if any(v.get("kind") == "Hashes" and str(v.get("name")).upper() == "MD5" for v in on):
+            out.add("WEAK_CIPHER", "High", "SCHANNEL explicitly enables the MD5 hash for TLS (registry)")
+        for v in algos.values():
+            bits = v.get("server_min_key_bits") if isinstance(v, dict) else None
+            if v.get("kind") == "KeyExchangeAlgorithms" and isinstance(bits, int) and 0 < bits < 2048 \
+                    and "diffie" in str(v.get("name")).lower():
+                out.add("DH_LT_2048", "Medium", f"SCHANNEL accepts Diffie-Hellman groups from {bits} bits (registry)")
+    dotnet = facts.get("dotnet")
+    if isinstance(dotnet, list):
+        off = [d for d in dotnet if isinstance(d, dict) and d.get("framework") == "v4.0.30319"
+               and d.get("sch_use_strong_crypto") == 0]
+        if off:
+            where = " and ".join("32-bit" if d.get("wow64") else "64-bit" for d in off)
+            out.add("DOTNET_WEAK_TLS", "Medium", f".NET Framework 4.x SchUseStrongCrypto=0 ({where})")
     rdp = facts.get("rdp") if isinstance(facts.get("rdp"), dict) else {}
     if rdp.get("security_layer") == 0:
         out.add("RDP_NO_TLS", "High", "Remote Desktop uses the legacy RDP security layer (no TLS)")
@@ -451,7 +472,10 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("EBS_DEFAULT_OFF", "Medium", "EBS encryption by default is off in this region")
         qv = False if facts.get("encrypted") else None
     elif asset_type == "cloud_secret":
-        if facts.get("rotation_enabled") is False:
+        if facts.get("service") == "ssm":
+            if facts.get("parameter_type") == "String" and facts.get("secret_like_name"):
+                out.add("SECRET_PLAINTEXT_PARAM", "High", "Secret-looking SSM parameter stored as a plain String")
+        elif facts.get("rotation_enabled") is False:
             out.add("SECRET_NO_ROTATION", "Low", "Secret rotation is off")
         qv = None
     elif asset_type == "keystore":

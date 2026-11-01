@@ -1224,7 +1224,10 @@ def generate_scan_dashboard(
             total_certificates = 0
             total_keys = 0
 
+            from backend.utilities.cbom_sources.cbom_rows import display_row
+
             for vulnerability in results:
+                vulnerability = display_row(vulnerability)  # old rows: library/config weaknesses count as weak
                 # severity distribution
                 impact = vulnerability.get("impact") or "Low"
                 impact_lower = impact.lower()

@@ -39,10 +39,18 @@ from aibom.graph_view import (
     compact_cbom_graph,
 )
 from aibom.model.component import AIComponent
+from aibom.cbom.graph_detail import build_detailed
 from aibom.model.result import ScanResult
 
 # A crypto-asset weakness flag is any C5 weak-crypto code OR an expired cert.
-_WEAKNESS_CODES = WEAK_CRYPTO_CODES | {EXPIRED_CERTIFICATE}
+# Code-scan weaknesses that are not an algorithm but still break the crypto (a library with a crypto CVE, TLS
+# verification switched off, data stored unencrypted, plaintext transport): they count as weak too, so the
+# Weak KPI, the strength chart and the weak-crypto chart agree with the High findings the table shows.
+CONFIG_WEAKNESS_CODES = frozenset({
+    "VULNERABLE_CRYPTO_LIBRARY", "TLS_VERIFICATION_DISABLED", "UNENCRYPTED_AT_REST", "AT_REST_ENCRYPTION_WEAK",
+    "UNENCRYPTED_IN_TRANSIT", "PLAINTEXT_LISTENER", "KNOWN_TLS_VULNERABILITY", "DOWNGRADE_PROTECTION_MISSING",
+})
+_WEAKNESS_CODES = WEAK_CRYPTO_CODES | {EXPIRED_CERTIFICATE, "CUSTOM_CRYPTO"} | CONFIG_WEAKNESS_CODES
 
 _SEVERITY_IMPACT = {"error": "High", "warning": "Medium", "note": "Low", "none": "Low"}
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
@@ -138,8 +146,24 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "finding_codes": codes,
         "description": _finding_description(comp, result),
         "location": props.get("crypto:source") or props.get("discovery:source") or "",
+        **_occurrence_fields(props),
         "risk_score": _risk_score_for(comp, result),
     }
+
+
+def _occurrence_fields(props: dict[str, Any]) -> dict[str, Any]:
+    """Line, every occurrence line, count and language from the occurrence pass (absent -> nothing added)."""
+    out: dict[str, Any] = {}
+    line = str(props.get("crypto:line") or "")
+    if line.isdigit():
+        out["line"] = int(line)
+        occ = [int(x) for x in str(props.get("crypto:occurrences") or line).split(",") if x.strip().isdigit()]
+        out["occurrences"] = occ
+        count = str(props.get("crypto:occurrenceCount") or "")
+        out["occurrence_count"] = int(count) if count.isdigit() else len(occ)
+    if props.get("crypto:language"):
+        out["language"] = props["crypto:language"]
+    return out
 
 
 def _algorithm_distribution(assets: list[AIComponent]) -> dict[str, int]:
@@ -438,6 +462,8 @@ def _crypto_graph(
             "weak": any(
                 f.code in _WEAKNESS_CODES for f in result.flags_for(c.bom_ref)
             ),
+            "location": (c.properties or {}).get("discovery:source")
+            or (c.properties or {}).get("crypto:source"),
         }
         for c in result.components
         if not _is_fact_component(c)
@@ -460,8 +486,18 @@ def _crypto_graph(
         if isinstance(src, str) and isinstance(cp, dict):
             for rel, target in _iter_crypto_refs(cp):
                 _add(src, rel, target)
-    for e in result.edges:  # future-proof: native scanner edges (none today)
+    for e in result.edges:  # native scanner edges (misuse used_by, certificate signed_by, ...)
         _add(e.src, e.rel, e.dst)
+    # library -> algorithm: the crypto libraries each asset's file imports (occurrence pass) "provide" it.
+    lib_by_label = {str(n["label"]).lower(): n["id"] for n in nodes if n["kind"] == "framework"}
+    for c in result.components:
+        libs = (c.properties or {}).get("crypto:libraries")
+        if c.kind != "crypto_asset" or not libs:
+            continue
+        for label in libs.split(","):
+            lib_id = lib_by_label.get(label.strip().lower())
+            if lib_id:
+                _add(lib_id, "provides", c.bom_ref)
 
     nodes.sort(key=lambda n: str(n["id"]))
     edges.sort(key=lambda e: (str(e["source"]), str(e["rel"]), str(e["target"])))
@@ -499,18 +535,10 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         "cbom_compliance": result.compliance or {},
         "cbom_scores": result.scores or {},
         "cbom_graph": full_graph,
-        "cbom_graph_compact": compact_cbom_graph(
-            full_graph,
-            max_nodes=COMPACT_MAX_NODES,
-            collapse_orphans=True,
-            collapse_duplicate_labels=True,
-        ),
-        "cbom_graph_expanded": compact_cbom_graph(
-            full_graph,
-            max_nodes=EXPANDED_MAX_NODES,
-            collapse_orphans=False,
-            collapse_duplicate_labels=True,
-        ),
+        # Detailed views (folders -> assets <- libraries, assets -> algorithm families) within a node budget;
+        # the extra layers exist only in these pictures, never in the inventory graph or the CycloneDX file.
+        "cbom_graph_compact": build_detailed(full_graph, max_nodes=COMPACT_MAX_NODES),
+        "cbom_graph_expanded": build_detailed(full_graph, max_nodes=EXPANDED_MAX_NODES),
         # Alias used by scan_metadata / FE (nodes+edges+meta).
         "cbom_graph_view": build_graph_view(
             full_graph, lane="cbom", max_nodes=COMPACT_MAX_NODES

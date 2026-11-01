@@ -1177,7 +1177,7 @@ function CryptoDependencyGraph({
       graph={compact}
       expandedGraph={expanded}
       title="Crypto dependency graph"
-      description="CycloneDX lineage — certificate / protocol / key material → the algorithm assets they reference"
+      description="Folders contain crypto assets; libraries provide them; each asset belongs to an algorithm family. Certificate / protocol / key lineage from the CycloneDX file. Riskiest assets first; the rest are folded into +N nodes."
       icon={<Share2 className="w-4 h-4 text-indigo-500" />}
       heightClass="h-[360px]"
     />

@@ -8,6 +8,8 @@ hashes) is ever selected.  Postgres password hash *types* are computed in SQL so
 """
 from __future__ import annotations
 
+import ipaddress
+
 import os
 import shutil
 import ssl
@@ -42,6 +44,19 @@ class DbFail(Exception):
         super().__init__(error)
         self.status, self.error = status, error
 
+
+
+def _where(target) -> str:
+    """Asset location host: the name the customer configured (an RDS or cloud endpoint keeps its name when its IP
+    changes on failover), else the address; IPv6 in brackets so ':port' stays unambiguous."""
+    label = str(target.label or "")
+    try:
+        ipaddress.ip_address(label)
+        is_ip = True
+    except ValueError:
+        is_ip = False
+    host = target.ip if is_ip or not label else label
+    return f"[{host}]" if ":" in str(host) else str(host)
 
 def _password(ctx: JobContext, config: dict, secrets: dict) -> str | None:
     if config.get("credential_type") == "vault":
@@ -97,7 +112,7 @@ def _server_tls(ctx: JobContext, target: Target, port: int, engine: str) -> tupl
     for i, der in enumerate(fh.certs_der[:5]):
         for cert in load_certs(der):
             f = cert_facts(cert, "tls")
-            ctx.emit("certificate", target.label, f"{target.ip}:{port}#chain[{i}]", name=f.get("subject", ""),
+            ctx.emit("certificate", target.label, f"{_where(target)}:{port}#chain[{i}]", name=f.get("subject", ""),
                      algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i, "role": engine})
             n += 1
     return facts, n
@@ -136,7 +151,7 @@ def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
             raise DbFail("tls_unavailable", "TLS to PostgreSQL failed (certificate not trusted or TLS refused)") from None
         raise DbFail("unreachable", "could not connect to PostgreSQL") from None
     n = 0
-    loc = f"{target.ip}:{port}"
+    loc = f"{_where(target)}:{port}"
     try:
         def q(sql: str, label: str, args=None):
             try:
@@ -229,7 +244,7 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
             raise DbFail("tls_unavailable", "MySQL requires a secure transport") from None
         raise DbFail("unreachable", f"could not connect to MySQL ({code})") from None
     n = 0
-    loc = f"{target.ip}:{port}"
+    loc = f"{_where(target)}:{port}"
     try:
         def q(sql: str, label: str, args=None):
             try:
@@ -289,7 +304,7 @@ def _redis(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
         kwargs.update(ssl=True, ssl_cert_reqs="required" if ca.path else "none", ssl_ca_certs=ca.path,
                       ssl_check_hostname=False)
     client = redis.Redis(**kwargs)
-    loc = f"{target.ip}:{port}"
+    loc = f"{_where(target)}:{port}"
     try:
         try:
             client.ping()
@@ -345,7 +360,7 @@ def _mongodb(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
         kwargs.update(username=config["login"], password=password or "",
                       authSource=config.get("database_name") or "admin")
     client = pymongo.MongoClient(**kwargs)
-    loc = f"{target.ip}:{port}"
+    loc = f"{_where(target)}:{port}"
     try:
         try:
             build = client.admin.command("buildInfo")
@@ -400,7 +415,7 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
     if tls:
         hs, n = _server_tls(ctx, target, port, engine)
         tls_facts.update(hs)
-    ctx.emit("tls_endpoint", target.label, f"{target.ip}:{port}", name=f"{engine} {target.ip}:{port}",
+    ctx.emit("tls_endpoint", target.label, f"{_where(target)}:{port}", name=f"{engine} {target.ip}:{port}",
              algorithm=tls_facts.get("negotiated_cipher"), protocol=tls_facts.get("negotiated_version") or engine,
              facts={**tls_facts, "service": engine, "tls": tls, "plaintext_only": not tls})
     n += 1

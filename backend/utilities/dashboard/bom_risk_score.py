@@ -41,6 +41,11 @@ _CBOM_FLAG_DELTA: dict[str, float] = {
     "QUANTUM_VULNERABLE": 0.9,
     "SELF_SIGNED_LEAF": 0.7,
     "CERT_NEAR_EXPIRY": 0.6,
+    # weight 8 in crypto-risk-weights.yaml, like WEAK_ALGORITHM: same delta (these fell back to 0.4 before)
+    "VULNERABLE_CRYPTO_LIBRARY": 1.4,
+    "UNENCRYPTED_AT_REST": 1.4,
+    "TLS_VERIFICATION_DISABLED": 1.4,
+    "CUSTOM_CRYPTO": 0.8,
 }
 
 _AIBOM_CATEGORY_DELTA: dict[str, float] = {

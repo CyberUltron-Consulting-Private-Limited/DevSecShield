@@ -2126,6 +2126,16 @@ export interface CbomFinding {
   not_valid_after?: string | null
   self_signed?: boolean | null
   expired?: boolean | null
+  /** Where in the file (code scans from this release on): first line, every occurrence, language. */
+  line?: number | null
+  occurrences?: number[]
+  occurrence_count?: number | null
+  language?: string | null
+  /** First line number of the redacted `snippet` window. */
+  snippet_start?: number | null
+  snippet_note?: string | null
+  weak?: boolean
+  finding_codes?: string[]
 }
 
 /** CBOM scan metadata from backend get_scan_metadata (cbom branch) */
@@ -2852,6 +2862,39 @@ export interface KbFindingDetail {
     references: string[]
 }
 
+/** In-house code fix for a CBOM finding (deterministic rewrite rules, no AI). */
+export interface CbomCodeFix {
+    version: string
+    available: boolean
+    kind: "code" | "dependency" | "config" | "manual" | "non-security-use"
+    language: string
+    original_code: string
+    fixed_code: string
+    diff: string
+    confidence: number
+    summary: string
+    rules: string[]
+    notes: string[]
+    warnings: string[]
+    commands: string[]
+}
+
+/** In-house exploit demonstration: narrative + a self-contained proof that runs only against keys, messages and
+ * servers it creates on the analyst's machine (no AI, never touches the scanned system). */
+export interface CbomExploitDemo {
+    code: string
+    family: string
+    description: string
+    difficulty: string
+    attack_vector: string
+    prerequisites: string
+    impact_demonstration: string
+    poc: { language: string; script: string; expected_marker: string; requires: string[] } | null
+    verify: { label: string; command: string }[]
+    safety: string
+    version: string
+}
+
 export interface RemediationData {
     generated_at: string
     status: "completed" | "failed"
@@ -2863,6 +2906,10 @@ export interface RemediationData {
     source?: "knowledge_base"
     kb_version?: string
     details?: KbFindingDetail[]
+    /** CBOM engine stamp ("kb+fixgen1+demo1"); results without it predate code fixes and are rebuilt. */
+    engine?: string
+    code_fix?: CbomCodeFix | null
+    exploit_demo?: CbomExploitDemo | null
 }
 
 const generateFindingRemediation = async ({

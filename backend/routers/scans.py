@@ -1179,7 +1179,10 @@ async def generate_finding_remediation(
         if type == "cbom":
             from backend.utilities.cbom_sources.kb_remediation import remediation as kb_remediation
 
-            remediation_result = kb_remediation(finding.get("finding_data") or {}, "code")
+            from starlette.concurrency import run_in_threadpool
+
+            # code fix + exploit demo are CPU work: keep them off the event loop
+            remediation_result = await run_in_threadpool(kb_remediation, finding.get("finding_data") or {}, "code")
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"remediation": remediation_result}})
             return remediation_result
 

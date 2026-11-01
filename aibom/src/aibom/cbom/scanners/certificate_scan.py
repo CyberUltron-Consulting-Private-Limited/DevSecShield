@@ -110,7 +110,7 @@ def _slug(text: str) -> str:
 
 def _iter_files(root: Path, exts: frozenset[str] | None):
     for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.parts):
+        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
             continue
         if not p.is_file():
             continue

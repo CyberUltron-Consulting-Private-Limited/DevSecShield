@@ -39,6 +39,8 @@ export const CBOM_ASSET_COLOR: Record<string, string> = {
   protocol: "#0ea5e9",
   "related-crypto-material": "#f59e0b",
   library: "#8b5cf6",
+  family: "#0f766e",
+  location: "#475569",
   other: "#71717a",
 };
 
@@ -57,6 +59,10 @@ export const REL_LABEL_CBOM: Record<string, string> = {
   algorithms: "uses",
   signed_by: "signed by",
   used_by: "used by",
+  provides: "provides",
+  contains: "contains",
+  declares: "declares",
+  is_a: "is a",
 };
 
 function assetKey(n: BomGraphNode): string {

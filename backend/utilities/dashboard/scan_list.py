@@ -1721,7 +1721,9 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
 
         total_crypto_assets += len(results)
 
-        for vuln in results:
+        from backend.utilities.cbom_sources.cbom_rows import display_row
+
+        for vuln in map(display_row, results):
             impact = vuln.get("impact") or "Low"
             impact_lower = impact.lower()
             if impact_lower in severity_distribution:

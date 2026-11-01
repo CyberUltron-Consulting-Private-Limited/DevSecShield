@@ -42,7 +42,7 @@ class CustomCryptoScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         root = ctx.root
         for path in sorted(root.rglob("*")):
-            if any(part in _IGNORE for part in path.parts):
+            if any(part in _IGNORE for part in path.relative_to(root).parts):
                 continue
             if not path.is_file() or path.suffix.lower() not in LANGUAGE_EXTENSIONS:
                 continue

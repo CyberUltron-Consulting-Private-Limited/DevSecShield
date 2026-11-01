@@ -624,6 +624,14 @@ CBOM_SCANNERS = (
         "of NIST SP 800-57.",
         "Security strength in bits recorded on each gradeable algorithm asset.",
     ),
+    ScannerSpec(
+        "crypto_occurrence",
+        60,
+        "Locates every inventoried asset in its source file: the line of each use, the language "
+        "and the crypto libraries the file imports.",
+        "Line numbers, occurrence count, language and providing library on each asset; no new "
+        "asset.",
+    ),
 )
 CBOM_SCANNER_INTRO = (
     "The engine runs its registered scanners in a fixed order. Earlier scanners inventory "

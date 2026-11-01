@@ -746,6 +746,26 @@ function CbomDashboardCharts({
   );
 }
 
+/** Quantum column: "Broken today" for a classically broken algorithm (MD5, SHA-1, DES …) instead of a misleading
+ * "Safe"; "—" when quantum readiness does not apply (libraries, configuration, certificates). */
+function QuantumBadge({ quantumSafe, strength, yesNo = false }: { quantumSafe?: boolean | null; strength?: string | null; yesNo?: boolean }) {
+  if (quantumSafe === true && String(strength ?? "").toLowerCase() === "weak") {
+    return (
+      <Badge variant="outline" className="border-amber-500/60 text-amber-700 dark:text-amber-400"
+        title="Already broken without a quantum computer: replace it now; post-quantum readiness does not help">
+        Broken today
+      </Badge>
+    );
+  }
+  if (quantumSafe === true) {
+    return <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">{yesNo ? "Yes" : "Safe"}</Badge>;
+  }
+  if (quantumSafe === false) {
+    return <Badge variant="outline" className="border-red-500/50 text-red-600 dark:text-red-400">{yesNo ? "No" : "Vulnerable"}</Badge>;
+  }
+  return <span className="text-zinc-500 dark:text-zinc-400 text-xs" title="Not applicable to this kind of finding">—</span>;
+}
+
 export default function CbomResults({
   data,
   conversationId,
@@ -1543,13 +1563,7 @@ export default function CbomResults({
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              {finding.quantum_safe === true ? (
-                                <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">Safe</Badge>
-                              ) : finding.quantum_safe === false ? (
-                                <Badge variant="outline" className="border-red-500/50 text-red-600 dark:text-red-400">Vulnerable</Badge>
-                              ) : (
-                                <span className="text-zinc-500 dark:text-zinc-400 text-xs">—</span>
-                              )}
+                              <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} />
                             </TableCell>
                             <TableCell className="text-center">
                               <span
@@ -1631,11 +1645,7 @@ export default function CbomResults({
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {risk.quantum_safe ? (
-                              <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">Yes</Badge>
-                            ) : (
-                              <Badge variant="outline" className="border-red-500/50 text-red-600 dark:text-red-400">No</Badge>
-                            )}
+                            <QuantumBadge quantumSafe={risk.quantum_safe} strength={risk.crypto_strength} yesNo />
                           </TableCell>
                           <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={risk.impact}>{risk.impact}</TableCell>
                         </TableRow>
@@ -1675,11 +1685,7 @@ export default function CbomResults({
                     </div>
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Quantum safe</div>
-                      {selectedFinding.quantum_safe === true ? (
-                        <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">Yes</Badge>
-                      ) : selectedFinding.quantum_safe === false ? (
-                        <Badge variant="outline" className="border-red-500/50 text-red-600 dark:text-red-400">No</Badge>
-                      ) : <span className="text-sm text-zinc-700 dark:text-zinc-300">—</span>}
+                      <QuantumBadge quantumSafe={selectedFinding.quantum_safe} strength={selectedFinding.crypto_strength} yesNo />
                     </div>
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Impact</div>
@@ -1699,7 +1705,16 @@ export default function CbomResults({
                   {selectedFinding.location && (
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Location</div>
-                      <p className="text-sm font-mono text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md border border-zinc-200 dark:border-zinc-700 break-all">{selectedFinding.location}</p>
+                      <p className="text-sm font-mono text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md border border-zinc-200 dark:border-zinc-700 break-all" data-testid="cbom-finding-location">
+                        {selectedFinding.location}{selectedFinding.line && !/:\d+$/.test(selectedFinding.location) ? `:${selectedFinding.line}` : ""}
+                        {selectedFinding.language ? <span className="ml-2 font-sans text-xs text-zinc-500">({selectedFinding.language})</span> : null}
+                      </p>
+                      {(selectedFinding.occurrence_count ?? 0) > 1 && (
+                        <p className="mt-1 text-xs text-zinc-500" data-testid="cbom-finding-occurrences">
+                          {selectedFinding.occurrence_count} occurrences in this file: line{(selectedFinding.occurrences ?? []).length > 1 ? "s" : ""} {(selectedFinding.occurrences ?? []).join(", ")}
+                          {(selectedFinding.occurrence_count ?? 0) > (selectedFinding.occurrences ?? []).length ? " …" : ""}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -1710,11 +1725,14 @@ export default function CbomResults({
                     </div>
                   )}
 
-                  {selectedFinding.snippet && (
+                  {selectedFinding.snippet && !selectedFinding.snippet_start && (
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Code snippet</div>
                       <pre className="text-xs font-mono text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-3 py-2 rounded-md overflow-x-auto whitespace-pre-wrap border border-zinc-200 dark:border-zinc-700">{selectedFinding.snippet}</pre>
                     </div>
+                  )}
+                  {selectedFinding.snippet_note && (
+                    <p className="text-xs text-zinc-500" data-testid="cbom-snippet-note">{selectedFinding.snippet_note}</p>
                   )}
 
                   {/* OWASP Top 10 */}
@@ -1766,6 +1784,8 @@ export default function CbomResults({
                     scanId={typeof scan_id === "number" ? scan_id : parseInt(String(scan_id), 10)}
                     findingId={selectedFinding.id}
                     existingRemediation={selectedFinding.remediation}
+                    snippetStart={selectedFinding.snippet_start}
+                    line={selectedFinding.line}
                   />
                 </div>
               </ScrollArea>

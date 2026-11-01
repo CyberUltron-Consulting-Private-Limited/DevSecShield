@@ -90,14 +90,14 @@ export function BomGraphCard({
                   ))
                 : (
                   <>
-                    {["algorithm", "certificate", "protocol", "related-crypto-material", "library"].map(
+                    {["algorithm", "certificate", "protocol", "related-crypto-material", "library", "family", "location"].map(
                       (k) => (
                         <span key={k} className="flex items-center gap-1.5">
                           <span
                             className="size-2.5 rounded-full"
                             style={{ background: CBOM_ASSET_COLOR[k] }}
                           />
-                          {k}
+                          {k === "location" ? "folder" : k === "family" ? "algorithm family" : k}
                         </span>
                       )
                     )}

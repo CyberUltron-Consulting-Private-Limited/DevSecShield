@@ -49,7 +49,8 @@ MAX_ASSETS_PER_ATTEMPT = 50_000
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
     "identity_unverified",
-    "sudoers_missing", "sudo_denied", "rbac_denied", "tls_unavailable", "not_supported", "error", "skipped_never_scan",
+    "sudoers_missing", "sudo_denied", "rbac_denied", "winrm_denied", "tls_unavailable", "not_supported", "error",
+    "skipped_never_scan",
     "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
 })
 
@@ -576,9 +577,18 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
         ok = sum(1 for s in samples if isinstance(s, dict) and s.get("status") in ("ready", "ok", "passed"))
         status = "passed" if ok == len(samples) else ("failed" if ok == 0 else "partial")
         summary = f"{ok} of {len(samples)} samples ready"
+        silent = all(isinstance(s, dict) and s.get("status") == "unreachable" for s in samples)
+        if ok == 0 and silent and source.kind == "network_range":
+            # Silence on a few sampled addresses proves nothing about a range: ranges are sparse, and clouds reserve
+            # the first addresses of every subnet (AWS .1-.3), which never answer.  Finding the live hosts is the
+            # sweep's job, so this must not block collection the way a refused login does.
+            status = "partial"
+            summary = (f"0 of {len(samples)} sampled addresses answered; the node is running and the range "
+                       "will be swept (sparse ranges are normal)")
         notes = [str(s.get("note") or s.get("error") or s.get("status")) for s in samples
                  if isinstance(s, dict) and s.get("status") not in ("ready", "ok", "passed")]
-        if notes:  # the first reason, so lists that show only the summary still say why
+        if notes and not (ok == 0 and silent and source.kind == "network_range"):
+            # the first reason, so lists that show only the summary still say why
             summary = f"{summary}: {notes[0]}"[:512]
     elif job.status == "success":
         status, summary = "passed", str(result.get("summary") or "Connection test passed")[:512]

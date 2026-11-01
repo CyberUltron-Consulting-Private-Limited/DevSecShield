@@ -342,6 +342,15 @@ entry("POLICY_LEGACY", title="System crypto policy is LEGACY", category="host", 
       cwe=["CWE-327", "CWE-1188"], owasp=["crypto", "misconfig"], cves=[], standards=["NIST SP 800-131A Rev. 2"], compliance=["algorithms"],
       remediation={"summary": "Set the policy to DEFAULT (or FUTURE) and reload services.", "steps": [{"platform": "RHEL / AL2023", "how": "update-crypto-policies --set DEFAULT && reboot"}]},
       verify=[{"label": "Current policy", "command": "update-crypto-policies --show"}], references=[])
+entry("DOTNET_WEAK_TLS", title=".NET Framework strong cryptography is disabled", category="host", default_impact="Medium",
+      description="SchUseStrongCrypto is 0 for .NET Framework 4.x on this Windows host, so .NET applications that do not pick their own protocol may still offer SSL 3.0 and TLS 1.0 and accept RC4 suites.",
+      attack="A man-in-the-middle can downgrade connections made by .NET applications (web service clients, LOB apps) to TLS 1.0 or SSL 3.0 and attack the weaker protocol (POODLE, BEAST, RC4 biases).",
+      cwe=["CWE-327", "CWE-757"], owasp=["crypto", "misconfig"], cves=["CVE-2014-3566"], standards=["NIST SP 800-52 Rev. 2"], compliance=["tls_min"],
+      remediation={"summary": "Set SchUseStrongCrypto=1 and SystemDefaultTlsVersions=1 for .NET Framework 4.x (64-bit and WOW6432Node), then restart the applications.", "steps": [
+          {"platform": "Windows (PowerShell, elevated)", "how": "foreach ($k in 'HKLM:\\SOFTWARE\\Microsoft\\.NETFramework\\v4.0.30319','HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\.NETFramework\\v4.0.30319') { Set-ItemProperty $k SchUseStrongCrypto 1 -Type DWord; Set-ItemProperty $k SystemDefaultTlsVersions 1 -Type DWord }"},
+          {"platform": "Group Policy", "how": "Deploy the same two DWORD values with Group Policy Preferences > Registry"}]},
+      verify=[{"label": "Current values", "command": "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\.NETFramework\\v4.0.30319' | Select-Object SchUseStrongCrypto,SystemDefaultTlsVersions"}],
+      references=["https://learn.microsoft.com/en-us/dotnet/framework/network-programming/tls"])
 entry("LIB_EOL", title="End-of-life crypto library", category="library", default_impact="High",
       description="The crypto library version is past its upstream end of support, so new vulnerabilities are not fixed upstream.",
       attack="Unpatched library flaws (memory corruption, side channels) stay exploitable; check whether your OS vendor still backports fixes.",
@@ -438,6 +447,13 @@ entry("KMS_PENDING_DELETION", title="KMS key pending deletion", category="cloud"
 entry("SECRET_NO_ROTATION", title="Secret rotation off", category="cloud", default_impact="Low", description="A Secrets Manager secret has no rotation configured.",
       attack="A leaked secret stays valid indefinitely.", cwe=["CWE-324"], owasp=["crypto"], cves=[], standards=[], compliance=["key_mgmt"],
       remediation={"summary": "Configure rotation with a rotation Lambda.", "steps": []}, verify=[{"label": "Rotation", "command": "aws secretsmanager describe-secret --secret-id {resource} --query RotationEnabled"}], references=[])
+entry("SECRET_PLAINTEXT_PARAM", title="Secret stored as a plain String parameter", category="cloud", default_impact="High",
+      description="An SSM Parameter Store entry whose name marks it as a key, password, token or certificate key is a plain String, not a SecureString: its value is stored and returned unencrypted.",
+      attack="Anyone with ssm:GetParameter (or read access to CloudTrail data events, backups or logs that echo it) reads the secret in clear text; KMS key policies and audit of decryption do not apply.",
+      cwe=["CWE-312"], owasp=["crypto", "misconfig"], cves=[], standards=[], compliance=["key_mgmt", "at_rest"],
+      remediation={"summary": "Recreate the parameter as a SecureString encrypted with a customer-managed KMS key, rotate the secret, and restrict ssm:GetParameter to the workloads that need it.",
+                   "steps": [{"platform": "AWS CLI", "how": "aws ssm put-parameter --name {name} --type SecureString --key-id <kms-key> --overwrite --value <new secret>"}]},
+      verify=[{"label": "Parameter type (metadata only)", "command": "aws ssm describe-parameters --parameter-filters Key=Name,Values={name} --query Parameters[].Type"}], references=[])
 entry("STORAGE_UNENCRYPTED", title="Storage not encrypted at rest", category="cloud", default_impact="High", description="The storage resource has no default encryption.",
       attack="Snapshots, copies and misconfigured access expose the data unencrypted.", cwe=["CWE-311"], owasp=["crypto"], cves=[], standards=[], compliance=["at_rest"],
       remediation={"summary": "Enable default encryption (SSE-KMS) and re-encrypt existing data.", "steps": []}, verify=[], references=[])
