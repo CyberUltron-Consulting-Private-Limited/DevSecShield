@@ -34,6 +34,10 @@ SSH_KEY_FINGERPRINT = "ssh-keygen -l -f {file}"
 # No -storepass: with stdin closed keytool lists a JKS/JCEKS without verifying integrity (public metadata only;
 # private entries stay encrypted).  PKCS#12 needs the password and is reported as password-protected.
 KEYSTORE_LIST = "keytool -list -v -keystore {file}"
+# Permission bits of a key file the login user could read (world-readable unencrypted keys are a finding).
+FILE_MODE = "stat -c %a {file}"
+# LUKS header version per block device (FSVER needs util-linux 2.36+; older lsblk fails and the check is skipped).
+LUKS_VERSIONS = "lsblk -nr -o MAJ:MIN,FSTYPE,FSVER"
 
 TIER1_DISPLAY = [
     OS_RELEASE,
@@ -50,6 +54,8 @@ TIER1_DISPLAY = [
     HAS_PRIVATE_KEY.format(file="<file>"),
     SSH_KEY_FINGERPRINT.format(file="<file>"),
     KEYSTORE_LIST.format(file="<file>"),
+    FILE_MODE.format(file="<file>"),
+    LUKS_VERSIONS,
 ]
 
 # ----------------------------------------------------------------------------- Tier 2 (sudo -n, exact argv)

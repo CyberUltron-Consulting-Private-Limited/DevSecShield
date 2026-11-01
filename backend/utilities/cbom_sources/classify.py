@@ -376,6 +376,16 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
                                          f"on {eol['date']}; confirm your OS vendor still ships fixes")
         elif not status and _EOL_OPENSSL.match(package) and re.match(r"^(\d+:)?1\.[01]\.", version):
             out.add("LIB_EOL", "Medium", f"{package} {version}: OpenSSL 1.x is end of life upstream; confirm vendor support")
+        elif asset_type == "process_library" and not version:
+            # A mapped library has no package version, but its soname pins the OpenSSL branch: libssl/libcrypto
+            # .so.1.0 / .so.1.1 are OpenSSL 1.0.2 / 1.1.1, both past upstream end of life (often inside a container
+            # image, where the host's package list never shows them).
+            soname = re.search(r"lib(?:ssl|crypto)\.so\.(1\.[01])(?:\b|$)", str(facts.get("lib") or algorithm or ""))
+            if soname:
+                branch = {"1.0": "1.0.2", "1.1": "1.1.1"}[soname.group(1)]
+                who = facts.get("process") or "a process"
+                out.add("LIB_EOL", "Medium", f"{who} loads OpenSSL {branch} ({str(facts.get('lib')).rsplit('/', 1)[-1]}), "
+                                             "which is end of life upstream; confirm the image or vendor still ships fixes")
         if status and status["cves"]:
             cves = status["cves"]
             out.add("LIB_KNOWN_CVE", "Low", f"{package} {version} is inside the published affected range of {len(cves)} "

@@ -451,7 +451,14 @@ def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -
                                    "process": (s["processes"][0]["name"] if s["processes"] else None)} for s in listen][:200]
         # disks
         state, out, _ = tier2.get("disk_encryption", ("skip", "", ""))
-        for row in P.dmsetup_crypt(out) if state == "ok" else []:
+        crypt_rows = P.dmsetup_crypt(out) if state == "ok" else []
+        luks: dict[str, int] = {}
+        if crypt_rows:
+            st, lout, _e = _t1(sess, C.LUKS_VERSIONS)
+            luks = P.luks_versions(lout) if st == 0 else {}
+        for row in crypt_rows:
+            if row.get("device") in luks:
+                row = {**row, "luks_version": luks[row["device"]]}
             emit("disk_encryption", loc, f"/dev/mapper/{row['name']}", name=row["name"], algorithm=row["cipher"],
                  key_size=row["effective_key_bits"], facts=row)
         state, out, _ = tier2.get("block_devices", ("skip", "", ""))
@@ -620,7 +627,12 @@ def _private_key(ctx: JobContext, sess: Session, loc: str, real_path: str) -> in
     low = err.lower()
     if pub:
         facts.update(pub)
-        facts["encrypted"] = False
+        # read by the login user without sudo: anyone with that much access can copy the key
+        facts.update({"encrypted": False, "readable": True})
+        st, mode_out, _e, _t = sess.run(_file_cmd(C.FILE_MODE, real_path), FILE_CMD_TIMEOUT)
+        mode = P.file_mode(mode_out) if st == 0 else None
+        if mode is not None:
+            facts.update({"mode": format(mode, "04o"), "world_readable": bool(mode & 0o004)})
     elif "permission denied" in low:
         facts.update({"readable": False})
     elif any(s in low for s in ("bad decrypt", "bad password", "maybe wrong password", "pass phrase", "unable to load key",

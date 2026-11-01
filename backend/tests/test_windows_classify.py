@@ -58,3 +58,22 @@ def test_windows_setup_script_is_least_privilege():
     text = template_text("windows-setup")
     assert "S-1-5-32-580" in text and "RootSDDL" in text and "0x20000000" in text
     assert "Administrators" not in text  # never adds the account to an admin group
+
+
+def test_eol_openssl_mapped_by_a_container_process_is_flagged():
+    """AWS lab: `openssl s_server` from a Debian buster container (OpenSSL 1.1.1n) on the host network."""
+    facts = {"exe": "/usr/bin/openssl", "lib": "/usr/lib/x86_64-linux-gnu/libssl.so.1.1", "pids": [6996],
+             "deleted": False, "ports": [9444], "process": "openssl"}
+    assert "LIB_EOL" in classify("process_library", None, None, None, facts)["finding_codes"]
+    current = {**facts, "lib": "/usr/lib/x86_64-linux-gnu/libssl.so.3"}
+    assert "LIB_EOL" not in classify("process_library", None, None, None, current)["finding_codes"]
+
+
+def test_world_readable_key_and_luks1_from_new_node_facts():
+    key = {"path": "/opt/payments/conf/server.key", "key_alg": "RSA", "key_size": 1024, "encrypted": False,
+           "readable": True, "mode": "0644", "world_readable": True}
+    got = classify("private_key", "RSA", 1024, None, key)["finding_codes"]
+    assert {"KEY_WORLD_READABLE", "KEY_READABLE", "RSA_LT_2048"} <= set(got)
+    disk = {"name": "zs_legacy_crypt", "cipher": "aes-cbc-essiv:sha256", "key_bits": 256, "effective_key_bits": 256,
+            "device": "7:4", "luks_version": 1}
+    assert {"LUKS1", "DISK_CBC"} <= set(classify("disk_encryption", "aes-cbc-essiv:sha256", 256, None, disk)["finding_codes"])

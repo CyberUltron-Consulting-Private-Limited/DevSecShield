@@ -116,3 +116,10 @@ def test_test_sample_reports_login_when_a_read_fails(monkeypatch):
     W._test_one(ctx, Target("win01", "10.60.20.86"), {}, "pw", None)
     s = ctx.samples[0]
     assert s["login"] is True and s["reachable"] is True and "Access denied" in s["note"]
+
+
+def test_linux_parsers_for_mode_and_luks_version():
+    from zs_scan_node import linux_parsers as P
+    assert P.file_mode("644\n") == 0o644 and P.file_mode("0600") == 0o600 and P.file_mode("junk") is None
+    out = "7:4 crypto_LUKS 1\n7:5 crypto_LUKS 2\n253:0 ext4 1.0\n259:1  \n"
+    assert P.luks_versions(out) == {"7:4": 1, "7:5": 2}

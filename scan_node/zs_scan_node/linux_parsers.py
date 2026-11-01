@@ -188,6 +188,23 @@ def dmsetup_crypt(text: str) -> list[dict[str, Any]]:
     return out[:200]
 
 
+def luks_versions(text: str) -> dict[str, int]:
+    """``lsblk -nr -o MAJ:MIN,FSTYPE,FSVER`` -> {"7:4": 1} for LUKS block devices (keyed like dmsetup's device)."""
+    out: dict[str, int] = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[1] == "crypto_LUKS" and re.fullmatch(r"\d+:\d+", parts[0]) \
+                and re.fullmatch(r"[12]", parts[2]):
+            out[parts[0]] = int(parts[2])
+    return out
+
+
+def file_mode(text: str) -> int | None:
+    """``stat -c %a`` -> permission bits as an int (e.g. '644' -> 0o644)."""
+    t = text.strip()
+    return int(t, 8) if re.fullmatch(r"[0-7]{3,4}", t) else None
+
+
 def lsblk(text: str) -> list[dict[str, str]]:
     out = []
     lines = text.splitlines()

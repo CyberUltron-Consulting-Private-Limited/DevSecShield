@@ -39,6 +39,8 @@ TIER1_COMMANDS = [
     "grep -c 'PRIVATE KEY-----' <file>",
     "ssh-keygen -l -f <file>",
     "keytool -list -v -keystore <file>",
+    "stat -c %a <file>",
+    "lsblk -nr -o MAJ:MIN,FSTYPE,FSVER",
 ]
 TIER2_COMMANDS = [
     "/usr/bin/ss -H -tlnp",
