@@ -168,6 +168,7 @@ class SettingsUpdate(_Body):
     soc_email: str | None = Field(default=None, max_length=254)
     emergency_contact: str | None = Field(default=None, max_length=64)
     risk_model: RiskModel | None = None
+    require_signed_nodes: bool | None = None
     expected_version: int | None = None
 
     @field_validator("scan_window")
@@ -300,6 +301,18 @@ class EnrollBody(_Body):
     ssh_public_key: str | None = Field(default=None, max_length=8192)
     capabilities: dict[str, Any] = Field(default_factory=dict)
     clock: str | None = Field(default=None, max_length=40)
+    # base64 of the raw 32-byte Ed25519 key the node signs its requests with (absent: an older, unsigned node)
+    signing_public_key: str | None = Field(default=None, max_length=64)
+
+    @field_validator("signing_public_key")
+    @classmethod
+    def _signing_key(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        from backend.utilities.cbom_sources.node_auth import load_public_key
+
+        load_public_key(v)  # ValueError -> 400
+        return v
 
 
 class RunningJob(_Body):

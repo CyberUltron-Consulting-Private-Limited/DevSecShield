@@ -271,9 +271,32 @@ class CbomScanNode(SQLModel, table=True):
     last_claim_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     last_seen_ip: str | None = Field(default=None, max_length=64)
     last_node_error: str | None = Field(default=None, max_length=512)
+    # Ed25519 request-signing key the node generated for this enrollment (raw 32 bytes, base64). Set: every request
+    # from the node must be signed with it ("required"). None: a node enrolled before signing existed ("legacy").
+    signing_public_key: str | None = Field(default=None, max_length=64)
+    # SHA-256 of the client certificate the proxy verified at enrollment (mTLS; only when CBOM_MTLS_HEADER_TRUSTED=1).
+    client_cert_sha256: str | None = Field(default=None, max_length=64)
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomNodeNonce(SQLModel, table=True):
+    """Nonces of signed scan-node requests, kept until their timestamp is outside the accepted clock skew, so a
+    captured request cannot be replayed (shared by every worker and replica)."""
+    __tablename__ = "cbomnodenonce"
+    node_id: int = Field(foreign_key="cbomscannode.id", primary_key=True, ondelete="CASCADE")
+    nonce: str = Field(primary_key=True, max_length=64)
+    expires_at: datetime.datetime = Field(sa_type=DateTime, index=True)
+
+
+class CbomDeployment(SQLModel, table=True):
+    """One row: this ZeroShield deployment's stable id, stamped on every scan-node response (X-ZS-Deployment) so a
+    node can tell a 401 from its own server apart from one sent by a wrong server or a proxy."""
+    __tablename__ = "cbomdeployment"
+    id: int = Field(default=1, primary_key=True)
+    deployment_id: str = Field(max_length=36)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
 
 
 class CbomCollectionSource(SQLModel, table=True):
@@ -402,6 +425,8 @@ class CbomCollectionSettings(SQLModel, table=True):
     soc_email: str | None = Field(default=None, max_length=254)
     emergency_contact: str | None = Field(default=None, max_length=64)
     stop_all_network: bool = Field(default=False)
+    # Refuse scan nodes that do not sign their requests (enrolled before signing existed, or an old node version).
+    require_signed_nodes: bool = Field(default=False)
     risk_model: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
     stop_all_changed_by: int | None = Field(default=None)
     stop_all_changed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)

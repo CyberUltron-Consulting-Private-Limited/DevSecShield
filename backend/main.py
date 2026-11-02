@@ -13,6 +13,7 @@ from backend.routers.certin import router as certin_router
 from backend.routers.cbom_deliverables import router as cbom_deliverables_router
 from backend.routers.cbom_sources import router as cbom_sources_router
 from backend.routers.cbom_node import router as cbom_node_router
+from backend.utilities.cbom_sources.node_auth import NodeDeploymentHeader
 from backend.routers.cbom_vendor_public import router as cbom_vendor_public_router
 from backend.routers.guardrails import router as guardrails_router
 from backend.routers.cicd import router as cicd_router
@@ -133,7 +134,9 @@ app = FastAPI(lifespan=lifespan, middleware=[
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
-    )
+    ),
+    # X-ZS-Deployment on every /cbom/node/* response (401s included), so a scan node can tell its own server apart
+    Middleware(NodeDeploymentHeader),
 ])
 
 # setting the environment variable to False for local development

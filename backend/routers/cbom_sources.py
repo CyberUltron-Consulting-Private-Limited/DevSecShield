@@ -880,6 +880,8 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             changes["network_exclusions"] = items
         if "risk_model" in changes:
             changes["risk_model"] = body.risk_model.model_dump() if body.risk_model else {}
+        if "require_signed_nodes" in changes and changes["require_signed_nodes"] is None:
+            changes.pop("require_signed_nodes")  # null means "leave as is" (the column is NOT NULL)
         if "cert_domains" in changes:
             changes["cert_domains"] = _norm_hostnames(body.cert_domains or [], "cert_domains")
         if "sni_hostnames" in changes:
@@ -904,6 +906,9 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             session.commit()
             session.refresh(row)
             log("settings updated", team=team_id, by=user_id, fields=len(changes))
+            if "require_signed_nodes" in changes:
+                log("signed scan nodes " + ("required" if changes["require_signed_nodes"] else "not required"),
+                    team=team_id, by=user_id)
         return {"settings": public_settings(row, now)}
 
 

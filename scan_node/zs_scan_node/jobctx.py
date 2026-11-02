@@ -192,7 +192,7 @@ class JobContext:
             return
         self.coverage_seen.add(key)
         self.emit("coverage", target, f"{target}#{check}" if target else check, name=check,
-                  facts={"check": check, "status": status, "detail": printable(detail, 400)})
+                  facts={"check": check, "status": status, "detail": printable(detail, 1000)})
 
     def flush(self) -> None:
         with self._lock:
