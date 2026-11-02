@@ -21,7 +21,12 @@ _NOT_SCANNED_EXTENSIONS = {
     ".so", ".dll", ".dylib", ".exe", ".bin", ".o", ".a", ".class", ".pyc", ".woff", ".woff2", ".ttf", ".otf", ".eot",
 }
 _MAX_SCANNED_FILE_BYTES = 2_000_000  # the engine skips larger source files
+_MAX_ARTIFACT_BYTES = 2 * 1024 * 1024 * 1024  # with scan_binaries: the engine's limit for one image / binary / blob
 MIN_CODE_SCAN_CREDITS = 1.0  # D3: a repository or zip CBOM scan costs at least 1 credit (backend credit_estimate.py)
+# With the scan option "scan binaries": container images, binaries and firmware are read too, priced per 5 MB (they
+# are streamed and mostly skipped, so a byte costs a tenth of a source byte). Backend formula "cbom-2026.11-min1-bin5".
+SOURCE_MB_PER_CREDIT = 0.5
+BINARY_MB_PER_CREDIT = 5.0
 
 
 class CBOMAgent(BaseAgent):
@@ -49,7 +54,8 @@ class CBOMAgent(BaseAgent):
 
             self.directory = directory
             self.cbom_json_file = file
-            self.scan_binaries = scan_binaries
+            # scan option: also read container images, compiled binaries and firmware (the engine's artifact lane)
+            self.scan_binaries = bool(scan_binaries)
             # scan option: also read vendor/, dist/, build/ and node_modules/ (third-party / build output)
             self.include_vendored = include_vendored
             self.state_update_writer: StateUpdateWriter | None = state_update_writer
@@ -85,7 +91,8 @@ class CBOMAgent(BaseAgent):
 
         if self.directory:
             return scan_crypto_to_devsecshield(
-                str(self.directory), level=4, progress=self._progress, include_vendored=self.include_vendored
+                str(self.directory), level=4, progress=self._progress, include_vendored=self.include_vendored,
+                scan_binaries=self.scan_binaries,
             )
         if self.cbom_json_file:
             return analyze_cbom_file_to_devsecshield(self.cbom_json_file, progress=self._progress)
@@ -134,16 +141,20 @@ class CBOMAgent(BaseAgent):
 
     def _measure_directory_size(self) -> tuple[int, float, float]:
         """Size of the files the crypto engine reads (same skip-list and per-file limit), for the credit estimate."""
+        return self._measure()[:3]
+
+    def _measure(self) -> tuple[int, float, float, float]:
+        """(source bytes, source MB, source GB, binary MB): source files as the engine's text lanes read them, and,
+        with scan_binaries, the images / binaries / archives / firmware the artifact lane reads."""
         from aibom.cbom.files import skipped_dirs
 
         skip = skipped_dirs(self.include_vendored)  # the engine's own walk rule
         total_bytes = 0
+        binary_bytes = 0
         file_count = 0
         for root, dirs, files in os.walk(self.directory):
             dirs[:] = [d for d in dirs if d not in skip]
             for fname in files:
-                if os.path.splitext(fname)[1].lower() in _NOT_SCANNED_EXTENSIONS:
-                    continue
                 fpath = os.path.join(root, fname)
                 if os.path.islink(fpath):
                     continue
@@ -151,22 +162,28 @@ class CBOMAgent(BaseAgent):
                     size = os.path.getsize(fpath)
                 except OSError:
                     continue
-                if size <= _MAX_SCANNED_FILE_BYTES:
-                    total_bytes += size
-                    file_count += 1
+                if os.path.splitext(fname)[1].lower() in _NOT_SCANNED_EXTENSIONS or size > _MAX_SCANNED_FILE_BYTES:
+                    if self.scan_binaries and size <= _MAX_ARTIFACT_BYTES:
+                        binary_bytes += size
+                    continue
+                total_bytes += size
+                file_count += 1
         size_mb = total_bytes / (1024 * 1024)
-        console.print(f"CBOM estimation: {file_count} files, {size_mb:.2f} MB", style="bold yellow")
-        return total_bytes, size_mb, size_mb / 1024
+        binary_mb = binary_bytes / (1024 * 1024)
+        console.print(f"CBOM estimation: {file_count} files, {size_mb:.2f} MB, binaries {binary_mb:.2f} MB",
+                      style="bold yellow")
+        return total_bytes, size_mb, size_mb / 1024, binary_mb
 
     def estimate_credits_required(self) -> float:
-        """Credits for the scan: 1 credit per 0.5 MB of scanned files, at least MIN_CODE_SCAN_CREDITS for a repository
+        """Credits for the scan: 1 credit per 0.5 MB of scanned source files and, with the scan option "scan
+        binaries", 1 credit per 5 MB of images / binaries / firmware; at least MIN_CODE_SCAN_CREDITS for a repository
         or zip scan (decision D3; the API applies the same minimum at start). There is no language-model charge (the
-        engine is deterministic) and no binary surcharge (binaries are not scanned). Analysing an uploaded CBOM file
-        is a flat 0.01 credit."""
+        engine is deterministic). Analysing an uploaded CBOM file is a flat 0.01 credit."""
         try:
             if self.directory:
-                _size_b, codebase_size_in_mb, _size_gb = self._measure_directory_size()
-                return max(MIN_CODE_SCAN_CREDITS, codebase_size_in_mb / 0.5)
+                _size_b, codebase_size_in_mb, _size_gb, binary_mb = self._measure()
+                return max(MIN_CODE_SCAN_CREDITS, codebase_size_in_mb / SOURCE_MB_PER_CREDIT
+                           + binary_mb / BINARY_MB_PER_CREDIT)
             return 0.01
         finally:
             console.print("Performing cleanup .... 🧹", style="dim bright_cyan")

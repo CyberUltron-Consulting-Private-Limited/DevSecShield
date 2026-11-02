@@ -147,7 +147,7 @@ def cve(cve_id: str) -> dict[str, Any] | None:
 # Findings whose evidence IS an advisory (the code scanner copies the advisory's CVE IDs into it). Only for these are
 # CVE IDs taken from the evidence text; elsewhere a CVE ID in stored text may belong to another finding on the same
 # asset or to an older knowledge base, and must not be attached.
-_ADVISORY_CODES = {("code", "VULNERABLE_CRYPTO_LIBRARY"), ("code", "KNOWN_TLS_VULNERABILITY")}
+_ADVISORY_CODES = {("code", "VULNERABLE_CRYPTO_LIBRARY"), ("code", "KNOWN_TLS_VULNERABILITY"), ("code", "LIBRARY_CVE_RANGE")}
 
 
 def cves_for(namespace: str, code: str, evidence: str = "") -> list[dict[str, Any]]:

@@ -42,7 +42,10 @@ flags:
   KMS_KEY_DELETION_UNPROTECTED: 1
   AT_REST_ENCRYPTION_WEAK: 4
   PROVIDER_MANAGED_KEY: 1     # encrypted only with the provider's own default key (note)
-  EOL_BASE_IMAGE: 4           # Dockerfile base image release past end of life (warning)
+  EOL_BASE_IMAGE: 4           # Dockerfile / container image base release past end of life (warning)
+  # ── container images, binaries and firmware (scan option scan_binaries) ──
+  EOL_CRYPTO_LIBRARY: 4       # library branch past its upstream end of life (warning)
+  LIBRARY_CVE_RANGE: 1        # OS package / binary version inside a published CVE range, in triage (note)
 
 # Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
 # A crypto asset with no flags scores 0 -> low (the inventory floor; a strong

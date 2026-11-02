@@ -645,10 +645,10 @@ try:
             # network lookups on any CBOM path. run_agent() always removes the temp input.
             if repo_context:
                 agent = CBOMAgent(context=repo_context, state_update_writer=state_update_writer,
-                                  include_vendored=include_vendored)
+                                  include_vendored=include_vendored, scan_binaries=scan_binaries)
             elif zip_context:
                 agent = CBOMAgent(zip_context=zip_context, state_update_writer=state_update_writer,
-                                  include_vendored=include_vendored)
+                                  include_vendored=include_vendored, scan_binaries=scan_binaries)
             elif file_context:
                 agent = CBOMAgent(cbom_file_context=file_context, state_update_writer=state_update_writer)
             else:
