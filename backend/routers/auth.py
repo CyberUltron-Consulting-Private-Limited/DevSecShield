@@ -10,7 +10,7 @@ import logging
 from typing import Annotated
 
 import psycopg2
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlmodel import Session, select, update
 from starlette.concurrency import run_in_threadpool
 
@@ -230,7 +230,7 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
 
 
 @router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(send_code_ip_limiter)])
-async def send_verification_code(data: CodeSend, background_tasks: BackgroundTasks):
+async def send_verification_code(data: CodeSend):
     """
     Request Fields:
     - email: str
@@ -255,7 +255,18 @@ async def send_verification_code(data: CodeSend, background_tasks: BackgroundTas
             raise HTTPException(status_code=500, detail="Server is busy, please try again later")
         raise HTTPException(status_code=400, detail="Could not send verification code, please try again later")
     if code is not None:  # None: the local dev account on a DSS_DEV_MODE=1 server (fixed code, no mail)
-        background_tasks.add_task(send_verification_email, data.email, code)
+        try:
+            await run_in_threadpool(send_verification_email, data.email, code)
+        except HTTPException as e:
+            if e.status_code == 400:  # the address itself was refused (for example a header-injection attempt)
+                raise
+            log.error("verification email not sent (status %s)", e.status_code)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail="We could not send the verification code right now. Please try again in a few minutes.") from None
+        except Exception as e:
+            log.error("verification email not sent: %s", type(e).__name__)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail="We could not send the verification code right now. Please try again in a few minutes.") from None
     return {
         "message": "Verification code sent to user"
     }

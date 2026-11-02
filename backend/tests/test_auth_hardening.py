@@ -467,3 +467,32 @@ def test_admin_created_users_follow_the_new_password_rules(client, world, monkey
     with Session(engine) as s:
         user = s.exec(select(User).where(User.email == "ops@example.test")).one()
     assert user.password.startswith("$argon2id$") and auth_utils.verify_password(long_ok, user.password)
+
+
+def test_send_code_tells_the_user_when_the_mail_cannot_be_sent(client, world, monkeypatch):
+    """Follow-up from the staging proof: /send_code answered 200 while the backend logged
+    "Error sending email: 'TENANT_ID'", so the user waited for a code that never came. The send now happens before
+    the answer; a failed send is a 503 with a generic message (the cause stays in the log)."""
+    from backend.routers import auth as auth_router_module
+
+    def broken(email, code):
+        raise KeyError("TENANT_ID")
+
+    monkeypatch.setattr(auth_router_module, "send_verification_email", broken)
+    r = client.post("/send_code", json={"email": "mail.down@example.test"})
+    assert r.status_code == 503
+    assert "TENANT_ID" not in r.text and "KeyError" not in r.text
+    assert "could not send the verification code" in r.json()["detail"]
+
+
+def test_send_code_passes_through_an_address_the_mailer_refuses(client, world, monkeypatch):
+    from fastapi import HTTPException
+
+    from backend.routers import auth as auth_router_module
+
+    def refused(email, code):
+        raise HTTPException(status_code=400, detail="Invalid recipient address")
+
+    monkeypatch.setattr(auth_router_module, "send_verification_email", refused)
+    r = client.post("/send_code", json={"email": "odd@example.test"})
+    assert r.status_code == 400 and r.json()["detail"] == "Invalid recipient address"

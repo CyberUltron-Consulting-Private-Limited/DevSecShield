@@ -370,59 +370,37 @@ async def send_outlook_email( recipient_email: str , subject: str , body: Option
             raise HTTPException(status_code=500, detail="Could not send the email through the configured mail relay")
 
     try:
-        # === CONFIGURATION ===
-        TENANT_ID =  os.environ['TENANT_ID']
-        CLIENT_ID = os.environ['CLIENT_ID']
-        CLIENT_SECRET = os.environ['CLIENT_SECRET']
-
-        SENDER_EMAIL = "support@zeroshield.ai"       # must exist in your Microsoft 365 tenant
-        RECIPIENT_EMAIL = recipient_email  # recipient
-
-        # === AUTHENTICATE WITH MICROSOFT GRAPH ===
-        AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
-        SCOPES = ["https://graph.microsoft.com/.default"]
-
-        app = msal.ConfidentialClientApplication(
-            CLIENT_ID,
-            authority=AUTHORITY,
-            client_credential=CLIENT_SECRET
-        )
-
-        token = app.acquire_token_for_client(scopes=SCOPES)
-        if "access_token" not in token:
-            raise Exception("Authentication failed: " + token.get("error_description", "Unknown error"))
-
-        access_token = token["access_token"]
-
-
-        email_data = {
-            "message": {
-                "subject": subject,
-                "body": {
-                    "contentType": "HTML",
-                    "content": html_body
-                },
-                "toRecipients": [
-                    {"emailAddress": {"address": RECIPIENT_EMAIL}}
-                ]
-            }
-        }
-
-        # === SEND THE EMAIL ===
-        url = f"https://graph.microsoft.com/v1.0/users/{SENDER_EMAIL}/sendMail"
-        headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-
-        response = requests.post(url, headers=headers, json=email_data)
-
-        # === RESULT ===
-        if response.status_code == 202:
-            log.info("email sent through Microsoft Graph")
-        else:
-            raise Exception(f"Failed: {response.status_code}\n{response.text}")
-
+        await asyncio.to_thread(_send_graph_mail, recipient_email, subject, html_body)
     except Exception as e:
+        # The cause (missing TENANT_ID, a Graph error body ...) goes to the log only, never to the client.
         log.error("email could not be sent through Microsoft Graph: %s", type(e).__name__)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Could not send the email") from None
+
+
+GRAPH_TIMEOUT_S = 20
+
+
+def _send_graph_mail(recipient_email: str, subject: str, html_body: str) -> None:
+    """Microsoft Graph sendMail as the support mailbox. Blocking (msal + requests), so callers run it in a thread."""
+    tenant_id = os.environ["TENANT_ID"]
+    client_id = os.environ["CLIENT_ID"]
+    client_secret = os.environ["CLIENT_SECRET"]
+    sender = "support@zeroshield.ai"  # must exist in the Microsoft 365 tenant
+    app = msal.ConfidentialClientApplication(
+        client_id, authority=f"https://login.microsoftonline.com/{tenant_id}", client_credential=client_secret,
+        timeout=GRAPH_TIMEOUT_S,
+    )
+    token = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    if "access_token" not in token:
+        raise RuntimeError("Microsoft Graph authentication failed")
+    email_data = {"message": {"subject": subject, "body": {"contentType": "HTML", "content": html_body},
+                              "toRecipients": [{"emailAddress": {"address": recipient_email}}]}}
+    response = requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
+                             headers={"Authorization": f"Bearer {token['access_token']}", "Content-Type": "application/json"},
+                             json=email_data, timeout=GRAPH_TIMEOUT_S)
+    if response.status_code != 202:
+        raise RuntimeError(f"Microsoft Graph sendMail returned {response.status_code}")
+    log.info("email sent through Microsoft Graph")
 
 
 # ------------------------------------------------------------------------------------------------ sign-in codes
@@ -585,16 +563,11 @@ def purge_unusable_verification_codes(engine: Engine) -> int:
     return int(result.rowcount or 0)
 
 
-def send_verification_email(recipient_email: str, code: str):
-    """Synchronous wrapper for background task. Sends email without blocking request."""
+def send_verification_email(recipient_email: str, code: str) -> None:
+    """Send the sign-in code. Synchronous (the router runs it in the threadpool) and RAISES when the mail could not
+    be sent, so the user is told instead of waiting for a code that never arrives."""
     body = create_verification_email_html(code)
-    try:
-        asyncio.run(send_outlook_email(
-            recipient_email=recipient_email,
-            subject="Verification code",
-            html_body=body))
-    except Exception as e:
-        log.error("verification email could not be sent: %s", type(e).__name__)
+    asyncio.run(send_outlook_email(recipient_email=recipient_email, subject="Verification code", html_body=body))
 
 
 def user_by_email(session: Session, email: str) -> Optional[User]:

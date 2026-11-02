@@ -1,3 +1,7 @@
+"""Manual smoke checks against a live LLM provider (network + credentials). Not part of the automated suite:
+they skip unless RUN_LIVE_LLM_TESTS=1, and nothing runs at import."""
+import pytest
+
 from langsmith import traceable
 from rich.console import Console
 from dotenv import load_dotenv
@@ -8,6 +12,7 @@ from langchain.prompts import PromptTemplate
 
 console = Console()
 load_dotenv()
+pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_LLM_TESTS") != "1", reason="live LLM call; set RUN_LIVE_LLM_TESTS=1")
 
 
 
@@ -59,4 +64,5 @@ def test_llm_with_openai_sdk():
 
 # test_llm()
 # test_llm_chain()
-test_llm_with_openai_sdk()
+if __name__ == "__main__":
+    test_llm_with_openai_sdk()

@@ -12,7 +12,8 @@ import time
 
 console = Console()
 
-_DEBUG_LOG_PATH = "/Users/anshsinghal/Desktop/DevSecShield/.cursor/debug-dd4a33.log"
+# A developer's local trace file; nothing is written unless DSS_AGENT_DEBUG_LOG is set.
+_DEBUG_LOG_PATH = os.environ.get("DSS_AGENT_DEBUG_LOG")
 
 
 def _agent_debug_log(location: str, message: str, data: dict, hypothesis_id: str, run_id: str = "pre-fix") -> None:
@@ -27,6 +28,8 @@ def _agent_debug_log(location: str, message: str, data: dict, hypothesis_id: str
             "data": data,
             "timestamp": int(time.time() * 1000),
         }
+        if not _DEBUG_LOG_PATH:
+            return
         with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
     except Exception:
