@@ -193,14 +193,34 @@ DB_GRANTS = {
         "GRANT SELECT ON performance_schema.status_by_thread TO 'zs_cbom'@'%';\n"
     ),
     "mssql": (
-        "CREATE LOGIN svc_zscbom WITH PASSWORD = '<from your vault>';\n"
+        "-- Run as a sysadmin (SQL Server 2014 or later). Read-only: no data, no key material.\n"
+        "CREATE LOGIN svc_zscbom WITH PASSWORD = '<from your vault>', CHECK_POLICY = ON;\n"
+        "-- sys.dm_exec_connections (encryption of live connections), sys.dm_database_encryption_keys (TDE),\n"
+        "-- sys.dm_server_registry (ForceEncryption)\n"
         "GRANT VIEW SERVER STATE TO svc_zscbom;\n"
+        "-- metadata of logins, keys and certificates (CERTENCODED returns public certificates only)\n"
         "GRANT VIEW ANY DEFINITION TO svc_zscbom;\n"
+        "-- read sys.symmetric_keys, sys.asymmetric_keys, sys.certificates and the Always Encrypted key views of\n"
+        "-- every database without a user in each one\n"
+        "GRANT CONNECT ANY DATABASE TO svc_zscbom;\n"
+        "-- Not granted: the hash VERSION of each SQL login (SHA-1 before SQL Server 2012, SHA-512 after) is visible\n"
+        "-- only with CONTROL SERVER; ZeroShield reads its first byte only and reports the check as not collected\n"
+        "-- without it.\n"
     ),
     "oracle": (
+        "-- Run as SYS in the database (PDB) whose service name you enter in ZeroShield.\n"
         "CREATE USER zs_cbom IDENTIFIED BY \"<from your vault>\";\n"
         "GRANT CREATE SESSION TO zs_cbom;\n"
-        "GRANT SELECT_CATALOG_ROLE TO zs_cbom;\n"
+        "-- exactly the views the scan node reads (no data, no wallet contents, no password verifiers)\n"
+        "GRANT SELECT ON sys.v_$version TO zs_cbom;\n"
+        "GRANT SELECT ON sys.v_$parameter TO zs_cbom;\n"
+        "GRANT SELECT ON sys.v_$session_connect_info TO zs_cbom;\n"
+        "GRANT SELECT ON sys.v_$encryption_wallet TO zs_cbom;\n"
+        "GRANT SELECT ON sys.v_$encrypted_tablespaces TO zs_cbom;\n"
+        "GRANT SELECT ON sys.v_$tablespace TO zs_cbom;\n"
+        "GRANT SELECT ON sys.dba_tablespaces TO zs_cbom;\n"
+        "GRANT SELECT ON sys.dba_encrypted_columns TO zs_cbom;\n"
+        "GRANT SELECT ON sys.dba_users TO zs_cbom;  -- PASSWORD_VERSIONS (10G/11G/12C); verifiers are in USER$, not here\n"
     ),
     "mongodb": (
         "use admin\n"
@@ -217,10 +237,14 @@ DB_READS = {
                  "TLS used by live client connections", "pgcrypto use"],
     "mysql": ["require_secure_transport and TLS versions", "Authentication plugin per user",
               "TLS used by live client connections", "Table encryption (InnoDB) and keyring"],
-    "mssql": ["Force encryption and TLS versions", "Transparent Data Encryption per database",
-              "Certificates and keys in the master database", "Encrypted live connections"],
-    "oracle": ["Native network encryption settings", "Transparent Data Encryption and wallet state",
-               "Password versions per user"],
+    "mssql": ["Force encryption, TLS versions and the server certificate (read before logging in)",
+              "Transparent Data Encryption per database (algorithm, key length, state)",
+              "Symmetric and asymmetric keys, certificates and Always Encrypted keys per database (metadata only)",
+              "Encryption of live connections",
+              "Password policy and hash version of each SQL login (never the hash)"],
+    "oracle": ["TLS on the listener and native network encryption in use",
+               "TDE keystore state, encrypted tablespaces and columns (algorithms)",
+               "Password verifier versions per user (10G, 11G, 12C; never the verifier)"],
     "mongodb": ["TLS mode and allowed protocols", "OpenSSL version and whether authorization is on",
                 "Encryption at rest setting"],
     "redis": ["TLS port, protocols and ciphers (named tls-* settings only; never passwords)", "Whether AUTH is required",
@@ -345,9 +369,29 @@ gcloud services enable cloudkms.googleapis.com privateca.googleapis.com secretma
   cloudresourcemanager.googleapis.com --project "$SA_PROJECT"
 # A JSON key for the service account (paste or upload it in ZeroShield; it is stored encrypted and never shown again):
 #   gcloud iam service-accounts keys create zs-cbom-key.json --iam-account "$SA"
+
+# Read-only Vault policy for ca_connector sources with provider "vault" (Vault PKI and transit).
+VAULT_POLICY = """# zs-cbom-vault-policy.hcl -- read-only ZeroShield CBOM policy for HashiCorp Vault (PKI and transit)
+#   vault policy write zs-cbom zs-cbom-vault-policy.hcl
+#   vault token create -policy=zs-cbom -period=768h -orphan     (store this token in ZeroShield)
+# Replace pki and transit with your mount paths (one block per mount). Nothing here returns key material:
+# transit/export, transit/backup and pki/issue are not granted, and transit/keys/<name> returns settings only.
+path "sys/mounts" { capabilities = ["read"] }
+
+path "pki/issuers" { capabilities = ["list"] }
+path "pki/issuer/+" { capabilities = ["read"] }
+path "pki/cert/ca" { capabilities = ["read"] }
+path "pki/roles" { capabilities = ["list"] }
+path "pki/roles/+" { capabilities = ["read"] }
+path "pki/config/crl" { capabilities = ["read"] }
+path "pki/config/urls" { capabilities = ["read"] }
+
+path "transit/keys" { capabilities = ["list"] }
+path "transit/keys/+" { capabilities = ["read"] }
 """
 
 TEMPLATE_NAMES = {
+    "vault-policy": ("text/plain", "zs-cbom-vault-policy.hcl"),
     "sudoers": ("text/plain", "zs-cbom"),
     "windows-setup": ("text/plain", "zs-cbom-windows-setup.ps1"),
     "azure-reader": ("text/plain", "zs-cbom-azure-reader.sh"),
@@ -371,6 +415,8 @@ def template_text(name: str) -> str | None:
         return K8S_TIER1
     if name == "k8s-tier2":
         return K8S_TIER2
+    if name == "vault-policy":
+        return VAULT_POLICY
     if name.startswith("grant-"):
         return DB_GRANTS.get(name[len("grant-"):])
     return None
