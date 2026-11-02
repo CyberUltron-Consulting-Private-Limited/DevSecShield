@@ -369,6 +369,7 @@ gcloud services enable cloudkms.googleapis.com privateca.googleapis.com secretma
   cloudresourcemanager.googleapis.com --project "$SA_PROJECT"
 # A JSON key for the service account (paste or upload it in ZeroShield; it is stored encrypted and never shown again):
 #   gcloud iam service-accounts keys create zs-cbom-key.json --iam-account "$SA"
+"""
 
 # Read-only Vault policy for ca_connector sources with provider "vault" (Vault PKI and transit).
 VAULT_POLICY = """# zs-cbom-vault-policy.hcl -- read-only ZeroShield CBOM policy for HashiCorp Vault (PKI and transit)
