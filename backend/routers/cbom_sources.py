@@ -41,7 +41,7 @@ from backend.new_models import (
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
-from backend.utilities.cbom_sources.common import audit, iso_z, log, new_token, sha256_hex, utcnow
+from backend.utilities.cbom_sources.common import audit, engine_version, iso_z, log, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, warn_if_key_is_weak
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE, VENDOR_LINK_DAYS, clean_answers
 from backend.utilities.cbom_sources.http import (
@@ -59,10 +59,12 @@ from backend.utilities.cbom_sources.http import (
     server_error,
     write_limiter,
 )
+from backend.utilities.cbom_sources import cdx_xml as CDX_XML
+from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
-from backend.utilities.cbom_sources.classify import ASSET_TYPES
-from backend.utilities.cbom_sources.kinds import KINDS, credential_target_problem, validate_secret_value
+from backend.utilities.cbom_sources.classify import ASSET_TYPES, CLASSIFIER_VERSION
+from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS, credential_target_problem, validate_secret_value
 from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
@@ -569,9 +571,10 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         spec = KINDS[source.kind]
         old_cfg = _validate_config(source.kind, source.config or {}) if source.config else None
         incoming = body.config
-        if isinstance(incoming, dict) and "business_criticality" not in incoming and old_cfg is not None:
-            # the source forms send their own fields only; keep the criticality set on Review & Run (send null to clear)
-            incoming = {**incoming, "business_criticality": getattr(old_cfg, "business_criticality", None)}
+        if isinstance(incoming, dict) and old_cfg is not None:
+            # the source forms send their own fields only: keep the metadata set elsewhere (business criticality and
+            # exposure on Review & Run, ...) unless the request names it (send null to clear)
+            incoming = {**{f: getattr(old_cfg, f, None) for f in METADATA_FIELDS if f not in incoming}, **incoming}
         cfg = _validate_config(source.kind, incoming) if incoming is not None else old_cfg
         if cfg is None:
             raise HTTPException(status_code=400, detail="config: required")
@@ -588,6 +591,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         _check_refs(session, team_id, source.kind, cfg)
         old_dump = old_cfg.model_dump(mode="json") if old_cfg else {}
         new_dump = cfg.model_dump(mode="json")
+        conn_before = J.connection_version(source)
         where_changed = new_node_id != source.node_id or any(old_dump.get(f) != new_dump.get(f) for f in spec.where_fields)
         credential_changed = old_dump.get("credential_type") != new_dump.get("credential_type") or (
             old_cfg is not None and spec.secret_fields(old_cfg) != spec.secret_fields(cfg))
@@ -621,14 +625,15 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
             source.enabled = body.enabled
         test = None
         if changed:
-            source.row_version += 1
+            source.row_version += 1  # the edit version (optimistic locking); jobs check the connection version
             source.updated_by_user_id = user_id
             source.last_updated = now
-            # a rename or a business-criticality change does not change what a sweep may touch or how it connects
-            cosmetic = {"name", "config.business_criticality"}
-            if changed - cosmetic:
+            # a rename or a metadata edit (criticality, exposure, ...) changes neither what a sweep may touch nor how it
+            # connects, so queued and running jobs and the connection test are kept
+            connection_changed = J.connection_version(source) != conn_before
+            if connection_changed or "enabled" in changed:
                 J.stop_discoveries_using(session, source, now, "A range in this discovery was changed")
-            if changed - cosmetic - {"enabled"}:
+            if connection_changed:
                 J.cancel_open_jobs(session, source, now, reason="Source changed")
                 source.last_test_status = "never" if spec.collectable(cfg) or source.kind == "aws_account" else "not_available"
                 source.last_test_summary, source.last_test_at, source.last_test_job_id = None, None, None
@@ -726,12 +731,12 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
             raise HTTPException(status_code=400, detail="Not an AWS account")
         settings = get_or_create_settings(session, team_id)
         cfg = dict(source.config or {})
-        version, external_id = source.row_version, settings.aws_external_id
+        version, external_id = J.connection_version(source), settings.aws_external_id
     result = validate_aws_role(team_id, cfg.get("role_arn", ""), external_id, cfg.get("regions") or [], cfg.get("scope", "account"))
     now = utcnow()
     with Session(engine) as session:
         source = session.get(CbomCollectionSource, source_id)
-        if source is not None and source.row_version == version:
+        if source is not None and J.connection_version(source) == version:
             source.last_test_status = result["status"]
             passed = sum(1 for c in result["checks"] if c["status"] == "pass")
             source.last_test_summary = f"{passed} of {len(result['checks'])} checks passed"
@@ -753,7 +758,7 @@ def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
     with Session(engine) as session:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
-        cfg, version, name = dict(source.config or {}), source.row_version, source.name
+        cfg, version, name = dict(source.config or {}), J.connection_version(source), source.name
     out = collect_idp(cfg, name)
     keys = sum(1 for a in out["assets"] if a["type"] == "signing_key")
     ok = out["counts"]["ok"]
@@ -763,7 +768,7 @@ def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
     now = utcnow()
     with Session(engine) as session:
         source = session.get(CbomCollectionSource, source_id)
-        if source is not None and source.row_version == version:
+        if source is not None and J.connection_version(source) == version:
             source.last_test_status, source.last_test_summary, source.last_test_at = status, summary[:512], now
             source.last_test_result = {"targets": out["targets"], "signing_keys": keys}
             session.add(source)
@@ -879,7 +884,10 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                 items.append({"cidr": canonical, "reason": item.reason})
             changes["network_exclusions"] = items
         if "risk_model" in changes:
-            changes["risk_model"] = body.risk_model.model_dump() if body.risk_model else {}
+            # merge: a field the request leaves out keeps its value; an explicit null clears it; risk_model: null
+            # clears all three
+            changes["risk_model"] = ({**(row.risk_model or {}), **body.risk_model.model_dump(exclude_unset=True)}
+                                     if body.risk_model is not None else {})
         if "cert_domains" in changes:
             changes["cert_domains"] = _norm_hostnames(body.cert_domains or [], "cert_domains")
         if "sni_hostnames" in changes:
@@ -1221,6 +1229,9 @@ def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[di
             breakdown={"groups": plan.groups(), "skipped": [i.public() for i in plan.items if i.status == "skipped"]},
             soc_ack_by=user_id if body.soc_ack else None, soc_ack_at=now if body.soc_ack else None,
             created_at=now, last_updated=now,
+            # what judges this run's facts (classification happens here, on the API)
+            kb_version=(crypto_kb.version() or None), classifier_version=CLASSIFIER_VERSION,
+            engine_version=engine_version(),
         )
         session.add(run)
         try:
@@ -1231,13 +1242,17 @@ def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[di
                 CbomCollectionRun.team_id == team_id, CbomCollectionRun.client_request_id == body.client_request_id)).one()
             return {"run": _run_detail(session, existing, settings, now), "replayed": True}, 200
         sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()}
+        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
         snapshot = [str(i.get("cidr")) for i in (settings.network_exclusions or []) if isinstance(i, dict)]
         for item in queued:
             source = sources[item.source_id]
             session.add(CbomCollectionJob(
                 team_id=team_id, run_id=run.id, source_id=source.id,
                 node_id=None if KINDS[source.kind].node_less else source.node_id, kind="collect",
-                params={"source_name": source.name, "units": item.units, "unit": item.unit, "exclusions": snapshot},
+                params={"source_name": source.name, "units": item.units, "unit": item.unit, "exclusions": snapshot,
+                        "conn_v": J.connection_version(source),
+                        # criticality / exposure as of now: posture scores this run with them, whatever changes later
+                        "metadata": J.metadata_snapshot(source, nodes.get(source.node_id or 0))},
                 source_version=source.row_version, weight_c=item.credits_c, created_by_user_id=user_id, created_at=now,
             ))
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="run.create",
@@ -1332,10 +1347,17 @@ def _run_cbom(engine, team_id: int, run_id: int) -> dict:
         return INV.cyclonedx(session, run, utcnow())
 
 
-@router.get(BASE + "/runs/{run_id}/cbom", dependencies=READ, summary="CycloneDX 1.6 CBOM of what a run collected")
-async def run_cbom(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
+@router.get(BASE + "/runs/{run_id}/cbom", dependencies=READ,
+            summary="CycloneDX 1.6 CBOM of what a run collected (format=json, or xml valid against the official XSD)")
+async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(default="json", pattern="^(json|xml)$"),
+                   Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     payload = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id)
+    if format == "xml":  # the same document, written as XML (cdx_xml); the signature covers the JSON form only
+        body = await _run("run cbom xml", team_id, CDX_XML.to_xml, payload)
+        return Response(body, media_type=CDX_XML.XML_MEDIA_TYPE, headers={
+            **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.xml"',
+            "X-ZS-Signature-Scope": CDX_XML.SIGNATURE_SCOPE})
     return JSONResponse(payload, headers={**PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
 
 
@@ -1360,7 +1382,12 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
         source = session.get(CbomCollectionSource, row.source_id) if row.source_id else None
         if source is not None and source.team_id != team_id:
             source = None
-        return {"asset": POSTURE.asset_detail(row, source)}
+        job = session.get(CbomCollectionJob, row.job_id) if row.job_id else None
+        node = session.get(CbomScanNode, source.node_id) if source is not None and source.node_id else None
+        if node is not None and node.team_id != team_id:
+            node = None
+        return {"asset": POSTURE.asset_detail(row, source, job=job if job and job.team_id == team_id else None,
+                                              node=node)}
 
 
 @router.get(BASE + "/assets/{asset_id}", dependencies=READ,

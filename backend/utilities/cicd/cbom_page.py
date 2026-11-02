@@ -40,7 +40,7 @@ def _finding(row: dict, index: int) -> dict:
         "bom_ref": shown.get("bom_ref") or None,
         "title": shown.get("title") or "",
         "description": shown.get("description") or "",
-        "impact": shown.get("impact") or "low",
+        "impact": shown.get("impact") or "low",  # findings only reach here; a legacy one without impact is Low
         "risk_score": cbom_finding_risk_score(shown),
         "status": "not_started",
         "compliance_controls": shown.get("compliance_controls") or [],
@@ -96,14 +96,17 @@ def project_cbom_ci_page(run: dict) -> dict | None:
         scan_metadata={"zip_file_used": True},
     )
     dashboard = generate_scan_dashboard(scan_type="cbom", scan_object=scan)
+    # findings only (cbom_rows.is_finding): clean inventory rows are listed by the CycloneDX and the charts
+    from backend.utilities.cbom_sources.cbom_rows import is_finding
+
+    flagged = [(index, row) for index, row in enumerate(rows) if isinstance(row, dict) and is_finding(row)]
     stored = [
         {
             "finding_status": "not_started",
-            "finding_data": row if isinstance(row, dict) else {},
+            "finding_data": row,
             "created_at": None,
         }
-        for row in rows
-        if isinstance(row, dict)
+        for _index, row in flagged
     ]
     status = get_issue_status_metrics(stored)
     dashboard["remediation_metrics"] = get_remediation_metrics(stored)
@@ -114,7 +117,7 @@ def project_cbom_ci_page(run: dict) -> dict | None:
         "total_not_started": status.get("not_started", 0),
         "total_ignored": status.get("ignored", 0),
     }
-    findings = [_finding(row, index) for index, row in enumerate(rows) if isinstance(row, dict)]
+    findings = [_finding(row, index) for index, row in flagged]
     return {
         "data": [_display_row(row) for row in rows if isinstance(row, dict)],
         "dashboard": dashboard,

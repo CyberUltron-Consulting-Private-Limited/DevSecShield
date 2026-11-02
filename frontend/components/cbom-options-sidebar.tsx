@@ -82,6 +82,8 @@ export function CBOMOptionsSidebar({
   const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done">("ready");
   const [error_message, setErrorMessage] = useState<string | null>(null);
   const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
+  // the least a code scan costs (1 credit for a repository or zip, decision D3); 0 for an uploaded CBOM file
+  const [minimumCredits, setMinimumCredits] = useState<number | null>(null);
   const [estimationProcessDone, setEstimationProcessDone] = useState(false);
   const [uploaded_file, setUploadedFile] = useState<File | null>(null);
   const [uploaded_cbom_file, setUploadedCbomFile] = useState<File | null>(null);
@@ -165,6 +167,7 @@ export function CBOMOptionsSidebar({
     onSuccess: ({ code, sources, key }) => {
       const data = code;
       setEstimatedCredits(data.credits_required);
+      setMinimumCredits(data.minimum_credits ?? null);
       setEstimationProcessDone(true);
       setSourcesEstimate(sources ? { key, estimate: sources, requestId: newRequestId() } : null);
       if (data.credits_required !== -1) {
@@ -470,6 +473,14 @@ export function CBOMOptionsSidebar({
             )}
             {displayCredits != null && !creditsInvalid && (
               <SourcesBreakdown estimate={currentSourcesEstimate?.estimate ?? null} codeCredits={estimatedCredits} />
+            )}
+            {!cbom_file_used && (
+              <p className="text-xs text-zinc-500 mt-2" data-testid="cbom-minimum-credits">
+                {minimumCredits && estimatedCredits != null && estimatedCredits <= minimumCredits
+                  ? `Includes the minimum charge of ${minimumCredits} credit for a code scan.`
+                  : "A repository or zip code scan costs at least 1 credit (1 credit per 0.5 MB scanned)."}
+                {" "}If the files or options change before you start, the scan is estimated again.
+              </p>
             )}
           </div>
 

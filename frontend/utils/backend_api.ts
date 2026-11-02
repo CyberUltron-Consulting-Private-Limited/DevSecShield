@@ -501,9 +501,9 @@ const estimateCreditsForScan = async (
   scan_id: number,
   start_scan_payload_string: string,
   uploaded_file?: File | null
-): Promise<{ credits_required: number }> => {
+): Promise<{ credits_required: number; minimum_credits?: number }> => {
   const form = buildScanFormData(start_scan_payload_string, uploaded_file);
-  const response = await api.post<{ credits_required: number }>(
+  const response = await api.post<{ credits_required: number; minimum_credits?: number }>(
     `/${team_id}/${type}/scan/${scan_id}/estimate_credits`,
     form,
     { headers: { "Content-Type": "multipart/form-data" } }
@@ -2204,6 +2204,10 @@ export interface CbomGraph {
 export interface CbomScanDashboardData {
   card_data: {
     total_crypto_assets: number
+    /** findings only (rows with a finding code); clean inventory is total_informational */
+    total_crypto_vulnerabilities?: number
+    total_informational?: number
+    quantum_readiness_judged?: boolean
     total_weak_algorithms: number
     total_quantum_vulnerable: number
     total_certificates: number
@@ -2224,7 +2228,7 @@ export interface CbomScanDashboardData {
     total_not_started: number
     total_ignored: number
   }
-  severity_distribution: { critical: number; high: number; medium: number; low: number }
+  severity_distribution: { critical: number; high: number; medium: number; low: number; informational?: number }
   algorithm_type_distribution: Record<string, number>
   strength_distribution: Record<string, number>
   quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown?: number }

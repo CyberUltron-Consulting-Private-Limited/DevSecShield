@@ -170,6 +170,8 @@ def _row(title, *, asset_type="algorithm", impact="Low", codes=(), bom_ref="auto
         "quantum_safe": True,
         "hybrid": False,
         "key_size": None,
+        # a synthetic row above Low is a finding (cbom_rows.is_finding): a clean row has no impact
+        "weak": impact not in (None, "Low"),
     }
     if bom_ref == "auto":
         row["bom_ref"] = f"ref-{asset_type}-{title}-{location}"
@@ -990,15 +992,15 @@ EXPECTED_SOURCES = {
     PAYMENTS: ("github.com/e2e-demo/payments-service (main)", "repo", (2, 1), TIER_A, "full",
                (9, "failure"), {"algorithm": 9, "certificate": 2, "protocol": 1,
                                 "related-crypto-material": 2},
-               {"High": 6, "Medium": 1, "Low": 7}, 4),
+               {"High": 6, "Medium": 1, "Info": 7}, 4),
     IDENTITY: ("github.com/e2e-demo/identity-gateway (main)", "repo", (3,), TIER_A, "full",
                (3, "success"), {"certificate": 12},
-               {"Critical": 1, "High": 4, "Medium": 1, "Low": 6}, 0),
+               {"Critical": 1, "High": 4, "Medium": 1, "Info": 6}, 0),
     MISUSE: ("github.com/e2e-demo/crypto-misuse-lab (main)", "repo", (4,), TIER_A, "full",
              (4, "success"), {"algorithm": 8, "related-crypto-material": 9},
-             {"High": 6, "Low": 11}, 2),
+             {"High": 6, "Info": 11}, 2),
     PQC: ("github.com/e2e-demo/pqc-pilot (release)", "repo", (5,), TIER_A, "full",
-          (5, "success"), {"algorithm": 11}, {"Medium": 1, "Low": 10}, 0),
+          (5, "success"), {"algorithm": 11}, {"Medium": 1, "Info": 10}, 0),
     ZIPLAB: ("Zip upload: cert-lifecycle-lab", "zip", (6,), TIER_A, "full",
              (6, "success"), {"certificate": 2}, {"High": 1, "Medium": 1}, 0),
     MANIFESTS: ("github.com/e2e-demo/vendor-sdk-manifests (main)", "repo", (7,), TIER_A, "full",
@@ -1006,7 +1008,7 @@ EXPECTED_SOURCES = {
     LEGACY: ("github.com/e2e-demo/legacy-billing (main)", "repo", (8,), TIER_B, "reduced",
              (8, "success"), {"algorithm": 9, "certificate": 1, "protocol": 1,
                               "related-crypto-material": 1},
-             {"High": 6, "Medium": 1, "Low": 5}, 4),
+             {"High": 6, "Medium": 1, "Info": 5}, 4),
 }  # fmt: skip
 SOURCE_AGES = {
     PAYMENTS: (21, 7),
@@ -1107,7 +1109,7 @@ def test_the_app_certificate_collapses_four_occurrences_across_three_sources(vie
     assert cert.locations_total == 3
     assert (cert.name, cert.file_names) == ("cert.pem", ("cert.pem", "payments-ca.pem"))
     assert (cert.is_ca, cert.self_signed, cert.signed_by) == (True, True, ())
-    assert (cert.impact, cert.finding_codes, cert.tier) == ("Low", (), TIER_A)
+    assert (cert.impact, cert.finding_codes, cert.tier) == ("Info", (), TIER_A)  # clean: no finding
     assert cert.expiry == ExpiryBand(VALID, (date(2027, 6, 29) - AS_OF).days)
 
 
@@ -1174,7 +1176,7 @@ def test_current_asset_occurrences_and_impact_buckets_match_appendix_b(view):
     assert view.assets_by_type == {
         "algorithm": 37, "certificate": 17, "protocol": 2, "related-crypto-material": 12,
     }  # fmt: skip
-    assert view.assets_by_impact == {"Critical": 1, "High": 23, "Medium": 5, "Low": 39}
+    assert view.assets_by_impact == {"Critical": 1, "High": 23, "Medium": 5, "Info": 39}  # clean rows: no impact
     assert view.issue_by_impact == {"Critical": 1, "High": 23, "Medium": 5}  # grade input (D-03)
     assert sum(view.issue_by_impact.values()) == 29
     assert view.finding_counts == APPENDIX_CODES
@@ -1402,7 +1404,7 @@ def test_assets_missing_from_the_latest_scan_are_resolved_not_current():
         (1,),
     )
     assert view.asset_occurrences == 1 and view.assets_by_type == {"algorithm": 1}
-    assert view.assets_by_impact == {"Low": 1} and view.issue_by_impact == {}
+    assert view.assets_by_impact == {"Info": 1} and view.issue_by_impact == {}
     assert view.finding_counts == {} and (view.pqc_vulnerable, view.pqc_safe) == (0, 1)
     assert view.readiness_pct == 100.0
     src = only(view.sources)
@@ -2166,11 +2168,18 @@ def test_module_level_imports_are_standard_library_only():
     assert top and all(name.split(".")[0] in sys.stdlib_module_names for name in top), top
 
 
+# The one finding rule and the one quantum-readiness definition every CBOM view shares: pure modules whose own
+# imports are stdlib only (the isolated import test below proves the closure stays clean).
+SHARED_PURE_RULES = {"backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics"}
+
+
 def test_only_the_db_loader_imports_non_stdlib_modules_and_only_lazily():
     outside = [(n, s) for n, s in _import_sites() if n.split(".")[0] not in sys.stdlib_module_names]
     assert outside, "load_team_cbom_view must import sqlmodel / backend.new_models lazily"
-    assert {scope for _, scope in outside} == {"load_team_cbom_view"}
-    assert {name.split(".")[0] for name, _ in outside} <= {"sqlmodel", "backend"}
+    db = [(n, s) for n, s in outside if n not in SHARED_PURE_RULES]
+    assert {scope for _, scope in db} == {"load_team_cbom_view"}
+    assert {name.split(".")[0] for name, _ in db} <= {"sqlmodel", "backend"}
+    assert all(scope != "<module>" for name, scope in outside if name in SHARED_PURE_RULES)
 
 
 def test_no_llm_network_or_process_imports_and_no_llm_tokens_in_the_source():

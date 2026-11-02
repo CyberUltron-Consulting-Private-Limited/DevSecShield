@@ -429,42 +429,24 @@ def return_dast_list_item(scan : Scan) -> dict:
 
 
 def return_cbom_list_item(scan : Scan) -> dict:
-    total_critical , total_high , total_medium , total_low , average_risk_score  = 0,0,0,0,0
-    total_weak , total_quantum_vulnerable = 0, 0
+    # the same counts as the scan's dashboard and PDF (cbom_metrics): findings only, inventory is informational
+    from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+
+    rows = []
     if scan.scan_data and scan.scan_data != {} and "results" in scan.scan_data and scan.scan_status == "success":
-        for vulnerability in scan.scan_data["results"]:
-            impact_lower = (vulnerability.get("impact") or "").lower()
-            if impact_lower == "critical":
-                total_critical += 1
-            elif impact_lower == "high":
-                total_high += 1
-            elif impact_lower == "medium":
-                total_medium += 1
-            elif impact_lower == "low":
-                total_low += 1
-
-            # Count weak algorithms and quantum-vulnerable
-            strength = (vulnerability.get("crypto_strength") or "").lower()
-            if strength == "weak":
-                total_weak += 1
-            # quantum_safe is tri-state: explicit False => vulnerable;
-            # missing/None => unknown (NOT counted vulnerable), matching the dashboards.
-            if vulnerability.get("quantum_safe") is False:
-                total_quantum_vulnerable += 1
-
+        rows = scan.scan_data["results"] or []
+    summary = summarize_code_rows(rows)
     risk_data = {
-        "total_critical": total_critical,
-        "total_high": total_high,
-        "total_medium": total_medium,
-        "total_low": total_low,
+        "total_critical": summary.severity["critical"],
+        "total_high": summary.severity["high"],
+        "total_medium": summary.severity["medium"],
+        "total_low": summary.severity["low"],
+        "total_informational": summary.informational,
     }
-
-
-    # calculating average risk score (app-wide 0-10 CBOM scale: critical=9, high=7, medium=5, low=2)
-    total_cbom_findings = total_critical + total_high + total_medium + total_low
-    if total_cbom_findings > 0:
-        average_risk_score = (total_critical * 9 + total_high * 7 + total_medium * 5 + total_low * 2) / total_cbom_findings
-
+    # app-wide 0-10 CBOM scale (critical=9, high=7, medium=5, low=2), over findings only
+    average_risk_score = summary.average_risk
+    total_weak = summary.weak
+    total_quantum_vulnerable = summary.quantum["quantum_vulnerable"]
 
     return {
         "id": scan.id,

@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   getCbomAssetDetail,
   getCbomRunPosture,
+  getCbomSourcesOverview,
   getCbomSourcesSettings,
   listCbomSources,
   updateCbomSource,
@@ -22,6 +23,12 @@ import {
   type CbomRiskModel,
   type CbomSource,
 } from "@/utils/backend_api";
+import {
+  EXPOSURE_LABEL,
+  type CbomAssetDetailWithExposure,
+  type CbomExposure,
+  type CbomPostureWithExposure,
+} from "@/utils/api/cbom_outputs";
 
 import { cbomSourcesKeys } from "./keys";
 import { pluralize } from "./logic";
@@ -34,6 +41,20 @@ const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
   "grover-weakened": ["Grover-weakened", "amber", "128-bit symmetric keys: still secure, smaller margin against quantum search"],
   "not-applicable": ["Not applicable", "zinc", "Settings and inventory with no public-key algorithm"],
 };
+
+const EXPOSURE_TONE: Record<CbomExposure, Tone> = { internet: "red", internal: "zinc", unknown: "zinc" };
+
+/** Team admins may change team settings (the API enforces it); others do not see the controls. */
+function useIsTeamAdmin(teamId: number): boolean {
+  const q = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 60_000,
+  });
+  return !!q.data?.viewer?.is_admin;
+}
 
 function Stat({ label, value, hint, testId }: { label: string; value: string; hint?: string; testId?: string }) {
   return (
@@ -111,9 +132,10 @@ function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => void })
 export function RunPostureCard({ teamId, runId, active }: { teamId: number; runId: number; active: boolean }) {
   const [showCompliance, setShowCompliance] = useState(false);
   const [editMosca, setEditMosca] = useState(false);
+  const isAdmin = useIsTeamAdmin(teamId);
   const query = useQuery({
     queryKey: cbomSourcesKeys.runPosture(teamId, runId),
-    queryFn: () => getCbomRunPosture(teamId, runId),
+    queryFn: async () => (await getCbomRunPosture(teamId, runId)) as unknown as CbomPostureWithExposure,
     enabled: Number.isFinite(teamId),
     retry: 1,
     refetchInterval: active ? 15000 : false,
@@ -147,13 +169,17 @@ export function RunPostureCard({ teamId, runId, active }: { teamId: number; runI
           ) : (
             <p className="text-xs text-zinc-500 mt-1">Not set</p>
           )}
-          <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer mt-1" data-testid="mosca-edit"
-                  onClick={() => setEditMosca(!editMosca)}>
-            {m.configured ? "Change X, Y, Z" : "Set X, Y, Z"}
-          </button>
+          {isAdmin ? (
+            <button type="button" className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer mt-1" data-testid="mosca-edit"
+                    onClick={() => setEditMosca(!editMosca)}>
+              {m.configured ? "Change X, Y, Z" : "Set X, Y, Z"}
+            </button>
+          ) : (
+            <p className="text-xs text-zinc-500 mt-1" data-testid="mosca-admin-only">A team admin sets X, Y and Z</p>
+          )}
         </div>
       </div>
-      {editMosca && <MoscaEditor teamId={teamId} onDone={() => setEditMosca(false)} />}
+      {editMosca && isAdmin && <MoscaEditor teamId={teamId} onDone={() => setEditMosca(false)} />}
       {!m.configured && !editMosca && m.note && <p className="text-xs text-zinc-500">{m.note}</p>}
       <div className="flex flex-wrap gap-2">
         {(Object.keys(CLASS_LABEL) as CbomPqcClass[]).map((c) =>
@@ -167,16 +193,26 @@ export function RunPostureCard({ teamId, runId, active }: { teamId: number; runI
       {m.configured && m.verdict && <p className="text-xs text-zinc-600 dark:text-zinc-400">{m.verdict}</p>}
       {p.top_risks.length > 0 && (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">Highest risk (impact × business criticality)</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">
+            Highest risk (impact × business criticality × internet exposure)
+          </p>
           <ul className="space-y-1">
             {p.top_risks.slice(0, 5).map((r) => (
-              <li key={r.id} className="text-xs text-zinc-700 dark:text-zinc-300 flex flex-wrap gap-2">
+              <li key={r.id} className="text-xs text-zinc-700 dark:text-zinc-300 flex flex-wrap gap-2" data-testid={`top-risk-${r.id}`}>
                 <span className="font-mono">{r.score}</span>
                 <span className="font-mono break-all">{r.name}</span>
                 <span className="text-zinc-500">{r.source_name ?? ""} · {r.criticality}{r.hndl ? " · HNDL" : ""}</span>
+                {r.exposure && (
+                  <span title={r.exposure_basis}>
+                    <StatusBadge tone={EXPOSURE_TONE[r.exposure]}>
+                      {EXPOSURE_LABEL[r.exposure]}{p.exposure_factors && r.exposure === "internet" ? ` ×${p.exposure_factors.internet}` : ""}
+                    </StatusBadge>
+                  </span>
+                )}
               </li>
             ))}
           </ul>
+          <p className="text-xs text-zinc-500 mt-1">Scored with the criticality and exposure the sources had when this run started.</p>
         </div>
       )}
       {p.compliance.length > 0 && (
@@ -217,7 +253,7 @@ export function RunPostureCard({ teamId, runId, active }: { teamId: number; runI
 export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId: number }) {
   const query = useQuery({
     queryKey: cbomSourcesKeys.asset(teamId, assetId),
-    queryFn: () => getCbomAssetDetail(teamId, assetId),
+    queryFn: async () => (await getCbomAssetDetail(teamId, assetId)) as unknown as CbomAssetDetailWithExposure,
     retry: 1,
     staleTime: 60_000,
   });
@@ -231,6 +267,14 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
         <StatusBadge tone={cls[1]}>{cls[0]}</StatusBadge>
         {a.hndl && <StatusBadge tone="red">Harvest now, decrypt later</StatusBadge>}
         <span className="text-xs text-zinc-500">Business criticality: {a.criticality}</span>
+        {a.exposure && (
+          <span title={a.exposure_basis} data-testid="asset-exposure">
+            <StatusBadge tone={EXPOSURE_TONE[a.exposure]}>
+              {EXPOSURE_LABEL[a.exposure]}{a.exposure_factor && a.exposure_factor !== 1 ? ` (risk ×${a.exposure_factor})` : ""}
+            </StatusBadge>
+          </span>
+        )}
+        {a.exposure_basis && <span className="text-xs text-zinc-500">{a.exposure_basis}</span>}
       </div>
       {a.library && (
         <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3 space-y-1" data-testid="asset-library">
@@ -238,8 +282,16 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
             {a.library.package} {a.library.package_version} (upstream {a.library.library} {a.library.upstream_version})
           </p>
           {a.library.eol && (
-            <p className={`text-xs ${a.library.eol.passed ? "text-red-600 dark:text-red-400" : "text-zinc-600 dark:text-zinc-400"}`}>
-              Upstream {a.library.eol.branch} {a.library.eol.passed ? "reached end of life" : "is supported until"} {a.library.eol.date}
+            <p className={`text-xs ${a.library.eol.passed ? "text-red-600 dark:text-red-400" : "text-zinc-600 dark:text-zinc-400"}`}
+               data-testid="asset-library-eol">
+              {a.library.eol_as_of ? `As of this run (${a.library.eol_as_of}): ` : ""}
+              upstream {a.library.eol.branch} {a.library.eol.passed ? "had reached end of life" : "was supported until"} {a.library.eol.date}
+            </p>
+          )}
+          {a.library.eol_today && (
+            <p className={`text-xs ${a.library.eol_today.passed ? "text-red-600 dark:text-red-400" : "text-zinc-600 dark:text-zinc-400"}`}
+               data-testid="asset-library-eol-today">
+              Today: upstream {a.library.eol_today.branch} {a.library.eol_today.passed ? "has reached end of life" : "is supported until"} {a.library.eol_today.date}
             </p>
           )}
           {a.library.cves.length > 0 && (
@@ -286,14 +338,48 @@ function CriticalitySelect({ teamId, source }: { teamId: number; source: CbomSou
   );
 }
 
-/** Business criticality per source: it multiplies the impact of what the source finds in the risk ranking.
- * Changing it does not reset the source's connection test. */
+const EXPOSURE_CHOICES: { value: CbomExposure | "auto"; label: string }[] = [
+  { value: "auto", label: "From collected facts" },
+  { value: "internet", label: "Internet-facing" },
+  { value: "internal", label: "Internal" },
+  { value: "unknown", label: "Unknown" },
+];
+
+function ExposureSelect({ teamId, source }: { teamId: number; source: CbomSource }) {
+  const queryClient = useQueryClient();
+  const current = ((source.config?.exposure as CbomExposure | null | undefined) ?? "auto") as CbomExposure | "auto";
+  const save = useMutation({
+    mutationFn: (value: CbomExposure | "auto") =>
+      updateCbomSource(teamId, source.id, {
+        config: { ...source.config, exposure: value === "auto" ? null : value },
+        expected_version: source.row_version,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onError: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+  });
+  return (
+    <Select value={current} onValueChange={(v) => v !== current && save.mutate(v as CbomExposure | "auto")} disabled={save.isPending}>
+      <SelectTrigger className="w-[170px] cursor-pointer" data-testid={`exposure-${source.id}`} aria-label={`Internet exposure of ${source.name}`}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {EXPOSURE_CHOICES.map((c) => (
+          <SelectItem key={c.value} value={c.value} className="cursor-pointer">{c.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Business criticality and internet exposure per source: they multiply the impact of what the source finds in the
+ * risk ranking (internet-facing x1.5). Changing them does not reset the source's connection test or stop its jobs. */
 export function CriticalityCard({ teamId }: { teamId: number }) {
   const query = useQuery({ queryKey: cbomSourcesKeys.sources(teamId, "all"), queryFn: () => listCbomSources(teamId), retry: 1 });
   const sources = query.data?.sources ?? [];
   if (query.isLoading || sources.length === 0) return null;
   return (
-    <SectionCard title="Business criticality" description="Weights each source's findings in the risk ranking of a run (default: medium)">
+    <SectionCard title="Business criticality and exposure"
+                 description="Weights each source's findings in the risk ranking of the next run (default: medium; exposure from the collected facts, internet-facing x1.5)">
       <ul className="divide-y divide-zinc-200 dark:divide-zinc-800" data-testid="criticality-card">
         {sources.map((src) => (
           <li key={src.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
@@ -301,7 +387,10 @@ export function CriticalityCard({ teamId }: { teamId: number }) {
               <Truncate text={src.name} className="text-sm font-medium text-zinc-900 dark:text-white" />
               <span className="text-xs text-zinc-500">{src.kind_label}</span>
             </div>
-            <CriticalitySelect teamId={teamId} source={src} />
+            <div className="flex flex-wrap gap-2">
+              <CriticalitySelect teamId={teamId} source={src} />
+              <ExposureSelect teamId={teamId} source={src} />
+            </div>
           </li>
         ))}
       </ul>

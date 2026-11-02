@@ -7,7 +7,8 @@ a test compares them.
 
 Updates: an operator may point CBOM_KB_BUNDLE at a newer crypto_kb.json. It is used only when CBOM_KB_BUNDLE_SIG
 holds a valid Ed25519 signature of the exact file by one of the keys in CBOM_KB_PUBKEYS (comma-separated, base64
-raw 32-byte public keys). Anything else falls back to the built-in file and logs why.
+raw 32-byte public keys) and when it keeps every finding code of the built-in file (stored scans reference them; an
+update may add or change entries, never drop one). Anything else falls back to the built-in file and logs why.
 """
 from __future__ import annotations
 
@@ -79,6 +80,16 @@ def _version_key(value: Any) -> tuple[int, ...]:
     return tuple(int(p) for p in parts)
 
 
+def _missing_codes(candidate: dict[str, Any], builtin: dict[str, Any]) -> list[str]:
+    """'namespace:CODE' for every finding code of the built-in knowledge base the candidate does not have."""
+    have = candidate.get("findings") if isinstance(candidate.get("findings"), dict) else {}
+    out = []
+    for namespace, entries in sorted((builtin.get("findings") or {}).items()):
+        theirs = have.get(namespace) if isinstance(have.get(namespace), dict) else {}
+        out += [f"{namespace}:{code}" for code in sorted(entries or {}) if code not in theirs]
+    return out
+
+
 @lru_cache(maxsize=1)
 def load() -> dict[str, Any]:
     """The knowledge base in force: a signed update bundle when one is configured and valid, else the built-in."""
@@ -103,10 +114,15 @@ def load() -> dict[str, Any]:
         except ValueError:
             candidate, reason = None, "bundle is not JSON"
         if candidate is not None:
-            if candidate.get("schema") != SCHEMA:
-                reason = f"bundle schema {candidate.get('schema')} is not {SCHEMA}"
+            missing = _missing_codes(candidate, builtin) if isinstance(candidate, dict) else []
+            if not isinstance(candidate, dict) or candidate.get("schema") != SCHEMA:
+                reason = f"bundle schema {candidate.get('schema') if isinstance(candidate, dict) else None} is not {SCHEMA}"
             elif _version_key(candidate.get("kb_version")) <= _version_key(builtin.get("kb_version")):
                 reason = "bundle is not newer than the built-in knowledge base"
+            elif missing:
+                # stored scans and runs reference these codes; an update may add and change entries, never drop them
+                reason = (f"bundle lacks {len(missing)} finding code(s) the built-in knowledge base has "
+                          f"({', '.join(missing[:10])})")
             else:
                 log.info("crypto KB: using signed bundle %s", candidate.get("kb_version"))
                 return candidate

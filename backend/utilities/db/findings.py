@@ -15,8 +15,19 @@ from backend.utilities.dashboard.bom_risk_score import (
 
 
 
-def get_findings_for_scan_id(scan_id: int) -> list[dict]:
-    
+def is_ticketable_finding(scan_type: str | None, finding_data: dict | None) -> bool:
+    """Whether a stored row is a FINDING (counted, listed, ticketed). Only CBOM stores clean inventory rows next to its
+    findings (a CBOM must list AES-GCM too); those are filtered when read, by the one rule in ``cbom_rows.is_finding``,
+    so scans stored before and after that rule behave the same. Every other scan type stores findings only."""
+    if scan_type != "cbom":
+        return True
+    from backend.utilities.cbom_sources.cbom_rows import is_finding
+
+    return is_finding(finding_data if isinstance(finding_data, dict) else {})
+
+
+def get_findings_for_scan_id(scan_id: int, scan_type: str | None = None) -> list[dict]:
+    """Stored findings of a scan. With ``scan_type="cbom"`` clean inventory rows are left out (read-time filter)."""
     mongo_db = get_mongo_client_db()
     findings_collection = mongo_db["scan_findings"]
 
@@ -24,8 +35,10 @@ def get_findings_for_scan_id(scan_id: int) -> list[dict]:
 
     findings_list = []
     for finding in findings:
+        if scan_type is not None and not is_ticketable_finding(scan_type, finding.get("finding_data")):
+            continue
         findings_list.append(finding)
-    
+
     return findings_list
 
 risk_score_map = {
@@ -198,7 +211,8 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
     elif scan_type == "cbom":
         from backend.utilities.cbom_sources.cbom_rows import display_row
 
-        findings_fetched = get_findings_for_scan_id(scan_id=scan_id)
+        # findings only: clean inventory rows stay in the CycloneDX download and the inventory charts
+        findings_fetched = get_findings_for_scan_id(scan_id=scan_id, scan_type="cbom")
         for finding in findings_fetched:
             fd = display_row(finding.get("finding_data", {}))
             findings.append({
@@ -209,7 +223,7 @@ def get_findings_for_scan_type(scan_type: scan_types , scan_id: int) -> list[dic
                 "bom_ref": fd.get("bom_ref") or None,
                 "title": fd.get("title", ""),
                 "description": fd.get("description", ""),
-                "impact": fd.get("impact") or "low",
+                "impact": fd.get("impact") or "low",  # a finding (legacy row) without an impact stays Low
                 "risk_score": cbom_finding_risk_score(fd),
                 "status": finding.get("finding_status", "open"),
                 "compliance_controls": fd.get("compliance_controls") or [],

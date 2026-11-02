@@ -55,6 +55,7 @@ import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
   buildRefAliasMap,
@@ -1095,6 +1096,9 @@ export default function CbomResults({
 
   const cardData = dashboard?.card_data;
   const meta = scanMetadata as CbomScanMetadata | null;
+  // An uploaded CBOM file's import report: notes say what was skipped or truncated (null for code scans)
+  const importReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_input ?? null) as CbomImportReport | null;
+  const informationalRows = dashboard?.card_data?.total_informational ?? 0;
 
   // Crypto-asset charts from the aibom CBOM lane's run-object (C9). Present only
   // on scans produced by the reconciled aibom lane; legacy worker CBOM scans
@@ -1215,6 +1219,16 @@ export default function CbomResults({
             <Button
               variant="outline"
               className="cursor-pointer"
+              title="The same CycloneDX 1.6 document as XML (valid against the official schema). The BOM signature covers the JSON form."
+              onClick={() => void downloadCbomScanBom(team_id as string, scan_id as string, "xml").then(() => toast.success("CycloneDX XML downloaded")).catch(() => undefined)}
+              data-testid="cbom-download-xml"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              CycloneDX XML
+            </Button>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
               onClick={() => void handleDownloadVex()}
             >
               <Download className="h-4 w-4 mr-2" />
@@ -1256,6 +1270,29 @@ export default function CbomResults({
           </div>
         )}
       </div>
+
+      {importReport && importReport.notes.length > 0 && (
+        <Card className="mb-6 border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20" role="alert" data-testid="cbom-import-notes">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4 shrink-0" /> About the uploaded CBOM file
+            </CardTitle>
+            <CardDescription className="text-amber-900/80 dark:text-amber-200/80">
+              {importReport.imported ?? 0} of {importReport.crypto_assets ?? 0} cryptographic assets imported
+              {importReport.spec_version ? ` · CycloneDX ${importReport.spec_version}` : ""}
+              {importReport.skipped_not_crypto ? ` · ${importReport.skipped_not_crypto} non-crypto components skipped` : ""}
+              {importReport.skipped_invalid ? ` · ${importReport.skipped_invalid} unreadable` : ""}
+              {importReport.duplicates ? ` · ${importReport.duplicates} duplicates` : ""}
+              {importReport.truncated ? " · truncated" : ""}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="list-disc pl-5 space-y-1 text-sm text-amber-900 dark:text-amber-200 break-words">
+              {importReport.notes.map((note, i) => <li key={i}>{note}</li>)}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {hasTicketingTab && (
         <div className="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -1393,6 +1430,12 @@ export default function CbomResults({
               <CardTitle>Cryptographic findings</CardTitle>
               <CardDescription>
                 {filteredFindings.length} of {(findingsList ?? []).length} findings. Select rows to create Jira tickets; use Action to change finding state.
+                {informationalRows > 0 && (
+                  <span className="block mt-1" data-testid="cbom-informational-note">
+                    {INFORMATIONAL_LABEL}: {informationalRows} clean {informationalRows === 1 ? "asset has" : "assets have"} no finding
+                    (for example AES-GCM or SHA-256). They are in the inventory charts and the CycloneDX download, not in this table.
+                  </span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>

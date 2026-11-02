@@ -1697,20 +1697,11 @@ def _cbom_results(scan: Scan) -> list:
 
 
 def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
-    """Aggregate CBOM dashboard data across all scans for the scan-list page."""
-    severity_distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-    algorithm_type_distribution: dict[str, int] = defaultdict(int)
-    strength_distribution = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
-    quantum_readiness = {"quantum_safe": 0, "quantum_vulnerable": 0}
-    owasp_top_10_metrics: dict[str, int] = defaultdict(int)
-    compliance_controls_metrics: dict[str, int] = defaultdict(int)
-    top_risks_entries: list[dict] = []
+    """Aggregate CBOM dashboard data across all scans for the scan-list page (same rules as one scan: cbom_metrics)."""
+    from backend.utilities.cbom_sources.cbom_metrics import CodeRowSummary
 
-    total_crypto_assets = 0
-    total_weak = 0
-    total_quantum_vulnerable = 0
-    total_certificates = 0
-    total_keys = 0
+    summary = CodeRowSummary()
+    compliance_controls_metrics: dict[str, int] = defaultdict(int)
 
     for scan in scans:
         if scan.scan_status != "success":
@@ -1718,61 +1709,7 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
         results = _cbom_results(scan)
         if not results:
             continue
-
-        total_crypto_assets += len(results)
-
-        from backend.utilities.cbom_sources.cbom_rows import display_row
-
-        for vuln in map(display_row, results):
-            impact = vuln.get("impact") or "Low"
-            impact_lower = impact.lower()
-            if impact_lower in severity_distribution:
-                severity_distribution[impact_lower] += 1
-
-            algo_type = vuln.get("algorithm_type") or "other"
-            if str(algo_type).lower() in ("unknown", "none", "null", ""):
-                algo_type = "other"
-            algorithm_type_distribution[algo_type] += 1
-
-            strength = vuln.get("crypto_strength") or "not-applicable"
-            if str(strength).lower() in ("unknown", "none", "null", ""):
-                strength = "not-applicable"
-            if strength in strength_distribution:
-                strength_distribution[strength] += 1
-
-            # Algorithm-only: boolean quantum_safe; N/A (null) rows excluded.
-            qs = vuln.get("quantum_safe")
-            if qs is True:
-                quantum_readiness["quantum_safe"] += 1
-            elif qs is False:
-                quantum_readiness["quantum_vulnerable"] += 1
-                total_quantum_vulnerable += 1
-
-            if strength == "weak":
-                total_weak += 1
-
-            if algo_type == "certificate":
-                total_certificates += 1
-            elif algo_type in ("key", "secret"):
-                total_keys += 1
-
-            # owasp metrics (None-safe; mirrors single-scan CBOM dashboard)
-            for _key, value in (vuln.get("owasp_top_10") or {}).items():
-                owasp_top_10_metrics[value] += 1
-
-            # compliance controls (None-safe; mirrors single-scan CBOM dashboard)
-            for _key, value in (vuln.get("compliance_controls") or {}).items():
-                compliance_controls_metrics[value] += 1
-
-            risk_score = cbom_finding_risk_score(vuln)
-            top_risks_entries.append({
-                "algorithm_name": vuln.get("algorithm_name", vuln.get("title", "Unknown")),
-                "algorithm_type": algo_type,
-                "crypto_strength": strength,
-                "quantum_safe": vuln.get("quantum_safe", False),
-                "impact": impact,
-                "risk_score": risk_score,
-            })
+        summary.add_rows(results)
 
         # Framework FAIL counts from cbom_compliance (mirrors single-scan CBOM dashboard)
         _cbom_compliance = (
@@ -1789,31 +1726,11 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
                     _label = _fw.get("title") or _fw_key
                     compliance_controls_metrics[_label] += int(_fail)
 
-    quantum_readiness_denominator = (
-        quantum_readiness["quantum_safe"] + quantum_readiness["quantum_vulnerable"]
-    )
-    quantum_readiness_score = 0.0
-    if quantum_readiness_denominator > 0:
-        quantum_readiness_score = round(
-            (quantum_readiness["quantum_safe"] / quantum_readiness_denominator) * 100,
-            1,
-        )
+    for label, count in summary.compliance.items():
+        compliance_controls_metrics[label] += count
+    readiness = summary.readiness_pct
 
-    total_findings = sum(severity_distribution.values())
-    if total_findings > 0:
-        weighted = (
-            severity_distribution["critical"] * CBOM_RISK_SCORE_FOR_IMPACT["critical"]
-            + severity_distribution["high"] * CBOM_RISK_SCORE_FOR_IMPACT["high"]
-            + severity_distribution["medium"] * CBOM_RISK_SCORE_FOR_IMPACT["medium"]
-            + severity_distribution["low"] * CBOM_RISK_SCORE_FOR_IMPACT["low"]
-        ) / total_findings
-        average_risk_score = min(10.0, max(0.0, weighted))
-    else:
-        average_risk_score = 0.0
-
-    top_risks_list = sorted(top_risks_entries, key=lambda x: x["risk_score"], reverse=True)[:10]
-
-    # Aggregate remediation across all successful scans
+    # Aggregate remediation across all successful scans (finding rows only)
     total_fixed = 0
     total_in_progress = 0
     total_not_started = 0
@@ -1822,7 +1739,7 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
     for scan in scans:
         if scan.scan_status != "success":
             continue
-        findings = get_findings_for_scan_id(scan_id=scan.id)
+        findings = get_findings_for_scan_id(scan_id=scan.id, scan_type="cbom")
         all_findings_count += len(findings)
         metrics = get_issue_status_metrics(findings)
         total_fixed += metrics.get("fixed", 0)
@@ -1832,21 +1749,24 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
 
     return {
         "card_data": {
-            "total_crypto_assets": total_crypto_assets,
-            "total_weak_algorithms": total_weak,
-            "total_quantum_vulnerable": total_quantum_vulnerable,
-            "total_certificates": total_certificates,
-            "total_keys": total_keys,
-            "quantum_readiness_score": quantum_readiness_score,
-            "average_risk_score": round(average_risk_score * 10) / 10,
+            "total_crypto_assets": summary.rows,
+            "total_crypto_vulnerabilities": summary.findings,
+            "total_informational": summary.informational,
+            "total_weak_algorithms": summary.weak,
+            "total_quantum_vulnerable": summary.quantum["quantum_vulnerable"],
+            "total_certificates": summary.certificates,
+            "total_keys": summary.keys,
+            "quantum_readiness_score": 0.0 if readiness is None else readiness,
+            "quantum_readiness_judged": readiness is not None,
+            "average_risk_score": summary.average_risk,
         },
-        "severity_distribution": severity_distribution,
-        "algorithm_type_distribution": dict(algorithm_type_distribution),
-        "strength_distribution": strength_distribution,
-        "quantum_readiness": quantum_readiness,
-        "owasp_top_10_issues": dict(owasp_top_10_metrics),
+        "severity_distribution": summary.severity_distribution(),
+        "algorithm_type_distribution": dict(summary.algorithm_types),
+        "strength_distribution": dict(summary.strengths),
+        "quantum_readiness": dict(summary.quantum),
+        "owasp_top_10_issues": dict(summary.owasp),
         "compliance_controls": dict(compliance_controls_metrics),
-        "top_risks": top_risks_list,
+        "top_risks": summary.top(10),
         "remediation_actions_required": {
             "total_findings": all_findings_count,
             "total_fixed": total_fixed,

@@ -233,6 +233,46 @@ def _bundle(tmp_path, key, version="2099.01.01.1", tamper=False):
     return path
 
 
+@pytest.mark.parametrize("namespace", ["node", "code"])
+def test_a_signed_bundle_that_drops_a_code_is_refused(tmp_path, monkeypatch, caplog, no_network, namespace):
+    """Stored scans and runs reference every code of the built-in KB: an update may add or change, never drop."""
+    key, pub = _keypair()
+    data = json.loads((BACKEND_KB / "data/crypto_kb.json").read_text())
+    builtin = data["kb_version"]
+    dropped = sorted(data["findings"][namespace])[0]
+    del data["findings"][namespace][dropped]
+    data["kb_version"] = "2099.01.01.1"
+    raw = json.dumps(data).encode()
+    (tmp_path / "kb.json").write_bytes(raw)
+    (tmp_path / "kb.json.sig").write_text(base64.b64encode(key.sign(raw)).decode())
+    monkeypatch.setenv("CBOM_KB_BUNDLE", str(tmp_path / "kb.json"))
+    monkeypatch.setenv("CBOM_KB_PUBKEYS", pub)
+    assert kb.version() == builtin
+    assert f"lacks 1 finding code(s) the built-in knowledge base has ({namespace}:{dropped})" in caplog.text
+
+
+def test_the_built_in_kb_explains_every_code_stored_scans_reference():
+    """Every finding code in the stored-scan fixtures (code scans) and every code the scan-node classifier can raise
+    (except codes added by a kb_ext module, which arrive with the next KB build) has an entry."""
+    data = json.loads((BACKEND_KB / "data/crypto_kb.json").read_text())
+
+    def codes_in(node, acc):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "finding_codes" and isinstance(v, list):
+                    acc.update(c for c in v if isinstance(c, str))
+                else:
+                    codes_in(v, acc)
+        elif isinstance(node, list):
+            for v in node:
+                codes_in(v, acc)
+
+    stored: set[str] = set()
+    for name in ("cbom_team_rollup_scans.json", "cbom_export_scandata.json", "cbom_consistency_scan.json"):
+        codes_in(json.loads((pathlib.Path(__file__).resolve().parent / "fixtures" / name).read_text()), stored)
+    assert stored and stored <= set(data["findings"]["code"]), sorted(stored - set(data["findings"]["code"]))
+
+
 def test_signed_newer_bundle_is_used(tmp_path, monkeypatch, no_network):
     key, pub = _keypair()
     monkeypatch.setenv("CBOM_KB_BUNDLE", str(_bundle(tmp_path, key)))

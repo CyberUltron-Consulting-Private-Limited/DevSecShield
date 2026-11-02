@@ -37,9 +37,21 @@ class _Strict(BaseModel):
 Criticality = Literal["low", "medium", "high", "critical"]
 
 
+Exposure = Literal["internet", "internal", "unknown"]
+
+
 class _Source(_Strict):
-    """Fields every source has. business_criticality scales the risk score of what the source finds."""
+    """Fields every source has: METADATA about the source, never about how to reach it.
+
+    * business_criticality scales the risk score of what the source finds;
+    * exposure overrides the internet exposure derived from the collected facts (risk x 1.5 when internet-facing).
+
+    Every field declared here is metadata (``METADATA_FIELDS``): editing it never cancels a job or resets the
+    connection test, a source form that does not send it keeps the stored value (send null to clear), and a run
+    snapshots it on its jobs when it is created.
+    """
     business_criticality: Criticality | None = None
+    exposure: Exposure | None = None
 
 
 class VaultRef(_Strict):
@@ -561,6 +573,8 @@ KINDS: dict[str, KindSpec] = {
 }
 
 KIND_NAMES = tuple(KINDS)
+# Config fields that describe the source rather than how it is reached (declared on ``_Source``).
+METADATA_FIELDS: tuple[str, ...] = tuple(_Source.model_fields)
 
 
 def validate_secret_value(field: str, value: str) -> str:

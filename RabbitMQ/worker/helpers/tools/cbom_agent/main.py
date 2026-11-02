@@ -21,6 +21,7 @@ _NOT_SCANNED_EXTENSIONS = {
     ".so", ".dll", ".dylib", ".exe", ".bin", ".o", ".a", ".class", ".pyc", ".woff", ".woff2", ".ttf", ".otf", ".eot",
 }
 _MAX_SCANNED_FILE_BYTES = 2_000_000  # the engine skips larger source files
+MIN_CODE_SCAN_CREDITS = 1.0  # D3: a repository or zip CBOM scan costs at least 1 credit (backend credit_estimate.py)
 
 
 class CBOMAgent(BaseAgent):
@@ -158,13 +159,14 @@ class CBOMAgent(BaseAgent):
         return total_bytes, size_mb, size_mb / 1024
 
     def estimate_credits_required(self) -> float:
-        """Credits for the scan: 1 credit per 0.5 MB of scanned files. There is no language-model charge (the engine
-        is deterministic) and no binary surcharge (binaries are not scanned). Analysing an uploaded CBOM file is a
-        flat 0.01 credit."""
+        """Credits for the scan: 1 credit per 0.5 MB of scanned files, at least MIN_CODE_SCAN_CREDITS for a repository
+        or zip scan (decision D3; the API applies the same minimum at start). There is no language-model charge (the
+        engine is deterministic) and no binary surcharge (binaries are not scanned). Analysing an uploaded CBOM file
+        is a flat 0.01 credit."""
         try:
             if self.directory:
                 _size_b, codebase_size_in_mb, _size_gb = self._measure_directory_size()
-                return codebase_size_in_mb / 0.5
+                return max(MIN_CODE_SCAN_CREDITS, codebase_size_in_mb / 0.5)
             return 0.01
         finally:
             console.print("Performing cleanup .... 🧹", style="dim bright_cyan")

@@ -11,7 +11,6 @@ from backend.utilities.celery.celery_connection import get_celery_app, get_statu
 from rich.console import Console
 from pymongo.database import Database
 import json
-import time
 import uuid
 from backend.new_models import Scan , scan_types
 from backend.utilities.db.schemas import StartScanPayload
@@ -20,29 +19,9 @@ from backend.utilities.db.metadata import get_scan_metadata_for_type
 from celery import Celery
 console = Console()
 
-_DEBUG_LOG_PATH = "/Users/anshsinghal/Desktop/DevSecShield/.cursor/debug-dd4a33.log"
 # SAST estimation clones repos and builds embeddings; 60s was too tight (prod task ~59.6s).
 ESTIMATION_POLL_INTERVAL_SEC = 2
 ESTIMATION_POLL_MAX_ATTEMPTS = 300  # up to ~600s (multi-engine SBOM / large clones)
-
-
-def _agent_debug_log(location: str, message: str, data: dict, hypothesis_id: str, run_id: str = "pre-fix") -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "dd4a33",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
 
 def _estimation_failure(task_result) -> HTTPException:
@@ -79,8 +58,7 @@ async def poll_for_estimated_credits (
     simple_app: Celery,
 ) -> float :
     try:
-        poll_started = time.monotonic()
-        for i in range(ESTIMATION_POLL_MAX_ATTEMPTS):
+        for _attempt in range(ESTIMATION_POLL_MAX_ATTEMPTS):
             task_result = simple_app.AsyncResult(task_id)
             if task_result.state == "FAILURE":
                 raise _estimation_failure(task_result)
@@ -88,19 +66,6 @@ async def poll_for_estimated_credits (
                 result = task_result.result
                 if result is None or result < 0:
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Credit estimation failed, please try again later")
-                # #region agent log
-                _agent_debug_log(
-                    "estimate_scan.py:poll_for_estimated_credits",
-                    "Credit estimation poll succeeded",
-                    {
-                        "task_id": task_id,
-                        "poll_attempt": i + 1,
-                        "elapsed_sec": round(time.monotonic() - poll_started, 2),
-                        "credits": result,
-                    },
-                    hypothesis_id="A",
-                )
-                # #endregion
                 return result # here the result is a float number that represents the estimated credits consumed for the scan
             await asyncio.sleep(ESTIMATION_POLL_INTERVAL_SEC)
         # Final check: worker may finish between last sleep and timeout raise.
@@ -108,34 +73,9 @@ async def poll_for_estimated_credits (
         if task_result.state == "SUCCESS":
             result = task_result.result
             if result is not None and result >= 0:
-                # #region agent log
-                _agent_debug_log(
-                    "estimate_scan.py:poll_for_estimated_credits",
-                    "Credit estimation succeeded on final poll check",
-                    {
-                        "task_id": task_id,
-                        "elapsed_sec": round(time.monotonic() - poll_started, 2),
-                        "credits": result,
-                    },
-                    hypothesis_id="A",
-                )
-                # #endregion
                 return result
         if task_result.state == "FAILURE":
             raise _estimation_failure(task_result)
-        # #region agent log
-        _agent_debug_log(
-            "estimate_scan.py:poll_for_estimated_credits",
-            "Credit estimation poll timed out",
-            {
-                "task_id": task_id,
-                "poll_attempts": ESTIMATION_POLL_MAX_ATTEMPTS,
-                "elapsed_sec": round(time.monotonic() - poll_started, 2),
-                "final_state": task_result.state,
-            },
-            hypothesis_id="A",
-        )
-        # #endregion
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Credit estimation timed out, please try again later")
     except HTTPException:
         raise

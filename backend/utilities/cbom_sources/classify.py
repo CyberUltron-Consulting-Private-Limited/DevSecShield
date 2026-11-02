@@ -144,13 +144,22 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
         elif days <= 30:
             out.add("CERT_EXPIRES_30D", "Medium", f"Certificate expires in {int(days)} days")
     sig = _upper(facts.get("sig_alg"))
+    sha1 = "SHA1" in sig.replace("-", "")
     if "MD5" in sig or "MD2" in sig:
         out.add("SIG_MD5", "Critical", f"Certificate is signed with {facts.get('sig_alg')}")
-    elif ("SHA1" in sig.replace("-", "") and not facts.get("self_signed")):
+    elif sha1 and not facts.get("self_signed"):
         out.add("SIG_SHA1", "High", f"Certificate is signed with {facts.get('sig_alg')}")
+    # A self-signature is never verified by a client (the certificate is trusted, or pinned, as itself), so SHA-1 there
+    # is not a forgery risk and is not SIG_SHA1; the text says so and asks for SHA-256 at the next re-issue.
+    sha1_note = (f"its {facts.get('sig_alg')} self-signature is not checked by clients (they trust the certificate "
+                 "itself); re-issue it with SHA-256 so policies and scanners stop flagging it")
     if facts.get("self_signed") and not facts.get("is_ca") and facts.get("source") != "idp":
         # identity-provider signing certificates are self-signed by design (trust comes from metadata)
-        out.add("CERT_SELF_SIGNED", "Low", "Self-signed certificate")
+        out.add("CERT_SELF_SIGNED", "Low", "Self-signed certificate" + (f"; {sha1_note}" if sha1 else ""))
+    elif facts.get("self_signed") and sha1:
+        # a self-signed CA root or IdP signing certificate: informational only (no impact)
+        what = "identity-provider signing certificate" if facts.get("source") == "idp" else "CA certificate"
+        out.add("CERT_SELF_SHA1", None, f"Self-signed {what}: {sha1_note}")
     if facts.get("in_use") is False:
         out.add("CERT_UNUSED", "Low", "Certificate is not attached to any resource (orphaned)")
     _key_rules(out, algorithm or facts.get("key_alg"), size or facts.get("key_size"), "Certificate key")
@@ -598,3 +607,25 @@ from backend.utilities.cbom_sources import classify_ext as _classify_ext  # noqa
 
 for _m in sorted(m.name for m in _pkgutil.iter_modules(_classify_ext.__path__)):
     _importlib.import_module(f"{_classify_ext.__name__}.{_m}")
+
+
+def _rules_version() -> str:
+    """A digest of the classification rules in force (this module and every classify_ext module), so a run records
+    exactly which rules judged it without anyone having to remember to bump a number."""
+    import hashlib
+    import os
+
+    digest = hashlib.sha256()
+    folder = os.path.dirname(_classify_ext.__file__)
+    paths = [__file__] + [os.path.join(folder, f"{m}.py")
+                          for m in sorted(m.name for m in _pkgutil.iter_modules(_classify_ext.__path__))]
+    for path in paths:
+        try:
+            with open(path, "rb") as fh:
+                digest.update(fh.read())
+        except OSError:
+            digest.update(path.encode("utf-8", "replace"))
+    return "rules-" + digest.hexdigest()[:12]
+
+
+CLASSIFIER_VERSION = _rules_version()
