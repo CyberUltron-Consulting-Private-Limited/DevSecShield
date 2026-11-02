@@ -604,7 +604,10 @@ def parse_s_client(out: str) -> FullHandshake:
         fh.secure_renegotiation = True
     elif "Secure Renegotiation IS NOT supported" in out:
         fh.secure_renegotiation = False
-    if re.search(r"^Acceptable client certificate CA names", out, re.M) or "Client Certificate Types:" in out:
+    # TLS 1.3 has no certificate types and a server need not send CA names: the CertificateRequest's signature
+    # algorithms ("Requested Signature Algorithms") are then the only sign that a client certificate was asked for
+    if re.search(r"^(Acceptable client certificate CA names|Requested Signature Algorithms:)", out, re.M) \
+            or "Client Certificate Types:" in out:
         fh.client_auth_requested = True
     for pem in _PEM.findall(out)[:60]:
         body = "".join(line for line in pem.splitlines() if not line.startswith("-----"))

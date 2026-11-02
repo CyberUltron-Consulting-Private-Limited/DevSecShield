@@ -33,7 +33,10 @@ DEFAULT_PORTS = [
     {"port": 8883, "protocol": "tls", "label": "MQTT"},
 ]
 PORT_PROTOCOLS = ("tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
-                  "tds", "ssh", "rdp", "ike")
+                  "tds", "ssh", "rdp", "ike",
+                  # OT (not in DEFAULT_PORTS: a team adds them for its OT ranges; an address with one open is scanned
+                  # in fragile mode by the node)
+                  "opcua", "modbus", "modbus-tls")
 MAX_PORTS = 64
 MAX_SNI = 10_000
 MAX_EXCLUSIONS = 500

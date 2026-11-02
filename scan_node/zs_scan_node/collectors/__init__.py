@@ -15,8 +15,10 @@ SUPPORTED = {
     ("test_connection", "linux_servers"), ("test_connection", "windows_servers"), ("test_connection", "kubernetes"),
     ("test_connection", "database"), ("test_connection", "network_range"),
 }
+SUPPORTED |= {("collect", "appliance"), ("test_connection", "appliance")}
 CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql", "redis", "mongodb", "network_tls",
                 "starttls", "ssh_kexinit", "rdp", "tds_prelogin", "discovery", "pq_hybrid_probe"]
+CAPABILITIES += ["ike", "ike_pq_probe", "opcua", "modbus", "appliance_config", "mesh_istio_linkerd"]
 
 
 class ConfigError(Exception):
@@ -54,6 +56,10 @@ def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tup
             from zs_scan_node.collectors import database
 
             summary = (database.test if kind == "test_connection" else database.collect)(ctx, config, secrets, scope)
+        elif source_kind == "appliance":
+            from zs_scan_node.collectors import appliance
+
+            summary = (appliance.test if kind == "test_connection" else appliance.collect)(ctx, config, secrets, scope)
         elif source_kind == "network_range":
             from zs_scan_node.collectors import network
 

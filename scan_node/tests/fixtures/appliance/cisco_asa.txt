@@ -1,0 +1,54 @@
+### show running-config ssl
+ssl server-version tlsv1
+ssl cipher tlsv1 low
+ssl cipher tlsv1.2 custom "AES256-SHA:DES-CBC3-SHA:ECDHE-RSA-AES256-GCM-SHA384"
+ssl dh-group group2
+ssl trust-point ASDM_TrustPoint0 outside
+### show running-config ssh
+ssh stricthostkeycheck
+ssh 10.0.0.0 255.0.0.0 inside
+ssh timeout 5
+ssh version 1
+ssh key-exchange group dh-group1-sha1
+### show running-config crypto ikev1
+crypto ikev1 enable outside
+crypto ikev1 policy 10
+ authentication pre-share
+ encryption 3des
+ hash sha
+ group 2
+ lifetime 86400
+crypto ikev1 policy 20
+ authentication rsa-sig
+ encryption aes-256
+ hash sha
+ group 14
+ lifetime 86400
+### show running-config crypto ikev2
+crypto ikev2 policy 1
+ encryption aes-gcm-256
+ integrity null
+ group 21 20
+ prf sha384
+ lifetime seconds 86400
+crypto ikev2 policy 10
+ encryption aes-256 3des
+ integrity sha256 sha
+ group 14 5
+ prf sha256 sha
+ lifetime seconds 86400
+crypto ikev2 enable outside
+### show crypto key mypubkey rsa
+Key pair was generated at: 09:12:44 UTC Mar 2 2025
+Key name: <Default-RSA-Key>
+ Usage: General Purpose Key
+ Modulus Size (bits): 1024
+ Storage: config
+ Key Data:
+
+  30819f30 0d06092a 864886f7 0d010101 05000381 8d003081 89028181 00b2c1c0
+Key pair was generated at: 09:20:10 UTC Mar 2 2025
+Key name: ASDM_TrustPoint0
+ Usage: General Purpose Key
+ Modulus Size (bits): 2048
+ Storage: config

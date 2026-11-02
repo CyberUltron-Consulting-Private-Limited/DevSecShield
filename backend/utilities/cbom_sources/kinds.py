@@ -219,6 +219,10 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
     if kind == "linux_servers" and cfg.credential_type == "password" and cfg.host_key_policy != "pinned":
         return ("host_key_policy: password logins need pinned host keys, so the password only goes to the real "
                 "servers; paste their known_hosts lines, or use the node key")
+    if kind == "appliance" and cfg.vendor in APPLIANCE_SSH_VENDORS and cfg.credential_type == "password" \
+            and cfg.host_key_policy != "pinned":
+        return ("host_key_policy: appliance passwords need the pinned host key (known_hosts), so the password only "
+                "goes to the real device")
     if kind == "windows_servers" and cfg.port == 5985:
         return "port: WinRM over HTTP (5985) would send the login to a server that is not verified; use HTTPS (5986)"
     if kind == "database" and cfg.engine in ("mysql", "redis"):
@@ -531,6 +535,58 @@ class NetworkRangeConfig(_Source):
         return canonical
 
 
+# ----------------------------------------------------------------------------- appliances
+# Read-only configuration pull (scan_node/zs_scan_node/collectors/appliance.py): SSH show commands or vendor API GETs.
+APPLIANCE_SSH_VENDORS = ("cisco_ios", "cisco_asa", "fortios")
+APPLIANCE_API_VENDORS = ("panos", "f5_bigip")
+
+
+class ApplianceConfig(_Source):
+    vendor: Literal["cisco_ios", "cisco_asa", "fortios", "panos", "f5_bigip"]
+    targets: list[str] = Field(default_factory=list, min_length=1, max_length=256)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    login_user: str = Field(default="zs-cbom", max_length=64)
+    credential_type: Literal["password", "vault"] = "password"
+    vault: VaultRef | None = None
+    host_key_policy: Literal["pinned", "tofu"] = "pinned"
+    known_hosts: str | None = Field(default=None, max_length=MAX_SECRET_BYTES)
+    ca_pem: str | None = Field(default=None, max_length=MAX_PEM_BYTES)
+
+    @field_validator("login_user")
+    @classmethod
+    def _login(cls, v: str) -> str:
+        return check_login(v) or "zs-cbom"
+
+    @field_validator("ca_pem")
+    @classmethod
+    def _ca(cls, v: str | None) -> str | None:
+        return check_pem_certificates(v)
+
+    @model_validator(mode="after")
+    def _check(self) -> "ApplianceConfig":
+        self.targets = T.parse_targets(self.targets).normalized
+        if not self.targets:
+            raise ValueError("targets: enter the appliance address")
+        if self.port is None:
+            self.port = 22 if self.vendor in APPLIANCE_SSH_VENDORS else 443
+        if self.credential_type == "vault" and self.vault is None:
+            raise ValueError("vault: choose a vault and enter the secret path")
+        if self.credential_type != "vault":
+            self.vault = None
+        if self.vendor in APPLIANCE_API_VENDORS:
+            self.known_hosts, self.host_key_policy = None, "pinned"
+        elif self.host_key_policy == "pinned" and not (self.known_hosts or "").strip():
+            raise ValueError("known_hosts: paste the appliance's known_hosts line (ssh-keyscan) so the password only "
+                             "goes to the real device")
+        return self
+
+
+def _appliance_secrets(cfg: ApplianceConfig) -> set[str]:
+    if cfg.credential_type != "password":
+        return set()
+    return {"api_key"} if cfg.vendor == "panos" else {"password"}
+
+
 # ----------------------------------------------------------------------------- registry
 @dataclass(frozen=True)
 class KindSpec:
@@ -597,6 +653,10 @@ KINDS: dict[str, KindSpec] = {
     "network_range": KindSpec("network_range", "network", "Network range", NetworkRangeConfig, lambda c: set(),
                               frozenset(), _always, _always, ("cidr",)),
 }
+KINDS["appliance"] = KindSpec("appliance", "network", "Network appliance", ApplianceConfig, _appliance_secrets,
+                              frozenset(), _always, _always,
+                              ("targets", "port", "login_user", "vendor", "host_key_policy", "known_hosts", "ca_pem",
+                               "vault"))
 
 KIND_NAMES = tuple(KINDS)
 # Config fields that describe the source rather than how it is reached (declared on ``_Source``).

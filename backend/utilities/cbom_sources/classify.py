@@ -577,8 +577,9 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
         if mode == "PERMISSIVE":
             out.add("MESH_MTLS_PERMISSIVE", "Medium", "Mesh mTLS is permissive (plaintext still accepted)")
         elif mode == "UNSET" and facts.get("scope") == "mesh":
-            out.add("MESH_MTLS_PERMISSIVE", "Medium", "The mesh-wide PeerAuthentication leaves the mTLS mode unset, so "
-                                                      "Istio applies PERMISSIVE (plaintext still accepted)")
+            out.add("MESH_MTLS_PERMISSIVE", "Medium", ("No mesh-wide PeerAuthentication exists" if facts.get("implicit")
+                                                       else "The mesh-wide PeerAuthentication leaves the mTLS mode unset")
+                    + ", so Istio applies PERMISSIVE (plaintext still accepted)")
         elif open_ports:
             out.add("MESH_MTLS_PERMISSIVE", "Medium", f"Mesh mTLS is permissive on port(s) {', '.join(open_ports[:10])}")
         qv = None
@@ -627,7 +628,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     elif asset_type in ("k8s_cluster", "open_port"):
         qv = None
 
-    if qv and not any(code.startswith(("NO_PQ", "SSH_NO_PQ")) for code in out.codes) and asset_type != "coverage":
+    if qv and not any("NO_PQ" in code for code in out.codes) and asset_type != "coverage":  # NO_PQ_KEX, SSH_/IKE_NO_PQ
         out.add("QUANTUM_VULNERABLE", None, "Uses public-key cryptography that a quantum computer can break")
     return {"impact": out.impact, "quantum_vulnerable": qv, "finding_codes": out.codes, "finding": out.finding(),
             "cdx_type": CDX_TYPE.get(asset_type, "other"), "texts": out.by_code, "impacts": out.impacts}

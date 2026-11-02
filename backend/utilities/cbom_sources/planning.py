@@ -44,7 +44,7 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
     cfg = source.config or {}
     spec = KINDS.get(source.kind)
     group = spec.group if spec else "other"
-    if group == "servers":
+    if group == "servers" or source.kind == "appliance":  # appliances list devices like servers do
         try:
             parsed = T.parse_targets(cfg.get("targets") or [], allow_empty=True)
             own = T.parse_exclusions(cfg.get("exclusions") or [])
@@ -189,14 +189,14 @@ def plan_run(
             item.reason = "Last connection test failed; fix it and test again"
         elif units <= 0:
             item.reason = "0 targets left after the never-scan list"
-        elif group == "network" and settings.stop_all_network:
+        elif group == "network" and source.kind != "appliance" and settings.stop_all_network:  # a config read, not a sweep
             item.reason = "Network scanning is stopped"
         elif source.id in active:
             item.reason = f"Already queued in run #{active[source.id]}"
         else:
             item.status = "queued"
             item.waiting = status == "offline"
-            if group == "servers":
+            if group == "servers" or source.kind == "appliance":
                 item.credits_c = RATES_C["server"] * units
             elif group == "kubernetes":
                 item.credits_c = RATES_C["kubernetes"]

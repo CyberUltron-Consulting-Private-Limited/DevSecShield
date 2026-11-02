@@ -26,7 +26,7 @@ import yaml
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, key_facts, load_certs
 from zs_scan_node.collectors import ConfigError
-from zs_scan_node.jobctx import JobContext
+from zs_scan_node.jobctx import JobContext, register_asset_types
 from zs_scan_node.netutil import Blocked, http_client, resolve_checked
 
 PAGE = 200
@@ -34,6 +34,18 @@ MAX_ITEMS = 5000
 MAX_PAGES = MAX_ITEMS // PAGE + 20  # a server that keeps sending "continue" cannot keep the job forever
 MAX_BODY = 32 * 1024 * 1024  # bytes per API response
 ISTIO_ROOT_NAMESPACE = "istio-system"  # meshConfig.rootNamespace default: its selector-less policy is mesh-wide
+# Linkerd policy resources (policy.linkerd.io) at the versions Linkerd 2.16+ serves; API discovery picks the versions
+# the cluster actually serves (Server was v1beta1/v1beta2 before).  CRDs: linkerd-crds chart, templates/policy/.
+LINKERD_RESOURCES = {
+    "servers": "/apis/policy.linkerd.io/v1beta3/servers",
+    "serverauthorizations": "/apis/policy.linkerd.io/v1beta1/serverauthorizations",
+    "authorizationpolicies": "/apis/policy.linkerd.io/v1alpha1/authorizationpolicies",
+    "meshtlsauthentications": "/apis/policy.linkerd.io/v1alpha1/meshtlsauthentications",
+    "networkauthentications": "/apis/policy.linkerd.io/v1alpha1/networkauthentications",
+}
+LINKERD_TRUST_ROOTS = ("linkerd-identity-trust-roots", "ca-bundle.crt")  # ConfigMap and key with the trust anchors
+
+register_asset_types("k8s_mesh_destination", "k8s_mesh_server")
 
 
 class Api:
@@ -272,6 +284,233 @@ def _meta(item: dict) -> tuple[str, str]:
     return str(m.get("namespace") or ""), str(m.get("name") or "")
 
 
+# ----------------------------------------------------------------------------- service mesh
+def istio_root_namespace(item: dict) -> str | None:
+    """meshConfig.rootNamespace from an Istio mesh ConfigMap ('istio' or 'istio-<revision>', key 'mesh'); a mesh
+    config without it means the namespace istiod runs in (Istio's default)."""
+    ns, name = _meta(item)
+    mesh = (item.get("data") or {}).get("mesh")
+    if not (name == "istio" or name.startswith("istio-")) or not isinstance(mesh, str):
+        return None
+    try:
+        cfg = yaml.safe_load(mesh)
+    except yaml.YAMLError:
+        return None
+    if cfg is None:
+        return ns or None
+    if not isinstance(cfg, dict):
+        return None
+    root = cfg.get("rootNamespace")
+    return str(root) if isinstance(root, str) and root else (ns or None)
+
+
+def peer_authentication_facts(item: dict, roots: set[str]) -> dict[str, Any]:
+    ns, name = _meta(item)
+    spec = item.get("spec") or {}
+    mode = str((spec.get("mtls") or {}).get("mode") or "UNSET").upper()
+    # UNSET inherits from the namespace / mesh-wide policy; on the mesh-wide policy (root namespace, no
+    # selector) Istio then applies PERMISSIVE, so the classifier needs the policy's scope.
+    selector = (spec.get("selector") or {}).get("matchLabels")
+    scope_ = "workload" if selector else ("mesh" if ns in roots else "namespace")
+    ports = {str(p): str((v or {}).get("mode") or "UNSET").upper()
+             for p, v in list((spec.get("portLevelMtls") or {}).items())[:50] if isinstance(v, dict)}
+    return {"namespace": ns, "name": name, "mtls_mode": mode, "scope": scope_, "port_modes": ports}
+
+
+def destination_rule_facts(item: dict) -> dict[str, Any]:
+    """TLS settings of an Istio DestinationRule (networking.istio.io): trafficPolicy.tls.mode for the host, each
+    portLevelSettings entry and each subset (DISABLE / SIMPLE / MUTUAL / ISTIO_MUTUAL).  Certificate paths and
+    credential names are not kept."""
+    ns, name = _meta(item)
+    spec = item.get("spec") or {}
+
+    def tls_of(policy: Any) -> dict:
+        return ((policy or {}).get("tls") or {}) if isinstance(policy, dict) else {}
+
+    def mode(policy: Any) -> str | None:
+        value = tls_of(policy).get("mode")
+        return str(value).upper() if value else None
+
+    top = spec.get("trafficPolicy") or {}
+    policies = [top]
+    ports: dict[str, str] = {}
+    for pls in (top.get("portLevelSettings") or [])[:50]:
+        if isinstance(pls, dict):
+            policies.append(pls)
+            if mode(pls):
+                ports[str((pls.get("port") or {}).get("number"))] = mode(pls)
+    subsets: dict[str, str] = {}
+    for sub in (spec.get("subsets") or [])[:50]:
+        if not isinstance(sub, dict):
+            continue
+        stp = sub.get("trafficPolicy") or {}
+        policies.append(stp)
+        if mode(stp):
+            subsets[str(sub.get("name"))] = mode(stp)
+        for pls in (stp.get("portLevelSettings") or [])[:50] if isinstance(stp, dict) else []:
+            if isinstance(pls, dict):
+                policies.append(pls)
+                if mode(pls):
+                    subsets[f"{sub.get('name')}:{(pls.get('port') or {}).get('number')}"] = mode(pls)
+    return {"namespace": ns, "name": name, "host": spec.get("host"), "tls_mode": mode(top), "port_tls_modes": ports,
+            "subset_tls_modes": subsets,
+            "insecure_skip_verify": any(tls_of(p).get("insecureSkipVerify") is True for p in policies)}
+
+
+def _istio(api: "Api", ctx: JobContext, loc: str, config_roots: set[str]) -> int:
+    """config_roots: root namespaces read from Istio mesh ConfigMaps (empty when none was found)."""
+    roots = set(config_roots) or {ISTIO_ROOT_NAMESPACE}
+    n, listed, mesh_wide = 0, True, False
+    for kind, item in api.list_all("/apis/security.istio.io/v1beta1/peerauthentications"):
+        if kind != "item":  # not_installed (404), denied, error, truncated: the list is not complete
+            listed = False
+            ctx.coverage(loc, "istio peer authentication", kind, "", once=False)
+            continue
+        ns, name = _meta(item)
+        facts = peer_authentication_facts(item, roots)
+        mesh_wide = mesh_wide or facts["scope"] == "mesh"
+        ctx.emit("k8s_mesh_policy", loc, f"{ns}/peerauthentication/{name}", name=f"{ns}/{name}", protocol="mtls",
+                 facts=facts)
+        n += 1
+    if listed and config_roots and not mesh_wide:
+        # Istio is installed (its mesh ConfigMap exists), the full list was read and no mesh-wide PeerAuthentication
+        # exists: Istio applies PERMISSIVE mesh-wide by default
+        root = sorted(roots)[0]
+        ctx.emit("k8s_mesh_policy", loc, f"{root}/peerauthentication/(mesh default)", name=f"{root}/(mesh default)",
+                 protocol="mtls", facts={"namespace": root, "name": None, "mtls_mode": "UNSET", "scope": "mesh",
+                                         "port_modes": {}, "implicit": True})
+        n += 1
+    for kind, item in api.list_all("/apis/networking.istio.io/v1beta1/destinationrules"):
+        if kind != "item":
+            ctx.coverage(loc, "istio destination rules", kind, "", once=False)
+            continue
+        ns, name = _meta(item)
+        ctx.emit("k8s_mesh_destination", loc, f"{ns}/destinationrule/{name}", name=f"{ns}/{name}", protocol="mtls",
+                 facts=destination_rule_facts(item))
+        n += 1
+    return n
+
+
+def _selector_matches(selector: Any, labels: dict) -> bool:
+    if not isinstance(selector, dict):
+        return False
+    for k, v in (selector.get("matchLabels") or {}).items():
+        if labels.get(k) != v:
+            return False
+    for expr in selector.get("matchExpressions") or []:
+        if not isinstance(expr, dict):
+            return False
+        key, op, values = expr.get("key"), expr.get("operator"), expr.get("values") or []
+        if op == "In" and labels.get(key) not in values:
+            return False
+        if op == "NotIn" and labels.get(key) in values:
+            return False
+        if op == "Exists" and key not in labels:
+            return False
+        if op == "DoesNotExist" and key in labels:
+            return False
+    return True
+
+
+def linkerd_server_facts(items: dict[str, list[dict]]) -> list[dict[str, Any]]:
+    """One row per Linkerd Server: whether clients without a mesh identity are allowed, and why.
+    Unauthenticated when accessPolicy is all-/cluster-unauthenticated, when a ServerAuthorization targeting it sets
+    client.unauthenticated, or when an AuthorizationPolicy targeting it (or its namespace) requires no
+    MeshTLSAuthentication / ServiceAccount.  An AuthorizationPolicy whose referenced authentication does not exist
+    is ignored by Linkerd, and so here."""
+    present = {kind: {_meta(i) for i in items.get(kind) or []} for kind in ("meshtlsauthentications",
+                                                                             "networkauthentications")}
+    rows = []
+    for server in (items.get("servers") or [])[:2000]:
+        ns, name = _meta(server)
+        spec = server.get("spec") or {}
+        labels = (server.get("metadata") or {}).get("labels") or {}
+        access = str(spec.get("accessPolicy") or "deny")
+        reasons = []
+        if access in ("all-unauthenticated", "cluster-unauthenticated"):
+            reasons.append(f"accessPolicy {access}")
+        for sa in items.get("serverauthorizations") or []:
+            sns, sname = _meta(sa)
+            sspec = sa.get("spec") or {}
+            target = sspec.get("server") or {}
+            if sns != ns or not (target.get("name") == name or _selector_matches(target.get("selector"), labels)):
+                continue
+            client = sspec.get("client") or {}
+            if client.get("unauthenticated") is True:
+                nets = [str((n or {}).get("cidr")) for n in client.get("networks") or [] if isinstance(n, dict)]
+                reasons.append(f"ServerAuthorization {sname} allows unauthenticated clients"
+                               + (f" from {', '.join(nets[:3])}" if nets else ""))
+        for ap in items.get("authorizationpolicies") or []:
+            ans, aname = _meta(ap)
+            aspec = ap.get("spec") or {}
+            ref = aspec.get("targetRef") or {}
+            if ans != ns or not ((ref.get("kind") == "Server" and ref.get("name") == name)
+                                 or (ref.get("kind") == "Namespace" and ref.get("name") == ns)):
+                continue
+            kinds, missing = [], False
+            for auth in aspec.get("requiredAuthenticationRefs") or []:
+                if not isinstance(auth, dict):
+                    continue
+                akind, rns = auth.get("kind"), auth.get("namespace") or ns
+                table = {"MeshTLSAuthentication": "meshtlsauthentications",
+                         "NetworkAuthentication": "networkauthentications"}.get(akind)
+                if table and (rns, auth.get("name")) not in present[table]:
+                    missing = True
+                kinds.append(akind)
+            if missing:
+                continue
+            if not any(k in ("MeshTLSAuthentication", "ServiceAccount") for k in kinds):
+                reasons.append(f"AuthorizationPolicy {aname} requires no mesh identity"
+                               + (" (network only)" if kinds else " (no authentication)"))
+        rows.append({"mesh": "linkerd", "namespace": ns, "name": name, "port": spec.get("port"),
+                     "access_policy": access, "proxy_protocol": spec.get("proxyProtocol"),
+                     "unauthenticated": bool(reasons), "unauthenticated_by": reasons[:10]})
+    return rows
+
+
+def _linkerd_paths(api: "Api") -> dict[str, str] | None:
+    """List paths for the Linkerd policy resources at the versions the cluster serves (API discovery), or None
+    when policy.linkerd.io is not installed."""
+    status, body = api.get("/apis/policy.linkerd.io")
+    if status != 200 or not isinstance(body, dict) or not isinstance(body.get("versions"), list):
+        return None
+    versions = [str(v.get("version")) for v in body["versions"] if isinstance(v, dict) and v.get("version")]
+    preferred = (body.get("preferredVersion") or {}).get("version") if isinstance(body.get("preferredVersion"), dict) else None
+    order = ([preferred] if preferred in versions else []) + [v for v in versions if v != preferred]
+    served: dict[str, str] = {}
+    for version in order[:8]:
+        if not re.fullmatch(r"v[0-9a-z]{1,16}", version):
+            continue
+        st, res = api.get(f"/apis/policy.linkerd.io/{version}")
+        if st != 200 or not isinstance(res, dict):
+            continue
+        for r in res.get("resources") or []:
+            rname = r.get("name") if isinstance(r, dict) else None
+            if rname in LINKERD_RESOURCES and rname not in served:
+                served[rname] = version
+    return {r: f"/apis/policy.linkerd.io/{v}/{r}" for r, v in served.items()}
+
+
+def _linkerd(api: "Api", ctx: JobContext, loc: str) -> int:
+    paths = _linkerd_paths(api)
+    if not paths or "servers" not in paths:
+        ctx.coverage(loc, "linkerd policy", "not_installed", "", once=False)
+        return 0
+    items: dict[str, list[dict]] = {}
+    for resource, path in paths.items():
+        items[resource] = []
+        for kind, item in api.list_all(path):
+            if kind != "item":
+                ctx.coverage(loc, f"linkerd {resource}", kind, "", once=False)
+                continue
+            items[resource].append(item)
+    rows = linkerd_server_facts(items)
+    for facts in rows:
+        ctx.emit("k8s_mesh_server", loc, f"{facts['namespace']}/server/{facts['name']}",
+                 name=f"{facts['namespace']}/{facts['name']}", protocol="mtls", facts=facts)
+    return len(rows)
+
+
 def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     started = time.monotonic()
     api = Api(ctx, config, secrets)
@@ -354,40 +593,29 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                             "not_after": st.get("notAfter"), "renewal_time": st.get("renewalTime"),
                             "secret": spec.get("secretName"), "duration": spec.get("duration")})
             n += 1
-        # Istio mTLS
-        for kind, item in api.list_all("/apis/security.istio.io/v1beta1/peerauthentications"):
-            if kind != "item":
-                ctx.coverage(loc, "istio peer authentication", kind, "", once=False)
-                continue
-            ns, name = _meta(item)
-            spec = item.get("spec") or {}
-            mode = str((spec.get("mtls") or {}).get("mode") or "UNSET").upper()
-            # UNSET inherits from the namespace / mesh-wide policy; on the mesh-wide policy (root namespace, no
-            # selector) Istio then applies PERMISSIVE, so the classifier needs the policy's scope.
-            selector = (spec.get("selector") or {}).get("matchLabels")
-            scope_ = "workload" if selector else ("mesh" if ns == ISTIO_ROOT_NAMESPACE else "namespace")
-            ports = {str(p): str((v or {}).get("mode") or "UNSET").upper()
-                     for p, v in list((spec.get("portLevelMtls") or {}).items())[:50] if isinstance(v, dict)}
-            ctx.emit("k8s_mesh_policy", loc, f"{ns}/peerauthentication/{name}", name=f"{ns}/{name}", protocol="mtls",
-                     facts={"namespace": ns, "name": name, "mtls_mode": mode, "scope": scope_, "port_modes": ports})
-            n += 1
-        # ConfigMaps: CA bundles (public certificates) and private keys that should not be there
+        # ConfigMaps: CA bundles (public certificates) and private keys that should not be there; also the Istio mesh
+        # config (rootNamespace) and the Linkerd trust anchors, which the mesh checks below need
         cm_rows = 0
+        istio_roots: set[str] = set()
         for kind, item in api.list_all("/api/v1/configmaps"):
             if kind != "item":
                 ctx.coverage(loc, "configmaps", kind, "")
                 continue
             ns, name = _meta(item)
+            root = istio_root_namespace(item)
+            if root:
+                istio_roots.add(root)
             for key, value in ((item.get("data") or {}).items()):
                 if not isinstance(value, str) or cm_rows >= 500:
                     continue
                 where = f"{ns}/configmap/{name}#{key}"
                 if "-----BEGIN CERTIFICATE-----" in value:
+                    role = {"role": "linkerd-trust-root"} if (name, key) == LINKERD_TRUST_ROOTS else {}
                     for i, cert in enumerate(load_certs(value.encode())[:50]):
                         f = cert_facts(cert, "k8s")
                         ctx.emit("certificate", loc, where if i == 0 else f"{where}[{i}]", name=f.get("subject", ""),
                                  algorithm=f.get("key_alg"), key_size=f.get("key_size"),
-                                 facts={**f, "configmap": f"{ns}/{name}", "key": key})
+                                 facts={**f, "configmap": f"{ns}/{name}", "key": key, **role})
                         n += 1
                         cm_rows += 1
                 for pk in embedded_private_keys(value):
@@ -396,6 +624,10 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                              facts={**pk, "configmap": f"{ns}/{name}", "key": key, "plaintext_in_configmap": True})
                     n += 1
                     cm_rows += 1
+        # Istio mTLS: PeerAuthentications (security.istio.io), the mesh-wide default, DestinationRules
+        # (networking.istio.io); then Linkerd policy (policy.linkerd.io)
+        n += _istio(api, ctx, loc, istio_roots)
+        n += _linkerd(api, ctx, loc)
         # Tier 2: TLS secrets only
         if int(config.get("tier") or 1) >= 2:
             for kind, item in api.list_all("/api/v1/secrets", {"fieldSelector": "type=kubernetes.io/tls"}):
