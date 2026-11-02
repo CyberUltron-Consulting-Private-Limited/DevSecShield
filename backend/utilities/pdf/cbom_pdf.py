@@ -29,11 +29,12 @@ from backend.utilities.pdf.report_branding import (
     split_scan_payload,
 )
 
+# Kept for callers that import it; the report itself uses the app-wide scale in cbom_metrics.IMPACT_RISK.
 IMPACT_TO_RISK: Dict[str, float] = {
     "critical": 9.0,
     "high": 7.0,
-    "medium": 4.0,
-    "low": 1.0,
+    "medium": 5.0,
+    "low": 2.0,
 }
 
 
@@ -71,41 +72,29 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = f"cbom_scan_report_{timestamp}.pdf"
 
+    from backend.utilities.cbom_sources.cbom_metrics import (
+        INFORMATIONAL_LABEL,
+        finding_rows,
+        finding_severity,
+        summarize_code_rows,
+    )
     from backend.utilities.cbom_sources.cbom_rows import display_row
 
-    vulnerabilities = [display_row(v) for v in _normalize_results(scan_results)]
+    rows = _normalize_results(scan_results)
+    # the same numbers as the results page (cbom_metrics): findings only; clean inventory is informational
+    summary = summarize_code_rows(rows)
+    vulnerabilities = [display_row(v) for v in finding_rows(rows)]
     _inner, duration, raw = split_scan_payload(scan_results)
     total = len(vulnerabilities)
 
-    by_impact: Dict[str, int] = {}
-    by_strength: Dict[str, int] = {}
-    by_type: Dict[str, int] = {}
-    quantum_vulnerable = 0
-    quantum_safe_count = 0
-    risk_sum = 0.0
-
-    for v in vulnerabilities:
-        impact_raw = (v.get("impact") or "unknown").strip().lower()
-        impact = count_label(impact_raw)
-        by_impact[impact] = by_impact.get(impact, 0) + 1
-        risk_sum += IMPACT_TO_RISK.get(impact_raw, 2.0)
-
-        strength = (v.get("crypto_strength") or "unknown").strip().lower()
-        by_strength[strength] = by_strength.get(strength, 0) + 1
-
-        alg_type = (v.get("algorithm_type") or "unknown").strip().lower()
-        by_type[alg_type] = by_type.get(alg_type, 0) + 1
-
-        if v.get("quantum_safe") is False:
-            quantum_vulnerable += 1
-        elif v.get("quantum_safe") is True:
-            quantum_safe_count += 1
-
-    avg_risk = risk_sum / total if total > 0 else 0.0
-    # same basis as the results dashboard: share of the assets that have a quantum verdict (hashes, MACs and
-    # unknown items have none), so the PDF and the screen show the same percentage
-    judged = quantum_safe_count + quantum_vulnerable
-    quantum_readiness = (quantum_safe_count / judged * 100) if judged > 0 else 0.0
+    by_impact: Dict[str, int] = {count_label(s): n for s, n in summary.severity.items() if n}
+    by_type: Dict[str, int] = {str(k).strip().lower(): v for k, v in summary.algorithm_types.items()}
+    quantum_vulnerable = summary.quantum["quantum_vulnerable"]
+    quantum_safe_count = summary.quantum["quantum_safe"]
+    avg_risk = summary.average_risk
+    readiness = summary.readiness_pct  # one definition for every CBOM surface (cbom_metrics.quantum_readiness_pct)
+    readiness_text = "n/a" if readiness is None else f"{readiness:.1f}%"  # as the team deliverables print it
+    informational = summary.informational
 
     styles = get_report_styles()
     doc = SimpleDocTemplate(
@@ -133,10 +122,12 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             "Cryptographic posture",
             ["Metric", "Value"],
             [
+                ["Cryptographic findings", str(total)],
+                [INFORMATIONAL_LABEL + " (no finding)", str(informational)],
                 ["Quantum-vulnerable algorithms", str(quantum_vulnerable)],
                 ["Quantum-safe algorithms", str(quantum_safe_count)],
-                ["Quantum readiness", f"{quantum_readiness:.1f}%"],
-                ["Weak algorithms", str(by_strength.get("weak", 0))],
+                ["Quantum readiness", readiness_text],
+                ["Weak algorithms", str(summary.weak)],
                 ["Average risk score", f"{avg_risk:.1f} / 10"],
             ],
             [4.0 * inch, 1.5 * inch],
@@ -146,6 +137,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     overview = [
         ("Scan type", "Cryptographic Bill of Materials (CBOM)"),
         ("Total cryptographic findings", str(total)),
+        (INFORMATIONAL_LABEL + " (no finding)", str(informational)),
         ("Quantum-vulnerable", str(quantum_vulnerable)),
         ("Quantum-safe", str(quantum_safe_count)),
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
@@ -181,7 +173,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     catalog: List[List[Any]] = []
     for idx, v in enumerate(sorted_vulns, 1):
         title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
-        impact = count_label(v.get("impact") or "Unknown")
+        impact = count_label(finding_severity(v) or "low")  # the severity the counts use
         location = finding_location(v)
         catalog.append(
             [
@@ -203,12 +195,16 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     )
     story.append(Spacer(1, 0.1 * inch))
 
+    if informational:
+        story.append(Paragraph(
+            f"{informational} clean inventory item(s) with no finding are listed in the CycloneDX download, "
+            "not here.", styles["muted"]))
     if total == 0:
         story.append(Paragraph("No cryptographic findings were detected.", styles["body"]))
     else:
         for idx, v in enumerate(sorted_vulns, 1):
             title = v.get("title") or v.get("algorithm_name") or f"Finding #{idx}"
-            impact = count_label(v.get("impact") or "Unknown")
+            impact = count_label(finding_severity(v) or "low")  # the severity the counts use
             strength = (v.get("crypto_strength") or "unknown").strip()
             alg_name = str(v.get("algorithm_name") or "—")
             alg_type = str(v.get("algorithm_type") or "—")

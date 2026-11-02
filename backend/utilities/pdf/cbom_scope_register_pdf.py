@@ -34,7 +34,7 @@ Rules this module keeps (enforced by the T-1 tests and the T-NOLLM guards):
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timezone
 
 from reportlab.lib.styles import ParagraphStyle
@@ -51,6 +51,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     EXCLUDED_NOT_COMPLETED,
     FIDELITY_FULL,
     IMPACT_LEVELS,
+    INFO,
     SOURCE_FILE,
     SOURCE_REPO,
     SOURCE_SCAN,
@@ -216,6 +217,7 @@ _BY_SOURCE_FIXED = {  # numeric columns of the population-by-source table
     "High": 30,
     "Medium": 36,
     "Low": 30,
+    INFO: 28,  # clean inventory (no finding), shown only when present
     _OTHER_IMPACT: 30,
 }
 
@@ -451,8 +453,14 @@ def _type_bucket(asset_type: object) -> str:
 
 
 def _impact_bucket(impact: object) -> str:
-    known = isinstance(impact, str) and impact in IMPACT_LEVELS
+    known = isinstance(impact, str) and impact in (*IMPACT_LEVELS, INFO)
     return str(impact) if known else _OTHER_IMPACT
+
+
+def _impact_columns(present: Iterable[str]) -> list[str]:
+    """The four severities, then Info (clean inventory, no finding) and Other only when some asset has them."""
+    seen = set(present)
+    return list(IMPACT_LEVELS) + [extra for extra in (INFO, _OTHER_IMPACT) if extra in seen]
 
 
 def _population_kpis(view: TeamCbomView) -> list[tuple[str, str, str]]:
@@ -478,9 +486,7 @@ def _by_type_table(view: TeamCbomView, width: float) -> Flowable:
         if asset.current:
             cells[(_type_bucket(asset.asset_type), _impact_bucket(asset.impact))] += 1
     types = list(_MAIN_TYPES) + ([ASSET_OTHER] if any(t == ASSET_OTHER for t, _ in cells) else [])
-    impacts = list(IMPACT_LEVELS) + (
-        [_OTHER_IMPACT] if any(i == _OTHER_IMPACT for _, i in cells) else []
-    )
+    impacts = _impact_columns(i for _, i in cells)
     rows: list[list[object]] = []
     for kind in types:
         counts = [cells.get((kind, impact), 0) for impact in impacts]
@@ -497,12 +503,15 @@ def _by_source_table(view: TeamCbomView, shown: Sequence[SourceAgg], width: floa
     """Current assets per source; the total row covers EVERY source, shown or not."""
     sources = list(view.sources)
     extra_types = any(_extra(s.asset_counts, _MAIN_TYPES) for s in sources)
-    extra_impacts = any(_extra(s.impact_counts, IMPACT_LEVELS) for s in sources)
+    known = (*IMPACT_LEVELS, INFO)
+    has_info = any(_count(s.impact_counts, INFO) for s in sources)
+    extra_impacts = any(_extra(s.impact_counts, known) for s in sources)
+    levels = [*IMPACT_LEVELS, INFO] if has_info else list(IMPACT_LEVELS)
 
     headers = ["#", "Source", *_TYPE_LABELS.values()]
     if extra_types:
         headers.append("Other types")
-    headers += ["Total", "Libraries", *IMPACT_LEVELS]
+    headers += ["Total", "Libraries", *levels]
     if extra_impacts:
         headers.append(_OTHER_IMPACT)
 
@@ -511,8 +520,8 @@ def _by_source_table(view: TeamCbomView, shown: Sequence[SourceAgg], width: floa
         return [*counts, _extra(source.asset_counts, _MAIN_TYPES)] if extra_types else counts
 
     def impact_counts(source: SourceAgg) -> list[int]:
-        counts = [_count(source.impact_counts, level) for level in IMPACT_LEVELS]
-        return [*counts, _extra(source.impact_counts, IMPACT_LEVELS)] if extra_impacts else counts
+        counts = [_count(source.impact_counts, level) for level in levels]
+        return [*counts, _extra(source.impact_counts, known)] if extra_impacts else counts
 
     def line(
         index: str, label: str, types: list[int], libraries: str, impacts: list[int]

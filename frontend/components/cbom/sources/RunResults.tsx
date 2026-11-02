@@ -22,6 +22,8 @@ import {
   type CbomJobTargets,
 } from "@/utils/backend_api";
 
+import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
+
 import { cbomSourcesKeys } from "./keys";
 import { pluralize } from "./logic";
 import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
@@ -234,6 +236,27 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
         >
           {downloading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Download className="h-4 w-4 mr-1.5" />}
           Download CBOM ({data.all_total}){active ? " so far" : ""}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="cursor-pointer"
+          disabled={data.all_total === 0 || downloading}
+          data-testid="run-results-download-xml"
+          title="The same CycloneDX 1.6 CBOM as XML, valid against the official schema"
+          onClick={async () => {
+            setDownloading(true);
+            try {
+              await downloadCbomRunBom(teamId, runId, "xml");
+            } catch {
+              // the helper already showed the error
+            } finally {
+              setDownloading(false);
+            }
+          }}
+        >
+          <Download className="h-4 w-4 mr-1.5" />
+          XML
         </Button>
       </div>
 

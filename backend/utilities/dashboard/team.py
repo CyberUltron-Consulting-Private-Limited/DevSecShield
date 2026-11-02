@@ -92,7 +92,8 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         ## STEP [ 1.4 ] : ==================== Get all Scan Findings records for this team =================================
         findings_list = [] # use this to calculate the additonal metrics mentioned above 
         for scan in scans:
-            findings = get_findings_for_scan_id(scan.id)
+            # CBOM: clean inventory rows are not findings (read-time rule, cbom_rows.is_finding)
+            findings = get_findings_for_scan_id(scan.id, scan_type=scan.scan_type)
             findings_list.extend(findings)
         console.print(f"{len(findings_list)} findings found")
 
@@ -206,7 +207,13 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
     
     high_and_critical_vuln_in_past_month : dict[str,int] = { "low" : 0 , "medium" : 0 , "high" : 0 , "critical" : 0 }
     for scan in scans_in_past_month:
-        if (scan.scan_type == "iac" or scan.scan_type == "sbom_sca") and "results" in scan.scan_data:
+        if scan.scan_type == "cbom" and isinstance(scan.scan_data, dict) and "results" in scan.scan_data:
+            from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+
+            severity = summarize_code_rows(scan.scan_data["results"] or []).severity  # findings only
+            high_and_critical_vuln_in_past_month["high"] += severity["high"]
+            high_and_critical_vuln_in_past_month["critical"] += severity["critical"]
+        elif (scan.scan_type == "iac" or scan.scan_type == "sbom_sca") and "results" in scan.scan_data:
             for vulnerability in scan.scan_data["results"]:
                 impact : str = vulnerability.get("impact") or "low"
                 impact = impact.lower()

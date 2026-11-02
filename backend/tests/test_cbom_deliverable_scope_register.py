@@ -138,6 +138,14 @@ BY_SOURCE_HEADER = [
     "Low",
 ]
 BY_TYPE_HEADER = ["Asset type", "Critical", "High", "Medium", "Low", "Total"]
+# The fixture's clean inventory rows (no finding code) have no impact: they are an "Info" column, never "Low".
+BY_SOURCE_HEADER_INFO = [*BY_SOURCE_HEADER, "Info"]
+BY_TYPE_HEADER_INFO = ["Asset type", "Critical", "High", "Medium", "Low", "Info", "Total"]
+
+
+def _with_info(counts):
+    """A (C, H, M, clean) tuple as printed: (C, H, M, Low=0, Info=clean). Every fixture row below Medium is clean."""
+    return (*counts[:3], 0, counts[3])
 BASIS_HEADER = ["Measure", "Scans"]
 EXCLUDED_HEADER = ["Scan", "Title", "Source", "Created", "Status", "Reason"]
 QUALITY_HEADER = ["Check", "Result"]
@@ -223,7 +231,7 @@ PAYMENTS = SOURCES[3]
 # Plan Appendix B headline numbers + the raw-fixture cross-tab (rows: type; cols: C/H/M/L).
 HEADLINE_OCCURRENCES = 68
 HEADLINE_BY_TYPE = (37, 17, 2, 12)  # algorithms, certificates, protocols, key material
-HEADLINE_BY_IMPACT = (1, 23, 5, 39)  # Critical, High, Medium, Low
+HEADLINE_BY_IMPACT = (1, 23, 5, 39)  # Critical, High, Medium, clean inventory (Info)
 UNIQUE_CERTIFICATES = 14
 UNIQUE_LIBRARIES = 23
 CROSS_TAB = (
@@ -756,8 +764,9 @@ def test_source_limits_and_legends_are_printed(text):
 def test_headline_counts_are_the_plan_numbers_and_reconcile_with_the_aggregator(view):
     assert view.asset_occurrences == HEADLINE_OCCURRENCES
     types = ("algorithm", "certificate", "protocol", "related-crypto-material")
-    impacts = ("Critical", "High", "Medium", "Low")
+    impacts = ("Critical", "High", "Medium", "Info")
     assert tuple(view.assets_by_type.get(t, 0) for t in types) == HEADLINE_BY_TYPE
+    assert view.assets_by_impact.get("Low", 0) == 0  # clean inventory is never a Low finding
     assert tuple(view.assets_by_impact.get(i, 0) for i in impacts) == HEADLINE_BY_IMPACT
     assert sum(1 for c in view.certs if c.current) == UNIQUE_CERTIFICATES
     assert sum(1 for lib in view.libs if lib.current) == UNIQUE_LIBRARIES
@@ -785,36 +794,36 @@ def test_population_kpi_strip_shows_the_headline_numbers(story):
 
 
 def test_assets_by_type_and_impact_matrix_equals_the_raw_fixture_cross_tab(story):
-    rows = rows_of(find_table(story, BY_TYPE_HEADER))
+    rows = rows_of(find_table(story, BY_TYPE_HEADER_INFO))
     assert [row[0] for row in rows] == [name for name, _ in CROSS_TAB] + ["All asset types"]
     for row, (name, impacts) in zip(rows, CROSS_TAB, strict=False):
-        assert row[1:5] == [str(n) for n in impacts], name
-        assert row[5] == str(sum(impacts)), name
-    assert rows[-1][1:] == [str(n) for n in HEADLINE_BY_IMPACT] + [str(HEADLINE_OCCURRENCES)]
+        assert row[1:6] == [str(n) for n in _with_info(impacts)], name
+        assert row[6] == str(sum(impacts)), name
+    assert rows[-1][1:] == [str(n) for n in _with_info(HEADLINE_BY_IMPACT)] + [str(HEADLINE_OCCURRENCES)]
 
 
 @pytest.mark.parametrize("expected", SOURCES, ids=[s.label for s in SOURCES])
 def test_population_by_source_row_matches_the_raw_fixture(story, expected):
-    rows = {row[1]: row for row in rows_of(find_table(story, BY_SOURCE_HEADER))}
+    rows = {row[1]: row for row in rows_of(find_table(story, BY_SOURCE_HEADER_INFO))}
     row = rows[expected.label]
     assert row[2:6] == [str(n) for n in expected.types]
     assert row[6] == str(expected.total)
     assert row[7] == str(expected.libs)
-    assert row[8:12] == [str(n) for n in expected.impacts]
+    assert row[8:13] == [str(n) for n in _with_info(expected.impacts)]
 
 
 def test_population_by_source_total_row_reconciles_with_the_rows_and_the_headline(story, view):
-    table = find_table(story, BY_SOURCE_HEADER)
+    table = find_table(story, BY_SOURCE_HEADER_INFO)
     rows = rows_of(table)
     assert len(rows) == 8  # seven sources + the total row
     body, total = rows[:-1], rows[-1]
     assert [row[1] for row in body] == [s.label for s in SOURCES]
     assert total[1] == "All sources"
-    for index in (2, 3, 4, 5, 6, 8, 9, 10, 11):  # everything except the libraries column
+    for index in (2, 3, 4, 5, 6, 8, 9, 10, 11, 12):  # everything except the libraries column
         assert total[index] == str(sum(int(row[index]) for row in body)), index
     assert total[2:6] == [str(n) for n in HEADLINE_BY_TYPE]
     assert total[6] == str(HEADLINE_OCCURRENCES)
-    assert total[8:12] == [str(n) for n in HEADLINE_BY_IMPACT]
+    assert total[8:13] == [str(n) for n in _with_info(HEADLINE_BY_IMPACT)]
     # libraries are de-duplicated across sources: 23 unique, not the sum of the rows
     assert total[7] == f"{UNIQUE_LIBRARIES} unique"
     assert sum(int(row[7]) for row in body) == 28 > UNIQUE_LIBRARIES
@@ -823,8 +832,8 @@ def test_population_by_source_total_row_reconciles_with_the_rows_and_the_headlin
         row = next(r for r in body if r[1] == source.label)
         assert row[2:6] == [str(source.asset_counts.get(t, 0)) for t in (
             "algorithm", "certificate", "protocol", "related-crypto-material")]
-        assert row[8:12] == [str(source.impact_counts.get(i, 0)) for i in (
-            "Critical", "High", "Medium", "Low")]
+        assert row[8:13] == [str(source.impact_counts.get(i, 0)) for i in (
+            "Critical", "High", "Medium", "Low", "Info")]
 
 
 def test_population_basis_and_library_statements(text):

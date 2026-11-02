@@ -196,6 +196,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
     if path.name == "cbom_team_rollup.py":
         roots |= {"sqlmodel"}  # imported lazily inside load_team_cbom_view
         backend += ("backend.new_models",)
+        # the one finding rule and quantum-readiness definition every CBOM view shares (pure, stdlib only)
+        backend += ("backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics")
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (

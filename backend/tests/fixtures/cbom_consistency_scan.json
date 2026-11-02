@@ -1,0 +1,2005 @@
+{
+ "cbom_json": {
+  "bomFormat": "CycloneDX",
+  "components": [
+   {
+    "bom-ref": "crypto-algo-3des-cbc-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 112,
+      "mode": "cbc",
+      "parameterSetIdentifier": "168",
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm",
+     "oid": "1.2.840.113549.3.7"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 59,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "3DES-CBC",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "cipher"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "168"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "59"
+     },
+     {
+      "name": "crypto:mode",
+      "value": "CBC"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "59"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "112"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "moderate"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "WEAK_ALGORITHM"
+     },
+     {
+      "name": "zs:impact",
+      "value": "High"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-aes-ecb-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "mode": "ecb",
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 73,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "AES-ECB",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "cipher"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "73"
+     },
+     {
+      "name": "crypto:mode",
+      "value": "ECB"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "73"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "WEAK_CIPHER_MODE"
+     },
+     {
+      "name": "zs:impact",
+      "value": "High"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-aes-gcm-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "mode": "gcm",
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 41,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "AES-GCM",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "cipher"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "41"
+     },
+     {
+      "name": "crypto:mode",
+      "value": "GCM"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "41"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-aes-tls-config-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "primitive": "block-cipher"
+     },
+     "assetType": "algorithm"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 10,
+       "location": "tls_config.py"
+      }
+     ]
+    },
+    "name": "AES",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "ssl (stdlib)"
+     },
+     {
+      "name": "crypto:line",
+      "value": "10"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "10"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "block-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "tls_config.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-md5-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 64,
+      "primitive": "hash"
+     },
+     "assetType": "algorithm",
+     "oid": "1.2.840.113549.2.5"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 54,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "MD5",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "hashlib (stdlib)"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "digest"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "54"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "54"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "hash"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "64"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "weak"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "WEAK_ALGORITHM"
+     },
+     {
+      "name": "zs:impact",
+      "value": "High"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-rc4-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 128,
+      "primitive": "stream-cipher"
+     },
+     "assetType": "algorithm",
+     "oid": "1.2.840.113549.3.4"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 66,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "RC4",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "cipher"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "66"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "66"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "stream-cipher"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "128"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "weak"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "WEAK_ALGORITHM"
+     },
+     {
+      "name": "zs:impact",
+      "value": "High"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-rsa-1024-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 80,
+      "nistQuantumSecurityLevel": 0,
+      "parameterSetIdentifier": "1024",
+      "primitive": "pke"
+     },
+     "assetType": "algorithm",
+     "oid": "1.2.840.113549.1.1.1"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 80,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "RSA-1024",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "pke"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "1024"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "80"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "0"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "80"
+     },
+     {
+      "name": "crypto:pqcMigrationRoadmap",
+      "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+     },
+     {
+      "name": "crypto:pqcMigrationTarget",
+      "value": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "pke"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "true"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "80"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "weak"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "QUANTUM_VULNERABLE"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "WEAK_ALGORITHM"
+     },
+     {
+      "name": "zs:impact",
+      "value": "High"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-rsa-2048-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 112,
+      "nistQuantumSecurityLevel": 0,
+      "parameterSetIdentifier": "2048",
+      "primitive": "pke"
+     },
+     "assetType": "algorithm",
+     "oid": "1.2.840.113549.1.1.1"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 36,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "RSA-2048",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "pyca/cryptography"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "pke"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "2048"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "36"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "0"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "36"
+     },
+     {
+      "name": "crypto:pqcMigrationRoadmap",
+      "value": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)"
+     },
+     {
+      "name": "crypto:pqcMigrationTarget",
+      "value": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "pke"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "true"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "112"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "QUANTUM_VULNERABLE"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Medium"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-algo-sha-256-crypto-app-py",
+    "cryptoProperties": {
+     "algorithmProperties": {
+      "classicalSecurityLevel": 128,
+      "nistQuantumSecurityLevel": 2,
+      "primitive": "hash"
+     },
+     "assetType": "algorithm",
+     "oid": "2.16.840.1.101.3.4.2.1"
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 48,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "SHA-256",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "algorithm"
+     },
+     {
+      "name": "crypto:confidence",
+      "value": "high"
+     },
+     {
+      "name": "crypto:detectedBy",
+      "value": "hashlib (stdlib)"
+     },
+     {
+      "name": "crypto:detectionContext",
+      "value": "digest"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:line",
+      "value": "48"
+     },
+     {
+      "name": "crypto:nistQuantumSecurityLevel",
+      "value": "2"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "48"
+     },
+     {
+      "name": "crypto:primitive",
+      "value": "hash"
+     },
+     {
+      "name": "crypto:quantumVulnerable",
+      "value": "false"
+     },
+     {
+      "name": "crypto:securityStrengthBits",
+      "value": "128"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "strong"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-cert-cert-pem-synthetic-crypto-app-test",
+    "cryptoProperties": {
+     "assetType": "certificate",
+     "certificateProperties": {
+      "certificateExtension": "pem",
+      "certificateFormat": "X.509",
+      "issuerName": "synthetic-crypto-app.test",
+      "notValidAfter": "2027-06-29T09:56:21Z",
+      "notValidBefore": "2026-06-29T09:56:21Z",
+      "signatureAlgorithmRef": "crypto-algo-sha-256-crypto-app-py",
+      "subjectName": "synthetic-crypto-app.test",
+      "subjectPublicKeyRef": "crypto-algo-rsa-2048-crypto-app-py"
+     }
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 1,
+       "location": "cert.pem"
+      }
+     ]
+    },
+    "name": "cert.pem",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "certificate"
+     },
+     {
+      "name": "crypto:isCertificateAuthority",
+      "value": "true"
+     },
+     {
+      "name": "crypto:issuerName",
+      "value": "synthetic-crypto-app.test"
+     },
+     {
+      "name": "crypto:keySize",
+      "value": "2048"
+     },
+     {
+      "name": "crypto:language",
+      "value": "pem"
+     },
+     {
+      "name": "crypto:line",
+      "value": "1"
+     },
+     {
+      "name": "crypto:notValidAfter",
+      "value": "2027-06-29T09:56:21Z"
+     },
+     {
+      "name": "crypto:notValidBefore",
+      "value": "2026-06-29T09:56:21Z"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "1"
+     },
+     {
+      "name": "crypto:publicKeyAlgorithm",
+      "value": "rsaEncryption"
+     },
+     {
+      "name": "crypto:selfSigned",
+      "value": "true"
+     },
+     {
+      "name": "crypto:signatureAlgorithm",
+      "value": "sha256WithRSAEncryption"
+     },
+     {
+      "name": "crypto:subjectName",
+      "value": "synthetic-crypto-app.test"
+     },
+     {
+      "name": "discovery:source",
+      "value": "cert.pem"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-material-initialization-vector-crypto-app-py",
+    "cryptoProperties": {
+     "assetType": "related-crypto-material",
+     "relatedCryptoMaterialProperties": {
+      "type": "initialization-vector"
+     }
+    },
+    "name": "initialization-vector (crypto_app.py)",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "related-crypto-material"
+     },
+     {
+      "name": "crypto:detectionMethod",
+      "value": "ast"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:materialKind",
+      "value": "initialization-vector"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-material-private-key-crypto-app-py",
+    "cryptoProperties": {
+     "assetType": "related-crypto-material",
+     "relatedCryptoMaterialProperties": {
+      "type": "private-key"
+     }
+    },
+    "name": "private-key (crypto_app.py)",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "related-crypto-material"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "hashlib (stdlib),pyca/cryptography"
+     },
+     {
+      "name": "crypto:materialKind",
+      "value": "private-key"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-protocol-tls-tls-config-py",
+    "cryptoProperties": {
+     "assetType": "protocol",
+     "protocolProperties": {
+      "cipherSuites": [
+       {
+        "name": "ECDHE-RSA-AES128-SHA"
+       }
+      ],
+      "type": "tls",
+      "version": "1.0"
+     }
+    },
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 9,
+       "location": "tls_config.py"
+      },
+      {
+       "line": 10,
+       "location": "tls_config.py"
+      },
+      {
+       "line": 14,
+       "location": "tls_config.py"
+      },
+      {
+       "line": 16,
+       "location": "tls_config.py"
+      },
+      {
+       "line": 17,
+       "location": "tls_config.py"
+      }
+     ]
+    },
+    "name": "TLS 1.0",
+    "properties": [
+     {
+      "name": "crypto:assetType",
+      "value": "protocol"
+     },
+     {
+      "name": "crypto:cipherSuite",
+      "value": "ECDHE-RSA-AES128-SHA"
+     },
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:libraries",
+      "value": "ssl (stdlib)"
+     },
+     {
+      "name": "crypto:line",
+      "value": "9"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "5"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "9,10,14,16,17"
+     },
+     {
+      "name": "crypto:protocolType",
+      "value": "tls"
+     },
+     {
+      "name": "crypto:protocolVersion",
+      "value": "1.0"
+     },
+     {
+      "name": "crypto:strength",
+      "value": "weak"
+     },
+     {
+      "name": "discovery:source",
+      "value": "tls_config.py"
+     },
+     {
+      "name": "zs:finding_code",
+      "value": "WEAK_PROTOCOL"
+     },
+     {
+      "name": "zs:impact",
+      "value": "High"
+     }
+    ],
+    "type": "cryptographic-asset"
+   },
+   {
+    "bom-ref": "crypto-lib-hashlib-stdlib",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 17,
+       "location": "crypto_app.py"
+      },
+      {
+       "line": 48,
+       "location": "crypto_app.py"
+      },
+      {
+       "line": 54,
+       "location": "crypto_app.py"
+      }
+     ]
+    },
+    "name": "hashlib (stdlib)",
+    "properties": [
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:line",
+      "value": "17"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "3"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "17,48,54"
+     },
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "discovery:source",
+      "value": "crypto_app.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "library"
+   },
+   {
+    "bom-ref": "crypto-lib-pyca-cryptography",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 2,
+       "location": "requirements.txt"
+      }
+     ]
+    },
+    "name": "pyca/cryptography",
+    "properties": [
+     {
+      "name": "crypto:language",
+      "value": "pip-requirements"
+     },
+     {
+      "name": "crypto:line",
+      "value": "2"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "2"
+     },
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "discovery:source",
+      "value": "requirements.txt"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "library"
+   },
+   {
+    "bom-ref": "crypto-lib-pyopenssl",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 3,
+       "location": "requirements.txt"
+      }
+     ]
+    },
+    "name": "pyOpenSSL",
+    "properties": [
+     {
+      "name": "crypto:language",
+      "value": "pip-requirements"
+     },
+     {
+      "name": "crypto:line",
+      "value": "3"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "1"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "3"
+     },
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "discovery:source",
+      "value": "requirements.txt"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "library"
+   },
+   {
+    "bom-ref": "crypto-lib-ssl-stdlib",
+    "evidence": {
+     "occurrences": [
+      {
+       "line": 6,
+       "location": "tls_config.py"
+      },
+      {
+       "line": 13,
+       "location": "tls_config.py"
+      },
+      {
+       "line": 14,
+       "location": "tls_config.py"
+      },
+      {
+       "line": 16,
+       "location": "tls_config.py"
+      }
+     ]
+    },
+    "name": "ssl (stdlib)",
+    "properties": [
+     {
+      "name": "crypto:language",
+      "value": "python"
+     },
+     {
+      "name": "crypto:line",
+      "value": "6"
+     },
+     {
+      "name": "crypto:occurrenceCount",
+      "value": "4"
+     },
+     {
+      "name": "crypto:occurrences",
+      "value": "6,13,14,16"
+     },
+     {
+      "name": "crypto:role",
+      "value": "library"
+     },
+     {
+      "name": "discovery:source",
+      "value": "tls_config.py"
+     },
+     {
+      "name": "zs:impact",
+      "value": "Info"
+     }
+    ],
+    "type": "library"
+   }
+  ],
+  "metadata": {
+   "component": {
+    "name": "synthetic-crypto-app",
+    "type": "application"
+   },
+   "properties": [
+    {
+     "name": "regulatory:disclaimer",
+     "value": "Regulatory mappings are advisory only; an AI BOM creates visibility, not assurance, and does not by itself satisfy FDA, EU AI Act, or HIPAA obligations. A qualified regulatory reviewer must sign off."
+    }
+   ],
+   "timestamp": "2026-06-21T00:00:00Z",
+   "tools": [
+    {
+     "name": "clinithread-aibom",
+     "version": "0.1.0"
+    }
+   ]
+  },
+  "serialNumber": "urn:uuid:b57a4382-b60e-5caf-b8cb-b27ff1720b46",
+  "specVersion": "1.6",
+  "version": 1
+ },
+ "results": [
+  {
+   "algorithm_name": "3DES-CBC",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-3des-cbc-crypto-app-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [
+    "CVE-2016-2183"
+   ],
+   "cwe": [
+    "CWE-327",
+    "CWE-328"
+   ],
+   "description": "Broken or deprecated algorithm 3DES-CBC: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.",
+   "expired": false,
+   "finding_codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "hybrid": false,
+   "impact": "High",
+   "key_size": "168",
+   "language": "python",
+   "line": 59,
+   "location": "crypto_app.py",
+   "material_kind": null,
+   "mode": "CBC",
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    59
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 7.5,
+   "security_strength_bits": 112,
+   "self_signed": false,
+   "snippet": "\ndef weak_des(key: bytes, data: bytes) -> bytes:\n    \"\"\"DES \u2014 56-bit block cipher, brute-forceable.\"\"\"\n    cipher = Cipher(algorithms.TripleDES(key), modes.CBC(b\"\\x00\" * 8))  # DES core\n    enc = cipher.encryptor()\n    return enc.update(data) + enc.finalize()\n",
+   "snippet_redactions": 0,
+   "snippet_start": 56,
+   "suggested_fix": "Use AES-256-GCM or ChaCha20-Poly1305.",
+   "title": "3DES-CBC",
+   "weak": true
+  },
+  {
+   "algorithm_name": "AES-ECB",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-aes-ecb-crypto-app-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-327"
+   ],
+   "description": "Insecure ECB cipher mode on AES-ECB: identical plaintext blocks map to identical ciphertext; use an authenticated mode (GCM/CCM).",
+   "expired": false,
+   "finding_codes": [
+    "WEAK_CIPHER_MODE"
+   ],
+   "hybrid": false,
+   "impact": "High",
+   "key_size": null,
+   "language": "python",
+   "line": 73,
+   "location": "crypto_app.py",
+   "material_kind": null,
+   "mode": "ECB",
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    73
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 7.5,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\ndef weak_aes_128_ecb(key: bytes, data: bytes) -> bytes:\n    \"\"\"AES-128 in ECB mode \u2014 leaks plaintext structure.\"\"\"\n    cipher = Cipher(algorithms.AES(key), modes.ECB())\n    enc = cipher.encryptor()\n    return enc.update(data) + enc.finalize()\n",
+   "snippet_redactions": 0,
+   "snippet_start": 70,
+   "suggested_fix": "Use an AEAD mode: AES/GCM/NoPadding with a unique 96-bit nonce per message.",
+   "title": "AES-ECB",
+   "weak": true
+  },
+  {
+   "algorithm_name": "MD5",
+   "algorithm_type": "hash",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-md5-crypto-app-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [
+    "CVE-2004-2761"
+   ],
+   "cwe": [
+    "CWE-327",
+    "CWE-328"
+   ],
+   "description": "Broken or deprecated algorithm MD5: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.",
+   "expired": false,
+   "finding_codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "hybrid": false,
+   "impact": "High",
+   "key_size": null,
+   "language": "python",
+   "line": 54,
+   "location": "crypto_app.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    54
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "hash",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 7.5,
+   "security_strength_bits": 64,
+   "self_signed": false,
+   "snippet": "# --- WEAK algorithms --------------------------------------------------------\ndef weak_md5(data: bytes) -> str:\n    \"\"\"MD5 \u2014 broken hash (collision).\"\"\"\n    return hashlib.md5(data).hexdigest()\n\n\ndef weak_des(key: bytes, data: bytes) -> bytes:",
+   "snippet_redactions": 0,
+   "snippet_start": 51,
+   "suggested_fix": "Use SHA-256 or SHA-3 (and Argon2id, scrypt or PBKDF2 for password hashing).",
+   "title": "MD5",
+   "weak": true
+  },
+  {
+   "algorithm_name": "RC4",
+   "algorithm_type": "stream-cipher",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-rc4-crypto-app-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [
+    "CVE-2013-2566"
+   ],
+   "cwe": [
+    "CWE-327",
+    "CWE-328"
+   ],
+   "description": "Broken or deprecated algorithm RC4: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.",
+   "expired": false,
+   "finding_codes": [
+    "WEAK_ALGORITHM"
+   ],
+   "hybrid": false,
+   "impact": "High",
+   "key_size": null,
+   "language": "python",
+   "line": 66,
+   "location": "crypto_app.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    66
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "stream-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 7.5,
+   "security_strength_bits": 128,
+   "self_signed": false,
+   "snippet": "\ndef weak_rc4(key: bytes, data: bytes) -> bytes:\n    \"\"\"RC4 \u2014 broken stream cipher.\"\"\"\n    cipher = Cipher(algorithms.ARC4(key), mode=None)\n    enc = cipher.encryptor()\n    return enc.update(data)\n",
+   "snippet_redactions": 0,
+   "snippet_start": 63,
+   "suggested_fix": "Use AES-256-GCM or ChaCha20-Poly1305.",
+   "title": "RC4",
+   "weak": true
+  },
+  {
+   "algorithm_name": "RSA-1024",
+   "algorithm_type": "pke",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-rsa-1024-crypto-app-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-327",
+    "CWE-328"
+   ],
+   "description": "Quantum-vulnerable algorithm RSA-1024: broken by Shor's algorithm on a cryptographically-relevant quantum computer (nistQuantumSecurityLevel 0). NIST deprecates RSA/ECC/DH after 2030 and disallows them from 2035 (NIST SP 1800-38 / IR 8547); CNSA 2.0 NSS milestones: software/firmware signing 2025, networking 2030, all NSS by 2033-2035; migrate to ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204) (target family ML-KEM (FIPS 203) / ML-DSA (FIPS 204)).; Broken or deprecated algorithm RSA-1024: superseded by modern primitives (e.g. SHA-256/SHA-3, AES-GCM, RSA-3072+/ECDSA); NIST SP 800-131A.",
+   "expired": false,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE",
+    "WEAK_ALGORITHM"
+   ],
+   "hybrid": false,
+   "impact": "High",
+   "key_size": "1024",
+   "language": "python",
+   "line": 80,
+   "location": "crypto_app.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": 0,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    80
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)",
+   "pqc_migration_target": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)",
+   "primitive": "pke",
+   "protocol_version": null,
+   "quantum_safe": false,
+   "quantum_vulnerable": true,
+   "risk_score": 8.5,
+   "security_strength_bits": 80,
+   "self_signed": false,
+   "snippet": "\ndef weak_rsa_1024():\n    \"\"\"RSA-1024 \u2014 undersized key, weak AND quantum-vulnerable.\"\"\"\n    return rsa.generate_private_key(<redacted:21>, key_size=1024)\n\n\ndef load_hardcoded_key():",
+   "snippet_redactions": 1,
+   "snippet_start": 77,
+   "suggested_fix": "Use RSA-3072 or larger (or ECDSA P-256 / X25519) now, and plan the post-quantum move to ML-KEM / ML-DSA.",
+   "title": "RSA-1024",
+   "weak": true
+  },
+  {
+   "algorithm_name": "TLS 1.0",
+   "algorithm_type": "protocol",
+   "asset_type": "protocol",
+   "bom_ref": "crypto-protocol-tls-tls-config-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_CM": "NIST 800-53 - Configuration Management",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "weak",
+   "curve": null,
+   "cves": [
+    "CVE-2011-3389"
+   ],
+   "cwe": [
+    "CWE-327",
+    "CWE-757"
+   ],
+   "description": "Weak transport protocol TLS 1.0 1.0: TLS below 1.2 / SSL is deprecated (RFC 8996); negotiate TLS 1.2+ (prefer 1.3).",
+   "expired": false,
+   "finding_codes": [
+    "WEAK_PROTOCOL"
+   ],
+   "hybrid": false,
+   "impact": "High",
+   "key_size": null,
+   "language": "python",
+   "line": 9,
+   "location": "tls_config.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 5,
+   "occurrences": [
+    9,
+    10,
+    14,
+    16,
+    17
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures",
+    "SECURITY_MISCONFIGURATION": "A05:2021 - Security Misconfiguration"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": "1.0",
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 7.5,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "import ssl\n\n# WEAK: pins the protocol floor to TLS 1.0.\nTLS_MIN_VERSION = \"TLSv1.0\"\nTLS_CIPHERS = \"ECDHE-RSA-AES128-SHA\"  # SHA-1 MAC, legacy suite\n\n",
+   "snippet_redactions": 0,
+   "snippet_start": 6,
+   "suggested_fix": "Set the minimum to TLS 1.2.",
+   "title": "TLS 1.0",
+   "weak": true
+  },
+  {
+   "algorithm_name": "RSA-2048",
+   "algorithm_type": "pke",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-rsa-2048-crypto-app-py",
+   "compliance_controls": {
+    "ISO27001_A10_CRYPTOGRAPHY": "ISO 27001 - A.10 Cryptography",
+    "NIST80053_SC": "NIST 800-53 - System and Communications Protection"
+   },
+   "container_format": null,
+   "crypto_strength": "strong",
+   "curve": null,
+   "cves": [],
+   "cwe": [
+    "CWE-327"
+   ],
+   "description": "Quantum-vulnerable algorithm RSA-2048: broken by Shor's algorithm on a cryptographically-relevant quantum computer (nistQuantumSecurityLevel 0). NIST deprecates RSA/ECC/DH after 2030 and disallows them from 2035 (NIST SP 1800-38 / IR 8547); CNSA 2.0 NSS milestones: software/firmware signing 2025, networking 2030, all NSS by 2033-2035; migrate to ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204) (target family ML-KEM (FIPS 203) / ML-DSA (FIPS 204)).",
+   "expired": false,
+   "finding_codes": [
+    "QUANTUM_VULNERABLE"
+   ],
+   "hybrid": false,
+   "impact": "Medium",
+   "key_size": "2048",
+   "language": "python",
+   "line": 36,
+   "location": "crypto_app.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": 0,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    36
+   ],
+   "owasp_top_10": {
+    "CRYPTOGRAPHIC_FAILURES": "A02:2021 - Cryptographic Failures"
+   },
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": "ML-KEM-768 (FIPS 203) / ML-DSA-65 (FIPS 204)",
+   "pqc_migration_target": "ML-KEM (FIPS 203) / ML-DSA (FIPS 204)",
+   "primitive": "pke",
+   "protocol_version": null,
+   "quantum_safe": false,
+   "quantum_vulnerable": true,
+   "risk_score": 4.5,
+   "security_strength_bits": 112,
+   "self_signed": false,
+   "snippet": "# --- STRONG algorithms ------------------------------------------------------\ndef strong_rsa_2048():\n    \"\"\"RSA-2048 \u2014 strong key size, but asymmetric => quantum-vulnerable.\"\"\"\n    return rsa.generate_private_key(<redacted:21>, key_size=2048)\n\n\ndef strong_aes_256_gcm(key: bytes, nonce: bytes, data: bytes) -> bytes:",
+   "snippet_redactions": 1,
+   "snippet_start": 33,
+   "suggested_fix": "Plan migration to post-quantum cryptography (ML-KEM (FIPS 203) / ML-DSA (FIPS 204)); NIST deprecates quantum-vulnerable public-key cryptography after 2030 and disallows it after 2035.",
+   "title": "RSA-2048",
+   "weak": false
+  },
+  {
+   "algorithm_name": "AES",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-aes-tls-config-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 10,
+   "location": "tls_config.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    10
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\n# WEAK: pins the protocol floor to TLS 1.0.\nTLS_MIN_VERSION = \"TLSv1.0\"\nTLS_CIPHERS = \"ECDHE-RSA-AES128-SHA\"  # SHA-1 MAC, legacy suite\n\n\ndef make_weak_context() -> ssl.SSLContext:",
+   "snippet_redactions": 0,
+   "snippet_start": 7,
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "AES",
+   "weak": false
+  },
+  {
+   "algorithm_name": "AES-GCM",
+   "algorithm_type": "block-cipher",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-aes-gcm-crypto-app-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 41,
+   "location": "crypto_app.py",
+   "material_kind": null,
+   "mode": "GCM",
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    41
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "block-cipher",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "\ndef strong_aes_256_gcm(key: bytes, nonce: bytes, data: bytes) -> bytes:\n    \"\"\"AES-256-GCM \u2014 authenticated encryption, strong + quantum-safe.\"\"\"\n    cipher = Cipher(algorithms.AES(key), modes.GCM(nonce))\n    enc = cipher.encryptor()\n    return enc.update(data) + enc.finalize()\n",
+   "snippet_redactions": 0,
+   "snippet_start": 38,
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "AES-GCM",
+   "weak": false
+  },
+  {
+   "algorithm_name": "SHA-256",
+   "algorithm_type": "hash",
+   "asset_type": "algorithm",
+   "bom_ref": "crypto-algo-sha-256-crypto-app-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "quantum_safe",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (algorithm).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "line": 48,
+   "location": "crypto_app.py",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": 2,
+   "not_valid_after": null,
+   "occurrence_count": 1,
+   "occurrences": [
+    48
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": "hash",
+   "protocol_version": null,
+   "quantum_safe": true,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": 128,
+   "self_signed": false,
+   "snippet": "\ndef strong_sha256(data: bytes) -> str:\n    \"\"\"SHA-256 \u2014 strong digest.\"\"\"\n    return hashlib.sha256(data).hexdigest()\n\n\n# --- WEAK algorithms --------------------------------------------------------",
+   "snippet_redactions": 0,
+   "snippet_start": 45,
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "SHA-256",
+   "weak": false
+  },
+  {
+   "algorithm_name": "cert.pem",
+   "algorithm_type": "certificate",
+   "asset_type": "certificate",
+   "bom_ref": "crypto-cert-cert-pem-synthetic-crypto-app-test",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "strong",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (certificate).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": "2048",
+   "language": "pem",
+   "line": 1,
+   "location": "cert.pem",
+   "material_kind": null,
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": "2027-06-29T09:56:21Z",
+   "occurrence_count": 1,
+   "occurrences": [
+    1
+   ],
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": true,
+   "snippet": "",
+   "snippet_note": "Key or certificate material is not copied into findings.",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "cert.pem",
+   "weak": false
+  },
+  {
+   "algorithm_name": "initialization-vector (crypto_app.py)",
+   "algorithm_type": "key",
+   "asset_type": "related-crypto-material",
+   "bom_ref": "crypto-material-initialization-vector-crypto-app-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "strong",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (related-crypto-material).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "location": "crypto_app.py",
+   "material_kind": "initialization-vector",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "initialization-vector (crypto_app.py)",
+   "weak": false
+  },
+  {
+   "algorithm_name": "private-key (crypto_app.py)",
+   "algorithm_type": "key",
+   "asset_type": "related-crypto-material",
+   "bom_ref": "crypto-material-private-key-crypto-app-py",
+   "compliance_controls": {},
+   "container_format": null,
+   "crypto_strength": "strong",
+   "curve": null,
+   "cves": [],
+   "cwe": [],
+   "description": "Inventoried crypto asset (related-crypto-material).",
+   "expired": false,
+   "finding_codes": [],
+   "hybrid": false,
+   "impact": null,
+   "key_size": null,
+   "language": "python",
+   "location": "crypto_app.py",
+   "material_kind": "private-key",
+   "mode": null,
+   "nist_quantum_security_level": null,
+   "not_valid_after": null,
+   "owasp_top_10": {},
+   "parameter_set": null,
+   "parse_status": null,
+   "pqc_migration_roadmap": null,
+   "pqc_migration_target": null,
+   "primitive": null,
+   "protocol_version": null,
+   "quantum_safe": null,
+   "quantum_vulnerable": false,
+   "risk_score": 0.0,
+   "security_strength_bits": null,
+   "self_signed": false,
+   "snippet": "",
+   "suggested_fix": "Keep this cryptographic asset in the organization's crypto inventory and post-quantum migration plan.",
+   "title": "private-key (crypto_app.py)",
+   "weak": false
+  }
+ ]
+}

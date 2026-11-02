@@ -6,6 +6,7 @@ import os
 from fastapi import HTTPException, status
 from celery.result import AsyncResult
 from sqlmodel import Session, select
+from sqlalchemy import or_, update
 from sqlalchemy.engine import Engine
 import datetime
 from datetime import timezone
@@ -106,45 +107,46 @@ def get_status_and_update_db(
         
 
         # STEP [ 2 ] : =================== Update the status in the main db ( if it has changed )=======================
+        # The transitions into success and failure are COMPARE-AND-SET updates: several polls (list, get, start,
+        # background tasks) can see the same finished task at once, and only the one whose UPDATE flips the row may
+        # insert the findings, create Jira tickets or refund the credits. The others read what the winner stored.
+        ingested = False
         with Session(engine) as session:
             scan : Scan | None = session.exec(select(table).where(table.id == scan_id)).first()
             if not scan:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
-            
-            #updating last_updated field
-            scan.last_updated = datetime.datetime.now(timezone.utc)
-
-
             previous_status = scan.scan_status  # capture BEFORE mutation, to detect the transition
-            if scan.scan_status != SCAN_STATUS:  # update the scan status only if it has changed
-                scan.scan_status = SCAN_STATUS
-                console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")
-            if SCAN_STATUS == "started":
-                info = async_result.info
-                # info is None until the task emits its first progress meta (race at scan start) — guard the type.
-                if isinstance(info, dict) and "current" in info:
-                    scan.info = {"current": info["current"]}  # for progress bar updates
-                    console.print(f"Scan with id: {task_id} progress updated to {info['current']} in main database" ,style="bold green")
-            elif SCAN_STATUS == "success":
-                # Only ingest results on the TRANSITION into success — prevents duplicate findings
-                # when multiple concurrent polls observe a freshly-succeeded task.
-                if previous_status != "success":
-                    results = simple_app.AsyncResult(task_id).result
-                    if not results:
-                        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
-                    SCAN_DATA = results
-                    scan.scan_data = SCAN_DATA
+            now = datetime.datetime.now(timezone.utc)
 
-                    mongo_db = get_mongo_client_db()
-                    # Idempotency: clear any pre-existing findings for this scan before (re)inserting.
-                    mongo_db["scan_findings"].delete_many({"scan_id": scan_id})
-                    create_findings_in_mongo_db(scan_id=scan_id, scan_results=SCAN_DATA, scan_type=scan.scan_type, mongo_db=mongo_db)
-                    scan.info = None # reset the info field
+            if SCAN_STATUS == "success" and previous_status != "success":
+                results = simple_app.AsyncResult(task_id).result
+                if not results:
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
+                won = session.exec(
+                    update(table)
+                    .where(table.id == scan_id, or_(table.scan_status.is_(None), table.scan_status != "success"))
+                    .values(scan_status="success", scan_data=results, info=None, last_updated=now)
+                ).rowcount == 1
+                session.commit()
+                if won:
+                    try:
+                        mongo_db = get_mongo_client_db()
+                        # Idempotency: clear any pre-existing findings for this scan before (re)inserting.
+                        mongo_db["scan_findings"].delete_many({"scan_id": scan_id})
+                        create_findings_in_mongo_db(scan_id=scan_id, scan_results=results, scan_type=scan.scan_type, mongo_db=mongo_db)
+                    except Exception:
+                        # give the transition back so the next poll ingests again (findings never half-stored)
+                        session.exec(update(table).where(table.id == scan_id, table.scan_status == "success")
+                                     .values(scan_status=previous_status, scan_data={}))
+                        session.commit()
+                        raise
+                    ingested = True
                     console.print(f"Scan with id: {task_id} scan data updated successfully in main database" ,style="bold green")
                 else:
-                    SCAN_DATA = scan.scan_data  # already ingested on a prior poll
-                    scan.info = None
-            elif SCAN_STATUS == "failure":
+                    console.print(f"Scan {scan_id}: another poll already stored the results", style="dim")
+                session.refresh(scan)
+                SCAN_DATA = scan.scan_data
+            elif SCAN_STATUS == "failure" and previous_status not in ("failure", "success"):
                 # Capture a SANITIZED, concise error summary so the cause is not lost.
                 # Prefer the task's exception (async_result.result); fall back to the traceback.
                 # We deliberately avoid persisting the full traceback (file paths / internals).
@@ -168,20 +170,42 @@ def get_status_and_update_db(
                 )
                 if not first_line:
                     first_line = "Scan failed"
-                sanitized_error = first_line[:500]
-                scan.info = {"error": sanitized_error}
+                won = session.exec(
+                    update(table)
+                    .where(table.id == scan_id, or_(table.scan_status.is_(None),
+                                                    table.scan_status.not_in(("failure", "success"))))
+                    .values(scan_status="failure", info={"error": first_line[:500]}, last_updated=now)
+                ).rowcount == 1
+                session.commit()
+                session.refresh(scan)
                 console.print(f"Scan with id: {task_id} failed. Captured sanitized error summary in scan.info." ,style="bold red")
-                # Refund the credits charged at dispatch — ONCE, only on the transition into failure
+                # Refund the credits charged at dispatch, ONCE: only the poll that made the transition refunds
                 # (prevents the customer being billed for a scan that crashed in the worker).
-                if previous_status not in ("failure", "success") and scan.credit_consumed and scan.credit_consumed > 0:
+                refund = scan.credit_charged if scan.credit_charged is not None else scan.credit_consumed
+                if won and refund and refund > 0:
                     try:
-                        refund_credits_to_team(scan.team_id, scan.credit_consumed)
-                        console.print(f"Refunded {scan.credit_consumed} credits to team {scan.team_id} for failed scan {scan_id}", style="bold yellow")
+                        refund_credits_to_team(scan.team_id, refund)
+                        console.print(f"Refunded {refund} credits to team {scan.team_id} for failed scan {scan_id}", style="bold yellow")
                     except Exception as refund_err:
                         console.print(f"Refund failed for scan {scan_id}: {refund_err}", style="bold red")
             else:
-                scan.info = None # reset the info field
-                console.print(f"Scan with id: {task_id} status is already {SCAN_STATUS}, and has not changed . No update needed." ,style="bold green")
+                scan.last_updated = now
+                if previous_status != SCAN_STATUS and SCAN_STATUS not in ("success", "failure"):
+                    scan.scan_status = SCAN_STATUS
+                    console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")
+                if SCAN_STATUS == "started":
+                    info = async_result.info
+                    # info is None until the task emits its first progress meta (race at scan start) — guard the type.
+                    if isinstance(info, dict) and "current" in info:
+                        scan.info = {"current": info["current"]}  # for progress bar updates
+                        console.print(f"Scan with id: {task_id} progress updated to {info['current']} in main database" ,style="bold green")
+                elif SCAN_STATUS == "success":
+                    SCAN_DATA = scan.scan_data  # already ingested on a prior poll
+                    scan.info = None
+                elif SCAN_STATUS != "failure":
+                    scan.info = None # reset the info field
+                session.add(scan)
+                session.commit()
 
             if SCAN_STATUS in ("success", "failure"):
                 try:
@@ -189,20 +213,18 @@ def get_status_and_update_db(
                     clear_inflight_for_scan(session, scan_id)
                 except Exception as inflight_err:
                     console.print(f"DAST inflight clear skipped for scan {scan_id}: {inflight_err}", style="dim yellow")
-            
-            session.add(scan)
-            session.commit()
+
             session.refresh(scan)
             SCAN_OBJECT = scan
 
-        if SCAN_STATUS == "success" and previous_status != "success":
+        if ingested:
             try:
                 from backend.utilities.integrations.jira_ticketing import auto_create_tickets_for_successful_scan
                 auto_create_tickets_for_successful_scan(scan_id, engine)
             except Exception as jira_err:
                 console.print(f"Auto-Jira skipped for scan {scan_id}: {jira_err}", style="yellow")
-        
-            
+
+
         return (SCAN_STATUS , SCAN_DATA , SCAN_OBJECT)
 
     except Exception as e:

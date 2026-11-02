@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import json
 import secrets
 from typing import Any
 
@@ -28,7 +29,7 @@ from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.classify import ASSET_TYPES, classify
 from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
-from backend.utilities.cbom_sources.kinds import KINDS
+from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
 from backend.utilities.cbom_sources.planning import credits, node_status
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
 
@@ -220,6 +221,27 @@ def safe_reap(session: Session, now: _dt.datetime, **kwargs: Any) -> None:
         log("reap FAILED", error=type(exc).__name__, **{k: v for k, v in kwargs.items() if v is not None})
 
 
+# ----------------------------------------------------------------------------- versions
+def connection_version(source: CbomCollectionSource) -> str:
+    """What a job depends on, as a hash: where the source points and how it connects (every config field except the
+    metadata ones: targets, ports, where-fields, credential type, vault reference, tier, window, exclusions ...), the
+    scan node, and the stored credential (a digest of its ciphertext, never the secret).
+
+    ``row_version`` is the EDIT version (a stale form gets a 409, any change bumps it); jobs check this instead, so a
+    rename or a metadata edit (business criticality, exposure, owner ...) never cancels a queued or running job."""
+    config = {k: v for k, v in sorted((source.config or {}).items()) if k not in METADATA_FIELDS}
+    secret = hashlib.sha256((source.secret_encrypted or "").encode("utf-8")).hexdigest()
+    blob = json.dumps({"kind": source.kind, "node_id": source.node_id, "config": config, "secret": secret},
+                      sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
+
+
+def metadata_snapshot(source: CbomCollectionSource, node: CbomScanNode | None) -> dict[str, Any]:
+    """The source's metadata (and its node's segment) when a run is created; posture scores the run with these."""
+    cfg = source.config or {}
+    return {**{k: cfg.get(k) for k in METADATA_FIELDS}, "node_segment": node.segment if node else None}
+
+
 # ----------------------------------------------------------------------------- create
 def _snapshot_exclusions(settings: CbomCollectionSettings) -> list[str]:
     return [str(item.get("cidr")) for item in (settings.network_exclusions or []) if isinstance(item, dict)]
@@ -230,7 +252,7 @@ def create_test_job(
 ) -> CbomCollectionJob:
     """Queue a connection test for the source's node and mark the source ``pending``.  Caller commits."""
     cancel_open_jobs(session, source, now, reason="Replaced by a newer connection test", kinds=("test_connection",))
-    params: dict[str, Any] = {"exclusions": _snapshot_exclusions(settings)}
+    params: dict[str, Any] = {"exclusions": _snapshot_exclusions(settings), "conn_v": connection_version(source)}
     spec = KINDS[source.kind]
     if spec.group == "servers":
         parsed = T.parse_targets((source.config or {}).get("targets") or [], allow_empty=True)
@@ -402,8 +424,12 @@ def _invalid_reason(job: CbomCollectionJob, source: CbomCollectionSource | None,
         return "Source moved to another scan node"
     if node is None and source.node_id is not None and job.node_id is not None:
         return "Source moved to another scan node"
-    if job.source_version is not None and source.row_version != job.source_version:
-        return "Source changed after this job was created"
+    conn_v = (job.params or {}).get("conn_v")
+    if conn_v is not None:
+        if connection_version(source) != conn_v:
+            return "Source changed after this job was created"
+    elif job.source_version is not None and source.row_version != job.source_version:
+        return "Source changed after this job was created"  # a job queued before connection versions existed
     if job.kind == "collect" and not source.enabled:
         return "Source was disabled"
     spec = KINDS.get(source.kind)

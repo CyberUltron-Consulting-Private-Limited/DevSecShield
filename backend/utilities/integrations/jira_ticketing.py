@@ -158,6 +158,15 @@ def create_jira_issue_for_finding(
     return str(key)
 
 
+def jira_candidates(scan_type: str, finding_docs: list[dict]) -> list[dict]:
+    """The stored findings that may become tickets: for CBOM, finding rows only (clean inventory rows such as an
+    AES-GCM are listed in the CBOM but are not findings; ``cbom_rows.is_finding``)."""
+    from backend.utilities.db.findings import is_ticketable_finding
+
+    return [doc for doc in finding_docs
+            if isinstance(doc, dict) and is_ticketable_finding(scan_type, doc.get("finding_data"))]
+
+
 def auto_create_tickets_for_successful_scan(scan_id: int, engine: Engine) -> int:
     """Create one Jira Task per finding when the scan opted in. Returns tickets created."""
     from backend.get_db import get_mongo_client_db
@@ -176,7 +185,7 @@ def auto_create_tickets_for_successful_scan(scan_id: int, engine: Engine) -> int
             console.print(f"Skipping auto-Jira for scan {scan_id}: project or team Jira creds missing", style="yellow")
             return 0
         scan_type = scan.scan_type
-        findings = list(mongo_db["scan_findings"].find({"scan_id": scan_id}))
+        findings = jira_candidates(scan_type, list(mongo_db["scan_findings"].find({"scan_id": scan_id})))
         for finding in findings:
             if created >= MAX_AUTO_TICKETS:
                 console.print(
@@ -256,7 +265,12 @@ def flatten_scan_result_rows(scan_type: str, results: Any) -> list[dict]:
         return rows
     if scan_type in ("iac", "dast", "sbom_sca", "cbom", "ai_bom"):
         items = results.get("results") if isinstance(results, dict) else results
-        return [x for x in (items or []) if isinstance(x, dict)]
+        rows = [x for x in (items or []) if isinstance(x, dict)]
+        if scan_type == "cbom":  # CI tickets: findings only, never clean inventory rows
+            from backend.utilities.cbom_sources.cbom_rows import is_finding
+
+            rows = [x for x in rows if is_finding(x)]
+        return rows
     if scan_type == "llm":
         inner = (results.get("results") or {}) if isinstance(results, dict) else {}
         return [x for x in (inner.get("vulnerabilities") or []) if isinstance(x, dict)]

@@ -63,6 +63,7 @@ from backend.utilities.pdf.report_branding import (  # noqa: E402
     PILL_HIGH_BG,
     PILL_LOW_BG,
     PILL_MEDIUM_BG,
+    PILL_UNKNOWN_BG,
 )
 
 UTC = timezone.utc
@@ -549,7 +550,7 @@ def test_sort_puts_expired_first_then_near_expiry_then_impact_then_valid_to(view
     assert [r.band.days_left for r in computed[:2]] == [-35, 20]
     assert all(r.band.band == VALID for r in computed[2:])
     impacts = [r.cert.impact for r in computed[2:]]
-    order = ["Critical", "High", "Medium", "Low"]
+    order = ["Critical", "High", "Medium", "Low", "Info"]  # a clean certificate (no finding) sorts last
     assert impacts == sorted(impacts, key=order.index)
     assert computed[2].cert.impact == "Critical"  # rsa1024_sha1.pem is the only Critical row
 
@@ -648,9 +649,9 @@ def test_weak_key_signature_and_self_signed_leaf_labels_carry_the_raw_code(rows)
     assert "MEDIUM" in leaf
 
 
-def test_clean_certificate_row_says_no_findings_with_a_low_chip(rows):
+def test_clean_certificate_row_says_no_findings_with_an_info_chip(rows):
     text = row_of(rows, "strong-control.test")
-    assert "Nofindings" in text and "LOW" in text
+    assert "Nofindings" in text and "INFO" in text and "LOW" not in text  # clean is not a Low finding
     assert "(WEAK_" not in text and "SELF_SIGNED_LEAF" not in text
 
 
@@ -718,7 +719,7 @@ def test_chips_follow_the_severity_palette_and_always_carry_text(view):
     assert impact_chip("legacy-internal.test").style.backColor == PILL_CRITICAL_BG
     assert impact_chip("weak-sig.test").style.backColor == PILL_HIGH_BG
     assert impact_chip("selfsigned-leaf.test").style.backColor == PILL_MEDIUM_BG
-    assert impact_chip("strong-control.test").style.backColor == PILL_LOW_BG
+    assert impact_chip("strong-control.test").style.backColor == PILL_UNKNOWN_BG  # informational, neutral
     # a chip is never colour-only
     assert expiry_chip("expired-api.e2e.test").getPlainText() == "EXPIRED"
     assert impact_chip("legacy-internal.test").getPlainText() == "CRITICAL"

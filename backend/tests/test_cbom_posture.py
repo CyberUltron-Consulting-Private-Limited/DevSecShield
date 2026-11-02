@@ -109,7 +109,10 @@ def test_run_posture_endpoint(api, world):
     assert out["pqc_classes"]["quantum-safe"] == 1  # the KMS symmetric key
     assert out["pqc_readiness_pct"] == 50.0 and out["hndl_assets"] == 1
     assert out["mosca"]["configured"] is False
-    assert out["top_risks"][0]["criticality"] == "critical" and out["top_risks"][0]["score"] == 20.0
+    # the run was created while the source was "medium": a later edit never re-scores it (snapshot on the job)
+    top = out["top_risks"][0]
+    assert (top["criticality"], top["score"], top["exposure"]) == ("medium", 10.0, "internal")
+    assert top["exposure_basis"] == "private IP address 10.20.0.1"
     frameworks = {f["framework"] for f in out["compliance"]}
     assert {"NIST", "RBI", "SEBI CSCRF", "CERT-In"} <= frameworks
     patched = api("PATCH", "/1/cbom/sources/settings", json={"risk_model": {"data_shelf_life_years": 10,

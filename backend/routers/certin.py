@@ -20,9 +20,11 @@ from fastapi import (
     Form,
     Header,
     HTTPException,
+    Query,
     UploadFile,
     status,
 )
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from backend.utilities.ratelimit import RateLimiter
 from sqlmodel import Session, select
@@ -329,6 +331,38 @@ async def get_scan_vex(
     return JSONResponse(vex)
 
 
+@router.get("/{team_id}/{type}/scan/{scan_id}/bom", dependencies=[Depends(read_limiter)])
+async def download_scan_bom(
+    team_id: int,
+    type: scan_types,
+    scan_id: int,
+    format: str = Query(default="json", pattern="^(json|xml)$"),
+    Authorization: Annotated[str | None, Header()] = None,
+):
+    """The scan's CycloneDX document: ``format=json`` (what ``bom_signature`` signs) or ``format=xml`` (CBOM scans:
+    the same document written as CycloneDX 1.6 XML, valid against the official XSD; the signature covers the JSON
+    form only, which the ``X-ZS-Signature-Scope`` header states)."""
+    _require_bom_type(type)
+    engine = get_db()
+    user = await get_user_from_header_or_raise_exception(engine, Authorization)
+    check_if_user_is_in_team(user.id, team_id, engine)
+    scan = _load_success_scan(engine, team_id, type, scan_id)
+    bom = bom_dict_from_scan_data(type, scan.scan_data if isinstance(scan.scan_data, dict) else {})
+    if not bom:
+        raise HTTPException(status_code=409, detail="No CycloneDX document is stored for this scan")
+    if format == "json":
+        return JSONResponse(bom, headers={
+            "Content-Disposition": f'attachment; filename="{type}-cyclonedx-{scan_id}.cdx.json"'})
+    if type != "cbom":
+        raise HTTPException(status_code=400, detail="format=xml: XML export is available for CBOM scans")
+    from backend.utilities.cbom_sources import cdx_xml
+
+    body = await run_in_threadpool(cdx_xml.to_xml, bom)
+    return Response(body, media_type=cdx_xml.XML_MEDIA_TYPE, headers={
+        "Content-Disposition": f'attachment; filename="cbom-cyclonedx-{scan_id}.cdx.xml"',
+        "X-ZS-Signature-Scope": cdx_xml.SIGNATURE_SCOPE})
+
+
 @router.get("/{team_id}/{type}/scan/{scan_id}/evidence-pack", dependencies=[Depends(write_limiter)])
 async def download_evidence_pack(
     team_id: int,
@@ -372,6 +406,13 @@ async def download_evidence_pack(
     with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         if bom:
             zf.writestr("bom.cdx.json", json.dumps(bom, indent=2))
+            if type == "cbom":  # the same document as CycloneDX XML; bom_signature.json signs the JSON form only
+                try:
+                    from backend.utilities.cbom_sources import cdx_xml
+
+                    zf.writestr("bom.cdx.xml", cdx_xml.to_xml(bom))
+                except Exception as e:  # the JSON is the signed original; never fail the pack over the XML copy
+                    console.print(f"evidence-pack XML skipped: {e.__class__.__name__}", style="yellow")
         if isinstance(data.get("vex_json"), dict):
             zf.writestr("vex.json", json.dumps(data["vex_json"], indent=2))
         if isinstance(data.get("bom_signature"), dict):

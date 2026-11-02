@@ -22,7 +22,7 @@ from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exce
 # from backend.utilities.celery.celery_connection import get_status_and_update_db
 from backend.utilities.db.functions import get_messages_from_scan, return_scan_list_for_type, update_status_of_scan_in_main_db 
 from backend.utilities.db.metadata import get_scan_metadata_for_type
-from backend.utilities.db.findings import get_findings_for_scan_type
+from backend.utilities.db.findings import get_findings_for_scan_type, is_ticketable_finding
 from backend.utilities.pdf import UnsupportedPdfExport, prepare_pdf_export_payload, write_scan_pdf
 from backend.utilities.ai.chatbot import create_response
 from backend.utilities.team import (
@@ -38,6 +38,7 @@ from backend.utilities.dashboard.sbom_license import (
 )
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.estimate_scan import estimate_credits
+from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
 from backend.utilities.db.schemas import * 
 from backend.utilities.celery.celery_connection import get_status_and_update_db
@@ -432,6 +433,39 @@ async def get_scan(
 
 
 
+def _payload_section(start_scan_payload: StartScanPayload, scan_type: str) -> dict:
+    section = getattr(start_scan_payload, scan_type, None)
+    return section.model_dump(mode="json") if section is not None and hasattr(section, "model_dump") else {}
+
+
+async def _read_upload(uploaded_file: UploadFile | None) -> bytes | None:
+    """The uploaded file's bytes for the estimate digest; the file is rewound for whoever reads it next."""
+    if uploaded_file is None:
+        return None
+    data = await uploaded_file.read()
+    await uploaded_file.seek(0)
+    return data
+
+
+def _store_estimate(engine, scan_id: int, team_id: int, credits: float, measured: dict, *, status_now: str) -> bool:
+    """Credits and what they were measured on, in ONE conditional update (only while the scan is in ``status_now``
+    and not dispatched), so an estimate can never be paired with another input's digest."""
+    with Session(engine) as session:
+        changed = session.exec(
+            update(Scan)
+            .where(Scan.id == scan_id, Scan.team_id == team_id, Scan.scan_status == status_now, Scan.task_id == None)  # noqa: E711
+            .values(credit_consumed=credits, credit_estimate={**measured, "credits": credits})
+        ).rowcount
+        session.commit()
+    return changed == 1
+
+
+def _set_charged(engine, scan_id: int, credits: float | None) -> None:
+    with Session(engine) as session:
+        session.exec(update(Scan).where(Scan.id == scan_id).values(credit_charged=credits))
+        session.commit()
+
+
 def _release_scan_claim(engine, scan_id: int, team_id: int) -> None:
     """
     Release an atomic start-claim made by the /start handler.
@@ -553,8 +587,33 @@ async def start_scan(
             session.commit()
             # Capture credits while session is open; scan is detached after the block exits
             credits_to_deduct = scan.credit_consumed
-        
+            stored_estimate = scan.credit_estimate
 
+        # STEP [ 2.6 ] : =========== The estimate must be for THIS input (inside the claim) ======================
+        # A stored estimate is charged only when it measured what is being started now (same file, repository,
+        # branch and options) with the current formula; otherwise (or for an estimate older than the digest) the
+        # scan is re-estimated here, before any credit moves. D3: CBOM code scans cost at least 1 credit.
+        section = _payload_section(start_scan_payload, type)
+        try:
+            measured = credit_estimate.input_digest(type, section, await _read_upload(uploaded_file))
+            if credit_estimate.needs_reestimate(stored_estimate, measured):
+                console.print(f"Scan {scan_id}: input or formula changed since the estimate; re-estimating", style="bold yellow")
+                fresh = credit_estimate.priced(type, section, await estimate_credits(
+                    scan_type=type, engine=engine, start_scan_payload=start_scan_payload, uploaded_file=uploaded_file))
+                if uploaded_file is not None:
+                    await uploaded_file.seek(0)
+                minimum = credit_estimate.minimum_credits(type, section)
+                if not _store_estimate(engine, scan_id, team_id, fresh, {**measured, "minimum": minimum},
+                                       status_now="pending"):
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or is not ready")
+                if not check_if_team_has_enough_credits(team_id, fresh):
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                        detail=f"The estimate for this input is {fresh} credits and the team does not have enough credits")
+                credits_to_deduct = fresh
+            credits_to_deduct = credit_estimate.priced(type, section, credits_to_deduct or 0)
+        except Exception:
+            _release_scan_claim(engine=engine, scan_id=scan_id, team_id=team_id)
+            raise
 
         # STEP [ 3 ] : =========== Deduct credits BEFORE dispatching scan (atomic with check) ====================== ⭐
         # SECURITY FIX: Deduct credits first to prevent race condition where scan runs without payment.
@@ -566,6 +625,8 @@ async def start_scan(
             console.print(f"Credit deduction failed after claim, releasing claim for scan {scan_id}", style="bold yellow")
             _release_scan_claim(engine=engine, scan_id=scan_id, team_id=team_id)
             raise deduct_error
+        # what was taken, kept apart from the estimate: a refund gives back exactly this
+        _set_charged(engine, scan_id, credits_to_deduct)
 
 
 
@@ -584,6 +645,7 @@ async def start_scan(
             console.print(f"Scan dispatch failed, refunding {credits_to_deduct} credits to team {team_id}", style="bold yellow")
             try:
                 refund_credits_to_team(team_id=team_id, credits=credits_to_deduct)
+                _set_charged(engine, scan_id, None)
             except Exception as refund_err:
                 console.print(f"CRITICAL: Failed to refund credits after scan dispatch failure: {refund_err}", style="bold red")
             # Release the atomic claim so the scan is not stranded in "pending" and can be retried.
@@ -930,20 +992,27 @@ async def estimate_credits_for_scan(
         
         
         # STEP [ 3 ] : =========== Estimate the credits for the scan and update the main db ======================
-        console.print(f"Estimating credits for {type} scan. start scan payload: {start_scan_payload}" ,style="bold yellow")
+        section = _payload_section(start_scan_payload, type)
+        measured = credit_estimate.input_digest(type, section, await _read_upload(uploaded_file))
+        console.print(f"Estimating credits for {type} scan {scan_id}", style="bold yellow")
         credits_required = await estimate_credits(
             scan_type=type,
             engine=engine,
             start_scan_payload=start_scan_payload,
             uploaded_file=uploaded_file,
         )
+        credits_required = credit_estimate.priced(type, section, credits_required)  # D3: CBOM code scans >= 1 credit
+        minimum = credit_estimate.minimum_credits(type, section)
 
-        # STEP [ 4 ] : =========== Update the main db scan the credit_consumed ======================
-        update_scan_credit_consumed(scan_id=scan_id, credits_consumed=credits_required)
+        # STEP [ 4 ] : =========== Store the credits WITH what they were measured on (one conditional update) ======
+        if not _store_estimate(engine, scan_id, team_id, credits_required, {**measured, "minimum": minimum},
+                               status_now="NOT_STARTED"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User cannot estimate credits")
         console.print(f"Credits required for {type} scan: {credits_required} updated in main database" ,style="dim cyan")
 
         return {
             "credits_required": credits_required,
+            "minimum_credits": minimum,
         }
     except Exception as e:
         console.print(f"Error in estimating credits for {type} scan: {e}",style="bold red")
@@ -1015,8 +1084,8 @@ async def create_ticket(
                     except (InvalidId, TypeError):
                         continue
                     doc = mongo_db["scan_findings"].find_one({"_id": finding_oid, "scan_id": scan_id})
-                    if not doc:
-                        continue
+                    if not doc or not is_ticketable_finding(type, doc.get("finding_data")):
+                        continue  # unknown id, or a clean CBOM inventory row (not a finding)
                     info = doc.get("info") if isinstance(doc.get("info"), dict) else {}
                     if (info.get("jira_issue_key") or "").strip():
                         issue_keys.append(info["jira_issue_key"])

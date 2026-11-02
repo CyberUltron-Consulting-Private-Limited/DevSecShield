@@ -524,7 +524,8 @@ function PqcInstanceHover({
                 bom_ref: row.bom_ref ?? null,
                 title: row.name,
                 description: description === "—" ? "" : description,
-                impact: row.impact || "Medium",
+                // a migration row without an impact is clean inventory (no finding), never a Medium finding
+                impact: row.impact || "Info",
                 risk_score: 0,
                 status: "open",
                 compliance_controls: [],

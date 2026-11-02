@@ -18,6 +18,13 @@ from backend.utilities.cbom_sources.classify import classify
 from backend.utilities.cbom_sources.common import iso_z
 
 EXPORT_CAP = 50_000
+# serialNumber = uuid5(this namespace, "<run id>:<KB version>"): the same run exported with the same knowledge base is
+# the same BOM (same serial); a newer KB re-judges the findings, so it is a new serial.
+_SERIAL_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/cbom/sources/run")
+
+
+def export_serial(run_id: int, kb_version: str) -> str:
+    return f"urn:uuid:{uuid.uuid5(_SERIAL_NS, f'{run_id}:{kb_version}')}"
 _IMPACT_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 
@@ -290,14 +297,21 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                 gaps.append(f"{info['source_name']}: {target.get('target')} {target.get('status')}")
         if job.status != "success":
             gaps.append(f"{info['source_name']}: job {job.status}")
+    kb_version = crypto_kb.version()
+    versions = [(name, value) for name, value in (("zs:run_kb_version", run.kb_version),
+                                                   ("zs:classifier_version", run.classifier_version),
+                                                   ("zs:engine_version", run.engine_version)) if value]
     return {
-        "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": f"urn:uuid:{uuid.uuid4()}", "version": 1,
+        "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": export_serial(run.id or 0, kb_version),
+        "version": 1,
         "metadata": {
             "timestamp": iso_z(now),
             "tools": {"components": [{"type": "application", "name": "ZeroShield CBOM Sources", "version": "1.0"}]},
             "properties": [
                 {"name": "zs:run_id", "value": str(run.id)}, {"name": "zs:run_status", "value": run.status},
                 {"name": "zs:asset_count", "value": str(len(rows))}, {"name": "zs:truncated", "value": str(truncated).lower()},
+                {"name": "zs:kb_version", "value": kb_version},
+                *[{"name": name, "value": str(value)} for name, value in versions],
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
             ],
         },

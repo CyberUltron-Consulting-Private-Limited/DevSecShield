@@ -137,6 +137,8 @@ def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None)
         "finished_at": iso_z(run.finished_at),
         "created_at": iso_z(run.created_at),
         "last_updated": iso_z(run.last_updated),
+        # what judged the run when it was created (null on runs from before they were recorded)
+        "versions": {"kb": run.kb_version, "classifier": run.classifier_version, "engine": run.engine_version},
     }
     if jobs is not None:
         out["jobs"] = jobs

@@ -128,6 +128,11 @@ ASSET_TYPES = (ASSET_ALGORITHM, ASSET_CERTIFICATE, ASSET_PROTOCOL, ASSET_MATERIA
 
 # ``results[].impact`` buckets, worst first (rank = index).  Anything else sorts last.
 IMPACT_LEVELS = ("Critical", "High", "Medium", "Low")
+# A clean inventory row (``cbom_rows.is_finding`` is False: an empty finding-code list, not weak, not
+# quantum-vulnerable) has no impact: it is listed under INFO and never counted as an issue, in old scans (stored "Low")
+# and new ones (None) alike, as on the scan dashboard and PDF.  A legacy row stored before ``finding_codes`` existed
+# keeps its stored impact (Tier C: shown, but never graded, because it carries no finding data).
+INFO = "Info"
 
 # Certificate validity bands (``classify_expiry``), in display / sort order.
 EXPIRED = "EXPIRED"  # days_left < 0
@@ -350,7 +355,7 @@ class CertAgg:
     # ``fold_scans`` - ``extract_scan_facts`` has no clock, so a per-scan CertAgg holds UNKNOWN.
     expiry: ExpiryBand = field(default_factory=lambda: ExpiryBand(UNKNOWN, None))
     scan_time_expired: bool | None = None  # results[].expired at scan time (None on legacy tiers)
-    impact: str = "Low"
+    impact: str = INFO  # INFO until a results[] row with a finding says otherwise
     # WEAK_CERTIFICATE_KEY / WEAK_CERTIFICATE_SIGNATURE / SELF_SIGNED_LEAF / EXPIRED_CERTIFICATE
     finding_codes: tuple[str, ...] = ()
     tier: str = TIER_NONE
@@ -1021,6 +1026,9 @@ def _codes_of(value: Any) -> tuple[str, ...]:
 
 def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
     """One ``results[]`` row (any tier) as a single-scan ``AssetAgg`` observation."""
+    # the one read-time finding rule of every CBOM view (a pure, stdlib-only module)
+    from backend.utilities.cbom_sources.cbom_rows import is_finding
+
     asset_type = _asset_type_of(row)
     title = _text(row.get("title")) or _text(row.get("algorithm_name")) or "(unnamed)"
     location = _text(row.get("location")) or ""
@@ -1039,7 +1047,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         ident=bom_ref or f"{_slug(title)}#{location}",
         title=title,
         location=location,
-        impact=_impact_of(row.get("impact")) or "Low",
+        impact=(_impact_of(row.get("impact")) or "Low") if is_finding(row) else INFO,
         finding_codes=_codes_of(row.get("finding_codes")),
         bom_ref=bom_ref,
         description=_text(row.get("description")) or "",
@@ -1166,7 +1174,7 @@ def _cert_from_component(
         is_ca=_tri(props.get("crypto:isCertificateAuthority")),
         signed_by=signed_by,
         scan_time_expired=_tri(row.get("expired")) if row is not None else None,
-        impact=asset.impact if asset is not None else "Low",
+        impact=asset.impact if asset is not None else INFO,
         finding_codes=asset.finding_codes if asset is not None else (),
     )
 
@@ -2692,6 +2700,9 @@ def fold_scans(
     same records give the same fingerprint whatever the order of ``heads`` or ``batch_size``.
     Every date derives from ``now``.
     """
+    # one quantum-readiness definition for every CBOM view (a pure, stdlib-only module)
+    from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
+
     moment = _utc(now) or _EPOCH
     hard = _bounded(hard_max, HARD_MAX_SCANS, 0)
     batch = _bounded(batch_size, BATCH_SIZE, 1)
@@ -2901,14 +2912,14 @@ def fold_scans(
         assets_by_type=_ordered_counts(Counter(a.asset_type for a in live), ASSET_TYPES),
         assets_by_impact=_ordered_counts(Counter(a.impact for a in live), IMPACT_LEVELS),
         issue_by_impact=_ordered_counts(
-            Counter(a.impact for a in live if a.finding_codes), IMPACT_LEVELS
+            Counter(a.impact for a in live if a.finding_codes and a.impact != INFO), IMPACT_LEVELS
         ),
         finding_counts=dict(sorted(codes.items())),
         pqc_vulnerable=vulnerable,
         pqc_safe=safe,
         pqc_hybrid=hybrid,
         pqc_ungraded=len(algorithms) - vulnerable - safe,
-        readiness_pct=round(100.0 * safe / (safe + vulnerable), 1) if safe + vulnerable else None,
+        readiness_pct=quantum_readiness_pct(vulnerable, safe + vulnerable),
         compliance_sources_pooled=len(full),
         compliance_legacy_excluded=legacy_excluded,
         warnings=tuple(warning_text),

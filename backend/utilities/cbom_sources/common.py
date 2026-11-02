@@ -43,6 +43,22 @@ def sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def engine_version() -> str:
+    """The API build that classifies node facts: ``DSS_BUILD_VERSION`` (set by the deployment, e.g. a git sha), else
+    the backend package version, else "unknown". At most 32 characters."""
+    import os
+
+    value = (os.environ.get("DSS_BUILD_VERSION") or "").strip()
+    if not value:
+        try:
+            from importlib.metadata import version
+
+            value = "devsecshield-" + version("devsecshield")
+        except Exception:
+            value = "unknown"
+    return value[:32]
+
+
 def new_token(prefix: str, nbytes: int = 32) -> str:
     return f"{prefix}{secrets.token_urlsafe(nbytes)}"
 

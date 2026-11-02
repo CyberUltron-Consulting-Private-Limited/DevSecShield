@@ -1,5 +1,21 @@
 from backend.new_models import scan_types , Scan
 
+_CBOM_INPUT_COUNTS = ("components_total", "crypto_assets", "imported", "skipped_not_crypto", "skipped_invalid",
+                      "duplicates")
+
+
+def _cbom_input(raw) -> dict | None:
+    """The import report of an uploaded CBOM file (``cbom_input``), reduced to its known fields: counts, truncation,
+    spec version and up to 20 short notes. None for code scans (they have no import report)."""
+    if not isinstance(raw, dict):
+        return None
+    out: dict = {k: raw[k] for k in _CBOM_INPUT_COUNTS if isinstance(raw.get(k), int) and not isinstance(raw.get(k), bool)}
+    out["truncated"] = raw.get("truncated") is True
+    spec = raw.get("spec_version")
+    out["spec_version"] = str(spec)[:16] if spec not in (None, "") else None
+    out["notes"] = [str(n)[:300] for n in (raw.get("notes") or []) if isinstance(n, str) and n.strip()][:20]
+    return out
+
 def get_scan_metadata(scan_type: scan_types, scan: Scan):
     """
     for SAST scans : 
@@ -230,16 +246,20 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         attestations = None
         bom_signature = None
         vex_json = None
+        cbom_input = None
         if scan.scan_data and isinstance(scan.scan_data, dict):
             attestations = scan.scan_data.get("attestations")
             bom_signature = scan.scan_data.get("bom_signature")
             vex_json = scan.scan_data.get("vex_json")
+            cbom_input = _cbom_input(scan.scan_data.get("cbom_input"))
 
         return {
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
             "cbom_file_used": cbom_file_used,
+            # an uploaded CBOM file: what was read, skipped or truncated, and the notes to show the user
+            "cbom_input": cbom_input,
             "scan_binaries": scan_binaries,
             "cbom_json": cbom_json,
             "cbom_distributions": cbom_distributions,

@@ -97,8 +97,12 @@ def _cve_count(cves: Any) -> int:
 
 
 def cbom_finding_risk_score(fd: dict[str, Any] | None) -> float:
-    """0–10 risk for a CBOM finding / result row."""
+    """0–10 risk for a CBOM finding / result row; 0.0 for clean inventory (``cbom_rows.is_finding``)."""
+    from backend.utilities.cbom_sources.cbom_rows import is_finding
+
     fd = fd or {}
+    if not is_finding(fd):
+        return 0.0  # an AES-GCM a CBOM must list is not a Low finding (the engine scores it 0.0 too)
     score = _impact_base(fd.get("impact"))
     codes = fd.get("finding_codes") or []
     if isinstance(codes, (list, tuple, set)):
