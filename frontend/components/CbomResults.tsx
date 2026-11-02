@@ -103,6 +103,8 @@ import {
   type CbomCompliance,
 } from "@/components/cbom/CbomCryptoCharts";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
+import { CodeChanges } from "@/components/cbom/sources/ChangesPanel";
+import { CodeWavesPanel } from "@/components/cbom/sources/WavesControls";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
 
@@ -1402,6 +1404,12 @@ export default function CbomResults({
               findings={findingsList ?? []}
               onOpenFinding={(f) => setSelectedFinding(f)}
             />
+          )}
+          {cryptoDistributions && Number.isFinite(tid) && tid > 0 && Number.isFinite(sid) && sid > 0 && (
+            <>
+              <CodeChanges teamId={tid} scanId={sid} />
+              <CodeWavesPanel teamId={tid} scanId={sid} />
+            </>
           )}
           <RbiCsfRollup
             rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}

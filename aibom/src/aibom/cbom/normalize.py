@@ -153,8 +153,20 @@ def _finding(comp: AIComponent, result: ScanResult) -> dict[str, Any]:
         "description": _finding_description(comp, result),
         "location": props.get("crypto:source") or props.get("discovery:source") or "",
         **_occurrence_fields(props),
+        **_business_fields(props),
         "risk_score": _risk_score_for(comp, result),
     }
+
+
+_BUSINESS_ROW = (("crypto:businessSystem", "application"), ("crypto:businessOwner", "owner"),
+                 ("crypto:businessDataClassification", "data_classification"),
+                 ("crypto:businessDataLifetime", "data_lifetime"), ("crypto:businessOwnerHint", "owner_hint"))
+
+
+def _business_fields(props: dict[str, Any]) -> dict[str, Any]:
+    """Owner, application, data classification / lifetime from cbom-mapping.yaml and CODEOWNERS
+    (``posture_linkage_scan``); absent -> nothing added, so rows without a mapping are unchanged."""
+    return {key: props[name] for name, key in _BUSINESS_ROW if props.get(name)}
 
 
 def _occurrence_fields(props: dict[str, Any]) -> dict[str, Any]:

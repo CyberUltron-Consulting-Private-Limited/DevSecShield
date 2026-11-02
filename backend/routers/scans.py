@@ -1168,15 +1168,11 @@ async def toggle_finding_state(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found for this scan")
 
         if data.state == "fixed":
-            scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"finding_status": data.state, "fixed_at": datetime.now(timezone.utc)}})
-            try:
-                from backend.utilities.integrations.jira_ticketing import close_jira_issue_for_finding
-                with Session(engine) as session:
-                    team = session.exec(select(Team).where(Team.id == team_id)).first()
-                    if team:
-                        close_jira_issue_for_finding(target_finding, team)
-            except Exception as jira_close_err:
-                console.print(f"Jira close-on-fixed skipped for {data.finding_id}: {jira_close_err}", style="yellow")
+            # one helper for "fixed" (status + Jira close-on-fixed), shared with a re-scan that proves the fix
+            from backend.utilities.db.finding_state import mark_finding_fixed
+            with Session(engine) as session:
+                team = session.exec(select(Team).where(Team.id == team_id)).first()
+            mark_finding_fixed(scan_findings_collection, target_finding, team, now=datetime.now(timezone.utc))
         elif data.state == "ignored":
             scan_findings_collection.update_one({"_id": finding_oid}, {"$set": {"finding_status": data.state, "ignored_at": datetime.now(timezone.utc)}})
         else:

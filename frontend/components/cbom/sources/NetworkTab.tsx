@@ -34,6 +34,7 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys } from "./keys";
+import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import {
   ago,
   countHours,
@@ -1123,15 +1124,16 @@ function AddRangeForm({
   const [cidr, setCidr] = useState("");
   const [nodeId, setNodeId] = useState<number | null>(nodes.length === 1 ? nodes[0].id : null);
   const [mode, setMode] = useState<Mode>("full");
-  const [errors, setErrors] = useState<{ cidr?: string | null; node?: string | null }>({});
+  const [meta, setMeta] = useState<SourceMetadata>(() => metadataFrom(null));
+  const [errors, setErrors] = useState<{ cidr?: string | null; node?: string | null; meta?: string | null }>({});
 
   const save = useMutation({
-    mutationFn: ({ test }: { test: boolean }) =>
+    mutationFn: ({ test, metaConfig }: { test: boolean; metaConfig: Record<string, unknown> }) =>
       createCbomSource(teamId, {
         kind: "network_range",
         name: rangeName(cidr, takenNames),
         node_id: nodeId ?? undefined,
-        config: { cidr: cidr.trim(), mode },
+        config: { cidr: cidr.trim(), mode, ...metaConfig },
         test_after_save: test,
       }),
     onSuccess: onDone,
@@ -1139,10 +1141,12 @@ function AddRangeForm({
   });
 
   const submit = (test: boolean) => {
-    const next = { cidr: rangeError(cidr, true), node: nodeId ? null : "Choose the scan node that reaches this range" };
+    const metaConfig = metadataConfig(meta);
+    const next = { cidr: rangeError(cidr, true), node: nodeId ? null : "Choose the scan node that reaches this range",
+                   meta: typeof metaConfig === "string" ? metaConfig : null };
     setErrors(next);
-    if (next.cidr || next.node) return;
-    save.mutate({ test });
+    if (next.cidr || next.node || typeof metaConfig === "string") return;
+    save.mutate({ test, metaConfig });
   };
 
   return (
@@ -1192,6 +1196,11 @@ function AddRangeForm({
           Add a scan node first
         </Button>
       )}
+      <details className="rounded-md border border-zinc-200 dark:border-zinc-800 p-3">
+        <summary className="cursor-pointer text-sm font-medium text-zinc-900 dark:text-white">Ownership and data</summary>
+        <div className="mt-3"><MetadataFields value={meta} onChange={setMeta} idPrefix="range" /></div>
+        {errors.meta && <p className="text-xs text-red-600 dark:text-red-400 mt-2" role="alert">{errors.meta}</p>}
+      </details>
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="outline" className="cursor-pointer" onClick={onDone} disabled={save.isPending}>
           Cancel

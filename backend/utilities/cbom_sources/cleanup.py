@@ -10,14 +10,20 @@ from backend.new_models import (
     CbomCollectionAuditEvent,
     CbomCollectionJob,
     CbomCollectionRun,
+    CbomCollectionSchedule,
     CbomCollectionSettings,
     CbomCollectionSource,
+    CbomDriftEvent,
     CbomEvidenceArea,
     CbomEvidenceVendor,
+    CbomRemediationAssignment,
     CbomScanNode,
 )
 
 _ORDER = (
+    CbomDriftEvent,
+    CbomRemediationAssignment,
+    CbomCollectionSchedule,
     CbomCollectedAsset,
     CbomCollectionJob,
     CbomCollectionRun,

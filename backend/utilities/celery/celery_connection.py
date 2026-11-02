@@ -223,6 +223,14 @@ def get_status_and_update_db(
                 auto_create_tickets_for_successful_scan(scan_id, engine)
             except Exception as jira_err:
                 console.print(f"Auto-Jira skipped for scan {scan_id}: {jira_err}", style="yellow")
+            if SCAN_OBJECT is not None and SCAN_OBJECT.scan_type == "cbom":
+                # drift against the previous scan of the same repository and branch; findings it no longer has are
+                # marked fixed and their Jira tickets closed (runs once: only the poll that ingested gets here)
+                try:
+                    from backend.utilities.cbom_sources.drift import on_code_scan_success
+                    on_code_scan_success(scan_id, engine)
+                except Exception as drift_err:
+                    console.print(f"CBOM drift skipped for scan {scan_id}: {type(drift_err).__name__}", style="yellow")
 
 
         return (SCAN_STATUS , SCAN_DATA , SCAN_OBJECT)

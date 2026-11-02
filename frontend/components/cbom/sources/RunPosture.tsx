@@ -8,6 +8,7 @@ import { ExternalLink, Info } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import KbFindingDetails from "@/components/cbom/KbFindingDetails";
+import { cbomOpsKeys, getCbomAssetSbom } from "@/utils/api/cbom_ops";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -308,7 +309,26 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
           )}
         </div>
       )}
+      {(a.type === "crypto_library" || a.type === "process_library") && <SbomLinks teamId={teamId} assetId={a.id} />}
       <KbFindingDetails details={a.details} />
+    </div>
+  );
+}
+
+/** "Also in SBOM scan X (component Y)": the team's SBOM scans that list this library (purl, else name and version). */
+function SbomLinks({ teamId, assetId }: { teamId: number; assetId: number }) {
+  const q = useQuery({ queryKey: cbomOpsKeys.assetSbom(teamId, assetId), queryFn: () => getCbomAssetSbom(teamId, assetId),
+                       retry: 1, staleTime: 60_000 });
+  if (!q.data) return null;
+  return (
+    <div className="text-xs text-zinc-600 dark:text-zinc-400 space-y-0.5" data-testid="asset-sbom-links">
+      {q.data.purl && <p>Package URL: <span className="font-mono break-all">{q.data.purl}</span></p>}
+      {q.data.matches.length === 0 ? <p>Not listed in the team&apos;s recent SBOM scans.</p> : q.data.matches.map((m) => (
+        <p key={m.scan_id}>
+          Also in SBOM scan <span className="font-medium text-zinc-800 dark:text-zinc-200">{m.scan_title} (#{m.scan_id})</span>
+          {" "}as {m.component}{m.match === "name" ? " (another version)" : ""}
+        </p>
+      ))}
     </div>
   );
 }

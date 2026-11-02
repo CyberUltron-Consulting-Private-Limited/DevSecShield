@@ -2280,7 +2280,7 @@ FROZEN_FIELDS = {
         "scans sources assets certs libs frameworks requirements asset_occurrences "
         "assets_by_type assets_by_impact issue_by_impact finding_counts pqc_vulnerable pqc_safe "
         "pqc_hybrid pqc_ungraded readiness_pct compliance_sources_pooled "
-        "compliance_legacy_excluded warnings posture"
+        "compliance_legacy_excluded warnings posture remediation"  # remediation: WP10 (loader only, not compared)
     ),
 }
 

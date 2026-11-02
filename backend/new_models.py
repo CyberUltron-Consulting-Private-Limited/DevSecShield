@@ -1,4 +1,5 @@
 import datetime
+import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
 from sqlalchemy import Text, UniqueConstraint
@@ -303,6 +304,9 @@ class CbomCollectionSource(SQLModel, table=True):
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    # stable identity that survives deletion: snapshotted on every collect job, so diffs, drift events and remediation
+    # assignments keep pointing at "the same source" after a rename, and a re-created source is a new one
+    source_uid: str | None = Field(default_factory=lambda: uuid.uuid4().hex, max_length=32, index=True)
 
 
 class CbomCollectionRun(SQLModel, table=True):
@@ -330,6 +334,8 @@ class CbomCollectionRun(SQLModel, table=True):
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     finished_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    schedule_id: int | None = Field(default=None, index=True)  # set when a schedule started the run
+    drift_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)  # drift events recorded (once)
 
 
 class CbomCollectionJob(SQLModel, table=True):
@@ -472,3 +478,80 @@ class CbomCollectionAuditEvent(SQLModel, table=True):
     object_type: str = Field(max_length=24)
     object_id: int | None = Field(default=None)
     changed_fields: list | None = Field(default_factory=list, sa_column=Column(JSON))
+
+
+class CbomCollectionSchedule(SQLModel, table=True):
+    """A recurring collection run: daily / weekly / monthly at a wall-clock time in the team's window time zone."""
+    __tablename__ = "cbomcollectionschedule"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    owner_user_id: int  # the runs it starts are this member's (credits, audit "system" on their behalf)
+    updated_by_user_id: int | None = Field(default=None)
+    name: str = Field(max_length=64)
+    enabled: bool = Field(default=True)
+    frequency: str = Field(default="weekly", max_length=8)  # daily | weekly | monthly
+    time_of_day: str = Field(default="02:00", max_length=5)  # HH:MM in the team's window_timezone
+    weekday: int | None = Field(default=None)  # weekly: 0 = Monday
+    monthday: int | None = Field(default=None)  # monthly: 1-28
+    include: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    source_ids: list | None = Field(default_factory=list, sa_column=Column(JSON))  # empty: every source in the groups
+    min_criticality: str | None = Field(default=None, max_length=8)  # only sources at or above this criticality
+    soc_ack_by: int | None = Field(default=None)  # network ranges need the SOC acknowledgement, kept with the schedule
+    soc_ack_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    next_run_at: datetime.datetime | None = Field(default=None, sa_type=DateTime, index=True)  # naive UTC
+    last_slot: str | None = Field(default=None, max_length=32)  # local wall time of the last slot fired
+    last_fired_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_run_id: int | None = Field(default=None)
+    last_status: str | None = Field(default=None, max_length=16)  # queued | skipped
+    last_message: str | None = Field(default=None, max_length=512)
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomDriftEvent(SQLModel, table=True):
+    """What changed between two complete collections of the same source (or two code scans of the same repository
+    and branch): finding opened / resolved, asset new / removed, certificate renewed / expiring, schedule skipped.
+    ``dedupe_key`` makes recording idempotent; ``forwarded_at`` is for the integrations that forward events."""
+    __tablename__ = "cbomdriftevent"
+    __table_args__ = (UniqueConstraint("team_id", "dedupe_key", name="uq_cbomdriftevent_team_key"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime, index=True)
+    scope: str = Field(default="node", max_length=8)  # node | code
+    kind: str = Field(max_length=24)
+    run_id: int | None = Field(default=None, index=True)
+    baseline_run_id: int | None = Field(default=None)
+    scan_id: int | None = Field(default=None, index=True)
+    baseline_scan_id: int | None = Field(default=None)
+    source_ref: str = Field(default="", max_length=255)  # source uid (node) or repository@branch key (code)
+    source_name: str | None = Field(default=None, max_length=255)
+    asset_key: str | None = Field(default=None, max_length=64, index=True)  # stable identity (identity.stable_key)
+    asset_label: str | None = Field(default=None, max_length=255)
+    code: str | None = Field(default=None, max_length=48)
+    severity: str | None = Field(default=None, max_length=16)
+    detail: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    dedupe_key: str = Field(max_length=64)
+    forwarded_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+class CbomRemediationAssignment(SQLModel, table=True):
+    """Wave, owner, target date and status of one asset, keyed by its STABLE identity (not a row id), so the plan
+    survives every later run or scan of the same source."""
+    __tablename__ = "cbomremediationassignment"
+    __table_args__ = (UniqueConstraint("team_id", "asset_key", name="uq_cbomremediation_team_asset"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    asset_key: str = Field(max_length=64)
+    scope: str = Field(default="node", max_length=8)  # node | code
+    source_ref: str = Field(default="", max_length=255)
+    label: str | None = Field(default=None, max_length=255)
+    wave: int | None = Field(default=None)  # 1-4; None = the suggested wave applies
+    owner: str | None = Field(default=None, max_length=128)
+    target_date: str | None = Field(default=None, max_length=10)  # YYYY-MM-DD
+    status: str = Field(default="open", max_length=16)  # open | in_progress | done | accepted_risk
+    note: str | None = Field(default=None, max_length=500)
+    updated_by_user_id: int | None = Field(default=None)
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)

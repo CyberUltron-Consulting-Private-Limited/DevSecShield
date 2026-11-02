@@ -38,13 +38,23 @@ Criticality = Literal["low", "medium", "high", "critical"]
 
 
 Exposure = Literal["internet", "internal", "unknown"]
+DataClassification = Literal["public", "internal", "confidential", "restricted"]
+
+
+def _metadata_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = "".join(ch for ch in value if ch >= " " and ch != "\x7f").strip()
+    return text or None
 
 
 class _Source(_Strict):
     """Fields every source has: METADATA about the source, never about how to reach it.
 
     * business_criticality scales the risk score of what the source finds;
-    * exposure overrides the internet exposure derived from the collected facts (risk x 1.5 when internet-facing).
+    * exposure overrides the internet exposure derived from the collected facts (risk x 1.5 when internet-facing);
+    * owner, application, data_classification and data_lifetime_years say who answers for the source, which
+      application it serves and how sensitive / long-lived its data is (remediation owners, roadmap, Mosca X).
 
     Every field declared here is metadata (``METADATA_FIELDS``): editing it never cancels a job or resets the
     connection test, a source form that does not send it keeps the stored value (send null to clear), and a run
@@ -52,6 +62,15 @@ class _Source(_Strict):
     """
     business_criticality: Criticality | None = None
     exposure: Exposure | None = None
+    owner: str | None = Field(default=None, max_length=128)
+    application: str | None = Field(default=None, max_length=128)
+    data_classification: DataClassification | None = None
+    data_lifetime_years: int | None = Field(default=None, ge=0, le=100)
+
+    @field_validator("owner", "application")
+    @classmethod
+    def _plain_text(cls, v: str | None) -> str | None:
+        return _metadata_text(v)
 
 
 class VaultRef(_Strict):

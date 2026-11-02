@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Calculator, Eye, Loader2, Play } from "lucide-react";
+import { Ban, Calculator, Eye, GitCompare, Loader2, Play } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -25,9 +25,12 @@ import {
   type CbomSourcesOverview,
 } from "@/utils/backend_api";
 
+import { CompareDialog, RunChanges } from "./ChangesPanel";
 import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
 import RunResults from "./RunResults";
 import { CriticalityCard } from "./RunPosture";
+import SchedulesCard from "./SchedulesCard";
+import { SourceMetadataCard } from "./SourceMetadata";
 import { credits, formatDateTime, newRequestId, pluralize } from "./logic";
 import {
   Checkbox2,
@@ -172,6 +175,7 @@ function sameInclude(a: IncludeState, b: IncludeState): boolean {
 export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
   const queryClient = useQueryClient();
   const [detailsRunId, setDetailsRunId] = useState<number | null>(null);
+  const [compareRunId, setCompareRunId] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState<CbomRun | null>(null);
 
   const overviewQuery = useQuery({
@@ -337,6 +341,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
       </SectionCard>
 
       <CriticalityCard teamId={teamId} />
+      <SourceMetadataCard teamId={teamId} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 min-w-0">
@@ -470,6 +475,18 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
                             <Eye className="h-4 w-4 mr-1.5" />
                             Results
                           </Button>
+                          {TERMINAL_RUN.has(run.status) && runs.length > 1 && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="cursor-pointer"
+                              data-testid={`review-run-compare-${run.id}`}
+                              onClick={() => setCompareRunId(run.id)}
+                            >
+                              <GitCompare className="h-4 w-4 mr-1.5" />
+                              Compare
+                            </Button>
+                          )}
                           {isActiveRun(run.status) && ((run.job_counts?.pending ?? 0) + (run.job_counts?.claimed ?? 0)) > 0 &&
                             (overview.viewer?.is_admin || overview.viewer?.user_id === run.owner_user_id) && (
                             <Button
@@ -498,6 +515,11 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
       {detailsRunId !== null && (
         <RunDetailsDialog key={detailsRunId} teamId={teamId} runId={detailsRunId} onClose={() => setDetailsRunId(null)} />
       )}
+      {compareRunId !== null && (
+        <CompareDialog key={compareRunId} teamId={teamId} runId={compareRunId} runs={runs} onClose={() => setCompareRunId(null)} />
+      )}
+
+      <SchedulesCard teamId={teamId} />
 
       <ConfirmDialog
         open={!!cancelling}
@@ -819,6 +841,12 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+          {run && jobs.length > 0 && (
+            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-2">
+              <p className="text-sm font-medium text-zinc-900 dark:text-white">Changes</p>
+              <RunChanges teamId={teamId} runId={runId} finished={TERMINAL_RUN.has(run.status)} />
             </div>
           )}
           {run && jobs.length > 0 && (
