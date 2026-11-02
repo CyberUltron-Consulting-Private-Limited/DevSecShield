@@ -8,7 +8,7 @@ from bson.errors import InvalidId
 from fastapi import APIRouter, Form, UploadFile
 from fastapi import BackgroundTasks, Depends, HTTPException, Header, status
 from fastapi.responses import FileResponse
-from fastapi_throttle import RateLimiter
+from backend.utilities.ratelimit import RateLimiter
 from pydantic import ValidationError
 from sqlalchemy import update
 from sqlmodel import Session, select
@@ -50,16 +50,20 @@ from datetime import datetime, timezone
 
 router = APIRouter( tags=["scans"])   
 console = Console()
-limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
+# Per verified user, per worker (backend/utilities/ratelimit.py).  Reads cover the 6-second status polling of
+# every open scan tab; finding toggles are high because bulk actions send one request per selected finding.
+read_limiter = RateLimiter("scans.read", times=120, seconds=60)
+write_limiter = RateLimiter("scans.write", times=30, seconds=60)
+start_limiter = RateLimiter("scans.start", times=10, seconds=60)  # start, re-run, estimate, AI remediation
+finding_limiter = RateLimiter("scans.finding", times=600, seconds=60)
     
 # revamped ✅
-@router.get("/{team_id}/{type}/scans",summary="List all scans for a team")
+@router.get("/{team_id}/{type}/scans",summary="List all scans for a team", dependencies=[Depends(read_limiter)])
 async def list_scans(
     team_id: int, 
     type: scan_types, 
     background_tasks: BackgroundTasks, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)],
+    Authorization: Annotated[str | None, Header()] = None ,
     ):
     """
     List all scans for a team.
@@ -101,13 +105,12 @@ async def list_scans(
 
     
 # revamped ✅
-@router.post("/{team_id}/{type}/scan",summary="Create a new scan")
+@router.post("/{team_id}/{type}/scan",summary="Create a new scan", dependencies=[Depends(write_limiter)])
 async def create_scan( 
     team_id: int,
     data: CreateScanData, 
     type: scan_types, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)],
+    Authorization: Annotated[str | None, Header()] = None ,
     ):
     """
     Create a new scan.
@@ -146,14 +149,13 @@ async def create_scan(
 
 
 # revamped ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/message",summary="Send a message to a scan")
+@router.post("/{team_id}/{type}/scan/{scan_id}/message",summary="Send a message to a scan", dependencies=[Depends(write_limiter)])
 async def send_message_to_scan(
     team_id: int, 
     type: scan_types, 
     data: SendMessageToScanData,
     scan_id: int, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Send a message to a scan.
     Note : 
@@ -276,13 +278,12 @@ async def send_message_to_scan(
 
 
 # revamped ✅
-@router.get("/{team_id}/{type}/scan/{scan_id}",summary="Get the scan status of a scan conversation")
+@router.get("/{team_id}/{type}/scan/{scan_id}",summary="Get the scan status of a scan conversation", dependencies=[Depends(read_limiter)])
 async def get_scan(
     type: scan_types, 
     scan_id: int, 
     team_id: int,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Get the scan status of a scan conversation.
     """
@@ -459,14 +460,14 @@ def _release_scan_claim(engine, scan_id: int, team_id: int) -> None:
 
 
 # revamped ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/start",summary="Start a scan")
+@router.post("/{team_id}/{type}/scan/{scan_id}/start",summary="Start a scan", dependencies=[Depends(start_limiter)])
 async def start_scan(
     type: scan_types,
     scan_id: int,
     team_id: int,
     start_scan_payload_string: str = Form(...),
     uploaded_file: UploadFile | None = None,
-    Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Start a scan.
     """
@@ -605,13 +606,12 @@ async def start_scan(
 
 
 # revamped ✅
-@router.delete("/{team_id}/{type}/scan/{scan_id}",summary="Delete a scan conversation")
+@router.delete("/{team_id}/{type}/scan/{scan_id}",summary="Delete a scan conversation", dependencies=[Depends(write_limiter)])
 async def delete_scan(
     type: scan_types, 
     scan_id: int, 
     team_id: int, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Delete a scan.
     """
@@ -677,14 +677,13 @@ async def delete_scan(
 
 
 # revamped ✅
-@router.put("/{team_id}/{type}/scan/{scan_id}",summary="Update a scan . Use this for renaming the scan")
+@router.put("/{team_id}/{type}/scan/{scan_id}",summary="Update a scan . Use this for renaming the scan", dependencies=[Depends(write_limiter)])
 async def update_scan(
     type: scan_types, 
     scan_id: int, 
     team_id: int,
     data: UpdateScanData, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)],
+    Authorization: Annotated[str | None, Header()] = None ,
 ):
     """
     Update a scan. ( rename the scan )
@@ -757,14 +756,13 @@ async def update_scan(
 
 
 # revamped ✅
-@router.get("/{team_id}/{type}/scan/{scan_id}/export",summary="Export the results of a scan")
+@router.get("/{team_id}/{type}/scan/{scan_id}/export",summary="Export the results of a scan", dependencies=[Depends(write_limiter)])
 async def export_scan(
     type: scan_types, 
     scan_id: int, 
     team_id: int,
     background_tasks: BackgroundTasks,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)] ,
+    Authorization: Annotated[str | None, Header()] = None ,
     ):
     """
     Export the results of a scan.
@@ -822,14 +820,14 @@ async def export_scan(
 
 
 # revamped ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/reinitialize",summary="Reinitialize a scan")
+@router.post("/{team_id}/{type}/scan/{scan_id}/reinitialize",summary="Reinitialize a scan", dependencies=[Depends(start_limiter)])
 async def reinitialize_scan(
     type: scan_types,
     scan_id: int, 
     team_id: int,
     start_scan_payload_string: str = Form(...),
     uploaded_file: UploadFile | None = None,
-    Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Reinitialize a scan.
     """
@@ -887,14 +885,14 @@ async def reinitialize_scan(
 
 
 # new route ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/estimate_credits",summary="Estimate the credits for a scan")
+@router.post("/{team_id}/{type}/scan/{scan_id}/estimate_credits",summary="Estimate the credits for a scan", dependencies=[Depends(start_limiter)])
 async def estimate_credits_for_scan(
     type: scan_types,
     scan_id: int, 
     team_id: int,
     start_scan_payload_string: str = Form(...),
     uploaded_file: UploadFile | None = None,
-    Authorization: Annotated[str | None, Header()] = None , dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Estimate the credits for a scan.
     """
@@ -955,14 +953,13 @@ async def estimate_credits_for_scan(
 
 
 # revamped ✅
-@router.post("/{team_id}/{type}/scan/{scan_id}/create_ticket",summary="Create a ticket for a scan")
+@router.post("/{team_id}/{type}/scan/{scan_id}/create_ticket",summary="Create a ticket for a scan", dependencies=[Depends(write_limiter)])
 async def create_ticket(
     type: scan_types, 
     scan_id: int, 
     team_id: int,
     data: CreateTicketData,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)] ,
+    Authorization: Annotated[str | None, Header()] = None ,
     ):
     """
     Create a ticket for a scan.
@@ -1060,14 +1057,13 @@ async def create_ticket(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in creating ticket for scan , please try again later")
 
 
-@router.post("/{team_id}/{type}/scan/{scan_id}/finding",summary="Toggle finding state between fixed | ignored | in_progress | not_started ") 
+@router.post("/{team_id}/{type}/scan/{scan_id}/finding",summary="Toggle finding state between fixed | ignored | in_progress | not_started ", dependencies=[Depends(finding_limiter)]) 
 async def toggle_finding_state(
     type: scan_types,
     scan_id: int,
     team_id: int,
     data: ToggleFindingStateData,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)] ,
+    Authorization: Annotated[str | None, Header()] = None ,
     ):
     """
     Toggle finding state between fixed | ignored | in_progress | not_started 
@@ -1131,14 +1127,13 @@ async def toggle_finding_state(
 
 
 @router.post("/{team_id}/{type}/scan/{scan_id}/finding/{finding_id}/remediate",
-             summary="Generate AI remediation (fix code + exploit payload) for a finding")
+             summary="Generate AI remediation (fix code + exploit payload) for a finding", dependencies=[Depends(start_limiter)])
 async def generate_finding_remediation(
     team_id: int,
     type: scan_types,
     scan_id: int,
     finding_id: str,
     Authorization: Annotated[str | None, Header()] = None,
-    dependencies=[Depends(limiter)],
     ):
     """
     Generate AI remediation for a specific finding.

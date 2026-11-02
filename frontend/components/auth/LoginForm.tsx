@@ -20,6 +20,7 @@ import api from "@//utils/interceptors"
 import { useRouter } from "next/navigation"
 import { handleApiError, showErrorToast } from "@/utils/error-handler"
 import { text_input_validation } from "@/utils/input_validation"
+import { loginPasswordProblem, newPasswordProblem, NEW_PASSWORD_HINT } from "@/utils/password_rules"
 
 
 
@@ -44,6 +45,8 @@ export default function LoginPage({
   const [timer, setTimer] = useState(delay*1000)
   const [ timerId , setTimerId ] = useState<NodeJS.Timeout | null>(null)
   const [timerStarted, setTimerStarted] = useState(false)
+  const [sendingCode, setSendingCode] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if(timer===0){
@@ -75,15 +78,16 @@ export default function LoginPage({
   const handleSendVerificationCode = async () => {
     const toastId = toast.loading("Sending verification code...")
     try{
-        if(userData?.email === ""){
+        if(userData?.email.trim() === ""){
             toast.error("Please enter your email address")
             return
         }
+        setSendingCode(true)
         setTimerStarted(true)
             setTimerId(setInterval(() => {
               setTimer(prev=>prev - 1000)
             }, 1000))
-        const response = await api.post("/send_code",{email: userData?.email})
+        const response = await api.post("/send_code",{email: userData?.email.trim()})
         if(response.status === 200){
             toast.success("Verification code sent successfully")
             
@@ -96,6 +100,7 @@ export default function LoginPage({
         showErrorToast(error, "Error while sending verification code");
     }
     finally{
+        setSendingCode(false)
         toast.dismiss(toastId)
     }
   }
@@ -104,7 +109,13 @@ export default function LoginPage({
   const router = useRouter()
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    const toastId = toast.loading("Registering...")
+    const problem = newPasswordProblem(userData?.password || "")
+    if (problem) {
+      toast.error(problem)
+      return
+    }
+    const toastId = toast.loading("Creating your account...")
+    setSubmitting(true)
 
 
     try{
@@ -134,13 +145,20 @@ export default function LoginPage({
       showErrorToast(error, "Error while registering");
     }
     finally{
+        setSubmitting(false)
         toast.dismiss(toastId)
     }
   }
 
   const handleLogin = async (e: React.FormEvent) => {
-    const toastId = toast.loading("Logging in...")
     e.preventDefault()
+    const problem = loginPasswordProblem(userData?.password || "")
+    if (problem) {
+      toast.error(problem)
+      return
+    }
+    const toastId = toast.loading("Logging in...")
+    setSubmitting(true)
     try{
       text_input_validation(userData?.verification_code)
 
@@ -165,6 +183,7 @@ export default function LoginPage({
       showErrorToast(error, "Error while logging in");
     }
     finally{
+        setSubmitting(false)
         toast.dismiss(toastId)
     }
   }
@@ -203,6 +222,7 @@ export default function LoginPage({
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="username"
                   placeholder="email address"
                   className="pl-9"
                   value={userData?.email}
@@ -219,6 +239,8 @@ export default function LoginPage({
                 <Input
                   id="password"
                   type="password"
+                  autoComplete={method === "login" ? "current-password" : "new-password"}
+                  aria-describedby={method === "signup" ? "password-rules" : undefined}
                   placeholder="Password"
                   className="pl-9"
                   value={userData?.password}
@@ -226,6 +248,9 @@ export default function LoginPage({
                   required
                 />
               </div>
+              {method === "signup" && (
+                <p id="password-rules" className="text-xs text-muted-foreground">{NEW_PASSWORD_HINT}</p>
+              )}
             </div>
 
             {/* first name section*/}
@@ -235,6 +260,7 @@ export default function LoginPage({
                 <Input
                   id="first_name"
                   type="text"
+                  autoComplete="given-name"
                   placeholder="First Name"
                   className="pl-2"
                   value={userData?.first_name}
@@ -250,6 +276,7 @@ export default function LoginPage({
                 <Input
                   id="last_name"
                   type="text"
+                  autoComplete="family-name"
                   placeholder="Last Name"
                   className="pl-2"
                   value={userData?.last_name}
@@ -265,6 +292,8 @@ export default function LoginPage({
                   <Input
                     id="verification_code"
                     type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
                     placeholder="Verification Code"
                     className="pl-2"
                     value={userData?.verification_code}
@@ -274,17 +303,20 @@ export default function LoginPage({
                 </div>
                 <div className="flex items-center w-full ">
                   <button 
-                    disabled={timerStarted}
+                    type="button"
+                    disabled={timerStarted || sendingCode}
                     className="w-fit cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-sm items-center ml-auto flex flex-row gap-2 hover:text-blue-300 hover:underline" onClick={handleSendVerificationCode}>
-                    {timerStarted ? `Resend in ${timer/1000}s` : "Send Verification Code"} <ArrowUpRight size={18}/>
+                    {sendingCode ? "Sending code..." : timerStarted ? `Resend in ${timer/1000}s` : "Send Verification Code"} <ArrowUpRight size={18}/>
                   </button>
                 </div>
               </div>
   
             
             {/* submit button */}
-            <Button type="submit" className="w-full cursor-pointer">
-              {method === "login" ? "Login" : "Register"}
+            <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>
+              {submitting
+                ? (method === "login" ? "Logging in..." : "Creating account...")
+                : (method === "login" ? "Login" : "Register")}
             </Button>
 
             {/* forgot password section */}

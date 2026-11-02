@@ -1,80 +1,105 @@
-import datetime
-from fastapi import APIRouter, BackgroundTasks
+"""Sign-up, sign-in, token refresh, verification codes, password reset, logout.
+
+Every sign-in, sign-up and reset needs the one-time code mailed to the address.  Codes are single-use, one
+live code per email, invalidated after five wrong tries and capped per email per hour (``auth_utils``).  The
+fixed local code works only on a DSS_DEV_MODE=1 server and never resets a password.
+
+Rate limits: by client address in the decorator, plus by email inside the handler (the email is in the body).
+"""
+import logging
 from typing import Annotated
-from fastapi import Depends, HTTPException, status , Header
-from rich.console import Console
-from sqlmodel import Session, delete, select, update
+
+import psycopg2
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
+from sqlmodel import Session, select, update
 from starlette.concurrency import run_in_threadpool
-from backend.new_models import Team
+
+from backend.get_db import get_db
+from backend.new_models import Team, TeamMembership, User
+from backend.utilities.auth.auth_schema import (
+    CodeSend,
+    NoEchoValidationRoute,
+    RefreshToken,
+    ResetPassword,
+    TokenSchema,
+    UserLogin,
+    UserSignup,
+)
 from backend.utilities.auth.auth_utils import (
+    CodeSendLimited,
+    consume_verification_code,
     create_access_token,
     create_refresh_token,
-    get_hashed_password,
-    send_verification_code_and_save_to_db,
-    verify_password,
-    get_current_user_from_refresh_token,
     get_current_user_from_access_token,
+    get_current_user_from_refresh_token,
+    get_hashed_password,
     get_user_from_header_or_raise_exception,
-    create_and_store_verification_code,
-    local_dev_verification_enabled,
+    issue_verification_code,
     send_verification_email,
-    verification_code_is_valid,
+    user_by_email,
+    verify_and_update_password,
 )
-from backend.new_models import *
-from backend.utilities.auth.auth_schema import TokenSchema , ResetPassword ,CodeSend ,RefreshToken, UserLogin, UserSignup
-from fastapi_throttle import RateLimiter
-import psycopg2
-from backend.get_db import get_db , get_mongo_client_db
-from rich.console import Console
-from starlette.concurrency import run_in_threadpool
-console = Console()
+from backend.utilities.ratelimit import RateLimiter, ip_key, user_key
 
+log = logging.getLogger("backend.auth")
 
 router = APIRouter(
-    tags=["auth"]
+    tags=["auth"],
+    route_class=NoEchoValidationRoute,  # a 422 never echoes the submitted password
 )
 
+# Per worker (gunicorn runs several): see backend/utilities/ratelimit.py.
+credentials_ip_limiter = RateLimiter("auth.credentials_ip", times=10, seconds=60, key_func=ip_key)  # signup, login, reset
+send_code_ip_limiter = RateLimiter("auth.send_code_ip", times=5, seconds=120, key_func=ip_key)
+refresh_limiter = RateLimiter("auth.refresh_ip", times=20, seconds=30, key_func=ip_key)
+session_limiter = RateLimiter("auth.session", times=20, seconds=30, key_func=user_key)  # get_user, logout
+# charged by hand with the (normalised) email from the body
+email_limiter = RateLimiter("auth.credentials_email", times=10, seconds=600, key_func=ip_key)
 
-# SECURITY: Tiered rate limiting for auth endpoints
-limiter = RateLimiter(times=20, seconds=30)  # General: 20 requests per 30 seconds
-limiter_strict = RateLimiter(times=5, seconds=60)  # Strict: 5 requests per 60 seconds (login, signup)
-limiter_very_strict = RateLimiter(times=3, seconds=120)  # Very strict: 3 requests per 120 seconds (verification codes)
 
-@router.post('/signup', summary="Create new user", dependencies=[Depends(limiter_strict)])
-async def create_user(data: UserSignup):
+def _tokens(user: User) -> dict:
+    version = user.token_version or 0
+    return {
+        "access_token": create_access_token(user.email, version=version),
+        "refresh_token": create_refresh_token(user.email, version=version),
+    }
+
+
+def _db_error(exc: Exception, what: str) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
+    log.error("%s failed: %s", what, type(exc).__name__)
+    if isinstance(exc, psycopg2.Error):
+        return HTTPException(status_code=500, detail="Server is busy, please try again later")
+    return HTTPException(status_code=500, detail=f"Could not {what}, please try again later")
+
+
+@router.post('/signup', summary="Create new user", dependencies=[Depends(credentials_ip_limiter)])
+async def create_user(data: UserSignup, request: Request):
     """
     Request Fields:
     - email: str
     - verification_code: str
-    - password: str
+    - password: str (8 to 128 characters)
     - first_name: str
     - last_name: str
     """
+    await email_limiter.charge(request, ("email", data.email))
     try:
-
         engine = get_db()
-        mongo_client_db = get_mongo_client_db()
-
-        # STEP 1-------------verifying verification code
+        if not await run_in_threadpool(consume_verification_code, engine, data.email, data.verification_code,
+                                       allow_dev_code=True):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification code",
+            )
         with Session(engine) as session:
-            if not verification_code_is_valid(session, data.email, data.verification_code):
-                print("invalid verification code 🔴")
+            if user_by_email(session, data.email) is not None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired verification code",
+                    detail="User with this email already exist"
                 )
-            print("code verified and performing cleanup 🟩")
-            session.exec(delete(VerificationCode).where(VerificationCode.email == data.email))
-            session.commit()
-
-        # STEP 2-------------querying database to check if user already exist
-        with Session(engine) as session:
-            user = session.exec(select(User).where(User.email == data.email)).first()
-        if user is not None:
-                raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email already exist"
-            )
+        hashed_password = await run_in_threadpool(get_hashed_password, data.password)
         with Session(engine) as session:
             new_team = Team(
                 name=f"{data.first_name}'s Default Team",
@@ -83,9 +108,8 @@ async def create_user(data: UserSignup):
             session.add(new_team)
             session.commit()
             session.refresh(new_team)
-            hashed_password = await run_in_threadpool(get_hashed_password, data.password)
             new_user = User(
-                email=data.email, 
+                email=data.email,
                 password=hashed_password,
                 first_name=data.first_name,
                 last_name=data.last_name,
@@ -97,86 +121,64 @@ async def create_user(data: UserSignup):
             session.add(team_membership)
             session.commit()
             session.refresh(new_user)
-
-            return {
-                "access_token": create_access_token(new_user.email),
-                "refresh_token": create_refresh_token(new_user.email),
-            }
+            log.info("user signed up user_id=%s", new_user.id)
+            return _tokens(new_user)
     except Exception as e:
-        Console().print(f"An error has occured : {str(e)}",style="bold red")
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
-            raise e
-        raise HTTPException(status_code=403, detail="Could not create user, please try again later")
+        raise _db_error(e, "create user") from None
 
-@router.post('/login', summary="Create access and refresh tokens for user. body should be form data", response_model=TokenSchema, dependencies=[Depends(limiter_strict)])
-async def login(form_data: UserLogin):
+
+@router.post('/login', summary="Create access and refresh tokens for user", response_model=TokenSchema,
+             dependencies=[Depends(credentials_ip_limiter)])
+async def login(form_data: UserLogin, request: Request):
     """
     Request Fields:
     - email: str
     - verification_code: str
     - password: str
-
     """
-
+    await email_limiter.charge(request, ("email", form_data.email))
     try:
         engine = get_db()
-        mongo_client_db = get_mongo_client_db()
-
-
-        # STEP 1-------------verifying verification code
+        if not await run_in_threadpool(consume_verification_code, engine, form_data.email,
+                                       form_data.verification_code, allow_dev_code=True):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification code",
+            )
         with Session(engine) as session:
-            if not verification_code_is_valid(session, form_data.email, form_data.verification_code):
-                print("invalid verification code 🔴")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid verification code",
-                )
-            print("code verified and performing cleanup 🟩")
-            session.exec(delete(VerificationCode).where(VerificationCode.email == form_data.email))
-            session.commit()
-
-        # STEP 2-------------querying database to check if user already exist
-        with Session(engine) as session:
-            user = session.exec(select(User).where(User.email == form_data.email)).first()
+            user = user_by_email(session, form_data.email)
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect email or password"
             )
-
-        hashed_pass = user.password
-        is_valid = await run_in_threadpool(verify_password, form_data.password, hashed_pass)
+        old_hash = user.password
+        is_valid, new_hash = await run_in_threadpool(verify_and_update_password, form_data.password, old_hash)
         if not is_valid:
+            log.info("login refused: credentials do not match user_id=%s", user.id)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect email or password"
             )
 
-
-        # STEP 3-------------activating session
         with Session(engine) as session:
-            statement = select(User).where(User.id == user.id)
-            user = session.exec(statement).first()
-            user.session_active = True
-            session.add(user)
+            if new_hash is not None:
+                # compare-and-swap: a concurrent reset or upgrade that already changed the hash wins
+                upgraded = session.exec(
+                    update(User).where(User.id == user.id, User.password == old_hash).values(password=new_hash)
+                ).rowcount
+                if upgraded:
+                    log.info("login: stored hash upgraded to argon2id user_id=%s", user.id)
+            session.exec(update(User).where(User.id == user.id).values(session_active=True))
             session.commit()
-            session.refresh(user)
-            print(f"user {user.email} logged in and session activated 🟩")
-
-        return {
-            "access_token": create_access_token(user.email),
-            "refresh_token": create_refresh_token(user.email),
-        }
+            user = session.exec(select(User).where(User.id == user.id)).first()
+            log.info("user logged in user_id=%s", user.id)
+        return _tokens(user)
     except Exception as e:
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
-            raise e
-        raise HTTPException(status_code=403, detail="Could not login user, Check credentials and try again")
+        raise _db_error(e, "login user") from None
 
-@router.post('/refresh', summary="Create new access token from refresh token", dependencies=[Depends(limiter)])
+
+@router.post('/refresh', summary="Create new access token from refresh token", dependencies=[Depends(refresh_limiter)])
 async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header()] = None, ):
     """
     Request Fields:
@@ -184,52 +186,34 @@ async def refresh(data:RefreshToken,Authorization: Annotated[str | None, Header(
     """
     try:
         engine = get_db()
-        mongo_client_db = get_mongo_client_db()
-
-
-        refresh_token = data.refresh_token
-        # checking if refresh token is valid
-        user = await get_current_user_from_refresh_token(engine, refresh_token)
-
-        # if refresh token is invalid
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Incorrect refresh token"
-            )
-
-        # if refresh token is valid
+        user = await get_current_user_from_refresh_token(engine, data.refresh_token)
         return {
-            "access_token": create_access_token(user.email),
+            "access_token": create_access_token(user.email, version=user.token_version or 0),
         }
     except Exception as e:
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
+        if isinstance(e, HTTPException):
             raise e
+        if isinstance(e, psycopg2.Error):
+            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
         raise HTTPException(status_code=403, detail="Could not refresh token, please try again later")
 
-@router.get('/get_user', summary="Get user details", dependencies=[Depends(limiter)])
+
+@router.get('/get_user', summary="Get user details", dependencies=[Depends(session_limiter)])
 async def get_user(Authorization: Annotated[str | None, Header()] = None):
     try:
         engine = get_db()
-        mongo_client_db = get_mongo_client_db()
-        
         if Authorization is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authorization header is required"
             )
-
-
         parts = Authorization.split(" ")
         if len(parts) != 2 or parts[0].lower() != "bearer":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid Authorization header format"
             )
-        access_token = parts[1]
-        user = await get_current_user_from_access_token(engine, access_token)
+        user = await get_current_user_from_access_token(engine, parts[1])
         return {
             "email": user.email,
             "first_name": user.first_name,
@@ -237,84 +221,84 @@ async def get_user(Authorization: Annotated[str | None, Header()] = None):
             "profile_photo": user.profile_photo
         }
     except Exception as e:
-        Console().print(f"error in get_user: {e} 🔴", style="bold red")
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
+        if isinstance(e, HTTPException):
             raise e
+        log.error("get_user failed: %s", type(e).__name__)
+        if isinstance(e, psycopg2.Error):
+            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
         raise HTTPException(status_code=403, detail="Could not get user details, please try again later")
 
-@router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(limiter_very_strict)])
+
+@router.post("/send_code", summary="Send verification code to user", dependencies=[Depends(send_code_ip_limiter)])
 async def send_verification_code(data: CodeSend, background_tasks: BackgroundTasks):
     """
     Request Fields:
     - email: str
-    
-    This endpoint returns immediately after storing the code in DB.
-    Email sending happens in background, so response is <50ms.
+
+    Stores the code (replacing any earlier one for the email) and returns; the email goes out in the background.
+    429 with Retry-After when too many codes were requested for this email within the hour.
     """
     try:
         engine = get_db()
-        mongo_client_db = get_mongo_client_db()
-
-        # STEP 1: Fast DB insert - returns immediately (fixed code for local demo user)
-        code = create_and_store_verification_code(data.email, engine)
-
-        # STEP 2: Queue email (skipped for local fixed-OTP demo account)
-        if not local_dev_verification_enabled(data.email):
-            background_tasks.add_task(send_verification_email, data.email, code)
-        
-        return {
-            "message": "Verification code sent to user"
-        }
+        code = await run_in_threadpool(issue_verification_code, engine, data.email)
+    except CodeSendLimited as limited:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many verification codes were requested for this email. Try again later.",
+            headers={"Retry-After": str(limited.retry_after)},
+        ) from None
     except Exception as e:
-        Console().print(f"error in send_verification_code: {e} 🔴", style="bold red")
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
+        if isinstance(e, HTTPException):
             raise e
+        log.error("send_code failed: %s", type(e).__name__)
+        if isinstance(e, psycopg2.Error):
+            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
         raise HTTPException(status_code=400, detail="Could not send verification code, please try again later")
+    if code is not None:  # None: the local dev account on a DSS_DEV_MODE=1 server (fixed code, no mail)
+        background_tasks.add_task(send_verification_email, data.email, code)
+    return {
+        "message": "Verification code sent to user"
+    }
 
-@router.post("/reset_password", summary="Reset password for user", dependencies=[Depends(limiter)])
-async def reset_password(data: ResetPassword):
+
+@router.post("/reset_password", summary="Reset password for user", dependencies=[Depends(credentials_ip_limiter)])
+async def reset_password(data: ResetPassword, request: Request):
     """
     Request Fields:
     - email: str
-    - verification_code: str
-    - password: str
+    - verification_code: str (the emailed code; the fixed dev code never works here)
+    - password: str (8 to 128 characters)
+
+    Every token issued before the reset stops working.
     """
+    await email_limiter.charge(request, ("email", data.email))
     try:
         engine = get_db()
-        mongo_client_db = get_mongo_client_db()
-
-        # STEP 1-------------verifying verification code
+        if not await run_in_threadpool(consume_verification_code, engine, data.email, data.verification_code,
+                                       allow_dev_code=False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification code",
+            )
+        hashed_pwd = await run_in_threadpool(get_hashed_password, data.password)
         with Session(engine) as session:
-            if not verification_code_is_valid(session, data.email, data.verification_code):
-                Console().print("invalid verification code 🔴", style="bold red")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid or expired verification code",
-                )
-            session.exec(delete(VerificationCode).where(VerificationCode.email == data.email))
+            user = user_by_email(session, data.email)
+            if user is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No account uses this email")
+            session.exec(
+                update(User).where(User.id == user.id)
+                .values(password=hashed_pwd, token_version=User.token_version + 1)
+            )
             session.commit()
-
-        # STEP 2-------------updating password
-        with Session(engine) as session:
-            hashed_pwd = await run_in_threadpool(get_hashed_password, data.password)
-            session.exec(update(User).where(User.email == data.email).values(password=hashed_pwd))
-            session.commit()
-            user = session.exec(select(User).where(User.email == data.email)).first()
+            log.info("credential reset done, earlier tokens revoked user_id=%s", user.id)
         return {
-            "message": f"Password reset successfully for user {user.email}"
+            "message": f"Password reset successfully for user {data.email}"
         }
     except Exception as e:
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
-            raise e
-        raise HTTPException(status_code=403, detail="Could not reset password, please try again later")
+        raise _db_error(e, "reset password") from None
 
-@router.get("/logout", summary="Logout user", dependencies=[Depends(limiter)])
+
+@router.get("/logout", summary="Logout user", dependencies=[Depends(session_limiter)])
 async def logout(Authorization: Annotated[str | None, Header()] = None):
     """
     Request Fields:
@@ -322,31 +306,18 @@ async def logout(Authorization: Annotated[str | None, Header()] = None):
     """
     try:
         engine = get_db()
-        mongo_client_db = get_mongo_client_db()
-
         user = await get_user_from_header_or_raise_exception(engine, Authorization, ignore_session_active=True)
         with Session(engine) as session:
-            statement = select(User).where(User.id == user.id)
-            user = session.exec(statement).first()
-
-            if user is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="User not found"
-                )
-
-            user.session_active = False
-            session.add(user)
+            session.exec(update(User).where(User.id == user.id).values(session_active=False))
             session.commit()
-            session.refresh(user)
-            print(f"user {user.email} logged out and session deactivated 🟩")
+        log.info("user logged out user_id=%s", user.id)
         return {
             "message": f"User {user.email} logged out and session deactivated 🟩"
         }, 200
     except Exception as e:
-        if isinstance(e,psycopg2.Error):
-            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
-        if isinstance(e,HTTPException):
+        if isinstance(e, HTTPException):
             raise e
-        print(f"error in logout: {e} 🔴")
+        log.error("logout failed: %s", type(e).__name__)
+        if isinstance(e, psycopg2.Error):
+            raise HTTPException(status_code=500, detail="Server is busy, please try again later")
         raise HTTPException(status_code=403, detail="Could not logout user, please try again later")

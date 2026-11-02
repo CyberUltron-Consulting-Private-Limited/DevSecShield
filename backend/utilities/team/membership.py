@@ -1,21 +1,27 @@
 from sqlmodel import  Session , select
 from sqlalchemy.engine import Engine
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from backend.new_models import User , Team , TeamMembership
 from rich.console import Console
-import random
+import secrets
 import string
+from starlette.concurrency import run_in_threadpool
 from backend.utilities.auth.email import send_email_with_credentials
-from backend.utilities.auth.auth_utils import get_hashed_password
+from backend.utilities.auth.auth_utils import get_hashed_password, normalise_email
 from fastapi import HTTPException , status
 
 console = Console()
 
+INVITE_PASSWORD_CHARS = 20
+
 
 def generate_random_password() -> str:
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+    """First password of an invited user (mailed to them): 20 characters from a CSPRNG (~119 bits)."""
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(INVITE_PASSWORD_CHARS))
 
 async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
+    email_ids = list(dict.fromkeys(normalise_email(email) for email in email_ids if normalise_email(email)))
     
     with Session(engine) as session:
         team = session.exec(select(Team).where(Team.id == team_id)).first()
@@ -24,7 +30,7 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
         # STEP [ 1 ] : =============================== create users if they dont exist ================================================= 
         for email in email_ids:
             # ---------------------------> creating a new user and send them an email with credentials 
-            user = session.exec(select(User).where(User.email == email)).first()
+            user = session.exec(select(User).where(func.lower(User.email) == email)).first()
             if not user:
                 # ---------------------------> creating a new default team for this new user 
                 default_team_for_new_user = Team(
@@ -39,7 +45,7 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
                 generated_password = generate_random_password()
                 user = User(
                     email=email, 
-                    password=get_hashed_password(generated_password),
+                    password=await run_in_threadpool(get_hashed_password, generated_password),
                     first_name=email.split("@")[0],
                     last_name="user",
                     default_team_id=default_team_for_new_user.id
@@ -63,7 +69,7 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
         # ----------------------------> get all users by their email ids 
         or_statements = []
         for email in email_ids:
-            or_statements.append(User.email == email)
+            or_statements.append(func.lower(User.email) == email)
         users = session.exec(select(User).where(or_(*or_statements))).all()
 
         # ----------------------------> add them to the team 
@@ -81,7 +87,7 @@ async def remove_emails_from_team(email_ids: list[str], team_id: int, engine: En
     with Session(engine) as session:
         or_statements = []
         for email in email_ids:
-            or_statements.append(User.email == email)
+            or_statements.append(func.lower(User.email) == normalise_email(email))
         users = session.exec(select(User).where(or_(*or_statements))).all()
 
         for user in users:

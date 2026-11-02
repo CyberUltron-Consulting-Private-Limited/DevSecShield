@@ -62,6 +62,17 @@ class CredentialRedactionFilter(logging.Filter):
 logging.getLogger().addFilter(CredentialRedactionFilter())
 console.print("[bold green]✓ Credential redaction filter applied to logging[/bold green]")
 
+# Security events (sign-ins, resets, revoked tokens, rate limiting) go to stderr at INFO; nothing else in the
+# app configures logging, so without this handler only WARNING and above would reach the container log.
+for _security_logger_name in ("backend.auth", "backend.ratelimit"):
+    _security_logger = logging.getLogger(_security_logger_name)
+    if not _security_logger.handlers:
+        _handler = logging.StreamHandler()
+        _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        _handler.addFilter(CredentialRedactionFilter())
+        _security_logger.addHandler(_handler)
+        _security_logger.setLevel(logging.INFO)
+
 # SECURITY: Load CORS origins from environment variable
 def get_cors_origins() -> list[str]:
     """Get allowed CORS origins from environment variable."""
@@ -81,10 +92,26 @@ def get_cors_origins() -> list[str]:
 CORS_ALLOWED_ORIGINS = get_cors_origins()
 console.print(f"[bold green]✓ CORS allowed origins: {CORS_ALLOWED_ORIGINS}[/bold green]")
 
+def startup_security() -> None:
+    """Refuse weak JWT secrets (unless DSS_DEV_MODE=1), warn when dev mode is on, and drop sign-in codes that
+    can no longer be used (expired ones, and outside dev mode rows holding the retired fixed code)."""
+    from backend.get_db import get_db
+    from backend.utilities.auth.auth_utils import check_startup_security, purge_unusable_verification_codes
+
+    check_startup_security()  # raises: the worker does not boot
+    try:
+        removed = purge_unusable_verification_codes(get_db())
+        if removed:
+            logging.getLogger("backend.auth").warning("removed %d unusable verification code row(s) at start-up", removed)
+    except Exception as exc:  # the database may still be starting; codes expire on their own anyway
+        logging.getLogger("backend.auth").warning("verification code clean-up skipped: %s", type(exc).__name__)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager to tune threadpool concurrency on startup."""
-    # Startup: increase threadpool token limit for bcrypt and other sync I/O under load
+    """Lifespan context manager: security checks, then tune threadpool concurrency on startup."""
+    startup_security()
+    # Startup: increase threadpool token limit for password hashing and other sync I/O under load
     try:
         import anyio.to_thread
         limiter = anyio.to_thread.current_default_thread_limiter()

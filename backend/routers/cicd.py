@@ -5,7 +5,8 @@ from typing import Annotated
 from bson import ObjectId
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, UploadFile, status
-from fastapi_throttle import RateLimiter
+from backend.utilities.ratelimit import RateLimiter
+from backend.utilities.cicd.auth import ci_key
 from rich.console import Console
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
@@ -49,18 +50,21 @@ console = Console()
 
 router = APIRouter(tags=["CICD"])
 
-limiter = RateLimiter(times=20, seconds=30)
+# Per worker (backend/utilities/ratelimit.py).  CI calls are charged to the VERIFIED integration (an unknown
+# key is charged to the client address); the UI routes to the verified user.  Jenkins polls DAST every 20 s.
+ci_limiter = RateLimiter("cicd.ci", times=60, seconds=60, key_func=ci_key)
+read_limiter = RateLimiter("cicd.read", times=120, seconds=60)
+write_limiter = RateLimiter("cicd.write", times=20, seconds=60)
 app_langs = ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"] 
 
 # ==================================== PUBLIC API ROUTES =============================================================
 # Register /cicd/dast/scan BEFORE /cicd/{type}/scan so "dast" is not swallowed by the zip poller.
 
 
-@router.post("/cicd/dast/scan", summary="Start an asynchronous DAST scan from a saved profile", status_code=202)
+@router.post("/cicd/dast/scan", summary="Start an asynchronous DAST scan from a saved profile", status_code=202, dependencies=[Depends(ci_limiter)])
 async def run_cicd_dast_scan(
     body: CicdDastScanRequest,
     user_and_integration: dict = Depends(get_user_and_integration_id),
-    dependencies=[Depends(limiter)],
 ):
     """Fire-and-forget DAST. Does not poll. Same team as the CI/CD API key."""
     require_dast_cicd_key(user_and_integration)
@@ -124,11 +128,10 @@ async def run_cicd_dast_scan(
     }
 
 
-@router.get("/cicd/dast/scan/{scan_id}", summary="DAST CI status for Jenkins wait-and-gate")
+@router.get("/cicd/dast/scan/{scan_id}", summary="DAST CI status for Jenkins wait-and-gate", dependencies=[Depends(ci_limiter)])
 async def get_cicd_dast_scan(
     scan_id: int,
     user_and_integration: dict = Depends(get_user_and_integration_id),
-    dependencies=[Depends(limiter)],
 ):
     require_dast_cicd_key(user_and_integration)
     engine = get_db()
@@ -173,12 +176,11 @@ async def get_cicd_dast_scan(
     }
 
 
-@router.post("/cicd/{type}/scan",summary="Run a new cicd scan")
+@router.post("/cicd/{type}/scan",summary="Run a new cicd scan", dependencies=[Depends(ci_limiter)])
 async def run_cicd_scan(
     type: scan_types, 
     zip_file: UploadFile  , 
-    user_and_integration: dict = Depends(get_user_and_integration_id) , 
-    dependencies=[Depends(limiter)]):
+    user_and_integration: dict = Depends(get_user_and_integration_id) ):
     """
     Submit a Zip file containing the code of the project to be scanned . 
     This route will create a new cicd scan on this project and poll it with a fixed timeout . 
@@ -360,11 +362,10 @@ async def run_cicd_scan(
 
 # ==================================== INTERNAL API ROUTES =============================================================
 # revamped ✅
-@router.get("/{team_id}/cicd/integrations",summary="List all cicd integrations")
+@router.get("/{team_id}/cicd/integrations",summary="List all cicd integrations", dependencies=[Depends(read_limiter)])
 async def list_cicd_integrations(
     team_id: int, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     List all cicd integrations
     """
@@ -412,12 +413,11 @@ async def list_cicd_integrations(
 
 
 # revamped ✅
-@router.post("/{team_id}/cicd/integration",summary="Create a new cicd integration")
+@router.post("/{team_id}/cicd/integration",summary="Create a new cicd integration", dependencies=[Depends(write_limiter)])
 async def create_cicd_integration(
     team_id: int, 
     data: CreateCicdIntegrationData, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Create a new cicd integration
     """
@@ -475,12 +475,11 @@ async def create_cicd_integration(
 
 
 # revamped ✅
-@router.delete("/{team_id}/cicd/integration/{integration_id}",summary="Delete a cicd integration")
+@router.delete("/{team_id}/cicd/integration/{integration_id}",summary="Delete a cicd integration", dependencies=[Depends(write_limiter)])
 async def delete_cicd_integration(
     team_id: int, 
     integration_id: int, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Delete a cicd integration
     """
@@ -522,13 +521,12 @@ async def delete_cicd_integration(
 
 
 # revamped ✅
-@router.put("/{team_id}/cicd/integration/{integration_id}",summary="Update a cicd integration")
+@router.put("/{team_id}/cicd/integration/{integration_id}",summary="Update a cicd integration", dependencies=[Depends(write_limiter)])
 async def update_cicd_integration(
     team_id: int, 
     integration_id: int, 
     data: UpdateCicdIntegrationData, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Update a cicd integration
     """
@@ -618,12 +616,11 @@ async def update_cicd_integration(
 
 
 # revamped ✅
-@router.get("/{team_id}/cicd/integration/{integration_id}",summary="Get a cicd integration")
+@router.get("/{team_id}/cicd/integration/{integration_id}",summary="Get a cicd integration", dependencies=[Depends(read_limiter)])
 async def get_cicd_integration(
     team_id: int, 
     integration_id: int, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)],
+    Authorization: Annotated[str | None, Header()] = None ,
     limit : int = 100,
     offset : int = 0,
 ):

@@ -54,6 +54,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
+import { makeQueryClient } from "@/utils/query_client"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { getUserProfile, logout, getTeams, createTeam, type TeamListItem, type CreateTeamData } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
@@ -299,7 +300,7 @@ export default function HomeLayout({
   const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => makeQueryClient());
 
   useEffect(() => {
     if (

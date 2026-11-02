@@ -16,6 +16,11 @@ const api = axios.create({
   baseURL: apiBaseURL,
 });
 
+// The refresh call goes through its own instance: it must never re-enter the 401 handler below.
+const refreshClient = axios.create({
+  baseURL: apiBaseURL,
+});
+
 export function getAccessToken() {
   try {
     return typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
@@ -42,7 +47,65 @@ function setAccessToken(token) {
   }
 }
 
-    
+function sendToLogin() {
+  try {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+  } catch {
+    // ignore storage errors
+  }
+  window.location.href = "/login";
+}
+
+/** Seconds from a 429's Retry-After header (delta-seconds or HTTP date), or null. */
+export function retryAfterSeconds(error) {
+  const raw = error?.response?.headers?.["retry-after"];
+  if (raw == null || raw === "") return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds);
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? null : Math.max(0, Math.ceil((at - Date.now()) / 1000));
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const REFRESH_429_ATTEMPTS = 5;
+const REFRESH_429_MAX_WAIT_S = 60;
+
+class RefreshRejected extends Error {}
+
+// One refresh at a time: every request that gets a 401 while a refresh is running waits for the same one.
+let refreshInFlight = null;
+
+async function requestNewAccessToken(refreshToken) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const response = await refreshClient.post("/refresh", { refresh_token: refreshToken });
+      const token = response?.data?.access_token;
+      if (!token) throw new RefreshRejected("no access token in the refresh response");
+      return token;
+    } catch (error) {
+      if (error instanceof RefreshRejected) throw error;
+      const status = error?.response?.status;
+      if (status === 429 && attempt < REFRESH_429_ATTEMPTS) {
+        // Rate limited: the refresh token is still good, so wait as told and try again (never log out here).
+        const wait = Math.min(retryAfterSeconds(error) ?? 2 ** attempt, REFRESH_429_MAX_WAIT_S);
+        await sleep(Math.max(1, wait) * 1000);
+        continue;
+      }
+      if (status === 401 || status === 403) throw new RefreshRejected("the refresh token was refused");
+      throw error; // 429 that never cleared, 5xx, network: keep the session, fail this request only
+    }
+  }
+}
+
+function refreshAccessToken(refreshToken) {
+  if (!refreshInFlight) {
+    refreshInFlight = requestNewAccessToken(refreshToken).finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
 
 // Request interceptor: attach Authorization header as expected by backend
 api.interceptors.request.use(
@@ -56,50 +119,33 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: on 401, attempt one-time refresh then retry original request
+// Response interceptor: on 401, refresh once (shared by all parallel 401s) and retry the request.
+// A 429 is passed through: react-query retries queries after Retry-After (utils/query_client.ts) and
+// utils/error-handler.ts tells the user how long to wait.
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-
-    // Only handle unauthorized responses
     const status = error?.response?.status;
 
-    if ((status === 401) && !originalRequest._retry) {
-      originalRequest._retry = true
-
+    if (status === 401 && originalRequest && !originalRequest._retry) {
+      originalRequest._retry = true;
+      const refreshToken = getRefreshToken();
+      if (!refreshToken) {
+        sendToLogin();
+        return Promise.reject(error);
+      }
       try {
-        const refreshToken = getRefreshToken();
-        if (!refreshToken) {
-          window.location.href = "/login";
-          localStorage.removeItem("access_token");
-          localStorage.removeItem("refresh_token");
-          return Promise.reject(error);
-        }
-
-        // Request new access token
-        const refreshResp = await api.post("/refresh", { refresh_token: refreshToken });
-        const newAccessToken = refreshResp?.data?.access_token;
-
-        if (!newAccessToken) {
-          window.location.href = "/login";
-          localStorage.removeItem("access_token");
-          localStorage.removeItem("refresh_token");
-          return Promise.reject(error);
-        }
-
+        const newAccessToken = await refreshAccessToken(refreshToken);
         setAccessToken(newAccessToken);
-
-        // Update Authorization header and retry original request
         originalRequest.headers = originalRequest.headers || {};
         originalRequest.headers["Authorization"] = `Bearer ${newAccessToken}`;
-
         return api(originalRequest);
       } catch (refreshErr) {
-        window.location.href = "/login";
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        return Promise.reject(refreshErr);
+        if (refreshErr instanceof RefreshRejected) {
+          sendToLogin();
+        }
+        return Promise.reject(refreshErr instanceof RefreshRejected ? error : refreshErr);
       }
     }
 
@@ -108,5 +154,3 @@ api.interceptors.response.use(
 );
 
 export default api;
-
-

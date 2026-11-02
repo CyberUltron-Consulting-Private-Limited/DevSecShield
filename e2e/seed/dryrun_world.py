@@ -183,10 +183,12 @@ def main() -> int:
         "E2E_ADMIN_EMAIL": "e2e-admin@dss-e2e.test", "E2E_ADMIN_PASSWORD": "Adm1n-dry-run-pw!",
         "E2E_OTHER_EMAIL": "e2e-other@dss-e2e.test", "E2E_OTHER_PASSWORD": "0ther-dry-run-pw!",
         "E2E_EMPTY_EMAIL": "e2e-empty@dss-e2e.test", "E2E_EMPTY_PASSWORD": "Empty-dry-run-pw!",
+        "DSS_DEV_MODE": "1",  # the fixed admin code only works in dev mode, exactly as on the e2e stack
         "LOCAL_DEV_VERIFICATION_EMAIL": "e2e-admin@dss-e2e.test", "LOCAL_DEV_VERIFICATION_CODE": "123456",
         "E2E_SEED_PERF": "1" if args.perf else "",
     }  # fmt: skip
-    os.environ.update({k: v for k, v in env.items() if k.startswith("LOCAL_DEV_")})  # auth_utils reads them at import
+    # auth_utils reads these when a code is checked
+    os.environ.update({k: v for k, v in env.items() if k.startswith("LOCAL_DEV_") or k == "DSS_DEV_MODE"})
     if os.environ.get("E2E_SEED_NOW"):
         env["E2E_SEED_NOW"] = os.environ["E2E_SEED_NOW"]
     cfg = seed_team.config_from_env(env)

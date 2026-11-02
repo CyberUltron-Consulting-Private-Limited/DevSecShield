@@ -51,6 +51,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query'
+import { makeQueryClient } from "@/utils/query_client"
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { getUserProfile, logout, getTeams, type TeamListItem } from "@/utils/backend_api";
 import { Button } from "@/components/ui/button";
@@ -255,7 +256,7 @@ export default function HomeLayout({
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  const [queryClient] = useState(() => new QueryClient())
+  const [queryClient] = useState(() => makeQueryClient())
 
   const homeHref = team_id ? `/${team_id}` : "#";
   const getItemHref = (path: string) => (team_id && path ? `/${team_id}/${path}` : "#");

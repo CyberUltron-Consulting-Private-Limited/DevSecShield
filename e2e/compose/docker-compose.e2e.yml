@@ -86,6 +86,10 @@ services:
     container_name: dss-e2e-backend
     labels: *e2e-labels
     env_file: *e2e-env-file
+    # Dev mode: the admin persona's fixed one-time code (LOCAL_DEV_VERIFICATION_*) is accepted for /login
+    # (never /reset_password). Only this stack sets it (backend/tests/test_ratelimit.py checks every other file).
+    environment:
+      DSS_DEV_MODE: "1"
     restart: "no"
     logging: *e2e-logging
     depends_on:

@@ -24,7 +24,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, JSONResponse, Response
-from fastapi_throttle import RateLimiter
+from backend.utilities.ratelimit import RateLimiter
 from sqlmodel import Session, select
 
 from backend.get_db import get_db
@@ -44,7 +44,9 @@ from rich.console import Console
 
 router = APIRouter(tags=["certin"])
 console = Console()
-limiter = RateLimiter(times=30, seconds=30)
+# Per verified user, per worker (backend/utilities/ratelimit.py).
+read_limiter = RateLimiter("certin.read", times=120, seconds=60)
+write_limiter = RateLimiter("certin.write", times=30, seconds=60)  # also the evidence-pack PDF
 
 _BOM_TYPES = frozenset({"ai_bom", "cbom", "sbom_sca"})
 
@@ -170,13 +172,12 @@ def _hmac_secret() -> bytes:
     return raw.encode("utf-8")
 
 
-@router.get("/{team_id}/{type}/scan/{scan_id}/attestations")
+@router.get("/{team_id}/{type}/scan/{scan_id}/attestations", dependencies=[Depends(read_limiter)])
 async def list_attestations(
     team_id: int,
     type: scan_types,
     scan_id: int,
     Authorization: Annotated[str | None, Header()] = None,
-    dependencies=[Depends(limiter)],
 ):
     _require_bom_type(type)
     engine = get_db()
@@ -187,7 +188,7 @@ async def list_attestations(
     return {"attestations": data.get("attestations") or {}}
 
 
-@router.post("/{team_id}/{type}/scan/{scan_id}/attestations")
+@router.post("/{team_id}/{type}/scan/{scan_id}/attestations", dependencies=[Depends(write_limiter)])
 async def upload_attestation(
     team_id: int,
     type: scan_types,
@@ -197,7 +198,6 @@ async def upload_attestation(
     note: str | None = Form(None),
     file: UploadFile | None = File(None),
     Authorization: Annotated[str | None, Header()] = None,
-    dependencies=[Depends(limiter)],
 ):
     _require_bom_type(type)
     engine = get_db()
@@ -239,7 +239,7 @@ async def upload_attestation(
     }
 
 
-@router.delete("/{team_id}/{type}/scan/{scan_id}/attestations/{framework}/{requirement_id}")
+@router.delete("/{team_id}/{type}/scan/{scan_id}/attestations/{framework}/{requirement_id}", dependencies=[Depends(write_limiter)])
 async def remove_attestation(
     team_id: int,
     type: scan_types,
@@ -247,7 +247,6 @@ async def remove_attestation(
     framework: str,
     requirement_id: str,
     Authorization: Annotated[str | None, Header()] = None,
-    dependencies=[Depends(limiter)],
 ):
     _require_bom_type(type)
     engine = get_db()
@@ -271,13 +270,12 @@ async def remove_attestation(
     }
 
 
-@router.post("/{team_id}/{type}/scan/{scan_id}/sign")
+@router.post("/{team_id}/{type}/scan/{scan_id}/sign", dependencies=[Depends(write_limiter)])
 async def sign_scan_bom(
     team_id: int,
     type: scan_types,
     scan_id: int,
     Authorization: Annotated[str | None, Header()] = None,
-    dependencies=[Depends(limiter)],
 ):
     _require_bom_type(type)
     engine = get_db()
@@ -300,14 +298,13 @@ async def sign_scan_bom(
     return {"bom_signature": signature}
 
 
-@router.get("/{team_id}/{type}/scan/{scan_id}/vex")
+@router.get("/{team_id}/{type}/scan/{scan_id}/vex", dependencies=[Depends(read_limiter)])
 async def get_scan_vex(
     team_id: int,
     type: scan_types,
     scan_id: int,
     refresh: bool = False,
     Authorization: Annotated[str | None, Header()] = None,
-    dependencies=[Depends(limiter)],
 ):
     _require_bom_type(type)
     engine = get_db()
@@ -332,14 +329,13 @@ async def get_scan_vex(
     return JSONResponse(vex)
 
 
-@router.get("/{team_id}/{type}/scan/{scan_id}/evidence-pack")
+@router.get("/{team_id}/{type}/scan/{scan_id}/evidence-pack", dependencies=[Depends(write_limiter)])
 async def download_evidence_pack(
     team_id: int,
     type: scan_types,
     scan_id: int,
     background_tasks: BackgroundTasks,
     Authorization: Annotated[str | None, Header()] = None,
-    dependencies=[Depends(limiter)],
 ):
     _require_bom_type(type)
     engine = get_db()

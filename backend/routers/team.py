@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from typing import Annotated
 from rich.console import Console
-from fastapi_throttle import RateLimiter
+from backend.utilities.ratelimit import RateLimiter
 from backend.utilities.cbom_sources.cleanup import delete_cbom_sources_for_team
 from backend.utilities.db.schemas import CreateTeamData , UpdateTeamData , RemoveOrAddMembersToTeamData
 from backend.utilities.team.validation import check_if_user_is_in_team , check_if_user_is_admin_of_team
@@ -17,16 +17,17 @@ import copy
 
 router = APIRouter( tags=["team"] )   
 console = Console()
-limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
+# Per verified user, per worker (backend/utilities/ratelimit.py).
+read_limiter = RateLimiter("team.read", times=120, seconds=60)
+write_limiter = RateLimiter("team.write", times=20, seconds=60)
 MAX_TEAMS_PER_USER = 5 # maximum number of teams a user can create
 
 
 # new ✅
-@router.get("/team/{team_id}",summary="Get the team details")
+@router.get("/team/{team_id}",summary="Get the team details", dependencies=[Depends(read_limiter)])
 async def get_team(
     team_id: int,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Get the team details
     """
@@ -87,10 +88,9 @@ async def get_team(
 
 
 # new ✅
-@router.get("/teams",summary="List all teams that the current user is a member of")
+@router.get("/teams",summary="List all teams that the current user is a member of", dependencies=[Depends(read_limiter)])
 async def list_teams(
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     List all teams
     """
@@ -134,11 +134,10 @@ async def list_teams(
 
 
 # new ✅
-@router.post("/team",summary="Create a new team")
+@router.post("/team",summary="Create a new team", dependencies=[Depends(write_limiter)])
 async def create_team(
     data: CreateTeamData,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Create a new team
     """
@@ -180,12 +179,11 @@ async def create_team(
 
 
 # new ✅
-@router.put("/team/{team_id}",summary="Update the team details")
+@router.put("/team/{team_id}",summary="Update the team details", dependencies=[Depends(write_limiter)])
 async def update_team(
     team_id: int,
     data: UpdateTeamData,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Update the team details
     """
@@ -231,12 +229,11 @@ async def update_team(
 
 
 # new ✅
-@router.patch("/team/{team_id}",summary="Remove or Add members to the team")
+@router.patch("/team/{team_id}",summary="Remove or Add members to the team", dependencies=[Depends(write_limiter)])
 async def remove_or_add_members_to_team(
     team_id: int,
     data: RemoveOrAddMembersToTeamData,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Remove or Add members to the team using a list of email ids
     """
@@ -268,11 +265,10 @@ async def remove_or_add_members_to_team(
 
 
 # new ✅
-@router.delete("/team/{team_id}",summary="Delete a team")
+@router.delete("/team/{team_id}",summary="Delete a team", dependencies=[Depends(write_limiter)])
 async def delete_team(
     team_id: int,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Delete a team
     """
@@ -383,11 +379,10 @@ async def delete_team(
 
 
 # new ✅
-@router.get("/team/{team_id}/dashboard",summary="Get the dashboard data for a team")
+@router.get("/team/{team_id}/dashboard",summary="Get the dashboard data for a team", dependencies=[Depends(read_limiter)])
 async def get_team_dashboard(
     team_id: int,
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Get the dashboard data for a team
     """
@@ -412,10 +407,9 @@ async def get_team_dashboard(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error in getting team dashboard: {e}")
 
 
-@router.get("/teams/dashboard",summary="Get the dashboard data for all teams that the current user is a member of")
+@router.get("/teams/dashboard",summary="Get the dashboard data for all teams that the current user is a member of", dependencies=[Depends(read_limiter)])
 async def get_teams_dashboard(
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Get the dashboard data for all teams that the current user is a member of
     """

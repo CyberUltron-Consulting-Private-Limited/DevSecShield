@@ -14,6 +14,7 @@ import {
   type AdminTeam,
 } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { newPasswordProblem, NEW_PASSWORD_HINT } from "@/utils/password_rules";
 import {
   Card,
   CardContent,
@@ -80,6 +81,11 @@ function CreateAdminUserDialog({
       showErrorToast(new Error("Please fill in all required fields"), "Validation error");
       return;
     }
+    const problem = newPasswordProblem(password);
+    if (problem) {
+      showErrorToast(new Error(problem), "Validation error");
+      return;
+    }
     createMutation.mutate({ email: email.trim(), password, first_name: firstName.trim(), last_name: lastName.trim() });
   };
 
@@ -98,6 +104,7 @@ function CreateAdminUserDialog({
             <Input
               id="admin-email"
               type="email"
+              autoComplete="off"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@example.com"
@@ -111,6 +118,8 @@ function CreateAdminUserDialog({
             <Input
               id="admin-password"
               type="password"
+              autoComplete="new-password"
+              aria-describedby="admin-password-rules"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -118,6 +127,7 @@ function CreateAdminUserDialog({
               disabled={createMutation.isPending}
               className="bg-zinc-800 border-zinc-700 text-zinc-200"
             />
+            <p id="admin-password-rules" className="text-xs text-zinc-500">{NEW_PASSWORD_HINT}</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -160,7 +170,7 @@ function CreateAdminUserDialog({
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Create admin user
+              {createMutation.isPending ? "Creating..." : "Create admin user"}
             </Button>
           </DialogFooter>
         </form>

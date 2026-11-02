@@ -20,7 +20,7 @@ from backend.utilities.dashboard.guardrails_list import create_dashboard_data_fo
 from backend.utilities.guardrails.auth import create_api_key
 from backend.utilities.guardrails.schemas import CreateGuardrailsIntegrationData, UpdateGuardrailsIntegrationData
 from backend.utilities.auth.auth_utils import *
-from fastapi_throttle import RateLimiter
+from backend.utilities.ratelimit import RateLimiter
 from backend.get_db import get_db , get_mongo_client_db
 from backend.utilities.team.credits import deduct_credits_from_team
 from backend.utilities.team.validation import check_if_user_is_in_team
@@ -29,13 +29,14 @@ console = Console()
 router = APIRouter(prefix="/guardrails", tags=["Guardrails (deprecated)"])
 
 # revamped ✅
-limiter = RateLimiter(times=20, seconds=30) # 20 requests per 30 seconds
-@router.get("/{team_id}/integrations",summary="List all guardrails integrations for a team", deprecated=True)
+# Per verified user, per worker (backend/utilities/ratelimit.py).
+read_limiter = RateLimiter("guardrails.read", times=120, seconds=60)
+write_limiter = RateLimiter("guardrails.write", times=20, seconds=60)
+@router.get("/{team_id}/integrations",summary="List all guardrails integrations for a team", deprecated=True, dependencies=[Depends(read_limiter)])
 async def list_guardrails_integrations( 
     team_id: int,
     background_tasks: BackgroundTasks, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     List all guardrails integrations.
     """
@@ -85,12 +86,11 @@ async def list_guardrails_integrations(
 
 
 # revamped ✅
-@router.post("/{team_id}/integration",summary="Create a new guardrails integration for a team", deprecated=True)
+@router.post("/{team_id}/integration",summary="Create a new guardrails integration for a team", deprecated=True, dependencies=[Depends(write_limiter)])
 async def create_guardrails_integration(
     team_id: int, 
     data: CreateGuardrailsIntegrationData, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Create a new guardrails integration.
     credits required : 0.5 
@@ -135,12 +135,11 @@ async def create_guardrails_integration(
 
 
 # revamped ✅
-@router.get("/{team_id}/integration/{integration_id}",summary="Get a guardrails integration", deprecated=True)
+@router.get("/{team_id}/integration/{integration_id}",summary="Get a guardrails integration", deprecated=True, dependencies=[Depends(read_limiter)])
 async def get_guardrails_integration(
     team_id: int, 
     integration_id: int, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)],
+    Authorization: Annotated[str | None, Header()] = None ,
     limit : int = 10,
     offset : int = 0,
     ):
@@ -239,13 +238,12 @@ async def get_guardrails_integration(
 
 
 # revamped ✅
-@router.put("/{team_id}/integration/{integration_id}",summary="Update a guardrails integration", deprecated=True)
+@router.put("/{team_id}/integration/{integration_id}",summary="Update a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter)])
 async def update_guardrails_integration(
     team_id: int, 
     integration_id: int, 
     data: UpdateGuardrailsIntegrationData, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Update a guardrails integration.
     """
@@ -302,12 +300,11 @@ async def update_guardrails_integration(
 
 
 # revamped ✅
-@router.delete("/{team_id}/integration/{integration_id}",summary="Delete a guardrails integration", deprecated=True)
+@router.delete("/{team_id}/integration/{integration_id}",summary="Delete a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter)])
 async def delete_guardrails_integration(
     team_id: int, 
     integration_id: int, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Delete a guardrails integration.
     """
@@ -353,12 +350,11 @@ async def delete_guardrails_integration(
 
 
 # revamped ✅
-@router.get("/{team_id}/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration", deprecated=True)
+@router.get("/{team_id}/integration/{integration_id}/settings",summary="Get the integration settings of all the scanners in the integration", deprecated=True, dependencies=[Depends(read_limiter)])
 async def get_guardrails_integration_settings(
     team_id: int, 
     integration_id: int, 
-    Authorization: Annotated[str | None, Header()] = None , 
-    dependencies=[Depends(limiter)] ):
+    Authorization: Annotated[str | None, Header()] = None ):
     """
     Get the integration settings of all the scanners in the integration.
     """
@@ -388,12 +384,11 @@ async def get_guardrails_integration_settings(
 
 
 # new ✅
-@router.post("/{team_id}/integration/{integration_id}/rotate-key", summary="Rotate API key for a guardrails integration", deprecated=True)
+@router.post("/{team_id}/integration/{integration_id}/rotate-key", summary="Rotate API key for a guardrails integration", deprecated=True, dependencies=[Depends(write_limiter)])
 async def rotate_guardrails_api_key(
     team_id: int,
     integration_id: int,
-    Authorization: Annotated[str | None, Header()] = None,
-    dependencies=[Depends(limiter)]):
+    Authorization: Annotated[str | None, Header()] = None):
     """
     Rotate the API key for a guardrails integration.
     The old key is immediately invalidated and a new key is generated.

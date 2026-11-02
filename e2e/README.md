@@ -167,8 +167,9 @@ files across the team-1 trees give 14 unique SHA-256 fingerprints, bands 1 expir
 
 `.env.e2e` keys (names only): `POSTGRES_USER/PASSWORD/DB`, `PG_USER/PG_USER_PASS/PG_DB/PG_HOST/PG_PORT`,
 `MONGO_HOST/PORT`, `IS_DOCKER_CONTAINER`, `CORS_ORIGINS`, `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY`,
-`CERTIN_HMAC_SECRET`, `LOCAL_DEV_VERIFICATION_EMAIL/CODE` (fixed OTP for the admin user, no mail is
-sent), `RABBIT_ADMIN_USERNAME/PASSWORD` (dummy), `AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY/DEFAULT_REGION`
+`CERTIN_HMAC_SECRET`, `DSS_DEV_MODE=1` (required for the next two; also set on the backend service),
+`LOCAL_DEV_VERIFICATION_EMAIL/CODE` (fixed OTP for the admin user, no mail is sent; accepted only by a
+`DSS_DEV_MODE=1` backend and never by `/reset_password`), `RABBIT_ADMIN_USERNAME/PASSWORD` (dummy), `AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY/DEFAULT_REGION`
 (dummy), and the seed identities `E2E_ADMIN_EMAIL/PASSWORD`, `E2E_OTHER_EMAIL/PASSWORD`,
 `E2E_EMPTY_EMAIL/PASSWORD`. The admin email equals `LOCAL_DEV_VERIFICATION_EMAIL`.
 
@@ -265,7 +266,7 @@ file, so the browser specs can be rehearsed against a `next dev` frontend on oth
   moves the fingerprint, and with it the Document ID suffix of all six documents of the team (the fingerprint is
   team-wide), as the methodology (#3) says. A scan set without attestations keeps its old value (`6a1e31ae946c`
   for the unit fixture). Spec 91 asserts that the value changes and records both values.
-* `POST /login` accepts passwords of 5 to 24 characters; the WP6a generator produced 28 (fixed in `lib.sh`).
+* New passwords are 8 to 128 characters (`POST /login` accepts 1 to 128); the generator makes 20.
 
 ## Troubleshooting
 
