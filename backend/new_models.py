@@ -580,3 +580,53 @@ class CbomRemediationAssignment(SQLModel, table=True):
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+# ========================================= integrations (WP11) =========================================
+class TeamIntegration(SQLModel, table=True):
+    """One outbound integration of a team: ServiceNow, syslog (SIEM), Splunk HEC, signed webhook or OSCAL push.
+    Secrets live only in ``secret_encrypted`` (Fernet over a JSON object) and are never serialised to a browser.
+    ``lease_until`` lets one dispatcher at a time deliver this integration's queue (in order);
+    ``failures`` / ``next_attempt_at`` are its back-off after a failed delivery."""
+    __tablename__ = "teamintegration"
+    __table_args__ = (UniqueConstraint("team_id", "kind", name="uq_teamintegration_team_kind"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    kind: str = Field(max_length=16)
+    enabled: bool = Field(default=False)
+    config: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    secret_encrypted: str | None = Field(default=None, sa_type=Text)
+    secret_fields: list | None = Field(default_factory=list, sa_column=Column(JSON))
+    last_test_status: str = Field(default="never", max_length=16)  # never | ok | failed
+    last_test_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_test_message: str | None = Field(default=None, max_length=255)
+    lease_until: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    failures: int = Field(default=0)
+    next_attempt_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_delivery_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_error: str | None = Field(default=None, max_length=255)
+    updated_by_user_id: int | None = Field(default=None)
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class IntegrationDelivery(SQLModel, table=True):
+    """One event queued for one integration (at least once: ``event_uid`` is the same on every retry and for every
+    destination, so a receiver can drop duplicates). pending -> delivered, or dead (dead-letter list, retryable)."""
+    __tablename__ = "integrationdelivery"
+    __table_args__ = (UniqueConstraint("integration_id", "event_uid", name="uq_integrationdelivery_event"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    integration_id: int = Field(foreign_key="teamintegration.id", index=True, ondelete="CASCADE")
+    kind: str = Field(max_length=16)  # the integration's kind (denormalised for the log)
+    event_uid: str = Field(max_length=36)
+    event_type: str = Field(max_length=32)  # finding.opened, scan.finished, ...
+    payload: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    status: str = Field(default="pending", max_length=16, index=True)  # pending | delivered | dead
+    attempts: int = Field(default=0)
+    last_attempt_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    delivered_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_result: str | None = Field(default=None, max_length=255)  # status code and a short reason, never a body
+    external_ref: str | None = Field(default=None, max_length=64)  # e.g. the ServiceNow record number
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime, index=True)

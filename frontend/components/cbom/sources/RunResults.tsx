@@ -23,6 +23,7 @@ import {
 } from "@/utils/backend_api";
 
 import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
+import { downloadOscal } from "@/utils/api/integrations";
 
 import { cbomSourcesKeys } from "./keys";
 import { pluralize } from "./logic";
@@ -265,6 +266,27 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
         >
           <Download className="h-4 w-4 mr-1.5" />
           XML
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="cursor-pointer"
+          disabled={active || downloading}
+          data-testid="run-results-download-oscal"
+          title={active ? "Available when the run has finished" : "OSCAL 1.2.3 assessment results for a GRC tool (validated against the official schema)"}
+          onClick={async () => {
+            setDownloading(true);
+            try {
+              await downloadOscal(teamId, { runId });
+            } catch {
+              // the helper already showed the error
+            } finally {
+              setDownloading(false);
+            }
+          }}
+        >
+          <Download className="h-4 w-4 mr-1.5" />
+          OSCAL
         </Button>
       </div>
 

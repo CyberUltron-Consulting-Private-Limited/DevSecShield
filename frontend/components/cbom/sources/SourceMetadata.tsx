@@ -24,6 +24,7 @@ export interface SourceMetadata {
   application: string;
   data_classification: Classification | "";
   data_lifetime_years: string;
+  environment: string;
 }
 
 export function metadataFrom(config: Record<string, unknown> | null | undefined): SourceMetadata {
@@ -34,6 +35,7 @@ export function metadataFrom(config: Record<string, unknown> | null | undefined)
     data_classification: (CLASSIFICATIONS as readonly string[]).includes(String(c.data_classification))
       ? (c.data_classification as Classification) : "",
     data_lifetime_years: typeof c.data_lifetime_years === "number" ? String(c.data_lifetime_years) : "",
+    environment: typeof c.environment === "string" ? c.environment : "",
   };
 }
 
@@ -46,6 +48,7 @@ export function metadataConfig(m: SourceMetadata): Record<string, unknown> | str
     application: m.application.trim() || null,
     data_classification: m.data_classification || null,
     data_lifetime_years: years === "" ? null : Number(years),
+    environment: m.environment.trim() || null,
   };
 }
 
@@ -77,6 +80,10 @@ export function MetadataFields({ value, onChange, idPrefix }: {
         <Input id={`${idPrefix}-lifetime`} inputMode="numeric" value={value.data_lifetime_years}
                onChange={(e) => set({ data_lifetime_years: e.target.value })} />
       </Field>
+      <Field label="Environment" htmlFor={`${idPrefix}-environment`} hint="As your CMDB names it: production, staging, ...">
+        <Input id={`${idPrefix}-environment`} maxLength={32} value={value.environment}
+               onChange={(e) => set({ environment: e.target.value })} />
+      </Field>
     </div>
   );
 }
@@ -86,7 +93,7 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: cbomSourcesKeys.sources(teamId, "all"), queryFn: () => listCbomSources(teamId), retry: 1 });
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [draft, setDraft] = useState<SourceMetadata>({ owner: "", application: "", data_classification: "", data_lifetime_years: "" });
+  const [draft, setDraft] = useState<SourceMetadata>({ owner: "", application: "", data_classification: "", data_lifetime_years: "", environment: "" });
   const [criticality, setCriticality] = useState("keep");
   const [error, setError] = useState<string | null>(null);
   const sources = query.data?.sources ?? [];
@@ -96,6 +103,7 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
       if (draft.owner.trim()) changes.owner = draft.owner.trim();
       if (draft.application.trim()) changes.application = draft.application.trim();
       if (draft.data_classification) changes.data_classification = draft.data_classification;
+      if (draft.environment.trim()) changes.environment = draft.environment.trim();
       if (draft.data_lifetime_years.trim()) {
         const parsed = metadataConfig(draft);
         if (typeof parsed === "string") throw new Error(parsed);
@@ -139,6 +147,7 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
                 {m.application && <span className="text-xs text-zinc-500">· {m.application}</span>}
                 {m.data_classification && <StatusBadge tone={m.data_classification === "restricted" ? "red" : "zinc"}>{m.data_classification}</StatusBadge>}
                 {m.data_lifetime_years && <span className="text-xs text-zinc-500">· {m.data_lifetime_years} y</span>}
+                {m.environment && <span className="text-xs text-zinc-500">· {m.environment}</span>}
               </li>
             );
           })}

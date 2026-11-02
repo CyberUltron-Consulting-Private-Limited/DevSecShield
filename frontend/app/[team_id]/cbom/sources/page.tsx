@@ -16,6 +16,7 @@ import CloudIdentityTab from "@/components/cbom/sources/CloudIdentityTab";
 import NetworkTab from "@/components/cbom/sources/NetworkTab";
 import EvidenceTab from "@/components/cbom/sources/EvidenceTab";
 import ReviewRunTab from "@/components/cbom/sources/ReviewRunTab";
+import CmdbImportDialog from "@/components/cbom/sources/CmdbImportDialog";
 
 const TABS = [
   { value: "scan-nodes", label: "Scan nodes" },
@@ -70,13 +71,16 @@ function SourcesPage() {
                 nothing is installed on your servers.
               </p>
             </div>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-              onClick={() => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) })}
-            >
-              <RefreshCcw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <CmdbImportDialog teamId={teamId} />
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                onClick={() => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) })}
+              >
+                <RefreshCcw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
           </div>
 
           <Tabs value={tab} onValueChange={goTo} className="w-full">

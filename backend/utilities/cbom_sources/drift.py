@@ -486,7 +486,26 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
                             run_id=run.id, baseline_run_id=base.run_id)
     stored = insert_events(session, rows[:EVENT_CAP])
     log("drift recorded", team=run.team_id, run=run.id, events=stored, truncated=len(rows) > EVENT_CAP or None)
+    jobs = _run_jobs(session, run)
+    _emit_finished(session, run.team_id, now, scope="node", run_id=run.id, at=run.finished_at, summary={
+        "status": run.status, "kb_version": run.kb_version, "sources": len(jobs),
+        "complete_sources": sum(1 for j in jobs if job_comparable(j)[0]),
+        "assets": sum(int(j.asset_count or 0) for j in jobs), "events": _kind_counts(rows[:EVENT_CAP])})
     return stored
+
+
+def _kind_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row["kind"]] = counts.get(row["kind"], 0) + 1
+    return counts
+
+
+def _emit_finished(session: Session, team_id: int, now: _dt.datetime, **fields: Any) -> None:
+    """Queue a "scan finished" event for the team's integrations (WP11; never fails the drift recording)."""
+    from backend.utilities.integrations.events import emit_safely, scan_finished_payload
+
+    emit_safely(session, team_id, [scan_finished_payload(team_id, **fields)], now)
 
 
 def record_pending_drift(engine, now: _dt.datetime, *, limit: int = 20) -> int:
@@ -613,6 +632,12 @@ def on_code_scan_success(scan_id: int, engine, now: _dt.datetime | None = None) 
         if scan is None or scan.scan_type != "cbom" or scan.scan_status != "success":
             return {"events": 0, "fixed": 0}
         diff, stored = record_code_scan_drift(session, scan, now)
+        rows = [r for r in _code_rows(scan) if isinstance(r, dict)]
+        _emit_finished(session, scan.team_id, now, scope="code", scan_id=scan.id, at=scan.last_updated or now,
+                       source_name=code_source(scan)[1], summary={
+                           "status": "success", "assets": len(rows),
+                           "findings": sum(1 for r in rows if is_finding(display_row(r))),
+                           "against_scan_id": diff["against_scan_id"] if diff else None, "events": stored})
         session.commit()
         if diff is None:
             return {"events": 0, "fixed": 0}

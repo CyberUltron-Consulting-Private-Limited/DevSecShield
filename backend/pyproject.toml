@@ -31,4 +31,6 @@ dependencies = [
     "gunicorn>=25.3.0",
     "lxml>=5.3.0",
     "httpx>=0.28.1",  # Azure / Google Cloud collectors (also via fastapi[standard])
+    "jsonschema>=4.20",  # OSCAL assessment-results validated offline before export / push (WP11)
+    "regex>=2024.11.6",  # OSCAL schema patterns use \p{L} Unicode classes (already locked via tiktoken)
 ]

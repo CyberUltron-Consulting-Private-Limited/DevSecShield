@@ -56,6 +56,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomImportReport } from "@/utils/api/cbom_outputs";
+import { downloadOscal } from "@/utils/api/integrations";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
   buildRefAliasMap,
@@ -1227,6 +1228,16 @@ export default function CbomResults({
             >
               <Download className="h-4 w-4 mr-2" />
               CycloneDX XML
+            </Button>
+            <Button
+              variant="outline"
+              className="cursor-pointer"
+              title="OSCAL 1.2.3 assessment results for a GRC tool: findings mapped to NIST SP 800-53 controls (validated against the official schema)"
+              onClick={() => void downloadOscal(team_id as string, { scanId: scan_id as string }).then(() => toast.success("OSCAL assessment results downloaded")).catch(() => undefined)}
+              data-testid="cbom-download-oscal"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              OSCAL
             </Button>
             <Button
               variant="outline"
