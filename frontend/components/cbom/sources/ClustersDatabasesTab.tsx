@@ -70,6 +70,8 @@ const DB_DEFAULT_PORTS: Record<Engine, number> = { postgres: 5432, mysql: 3306, 
 // The login names the grant templates create.
 const DB_DEFAULT_LOGIN: Record<Engine, string> = { postgres: "zs_cbom", mysql: "zs_cbom", mssql: "svc_zscbom", oracle: "zs_cbom", mongodb: "zs_cbom", redis: "zs_cbom" };
 const LOGIN_OPTIONAL: ReadonlySet<Engine> = new Set(["mongodb", "redis"]);
+// kinds.credential_target_problem: logins a fake server could read need TLS with the server's CA
+const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql"]);
 const GRANT_LANGUAGE: Record<Engine, string> = { postgres: "sql", mysql: "sql", mssql: "sql", oracle: "sql", mongodb: "javascript", redis: "bash" };
 
 // templates.py DB_READS (kept equal by test_command_lists_shown_to_customers_match_the_server_and_sudoers)
@@ -88,15 +90,16 @@ const DB_READS: Record<Engine, string[]> = {
     "Table encryption (InnoDB) and keyring",
   ],
   mssql: [
-    "Force encryption and TLS versions",
-    "Transparent Data Encryption per database",
-    "Certificates and keys in the master database",
-    "Encrypted live connections",
+    "Force encryption, TLS versions and the server certificate (read before logging in)",
+    "Transparent Data Encryption per database (algorithm, key length, state)",
+    "Symmetric and asymmetric keys, certificates and Always Encrypted keys per database (metadata only)",
+    "Encryption of live connections",
+    "Password policy and hash version of each SQL login (never the hash)",
   ],
   oracle: [
-    "Native network encryption settings",
-    "Transparent Data Encryption and wallet state",
-    "Password versions per user",
+    "TLS on the listener and native network encryption in use",
+    "TDE keystore state, encrypted tablespaces and columns (algorithms)",
+    "Password verifier versions per user (10G, 11G, 12C; never the verifier)",
   ],
   mongodb: [
     "TLS mode and allowed protocols",
@@ -192,6 +195,9 @@ function kubeconfigProblem(text: string): string | null {
 
 function endpointOf(source: CbomSource): string {
   const cfg = source.config ?? {};
+  if (source.kind === "key_manager") {
+    return cfg.provider === "kmip" ? `${cfg.host ?? "—"}:${cfg.port ?? 5696}` : `module ${cfg.module ?? "—"}${cfg.token_label ? ` / ${cfg.token_label}` : ""}`;
+  }
   if (source.kind === "kubernetes") {
     try {
       return new URL(String(cfg.api_url ?? "")).host || String(cfg.api_url ?? "—");
@@ -205,11 +211,16 @@ function endpointOf(source: CbomSource): string {
 
 function typeOf(source: CbomSource): string {
   if (source.kind === "kubernetes") return "Kubernetes";
+  if (source.kind === "key_manager") return source.config?.provider === "kmip" ? "KMIP server" : "HSM (PKCS#11)";
   return ENGINE_SHORT[source.config?.engine as Engine] ?? source.kind_label;
 }
 
 function accessOf(source: CbomSource): string {
   if (source.kind === "kubernetes") return `Tier ${source.config?.tier === 2 ? 2 : 1}${source.config?.managed ? " · managed" : ""}`;
+  if (source.kind === "key_manager") {
+    if (source.config?.provider === "kmip") return "client certificate";
+    return source.config?.credential_type === "vault" ? "PIN from vault" : source.secrets_set.includes("pin") ? "PIN" : "public objects only";
+  }
   return source.config?.login || "—";
 }
 
@@ -218,8 +229,10 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
   const queryClient = useQueryClient();
   const [editingCluster, setEditingCluster] = useState<CbomSource | null>(null);
   const [editingDb, setEditingDb] = useState<CbomSource | null>(null);
+  const [editingKm, setEditingKm] = useState<CbomSource | null>(null);
   const [clusterNonce, setClusterNonce] = useState(0);
   const [dbNonce, setDbNonce] = useState(0);
+  const [kmNonce, setKmNonce] = useState(0);
   const [activeTest, setActiveTest] = useState<{ sourceId: number; jobId: number } | null>(null);
   const [deleting, setDeleting] = useState<CbomSource | null>(null);
 
@@ -254,7 +267,9 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
 
   const nodes = useMemo(() => nodesQuery.data?.nodes ?? [], [nodesQuery.data]);
   const clusters = useMemo(() => clustersQuery.data?.sources ?? [], [clustersQuery.data]);
+  // the databases group also holds HSMs and KMIP servers (kind key_manager)
   const databases = useMemo(() => databasesQuery.data?.sources ?? [], [databasesQuery.data]);
+  const keyManagerCount = databases.filter((s) => s.kind === "key_manager").length;
   const cloudSources = useMemo(() => (cloudQuery.data?.sources ?? []).filter((s) => CLOUD_KINDS.has(s.kind)), [cloudQuery.data]);
   const rows = useMemo(() => [...clusters, ...databases], [clusters, databases]);
   const serverNow = clustersQuery.data?.server_time ?? databasesQuery.data?.server_time;
@@ -277,6 +292,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
       setDeleting(null);
       setEditingCluster((cur) => (cur && cur.id === source.id ? null : cur));
       setEditingDb((cur) => (cur && cur.id === source.id ? null : cur));
+      setEditingKm((cur) => (cur && cur.id === source.id ? null : cur));
       setActiveTest((cur) => (cur && cur.sourceId === source.id ? null : cur));
     },
     onSettled: invalidate,
@@ -290,10 +306,17 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
     setEditingDb(null);
     setDbNonce((n) => n + 1);
   };
+  const newKm = () => {
+    setEditingKm(null);
+    setKmNonce((n) => n + 1);
+  };
   const startEdit = (source: CbomSource) => {
     if (source.kind === "kubernetes") {
       setEditingCluster(source);
       scrollToId("k8s-form");
+    } else if (source.kind === "key_manager") {
+      setEditingKm(source);
+      scrollToId("km-form");
     } else {
       setEditingDb(source);
       scrollToId("db-form");
@@ -308,6 +331,11 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
   const savedDb = (source: CbomSource, jobId: number | null, tested: boolean) => {
     setEditingDb(tested ? source : null);
     setDbNonce((n) => n + 1);
+    if (tested && jobId) setActiveTest({ sourceId: source.id, jobId });
+  };
+  const savedKm = (source: CbomSource, jobId: number | null, tested: boolean) => {
+    setEditingKm(tested ? source : null);
+    setKmNonce((n) => n + 1);
     if (tested && jobId) setActiveTest({ sourceId: source.id, jobId });
   };
 
@@ -329,6 +357,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
 
   const liveCluster = editingCluster ? clusters.find((s) => s.id === editingCluster.id) ?? null : null;
   const liveDb = editingDb ? databases.find((s) => s.id === editingDb.id) ?? null : null;
+  const liveKm = editingKm ? databases.find((s) => s.id === editingKm.id) ?? null : null;
 
   return (
     <div className="space-y-6">
@@ -370,6 +399,16 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
             onCancelEdit={newDb}
             onStale={newDb}
           />
+          <KeyManagerForm
+            key={editingKm ? `km-edit-${editingKm.id}-${editingKm.row_version}-${kmNonce}` : `km-new-${kmNonce}`}
+            teamId={teamId}
+            source={editingKm}
+            nodes={nodes}
+            testStatus={liveKm ? <TestLine source={liveKm} job={jobFor(liveKm.id)} serverNow={serverNow} /> : null}
+            onSaved={savedKm}
+            onCancelEdit={newKm}
+            onStale={newKm}
+          />
         </div>
       )}
 
@@ -377,7 +416,8 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
         title="Configured clusters and databases"
         description={
           rows.length
-            ? `${pluralize(clusters.length, "cluster")} and ${pluralize(databases.length, "database")}`
+            ? `${pluralize(clusters.length, "cluster")} and ${pluralize(databases.length - keyManagerCount, "database")}` +
+              (keyManagerCount ? `, ${pluralize(keyManagerCount, "HSM or key manager", "HSMs or key managers")}` : "")
             : "Clusters and databases you add appear here."
         }
       >
@@ -513,7 +553,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(v) => !v && setDeleting(null)}
-        title={deleting?.kind === "kubernetes" ? "Delete this cluster?" : "Delete this database?"}
+        title={deleting?.kind === "kubernetes" ? "Delete this cluster?" : deleting?.kind === "key_manager" ? "Delete this key manager?" : "Delete this database?"}
         description={
           deleting
             ? `${deleting.name} and its stored credentials are deleted. Pending tests and collection jobs for it are cancelled; results already collected stay in past scans.`
@@ -1187,9 +1227,9 @@ function DatabaseForm({
   const loginOptional = LOGIN_OPTIONAL.has(form.engine);
   const passwordRequired = form.credentialType === "password" && form.engine !== "redis" && !!form.login.trim();
   const isAdmin = useIsTeamAdmin(teamId);
-  // MySQL and Redis logins can be read by whatever answers, so a password needs TLS with the server's CA
+  // MySQL, Redis and SQL Server logins can be read by whatever answers, so a password needs TLS with the server's CA
   const usesPassword = form.credentialType === "vault" || !!form.password || passwordStored;
-  const caRequired = (form.engine === "mysql" || form.engine === "redis") && usesPassword;
+  const caRequired = CA_REQUIRED_ENGINES.has(form.engine) && usesPassword;
   const whereChanged =
     !!source &&
     (form.engine !== cfg.engine ||
@@ -1253,13 +1293,14 @@ function DatabaseForm({
       e.login = "Use up to 64 letters, digits and . _ @ $ \\ -";
     }
     if (form.databaseName.trim().length > 128) e.databaseName = "128 characters at most";
+    else if (form.engine === "oracle" && !form.databaseName.trim()) e.databaseName = "Enter the Oracle service name (for example ORCLPDB1)";
     if (passwordRequired && !form.password && !passwordStored) e.password = "Enter the password for this login";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
     if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
     const pemError = checkPem(form.caPem);
     if (pemError) e.caPem = pemError;
     else if (caRequired && !(form.requireTls && form.caPem.trim()))
-      e.caPem = `${form.engine === "mysql" ? "MySQL" : "Redis"} logins need TLS and the CA that signed the server's certificate, so the password only goes to the real server`;
+      e.caPem = `${ENGINE_SHORT[form.engine]} logins need TLS and the CA that signed the server's certificate, so the password only goes to the real server`;
     if (!form.nodeId) e.nodeId = "Choose the scan node that reaches this database";
     return e;
   };
@@ -1356,10 +1397,11 @@ function DatabaseForm({
             <Input id="db-login" data-testid="db-login" value={form.login} maxLength={64} autoComplete="off" onChange={(e) => set({ login: e.target.value })} />
           </Field>
           <Field
-            label={form.engine === "oracle" ? "Service name (optional)" : "Database (optional)"}
+            label={form.engine === "oracle" ? "Service name" : "Database (optional)"}
             htmlFor="db-database"
+            required={form.engine === "oracle"}
             error={errors.databaseName}
-            hint="Where to connect first; server-wide settings are read from there"
+            hint={form.engine === "oracle" ? "The service (PDB) the login and grants belong to" : "Where to connect first; server-wide settings are read from there"}
           >
             <Input id="db-database" data-testid="db-database" value={form.databaseName} maxLength={128} onChange={(e) => set({ databaseName: e.target.value })} />
           </Field>
@@ -1425,7 +1467,11 @@ function DatabaseForm({
                   ? "Required with a password: the node checks the server against this CA before sending it"
                   : form.engine === "postgres"
                     ? "Optional. Without it, the node allows only SCRAM logins, which never reveal the password"
-                    : "Optional PEM file, for a private CA"
+                    : form.engine === "mssql"
+                      ? "Needed to log in: SQL Server only obfuscates the password, so it goes only to a server proven by this CA (or its own certificate). Without it the node reads the TLS setup only"
+                      : form.engine === "oracle"
+                        ? "Optional (TCPS). The Oracle login never sends the password itself"
+                        : "Optional PEM file, for a private CA"
             }
           >
             <input
@@ -1515,6 +1561,293 @@ function DatabaseForm({
           pending={save.isPending}
           testing={!!save.variables?.test}
           saveLabel="Save database"
+          onCancel={onCancelEdit}
+          onTest={() => submit(true)}
+          onSave={() => submit(false)}
+        />
+        {testStatus}
+      </div>
+    </SectionCard>
+  );
+}
+
+// ---------------------------------------------------------------------------- HSMs and key managers (key_manager)
+type KmProvider = "pkcs11" | "kmip";
+type KmCred = "password" | "vault";
+const MODULE_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+// kinds.KeyManagerConfig: what the scan node reads (attributes only, never key values)
+const KM_READS: Record<KmProvider, string[]> = {
+  pkcs11: [
+    "Token label, manufacturer, model, serial and firmware",
+    "Per key: class, type, size or curve, label, id, extractable / sensitive / local flags, usage flags and dates",
+    "Certificates stored on the token (public)",
+    "Never key values: the session is read-only and no value attribute of a key is requested",
+  ],
+  kmip: [
+    "Protocol versions, vendor and server information (Discover Versions, Query)",
+    "Per object: type, algorithm, length, state, usage mask and dates (Locate, Get Attributes)",
+    "Never key material: Get and Export are not sent",
+  ],
+};
+
+interface KmState {
+  name: string;
+  provider: KmProvider;
+  module: string;
+  tokenLabel: string;
+  credentialType: KmCred;
+  pin: string;
+  vaultProvider: string;
+  vaultPath: string;
+  host: string;
+  port: string;
+  caPem: string;
+  clientCert: string;
+  clientKey: string;
+  nodeId: number | null;
+}
+type KmErrors = Partial<Record<keyof KmState, string>>;
+
+function initialKm(source: CbomSource | null, nodes: CbomScanNode[]): KmState {
+  const cfg = source?.config ?? {};
+  return {
+    name: source?.name ?? "",
+    provider: cfg.provider === "kmip" ? "kmip" : "pkcs11",
+    module: typeof cfg.module === "string" ? cfg.module : "",
+    tokenLabel: typeof cfg.token_label === "string" ? cfg.token_label : "",
+    credentialType: cfg.credential_type === "vault" ? "vault" : "password",
+    pin: "",
+    vaultProvider: cfg.vault?.provider ?? "hashicorp",
+    vaultPath: cfg.vault?.path ?? "",
+    host: typeof cfg.host === "string" ? cfg.host : "",
+    port: String(cfg.port ?? 5696),
+    caPem: typeof cfg.ca_pem === "string" ? cfg.ca_pem : "",
+    clientCert: "",
+    clientKey: "",
+    nodeId: source ? source.node_id : nodes.length === 1 ? nodes[0].id : null,
+  };
+}
+
+function KeyManagerForm({
+  teamId,
+  source,
+  nodes,
+  testStatus,
+  onSaved,
+  onCancelEdit,
+  onStale,
+}: {
+  teamId: number;
+  source: CbomSource | null;
+  nodes: CbomScanNode[];
+  testStatus: ReactNode;
+  onSaved: (source: CbomSource, jobId: number | null, tested: boolean) => void;
+  onCancelEdit: () => void;
+  onStale: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<KmState>(() => initialKm(source, nodes));
+  const [errors, setErrors] = useState<KmErrors>({});
+  const isAdmin = useIsTeamAdmin(teamId);
+  const cfg = source?.config ?? {};
+  const pinStored = !!source?.secrets_set.includes("pin") && cfg.credential_type !== "vault";
+  const certStored = !!source?.secrets_set.includes("client_cert") && !!source?.secrets_set.includes("client_key");
+  const kmipWhereChanged =
+    !!source &&
+    (cfg.provider !== "kmip" ||
+      form.host.trim() !== String(cfg.host ?? "") ||
+      Number(form.port.trim() || 5696) !== Number(cfg.port ?? 5696) ||
+      (form.caPem.trim() || null) !== ((typeof cfg.ca_pem === "string" && cfg.ca_pem.trim()) || null) ||
+      form.nodeId !== source.node_id);
+
+  const set = (patch: Partial<KmState>) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setErrors((e) => {
+      const next = { ...e };
+      for (const key of Object.keys(patch)) delete next[key as keyof KmState];
+      return next;
+    });
+  };
+
+  const save = useMutation({
+    mutationFn: ({ body, test }: { body: CbomSourceWrite; test: boolean }) =>
+      source ? updateCbomSource(teamId, source.id, { ...body, test_after_save: test }) : createCbomSource(teamId, { ...body, test_after_save: test }),
+    onSuccess: (data, vars) => onSaved(data.source, testJobId(data.test), vars.test),
+    onError: (err) => {
+      const status = httpStatus(err);
+      if (source && (status === 409 || status === 404)) onStale();
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+  });
+
+  const validate = (): KmErrors => {
+    const e: KmErrors = {};
+    if (!NAME_RE.test(form.name.trim())) e.name = NAME_ERROR;
+    if (form.provider === "pkcs11") {
+      if (!MODULE_RE.test(form.module.trim())) e.module = "Enter the module name listed in the node's ZS_PKCS11_MODULES (letters, digits, . _ -)";
+      if (form.tokenLabel.length > 32) e.tokenLabel = "32 characters at most (a PKCS#11 token label)";
+      if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path of the PIN in your vault";
+      if (form.credentialType === "vault" && !isAdmin) e.vaultPath = "Only a team admin can add or change a vault reference";
+    } else {
+      if (!HOST_RE.test(form.host.trim())) e.host = "Enter the KMIP server's host name or IP address";
+      const port = Number(form.port.trim() || 5696);
+      if (!/^\d{0,5}$/.test(form.port.trim()) || port < 1 || port > 65535) e.port = "1 to 65535";
+      const pemError = checkPem(form.caPem);
+      if (pemError) e.caPem = pemError;
+      const needCert = !certStored || kmipWhereChanged;
+      if (form.clientCert.trim() && !form.clientCert.includes("-----BEGIN CERTIFICATE-----")) e.clientCert = "Paste the PEM client certificate";
+      else if (needCert && !form.clientCert.trim()) e.clientCert = certStored ? "Re-enter it: it is cleared when the server, CA or node changes" : "Paste the PEM client certificate";
+      if (form.clientKey.trim() && (!form.clientKey.includes("PRIVATE KEY-----") || form.clientKey.includes("ENCRYPTED PRIVATE KEY")))
+        e.clientKey = "Paste the unencrypted PEM private key of the client certificate";
+      else if (needCert && !form.clientKey.trim()) e.clientKey = "Paste the PEM private key of the client certificate";
+    }
+    if (!form.nodeId) e.nodeId = "Choose the scan node that reaches this HSM or key manager";
+    return e;
+  };
+
+  const submit = (test: boolean) => {
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length) {
+      toast.error("Check the highlighted fields");
+      return;
+    }
+    const pkcs11 = form.provider === "pkcs11";
+    const secrets: Record<string, string> = {};
+    if (pkcs11 && form.credentialType === "password" && form.pin) secrets.pin = form.pin;
+    if (!pkcs11 && form.clientCert.trim()) secrets.client_cert = form.clientCert.trim() + "\n";
+    if (!pkcs11 && form.clientKey.trim()) secrets.client_key = form.clientKey.trim() + "\n";
+    const body: CbomSourceWrite = {
+      name: form.name.trim(),
+      node_id: form.nodeId,
+      config: pkcs11
+        ? {
+            provider: "pkcs11",
+            module: form.module.trim(),
+            token_label: form.tokenLabel.trim() || null,
+            credential_type: form.credentialType,
+            vault: form.credentialType === "vault" ? { provider: form.vaultProvider, path: form.vaultPath.trim() } : null,
+          }
+        : { provider: "kmip", host: form.host.trim(), port: form.port.trim() ? Number(form.port.trim()) : null, ca_pem: form.caPem.trim() ? form.caPem : null },
+      secrets,
+      ...(source ? { expected_version: source.row_version } : { kind: "key_manager" }),
+    };
+    save.mutate({ body, test });
+  };
+
+  return (
+    <SectionCard
+      id="km-form"
+      className="scroll-mt-4"
+      title={source ? `Edit ${source.name}` : "Add an HSM or key manager"}
+      description="Keys are inventoried by their attributes only; no key value ever leaves the HSM or key manager."
+    >
+      <div className="space-y-5">
+        <Field label="Name" htmlFor="km-name" required error={errors.name}>
+          <Input id="km-name" data-testid="km-name" value={form.name} maxLength={64} placeholder="hsm-payments-01" onChange={(e) => set({ name: e.target.value })} />
+        </Field>
+        <div data-testid="km-provider">
+          <ChoiceCards<KmProvider>
+            name="km-provider"
+            label="Kind of key manager"
+            value={form.provider}
+            onChange={(v) => set({ provider: v })}
+            options={[
+              { value: "pkcs11", title: "HSM or token (PKCS#11)", description: "Read through the vendor library on the scan node" },
+              { value: "kmip", title: "KMIP server", description: "Read over TLS with a client certificate" },
+            ]}
+          />
+        </div>
+
+        {form.provider === "pkcs11" ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field
+                label="Module name"
+                htmlFor="km-module"
+                required
+                error={errors.module}
+                hint="The name the scan node's operator maps to a library in ZS_PKCS11_MODULES, e.g. luna=/usr/safenet/lunaclient/lib/libCryptoki2_64.so. ZeroShield never sends a library path."
+              >
+                <Input id="km-module" data-testid="km-module" value={form.module} maxLength={64} placeholder="luna" onChange={(e) => set({ module: e.target.value })} />
+              </Field>
+              <Field label="Token label (optional)" htmlFor="km-token" error={errors.tokenLabel} hint="Blank reads every initialised token the module shows">
+                <Input id="km-token" data-testid="km-token" value={form.tokenLabel} maxLength={32} onChange={(e) => set({ tokenLabel: e.target.value })} />
+              </Field>
+            </div>
+            <div className="space-y-3">
+              <SubLabel>User PIN</SubLabel>
+              <ChoiceCards<KmCred>
+                name="km-credential"
+                label="PIN source"
+                value={form.credentialType}
+                onChange={(v) => set({ credentialType: v })}
+                options={[
+                  { value: "password", title: "PIN", description: "Optional: without it only public objects are read" },
+                  { value: "vault", title: "PIN from vault", description: "Fetched by the scan node when the job runs", disabled: !isAdmin },
+                ]}
+              />
+              {form.credentialType === "password" ? (
+                <SecretField id="km-pin" label="User PIN (crypto user / partition role)" value={form.pin} onChange={(v) => set({ pin: v })} isSet={pinStored} error={errors.pin} />
+              ) : (
+                <VaultFields
+                  idPrefix="km"
+                  provider={form.vaultProvider}
+                  path={form.vaultPath}
+                  error={errors.vaultPath}
+                  onProvider={(v) => set({ vaultProvider: v })}
+                  onPath={(v) => set({ vaultPath: v })}
+                  placeholder="secret/zs-cbom/hsm/payments"
+                />
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Field label="Host" htmlFor="km-host" required error={errors.host} className="sm:col-span-3">
+                <Input id="km-host" data-testid="km-host" value={form.host} maxLength={253} placeholder="kms01.bank.local" onChange={(e) => set({ host: e.target.value })} />
+              </Field>
+              <Field label="Port" htmlFor="km-port" error={errors.port} hint="Default 5696">
+                <Input id="km-port" data-testid="km-port" inputMode="numeric" value={form.port} maxLength={5} onChange={(e) => set({ port: e.target.value.replace(/[^\d]/g, "") })} />
+              </Field>
+            </div>
+            <Field
+              label="Server CA certificate (optional)"
+              htmlFor="km-ca"
+              error={errors.caPem}
+              hint="PEM. With it the node verifies the KMIP server; TLS client authentication never reveals the client key either way."
+            >
+              <Textarea id="km-ca" data-testid="km-ca" value={form.caPem} spellCheck={false} className="font-mono text-xs min-h-[72px]" placeholder="-----BEGIN CERTIFICATE-----" onChange={(e) => set({ caPem: e.target.value })} />
+            </Field>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <SecretField id="km-client-cert" label="Client certificate (PEM)" multiline value={form.clientCert} onChange={(v) => set({ clientCert: v })} isSet={certStored && !kmipWhereChanged} required error={errors.clientCert} />
+              <SecretField id="km-client-key" label="Client private key (PEM, unencrypted)" multiline value={form.clientKey} onChange={(v) => set({ clientKey: v })} isSet={certStored && !kmipWhereChanged} required error={errors.clientKey} />
+            </div>
+          </>
+        )}
+
+        <div className="space-y-2">
+          <SubLabel>What we read</SubLabel>
+          <ul className="list-disc pl-5 space-y-1 text-sm text-zinc-700 dark:text-zinc-300" data-testid="km-reads">
+            {KM_READS[form.provider].map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <Field label="Reached through scan node" htmlFor="km-node" required error={errors.nodeId} hint={form.provider === "pkcs11" ? "The node that has the vendor's PKCS#11 client installed." : "The node must reach the host and port above."}>
+          <div data-testid="km-node">
+            <NodeSelect id="km-node" nodes={nodes} value={form.nodeId} onChange={(v) => set({ nodeId: v })} />
+          </div>
+        </Field>
+
+        <FormButtons
+          prefix="km"
+          editing={!!source}
+          pending={save.isPending}
+          testing={!!save.variables?.test}
+          saveLabel="Save key manager"
           onCancel={onCancelEdit}
           onTest={() => submit(true)}
           onSave={() => submit(false)}

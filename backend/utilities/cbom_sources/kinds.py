@@ -202,10 +202,11 @@ def credential_target_problem(kind: str, cfg: Any, secrets: dict[str, str]) -> s
                 "servers; paste their known_hosts lines, or use the node key")
     if kind == "windows_servers" and cfg.port == 5985:
         return "port: WinRM over HTTP (5985) would send the login to a server that is not verified; use HTTPS (5986)"
-    if kind == "database" and cfg.engine in ("mysql", "redis"):
+    if kind == "database" and cfg.engine in ("mysql", "redis", "mssql"):
         uses_password = cfg.credential_type == "vault" or bool(secrets.get("password"))
         if uses_password and not (cfg.require_tls and cfg.ca_pem):
-            name = "MySQL" if cfg.engine == "mysql" else "Redis"
+            # SQL Server's login packet only obfuscates the password (MS-TDS 2.2.6.4)
+            name = {"mysql": "MySQL", "redis": "Redis", "mssql": "SQL Server"}[cfg.engine]
             return (f"ca_pem: {name} logins need TLS and the CA certificate that signed the server's certificate, so "
                     "the password only goes to the real server")
     return None
@@ -313,6 +314,8 @@ class DatabaseConfig(_Source):
             self.port = DB_DEFAULT_PORTS[self.engine]
         if self.login is None and self.engine not in ("mongodb", "redis"):
             raise ValueError("login: enter the read-only database login")
+        if self.engine == "oracle" and not self.database_name:
+            raise ValueError("database_name: enter the Oracle service name (for example ORCLPDB1)")
         if self.credential_type == "vault" and self.vault is None:
             raise ValueError("vault: choose a vault and enter the secret path")
         if self.credential_type != "vault":
@@ -405,11 +408,29 @@ class GcpConfig(_Source):
 
 
 # ----------------------------------------------------------------------------- identity
+CA_NODE_PROVIDERS = ("adcs", "vault", "ejbca")  # collected by a scan node inside the customer network
+
+
 class CaConnectorConfig(_Source):
-    provider: Literal["adcs", "aws_private_ca", "venafi", "keyfactor", "digicert", "ejbca", "sectigo", "other"]
+    provider: Literal["adcs", "aws_private_ca", "vault", "venafi", "keyfactor", "digicert", "ejbca", "sectigo", "other"]
     api_url: str | None = Field(default=None, max_length=512)
     login: str | None = Field(default=None, max_length=64)
     aws_source_id: int | None = None
+    # AD CS: the CA server reached over WinRM HTTPS (like a Windows server source)
+    host: str | None = Field(default=None, max_length=253)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    # CA that issued the CA server's / Vault's / EJBCA's own TLS certificate when it is not publicly trusted
+    ca_pem: str | None = Field(default=None, max_length=MAX_PEM_BYTES)
+
+    @field_validator("host")
+    @classmethod
+    def _host(cls, v: str | None) -> str | None:
+        return check_host(v) if v else None
+
+    @field_validator("ca_pem")
+    @classmethod
+    def _ca(cls, v: str | None) -> str | None:
+        return check_pem_certificates(v)
 
     @field_validator("api_url")
     @classmethod
@@ -423,10 +444,19 @@ class CaConnectorConfig(_Source):
 
     @model_validator(mode="after")
     def _check(self) -> "CaConnectorConfig":
-        if self.provider in ("venafi", "keyfactor", "digicert", "ejbca", "sectigo", "other") and not self.api_url:
+        if self.provider in ("vault", "venafi", "keyfactor", "digicert", "ejbca", "sectigo", "other") and not self.api_url:
             raise ValueError("api_url: enter the HTTPS API address")
         if self.provider == "adcs" and not self.login:
             raise ValueError("login: enter the read-only Windows account used to read AD CS")
+        if self.provider == "adcs" and not self.host:
+            raise ValueError("host: enter the name of the certificate authority server (reached over WinRM HTTPS)")
+        if self.provider == "adcs":
+            self.port = self.port or 5986
+            if self.port == 5985:
+                raise ValueError("port: WinRM over HTTP (5985) would send the login to a server that is not verified; "
+                                 "use HTTPS (5986)")
+        else:
+            self.host = self.port = None
         if self.provider == "aws_private_ca" and self.aws_source_id is None:
             raise ValueError("aws_source_id: pick the AWS account that holds the private CA")
         return self
@@ -437,7 +467,71 @@ def _ca_secrets(cfg: CaConnectorConfig) -> set[str]:
         return {"password"}
     if cfg.provider == "aws_private_ca":
         return set()
+    if cfg.provider == "vault":
+        return {"token"}  # a read-only Vault token (policy template on the source's Privilege section)
+    if cfg.provider == "ejbca":
+        return {"client_cert", "client_key"}  # the EJBCA REST API authenticates clients by certificate
     return {"api_key"}
+
+
+def _ca_on_node(cfg: Any) -> bool:
+    return getattr(cfg, "provider", None) in CA_NODE_PROVIDERS
+
+
+# ----------------------------------------------------------------------------- keys
+KeyManagerProvider = Literal["pkcs11", "kmip"]
+_MODULE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+
+class KeyManagerConfig(_Source):
+    """An HSM or token through PKCS#11, or a KMIP server.  For PKCS#11 the source names a module; the library path is
+    mapped to that name in the scan node's own environment (ZS_PKCS11_MODULES), never sent by the server."""
+    provider: KeyManagerProvider
+    module: str | None = Field(default=None, max_length=64)
+    token_label: str | None = Field(default=None, max_length=32)
+    credential_type: Literal["password", "vault"] = "password"
+    vault: VaultRef | None = None
+    host: str | None = Field(default=None, max_length=253)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    ca_pem: str | None = Field(default=None, max_length=MAX_PEM_BYTES)
+
+    @field_validator("host")
+    @classmethod
+    def _host(cls, v: str | None) -> str | None:
+        return check_host(v) if v else None
+
+    @field_validator("ca_pem")
+    @classmethod
+    def _ca(cls, v: str | None) -> str | None:
+        return check_pem_certificates(v)
+
+    @model_validator(mode="after")
+    def _check(self) -> "KeyManagerConfig":
+        if self.provider == "pkcs11":
+            if not self.module or not _MODULE_RE.match(self.module):
+                raise ValueError("module: enter the module name the scan node lists in ZS_PKCS11_MODULES "
+                                 "(letters, digits, . _ -)")
+            self.token_label = (self.token_label or "").strip() or None
+            if self.token_label and any(ord(ch) < 32 for ch in self.token_label):
+                raise ValueError("token_label: control characters are not allowed")
+            self.host = self.port = self.ca_pem = None
+            if self.credential_type == "vault" and self.vault is None:
+                raise ValueError("vault: choose a vault and enter the secret path of the PIN")
+            if self.credential_type != "vault":
+                self.vault = None
+        else:
+            if not self.host:
+                raise ValueError("host: enter the KMIP server's host name or IP address")
+            self.port = self.port or 5696
+            self.module = self.token_label = None
+            self.credential_type, self.vault = "password", None
+        return self
+
+
+def _key_manager_secrets(cfg: KeyManagerConfig) -> set[str]:
+    if cfg.provider == "kmip":
+        return {"client_cert", "client_key"}  # KMIP servers authenticate clients by TLS certificate
+    return set()  # the PIN is optional: a token without a stored PIN shows its public objects only
 
 
 class IdpConfig(_Source):
@@ -530,8 +624,8 @@ def _never(_cfg: Any) -> bool:
     return False
 
 
-# Engines the scan node can read today; SQL Server and Oracle are listed but not collected yet.
-COLLECTABLE_DB_ENGINES = frozenset({"postgres", "mysql", "redis", "mongodb"})
+# Engines the scan node can read today.
+COLLECTABLE_DB_ENGINES = frozenset({"postgres", "mysql", "redis", "mongodb", "mssql", "oracle"})
 
 
 def _db_collectable(cfg: Any) -> bool:
@@ -562,14 +656,17 @@ KINDS: dict[str, KindSpec] = {
     "gcp_project": KindSpec("gcp_project", "cloud", "Google Cloud", GcpConfig, lambda c: {"service_account_key"},
                             frozenset(), _never, _never, ("service_account_email",)),
     "ca_connector": KindSpec("ca_connector", "identity", "Certificate authority", CaConnectorConfig, _ca_secrets,
-                             frozenset(), lambda c: c.provider == "adcs", _never,
-                             ("api_url", "login", "provider")),
+                             frozenset(), _ca_on_node, _ca_on_node,
+                             ("api_url", "login", "provider", "host", "port", "ca_pem")),
     # Signing keys are read from public metadata, so the IdP secret is optional (kept for API reads later).
     "idp": KindSpec("idp", "identity", "Identity provider", IdpConfig, lambda c: set(),
                     frozenset({"client_secret", "api_token"}), _never, _always, ("base_url", "tenant_id", "client_id", "provider", "metadata_url", "realm"),
                     node_less=True),
     "network_range": KindSpec("network_range", "network", "Network range", NetworkRangeConfig, lambda c: set(),
                               frozenset(), _always, _always, ("cidr",)),
+    "key_manager": KindSpec("key_manager", "databases", "HSM or key manager", KeyManagerConfig, _key_manager_secrets,
+                            frozenset({"pin"}), _always, _always,
+                            ("provider", "module", "token_label", "host", "port", "ca_pem", "vault")),
 }
 
 KIND_NAMES = tuple(KINDS)
@@ -586,6 +683,11 @@ def validate_secret_value(field: str, value: str) -> str:
         raise ValueError(f"{field}: contains a NUL byte; upload a text file")
     if field == "kubeconfig":
         check_kubeconfig(value)
-    if field in ("private_key", "ssh_certificate"):
-        return value.replace("\r\n", "\n")
+    if field in ("private_key", "ssh_certificate", "client_cert", "client_key"):
+        value = value.replace("\r\n", "\n")
+        if field == "client_cert" and "-----BEGIN CERTIFICATE-----" not in value:
+            raise ValueError(f"{field}: paste the PEM client certificate (-----BEGIN CERTIFICATE-----)")
+        if field == "client_key" and ("PRIVATE KEY-----" not in value or "ENCRYPTED PRIVATE KEY" in value):
+            raise ValueError(f"{field}: paste the unencrypted PEM private key of the client certificate")
+        return value
     return value

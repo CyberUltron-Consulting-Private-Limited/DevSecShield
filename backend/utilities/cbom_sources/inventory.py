@@ -130,7 +130,7 @@ def _job_targets(job: CbomCollectionJob, names: dict[int, str]) -> dict[str, Any
 # ----------------------------------------------------------------------------- CycloneDX 1.6
 _REL_TYPE = {"private_key": "private-key", "public_key": "public-key", "ssh_host_key": "public-key",
              "signing_key": "public-key", "kms_key": "key", "cloud_secret": "secret-key", "host_secret": "secret-key", "keystore": "key",
-             "k8s_certificate": "key"}
+             "k8s_certificate": "key", "managed_key": "key"}
 
 
 # CycloneDX 1.6 enums (cryptoProperties): values outside them make the document invalid
@@ -138,7 +138,10 @@ _CDX_PRIMITIVES = {"drbg", "mac", "block-cipher", "stream-cipher", "signature", 
                    "kem", "ae", "combiner", "other", "unknown"}
 _CDX_MODES = {"cbc", "ecb", "ccm", "gcm", "cfb", "ofb", "ctr", "other", "unknown"}
 _KEY_STATE = {"Enabled": "active", "Disabled": "suspended", "PendingDeletion": "deactivated",
-              "PendingImport": "pre-activation", "Unavailable": "suspended", "active": "active"}
+              "PendingImport": "pre-activation", "Unavailable": "suspended", "active": "active",
+              # KMIP states (managed_key facts from KMIP servers)
+              "Pre-Active": "pre-activation", "Active": "active", "Deactivated": "deactivated",
+              "Compromised": "compromised", "Destroyed": "destroyed", "Destroyed Compromised": "compromised"}
 _SEVERITY = {"Critical": "critical", "High": "high", "Medium": "medium", "Low": "low"}
 
 

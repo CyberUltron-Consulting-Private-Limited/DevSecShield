@@ -14,9 +14,12 @@ SUPPORTED = {
     ("collect", "network_range"),
     ("test_connection", "linux_servers"), ("test_connection", "windows_servers"), ("test_connection", "kubernetes"),
     ("test_connection", "database"), ("test_connection", "network_range"),
+    ("collect", "key_manager"), ("test_connection", "key_manager"),
+    ("collect", "ca_connector"), ("test_connection", "ca_connector"),
 }
 CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql", "redis", "mongodb", "network_tls",
-                "starttls", "ssh_kexinit", "rdp", "tds_prelogin", "discovery", "pq_hybrid_probe"]
+                "starttls", "ssh_kexinit", "rdp", "tds_prelogin", "discovery", "pq_hybrid_probe",
+                "mssql", "oracle", "pkcs11", "kmip", "vault_pki", "ejbca", "adcs"]
 
 
 class ConfigError(Exception):
@@ -54,6 +57,15 @@ def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tup
             from zs_scan_node.collectors import database
 
             summary = (database.test if kind == "test_connection" else database.collect)(ctx, config, secrets, scope)
+        elif source_kind == "key_manager":
+            from zs_scan_node.collectors import hsm_pkcs11, kmip
+
+            module = kmip if config.get("provider") == "kmip" else hsm_pkcs11
+            summary = (module.test if kind == "test_connection" else module.collect)(ctx, config, secrets, scope)
+        elif source_kind == "ca_connector":
+            from zs_scan_node.collectors import ca
+
+            summary = (ca.test if kind == "test_connection" else ca.collect)(ctx, config, secrets, scope)
         elif source_kind == "network_range":
             from zs_scan_node.collectors import network
 

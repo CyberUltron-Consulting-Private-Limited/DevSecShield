@@ -1,4 +1,4 @@
-"""Databases: PostgreSQL, MySQL, Redis and MongoDB with a read-only login.
+"""Databases: PostgreSQL, MySQL, Redis, MongoDB, SQL Server (mssql.py) and Oracle (oracle.py) with a read-only login.
 
 Before any credential is sent the node checks whether the server offers TLS (Postgres SSLRequest, MySQL greeting
 CLIENT_SSL flag, a raw ClientHello for Redis/MongoDB).  With ``require_tls`` and no TLS the target is
@@ -23,7 +23,8 @@ from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
 from zs_scan_node.netutil import Blocked, Target, checked_ip, resolve_checked
 
-SUPPORTED = ("postgres", "mysql", "redis", "mongodb")
+SUPPORTED = ("postgres", "mysql", "redis", "mongodb", "mssql", "oracle")
+DEFAULT_PORTS = {"postgres": 5432, "mysql": 3306, "redis": 6379, "mongodb": 27017, "mssql": 1433, "oracle": 1521}
 REDIS_TLS_SETTINGS = ["port", "tls-port", "tls-protocols", "tls-ciphers", "tls-ciphersuites", "tls-auth-clients",
                       "tls-replication", "tls-cluster", "tls-prefer-server-ciphers", "tls-session-caching"]
 MYSQL_VARIABLES = ["version", "have_ssl", "tls_version", "ssl_cipher", "tls_ciphersuites", "require_secure_transport",
@@ -519,7 +520,12 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
         return Target(label, None), "skipped_never_scan", None, 0
     except OSError as exc:
         return Target(label, None), "unreachable", f"could not resolve {label}: {exc.__class__.__name__}", 0
-    port = int(config.get("port") or {"postgres": 5432, "mysql": 3306, "redis": 6379, "mongodb": 27017}[engine])
+    port = int(config.get("port") or DEFAULT_PORTS[engine])
+    if engine == "mssql":  # TLS travels inside TDS packets: the engine module reads it before any login
+        from zs_scan_node.collectors import mssql
+
+        return (target, *mssql.collect_target(ctx, target, port, config, lambda: _password(ctx, config, secrets),
+                                              _where(target)))
     require_tls = bool(config.get("require_tls", True))
     try:
         tls, pre = _tls_offered(target.ip, port, engine, ctx.never_scan)
@@ -555,6 +561,13 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
             n += _mysql(ctx, target, config, password, ca, tls)
         elif engine == "redis":
             n += _redis(ctx, target, config, password, ca, tls)
+        elif engine == "oracle":
+            from zs_scan_node.collectors import oracle
+
+            try:
+                n += oracle.collect_login(ctx, target, port, config, password or "", tls, f"{_where(target)}:{port}")
+            except oracle.OracleFail as fail:
+                raise DbFail(fail.status, fail.error) from None
         else:
             n += _mongodb(ctx, target, config, password, ca, tls)
     except DbFail as fail:

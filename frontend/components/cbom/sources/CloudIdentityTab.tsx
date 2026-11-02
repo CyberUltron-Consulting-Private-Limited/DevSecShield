@@ -18,6 +18,7 @@ import {
   createCbomSource,
   deleteCbomSource,
   getCbomAwsTemplate,
+  getCbomTemplate,
   getCbomSourcesSettings,
   listCbomScanNodes,
   listCbomSources,
@@ -57,7 +58,7 @@ import {
 // ---------------------------------------------------------------------------- constants
 type Provider = "aws" | "azure" | "gcp";
 type AwsScope = "account" | "organization";
-type CaProvider = "adcs" | "aws_private_ca" | "venafi" | "keyfactor" | "digicert" | "ejbca" | "sectigo" | "other";
+type CaProvider = "adcs" | "aws_private_ca" | "vault" | "venafi" | "keyfactor" | "digicert" | "ejbca" | "sectigo" | "other";
 type IdpProvider = "entra_id" | "okta" | "keycloak";
 type MetadataProvider = "saml_metadata" | "oidc_discovery";
 
@@ -76,15 +77,21 @@ interface CaRow {
 }
 const CA_ROWS: CaRow[] = [
   { key: "adcs", providers: ["adcs"], label: "Microsoft AD CS", detail: "through a scan node" },
+  { key: "vault", providers: ["vault"], label: "HashiCorp Vault PKI and transit", detail: "through a scan node" },
+  { key: "ejbca", providers: ["ejbca"], label: "EJBCA", detail: "through a scan node" },
   { key: "aws_private_ca", providers: ["aws_private_ca"], label: "AWS Private CA", detail: "through a connected AWS account" },
   { key: "venafi", providers: ["venafi"], label: "Venafi / CyberArk Certificate Manager" },
   { key: "keyfactor", providers: ["keyfactor"], label: "Keyfactor" },
   { key: "digicert", providers: ["digicert"], label: "DigiCert CertCentral" },
-  { key: "other", providers: ["ejbca", "sectigo", "other"], label: "EJBCA, Sectigo or other" },
+  { key: "other", providers: ["sectigo", "other"], label: "Sectigo or other" },
 ];
+// kinds.CA_NODE_PROVIDERS: read by a scan node inside the network (the others are not collected yet)
+const NODE_CA_PROVIDERS: ReadonlySet<CaProvider> = new Set<CaProvider>(["adcs", "vault", "ejbca"]);
+const HOST_RE = /^[A-Za-z0-9._:-]{1,253}$/;
 const CA_DEFAULT_NAME: Record<CaProvider, string> = {
   adcs: "AD CS",
   aws_private_ca: "AWS Private CA",
+  vault: "Vault PKI",
   venafi: "Venafi",
   keyfactor: "Keyfactor",
   digicert: "DigiCert",
@@ -567,7 +574,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               <p className="text-sm font-medium text-zinc-900 dark:text-white">Certificate authorities and CLM</p>
               {CA_ROWS.map((row) => {
                 const rowSources = caSources.filter((s) => row.providers.includes(s.config?.provider as CaProvider));
-                const isAdcs = row.key === "adcs";
+                const onNode = NODE_CA_PROVIDERS.has(row.providers[0]);
                 return (
                   <ConnectorRow
                     key={row.key}
@@ -575,14 +582,14 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                     label={row.label}
                     detail={row.detail}
                     sources={rowSources}
-                    canTest={isAdcs}
+                    canTest={onNode}
                     testing={testMutation.isPending ? testMutation.variables?.id ?? null : null}
                     onConnect={() => setCaDialog({ row, source: null, nonce: Date.now() })}
                     onEdit={(s) => setCaDialog({ row, source: s, nonce: Date.now() })}
                     onTest={(s) => testMutation.mutate(s)}
                     onDelete={(s) => setDeleting(s)}
                     renderDetail={(s) =>
-                      isAdcs ? (
+                      onNode ? (
                         <NodeTestLine teamId={teamId} source={s} />
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
@@ -1614,15 +1621,32 @@ function CaDialog({
   const [name, setName] = useState(source?.name ?? uniqueName(CA_DEFAULT_NAME[initialProvider], takenNames));
   const [nodeId, setNodeId] = useState<number | null>(source?.node_id ?? (nodes.length === 1 ? nodes[0].id : null));
   const [login, setLogin] = useState(cfgString(source, "login"));
+  const [host, setHost] = useState(cfgString(source, "host"));
+  const [caPem, setCaPem] = useState(cfgString(source, "ca_pem"));
   const [password, setPassword] = useState("");
   const [awsSourceId, setAwsSourceId] = useState<number | null>(cfgNumber(source, "aws_source_id") ?? (awsSources.length === 1 ? awsSources[0].id : null));
   const [apiUrl, setApiUrl] = useState(cfgString(source, "api_url"));
   const [apiKey, setApiKey] = useState("");
+  const [token, setToken] = useState("");
+  const [clientCert, setClientCert] = useState("");
+  const [clientKey, setClientKey] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const isAdcs = provider === "adcs";
   const isAwsCa = provider === "aws_private_ca";
+  const isVault = provider === "vault";
+  const isEjbca = provider === "ejbca";
+  const onNode = NODE_CA_PROVIDERS.has(provider);
   const passwordSet = !!source?.secrets_set.includes("password");
   const apiKeySet = !!source?.secrets_set.includes("api_key");
+  const tokenSet = !!source?.secrets_set.includes("token");
+  const certSet = !!source?.secrets_set.includes("client_cert") && !!source?.secrets_set.includes("client_key");
+  const policy = useQuery({
+    queryKey: cbomSourcesKeys.template(teamId, "vault-policy"),
+    queryFn: () => getCbomTemplate(teamId, "vault-policy"),
+    enabled: isVault && Number.isFinite(teamId),
+    retry: 1,
+    staleTime: Infinity,
+  });
 
   const save = useMutation({
     mutationFn: ({ test }: { test: boolean }) => {
@@ -1630,14 +1654,22 @@ function CaDialog({
       const secrets: Record<string, string> = {};
       if (isAdcs) {
         config.login = login.trim();
+        config.host = host.trim();
+        config.ca_pem = caPem.trim() ? caPem : null;
         if (password) secrets.password = password;
       } else if (isAwsCa) {
         config.aws_source_id = awsSourceId;
+      } else if (onNode) {
+        config.api_url = apiUrl.trim();
+        config.ca_pem = caPem.trim() ? caPem : null;
+        if (isVault && token) secrets.token = token;
+        if (isEjbca && clientCert.trim()) secrets.client_cert = clientCert.trim() + "\n";
+        if (isEjbca && clientKey.trim()) secrets.client_key = clientKey.trim() + "\n";
       } else {
         config.api_url = apiUrl.trim();
         if (apiKey) secrets.api_key = apiKey;
       }
-      const body = { name: name.trim(), config, secrets, test_after_save: test, ...(isAdcs && nodeId ? { node_id: nodeId } : {}) };
+      const body = { name: name.trim(), config, secrets, test_after_save: test, ...(onNode && nodeId ? { node_id: nodeId } : {}) };
       return source
         ? updateCbomSource(teamId, source.id, { ...body, expected_version: source.row_version })
         : createCbomSource(teamId, { kind: "ca_connector", ...body });
@@ -1651,19 +1683,35 @@ function CaDialog({
 
   const submit = (test: boolean) => {
     const providerChanged = !!source && savedProvider !== provider;
+    const caChanged = !!source && caPem.trim() !== cfgString(source, "ca_pem").trim();
     const next: Record<string, string | null> = { name: nameError(name) };
+    if (onNode) next.node = nodeId ? null : "Choose the scan node that can reach your certificate authority";
+    if (caPem.trim() && !caPem.includes("-----BEGIN CERTIFICATE-----")) next.caPem = "Paste a PEM CA certificate (-----BEGIN CERTIFICATE-----)";
     if (isAdcs) {
-      const whereChanged = !!source && (providerChanged || login.trim() !== cfgString(source, "login") || nodeId !== source.node_id);
-      next.node = nodeId ? null : "Choose the scan node that can reach your certificate authority";
+      const whereChanged =
+        !!source && (providerChanged || caChanged || login.trim() !== cfgString(source, "login") || host.trim() !== cfgString(source, "host") || nodeId !== source.node_id);
+      next.host = HOST_RE.test(host.trim()) ? null : "Enter the CA server's name, e.g. ca01.corp.example.com";
       next.login = LOGIN_RE.test(login.trim()) ? null : "Enter the read-only Windows account, e.g. CORP\\svc-zscbom";
       next.password =
-        password || (passwordSet && !whereChanged) ? null : passwordSet ? "Re-enter the password: it is cleared when the account or node changes" : "Enter the password";
+        password || (passwordSet && !whereChanged) ? null : passwordSet ? "Re-enter the password: it is cleared when the server, account, CA or node changes" : "Enter the password";
     } else if (isAwsCa) {
       next.aws = awsSourceId ? null : "Pick the AWS account that holds the private CA";
     } else {
-      const whereChanged = !!source && (providerChanged || apiUrl.trim() !== cfgString(source, "api_url"));
+      const whereChanged = !!source && (providerChanged || caChanged || apiUrl.trim() !== cfgString(source, "api_url") || (onNode && nodeId !== source.node_id));
       next.apiUrl = httpsUrlError(apiUrl, "API address");
-      next.apiKey = apiKey || (apiKeySet && !whereChanged) ? null : apiKeySet ? "Re-enter the API key: it is cleared when the address changes" : "Enter the API key";
+      if (isVault) {
+        next.token = token || (tokenSet && !whereChanged) ? null : tokenSet ? "Re-enter the token: it is cleared when the address, CA or node changes" : "Enter a token with the read-only policy";
+      } else if (isEjbca) {
+        const need = !certSet || whereChanged;
+        next.clientCert = clientCert.trim()
+          ? clientCert.includes("-----BEGIN CERTIFICATE-----") ? null : "Paste the PEM client certificate"
+          : need ? "Paste the PEM client certificate of an EJBCA role that can read CAs" : null;
+        next.clientKey = clientKey.trim()
+          ? clientKey.includes("PRIVATE KEY-----") && !clientKey.includes("ENCRYPTED PRIVATE KEY") ? null : "Paste the unencrypted PEM private key"
+          : need ? "Paste the PEM private key of the client certificate" : null;
+      } else {
+        next.apiKey = apiKey || (apiKeySet && !whereChanged) ? null : apiKeySet ? "Re-enter the API key: it is cleared when the address changes" : "Enter the API key";
+      }
     }
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -1680,10 +1728,14 @@ function CaDialog({
           <DialogTitle>{source ? `Edit ${source.name}` : `Connect ${row.label}`}</DialogTitle>
           <DialogDescription>
             {isAdcs
-              ? "A scan node reads the certificate authority with a read-only Windows account."
-              : isAwsCa
-                ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                : "ZeroShield keeps the API address and key for the certificate collector."}
+              ? "A scan node reads the CA server over WinRM HTTPS with a read-only Windows account: its signing hash, its certificate and the templates it publishes."
+              : isVault
+                ? "A scan node reads PKI issuers and roles and transit key settings with a read-only token; never key material."
+                : isEjbca
+                  ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
+                  : isAwsCa
+                    ? "Read through the read-only role of a connected AWS account. No new credential is needed."
+                    : "ZeroShield keeps the API address and key for the certificate collector."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -1714,9 +1766,9 @@ function CaDialog({
             <Input id="ca-name" data-testid="cloud-ca-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
           </Field>
 
-          {isAdcs && (
+          {onNode && (
             <>
-              <Field label="Scan node" htmlFor="ca-node" required error={errors.node} hint="A node in a segment that reaches your domain controllers and CA">
+              <Field label="Scan node" htmlFor="ca-node" required error={errors.node} hint="A node in a segment that reaches the certificate authority">
                 <NodeSelect id="ca-node" nodes={nodes} value={nodeId} onChange={setNodeId} />
               </Field>
               {nodes.length === 0 && (
@@ -1732,6 +1784,14 @@ function CaDialog({
                   Add a scan node first
                 </Button>
               )}
+            </>
+          )}
+
+          {isAdcs && (
+            <>
+              <Field label="CA server" htmlFor="ca-host" required error={errors.host} hint="Reached over WinRM HTTPS (5986); run the Windows setup script from the Servers tab on it">
+                <Input id="ca-host" data-testid="cloud-ca-host" value={host} maxLength={253} placeholder="ca01.corp.example.com" onChange={(e) => setHost(e.target.value)} />
+              </Field>
               <Field label="Read-only Windows account" htmlFor="ca-login" required error={errors.login}>
                 <Input id="ca-login" data-testid="cloud-ca-login" value={login} maxLength={64} placeholder="svc-zscbom" autoComplete="off" onChange={(e) => setLogin(e.target.value)} />
               </Field>
@@ -1743,7 +1803,7 @@ function CaDialog({
                 isSet={passwordSet}
                 required
                 error={errors.password}
-                hint={passwordSet ? "Saved. Leave blank to keep it; changing the account or node clears it." : undefined}
+                hint={passwordSet ? "Saved. Leave blank to keep it; changing the server, account, CA or node clears it." : undefined}
               />
             </>
           )}
@@ -1770,37 +1830,91 @@ function CaDialog({
           )}
 
           {!isAdcs && !isAwsCa && (
+            <Field label="API address" htmlFor="ca-api-url" required error={errors.apiUrl}>
+              <Input
+                id="ca-api-url"
+                data-testid="cloud-ca-api-url"
+                value={apiUrl}
+                maxLength={512}
+                spellCheck={false}
+                placeholder={isVault ? "https://vault.corp.example.com:8200" : isEjbca ? "https://ejbca.corp.example.com" : "https://tpp.example.com/vedsdk"}
+                onChange={(e) => setApiUrl(e.target.value)}
+              />
+            </Field>
+          )}
+
+          {isVault && (
             <>
-              <Field label="API address" htmlFor="ca-api-url" required error={errors.apiUrl}>
-                <Input
-                  id="ca-api-url"
-                  data-testid="cloud-ca-api-url"
-                  value={apiUrl}
-                  maxLength={512}
-                  spellCheck={false}
-                  placeholder="https://tpp.example.com/vedsdk"
-                  onChange={(e) => setApiUrl(e.target.value)}
-                />
-              </Field>
               <SecretField
-                id="ca-api-key"
-                label="API key"
-                value={apiKey}
-                onChange={setApiKey}
-                isSet={apiKeySet}
+                id="ca-token"
+                label="Vault token (read-only policy)"
+                value={token}
+                onChange={setToken}
+                isSet={tokenSet}
                 required
-                error={errors.apiKey}
-                hint={apiKeySet ? "Saved. Leave blank to keep it; changing the address clears it." : STORED_HINT}
+                error={errors.token}
+                hint={tokenSet ? "Saved. Leave blank to keep it; changing the address, CA or node clears it." : STORED_HINT}
+              />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Policy for the token</p>
+                {policy.data ? (
+                  <div data-testid="cloud-ca-vault-policy">
+                    <CodeSnippet code={policy.data} language="hcl" />
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">{policy.isLoading ? "Loading the policy" : "Could not load the policy"}</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {isEjbca && (
+            <>
+              <SecretField id="ca-client-cert" label="Client certificate (PEM)" multiline value={clientCert} onChange={setClientCert} isSet={certSet} required error={errors.clientCert} />
+              <SecretField
+                id="ca-client-key"
+                label="Client private key (PEM, unencrypted)"
+                multiline
+                value={clientKey}
+                onChange={setClientKey}
+                isSet={certSet}
+                required
+                error={errors.clientKey}
+                hint={certSet ? "Saved. Leave blank to keep it; changing the address, CA or node clears it." : STORED_HINT}
               />
             </>
           )}
-          {!isAdcs && <p className="text-xs text-zinc-500">{NOT_AVAILABLE}</p>}
+
+          {onNode && (
+            <Field
+              label={isAdcs ? "CA of the WinRM certificate (optional)" : "CA of the server certificate (optional)"}
+              htmlFor="ca-ca-pem"
+              error={errors.caPem}
+              hint="PEM. Needed when the server's TLS certificate comes from a private CA; the node verifies it before signing in"
+            >
+              <Textarea id="ca-ca-pem" data-testid="cloud-ca-ca-pem" value={caPem} spellCheck={false} className="font-mono text-xs min-h-[72px]" placeholder="-----BEGIN CERTIFICATE-----" onChange={(e) => setCaPem(e.target.value)} />
+            </Field>
+          )}
+
+          {!onNode && !isAwsCa && (
+            <SecretField
+              id="ca-api-key"
+              label="API key"
+              value={apiKey}
+              onChange={setApiKey}
+              isSet={apiKeySet}
+              required
+              error={errors.apiKey}
+              hint={apiKeySet ? "Saved. Leave blank to keep it; changing the address clears it." : STORED_HINT}
+            />
+          )}
+          {!onNode && <p className="text-xs text-zinc-500">{NOT_AVAILABLE}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
             Cancel
           </Button>
-          {isAdcs ? (
+          {onNode ? (
             <>
               <Button variant="outline" className="cursor-pointer" disabled={save.isPending} onClick={() => submit(false)} data-testid="cloud-ca-save">
                 {pendingSave && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

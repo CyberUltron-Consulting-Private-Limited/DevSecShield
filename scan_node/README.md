@@ -34,6 +34,7 @@ token for its own node token. The public key is shown in ZeroShield: add it to t
 | AWS role of the host | used for AWS Secrets Manager credentials |
 | `ZS_CLIENT_CERT`, `ZS_CLIENT_KEY` | PEM client certificate and key the node presents to the ZeroShield proxy (mTLS; optional) |
 | `ZS_CA_FILE` | CA bundle trusted for the ZeroShield API instead of the default (private CA, TLS-inspecting proxy) |
+| `ZS_PKCS11_MODULES` | PKCS#11 libraries the node may load, as `name=/path` pairs separated by `;` (for example `luna=/usr/safenet/lunaclient/lib/libCryptoki2_64.so`). An HSM source names a module; the path never comes from ZeroShield. Mount the vendor client read-only into the container. |
 
 ### How the node authenticates
 
@@ -89,12 +90,31 @@ suite order, BitLocker, RDP security layer.
 mTLS, ConfigMap CA bundles and private keys pasted into ConfigMaps (type and size only). Tier 2 adds TLS
 secrets, listed with `fieldSelector=type=kubernetes.io/tls`; only `tls.crt` is parsed, `tls.key` is dropped.
 
-**Databases.** PostgreSQL, MySQL, Redis, MongoDB. TLS is checked before the password is sent; with
+**Databases.** PostgreSQL, MySQL, Redis, MongoDB, SQL Server, Oracle. TLS is checked before the password is sent; with
 `require_tls` and no TLS the password is never sent. Only fixed queries and fixed setting names are read.
 PostgreSQL password hash *types* of login roles (never the hashes) come from `pg_authid` (superuser), else the
 DBA-installed `public.zs_role_password_types()` SECURITY DEFINER function (in the grant template), else
 `rds_tools.role_password_encryption_type()` on Amazon RDS/Aurora; otherwise one coverage row names the exact fix
 for that kind of server. Errors are classified by SQLSTATE (42501, 42883, 3F000), not by message text.
+SQL Server (python-tds): PRELOGIN encryption policy, TLS versions and certificate are read before any login; the
+login only obfuscates the password (MS-TDS 2.2.6.4), so it is sent only inside TLS to a server proven by the
+uploaded CA (or its own certificate). Then TDE per database, symmetric/asymmetric keys, certificates and Always
+Encrypted keys per database (metadata), live connection encryption, login policy and hash *version*. A server
+with TDS 8.0 strict encryption is reported (transport facts only). Oracle (python-oracledb thin): TCPS when
+offered, TDE keystore and encrypted tablespaces/columns, password verifier versions, native network encryption
+in use; thin-mode refusals (NNE required DPY-3001, 10G verifier DPY-3015, release before 12.1 DPY-3010) are
+findings. Both drivers open their own sockets and can be redirected by the server, so they run inside
+`drivergate.scope()`, which routes every lookup and connection through the network gate.
+
+**HSMs and key managers.** PKCS#11 (python-pkcs11): read-only sessions; token information and per object the
+class, key type, size or curve, label, id, extractable/sensitive/local and usage flags and dates; a key's value
+attribute is never requested (certificates are read, they are public). KMIP 1.0-2.0 (own TTLV client over TLS
+with a client certificate): Discover Versions, Query, Locate and Get Attributes only, never Get or Export.
+
+**Certificate authorities.** HashiCorp Vault (PKI issuers, roles, CRL/URL configuration; transit key settings,
+never `export` or `backup`; read-only policy template), EJBCA REST (CAs, CA certificates, built-in certificate
+profiles where the endpoint exists; client-certificate authentication) and AD CS over WinRM HTTPS (signing hash,
+CA certificate, EditFlags, published templates from the CA server's own template cache).
 
 **Network gate.** Every connection a collector makes to a target goes through `netutil`: `resolve_checked()`
 resolves once and applies the never-scan list, `checked_ip()` re-checks right before a driver connects,
