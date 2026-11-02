@@ -269,6 +269,15 @@ def test_servicenow_test_reads_and_creates_nothing(monkeypatch):
     assert out.status == "retry" and "credentials" in out.reason
 
 
+def test_servicenow_minimum_severity_limits_new_records_but_never_resolving(monkeypatch):
+    fake, ctx = _sn(monkeypatch, min_severity="High")
+    low = {**EVENT, "severity": "Low", "id": "low", "finding": {**EVENT["finding"], "code": "QUANTUM_VULNERABLE"}}
+    out = servicenow.send(ctx, [low, EVENT])
+    assert out[0].status == "ok" and "minimum severity" in out[0].reason and len(fake.records) == 1
+    resolved = {**EVENT, "kind": "resolved", "type": "finding.resolved", "severity": "Info", "id": "r"}
+    assert servicenow.send(ctx, [resolved])[0].reason.startswith("resolved")
+
+
 def test_servicenow_cert_events_and_ignores_others(monkeypatch):
     fake, ctx = _sn(monkeypatch, events=["opened", "resolved", "cert_expiring", "cert_renewed"])
     expiring = {**EVENT, "kind": "cert_expiring", "type": "certificate.expiring", "finding": None, "id": "c1"}

@@ -52,6 +52,7 @@ OPEN_KINDS = ("opened", "cert_expiring")
 CLOSE_KINDS = ("resolved", "cert_renewed")
 # impact / urgency (1 high, 2 medium, 3 low): Critical -> P1, High -> P2, Medium -> P3, Low -> P5
 _PRIORITY = {"Critical": ("1", "1"), "High": ("1", "2"), "Medium": ("2", "2"), "Low": ("3", "3")}
+_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 CMDB_MAX_ROWS = 5000
 CMDB_PAGE = 500
 CMDB_PAGE_BYTES = 8 * 1024 * 1024
@@ -98,6 +99,8 @@ class ServiceNowConfig(Cfg):
     category: str | None = Field(default=None, max_length=80)
     resolve_state: str = Field(default="6", max_length=20)
     close_code: str = Field(default="Solution provided", max_length=80)
+    # records are opened only for findings at or above this severity (resolving always goes through)
+    min_severity: Literal["Critical", "High", "Medium", "Low"] = "Low"
     ca_pem: str | None = Field(default=None, max_length=64 * 1024)
     events: list[str] | None = None
     cmdb_table: str = Field(default="cmdb_ci_server", max_length=80)
@@ -227,6 +230,8 @@ def _ref(record: dict | None) -> str | None:
 
 
 def deliver_one(cfg: ServiceNowConfig, headers: dict[str, str], event: dict[str, Any]) -> Outcome:
+    if event["kind"] in OPEN_KINDS and _RANK.get(event.get("severity") or "Low", 3) > _RANK[cfg.min_severity]:
+        return Outcome("ok", f"below the minimum severity ({cfg.min_severity}); no record opened")
     cid = correlation_id(event)
     resp, record = _find_active(cfg, headers, cid)
     if resp.status != 200:
