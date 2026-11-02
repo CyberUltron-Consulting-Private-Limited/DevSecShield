@@ -1001,6 +1001,7 @@
   "CWE-338": "Use of Cryptographically Weak Pseudo-Random Number Generator (PRNG)",
   "CWE-347": "Improper Verification of Cryptographic Signature",
   "CWE-522": "Insufficiently Protected Credentials",
+  "CWE-668": "Exposure of Resource to Wrong Sphere",
   "CWE-732": "Incorrect Permission Assignment for Critical Resource",
   "CWE-757": "Selection of Less-Secure Algorithm During Negotiation",
   "CWE-780": "Use of RSA Algorithm without OAEP",
@@ -3672,6 +3673,73 @@
      }
     ]
    },
+   "DB_MD5_ACCEPTED": {
+    "attack": "An md5 hash (salted only with the role name) taken from a backup or pg_authid can be replayed as the password, and md5 challenge-response captures are cheap to brute-force.",
+    "category": "database",
+    "compliance": [
+     "auth"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-916",
+     "CWE-328"
+    ],
+    "default_impact": "Medium",
+    "description": "RDS for PostgreSQL rds.accepted_password_auth_method is md5+scram, so roles whose password is stored as an MD5 hash can still log in with the md5 method instead of SCRAM-SHA-256.",
+    "owasp": [
+     "crypto",
+     "auth"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-916, CWE-328 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-916, CWE-328 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL_Password_Encryption_configuration.html"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "aws rds modify-db-parameter-group --db-parameter-group-name <group> --parameters ParameterName=rds.accepted_password_auth_method,ParameterValue=scram,ApplyMethod=immediate",
+       "platform": "RDS PostgreSQL"
+      }
+     ],
+     "summary": "Reset every role's password with password_encryption = scram-sha-256, then set rds.accepted_password_auth_method = scram in the parameter group."
+    },
+    "standards": [
+     "RFC 7677"
+    ],
+    "summary_rules": [],
+    "title": "Database still accepts md5 password authentication",
+    "verify": [
+     {
+      "command": "aws rds describe-db-parameters --db-parameter-group-name <group> --query \"Parameters[?ParameterName=='rds.accepted_password_auth_method' || ParameterName=='password_encryption' || ParameterName=='rds.force_ssl'].[ParameterName,ParameterValue]\"",
+      "label": "Effective RDS parameters"
+     }
+    ]
+   },
    "DB_MD5_DEFAULT": {
     "attack": "An MD5 password hash (salted only with the user name) can be replayed as the password itself and is cheap to brute-force once read from the database or a backup.",
     "category": "database",
@@ -5028,6 +5096,232 @@
      }
     ]
    },
+   "GLUE_CATALOG_UNENCRYPTED": {
+    "attack": "Catalog metadata, including connection definitions, is readable to any principal with Glue read access and is not covered by a KMS key policy or by CloudTrail records of key use.",
+    "category": "cloud",
+    "compliance": [
+     "at_rest"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-311"
+    ],
+    "default_impact": "Medium",
+    "description": "The AWS Glue Data Catalog in this region has CatalogEncryptionMode DISABLED, so its metadata (databases, table definitions, and connection definitions with their properties) is not encrypted with a KMS key you control.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-311 is in OWASP's mapped CWE list",
+      "id": "A04:2021",
+      "label": "A04:2021 - Insecure Design"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-311 is in OWASP's mapped CWE list",
+      "id": "A06:2025",
+      "label": "A06:2025 - Insecure Design"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.aws.amazon.com/glue/latest/dg/encrypt-glue-data-catalog.html"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "aws glue put-data-catalog-encryption-settings --data-catalog-encryption-settings 'EncryptionAtRest={CatalogEncryptionMode=SSE-KMS,SseAwsKmsKeyId=<key arn>},ConnectionPasswordEncryption={ReturnConnectionPasswordEncrypted=true,AwsKmsKeyId=<key arn>}'",
+       "platform": "AWS CLI"
+      }
+     ],
+     "summary": "Turn on Data Catalog encryption (SSE-KMS) and connection password encryption in the Glue console (Data Catalog settings) or with aws glue put-data-catalog-encryption-settings."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Glue Data Catalog not encrypted with KMS",
+    "verify": [
+     {
+      "command": "aws glue get-data-catalog-encryption-settings --query DataCatalogEncryptionSettings",
+      "label": "Data Catalog encryption settings (no secrets)"
+     }
+    ]
+   },
+   "GLUE_JDBC_NO_TLS": {
+    "attack": "On the network path between Glue and the database, credentials and query results can be read or changed.",
+    "category": "cloud",
+    "compliance": [
+     "in_transit"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-319",
+     "CWE-295"
+    ],
+    "default_impact": "Medium",
+    "description": "The Glue JDBC connection has JDBC_ENFORCE_SSL unset or false and its URL does not require TLS, so Glue jobs may connect to the database without TLS and without checking the server's certificate.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-319 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-319 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.aws.amazon.com/glue/latest/webapi/API_Connection.html"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Set 'Require SSL connection' on the connection (JDBC_ENFORCE_SSL=true) and, for a private CA, CUSTOM_JDBC_CERT; also require TLS on the database itself."
+    },
+    "standards": [
+     "NIST SP 800-52 Rev. 2"
+    ],
+    "summary_rules": [],
+    "title": "Glue JDBC connection does not enforce TLS",
+    "verify": [
+     {
+      "command": "aws glue get-connection --name {name} --hide-password --query 'Connection.ConnectionProperties | keys(@)'",
+      "label": "Connection properties without the password"
+     }
+    ]
+   },
+   "GLUE_PLAINTEXT_PASSWORD": {
+    "attack": "Any principal allowed glue:GetConnection(s) (read-only auditors included) can read the database password and log in to the database directly.",
+    "category": "cloud",
+    "compliance": [
+     "key_mgmt",
+     "at_rest"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-312",
+     "CWE-522"
+    ],
+    "default_impact": "High",
+    "description": "A Glue connection keeps its database password in the connection itself (no Secrets Manager SECRET_ID) and the password was not encrypted: connection password encryption was off when the connection was created or last updated, so GetConnection returns it in clear text.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-312, CWE-522 is in OWASP's mapped CWE list",
+      "id": "A04:2021",
+      "label": "A04:2021 - Insecure Design"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-312, CWE-522 is in OWASP's mapped CWE list",
+      "id": "A06:2025",
+      "label": "A06:2025 - Insecure Design"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.aws.amazon.com/glue/latest/dg/encrypt-connection-passwords.html"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Edit the connection, choose 'Use AWS Secrets Manager' for credentials and pick the secret, then save",
+       "platform": "AWS Glue"
+      },
+      {
+       "how": "Glue console > Data Catalog settings > Encrypt connection passwords (symmetric KMS key)",
+       "platform": "Data Catalog"
+      }
+     ],
+     "summary": "Store the credentials in Secrets Manager and reference them from the connection (SECRET_ID); turn on connection password encryption; rotate the database password, because it was readable."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Glue connection password stored in plain text",
+    "verify": [
+     {
+      "command": "aws glue get-connection --name {name} --hide-password --query 'Connection.ConnectionProperties | keys(@)'",
+      "label": "Connection properties without the password"
+     }
+    ]
+   },
    "KEYSTORE_JKS": {
     "attack": "JKS protects private keys with a weak proprietary scheme; a stolen keystore is easier to brute-force than PKCS#12.",
     "category": "key",
@@ -5452,6 +5746,176 @@
      {
       "command": "aws kms describe-key --key-id {resource} --query KeyMetadata.KeyState",
       "label": "Key state"
+     }
+    ]
+   },
+   "KV_NO_PURGE_PROTECTION": {
+    "attack": "An insider or compromised principal can delete and then purge keys, permanently destroying the data they protect.",
+    "category": "cloud",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-320"
+    ],
+    "default_impact": "Medium",
+    "description": "The Azure Key Vault has soft delete but not purge protection, so a soft-deleted key can be purged before its retention period ends.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-320 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [],
+    "remediation": {
+     "steps": [],
+     "summary": "az keyvault update --name {name} --enable-purge-protection true (it cannot be turned off again)."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Key Vault purge protection off",
+    "verify": [
+     {
+      "command": "az keyvault show --name {name} --query '{softDelete:properties.enableSoftDelete, purgeProtection:properties.enablePurgeProtection, publicNetworkAccess:properties.publicNetworkAccess, defaultAction:properties.networkAcls.defaultAction}'",
+      "label": "Vault protection settings"
+     }
+    ]
+   },
+   "KV_PUBLIC_NETWORK": {
+    "attack": "Anyone who obtains a token for the vault can use it from any network; the vault firewall does not limit where keys and secrets are reached from.",
+    "category": "cloud",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-668"
+    ],
+    "default_impact": "Low",
+    "description": "The Azure Key Vault allows public network access and its firewall default action is Allow.",
+    "owasp": [
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-668 is in OWASP's mapped CWE list",
+      "id": "A01:2021",
+      "label": "A01:2021 - Broken Access Control"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-668 is in OWASP's mapped CWE list",
+      "id": "A01:2025",
+      "label": "A01:2025 - Broken Access Control"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [],
+    "remediation": {
+     "steps": [],
+     "summary": "Set the vault firewall default action to Deny and allow only your networks or a private endpoint (az keyvault update --default-action Deny)."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Key Vault open to every network",
+    "verify": [
+     {
+      "command": "az keyvault show --name {name} --query '{softDelete:properties.enableSoftDelete, purgeProtection:properties.enablePurgeProtection, publicNetworkAccess:properties.publicNetworkAccess, defaultAction:properties.networkAcls.defaultAction}'",
+      "label": "Vault protection settings"
+     }
+    ]
+   },
+   "KV_SOFT_DELETE_OFF": {
+    "attack": "One delete call (by a compromised or careless principal) destroys keys and makes the data they protect unrecoverable.",
+    "category": "cloud",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-320"
+    ],
+    "default_impact": "High",
+    "description": "The Azure Key Vault has soft delete disabled, so a deleted key, secret or certificate is removed immediately.",
+    "owasp": [
+     "crypto",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-320 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [],
+    "remediation": {
+     "steps": [],
+     "summary": "Enable soft delete and purge protection on the vault (az keyvault update --enable-purge-protection true)."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Key Vault soft delete off",
+    "verify": [
+     {
+      "command": "az keyvault show --name {name} --query '{softDelete:properties.enableSoftDelete, purgeProtection:properties.enablePurgeProtection, publicNetworkAccess:properties.publicNetworkAccess, defaultAction:properties.networkAcls.defaultAction}'",
+      "label": "Vault protection settings"
      }
     ]
    },
@@ -9018,7 +9482,7 @@
    }
   }
  },
- "kb_version": "2026.11.02.3",
+ "kb_version": "2026.11.02.4",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
