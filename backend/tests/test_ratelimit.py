@@ -275,6 +275,11 @@ def test_every_registered_api_route_is_limited_at_runtime():
     assert unlimited == []
 
 
+# A line that assigns a value (compose `KEY: "1"` / `KEY=1`, `ENV KEY 1`, `-e KEY=1`), not a comment or a guard that
+# merely names the variable (deploy/staging/docker-compose.yml warns against it; scripts/deploy/staging.sh refuses it).
+_SETS_DEV_MODE = re.compile(r"^(?![ \t]*#)[^\n#]*\bDSS_DEV_MODE\b[ \t]*(?:[:=]|[ \t]+(?=\S))[ \t]*[\"']?\w", re.M)
+
+
 def test_dss_dev_mode_is_only_ever_set_by_the_e2e_harness():
     """The fixed sign-in code must never be switched on by a deployment file."""
     offenders = []
@@ -287,6 +292,6 @@ def test_dss_dev_mode_is_only_ever_set_by_the_e2e_harness():
             continue  # never opened
         deploy_file = (name.endswith((".yml", ".yaml")) and ("compose" in name or "compose" in parts)) \
             or name.startswith("dockerfile") or name.endswith(".sh") or name in {"gunicorn.conf.py"}
-        if deploy_file and "DSS_DEV_MODE" in path.read_text(encoding="utf-8", errors="replace"):
+        if deploy_file and _SETS_DEV_MODE.search(path.read_text(encoding="utf-8", errors="replace")):
             offenders.append(str(path.relative_to(_REPO_ROOT)))
     assert offenders == []
