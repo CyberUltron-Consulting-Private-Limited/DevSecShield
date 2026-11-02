@@ -78,6 +78,10 @@ _CONFIG_TYPE_CODES = frozenset({"TLS_VERIFICATION_DISABLED", "UNENCRYPTED_AT_RES
                                 "PROVIDER_MANAGED_KEY", "EOL_BASE_IMAGE"})
 
 
+# a library row: a vulnerable, in-CVE-range or end-of-life crypto library (manifests, images, binaries, firmware)
+_LIBRARY_TYPE_CODES = frozenset({"VULNERABLE_CRYPTO_LIBRARY", "LIBRARY_CVE_RANGE", "EOL_CRYPTO_LIBRARY"})
+
+
 def _legacy_algorithm_type(row: dict[str, Any]) -> str:
     """Map the normalized ``asset_type`` to the dashboard ``algorithm_type``. Rows that are not crypto assets
     (a library from a manifest, a configuration fact) say so instead of "other"; these labels live on the row
@@ -88,7 +92,7 @@ def _legacy_algorithm_type(row: dict[str, Any]) -> str:
     if asset_type == "algorithm":
         return row.get("primitive") or "algorithm"
     codes = set(row.get("finding_codes") or [])
-    if "VULNERABLE_CRYPTO_LIBRARY" in codes or row.get("role") == "library":
+    if codes & _LIBRARY_TYPE_CODES or row.get("role") == "library":
         return "library"
     if codes & _CONFIG_TYPE_CODES:
         return "configuration"
@@ -276,15 +280,18 @@ def scan_crypto_to_devsecshield(
     progress: ProgressCb | None = None,
     include_vendored: bool = False,
     scan_history: bool | None = None,
+    scan_binaries: bool = False,
 ) -> dict[str, Any]:
     """One-call entry for the worker: scan + normalize -> the CBOM run-object.
 
     ``include_vendored`` is the scan option that also reads ``vendor/``, ``dist/``, ``build/`` and
     ``node_modules/`` (default off). ``scan_history`` reads key files that exist only in the tree's ``.git``
-    history (None: when the history is complete, True: also a shallow clone, False: never)."""
+    history (None: when the history is complete, True: also a shallow clone, False: never). ``scan_binaries`` also
+    reads container images, compiled binaries and firmware in the tree (default off)."""
     _report(progress, 10, "scanning repository for cryptographic assets")
     start = time.monotonic()
-    result = scan_crypto(target, level=level, include_vendored=include_vendored, scan_history=scan_history)
+    result = scan_crypto(target, level=level, include_vendored=include_vendored, scan_history=scan_history,
+                         scan_binaries=scan_binaries)
     _report(progress, 80, "normalizing crypto findings")
     out = normalize_to_devsecshield(result, duration_of_scan=time.monotonic() - start)
     # Code windows (redacted) are read here, while the checkout still exists, and only for this code-scan path:

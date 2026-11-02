@@ -50,6 +50,12 @@ class VirtualFile:
         return ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
 
 
+#: Limits of the binary / image / firmware lane (scan option ``scan_binaries``). The same budget object carries
+#: them, so the zip key lane and the unpacker of :mod:`aibom.cbom.unpack` share one count per scan.
+BINARY_TOTAL_BYTES = 2_000_000_000  # decompressed bytes produced across every archive, layer and level
+BINARY_MEMBERS = 400_000
+
+
 @dataclass
 class ArchiveBudget:
     bytes_read: int = 0
@@ -59,6 +65,26 @@ class ArchiveBudget:
     skipped_budget: int = 0
     skipped_depth: int = 0
     not_scanned: int = 0
+    # limits (raised for a scan with ``scan_binaries``; see :func:`ArchiveBudget.for_binaries`)
+    max_total_bytes: int = MAX_TOTAL_BYTES
+    max_members: int = MAX_MEMBERS
+    # members refused by the unpacker (never read): reason -> count (see :mod:`aibom.cbom.unpack`)
+    refused: dict[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def for_binaries(cls) -> "ArchiveBudget":
+        return cls(max_total_bytes=BINARY_TOTAL_BYTES, max_members=BINARY_MEMBERS)
+
+    def refuse(self, reason: str, n: int = 1) -> None:
+        self.refused[reason] = self.refused.get(reason, 0) + n
+
+    def take(self, n: int) -> bool:
+        """Account ``n`` decompressed bytes; False (and counted) when that passes the scan's total."""
+        if self.bytes_read + n > self.max_total_bytes:
+            self.skipped_budget += 1
+            return False
+        self.bytes_read += n
+        return True
 
     def coverage(self) -> dict[str, str]:
         out: dict[str, str] = {}
@@ -71,6 +97,9 @@ class ArchiveBudget:
         ):
             if value:
                 out[name] = str(value)
+        for reason, value in sorted(self.refused.items()):
+            if value:
+                out[f"crypto:coverage:unpackRefused:{reason}"] = str(value)
         return out
 
 
@@ -83,7 +112,7 @@ def _read_member(zf: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int, budget:
         budget.skipped_encrypted += 1
         return None
     if info.file_size > limit or (info.compress_size and info.file_size / max(info.compress_size, 1) > MAX_RATIO) \
-            or budget.bytes_read + info.file_size > MAX_TOTAL_BYTES:
+            or budget.bytes_read + info.file_size > budget.max_total_bytes:
         budget.skipped_budget += 1
         return None
     chunks: list[bytes] = []
@@ -95,7 +124,7 @@ def _read_member(zf: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int, budget:
                 if not chunk:
                     break
                 got += len(chunk)
-                if got > limit or got > info.file_size or budget.bytes_read + got > MAX_TOTAL_BYTES:
+                if got > limit or got > info.file_size or budget.bytes_read + got > budget.max_total_bytes:
                     budget.skipped_budget += 1  # the header lied about the size
                     return None
                 chunks.append(chunk)
@@ -119,7 +148,7 @@ def _walk_archive(zf: zipfile.ZipFile, label: str, depth: int, budget: ArchiveBu
         if info.is_dir():
             continue
         budget.members += 1
-        if budget.members > MAX_MEMBERS:
+        if budget.members > budget.max_members:
             budget.skipped_budget += 1
             return
         name = _member_name(info.filename)

@@ -23,7 +23,8 @@ from typing import Any
 CBOM_CODE_SCAN_MIN_CREDITS = 1.0
 CBOM_FILE_CREDITS = 0.01
 # Bump a type's version whenever its pricing changes: estimates priced by an older formula are re-estimated at start.
-FORMULA_VERSIONS: dict[str, str] = {"cbom": "cbom-2026.11-min1"}
+# cbom-2026.11-min1-bin5: the scan option "scan binaries" adds images / binaries / firmware at 1 credit per 5 MB (WP8).
+FORMULA_VERSIONS: dict[str, str] = {"cbom": "cbom-2026.11-min1-bin5"}
 DEFAULT_FORMULA = "v1"
 _SECRET_KEYS = {"pat", "password", "token", "api_key", "apikey", "secret", "client_secret", "auth", "authorization",
                 "headers", "cookies", "cookie", "login_password", "bearer"}

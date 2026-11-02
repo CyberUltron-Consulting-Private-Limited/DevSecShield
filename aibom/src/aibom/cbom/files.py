@@ -119,9 +119,12 @@ def looks_binary(raw: bytes) -> bool:
 class FileWalk:
     """One sorted walk of a scan root, shared by every lane of a scan (see the module docstring)."""
 
-    def __init__(self, root: Path, *, include_vendored: bool = False) -> None:
+    def __init__(self, root: Path, *, include_vendored: bool = False, scan_binaries: bool = False) -> None:
         self.root = Path(root)
         self.include_vendored = include_vendored
+        # scan option: also read container images, compiled binaries and firmware (aibom.cbom.artifacts)
+        self.scan_binaries = scan_binaries
+        self._artifacts = None
         self._files: list[tuple[Path, int]] | None = None
         self.skipped_links: set[str] = set()
         self.skipped_oversized: set[str] = set()
@@ -131,13 +134,24 @@ class FileWalk:
         # even when shallow (history depth opted in), False = never.
         self.scan_history: bool | None = None
         self._virtual: list[VirtualFile] | None = None
-        self.archive_budget = ArchiveBudget()
+        # one budget for every archive, image layer and firmware level of the scan (larger with scan_binaries)
+        self.archive_budget = ArchiveBudget.for_binaries() if scan_binaries else ArchiveBudget()
         self.history_coverage: dict[str, str] = {}
+
+    def artifacts(self):
+        """The container images, binaries and firmware of the tree (:func:`aibom.cbom.artifacts.collect`), read once
+        per scan and only with ``scan_binaries``; an empty report otherwise."""
+        if self._artifacts is None:
+            from aibom.cbom.artifacts import ArtifactReport, collect
+
+            self._artifacts = collect(self) if self.scan_binaries else ArtifactReport()
+        return self._artifacts
 
     def virtual_files(self) -> list[VirtualFile]:
         """Key / certificate files that are not on disk under their own path: members of archives in the tree
-        (``outer.zip!inner/key.pem``, see :mod:`aibom.cbom.archives`) and blobs only in git history
-        (:mod:`aibom.cbom.githistory`). Read once per scan."""
+        (``outer.zip!inner/key.pem``, see :mod:`aibom.cbom.archives`), blobs only in git history
+        (:mod:`aibom.cbom.githistory`) and, with ``scan_binaries``, certificates and public keys inside container
+        images, binaries and firmware (:mod:`aibom.cbom.artifacts`). Read once per scan."""
         if self._virtual is None:
             from aibom.cbom.githistory import history_key_files
 
@@ -148,6 +162,8 @@ class FileWalk:
                 history, self.history_coverage = history_key_files(self.root, tree, force=bool(self.scan_history))
                 skip = skipped_dirs(self.include_vendored)  # the walk's own rule applies to history paths too
                 found.extend(h for h in history if not skip.intersection(h.rel.split("/")[:-1]))
+            if self.scan_binaries:
+                found.extend(self.artifacts().key_files)
             self._virtual = found
         return self._virtual
 
@@ -239,6 +255,9 @@ class FileWalk:
                 out[name] = str(len(items))
         if self.include_vendored:
             out["crypto:coverage:vendoredIncluded"] = "true"
+        if self.scan_binaries:
+            out["crypto:coverage:binariesIncluded"] = "true"
+            out.update(self.artifacts().coverage())
         out.update(self.archive_budget.coverage())
         out.update(self.history_coverage)
         return out

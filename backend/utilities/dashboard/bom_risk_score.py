@@ -46,6 +46,8 @@ _CBOM_FLAG_DELTA: dict[str, float] = {
     "UNENCRYPTED_AT_REST": 1.4,
     "TLS_VERIFICATION_DISABLED": 1.4,
     "CUSTOM_CRYPTO": 0.8,
+    # images, binaries and firmware (WP8): weight 4 like CUSTOM_CRYPTO; LIBRARY_CVE_RANGE (weight 1) keeps the default
+    "EOL_CRYPTO_LIBRARY": 0.8,
 }
 
 _AIBOM_CATEGORY_DELTA: dict[str, float] = {

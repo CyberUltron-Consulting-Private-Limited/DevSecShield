@@ -373,7 +373,7 @@ def test_estimate_stores_the_digest_and_applies_the_minimum(http):
     assert r.json() == {"credits_required": 1.0, "minimum_credits": 1.0}  # 0.5 measured, 1 credit minimum (D3)
     scan, _ = _row(engine, 1)
     assert scan.credit_consumed == 1.0 and scan.credit_estimate["file_size"] == 50
-    assert scan.credit_estimate["formula"] == "cbom-2026.11-min1" and len(scan.credit_estimate["digest"]) == 64
+    assert scan.credit_estimate["formula"] == "cbom-2026.11-min1-bin5" and len(scan.credit_estimate["digest"]) == 64
     start = _post(client, 1, "start", ZIP_PAYLOAD)
     assert start.status_code == 200, start.text
     scan, balance = _row(engine, 1)

@@ -431,14 +431,20 @@ def _flagged_facts(result: ScanResult) -> list[AIComponent]:
     return found
 
 
+#: Findings a library row (framework component) can carry: advisories, a version inside a published CVE range,
+#: an end-of-life library branch, and an image's end-of-life base OS (the binary / image lane).
+LIBRARY_FINDING_CODES = frozenset({"VULNERABLE_CRYPTO_LIBRARY", "LIBRARY_CVE_RANGE", "EOL_CRYPTO_LIBRARY",
+                                   "EOL_BASE_IMAGE"})
+
+
 def _flagged_libraries(result: ScanResult) -> list[AIComponent]:
-    """Vulnerable library components. Safe libraries stay out of the finding list."""
+    """Library components with a finding. Libraries without one stay out of the finding list."""
     found: list[AIComponent] = []
     for component in result.components:
         if component.kind != "framework":
             continue
         codes = {flag.code for flag in result.flags_for(component.bom_ref)}
-        if "VULNERABLE_CRYPTO_LIBRARY" in codes:
+        if codes & LIBRARY_FINDING_CODES:
             found.append(component)
     return found
 

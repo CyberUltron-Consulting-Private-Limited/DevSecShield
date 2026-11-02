@@ -74,6 +74,7 @@ def scan_crypto(
     subject: MetadataComponent | None = None,
     include_vendored: bool = False,
     scan_history: bool | None = None,
+    scan_binaries: bool = False,
 ) -> ScanResult:
     """Scan a repo at ``path`` into a CBOM :class:`ScanResult`.
 
@@ -85,6 +86,9 @@ def scan_crypto(
     (:mod:`aibom.cbom.githistory`): None (default) when the ``.git`` directory holds full history (an uploaded
     working copy), True also for a shallow clone, False never.
 
+    ``scan_binaries`` (scan option, default off) also reads container images (``docker save`` / OCI), compiled
+    binaries (ELF, PE, Mach-O) and firmware blobs (:mod:`aibom.cbom.artifacts`).
+
     Only CBOM scanners with ``scanner.level <= level`` run. Raises
     ``NotADirectoryError`` if ``path`` is not a directory. ``seed`` components
     (an imported CBOM) are placed on the context before the scanners run, so
@@ -95,7 +99,7 @@ def scan_crypto(
     if not root.is_dir():
         raise NotADirectoryError(f"scan target is not a directory: {root}")
 
-    ctx = CbomScanContext(root, include_vendored=include_vendored)
+    ctx = CbomScanContext(root, include_vendored=include_vendored, scan_binaries=scan_binaries)
     ctx.file_walk.scan_history = scan_history
     for component in seed or []:
         ctx.add_component(component)

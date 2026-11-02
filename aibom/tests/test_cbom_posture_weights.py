@@ -33,6 +33,9 @@ BASE = {
 ADDED_AFTER_BASE = {
     "VULNERABLE_CRYPTO_LIBRARY": 8,
     "CUSTOM_CRYPTO": 4,
+    # container images, binaries and firmware (artifact_scan, scan option scan_binaries)
+    "EOL_CRYPTO_LIBRARY": 4,
+    "LIBRARY_CVE_RANGE": 1,
 }
 
 

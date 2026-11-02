@@ -297,11 +297,13 @@ class PostureSink:
 
 
 class CbomScanContext(ScanContext):
-    def __init__(self, root: Path, *, file_order=None, include_vendored: bool = False) -> None:
+    def __init__(self, root: Path, *, file_order=None, include_vendored: bool = False,
+                 scan_binaries: bool = False) -> None:
         super().__init__(root)
         self.posture = PostureSink(root=root, file_order=file_order, include_vendored=include_vendored)
-        # the one walk every code lane reads from (no links; vendored/build output only when opted in)
-        self.file_walk = FileWalk(root, include_vendored=include_vendored)
+        # the one walk every code lane reads from (no links; vendored/build output only when opted in; images,
+        # binaries and firmware only with scan_binaries)
+        self.file_walk = FileWalk(root, include_vendored=include_vendored, scan_binaries=scan_binaries)
 
 
 def posture_sink(ctx: ScanContext) -> PostureSink:
