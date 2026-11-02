@@ -24,6 +24,7 @@ from typing import Any
 # Importing the CBOM scanners package self-registers every CBOM scanner.
 import aibom.cbom.scanners  # noqa: F401
 from aibom.cbom.compliance import run_cbom_compliance
+from aibom.cbom.files import is_vendored
 from aibom.cbom.posture.assemble import discard_posture, finalize_posture
 from aibom.cbom.posture.context import CbomScanContext, CbomScanResult
 from aibom.cbom.registry import ordered_cbom_scanners
@@ -55,6 +56,16 @@ def _dedup_by_ref(components: list[AIComponent]) -> list[AIComponent]:
     return [best[ref] for ref in order]
 
 
+def _label_third_party(components: list[AIComponent]) -> None:
+    """Rows found in vendored / build output say so (``crypto:thirdParty=true``): the code is not the
+    project's own, and a fix belongs upstream or in the build."""
+    for comp in components:
+        props = comp.properties or {}
+        src = props.get("discovery:source") or props.get("crypto:factPath") or ""
+        if src and is_vendored(src) and props.get("crypto:thirdParty") != "true":
+            comp.properties = {**props, "crypto:thirdParty": "true"}
+
+
 def scan_crypto(
     path: str | Path,
     level: int = 1,
@@ -62,12 +73,17 @@ def scan_crypto(
     seed: list[AIComponent] | None = None,
     subject: MetadataComponent | None = None,
     include_vendored: bool = False,
+    scan_history: bool | None = None,
 ) -> ScanResult:
     """Scan a repo at ``path`` into a CBOM :class:`ScanResult`.
 
     ``include_vendored`` (scan option, default off) also reads third-party and build output (``vendor/``,
-    ``dist/``, ``build/``, ``node_modules/``); what the walk left out is reported as ``crypto:coverage:*``
-    scan properties.
+    ``dist/``, ``build/`` and the loose files of ``node_modules/``), labelled ``crypto:thirdParty=true``; what
+    the walk left out is reported as ``crypto:coverage:*`` scan properties.
+
+    ``scan_history`` reads key/certificate files that exist only in the tree's own ``.git`` history
+    (:mod:`aibom.cbom.githistory`): None (default) when the ``.git`` directory holds full history (an uploaded
+    working copy), True also for a shallow clone, False never.
 
     Only CBOM scanners with ``scanner.level <= level`` run. Raises
     ``NotADirectoryError`` if ``path`` is not a directory. ``seed`` components
@@ -80,6 +96,7 @@ def scan_crypto(
         raise NotADirectoryError(f"scan target is not a directory: {root}")
 
     ctx = CbomScanContext(root, include_vendored=include_vendored)
+    ctx.file_walk.scan_history = scan_history
     for component in seed or []:
         ctx.add_component(component)
     if subject is not None:
@@ -89,6 +106,8 @@ def scan_crypto(
             scanner.scan(ctx)
 
     components = _dedup_by_ref(ctx.components)
+    if include_vendored:
+        _label_third_party(components)
     edges = ctx.edges
     flags = ctx.flags
     properties = {**ctx.properties, **ctx.file_walk.coverage()}

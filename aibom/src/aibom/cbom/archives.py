@@ -1,0 +1,171 @@
+"""Key and certificate files inside archives the repository carries (``.zip``, ``.jar``, ``.war``, ``.ear``).
+
+An upload is extracted once by the worker; an archive committed INSIDE the repository (``assets/bundle.zip``) or a
+jar in ``lib/`` is not, and a key packed into it was invisible. This module reads such archives in memory (never
+extracting to disk), recursing into nested archives, and returns their key / certificate members as
+:class:`VirtualFile` objects named ``outer.zip!inner/path`` for the key/certificate lane.
+
+One budget is shared by every archive of a scan and every nesting level: total bytes read, members visited,
+nesting depth (:data:`MAX_DEPTH`) and the compression ratio of a member (a zip bomb lies in its headers, so the
+read itself is capped too). Encrypted members, unsupported compression and corrupt archives are not read; they are
+counted as coverage (``crypto:coverage:archive*``). Only key/certificate members are returned: other members
+(source code in a jar) are counted as not scanned.
+"""
+
+from __future__ import annotations
+
+import io
+import os
+import stat
+import zipfile
+from dataclasses import dataclass, field
+from pathlib import Path
+
+ARCHIVE_SUFFIXES = (".zip", ".jar", ".war", ".ear")
+#: Key / certificate member suffixes (the certificate lane's set plus keystores).
+KEY_SUFFIXES = (".pem", ".crt", ".cer", ".cert", ".der", ".ca-bundle", ".key", ".pub", ".p7b", ".p7c", ".gpg",
+                ".asc", ".jks", ".p12", ".pfx")
+MAX_DEPTH = 3
+MAX_ARCHIVE_BYTES = 256_000_000  # an archive on disk larger than this is not opened
+MAX_NESTED_BYTES = 16_000_000  # an inner archive is read into memory up to this size
+MAX_MEMBER_BYTES = 2_000_000
+MAX_TOTAL_BYTES = 64_000_000
+MAX_MEMBERS = 20_000
+MAX_RATIO = 200
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+@dataclass
+class VirtualFile:
+    """A file that is not on disk under its own path: an archive member or a blob from git history."""
+
+    rel: str
+    data: bytes
+    props: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def suffix(self) -> str:
+        name = self.rel.rsplit("!", 1)[-1].rsplit("/", 1)[-1]
+        name = name.split("@", 1)[0]
+        return ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+
+
+@dataclass
+class ArchiveBudget:
+    bytes_read: int = 0
+    members: int = 0
+    skipped_encrypted: int = 0
+    skipped_unsupported: int = 0
+    skipped_budget: int = 0
+    skipped_depth: int = 0
+    not_scanned: int = 0
+
+    def coverage(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for name, value in (
+            ("crypto:coverage:archiveEncrypted", self.skipped_encrypted),
+            ("crypto:coverage:archiveUnsupported", self.skipped_unsupported),
+            ("crypto:coverage:archiveBudgetExceeded", self.skipped_budget),
+            ("crypto:coverage:archiveTooDeep", self.skipped_depth),
+            ("crypto:coverage:archiveMembersNotScanned", self.not_scanned),
+        ):
+            if value:
+                out[name] = str(value)
+        return out
+
+
+def _member_name(name: str) -> str:
+    return "/".join(p for p in name.replace("\\", "/").split("/") if p not in ("", ".", ".."))
+
+
+def _read_member(zf: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int, budget: ArchiveBudget) -> bytes | None:
+    if info.flag_bits & 0x1:
+        budget.skipped_encrypted += 1
+        return None
+    if info.file_size > limit or (info.compress_size and info.file_size / max(info.compress_size, 1) > MAX_RATIO) \
+            or budget.bytes_read + info.file_size > MAX_TOTAL_BYTES:
+        budget.skipped_budget += 1
+        return None
+    chunks: list[bytes] = []
+    got = 0
+    try:
+        with zf.open(info) as fh:
+            while True:
+                chunk = fh.read(1 << 16)
+                if not chunk:
+                    break
+                got += len(chunk)
+                if got > limit or got > info.file_size or budget.bytes_read + got > MAX_TOTAL_BYTES:
+                    budget.skipped_budget += 1  # the header lied about the size
+                    return None
+                chunks.append(chunk)
+    except NotImplementedError:
+        budget.skipped_unsupported += 1
+        return None
+    except (zipfile.BadZipFile, OSError, EOFError, RuntimeError, ValueError):
+        budget.skipped_unsupported += 1
+        return None
+    budget.bytes_read += got
+    return b"".join(chunks)
+
+
+def _walk_archive(zf: zipfile.ZipFile, label: str, depth: int, budget: ArchiveBudget, out: list[VirtualFile]) -> None:
+    try:
+        infos = zf.infolist()
+    except (zipfile.BadZipFile, OSError, RuntimeError, ValueError):
+        budget.skipped_unsupported += 1
+        return
+    for info in sorted(infos, key=lambda i: i.filename):
+        if info.is_dir():
+            continue
+        budget.members += 1
+        if budget.members > MAX_MEMBERS:
+            budget.skipped_budget += 1
+            return
+        name = _member_name(info.filename)
+        low = name.lower()
+        rel = f"{label}!{name}"
+        if low.endswith(ARCHIVE_SUFFIXES):
+            if depth >= MAX_DEPTH:
+                budget.skipped_depth += 1
+                continue
+            data = _read_member(zf, info, MAX_NESTED_BYTES, budget)
+            if data is None:
+                continue
+            try:
+                with zipfile.ZipFile(io.BytesIO(data)) as inner:
+                    _walk_archive(inner, rel, depth + 1, budget, out)
+            except (zipfile.BadZipFile, OSError, RuntimeError, ValueError):
+                budget.skipped_unsupported += 1
+            continue
+        if not low.endswith(KEY_SUFFIXES):
+            budget.not_scanned += 1
+            continue
+        data = _read_member(zf, info, MAX_MEMBER_BYTES, budget)
+        if data is not None:
+            out.append(VirtualFile(rel, data, {"crypto:archive": label.split("!", 1)[0]}))
+
+
+def archive_members(root: Path, archives: list[Path], budget: ArchiveBudget) -> list[VirtualFile]:
+    """Key/certificate members of ``archives`` (files under ``root``), recursing into nested archives."""
+    out: list[VirtualFile] = []
+    for path in archives:
+        try:
+            fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW)
+        except OSError:
+            continue
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_ARCHIVE_BYTES:
+                budget.skipped_budget += 1
+                continue
+            with os.fdopen(os.dup(fd), "rb") as fh, zipfile.ZipFile(fh) as zf:
+                _walk_archive(zf, path.relative_to(root).as_posix(), 1, budget, out)
+        except (zipfile.BadZipFile, OSError, RuntimeError, ValueError):
+            budget.skipped_unsupported += 1
+        finally:
+            os.close(fd)
+    return out
+
+
+__all__ = ["ARCHIVE_SUFFIXES", "ArchiveBudget", "KEY_SUFFIXES", "VirtualFile", "archive_members"]

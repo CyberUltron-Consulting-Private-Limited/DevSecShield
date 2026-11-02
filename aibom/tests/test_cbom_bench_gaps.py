@@ -23,8 +23,9 @@ from aibom.model.component import CryptoAssetComponent
 _JCA_IMPORTS = "import javax.crypto.Cipher;\nimport java.security.KeyFactory;\n"
 
 
-def _scan(tmp_path: Path, files: dict[str, str]) -> dict[str, dict[str, dict]]:
-    """file -> {asset name -> properties} for every crypto asset the pipeline emits."""
+def _scan(tmp_path: Path, files: dict[str, str], derived: bool = False) -> dict[str, dict[str, dict]]:
+    """file -> {asset name -> properties} for every crypto asset the pipeline emits; the inner hash of a composite
+    (``crypto:derived=true``, no finding of its own) only with ``derived``."""
     for rel, text in files.items():
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -34,6 +35,8 @@ def _scan(tmp_path: Path, files: dict[str, str]) -> dict[str, dict[str, dict]]:
         if c.kind != "crypto_asset":
             continue
         props = c.properties or {}
+        if props.get("crypto:derived") == "true" and not derived:
+            continue
         out.setdefault(props.get("discovery:source", ""), {})[c.name] = props
     return out
 
@@ -206,8 +209,9 @@ def test_bouncycastle_aes_wrap_and_concat_kdf(tmp_path: Path) -> None:
         "new ConcatenationKDFGenerator(DigestFactory.createSHA256()); return kdf; }\n",
         imports="import org.bouncycastle.crypto.engines.AESWrapEngine;\n",
     )
-    found = _scan(tmp_path, {"B.java": src})["B.java"]
+    found = _scan(tmp_path, {"B.java": src}, derived=True)["B.java"]
     assert set(found) == {"AES-KW", "ConcatenationKDF", "SHA-256"}
+    assert found["SHA-256"]["crypto:derived"] == "true"
     assert found["AES-KW"]["crypto:primitive"] == "block-cipher"
     assert found["ConcatenationKDF"]["crypto:primitive"] == "kdf"
 
@@ -254,9 +258,10 @@ def test_mgf1_in_oaep_and_pss_parameter_specs(tmp_path: Path) -> None:
         '      ps.getDigestAlgorithm(), "MGF1", ps, 32, 1);\n'
         "}\n"
     )
-    found = _scan(tmp_path, {"M.java": src})["M.java"]
+    found = _scan(tmp_path, {"M.java": src}, derived=True)["M.java"]
     assert {"MGF1", "SHA-256"} <= set(found)
     assert found["MGF1"]["crypto:occurrences"] == "5,6,8"
+    assert found["SHA-256"]["crypto:derived"] == "true"  # the OAEP digest parameter, not a hashing of its own
 
 
 def test_mgf1_word_in_prose_is_not_an_asset(tmp_path: Path) -> None:
@@ -297,11 +302,13 @@ def test_composite_names_keep_their_hash(tmp_path: Path) -> None:
         'Object k() throws Exception { return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512"); }\n'
         'Object r() throws Exception { return Signature.getInstance("SHA1withRSA"); }\n'
     )
-    found = _scan(tmp_path, {"N.java": src})["N.java"]
-    assert set(found) == {"HMAC-SHA512", "DSA", "SHA-256", "PBKDF2-HMAC-SHA512", "RSA", "SHA-1"}
+    found = _scan(tmp_path, {"N.java": src}, derived=True)["N.java"]
+    assert set(found) == {"HMAC-SHA512", "DSA", "SHA-256", "PBKDF2-HMAC-SHA512", "RSA", "SHA-1", "SHA-512"}
     assert found["HMAC-SHA512"]["crypto:primitive"] == "mac"
     assert found["PBKDF2-HMAC-SHA512"]["crypto:primitive"] == "kdf"
-    assert found["SHA-1"]["crypto:strength"] == "weak"  # SHA-1 in a signature is a real weakness
+    assert found["SHA-1"]["crypto:strength"] == "weak"  # SHA-1 in a signature is a real weakness ...
+    assert found["RSA"]["crypto:innerDigest"] == "SHA-1"  # ... carried by the signature (the hash is derived)
+    assert {n for n, p in found.items() if p.get("crypto:derived") == "true"} == {"SHA-1", "SHA-256", "SHA-512"}
 
 
 def test_unqualified_mentions_fold_into_the_single_variant(tmp_path: Path) -> None:
@@ -322,7 +329,9 @@ def test_unqualified_mentions_fold_into_the_single_variant(tmp_path: Path) -> No
 def test_bouncycastle_hmac_takes_its_digest(tmp_path: Path) -> None:
     src = _java("Object m() { return new HMac(new SHA384Digest()); }\n",
                 imports="import org.bouncycastle.crypto.macs.HMac;\n")
-    assert _names(tmp_path, "H.java", src) == {"HMAC-SHA384", "SHA-384"}
+    found = _scan(tmp_path, {"H.java": src}, derived=True)["H.java"]
+    assert set(found) == {"HMAC-SHA384", "SHA-384"}
+    assert found["SHA-384"]["crypto:derived"] == "true"
 
 
 def test_composite_names_keep_the_construction_family() -> None:

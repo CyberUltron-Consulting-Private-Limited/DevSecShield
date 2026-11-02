@@ -227,3 +227,30 @@
   rows without `finding_codes` stay findings).
 - Output changes regenerate `tests/fixtures/frozen_goldens/{base_commit_digests.json,adapter_signature.txt}` with
   `tests/support/make_goldens.py` (deliberate golden update).
+
+## CBOM code scan (round 5, WP3b)
+- Cross-file facts live in `aibom.cbom.project.ProjectIndex` (`project_index(ctx)`, built lazily from the shared
+  walk): `scope_for(rel, lang, text)` gives the constants a file names from other files (Java `Class.NAME`, static
+  imports, Spring `@Value("${k}")` fields; Python `from m import NAME` / `module.NAME`), passed to
+  `detect_crypto(text, lang, external)`; a detection that used one carries `defined_at`, exported as
+  `crypto:definedAt` and a second `evidence.occurrences` entry. `call_sites` lists other modules calling a Python
+  helper imported by name (`crypto:calledFrom`). The occurrence pass gets the same index (`annotate(..., project=)`).
+- An unresolved `Cipher.getInstance(<String parameter>)` binds only to the one cipher transformation in that
+  module's `src/main/resources` (`crypto:confidence=medium`); two candidates bind nothing.
+- Inner hashes of composites (`SHA1withRSA`, `HmacSHA256`, `PBKDF2HMAC(algorithm=hashes.SHA256())`, Ed25519 ->
+  SHA-512) are rows with `crypto:derived=true` + `crypto:derivedFrom` and no finding (`weak_finding` returns None);
+  the composite carries `crypto:innerDigest` and the weakness (signature over MD5/SHA-1, MAC/KDF over an MD hash).
+- A hash whose every use is non-security (`usedforsecurity=False`, a cache-key / ETag / checksum / partition name, no
+  secret word on the line or in the function's parameters) carries `crypto:nonSecurityUse` and no WEAK_ALGORITHM
+  (`aibom.cbom.purpose`). "fingerprint" is not on the list (key pinning is a security use).
+- Key material proven by its value (decoded literal >= 16 bytes, 128/192/256-bit hex, `k()`/`key()` returning one,
+  digest of a constant, key-named config entry the code reads, a key printed in a notebook output) is found without
+  the crypto-context gate (`misuse._literal_key_facts` etc.); names like `CACHE_KEY` / `api_key` are excluded.
+- Notebooks: `.ipynb` reads as a virtual Python source (`aibom.cbom.notebook`): code cells (magics blanked) + text
+  outputs as `#> ` comment lines; reported lines are virtual-source lines, `crypto:language=jupyter`.
+- `FileWalk.virtual_files()`: key/cert members of `.zip/.jar/.war/.ear` (`outer.zip!inner`, one shared budget,
+  depth <= 3, encrypted/unsupported -> `crypto:coverage:archive*`) and key/cert blobs only in `.git` history
+  (`aibom.cbom.githistory`: loose + packed objects, never runs git, never reads `.git/config`; skipped for a shallow
+  clone unless `scan_crypto(..., scan_history=True)`). The certificate lane reads both; rows get `crypto:line=1`.
+- `include_vendored` labels rows `crypto:thirdParty=true`; `node_modules/` contributes only its loose files.
+  String folding runs on long (minified) lines in `;`-cut windows.

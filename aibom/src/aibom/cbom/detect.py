@@ -41,7 +41,9 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
 from aibom.cbom.powershell import POWERSHELL_LITERALS
 from aibom.cbom.rules import (
@@ -144,6 +146,15 @@ class Detection:
     # Only a key specification named the algorithm (Java ``new SecretKeySpec(k, "AES")``): the key of a cipher
     # used elsewhere in the file, not a separate usage (see :func:`_drop_subsumed_key_specs`).
     key_spec_only: bool = False
+    # Where the algorithm name was spelled when it is not on this line: a constant defined in another file
+    # (``Cipher.getInstance(Algs.CIPHER)`` -> ``Algs.java:3``), as ``path:line``.
+    defined_at: str | None = None
+    # The composite this hash is only a parameter of on this line (``SHA1withRSA`` -> rsa,
+    # ``PBKDF2HMAC(algorithm=hashes.SHA256())`` -> pbkdf2): not a hashing of its own (see :func:`_mark_inner`).
+    inner_of: str | None = None
+    # The algorithm is inferred, not read: ``Cipher.getInstance(<String parameter>)`` bound to the only cipher
+    # transformation configured for the module (``defined_at`` names that configuration line).
+    inferred: bool = False
 
 
 # --------------------------------------------------------------------------- #
@@ -199,6 +210,9 @@ PYTHON_RULES: tuple[CryptoRule, ...] = (
     CryptoRule(_PY, _PYCA, None, "Scrypt", "scrypt", ()),
     CryptoRule(_PY, _PYCA, None, "HKDF", "hkdf", ()),
     CryptoRule(_PY, _STDLIB, "hmac", "HMAC|new", "hmac", ()),
+    # Fernet (pyca ``cryptography.fernet``): AES-128-CBC + HMAC-SHA256 under one 256-bit key (the Fernet spec);
+    # the key's source (a literal or the environment) is the misuse lane's question, not this one.
+    CryptoRule(_PY, _PYCA, None, r"(?:Fernet|MultiFernet)", "fernet", ()),
     # --- PyCryptodome / PyCrypto: <Cipher>.new(key, <Cipher>.MODE_x, ...), RSA/DSA/ECC.generate(...) ---
     # (the AST lane covers pyca + hashlib only; without these, AES.new(k, AES.MODE_ECB) produced no row)
     CryptoRule(_PY, _PYCRYPTODOME, "AES", "new", "aes", (ROLE_MODE,)),
@@ -686,6 +700,9 @@ _IMPORT_RE = re.compile(
 # not usage — scanning them would mint an info-less detection that precedes and
 # shadows the real call site (e.g. "crypto/ecdsa" before ecdsa.GenerateKey(P256)).
 _BARE_IMPORT_PATH = re.compile(r'^\s*(?:[A-Za-z_.]\w*\s+)?"[^"]*/[^"]*"\s*$')
+# A package declaration (Java/Kotlin/Scala ``package org.x.crypto.ed25519;``, Go ``package ed25519``, Perl
+# ``package Crypt::DES;``) names a namespace, not a usage.
+_PACKAGE_DECL = re.compile(r"^\s*package\s+[\w.:]+\s*;?\s*$")
 
 
 def _blank(match: re.Match[str]) -> str:
@@ -932,6 +949,33 @@ def _merge(into: Detection, other: Detection) -> None:
     into.receiver_bound = into.receiver_bound or other.receiver_bound
     into.variant = into.variant or other.variant
     into.key_spec_only = into.key_spec_only and other.key_spec_only
+    into.defined_at = into.defined_at or other.defined_at
+    into.inner_of = into.inner_of if into.inner_of == other.inner_of else None
+    into.inferred = into.inferred and other.inferred
+
+
+# Composites a hash can be a parameter of: a MAC / KDF / mask function, or a signature named with its digest.
+_COMPOSITE_KEYS = ("hmac", "pbkdf2", "hkdf", "mgf1", "concat-kdf")
+_SIGNATURE_KEYS = ("rsa", "ecdsa", "dsa")
+_SIGNATURE_SPEC = re.compile(r"with(?:RSA|ECDSA|DSA|PLAIN-ECDSA|RSAandMGF1)\b|\bOAEP|\bPSS\b", re.I)
+# A direct hashing call (``hashlib.sha256(data)``, ``MessageDigest.getInstance("SHA-1")``, ``createHash('md5')``)
+# is a hash usage of its own even next to a composite.
+_DIRECT_HASH_CALL = re.compile(
+    r"\bhashlib\.\w+\s*\(|\bMessageDigest\s*\.\s*getInstance|\bcreateHash\s*\(|\bhashes\.Hash\s*\(", re.I
+)
+
+
+def _mark_inner(per_line: dict[str, Detection], line: str) -> None:
+    """A hash on a line that builds a composite (HMAC, PBKDF2, HKDF, MGF1, a ``<digest>with<pk>`` signature, an
+    OAEP/PSS padding) and that is not hashed directly there is that composite's parameter."""
+    composite = next((k for k in _COMPOSITE_KEYS if k in per_line), None)
+    if composite is None and _SIGNATURE_SPEC.search(line):
+        composite = next((k for k in _SIGNATURE_KEYS if k in per_line), None)
+    if composite is None or _DIRECT_HASH_CALL.search(line):
+        return
+    for key, det in per_line.items():
+        if key != composite and (algo_info(key) or {}).get("primitive") == "hash":
+            det.inner_of = composite
 
 
 def _drop_subsumed_key_specs(dets: list[Detection]) -> list[Detection]:
@@ -982,7 +1026,7 @@ def blank_prose(line: str, lang: str) -> str:
         return lit[0] + " " * (len(lit) - 2) + lit[-1] if _is_prose(lit[1:-1]) else lit
 
     if len(line) > _MAX_STRING_SCAN:
-        return line
+        return "".join(blank_prose(w, lang) for w in _windows(line))
     out = _STR_LIT.sub(blank, line)
     if lang == "javascript" and "<" in out:
         out = _JSX_TEXT.sub(lambda m: ">" + " " * len(m.group(1)) + "<" if _is_prose(m.group(1)) else m.group(0), out)
@@ -1159,13 +1203,18 @@ def jca_assets(cls: str, spec: str) -> list[tuple[str, str | None, str | None, i
 class _JavaContext:
     """Per-file facts the JCA argument lane resolves against."""
 
-    __slots__ = ("jca", "consts", "classes", "helpers", "gen_sizes")
+    __slots__ = ("jca", "consts", "classes", "helpers", "gen_sizes", "external", "code", "defaults")
 
-    def __init__(self, lines: list[str]) -> None:
+    def __init__(self, lines: list[str], external: Mapping[str, Any] | None = None) -> None:
         code = "\n".join(lines)  # comments already stripped
+        self.code = code
         self.jca = bool(_JCA_FILE.search(code))
         self.classes = set(_JAVA_CLASS_DECL.findall(code))
         self.consts = _string_constants(code)
+        # fields with a default a setter may override (``String alg = "AES"`` + ``this.alg = alg``): inferred
+        self.defaults = _field_defaults(code, self.consts) if self.jca else {}
+        # constants of other project files this file names (``Algs.CIPHER``, a static import): name -> Definition
+        self.external: Mapping[str, Any] = external or {}
         self.helpers = _jca_helpers(lines) if self.jca else {}
         self.gen_sizes = _generator_sizes(lines) if self.jca else {}
 
@@ -1228,6 +1277,28 @@ def _string_constants(code: str) -> dict[str, str]:
     return out
 
 
+_JAVA_FIELD_DEFAULT = re.compile(
+    r'\b(?:private|protected|public)\s+String\s+([A-Za-z_]\w*)\s*=\s*"([^"\\\s]{1,80})"\s*;'
+)
+
+
+def _field_defaults(code: str, consts: dict[str, str]) -> dict[str, str]:
+    """String fields with a literal default that are otherwise only set by a setter (``this.f = f;``, the value
+    a caller passes): the default is the algorithm unless something configures another one."""
+    out: dict[str, str] = {}
+    for m in _JAVA_FIELD_DEFAULT.finditer(code):
+        name, value = m.group(1), m.group(2)
+        if name in consts or name in out:
+            continue
+        if len(re.findall(rf"\bString\s+{re.escape(name)}\s*=", code)) != 1:
+            continue  # declared with a value twice (two classes): not provable
+        writes = [w.strip() for w in re.findall(rf"(?<![\w.])(?:this\.)?{re.escape(name)}\s*=(?!=)\s*([^;]*);", code)]
+        others = [w for w in writes if w != f'"{value}"']
+        if len(writes) - len(others) == 1 and all(re.fullmatch(r"[A-Za-z_]\w*", w) for w in others):
+            out[name] = value
+    return out
+
+
 def _jca_helpers(lines: list[str]) -> dict[str, tuple[str, int]]:
     """Same-file helpers ``name(String p) { ... X.getInstance(p) ... }`` -> (X, decl line)."""
     out: dict[str, tuple[str, int]] = {}
@@ -1276,16 +1347,46 @@ def _call_args(line: str, open_idx: int) -> list[str]:
 
 
 def _resolve_java_arg(lit: str | None, ident: str | None, ctx: _JavaContext) -> str | None:
-    if lit is not None:
-        return lit
+    return _resolve_java_arg_where(lit, ident, ctx)[0]
+
+
+def _inferred_arg(cls: str, ident: str | None, ctx: _JavaContext) -> tuple[str, str | None] | None:
+    """(value, ``path:line`` or None) for an argument no constant resolves, inferred: for a key specification
+    (``new SecretKeySpec(k, encryptionAlgorithm)``) a field's default that only a setter overrides, and for
+    ``Cipher.getInstance(<String parameter>)`` the module's one configured cipher transformation (the value comes
+    from the caller, typically configuration). An engine call on a settable field stays unresolved."""
     if not ident:
         return None
     name = ident[5:] if ident.startswith("this.") else ident
+    if cls == "SecretKeySpec" and name in ctx.defaults:
+        return ctx.defaults[name], None
+    guess = ctx.external.get("@config:Cipher")
+    if cls != "Cipher" or guess is None or "." in name or name in ctx.consts:
+        return None
+    if re.search(rf"[(,]\s*(?:final\s+)?String\s+{re.escape(name)}\s*[,)]", ctx.code):
+        return guess.value, guess.where
+    return None
+
+
+def _resolve_java_arg_where(
+    lit: str | None, ident: str | None, ctx: _JavaContext
+) -> tuple[str | None, str | None]:
+    """The argument's value, and ``path:line`` when it is a constant of another project file."""
+    if lit is not None:
+        return lit, None
+    if not ident:
+        return None, None
+    name = ident[5:] if ident.startswith("this.") else ident
     if "." in name:
-        qualifier, name = name.rsplit(".", 1)
+        qualifier, short = name.rsplit(".", 1)
         if qualifier not in ctx.classes:
-            return None
-    return ctx.consts.get(name)
+            ext = ctx.external.get(name)
+            return (ext.value, ext.where) if ext is not None else (None, None)
+        name = short
+    if name in ctx.consts:
+        return ctx.consts[name], None
+    ext = ctx.external.get(name)  # ``import static ...Algs.CIPHER``
+    return (ext.value, ext.where) if ext is not None else (None, None)
 
 
 # Bouncy Castle ``new HMac(new SHA256Digest())``: the nested digest is the HMAC hash.
@@ -1325,12 +1426,22 @@ def _java_jca_lane(line: str, line_no: int, ctx: _JavaContext) -> list[Detection
     found: list[tuple[str, str | None, str | None, int | None]] = []
     key_specs: list[tuple[str, str | None, str | None, int | None]] = []
     paddings: dict[str, str] = {}
+    where: dict[str, str] = {}  # key -> the other file that spells its algorithm name
+    inferred: set[str] = set()
     if ctx.jca:
         for m in _JCA_CALL.finditer(line):
-            spec = _resolve_java_arg(m.group("lit"), m.group("ident"), ctx)
+            spec, defined = _resolve_java_arg_where(m.group("lit"), m.group("ident"), ctx)
+            guess = None if spec else _inferred_arg(m.group("cls"), m.group("ident"), ctx)
+            if guess is not None:
+                spec, defined = guess
             if not spec:
                 continue
             assets = jca_assets(m.group("cls"), spec)
+            for asset in assets:
+                if defined:
+                    where.setdefault(asset[0], defined)
+                if guess is not None:
+                    inferred.add(asset[0])
             gen_size = ctx.gen_sizes.get(line_no)
             if gen_size and m.group("cls") in ("KeyPairGenerator", "KeyGenerator"):
                 assets = [
@@ -1347,9 +1458,19 @@ def _java_jca_lane(line: str, line_no: int, ctx: _JavaContext) -> list[Detection
             args = _call_args(line, m.end() - 1)
             if len(args) >= 2:
                 am = _ARG_TOKEN.match(args[-1])
-                spec = _resolve_java_arg(am.group("lit"), am.group("ident"), ctx) if am else None
+                spec, defined = _resolve_java_arg_where(am.group("lit"), am.group("ident"), ctx) if am \
+                    else (None, None)
+                guess = None if spec or not am else _inferred_arg("SecretKeySpec", am.group("ident"), ctx)
+                if guess is not None:
+                    spec, defined = guess
                 if spec:
-                    key_specs.extend(jca_assets("SecretKeySpec", spec))
+                    specs = jca_assets("SecretKeySpec", spec)
+                    key_specs.extend(specs)
+                    for asset in specs:
+                        if defined:
+                            where.setdefault(asset[0], defined)
+                        if guess is not None:
+                            inferred.add(asset[0])
         for helper, (cls, decl_line) in ctx.helpers.items():
             if line_no == decl_line:
                 continue
@@ -1371,10 +1492,11 @@ def _java_jca_lane(line: str, line_no: int, ctx: _JavaContext) -> list[Detection
     for key, variant, mode, size in found:
         out.append(Detection(key=key, line_no=line_no, key_size=size, mode=mode,
                              padding=paddings.get(key), variant=variant, library=_JCA_LIB,
-                             receiver_bound=True))
+                             receiver_bound=True, defined_at=where.get(key), inferred=key in inferred))
     for key, variant, mode, size in key_specs:
         out.append(Detection(key=key, line_no=line_no, key_size=size, mode=mode, variant=variant,
-                             library=_JCA_LIB, receiver_bound=True, key_spec_only=True))
+                             library=_JCA_LIB, receiver_bound=True, key_spec_only=True,
+                             defined_at=where.get(key), inferred=key in inferred))
     return out
 
 
@@ -1445,9 +1567,29 @@ def _quote(value: str) -> str:
     return f"'{value}'" if "'" not in value else f'"{value}"'
 
 
+def _windows(line: str, size: int = _MAX_STRING_SCAN) -> list[str]:
+    """A long (minified / generated) line cut after ``;`` statement ends into pieces of at most ``size`` characters
+    where possible, so string-level rewriting still runs on it piece by piece (rejoined unchanged in length)."""
+    out: list[str] = []
+    start = 0
+    while len(line) - start > size:
+        cut = line.rfind(";", start, start + size)
+        cut = start + size if cut <= start else cut + 1
+        out.append(line[start:cut])
+        start = cut
+    out.append(line[start:])
+    return out
+
+
 def _fold_strings(line: str, lang: str) -> str:
-    if ("'" not in line and '"' not in line) or len(line) > _MAX_STRING_SCAN:
+    if "'" not in line and '"' not in line:
         return line
+    if len(line) > _MAX_STRING_SCAN:
+        return "".join(_fold_strings_window(w, lang) for w in _windows(line))
+    return _fold_strings_window(line, lang)
+
+
+def _fold_strings_window(line: str, lang: str) -> str:
 
     def b64(m: re.Match[str]) -> str:
         import base64
@@ -1695,18 +1837,59 @@ def _bind_js_keygen_options(lines: list[str], dets: list[Detection]) -> None:
                 det.curve = extract_curve(curve.group(1)) or curve.group(1)
 
 
-def detect_crypto(text: str, lang: str) -> list[Detection]:
+# A name passed as a call argument (``hashlib.new(ALG, pw)``, ``f(x, algorithm=consts.ALG)``).
+_PY_ARG_NAME = r"([(,=]\s*){}(\s*[,)])"
+
+
+def _value_keys(value: str, lang: str) -> set[str]:
+    """The algorithm keys a constant's value names on its own (``'md5'`` -> {md5})."""
+    quoted = _quote(value)
+    keys = {k for k, pat in (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ())) if pat.search(quoted)}
+    alias = LITERAL_ALGO_ALIASES.get(re.sub(r"[^a-z0-9]", "", value.lower()))
+    if alias:
+        keys.add(alias)
+    return keys
+
+
+def _substitute_python_constants(
+    work_lines: list[str], external: Mapping[str, Any]
+) -> dict[int, list[Any]]:
+    """Replace a constant imported from another project module, where it is passed as a call argument, by its
+    quoted value (``hashlib.new(ALG)`` -> ``hashlib.new('md5')``) so every lane reads the algorithm at the use
+    site. Returns line number -> the definitions substituted there."""
+    used: dict[int, list[Any]] = {}
+    patterns = [(re.compile(_PY_ARG_NAME.format(re.escape(name))), d) for name, d in external.items()]
+    for idx, line in enumerate(work_lines):
+        if not line or "(" not in line or _IMPORT_RE.search(line.strip()):
+            continue
+        for pat, d in patterns:
+            new = pat.sub(lambda m, v=d.value: f"{m.group(1)}{_quote(v)}{m.group(2)}", line)
+            if new != line:
+                line = new
+                used.setdefault(idx + 1, []).append(d)
+        work_lines[idx] = line
+    return used
+
+
+def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = None) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
     Runs the bounded 3-step match: prose-strip + call-split -> data-flow-lite
     symbol table -> rule apply (receiver+method+arg-roles) merged with the literal
     lane. Returns one :class:`Detection` per distinct algorithm per line.
+
+    ``external`` maps the names this file uses that are constants of other project files
+    (:meth:`aibom.cbom.project.ProjectIndex.scope_for`) to their definitions; a detection that reads one carries
+    ``defined_at``.
     """
     stripped = strip_noncode(text)
     # Split on "\n" only: splitlines() also breaks on \f, \v, \x1c-\x1e, \x85, U+2028/9 and would shift
     # every reported line number after such a character (the occurrence pass uses the same rule).
     raw_lines = stripped.split("\n")
     work_lines = [_fold_strings(_strip_line_comment(ln, lang), lang) for ln in raw_lines]
+    substituted: dict[int, list[Any]] = {}
+    if external and lang == _PY:
+        substituted = _substitute_python_constants(work_lines, external)
     if lang == _JAVA:
         work_lines = [_fold_java_arrays(ln) for ln in work_lines]
     aliases = _import_aliases(work_lines, lang) if lang in (_GO, _PY) else {}
@@ -1715,14 +1898,14 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
                       for ln in work_lines]
     symbols = build_symbols(work_lines)
     rules = RULES_BY_LANG.get(lang, ())
-    java_ctx = _JavaContext(work_lines) if lang == _JAVA else None
+    java_ctx = _JavaContext(work_lines, external) if lang == _JAVA else None
     jwt_file = bool(_JWT_FILE.search(stripped)) and lang in (_PY, _JS, _JAVA)
     keyword_lines = _keyword_list_lines(work_lines, lang)
 
     out: list[Detection] = []
     for line_no, work in enumerate(work_lines, start=1):
         line = work.strip()
-        if not line or _IMPORT_RE.search(line) or _BARE_IMPORT_PATH.match(work):
+        if not line or _IMPORT_RE.search(line) or _BARE_IMPORT_PATH.match(work) or _PACKAGE_DECL.match(work):
             continue  # imports are LIBRARY signals, handled by the scanner
         if line_no in keyword_lines:
             continue  # an element of a non-crypto keyword table
@@ -1787,6 +1970,12 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
                 per_line[key] = lit
 
         _merge_sized_into_coarse(per_line)
+        _mark_inner(per_line, line)
+        for d in substituted.get(line_no, ()):
+            keys = _value_keys(d.value, lang)
+            for det in per_line.values():
+                if det.key in keys or det.key.split("-")[0] in keys:
+                    det.defined_at = det.defined_at or d.where
         out.extend(per_line.values())
     if java_ctx is not None:
         _fold_variants(out)

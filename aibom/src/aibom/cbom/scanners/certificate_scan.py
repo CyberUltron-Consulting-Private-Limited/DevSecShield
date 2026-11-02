@@ -109,6 +109,53 @@ def _iter_files(walk: FileWalk, exts: frozenset[str] | None) -> list[Path]:
     return walk.files(lambda p: exts is None or p.suffix.lower() in exts)
 
 
+def _sources(walk: FileWalk, exts: frozenset[str]):
+    """(rel, bytes, suffix, extra properties) of the key/certificate files on disk, then of those inside archives
+    (``outer.zip!inner.pem``) and in git history (:meth:`FileWalk.virtual_files`)."""
+    for path in _iter_files(walk, exts):
+        raw = walk.read_bytes(path)
+        if raw is not None:
+            yield walk.rel(path), raw, path.suffix.lower(), None
+    for vf in walk.virtual_files():
+        if vf.suffix in exts:
+            yield vf.rel, vf.data, vf.suffix, vf.props
+
+
+def _annotate_virtual(ctx: ScanContext, before: int, extra: dict[str, str] | None) -> None:
+    """Components found in an archive member / a history blob: where they came from, and line 1 (the occurrence
+    pass cannot open a file that is not on disk under that path)."""
+    if extra is None:
+        return
+    for comp in ctx.components[before:]:
+        props = dict(comp.properties or {})
+        props.update(extra)
+        props.setdefault("crypto:line", "1")
+        comp.properties = props
+
+
+_HEX_RE = re.compile(rb"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{48}|[0-9a-fA-F]{64})$")
+_B64_RE = re.compile(rb"^[A-Za-z0-9+/_-]{22,44}={0,2}$")
+
+
+def _raw_symmetric_key_bits(raw: bytes) -> int | None:
+    """The size of a bare symmetric key held by a key file: 128/192/256 bits as hex, base64 or raw bytes."""
+    body = raw.strip()
+    if _HEX_RE.match(body) and len(set(body.lower())) >= 8:
+        return len(body) * 4
+    if _B64_RE.match(body):
+        try:
+            n = len(base64.b64decode(body + b"=" * (-len(body) % 4), altchars=b"-_" if b"-" in body or b"_" in body
+                                     else None, validate=True))
+        except (ValueError, base64.binascii.Error):  # type: ignore[attr-defined]
+            n = 0
+        if n in (16, 24, 32):
+            return n * 8
+    binary = sum(1 for b in raw if b < 0x20 or b > 0x7E) >= 2
+    if len(raw) in (16, 24, 32) and binary and len(set(raw)) >= len(raw) // 2:
+        return len(raw) * 8  # raw key bytes (no text encoding), mostly distinct
+    return None
+
+
 def _decode_cert(b64body: str) -> Certificate | None:
     try:
         return parse_certificate(base64.b64decode("".join(b64body.split())))
@@ -137,23 +184,32 @@ class CertificateMaterialScanner(Scanner):
     def _scan_cert_files(
         self, ctx: ScanContext, seen: set[str], chain: list
     ) -> None:
-        walk = file_walk(ctx)
-        for path in _iter_files(walk, _CERT_EXTS):
-            rel = walk.rel(path)
-            raw = walk.read_bytes(path)
-            if raw is None:
-                continue
+        for rel, raw, ext, extra in _sources(file_walk(ctx), _CERT_EXTS):
+            before = len(ctx.components)
             if b"-----BEGIN" in raw:
                 text = raw.decode("utf-8", "ignore")
                 for label, body in _PEM_BLOCK.findall(text):
                     self._emit_pem(ctx, seen, chain, label.strip().upper(), body, rel)
-            elif path.suffix.lower() in _BINARY_CERT_EXTS:
+            elif ext in _BINARY_CERT_EXTS:
                 # DER / raw X.509 without PEM armor (common for .crt/.cer/.der;
                 # also rare DER-as-.pem). TOTAL — parse_certificate returns None
                 # on garbage so a non-cert .pem body cannot crash the scan.
                 cert = parse_certificate(raw)
                 if cert is not None:
                     self._emit_certificate(ctx, seen, chain, cert, rel)
+            elif ext in (".gpg", ".pgp") and raw[:1] and raw[0] & 0x80:
+                # binary (unarmored) OpenPGP keyring / exported key: the key packets themselves
+                for kind, info in _openpgp_binary_keys(raw):
+                    extra_pgp = {"crypto:containerFormat": "openpgp"}
+                    if info[1]:
+                        extra_pgp["crypto:keySize"] = str(info[1])
+                    self._emit_material(ctx, seen, kind, rel, info[0], extra=extra_pgp)
+                    break  # one row per file and kind, like an armored block
+            elif ext == ".key":
+                bits = _raw_symmetric_key_bits(raw)
+                if bits:  # a bare 128/192/256-bit key (hex, base64 or raw bytes) in a key file
+                    self._emit_material(ctx, seen, "secret-key", rel, None, extra={"crypto:keySize": str(bits)})
+            _annotate_virtual(ctx, before, extra)
 
     # --- opaque keystore containers (no password parse) ------------------- #
 
@@ -167,39 +223,38 @@ class CertificateMaterialScanner(Scanner):
         format props so the chart can show keystore presence without fake
         ``notValidAfter`` claims.
         """
-        walk = file_walk(ctx)
-        for path in _iter_files(walk, _KEYSTORE_EXTS):
-            rel = walk.rel(path)
-            raw = walk.read_bytes(path)
-            if raw is None:
-                continue
+        for rel, raw, ext, extra in _sources(file_walk(ctx), _KEYSTORE_EXTS):
             if not raw:
                 continue
-            ext = path.suffix.lower()
-            if ext == ".jks":
-                if not raw.startswith(_JKS_MAGIC):
-                    continue
-                fmt = "jks"
-            else:
-                # PKCS#12 / PFX are ASN.1 DER; require SEQUENCE tag + length.
-                if raw[0] != _PKCS12_ASN1_SEQ:
-                    continue
-                fmt = "pkcs12"
-            self._emit_material(
-                ctx,
-                seen,
-                "credential",
-                rel,
-                None,
-                extra={
-                    "crypto:containerFormat": fmt,
-                    "crypto:parseStatus": "opaque",
-                    "crypto:parseNote": (
-                        "keystore inventoried without password; "
-                        "contents not decrypted"
-                    ),
-                },
-            )
+            before = len(ctx.components)
+            self._emit_keystore(ctx, seen, rel, raw, ext)
+            _annotate_virtual(ctx, before, extra)
+
+    def _emit_keystore(self, ctx: ScanContext, seen: set[str], rel: str, raw: bytes, ext: str) -> None:
+        if ext == ".jks":
+            if not raw.startswith(_JKS_MAGIC):
+                return
+            fmt = "jks"
+        else:
+            # PKCS#12 / PFX are ASN.1 DER; require SEQUENCE tag + length.
+            if raw[0] != _PKCS12_ASN1_SEQ:
+                return
+            fmt = "pkcs12"
+        self._emit_material(
+            ctx,
+            seen,
+            "credential",
+            rel,
+            None,
+            extra={
+                "crypto:containerFormat": fmt,
+                "crypto:parseStatus": "opaque",
+                "crypto:parseNote": (
+                    "keystore inventoried without password; "
+                    "contents not decrypted"
+                ),
+            },
+        )
 
     def _emit_pem(
         self,
@@ -381,6 +436,46 @@ def _openpgp_key_info(armored: str) -> tuple[str, int | None] | None:
         data = base64.b64decode(joined[: len(joined) // 4 * 4], validate=False)
     except (ValueError, base64.binascii.Error):  # type: ignore[attr-defined]
         return None
+    return _openpgp_packet_info(data)
+
+
+def _openpgp_binary_keys(data: bytes) -> list[tuple[str, tuple[str, int | None]]]:
+    """(material kind, (algorithm, key size)) of the primary key packets of a binary (unarmored) OpenPGP keyring /
+    exported key: RFC 9580 packets walked by their headers, secret (tag 5) and public (tag 6) keys kept."""
+    out: list[tuple[str, tuple[str, int | None]]] = []
+    pos = 0
+    for _ in range(4096):  # packets; a keyring holds keys, user ids, signatures, subkeys
+        if pos >= len(data) or not data[pos] & 0x80:
+            break
+        head = data[pos]
+        if head & 0x40:
+            tag = head & 0x3F
+            first = data[pos + 1] if pos + 1 < len(data) else 0
+            if first < 192:
+                hdr, length = 2, first
+            elif first < 224 and pos + 2 < len(data):
+                hdr, length = 3, ((first - 192) << 8) + data[pos + 2] + 192
+            elif first == 255 and pos + 5 < len(data):
+                hdr, length = 6, int.from_bytes(data[pos + 2: pos + 6], "big")
+            else:
+                break  # partial lengths are not used for key packets
+        else:
+            tag = (head >> 2) & 0x0F
+            ltype = head & 0x03
+            if ltype == 3:
+                break
+            size = {0: 1, 1: 2, 2: 4}[ltype]
+            hdr, length = 1 + size, int.from_bytes(data[pos + 1: pos + 1 + size], "big")
+        if tag in (5, 6):
+            info = _openpgp_packet_info(data[pos: pos + hdr + length])
+            if info is not None:
+                out.append(("private-key" if tag == 5 else "public-key", info))
+        pos += hdr + length
+    return out
+
+
+def _openpgp_packet_info(data: bytes) -> tuple[str, int | None] | None:
+    """(algorithm, key size) of the key packet at the start of ``data``, or None."""
     if len(data) < 9 or not data[0] & 0x80:
         return None
     if data[0] & 0x40:  # new-format packet header

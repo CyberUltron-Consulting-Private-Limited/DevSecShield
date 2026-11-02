@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from aibom.cbom.files import FileWalk, decode_text, file_walk, read_bytes
+from aibom.cbom.project import project_index
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import ALGORITHM_NORMALIZE, algo_info
 from aibom.cbom.scanners.algorithm_scan import _display_name, _refine_key, _slug
@@ -207,6 +208,8 @@ def _literal_value(node: ast.expr | None, consts: dict[str, object]) -> object |
         return node.value
     if isinstance(node, ast.Name):
         return consts.get(node.id)
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):  # ``consts.ALG`` (another module)
+        return consts.get(f"{node.value.id}.{node.attr}")
     if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Add)):
         left: Any = _literal_value(node.left, consts)
         right: Any = _literal_value(node.right, consts)
@@ -328,7 +331,9 @@ def _make_asset(key, key_size, mode, curve, context, scope, rel) -> _Asset | Non
                   scope, rel)
 
 
-def _scan_file(path: Path, rel: str, text: str | None = None) -> tuple[list[_Asset], list[_Material]]:
+def _scan_file(
+    path: Path, rel: str, text: str | None = None, external: dict | None = None
+) -> tuple[list[_Asset], list[_Material]]:
     if text is None:
         text = read_text_safely(path)
     if text is None:
@@ -340,7 +345,9 @@ def _scan_file(path: Path, rel: str, text: str | None = None) -> tuple[list[_Ass
     if not _has_crypto_import(tree):
         return [], []
 
-    consts = _collect_consts(tree)
+    # constants imported from other project modules (``from .consts import ALG``), then this file's own
+    consts = {name: d.value for name, d in (external or {}).items()}
+    consts.update(_collect_consts(tree))
     calls: list[tuple[ast.Call, tuple[str, ...]]] = []
     _collect_calls(tree, (), calls)
 
@@ -471,7 +478,8 @@ def _scan_file(path: Path, rel: str, text: str | None = None) -> tuple[list[_Ass
 
 
 def _iter_py_files(walk: FileWalk) -> list[Path]:
-    return walk.files(lambda p: p.suffix == ".py")
+    # a notebook is read as its code cells (see :mod:`aibom.cbom.notebook`)
+    return walk.files(lambda p: p.suffix in (".py", ".ipynb"))
 
 
 def _library_for(context: str) -> str:
@@ -499,7 +507,8 @@ class AstCryptoScanner(Scanner):
             text = walk.read_text(path)
             if text is None:
                 continue
-            assets, materials = _scan_file(path, rel, text)
+            external = project_index(ctx).scope_for(rel, "python", text)
+            assets, materials = _scan_file(path, rel, text, external)
 
             for asset in assets:
                 props: dict[str, str] = {
