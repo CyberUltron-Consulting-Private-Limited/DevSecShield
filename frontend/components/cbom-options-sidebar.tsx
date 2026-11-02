@@ -85,6 +85,8 @@ export function CBOMOptionsSidebar({
   const [estimationProcessDone, setEstimationProcessDone] = useState(false);
   const [uploaded_file, setUploadedFile] = useState<File | null>(null);
   const [uploaded_cbom_file, setUploadedCbomFile] = useState<File | null>(null);
+  // Off by default: vendor/, dist/, build/ and node_modules/ are third-party or build output.
+  const [include_vendored, setIncludeVendored] = useState(false);
 
   // CBOM Sources (servers, clusters, network) included in this scan: off by default, opt-in per group.
   const [sourceInclude, setSourceInclude] = useState<CbomInclude>({});
@@ -103,7 +105,7 @@ export function CBOMOptionsSidebar({
   const scan_id = parseInt(params?.scan_id as string, 10);
   const sourcesOverview = useSourcesOverview(team_id);
   // The sources estimate belongs to one exact set of inputs; any change makes it stale (derived, no effect).
-  const estimateKey = JSON.stringify([mode, repo_url, PAT, branch, uploaded_file?.name ?? null, uploaded_cbom_file?.name ?? null, scan_binaries, includedGroups]);
+  const estimateKey = JSON.stringify([mode, repo_url, PAT, branch, uploaded_file?.name ?? null, uploaded_cbom_file?.name ?? null, scan_binaries, include_vendored, includedGroups]);
   const currentSourcesEstimate = sourcesEstimate && sourcesEstimate.key === estimateKey ? sourcesEstimate : null;
   const toggleSource = (key: CbomIncludeKey, on: boolean) => setSourceInclude((prev) => ({ ...prev, [key]: on }));
 
@@ -138,6 +140,8 @@ export function CBOMOptionsSidebar({
         zip_file_used,
         cbom_file_used,
         scan_binaries,
+        // a code-scan option only: an uploaded CBOM file has no directories to read
+        include_vendored: cbom_file_used ? false : include_vendored,
       },
     };
     return JSON.stringify(payload);
@@ -248,7 +252,7 @@ export function CBOMOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
-  }, [mode, repo_url, PAT, branch, uploaded_file, uploaded_cbom_file, scan_binaries]);
+  }, [mode, repo_url, PAT, branch, uploaded_file, uploaded_cbom_file, scan_binaries, include_vendored]);
 
   const creditsInvalid = estimatedCredits === -1;
   const displayCredits =
@@ -417,6 +421,22 @@ export function CBOMOptionsSidebar({
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
+            {!cbom_file_used && (
+              <label className="flex items-start gap-2 mt-4 text-sm text-zinc-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-blue-600"
+                  checked={include_vendored}
+                  onChange={(e) => setIncludeVendored(e.target.checked)}
+                />
+                <span>
+                  Scan vendored and build directories
+                  <span className="block text-xs text-zinc-500 mt-0.5">
+                    Also reads vendor/, dist/, build/ and node_modules/ (third-party code and build output). Off by default.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
 
           <Separator className="bg-zinc-800" />

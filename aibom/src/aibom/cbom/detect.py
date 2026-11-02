@@ -140,6 +140,9 @@ class Detection:
     # PBKDF2 hash (``HmacSHA256`` -> ``SHA256``, ``PBKDF2WithHmacSHA512`` ->
     # ``HMAC-SHA512``) or AES key wrap (``KW``). Folded into the display name only.
     variant: str | None = None
+    # Only a key specification named the algorithm (Java ``new SecretKeySpec(k, "AES")``): the key of a cipher
+    # used elsewhere in the file, not a separate usage (see :func:`_drop_subsumed_key_specs`).
+    key_spec_only: bool = False
 
 
 # --------------------------------------------------------------------------- #
@@ -231,19 +234,20 @@ def _bc_rule(method: str, key: str, roles: tuple[str, ...] = (),
 
 
 JAVA_RULES: tuple[CryptoRule, ...] = (
-    # --- BouncyCastle symmetric engines ---
-    _bc_rule(r"(?:AESEngine|AESFastEngine|AESLightEngine)", "aes"),
+    # --- BouncyCastle symmetric engines (MODE: the block-mode wrapper the engine
+    #     is nested in, ``new CBCBlockCipher(new DESedeEngine())`` -> 3DES-CBC) ---
+    _bc_rule(r"(?:AESEngine|AESFastEngine|AESLightEngine)", "aes", (ROLE_MODE,)),
     # RFC 3394 / RFC 5649 AES key wrap (JWE A*KW, ECDH-ES+A*KW).
     _bc_rule(r"AESWrapEngine", "aes", variant="KW"),
     _bc_rule(r"AESWrapPadEngine", "aes", variant="KWP"),
     _bc_rule(r"ElGamalEngine", "elgamal"),
     # --- BouncyCastle KDFs (SP 800-56A Concatenation KDF, JWE ECDH-ES) ---
     _bc_rule(r"ConcatenationKDFGenerator", "concat-kdf"),
-    _bc_rule(r"DESEngine", "des"),
-    _bc_rule(r"DESedeEngine", "3des"),
-    _bc_rule(r"RC2Engine", "rc2"),
+    _bc_rule(r"DESEngine", "des", (ROLE_MODE,)),
+    _bc_rule(r"DESedeEngine", "3des", (ROLE_MODE,)),
+    _bc_rule(r"RC2Engine", "rc2", (ROLE_MODE,)),
     _bc_rule(r"RC4Engine", "rc4"),
-    _bc_rule(r"BlowfishEngine", "blowfish"),
+    _bc_rule(r"BlowfishEngine", "blowfish", (ROLE_MODE,)),
     _bc_rule(r"(?:ChaChaEngine|ChaCha7539Engine)", "chacha20"),
     # --- BouncyCastle asymmetric engines ---
     _bc_rule(r"(?:RSAEngine|RSABlindedEngine)", "rsa"),
@@ -269,14 +273,30 @@ JAVA_RULES: tuple[CryptoRule, ...] = (
 )
 
 
+# Bouncy Castle block-mode wrapper around an engine on the same line:
+# ``new GCMBlockCipher(new AESEngine())`` / ``GCMBlockCipher.newInstance(AESEngine.newInstance())``.
+# SIC is Bouncy Castle's name for CTR.
+_BC_MODE_WRAP = re.compile(
+    r"\b(CBC|GCM|CFB|OFB|SIC|CTR|CCM)BlockCipher\b(?:\s*\.\s*newInstance)?\s*\(\s*(?:new\s+)?\w+Engine\b"
+)
+
+
+def _bc_wrapper_mode(line: str) -> str | None:
+    m = _BC_MODE_WRAP.search(line)
+    if not m:
+        return None
+    return "CTR" if m.group(1) == "SIC" else m.group(1)
+
+
 # --------------------------------------------------------------------------- #
 # Go rule table (C2). ``crypto/*`` stdlib is package.method-shaped
 # (``aes.NewCipher``, ``rsa.GenerateKey(_, 2048)``, ``ecdsa.GenerateKey(P256)``);
 # ``golang.org/x/crypto`` adds bcrypt/argon2/scrypt/chacha20poly1305/blake2*. The
 # stdlib block-cipher constructors (``aes.NewCipher``/``des.NewCipher``) are the
 # real gap — the token corpus never bound them (no ``AES(`` / ``getInstance``).
-# Go decouples the mode (``cipher.NewGCM``) from the block cipher, so a Go asset
-# is inventoried per PRIMITIVE (mode is left to a future cross-line pass).
+# Go decouples the mode (``cipher.NewGCM(block)``) from the block cipher
+# (``block, err := aes.NewCipher(key)``); :func:`_bind_go_modes` joins them through
+# the block variable after the per-line pass.
 # --------------------------------------------------------------------------- #
 _GO = "go"
 _GOSTD = "Go crypto (stdlib)"
@@ -294,6 +314,7 @@ GO_RULES: tuple[CryptoRule, ...] = (
     CryptoRule(_GO, _GOSTD, "sha256", r"(?:New|New224|Sum256|Sum224)", "sha256"),
     CryptoRule(_GO, _GOSTD, "sha512", r"(?:New|New384|Sum512|Sum384)", "sha512"),
     CryptoRule(_GO, _GOSTD, "sha3", r"(?:New256|New384|New512|Sum256)", "sha3_256"),
+    CryptoRule(_GO, _GOSTD, "hmac", "New", "hmac"),
     # --- stdlib asymmetric ---
     CryptoRule(_GO, _GOSTD, "rsa", "GenerateKey", "rsa", (ROLE_KEY_SIZE,)),
     CryptoRule(_GO, _GOSTD, "dsa", r"(?:GenerateKey|GenerateParameters)", "dsa"),
@@ -345,8 +366,10 @@ LITERAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"(?<![-.:/\w])RC2\b(?![-.]\d)"
         r"|(?i:\brc2-(?:cbc|ecb|cfb|ofb|40|64|128)\b|(?<=[\"'])rc2(?=[\"'/]))")),
     ("blowfish", re.compile(r"\bBlowfish\b", _F)),
+    # pyca's AESGCM / AESCCM class names are matched case-sensitively: an identifier such as Go's
+    # ``func aesGCM(`` is not a use of AES.
     ("aes", re.compile(
-        r"\balgorithms\.AES\b|\bAESGCM\b|\bAESCCM\b|\bAES-?(?:128|192|256)\b"
+        r"\balgorithms\.AES\b|(?-i:\bAES(?:GCM|CCM)\b)|\bAES-?(?:128|192|256)\b"
         r"|\bAES\b(?=\s*[/(])|getInstance\(\s*['\"]AES", _F)),
     ("chacha20", re.compile(r"\bChaCha20\b", _F)),
     ("rsa", re.compile(
@@ -466,6 +489,9 @@ JS_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"|generateKeyPair(?:Sync)?\s*\(\s*['\"]rsa", _F)),
     # node-forge ``forge.pki.rsa.generateKeyPair({ bits: 1024 })`` — size via the ``bits`` digit on the line.
     ("rsa", re.compile(r"\bpki\.rsa\.generateKeyPair\b")),
+    # Node ``createSign('RSA-SHA256')`` / ``createVerify('RSA-SHA1')``: the signature names RSA explicitly
+    # (a bare ``'SHA256'`` takes its key type from the key and names no algorithm).
+    ("rsa", re.compile(r"\bcreate(?:Sign|Verify)\s*\(\s*['\"]RSA-(?:SHA|MD5)", _F)),
     # Node ``generateKeyPair[Sync]('ec',…)`` — curve via the ``namedCurve`` string.
     ("ecdsa", re.compile(r"generateKeyPair(?:Sync)?\s*\(\s*['\"]ec['\"]", _F)),
     # Node ``createHmac(…)`` — ``\bHMAC\b`` never fires on ``createHmac``.
@@ -514,6 +540,8 @@ RUST_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("ecdsa", re.compile(r"\bECDSA_P\d+", _F)),
     # ring ``hmac::HMAC_SHA256`` — a trailing ``_``/``::`` breaks the global lane.
     ("hmac", re.compile(r"\bhmac::|\bHMAC_SHA", _F)),
+    # ring ``digest::SHA1_FOR_LEGACY_USE_ONLY`` — the ``_`` breaks the global ``\bSHA-?1\b``.
+    ("sha1", re.compile(r"\bSHA1_FOR_LEGACY_USE_ONLY\b")),
 )
 
 DOTNET_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -586,6 +614,39 @@ _PERL = "perl"
 _SQL = "sql"
 _SHELL = "shell"
 _VBNET = "vbnet"
+
+# Modes the global ``extract_mode`` cannot read because the spelling has no ``-``/``/`` separator: OpenSSL's
+# ``EVP_aes_128_ecb`` / ``EVP_des_ede3_cbc``, RustCrypto ``Aes256Gcm`` / ring ``AES_256_GCM`` and the
+# ``cbc::Encryptor`` / ``ecb::Encryptor`` modules, .NET ``AesGcm`` / ``AesCcm``.
+_LANG_MODE: dict[str, re.Pattern[str]] = {
+    _C: re.compile(
+        r"\bEVP_(?:aes_\d{3}|des_ede3?|des|bf|rc2|camellia_\d{3}|aria_\d{3}|sm4)_"
+        r"(gcm|cbc|ecb|ctr|cfb(?:1|8|64|128)?|ofb|ccm|xts)\b", _F),
+    _RUST: re.compile(
+        r"\bAes(?:128|192|256)(Gcm|Ccm)(?:Siv)?\b|\bAES_(?:128|192|256)_(GCM)\b|\b(cbc|ecb|ctr|cfb|ofb)::(?:En|De)cryptor\b"),
+    _CSHARP: re.compile(r"\bAes(Gcm|Ccm)\b"),
+}
+
+
+def _lang_mode(line: str, lang: str) -> str | None:
+    pat = _LANG_MODE.get(lang)
+    m = pat.search(line) if pat else None
+    if not m:
+        return None
+    mode = next(g for g in m.groups() if g).upper()
+    return "CFB" if mode.startswith("CFB") else mode
+
+
+# WebCrypto RSA algorithm names carry the padding scheme (``{name: "RSA-OAEP"}``).
+_WEBCRYPTO_PADDING = (("RSA-OAEP", "oaep"), ("RSA-PSS", "pss"), ("RSASSA-PKCS1", "pkcs1v15"))
+
+
+def _lang_padding(line: str, lang: str, key: str) -> str | None:
+    if lang != _JS or key != "rsa":
+        return None
+    up = line.upper()
+    return next((pad for token, pad in _WEBCRYPTO_PADDING if token in up), None)
+
 
 LITERAL_BY_LANG: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     _JAVA: JAVA_LITERALS,
@@ -819,7 +880,9 @@ def _apply_rule(
         elif role == ROLE_LITERAL_KEY:
             det.key_size = _resolve_literal_key_size(args, symbols)
         elif role == ROLE_MODE:
-            det.mode = extract_mode(line)
+            det.mode = extract_mode(line) or (
+                _bc_wrapper_mode(line) if rule.lang == _JAVA else None
+            )
         elif role == ROLE_CURVE:
             det.curve = _resolve_curve(args, line)
         elif role == ROLE_PADDING:
@@ -865,6 +928,34 @@ def _merge(into: Detection, other: Detection) -> None:
     into.library = into.library or other.library
     into.receiver_bound = into.receiver_bound or other.receiver_bound
     into.variant = into.variant or other.variant
+    into.key_spec_only = into.key_spec_only and other.key_spec_only
+
+
+def _drop_subsumed_key_specs(dets: list[Detection]) -> list[Detection]:
+    """``new SecretKeySpec(key, "AES")`` next to ``Cipher.getInstance("AES/CBC/PKCS5Padding")`` is the key of that
+    cipher: one AES usage, not a second bare ``AES`` row beside ``AES-CBC``. A key spec stays a row when nothing
+    else in the file uses its algorithm."""
+    used = {d.key for d in dets if not d.key_spec_only}
+    return [d for d in dets if not (d.key_spec_only and d.key in used)]
+
+
+# A canonical key that encodes its size (``aes-256``), and the bare family key it refines.
+_SIZED_KEY = re.compile(r"^([a-z0-9]+)-(\d{2,5})$")
+
+
+def _merge_sized_into_coarse(per_line: dict[str, Detection]) -> None:
+    """One call, one asset: ``createCipheriv('aes-256-gcm')`` hits both the sized lane key (``aes-256``) and the
+    bare family key (``aes``, from ``\\bAES-256\\b`` without a size the line extractor can read). The bare
+    detection is the SAME usage, so it folds into the sized one instead of becoming a second, coarser
+    ``AES-GCM`` row next to ``AES-256-GCM``. A bare detection with a different explicit size stays separate."""
+    for sized in [k for k in per_line if _SIZED_KEY.match(k)]:
+        m = _SIZED_KEY.match(sized)
+        assert m is not None
+        coarse = per_line.get(m.group(1))
+        if coarse is None or coarse.key_size not in (None, int(m.group(2))):
+            continue
+        _merge(per_line[sized], coarse)
+        del per_line[m.group(1)]
 
 
 # One alternative per quote character, so a backslash can only be consumed as an escape pair. The shared form
@@ -1065,7 +1156,7 @@ def jca_assets(cls: str, spec: str) -> list[tuple[str, str | None, str | None, i
 class _JavaContext:
     """Per-file facts the JCA argument lane resolves against."""
 
-    __slots__ = ("jca", "consts", "classes", "helpers")
+    __slots__ = ("jca", "consts", "classes", "helpers", "gen_sizes")
 
     def __init__(self, lines: list[str]) -> None:
         code = "\n".join(lines)  # comments already stripped
@@ -1073,6 +1164,35 @@ class _JavaContext:
         self.classes = set(_JAVA_CLASS_DECL.findall(code))
         self.consts = _string_constants(code)
         self.helpers = _jca_helpers(lines) if self.jca else {}
+        self.gen_sizes = _generator_sizes(lines) if self.jca else {}
+
+
+# ``KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");`` ... ``kpg.initialize(2048);`` — the key size
+# is set on the generator variable in a later statement. Bound forward from the getInstance line to the first
+# ``<var>.initialize(<int>)`` / ``<var>.init(<int>)``, stopping when the variable is reassigned.
+_JCA_GEN_DECL = re.compile(
+    r"\b([A-Za-z_]\w*)\s*=\s*(?:[\w.]+\.)?(?:KeyPairGenerator|KeyGenerator)\s*\.\s*getInstance\s*\("
+)
+_GEN_SIZE_WINDOW = 40
+
+
+def _generator_sizes(lines: list[str]) -> dict[int, int]:
+    """getInstance line number (1-based) -> the key size its generator variable is initialised with."""
+    out: dict[int, int] = {}
+    for i, line in enumerate(lines):
+        for decl in _JCA_GEN_DECL.finditer(line):
+            var = re.escape(decl.group(1))
+            init = re.compile(rf"(?<![\w.]){var}\s*\.\s*(?:initialize|init)\s*\(\s*(\d{{2,5}})\b")
+            reassigned = re.compile(rf"(?<![\w.]){var}\s*=(?!=)")
+            for j in range(i, min(len(lines), i + _GEN_SIZE_WINDOW)):
+                seg = lines[j][decl.end():] if j == i else lines[j]
+                m = init.search(seg)
+                if m:
+                    out.setdefault(i + 1, int(m.group(1)))
+                    break
+                if j > i and reassigned.search(seg):
+                    break
+    return out
 
 
 def _string_constants(code: str) -> dict[str, str]:
@@ -1195,20 +1315,38 @@ _COMPOSITE_LIT = re.compile(
     r'|Hmac(?:SHA|MD5)[A-Za-z0-9-]*|PBKDF2WithHmac(?:SHA|MD5)[A-Za-z0-9-]*)"', re.I)
 
 
+_GENERATOR_SIZED_PRIMITIVES = ("pke", "block-cipher", "stream-cipher", "signature", "key-agree")
+
+
 def _java_jca_lane(line: str, line_no: int, ctx: _JavaContext) -> list[Detection]:
     found: list[tuple[str, str | None, str | None, int | None]] = []
+    key_specs: list[tuple[str, str | None, str | None, int | None]] = []
+    paddings: dict[str, str] = {}
     if ctx.jca:
         for m in _JCA_CALL.finditer(line):
             spec = _resolve_java_arg(m.group("lit"), m.group("ident"), ctx)
-            if spec:
-                found.extend(jca_assets(m.group("cls"), spec))
+            if not spec:
+                continue
+            assets = jca_assets(m.group("cls"), spec)
+            gen_size = ctx.gen_sizes.get(line_no)
+            if gen_size and m.group("cls") in ("KeyPairGenerator", "KeyGenerator"):
+                assets = [
+                    (k, v, md, sz or (gen_size if (algo_info(k) or {}).get("primitive")
+                                      in _GENERATOR_SIZED_PRIMITIVES else None))
+                    for k, v, md, sz in assets
+                ]
+            parts = spec.split("/")
+            if m.group("cls") == "Cipher" and assets and len(parts) >= 3 and parts[2].strip():
+                # the transformation's padding ("AES/GCM/NoPadding", "RSA/ECB/OAEPWith...Padding"), verbatim
+                paddings.setdefault(assets[0][0], parts[2].strip())
+            found.extend(assets)
         for m in _SECRET_KEY_SPEC.finditer(line):
             args = _call_args(line, m.end() - 1)
             if len(args) >= 2:
                 am = _ARG_TOKEN.match(args[-1])
                 spec = _resolve_java_arg(am.group("lit"), am.group("ident"), ctx) if am else None
                 if spec:
-                    found.extend(jca_assets("SecretKeySpec", spec))
+                    key_specs.extend(jca_assets("SecretKeySpec", spec))
         for helper, (cls, decl_line) in ctx.helpers.items():
             if line_no == decl_line:
                 continue
@@ -1229,7 +1367,11 @@ def _java_jca_lane(line: str, line_no: int, ctx: _JavaContext) -> list[Detection
     out: list[Detection] = []
     for key, variant, mode, size in found:
         out.append(Detection(key=key, line_no=line_no, key_size=size, mode=mode,
-                             variant=variant, library=_JCA_LIB, receiver_bound=True))
+                             padding=paddings.get(key), variant=variant, library=_JCA_LIB,
+                             receiver_bound=True))
+    for key, variant, mode, size in key_specs:
+        out.append(Detection(key=key, line_no=line_no, key_size=size, mode=mode, variant=variant,
+                             library=_JCA_LIB, receiver_bound=True, key_spec_only=True))
     return out
 
 
@@ -1443,6 +1585,113 @@ def _jwt_lane(line: str, line_no: int) -> list[Detection]:
     return [Detection(key=k, line_no=line_no, variant=v, library="JWT", receiver_bound=True) for k, v in found]
 
 
+# Go: ``block, err := aes.NewCipher(key)`` then ``cipher.NewGCM(block)`` — the mode lives on another statement,
+# bound through the block variable to the NEAREST preceding constructor of that name in the same function.
+_GO_BLOCK_DECL = re.compile(
+    r"\b([A-Za-z_]\w*)\s*(?:,\s*[A-Za-z_]\w*\s*)?:?=\s*(aes|des)\.New(?:TripleDES)?Cipher\s*\("
+)
+_GO_MODE_CALL = re.compile(
+    r"\bcipher\.(NewGCM(?:WithNonceSize|WithTagSize)?|NewCBCEncrypter|NewCBCDecrypter|NewCTR"
+    r"|NewCFBEncrypter|NewCFBDecrypter|NewOFB)\s*\(\s*([A-Za-z_]\w*)"
+)
+_GO_FUNC = re.compile(r"^\s*func\b")
+_GO_BLOCK_KEYS = ("aes", "des", "3des")
+
+
+def _go_mode(fn: str) -> str:
+    for prefix, mode in (("NewGCM", "GCM"), ("NewCBC", "CBC"), ("NewCTR", "CTR"), ("NewCFB", "CFB"),
+                         ("NewOFB", "OFB")):
+        if fn.startswith(prefix):
+            return mode
+    return "OTHER"
+
+
+def _bind_go_modes(lines: list[str], dets: list[Detection]) -> None:
+    by_line: dict[int, list[Detection]] = {}
+    for det in dets:
+        if det.key in _GO_BLOCK_KEYS:
+            by_line.setdefault(det.line_no, []).append(det)
+    if not by_line:
+        return
+    for idx, line in enumerate(lines):
+        for call in _GO_MODE_CALL.finditer(line):
+            var = call.group(2)
+            for j in range(idx, -1, -1):
+                if j < idx and _GO_FUNC.match(lines[j]):
+                    break  # never bind across a function boundary
+                decl = next((d for d in _GO_BLOCK_DECL.finditer(lines[j]) if d.group(1) == var), None)
+                if decl is None:
+                    continue
+                for det in by_line.get(j + 1, []):
+                    if det.mode is None:
+                        det.mode = _go_mode(call.group(1))
+                break
+
+
+# .NET: ``var aes = Aes.Create();`` then ``aes.Mode = CipherMode.ECB;`` / ``aes.KeySize = 256;`` — mode and size
+# are set on the instance in later statements, bound through the variable to its NEAREST preceding declaration.
+_DOTNET_DECL = re.compile(
+    r"\b([A-Za-z_]\w*)\s*=\s*(?:new\s+)?(Aes|AesManaged|AesCryptoServiceProvider|AesCng|RijndaelManaged|TripleDES"
+    r"|TripleDESCryptoServiceProvider|TripleDESCng|DES|DESCryptoServiceProvider|RC2|RC2CryptoServiceProvider"
+    r"|RSA|RSACryptoServiceProvider|RSACng)\b(?:\s*\.\s*Create)?\s*\("
+)
+_DOTNET_SET = re.compile(
+    r"(?<![\w.])([A-Za-z_]\w*)\s*\.\s*(?:Mode\s*=\s*CipherMode\s*\.\s*(CBC|ECB|CFB|OFB|CTS)\b"
+    r"|KeySize\s*=\s*(\d{2,5})\b)"
+)
+_DOTNET_SYMMETRIC_KEYS = ("aes", "3des", "des", "rc2")
+_DOTNET_SIZED = {"aes": (128, 192, 256), "rsa": (512, 1024, 2048, 3072, 4096, 8192)}
+
+
+def _bind_dotnet_settings(lines: list[str], dets: list[Detection]) -> None:
+    by_line: dict[int, list[Detection]] = {}
+    for det in dets:
+        by_line.setdefault(det.line_no, []).append(det)
+    for idx, line in enumerate(lines):
+        for setting in _DOTNET_SET.finditer(line):
+            var, mode, size = setting.group(1), setting.group(2), setting.group(3)
+            for j in range(idx, -1, -1):
+                if not any(d.group(1) == var for d in _DOTNET_DECL.finditer(lines[j])):
+                    continue
+                for det in by_line.get(j + 1, []):
+                    if mode and det.key in _DOTNET_SYMMETRIC_KEYS and det.mode is None:
+                        det.mode = "CBC" if mode == "CTS" else mode  # CTS is CBC with ciphertext stealing
+                    if size and int(size) in _DOTNET_SIZED.get(det.key, ()) and det.key_size is None:
+                        det.key_size = int(size)
+                break
+
+
+# Node ``generateKeyPair[Sync]('rsa', {\n  modulusLength: 2048, ...})`` — the options object spans lines.
+_JS_KEYGEN = re.compile(r"\bgenerateKeyPair(?:Sync)?\s*\(\s*['\"](rsa|rsa-pss|ec)['\"]")
+_JS_MODULUS = re.compile(r"\bmodulusLength\s*:\s*(\d{3,5})\b")
+_JS_NAMED_CURVE = re.compile(r"\bnamedCurve\s*:\s*['\"]([\w-]+)['\"]")
+_JS_OPTIONS_LINES = 15
+
+
+def _bind_js_keygen_options(lines: list[str], dets: list[Detection]) -> None:
+    for idx, line in enumerate(lines):
+        call = _JS_KEYGEN.search(line)
+        if not call:
+            continue
+        depth, span = 0, []
+        for j in range(idx, min(len(lines), idx + _JS_OPTIONS_LINES)):
+            seg = lines[j][call.start():] if j == idx else lines[j]
+            span.append(seg)
+            depth += seg.count("(") - seg.count(")")
+            if depth <= 0:
+                break
+        options = "\n".join(span)
+        size = _JS_MODULUS.search(options)
+        curve = _JS_NAMED_CURVE.search(options)
+        for det in dets:
+            if det.line_no != idx + 1:
+                continue
+            if det.key == "rsa" and size and det.key_size is None:
+                det.key_size = int(size.group(1))
+            if det.key == "ecdsa" and curve and det.curve is None:
+                det.curve = extract_curve(curve.group(1)) or curve.group(1)
+
+
 def detect_crypto(text: str, lang: str) -> list[Detection]:
     """Detect crypto usage in one source file's ``text`` (of language ``lang``).
 
@@ -1515,7 +1764,7 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
                     per_line[det.key] = det
 
         explicit_ks = extract_key_size(lit_line)
-        mode = extract_mode(lit_line)
+        mode = extract_mode(lit_line) or _lang_mode(lit_line, lang)
         curve = extract_curve(lit_line)
         for key, pat in (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ())):
             if not pat.search(lit_line):
@@ -1526,6 +1775,7 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
                 key_size=explicit_ks,
                 mode=mode,
                 curve=curve,
+                padding=_lang_padding(lit_line, lang, key),
                 parameter=extract_pqc_parameter(line, key),
             )
             if key in per_line:
@@ -1533,9 +1783,17 @@ def detect_crypto(text: str, lang: str) -> list[Detection]:
             else:
                 per_line[key] = lit
 
+        _merge_sized_into_coarse(per_line)
         out.extend(per_line.values())
     if java_ctx is not None:
         _fold_variants(out)
+        out = _drop_subsumed_key_specs(out)
+    if lang == _GO:
+        _bind_go_modes(work_lines, out)
+    elif lang in (_CSHARP, _VBNET):
+        _bind_dotnet_settings(work_lines, out)
+    elif lang == _JS:
+        _bind_js_keygen_options(work_lines, out)
     return out
 
 

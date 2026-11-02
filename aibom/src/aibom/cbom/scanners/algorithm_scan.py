@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import json
 import re
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from aibom.cbom.detect import detect_crypto
+from aibom.cbom.files import FileWalk, file_walk
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import (
     ALGORITHM_NORMALIZE,
@@ -36,20 +38,10 @@ from aibom.cbom.rules import (
     PQC_FIPS_NAME,
     algo_info,
     match_dep_coordinate,
-    read_source,
     source_language,
 )
 from aibom.model.component import CryptoAssetComponent, FrameworkComponent
 from aibom.scan.registry import ScanContext, Scanner
-
-_IGNORE_DIRS = frozenset(
-    {
-        ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
-        "dist", "build", ".next", ".nuxt", "target", "vendor", ".tox",
-        ".mypy_cache", ".pytest_cache",
-    }
-)
-_MAX_BYTES = 2_000_000
 
 # Detection of concrete crypto-API usage (receiver+method+arg-role rule model,
 # data-flow-lite symbol table, and the literal-token recall lane) lives in the
@@ -62,18 +54,9 @@ _IMPORT_RE = re.compile(
 )
 
 
-def _iter_source_files(root: Path):
-    for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
-            continue
-        if not p.is_file() or source_language(p) is None:
-            continue
-        try:
-            if p.stat().st_size > _MAX_BYTES:
-                continue
-        except OSError:
-            continue
-        yield p
+def _iter_source_files(walk: FileWalk) -> list[Path]:
+    """Source files of a detector language (the shared walk: no links, no skipped/vendored dirs, size-capped)."""
+    return walk.files(lambda p: source_language(p) is not None)
 
 
 def _refine_key(key: str, key_size: int | None) -> str:
@@ -128,10 +111,10 @@ def _display_name(
 
 class _Asset:
     __slots__ = ("key", "name", "key_size", "mode", "curve", "padding",
-                 "operation", "parameter", "info", "location")
+                 "operation", "parameter", "info", "location", "library")
 
     def __init__(self, key, name, key_size, mode, curve, padding, operation,
-                 parameter, info, location):
+                 parameter, info, location, library=None):
         self.key = key
         self.name = name
         self.key_size = key_size
@@ -142,9 +125,21 @@ class _Asset:
         self.parameter = parameter
         self.info = info
         self.location = location
+        # The library whose API call produced the asset (a receiver+method / call-argument match); None when only
+        # a literal token named the algorithm.
+        self.library = library
+
+    def fill_from(self, curve, padding, operation, library) -> None:
+        """A later sighting of the same asset (same name, same file) fills parameters the first one lacked —
+        ``func ecdsaKey() (*ecdsa.PrivateKey ...`` names ECDSA before ``ecdsa.GenerateKey(elliptic.P384() ...``
+        binds its curve."""
+        self.curve = self.curve or curve
+        self.padding = self.padding or padding
+        self.operation = self.operation or operation
+        self.library = self.library or library
 
 
-def _detect_assets(root: Path) -> list[_Asset]:
+def _detect_assets(root: Path, walk: FileWalk | None = None) -> list[_Asset]:
     """Detect concrete algorithm usages (one per distinct name+file).
 
     Detection facts come from the clean-room :func:`detect_crypto` rule engine
@@ -152,13 +147,13 @@ def _detect_assets(root: Path) -> list[_Asset]:
     turns each fact into an inventoried asset, folding an explicit key size / mode
     into the display name so RSA-2048 vs RSA-1024 and AES-GCM vs AES-ECB separate.
     """
+    walk = walk or FileWalk(root)
     seen: dict[tuple[str, str], _Asset] = {}
-    for path in _iter_source_files(root):
+    for path in _iter_source_files(walk):
         lang = source_language(path)
-        rel = path.relative_to(root).as_posix()
-        try:
-            text = read_source(path)
-        except OSError:
+        rel = walk.rel(path)
+        text = walk.read_text(path)
+        if text is None:
             continue
         for det in detect_crypto(text, lang):
             refined = _refine_key(det.key, det.key_size)
@@ -169,11 +164,14 @@ def _detect_assets(root: Path) -> list[_Asset]:
             mode = det.mode if info.get("primitive") == "block-cipher" else None
             name = _display_name(refined, det.key_size, mode, det.parameter, det.variant)
             ident = (name, rel)
+            library = det.library if det.receiver_bound else None
             if ident not in seen:
                 seen[ident] = _Asset(
                     refined, name, resolved_ks, mode, det.curve,
-                    det.padding, det.operation, det.parameter, info, rel
+                    det.padding, det.operation, det.parameter, info, rel, library
                 )
+            else:
+                seen[ident].fill_from(det.curve, det.padding, det.operation, library)
     return sorted(seen.values(), key=lambda a: (a.name, a.location))
 
 
@@ -278,27 +276,21 @@ def _manifest_coordinates(ecosystem: str, name: str, text: str) -> list[str]:
     return []
 
 
-def _detect_manifest_libraries(root: Path) -> list[tuple[str, str]]:
+def _detect_manifest_libraries(root: Path, walk: FileWalk | None = None) -> list[tuple[str, str]]:
     """Crypto libraries DECLARED in non-Python manifests. -> (label, src)."""
+    walk = walk or FileWalk(root)
     found: dict[str, str] = {}
-    for path in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in path.relative_to(root).parts):
-            continue
-        if not path.is_file():
-            continue
+    for path in walk.files():
         low_name = path.name.lower()
         ecosystem = _MANIFEST_BY_NAME.get(low_name)
         # *.csproj is matched by suffix (NuGet PackageReference form).
         is_csproj = path.suffix.lower() == ".csproj"
         if ecosystem is None and not is_csproj:
             continue
-        try:
-            if path.stat().st_size > _MAX_BYTES:
-                continue
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        text = walk.read_text(path)
+        if text is None:
             continue
-        rel = path.relative_to(root).as_posix()
+        rel = walk.rel(path)
         if is_csproj:
             coords = _CSPROJ_REF_RE.findall(text)
             eco = "nuget"
@@ -313,19 +305,19 @@ def _detect_manifest_libraries(root: Path) -> list[tuple[str, str]]:
     return sorted(found.items())
 
 
-def _detect_libraries(root: Path) -> list[tuple[str, str]]:
+def _detect_libraries(root: Path, walk: FileWalk | None = None) -> list[tuple[str, str]]:
     """Detect crypto libraries: declared deps + imported modules. -> (label, src)."""
+    walk = walk or FileWalk(root)
     found: dict[str, str] = {}
 
     # 1) declared dependencies (requirements.txt / pyproject)
-    for req in (*root.rglob("requirements*.txt"), *root.rglob("pyproject.toml")):
-        if any(part in _IGNORE_DIRS for part in req.relative_to(root).parts):
+    requirements = walk.files(lambda p: fnmatchcase(p.name, "requirements*.txt"))
+    pyprojects = walk.files(lambda p: p.name == "pyproject.toml")
+    for req in (*requirements, *pyprojects):
+        text = walk.read_text(req)
+        if text is None:
             continue
-        try:
-            text = req.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        rel = req.relative_to(root).as_posix()
+        rel = walk.rel(req)
         for raw in text.splitlines():
             name = re.split(r"[<>=!~;\[\s#]", raw.strip(), maxsplit=1)[0].lower()
             label = CRYPTO_LIBRARY_PACKAGES.get(name)
@@ -335,22 +327,21 @@ def _detect_libraries(root: Path) -> list[tuple[str, str]]:
     # 1b) declared dependencies in non-Python manifests (C12: Maven/Go/npm/
     # Cargo/NuGet). A manifest is the authoritative declaration site, so it is
     # recorded before the import lane (setdefault keeps the manifest source).
-    for label, rel in _detect_manifest_libraries(root):
+    for label, rel in _detect_manifest_libraries(root, walk):
         found.setdefault(label, rel)
 
     # 2) imported crypto modules in source
-    for path in _iter_source_files(root):
-        rel = path.relative_to(root).as_posix()
+    for path in _iter_source_files(walk):
+        rel = walk.rel(path)
         lang = source_language(path)
         # Node's ``crypto`` and C's ``openssl`` roots collide with the Python keys,
         # so JS/C/Rust/.NET files use a language-scoped map; Python/Go/Java (whose
         # roots are distinctive) fall back to the global one (C3).
         modules = CRYPTO_IMPORT_MODULES_BY_LANG.get(lang, CRYPTO_IMPORT_MODULES)
-        try:
-            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        except OSError:
+        text = walk.read_text(path)
+        if text is None:
             continue
-        for line in lines:
+        for line in text.splitlines():
             if not _IMPORT_RE.search(line):
                 continue
             low = line.lower()
@@ -375,7 +366,8 @@ class CryptoAlgorithmScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        for label, src in _detect_libraries(ctx.root):
+        walk = file_walk(ctx)
+        for label, src in _detect_libraries(ctx.root, walk):
             ref = f"crypto-lib-{_slug(label)}"
             if ctx.has_ref(ref):
                 continue
@@ -387,7 +379,7 @@ class CryptoAlgorithmScanner(Scanner):
                 )
             )
 
-        for asset in _detect_assets(ctx.root):
+        for asset in _detect_assets(ctx.root, walk):
             # The AST scanner (order 8) owns Python algorithm detection with
             # argument binding; defer to any ref it already emitted so the regex
             # pass only adds usages the AST could not see (e.g. an algorithm named
@@ -419,6 +411,10 @@ class CryptoAlgorithmScanner(Scanner):
                 props["crypto:parameterSet"] = asset.parameter
             if asset.key == "hybrid":
                 props["crypto:hybrid"] = "true"
+            if asset.library:
+                # call-site provenance: the API call that fixed the algorithm (the AST lane writes "ast")
+                props["crypto:detectedBy"] = asset.library
+                props["crypto:detectionMethod"] = "call-expr"
             ctx.add_component(
                 CryptoAssetComponent(
                     bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",

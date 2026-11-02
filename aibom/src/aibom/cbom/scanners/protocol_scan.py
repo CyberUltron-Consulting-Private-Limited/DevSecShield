@@ -37,19 +37,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from aibom.cbom.files import FileWalk, file_walk
 from aibom.cbom.registry import cbom_register
-from aibom.cbom.rules import read_source, source_language
+from aibom.cbom.rules import source_language
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
-
-_IGNORE_DIRS = frozenset(
-    {
-        ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
-        "dist", "build", ".next", ".nuxt", "target", "vendor", ".tox",
-        ".mypy_cache", ".pytest_cache",
-    }
-)
-_MAX_BYTES = 2_000_000
 
 # --------------------------------------------------------------------------- #
 # Detection patterns. Versions normalize to a (family, minor) sort key so the
@@ -166,37 +158,17 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
 
 
-def _iter_source_files(root: Path):
-    for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
-            continue
-        if not p.is_file() or source_language(p) is None:
-            continue
-        try:
-            if p.stat().st_size > _MAX_BYTES:
-                continue
-        except OSError:
-            continue
-        yield p
+def _iter_source_files(walk: FileWalk) -> list[Path]:
+    return walk.files(lambda p: source_language(p) is not None)
 
 
-def _iter_ipsec_configs(root: Path):
+def _iter_ipsec_configs(walk: FileWalk) -> list[Path]:
     """IPsec config files matched by name (``ipsec.conf`` / ``swanctl.conf`` …).
 
     These carry no code extension so :func:`_iter_source_files` skips them; the
     IPsec lane reads them directly for the IKE version + transform proposals.
     """
-    for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
-            continue
-        if not p.is_file() or p.name.lower() not in _IPSEC_CONFIG_NAMES:
-            continue
-        try:
-            if p.stat().st_size > _MAX_BYTES:
-                continue
-        except OSError:
-            continue
-        yield p
+    return walk.files(lambda p: p.name.lower() in _IPSEC_CONFIG_NAMES)
 
 
 class _TlsVersion:
@@ -244,24 +216,25 @@ class ProtocolScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        for path in _iter_source_files(ctx.root):
-            rel = path.relative_to(ctx.root).as_posix()
-            try:
-                code = _strip_prose(read_source(path))
-            except OSError:
+        walk = file_walk(ctx)
+        for path in _iter_source_files(walk):
+            rel = walk.rel(path)
+            text = walk.read_text(path)
+            if text is None:
                 continue
+            code = _strip_prose(text)
             self._emit_tls(ctx, rel, code)
             self._emit_ssh(ctx, rel, code)
             # Source-level IPsec references (strongSwan/libreswan API, IKEv2 …).
             if _IPSEC_USE.search(code):
                 self._emit_ipsec(ctx, rel, code, is_config=False)
         # Named IPsec config artifacts (ipsec.conf / swanctl.conf / …).
-        for path in _iter_ipsec_configs(ctx.root):
-            rel = path.relative_to(ctx.root).as_posix()
-            try:
-                code = _strip_prose(path.read_text(encoding="utf-8", errors="ignore"))
-            except OSError:
+        for path in _iter_ipsec_configs(walk):
+            rel = walk.rel(path)
+            text = walk.read_text(path)
+            if text is None:
                 continue
+            code = _strip_prose(text)
             self._emit_ipsec(ctx, rel, code, is_config=True)
 
     # --- TLS / SSL -------------------------------------------------------- #

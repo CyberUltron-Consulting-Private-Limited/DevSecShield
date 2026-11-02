@@ -117,8 +117,8 @@
       "skipped": 0
     },
     "tests/test_cbom_jvm_go_crypto_scan.py": {
-      "failed": 13,
-      "passed": 3,
+      "failed": 0,
+      "passed": 21,
       "skipped": 0
     },
     "tests/test_cbom_manifest_libraries.py": {
@@ -127,8 +127,8 @@
       "skipped": 0
     },
     "tests/test_cbom_native_crypto_scan.py": {
-      "failed": 16,
-      "passed": 1,
+      "failed": 0,
+      "passed": 17,
       "skipped": 0
     },
     "tests/test_cbom_normalize.py": {
@@ -182,8 +182,8 @@
       "skipped": 0
     },
     "tests/test_cbom_web_native_crypto_scan.py": {
-      "failed": 12,
-      "passed": 3,
+      "failed": 0,
+      "passed": 14,
       "skipped": 0
     },
     "tests/test_cedar.py": {

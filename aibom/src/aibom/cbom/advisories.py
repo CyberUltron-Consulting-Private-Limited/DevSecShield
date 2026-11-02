@@ -15,20 +15,9 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
+from aibom.cbom.files import FileWalk
+
 _MAX_BYTES = 8_388_608
-_IGNORE = frozenset(
-    {
-        ".git",
-        ".venv",
-        "venv",
-        "node_modules",
-        "vendor",
-        "dist",
-        "build",
-        "target",
-        "__pycache__",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -289,13 +278,8 @@ def match_advisories(
     return tuple(hits)
 
 
-def _read(path: Path) -> str | None:
-    try:
-        if path.stat().st_size > _MAX_BYTES:
-            return None
-        return path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return None
+def _read(walk: FileWalk, path: Path) -> str | None:
+    return walk.read_text(path, _MAX_BYTES)
 
 
 def _requirements(text: str, path: str) -> list[Pin]:
@@ -520,21 +504,19 @@ def _go_mod_pins(text: str, path: str) -> list[Pin]:
     return pins
 
 
-def iter_pins(root: Path) -> Iterator[Pin]:
-    """Every version pin under ``root``, skipping dependency install trees."""
+def iter_pins(root: Path, walk: FileWalk | None = None) -> Iterator[Pin]:
+    """Every version pin under ``root``, skipping dependency install trees (the shared walk)."""
+    walk = walk or FileWalk(root)
     go_direct: set[str] = set()
-    for path in sorted(root.rglob("*")):
-        if any(part in _IGNORE for part in path.relative_to(root).parts):
-            continue
-        if not path.is_file():
-            continue
+    manifests = walk.files(
+        lambda p: p.name.lower() in _PARSERS or p.name.lower() in {"go.mod", "go.sum"}, max_bytes=_MAX_BYTES
+    )
+    for path in manifests:
         name = path.name.lower()
-        if name not in _PARSERS and name not in {"go.mod", "go.sum"}:
-            continue
-        text = _read(path)
+        text = _read(walk, path)
         if text is None:
             continue
-        rel = path.relative_to(root).as_posix()
+        rel = walk.rel(path)
         if name == "go.mod":
             go_direct |= _go_mod_direct(text)
             yield from _go_mod_pins(text, rel)
@@ -544,15 +526,15 @@ def iter_pins(root: Path) -> Iterator[Pin]:
         parser = _PARSERS.get(name)
         if parser is not None:
             yield from parser(text, rel)
-    for path in sorted(root.rglob("go.sum")):
-        if any(part in _IGNORE for part in path.relative_to(root).parts):
+    for path in manifests:
+        if path.name != "go.sum":
             continue
-        text = _read(path)
+        text = _read(walk, path)
         if text is None:
             continue
-        yield from _go_sum(text, path.relative_to(root).as_posix(), go_direct)
+        yield from _go_sum(text, walk.rel(path), go_direct)
 
 
-def find_vulnerable(root: Path) -> tuple[AdvisoryHit, ...]:
+def find_vulnerable(root: Path, walk: FileWalk | None = None) -> tuple[AdvisoryHit, ...]:
     """Advisory hits for one repository tree."""
-    return match_advisories(iter_pins(root), load_advisories())
+    return match_advisories(iter_pins(root, walk), load_advisories())

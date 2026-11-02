@@ -97,17 +97,14 @@ DETECTOR_LANGUAGES = frozenset(LANGUAGE_EXTENSIONS.values()) | frozenset(CODE_SC
 
 def read_source(path) -> str:
     """Source text as ``Path.read_text(encoding="utf-8", errors="ignore")`` returns it (universal newlines), but a
-    UTF-16 file with a byte-order mark is decoded as UTF-16 instead of being read as NUL-riddled UTF-8."""
-    raw = path.read_bytes()
-    text = None
-    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
-        try:
-            text = raw.decode("utf-16")
-        except UnicodeDecodeError:
-            text = None
-    if text is None:
-        text = raw.decode("utf-8", errors="ignore")
-    return text.replace("\r\n", "\n").replace("\r", "\n")
+    UTF-16 file with a byte-order mark is decoded as UTF-16 instead of being read as NUL-riddled UTF-8. A link, a
+    non-regular file or a file over the size cap raises ``OSError`` (it is never followed or read)."""
+    from aibom.cbom.files import decode_text, read_bytes
+
+    raw = read_bytes(path)
+    if raw is None:
+        raise OSError(f"not a readable regular file: {path}")
+    return decode_text(raw)
 
 # --------------------------------------------------------------------------- #
 # Algorithm strength tables (port: WEAK_ALGORITHMS / STANDARD_ALGORITHMS).

@@ -15,6 +15,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# A cloned repository is attacker-controlled: a committed link such as ``key.pem -> /proc/self/environ`` must never
+# become a real link on the worker. ``core.symlinks=false`` makes git check every link out as a plain file holding
+# the target path. It is set through git's environment config (git >= 2.31) rather than ``-c`` on the clone command
+# line, which GitPython only accepts with its unsafe-options check switched off.
+CLONE_GIT_ENV = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.symlinks", "GIT_CONFIG_VALUE_0": "false"}
+
+
 def clone_repo(
     url: str,
     branch: str = "main") -> Path:
@@ -25,7 +32,7 @@ def clone_repo(
             tmp = Path(temp_dir)
         Console().print(f":package: Cloning [blue]{url}[/] → {tmp} Branch:{branch}")
 
-        Repo.clone_from(url, tmp, depth=1 , branch=branch)
+        Repo.clone_from(url, tmp, depth=1, branch=branch, env=CLONE_GIT_ENV)
     except GitCommandError as e:
         shutil.rmtree(tmp, ignore_errors=True)
         raise RuntimeError(f"Clone failed: {e}") from e

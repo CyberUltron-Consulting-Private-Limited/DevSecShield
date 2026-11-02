@@ -61,13 +61,15 @@ ALL_PATTERNS = LINE_PATTERNS + TOKEN_PATTERNS
 
 
 class LineDict(dict[object, object]):
-    """Mapping that remembers the line of its start mark."""
+    """Mapping that remembers the line of its start mark and the line of each scalar key."""
 
     line: int
+    key_lines: dict[str, int]
 
     def __init__(self, line: int = 1) -> None:
         super().__init__()
         self.line = line
+        self.key_lines = {}
 
 
 class LineList(list[object]):
@@ -127,6 +129,9 @@ class _Loader(yaml.SafeLoader):
         yield data
         filled = self.construct_mapping(node)
         data.update(filled)
+        for key, _value in node.value:
+            if isinstance(key, ScalarNode):
+                data.key_lines[str(key.value)] = key.start_mark.line + 1  # the last duplicate wins, like the value
 
     def construct_yaml_seq(self, node: SequenceNode) -> object:
         data = LineList(node.start_mark.line + 1)

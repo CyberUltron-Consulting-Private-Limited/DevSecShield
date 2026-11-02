@@ -11,7 +11,7 @@
  * fixtures/expected.json is matched against the PDF TEXT (not the DOM) and the canaries of the failed, queued,
  * running, success-but-empty, other-team and sbom_sca scans must be absent.
  *
- * What this document must show: live numbers templated into authored text (7 sources, 8 of 9 scans, 68 assets, 14 unique certificates, 13 frameworks pooled over 6 sources), the nine registered scanners in registry order and none of the three unwired modules, the 13-framework coverage table with its totals row, and the blank RACI / retention / sign-off tables.
+ * What this document must show: live numbers templated into authored text (7 sources, 8 of 9 scans, 68 assets, 14 unique certificates, 13 frameworks pooled over 6 sources), the nine registered scanners in registry order and none of the three removed scanner modules, the 13-framework coverage table with its totals row, and the blank RACI / retention / sign-off tables.
  */
 import { expect, test } from '../fixtures';
 import { expectNoFindings, runDeliverableFlow } from '../lib/flow';

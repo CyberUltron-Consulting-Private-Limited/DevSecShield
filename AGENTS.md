@@ -74,8 +74,8 @@
   `_detect_libraries`'s import-root lookbehind is `(?<![a-z0-9_./])` so a generic root (the Python `crypto`
   key) can't match across a `.`/`/` path boundary (was mislabeling `javax.crypto` as PyCryptodome).
 - C3 lane (JS/TS + C/C++ + Rust + .NET detection): also extends `detect.py`, NOT a new scanner (the
-  parallel Ralph's `scanners/web_native_crypto_scan.py` is the OTHER branch's approach — do NOT adopt it;
-  it needs a second detection engine + imports a nonexistent `jvm_go_crypto_scan`). These four ecosystems
+  never-registered `jvm_go_crypto_scan` / `native_crypto_scan` / `web_native_crypto_scan` modules were that other
+  approach; they are DELETED — see the "Round 5" note at the end). These four ecosystems
   embed the algorithm in a STRING (Node `'aes-256-gcm'`, WebCrypto `{name:"AES-GCM"}`) or a TYPE/FN name
   (`Aes256Gcm`, `EVP_aes_256_gcm`, `RSACryptoServiceProvider`), NOT a receiver.method(fixed-key) — so C3
   is LANGUAGE-SCOPED literal lanes `{JS,C,RUST,DOTNET}_LITERALS` in `LITERAL_BY_LANG`, NO rule tables. Keys
@@ -180,7 +180,7 @@
 - CBOM DELIVERABLES GOTCHA F-05: `cbom_compliance["disclaimer"]`, `cbom_json.metadata.properties[regulatory:disclaimer]` carry the AIBOM/FDA/HIPAA disclaimer, `metadata.tools[0].name` is `clinithread-aibom`, and `metadata.timestamp` is a constant. NEVER print any of these in a deliverable; use the CBOM constants in `cbom_deliverable_text.py` (tool identity "DevSecShield CBOM engine") and take dates from `Scan.created_at`. Tests assert no "AI BOM"/FDA/HIPAA/clinithread substrings in any PDF.
 - CBOM DELIVERABLES GOTCHA F-07: the existing `dependencies=[Depends(limiter)]` in `scans.py`/`certin.py` is a parameter-default form and is a NO-OP (OpenAPI lists it as a query param `dependencies`). New routers must use decorator-level `dependencies=[Depends(...)]` (as `cbom_deliverables.py` does, with a token-hash key func).
 - CBOM DELIVERABLES GOTCHA F-09: a clean git worktree/CI build bakes the WRONG env and misses migrations: the four `.env` files are tracked and HEAD holds the old deactivated key (suffix `4I25`) while the main checkout holds the rotated key as uncommitted edits; `backend/_migrations/` is fully gitignored but `backend/Dockerfile` does `COPY _migrations /prod_database_migrations`, so populate it first: `rsync -a --exclude .env --exclude __pycache__ prod_database_migrations/ backend/_migrations/`. Never commit `.env`; `frontend/.env.local` / `.env.production.local` are ignored too.
-- CBOM DELIVERABLES GOTCHA R-07: `cert_scan` ignores `vendor/` (`certificate_scan.py` `_IGNORE_DIRS`), so a cert placed under `vendor/` is silently skipped. Keep seeds/fixtures for certificate scans out of `vendor/`.
+- CBOM DELIVERABLES GOTCHA R-07: every CBOM lane skips `vendor/` (and `dist/`, `build/`, `node_modules/`) unless the scan option `include_vendored` is on (`aibom.cbom.files`), so a cert placed under `vendor/` is skipped by default. Keep seeds/fixtures for certificate scans out of `vendor/`.
 - CBOM DELIVERABLES GOTCHA R-08: a manifest-only repo yields `results=[]` but still has library components in `cbom_json` (e.g. 18 in `synthetic-crypto-manifests`). That is a VALID in-scope scan: the aggregator reads libraries from `cbom_json` and counts the scan in scope; never treat empty `results` as out-of-scope or failed.
 
 ## CBOM configuration posture
@@ -200,3 +200,30 @@
 - `POSTURE_BLOCK_BYTES` is 8388608. `bomcheck.py` is not in the tree. The hatchling wheel still fails on duplicate `force-include` entries (K-1); do not edit `pyproject.toml` to hide that.
 - Zip upload still needs `AWS_ENDPOINT_URL_S3` for the product stack. The posture scanners themselves do not open a network connection.
 - Do not write `bedrock`, `anthropic`, `openai`, `get_llm`, or `chatbedrock` in new backend posture text, including comments.
+
+## CBOM code scan (round 5, WP2)
+- The three never-registered scanners are deleted. What only they had now lives in `detect.py`: Go `aes.NewCipher` →
+  `cipher.NewGCM(block)` mode binding through the block variable (never across a `func`), JCA
+  `KeyPairGenerator`/`KeyGenerator` `.initialize(n)` size binding, JCA transformation padding, Bouncy Castle
+  `*BlockCipher(new *Engine())` modes, .NET `aes.Mode = CipherMode.X` / `KeySize` bound to their instance, Node
+  multi-line `modulusLength`/`namedCurve`, OpenSSL `EVP_aes_128_ecb` / Rust `Aes256Gcm` modes. One call is one asset:
+  a sized lane key (`aes-256`) absorbs the bare family key (`aes`) on the same line (`_merge_sized_into_coarse`).
+  Receiver/argument-bound matches carry `crypto:detectedBy` + `crypto:detectionMethod=call-expr` (the AST lane writes
+  `ast`); literal-lane ecosystems (JS/C/Rust/.NET) carry none. `ScanContext.reserved_refs` is gone (its only writer was
+  deleted). `cbom_scanner_registry.json` lists `unregistered_scanner_modules: []`: a new unregistered `*_scan.py` fails
+  `test_cbom_deliverables_contract`.
+- Files: every CBOM lane reads through ONE walk, `aibom.cbom.files.FileWalk` on `CbomScanContext.file_walk` (use
+  `file_walk(ctx)`): never follows or yields a symbolic link, `O_NOFOLLOW` reads of regular files only, one skip set
+  (`SKIP_DIRS`; posture's `safeio.SKIP_DIRS` is derived from it), vendored/build output (`VENDORED_DIRS`) only with
+  `scan_crypto(..., include_vendored=True)`. Skipped links / oversized / binary / vendored dirs become
+  `crypto:coverage:*` scan properties. Never add a per-scanner `_IGNORE_DIRS` or `rglob` again.
+- Export: `normalize_crypto` adds `zs:finding_code` (one per code) and `zs:impact` (`Info` for clean inventory) to
+  every crypto asset / crypto library / posture fact in `cbom_json`; the renderer stays flag-free. Library and fact
+  components carry `evidence.occurrences`. Certificate-synthesized algorithms carry `crypto:derived=true` +
+  `crypto:derivedFrom`. A posture fact's line is the attribute that decides it (`storage_encrypted = false`), not the
+  block start.
+- Clean rows: `normalize._impact_for` returns None (and risk 0.0) for a row with no finding code; a QUANTUM_VULNERABLE
+  row keeps Medium. Backend consumers decide with `backend/utilities/cbom_sources/cbom_rows.is_finding(row)` (legacy
+  rows without `finding_codes` stay findings).
+- Output changes regenerate `tests/fixtures/frozen_goldens/{base_commit_digests.json,adapter_signature.txt}` with
+  `tests/support/make_goldens.py` (deliberate golden update).

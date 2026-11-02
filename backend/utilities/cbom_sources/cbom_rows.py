@@ -36,4 +36,23 @@ def display_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-__all__ = ["display_row", "WEAK_EXTRA_CODES"]
+def is_finding(row: dict[str, Any]) -> bool:
+    """Whether a CBOM code-scan row is a FINDING (counted on dashboards, reports and tickets) or clean inventory.
+
+    The engine now leaves a row with no finding code without an impact (an AES-GCM or Ed25519 a CBOM must list is
+    not a Low finding). One rule, decided when rows are read, so stored scans are never rewritten:
+
+    * a legacy row stored before ``finding_codes`` existed keeps its impact and counts as a finding;
+    * a row with at least one finding code is a finding (QUANTUM_VULNERABLE included);
+    * a row with an empty code list is a finding only when it is still marked weak or quantum-vulnerable.
+    """
+    if not isinstance(row, dict):
+        return False
+    if "finding_codes" not in row:
+        return True
+    if any(isinstance(c, str) and c for c in (row.get("finding_codes") or [])):
+        return True
+    return bool(row.get("weak") is True or row.get("quantum_vulnerable") is True)
+
+
+__all__ = ["display_row", "is_finding", "WEAK_EXTRA_CODES"]

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from aibom.cbom.files import skipped_dirs
 from aibom.cbom.posture.limits import (
     BYTES_PER_CONFIG_FILE,
     BYTES_PER_LINE,
@@ -16,26 +17,9 @@ from aibom.cbom.posture.limits import (
 )
 from aibom.cbom.rules import LANGUAGE_EXTENSIONS
 
-SKIP_DIRS = frozenset(
-    {
-        ".git",
-        ".terraform",
-        ".terragrunt-cache",
-        "node_modules",
-        "vendor",
-        ".venv",
-        "venv",
-        "site-packages",
-        "__pycache__",
-        "dist",
-        "build",
-        "target",
-        "cdk.out",
-        ".serverless",
-        ".aws-sam",
-        ".next",
-    }
-)
+# One skip-directory rule for every lane (``aibom.cbom.files``); this is the default set (vendored/build output
+# left out), kept here for the callers that estimate a scan's size.
+SKIP_DIRS = skipped_dirs(include_vendored=False)
 
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
@@ -203,8 +187,9 @@ def _sort_key(name: str, is_dir: bool) -> bytes:
     return raw + (b"/" if is_dir else b"")
 
 
-def iter_entries(root: Path):
-    """Yield regular-file candidates as (relative path, DirEntry)."""
+def iter_entries(root: Path, skip: frozenset[str] = SKIP_DIRS):
+    """Yield regular-file candidates as (relative path, DirEntry). Links are yielded (never followed) so the
+    caller can report them as skipped special files."""
     pending = [root]
     while pending:
         current = pending.pop(0)
@@ -218,7 +203,7 @@ def iter_entries(root: Path):
         entries.sort(key=sort_key)
         for entry in entries:
             if entry.is_dir(follow_symlinks=False):
-                if entry.name in SKIP_DIRS:
+                if entry.name in skip:
                     continue
                 pending.append(Path(entry.path))
                 continue

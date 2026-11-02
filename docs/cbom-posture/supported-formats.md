@@ -33,17 +33,26 @@ File names select a class. The coverage table then names the native types the ve
 
 ## Skipped directories
 
-These directory names are skipped at any depth.
+These directory names are skipped at any depth, by every lane of a code scan (one shared walk that never follows a
+symbolic link). `build`, `dist`, `node_modules` and `vendor` are third-party or build output: the scan option
+"Scan vendored and build directories" reads them too. What a scan left out is reported as `crypto:coverage:*`
+properties on the CBOM.
 
 <!-- table:skip-dirs -->
 | name |
 | --- |
 | .aws-sam |
 | .git |
+| .hg |
+| .mypy_cache |
 | .next |
+| .nuxt |
+| .pytest_cache |
 | .serverless |
+| .svn |
 | .terraform |
 | .terragrunt-cache |
+| .tox |
 | .venv |
 | __pycache__ |
 | build |

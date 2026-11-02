@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from aibom.cbom.advisories import AdvisoryHit, find_vulnerable
+from aibom.cbom.files import file_walk
 from aibom.cbom.gate import VULNERABLE_CRYPTO_LIBRARY
 from aibom.cbom.registry import cbom_register
 from aibom.model.component import FrameworkComponent
@@ -29,7 +30,7 @@ class CryptoAdvisoryScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        for hit in find_vulnerable(ctx.root):
+        for hit in find_vulnerable(ctx.root, file_walk(ctx)):
             ref = hit.ref
             if ctx.has_ref(ref):
                 continue

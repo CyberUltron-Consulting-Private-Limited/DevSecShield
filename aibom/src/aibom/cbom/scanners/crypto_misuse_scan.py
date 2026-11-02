@@ -25,20 +25,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aibom.cbom.files import FileWalk, file_walk
 from aibom.cbom.misuse import detect_material_misuse
 from aibom.cbom.registry import cbom_register
-from aibom.cbom.rules import read_source, source_language
+from aibom.cbom.rules import source_language
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
-
-_IGNORE_DIRS = frozenset(
-    {
-        ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
-        "dist", "build", ".next", ".nuxt", "target", "vendor", ".tox",
-        ".mypy_cache", ".pytest_cache",
-    }
-)
-_MAX_BYTES = 2_000_000
 
 # Cipher primitives an IV / key secures — used to attach the `used_by` edge.
 _CIPHER_PRIMITIVES = frozenset({"block-cipher", "stream-cipher"})
@@ -50,18 +42,8 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
 
 
-def _iter_source_files(root: Path):
-    for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
-            continue
-        if not p.is_file() or source_language(p) is None:
-            continue
-        try:
-            if p.stat().st_size > _MAX_BYTES:
-                continue
-        except OSError:
-            continue
-        yield p
+def _iter_source_files(walk: FileWalk) -> list[Path]:
+    return walk.files(lambda p: source_language(p) is not None)
 
 
 @cbom_register
@@ -71,11 +53,11 @@ class CryptoMisuseScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        for path in _iter_source_files(ctx.root):
-            rel = path.relative_to(ctx.root).as_posix()
-            try:
-                text = read_source(path)
-            except OSError:
+        walk = file_walk(ctx)
+        for path in _iter_source_files(walk):
+            rel = walk.rel(path)
+            text = walk.read_text(path)
+            if text is None:
                 continue
             lang = source_language(path)
             cipher_refs = self._cipher_refs_in(ctx, rel)

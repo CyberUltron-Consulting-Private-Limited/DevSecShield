@@ -67,6 +67,8 @@ export interface StartCBOMScanData {
   zip_file_used: boolean;
   cbom_file_used: boolean;
   scan_binaries: boolean;
+  /** code scans: also read vendor/, dist/, build/ and node_modules/ (default false) */
+  include_vendored?: boolean;
 }
 
 /** AI BOM scan input: exactly one of repo_context, zip_file_used, or ai_bom_file_used (matches backend StartAiBomScanData) */

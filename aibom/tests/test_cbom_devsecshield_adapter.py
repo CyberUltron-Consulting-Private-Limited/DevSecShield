@@ -75,8 +75,12 @@ def test_every_finding_carries_host_dashboard_keys() -> None:
         missing = required - row.keys()
         assert not missing, f"finding row missing host keys: {missing}"
         assert row["algorithm_name"] == row["title"]
-        # impact is one of the dashboard's recognized bands
-        assert row["impact"] in {"Critical", "High", "Medium", "Low"}
+        # a finding's impact is one of the dashboard's recognized bands; a clean
+        # inventory row (no finding code) has none
+        if row["finding_codes"]:
+            assert row["impact"] in {"Critical", "High", "Medium", "Low"}
+        else:
+            assert row["impact"] is None
 
 
 def test_dashboard_semantics_are_meaningful() -> None:

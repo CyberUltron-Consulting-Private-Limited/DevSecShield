@@ -29,20 +29,12 @@ import base64
 import re
 from pathlib import Path
 
+from aibom.cbom.files import FileWalk, file_walk
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import LANGUAGE_EXTENSIONS
 from aibom.cbom.x509 import Certificate, parse_certificate
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
-
-_IGNORE_DIRS = frozenset(
-    {
-        ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
-        "dist", "build", ".next", ".nuxt", "target", "vendor", ".tox",
-        ".mypy_cache", ".pytest_cache",
-    }
-)
-_MAX_BYTES = 2_000_000
 
 # Certificate / key container file extensions.
 # ``.ca-bundle`` matches cbomkit-theia certificate-plugin enumeration (v1.1.2).
@@ -113,20 +105,8 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
 
 
-def _iter_files(root: Path, exts: frozenset[str] | None):
-    for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
-            continue
-        if not p.is_file():
-            continue
-        if exts is not None and p.suffix.lower() not in exts:
-            continue
-        try:
-            if p.stat().st_size > _MAX_BYTES:
-                continue
-        except OSError:
-            continue
-        yield p
+def _iter_files(walk: FileWalk, exts: frozenset[str] | None) -> list[Path]:
+    return walk.files(lambda p: exts is None or p.suffix.lower() in exts)
 
 
 def _decode_cert(b64body: str) -> Certificate | None:
@@ -157,11 +137,11 @@ class CertificateMaterialScanner(Scanner):
     def _scan_cert_files(
         self, ctx: ScanContext, seen: set[str], chain: list
     ) -> None:
-        for path in _iter_files(ctx.root, _CERT_EXTS):
-            rel = path.relative_to(ctx.root).as_posix()
-            try:
-                raw = path.read_bytes()
-            except OSError:
+        walk = file_walk(ctx)
+        for path in _iter_files(walk, _CERT_EXTS):
+            rel = walk.rel(path)
+            raw = walk.read_bytes(path)
+            if raw is None:
                 continue
             if b"-----BEGIN" in raw:
                 text = raw.decode("utf-8", "ignore")
@@ -187,11 +167,11 @@ class CertificateMaterialScanner(Scanner):
         format props so the chart can show keystore presence without fake
         ``notValidAfter`` claims.
         """
-        for path in _iter_files(ctx.root, _KEYSTORE_EXTS):
-            rel = path.relative_to(ctx.root).as_posix()
-            try:
-                raw = path.read_bytes()
-            except OSError:
+        walk = file_walk(ctx)
+        for path in _iter_files(walk, _KEYSTORE_EXTS):
+            rel = walk.rel(path)
+            raw = walk.read_bytes(path)
+            if raw is None:
                 continue
             if not raw:
                 continue
@@ -257,15 +237,15 @@ class CertificateMaterialScanner(Scanner):
     def _scan_embedded_material(
         self, ctx: ScanContext, seen: set[str], chain: list
     ) -> None:
-        for path in _iter_files(ctx.root, None):
+        walk = file_walk(ctx)
+        for path in _iter_files(walk, None):
             if path.suffix.lower() in _CERT_EXTS:
                 continue  # already handled as a cert/key file
             if path.suffix.lower() not in LANGUAGE_EXTENSIONS:
                 continue
-            rel = path.relative_to(ctx.root).as_posix()
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+            rel = walk.rel(path)
+            text = walk.read_text(path)
+            if text is None:
                 continue
             # Inline PEM blocks (hardcoded private key OR embedded certificate).
             for label, body in _PEM_BLOCK.findall(text):
