@@ -27,6 +27,7 @@ from pathlib import Path
 
 from aibom.cbom.files import FileWalk, file_walk
 from aibom.cbom.misuse import detect_material_misuse
+from aibom.cbom.project import project_index
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import source_language
 from aibom.model.component import CryptoAssetComponent
@@ -54,6 +55,7 @@ class CryptoMisuseScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         walk = file_walk(ctx)
+        project = project_index(ctx)
         for path in _iter_source_files(walk):
             rel = walk.rel(path)
             text = walk.read_text(path)
@@ -61,8 +63,32 @@ class CryptoMisuseScanner(Scanner):
                 continue
             lang = source_language(path)
             cipher_refs = self._cipher_refs_in(ctx, rel)
-            for fact in detect_material_misuse(text, lang):
-                self._emit(ctx, fact, rel, cipher_refs)
+
+            def lookup(key: str, file_name: str | None, _rel: str = rel):
+                return project.config_value(key, near=_rel, file_name=file_name)
+
+            for fact in detect_material_misuse(text, lang, lookup):
+                ref = self._emit(ctx, fact, rel, cipher_refs)
+                if fact.derived_with:
+                    self._mark_derived(ctx, rel, text, lang, fact, ref)
+
+    @staticmethod
+    def _mark_derived(ctx: ScanContext, rel: str, text: str, lang: str, fact, material_ref: str) -> None:
+        """The hash a hardcoded key is derived through (``MD5(constant)``) is that key's derivation, not a usage
+        of its own: when it is the file's only use of that hash, its row says so (``crypto:derived``) and carries
+        no finding; the key row carries the finding."""
+        from aibom.cbom.detect import detect_crypto
+        from aibom.cbom.rules import ALGORITHM_NORMALIZE
+
+        lines = {d.line_no for d in detect_crypto(text, lang)
+                 if ALGORITHM_NORMALIZE.get(d.key, d.key.upper()) == fact.derived_with}
+        if lines - {fact.line}:
+            return
+        for c in ctx.components:
+            props = c.properties or {}
+            if c.kind == "crypto_asset" and props.get("discovery:source") == rel and \
+                    props.get("crypto:assetType") == "algorithm" and c.name == fact.derived_with:
+                c.properties = {**props, "crypto:derived": "true", "crypto:derivedFrom": material_ref}
 
     @staticmethod
     def _cipher_refs_in(ctx: ScanContext, rel: str) -> list[str]:
@@ -82,7 +108,7 @@ class CryptoMisuseScanner(Scanner):
 
     def _emit(
         self, ctx: ScanContext, fact, rel: str, cipher_refs: list[str]
-    ) -> None:
+    ) -> str:
         var = fact.var or "inline"
         ref = (
             f"crypto-material-misuse-{fact.kind}-{_slug(var)}"
@@ -104,6 +130,10 @@ class CryptoMisuseScanner(Scanner):
             props["crypto:staticIv"] = "true"
         if fact.reused:
             props["crypto:reused"] = "true"
+        if getattr(fact, "derived_with", None):
+            props["crypto:derivedWith"] = fact.derived_with
+        if getattr(fact, "defined_at", None):
+            props["crypto:definedAt"] = fact.defined_at
         name = f"{fact.kind} ({var}, {Path(rel).name})"
         ctx.add_component(
             CryptoAssetComponent(bom_ref=ref, name=name, properties=props)
@@ -111,6 +141,7 @@ class CryptoMisuseScanner(Scanner):
         # Link the misused material to the cipher(s) it secures in this file.
         for cipher_ref in cipher_refs:
             ctx.add_edge(ref, "used_by", cipher_ref)
+        return ref
 
 
 __all__ = ["CryptoMisuseScanner"]

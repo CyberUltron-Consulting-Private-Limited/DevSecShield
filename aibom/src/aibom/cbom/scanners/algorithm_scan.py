@@ -27,8 +27,10 @@ import re
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-from aibom.cbom.detect import detect_crypto
+from aibom.cbom.detect import _strip_line_comment, detect_crypto, strip_noncode
 from aibom.cbom.files import FileWalk, file_walk
+from aibom.cbom.project import ProjectIndex, project_index
+from aibom.cbom.purpose import hash_purpose
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import (
     ALGORITHM_NORMALIZE,
@@ -111,10 +113,17 @@ def _display_name(
 
 class _Asset:
     __slots__ = ("key", "name", "key_size", "mode", "curve", "padding",
-                 "operation", "parameter", "info", "location", "library")
+                 "operation", "parameter", "info", "location", "library",
+                 "lines", "own_lines", "derived_from", "inner_digest", "purposes", "inferred")
 
     def __init__(self, key, name, key_size, mode, curve, padding, operation,
                  parameter, info, location, library=None):
+        self.inferred: bool | None = None  # every sighting inferred from configuration (see Detection.inferred)
+        self.lines: list[int] = []
+        self.own_lines = 0  # lines where the asset is used on its own (not only as a composite's parameter)
+        self.derived_from: str | None = None  # display name of the composite (same file) it is a parameter of
+        self.inner_digest: str | None = None  # a composite's hash parameter (``SHA1withRSA`` -> SHA-1)
+        self.purposes: list[str | None] = []  # per line, the non-security purpose of a hash (None = security)
         self.key = key
         self.name = name
         self.key_size = key_size
@@ -139,7 +148,9 @@ class _Asset:
         self.library = self.library or library
 
 
-def _detect_assets(root: Path, walk: FileWalk | None = None) -> list[_Asset]:
+def _detect_assets(
+    root: Path, walk: FileWalk | None = None, project: ProjectIndex | None = None
+) -> list[_Asset]:
     """Detect concrete algorithm usages (one per distinct name+file).
 
     Detection facts come from the clean-room :func:`detect_crypto` rule engine
@@ -155,7 +166,11 @@ def _detect_assets(root: Path, walk: FileWalk | None = None) -> list[_Asset]:
         text = walk.read_text(path)
         if text is None:
             continue
-        for det in detect_crypto(text, lang):
+        external = project.scope_for(rel, lang, text) if project is not None else None
+        code_lines: list[str] | None = None
+        at_line: dict[tuple[int, str], str] = {}  # (line, key) -> display name, to find a composite
+        inner: list[tuple[_Asset, int, str]] = []
+        for det in detect_crypto(text, lang, external):
             refined = _refine_key(det.key, det.key_size)
             info = algo_info(refined) or {}
             resolved_ks = det.key_size or info.get("key_size")
@@ -172,7 +187,58 @@ def _detect_assets(root: Path, walk: FileWalk | None = None) -> list[_Asset]:
                 )
             else:
                 seen[ident].fill_from(det.curve, det.padding, det.operation, library)
+            asset = seen[ident]
+            asset.lines.append(det.line_no)
+            asset.inferred = det.inferred if asset.inferred is None else (asset.inferred and det.inferred)
+            at_line.setdefault((det.line_no, det.key), name)
+            if det.inner_of:
+                inner.append((asset, det.line_no, det.inner_of))
+            else:
+                asset.own_lines += 1
+            if info.get("primitive") == "hash" and refined in _PURPOSE_HASHES:
+                if code_lines is None:
+                    code_lines = [_strip_line_comment(ln, lang) for ln in strip_noncode(text).split("\n")]
+                asset.purposes.append(hash_purpose(code_lines, det.line_no, lang))
+        for asset, line_no, composite_key in inner:
+            composite = at_line.get((line_no, composite_key))
+            parent = seen.get((composite, rel)) if composite else None
+            if parent is None:
+                continue
+            parent.inner_digest = parent.inner_digest or asset.name
+            if asset.own_lines == 0 and asset.derived_from is None:
+                asset.derived_from = composite
+    _add_inner_hashes(seen)
     return sorted(seen.values(), key=lambda a: (a.name, a.location))
+
+
+# Hashes whose weakness is collision resistance: a non-security use (cache key, checksum) is not a finding.
+_PURPOSE_HASHES = frozenset({"md5", "md4", "sha1"})
+# The hash inside a composite whose name carries it: HMAC-SHA256 / PBKDF2-HMAC-SHA512 / Ed25519 (SHA-512, RFC 8032).
+_NAMED_INNER = re.compile(r"^(?:PBKDF2-)?HMAC-(SHA-?1|SHA-?224|SHA-?256|SHA-?384|SHA-?512|MD5)$", re.I)
+_INNER_KEYS = {"sha1": "sha1", "sha224": "sha256", "sha256": "sha256", "sha384": "sha384", "sha512": "sha512",
+               "md5": "md5"}
+
+
+def _add_inner_hashes(seen: dict[tuple[str, str], _Asset]) -> None:
+    """A composite that names its hash (HMAC-SHA256, PBKDF2-HMAC-SHA512, Ed25519 -> SHA-512) lists that hash as a
+    derived component at the composite's lines, unless the file already inventories the hash itself."""
+    for (name, rel), asset in list(seen.items()):
+        if asset.derived_from is not None:
+            continue
+        m = _NAMED_INNER.match(name)
+        key = _INNER_KEYS.get(m.group(1).replace("-", "").lower()) if m else ("sha512" if asset.key == "ed25519"
+                                                                              else None)
+        if key is None:
+            continue
+        info = algo_info(key) or {}
+        inner_name = ALGORITHM_NORMALIZE.get(key, key.upper())
+        asset.inner_digest = asset.inner_digest or inner_name
+        if (inner_name, rel) in seen:
+            continue
+        derived = _Asset(key, inner_name, None, None, None, None, None, None, info, rel)
+        derived.lines = list(asset.lines)
+        derived.derived_from = name
+        seen[(inner_name, rel)] = derived
 
 
 # --------------------------------------------------------------------------- #
@@ -359,6 +425,21 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+def _context_props(asset: _Asset) -> dict[str, str]:
+    """What the whole file says about an asset: the hash a composite is built on, and a hash used only to name or
+    check content (every line non-security; see :mod:`aibom.cbom.purpose`)."""
+    props: dict[str, str] = {}
+    if asset.inner_digest:
+        props["crypto:innerDigest"] = asset.inner_digest
+    if asset.purposes and all(asset.purposes):
+        props["crypto:nonSecurityUse"] = "true"
+        props["crypto:purpose"] = sorted({p for p in asset.purposes if p})[0]
+    if asset.inferred:
+        props["crypto:confidence"] = "medium"
+        props["crypto:resolution"] = "inferred: a field default or the module's one configured transformation"
+    return props
+
+
 @cbom_register
 class CryptoAlgorithmScanner(Scanner):
     name = "crypto_algorithm"
@@ -379,7 +460,7 @@ class CryptoAlgorithmScanner(Scanner):
                 )
             )
 
-        for asset in _detect_assets(ctx.root, walk):
+        for asset in _detect_assets(ctx.root, walk, project_index(ctx)):
             # The AST scanner (order 8) owns Python algorithm detection with
             # argument binding; defer to any ref it already emitted so the regex
             # pass only adds usages the AST could not see (e.g. an algorithm named
@@ -387,6 +468,12 @@ class CryptoAlgorithmScanner(Scanner):
             # inventory duplicate-free *before* the flag/PQC scanners run.
             ast_ref = f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}"
             if ctx.has_ref(ast_ref):
+                # the AST row is the same usage: it takes what only the whole-file view knows
+                extra = _context_props(asset)
+                if extra:
+                    for comp in ctx.components:
+                        if comp.bom_ref == ast_ref:
+                            comp.properties = {**(comp.properties or {}), **extra}
                 continue
             props: dict[str, str] = {
                 "crypto:assetType": "algorithm",
@@ -415,6 +502,14 @@ class CryptoAlgorithmScanner(Scanner):
                 # call-site provenance: the API call that fixed the algorithm (the AST lane writes "ast")
                 props["crypto:detectedBy"] = asset.library
                 props["crypto:detectionMethod"] = "call-expr"
+            props.update(_context_props(asset))
+            if asset.derived_from is not None:
+                props["crypto:derived"] = "true"
+                props["crypto:derivedFrom"] = f"crypto-algo-{_slug(asset.derived_from)}-{_slug(asset.location)}"
+                if asset.lines:  # located at the composite's line(s): its name alone may not be on them
+                    lines = sorted(set(asset.lines))
+                    props["crypto:line"] = str(lines[0])
+                    props["crypto:occurrences"] = ",".join(str(n) for n in lines[:25])
             ctx.add_component(
                 CryptoAssetComponent(
                     bom_ref=f"crypto-algo-{_slug(asset.name)}-{_slug(asset.location)}",

@@ -839,7 +839,19 @@ def _occurrences(props: dict[str, str]) -> list[dict[str, Any]]:
         return []
     lines = [int(x) for x in (props.get("crypto:occurrences") or props.get("crypto:line") or "").split(",")
              if x.strip().isdigit() and int(x) > 0]
-    return [{"location": src, "line": n} for n in lines[:_MAX_EVIDENCE_OCCURRENCES]]
+    out: list[dict[str, Any]] = [{"location": src, "line": n} for n in lines[:_MAX_EVIDENCE_OCCURRENCES]]
+    if not out:
+        return out
+    # Where else the same usage shows: the constant of another file that spells the algorithm
+    # (``crypto:definedAt``) and the other modules that call the helper using it (``crypto:calledFrom``).
+    for prop, context in (("crypto:definedAt", "value defined here"),
+                          ("crypto:calledFrom", "called from here")):
+        for item in (props.get(prop) or "").split(","):
+            path, _, line = item.strip().rpartition(":")
+            if path and line.isdigit() and int(line) > 0 and _repo_relative(path) and \
+                    len(out) < _MAX_EVIDENCE_OCCURRENCES:
+                out.append({"location": path, "line": int(line), "additionalContext": context})
+    return out
 
 
 def _fact_occurrences(props: dict[str, str]) -> list[dict[str, Any]]:

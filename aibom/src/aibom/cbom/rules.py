@@ -58,6 +58,8 @@ CODE_SCAN_EXTENSIONS: dict[str, str] = {
     ".sql": "sql",
     ".sh": "shell",
     ".bash": "shell",
+    # Jupyter notebooks are read as their code cells (aibom.cbom.notebook)
+    ".ipynb": "python",
 }
 
 # Files whose language is not in their suffix: Dockerfiles (``RUN openssl enc …`` lines are shell) and
@@ -164,6 +166,9 @@ STANDARD_ALGORITHMS: dict[str, dict] = {
                  "quantum_vulnerable": False},
     "chacha20-poly1305": {"primitive": "ae", "strength": _STRONG,
                           "quantum_vulnerable": False},
+    # Fernet (cryptography.io spec): AES-128-CBC + HMAC-SHA256 under one 256-bit key (128-bit signing + 128-bit
+    # encryption half).
+    "fernet": {"primitive": "ae", "strength": _STRONG, "quantum_vulnerable": False, "key_size": 256},
     "rsa": {"primitive": "pke", "strength": _STRONG, "quantum_vulnerable": True},
     "rsa-2048": {"primitive": "pke", "strength": _STRONG,
                  "quantum_vulnerable": True, "key_size": 2048},
@@ -241,7 +246,7 @@ ALGORITHM_NORMALIZE: dict[str, str] = {
     "blake2b": "BLAKE2b", "blake2s": "BLAKE2s",
     "aes": "AES", "aes-128": "AES-128", "aes-192": "AES-192", "aes-256": "AES-256",
     "des": "DES", "3des": "3DES", "blowfish": "Blowfish", "rc2": "RC2", "rc4": "RC4",
-    "chacha20": "ChaCha20", "chacha20-poly1305": "ChaCha20-Poly1305",
+    "chacha20": "ChaCha20", "chacha20-poly1305": "ChaCha20-Poly1305", "fernet": "Fernet",
     "rsa": "RSA", "rsa-512": "RSA-512", "rsa-1024": "RSA-1024",
     "rsa-2048": "RSA-2048", "rsa-4096": "RSA-4096",
     "ecdsa": "ECDSA", "ed25519": "Ed25519", "ed448": "Ed448", "x25519": "X25519",
@@ -287,7 +292,7 @@ LITERAL_ALGO_ALIASES: dict[str, str] = {
     "aesgcm": "aes-256", "rijndael": "aes",
     "des": "des", "3des": "3des", "desede": "3des", "tripledes": "3des",
     "rc4": "rc4", "arc4": "rc4", "rc2": "rc2", "blowfish": "blowfish",
-    "chacha20": "chacha20", "chacha20poly1305": "chacha20-poly1305",
+    "chacha20": "chacha20", "chacha20poly1305": "chacha20-poly1305", "fernet": "fernet",
     "poly1305": "poly1305",
     "rsa": "rsa", "rsa512": "rsa-512", "rsa1024": "rsa-1024",
     "rsa2048": "rsa-2048", "rsa4096": "rsa-4096",

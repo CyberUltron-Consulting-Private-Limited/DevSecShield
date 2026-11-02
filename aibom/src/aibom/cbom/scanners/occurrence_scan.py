@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from aibom.cbom.occurrences import annotate
+from aibom.cbom.project import project_index
 from aibom.cbom.registry import cbom_register
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -18,7 +19,7 @@ class OccurrenceScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        stats = annotate(ctx.root, ctx.components)
+        stats = annotate(ctx.root, ctx.components, project=project_index(ctx))
         log.info("cbom occurrences: located=%(located)d unlocated=%(unlocated)d unreadable=%(unreadable)d", stats)
 
 

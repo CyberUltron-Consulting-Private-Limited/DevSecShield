@@ -22,6 +22,16 @@ import stat
 from collections.abc import Callable
 from pathlib import Path
 
+from aibom.cbom.archives import (
+    ARCHIVE_SUFFIXES,
+    KEY_SUFFIXES,
+    MAX_ARCHIVE_BYTES,
+    ArchiveBudget,
+    VirtualFile,
+    archive_members,
+)
+from aibom.cbom.notebook import MAX_NOTEBOOK_BYTES, is_notebook, virtual_source
+
 #: Directories no lane ever enters: VCS metadata, caches, virtual environments and generated IaC state.
 SKIP_DIRS: frozenset[str] = frozenset(
     {
@@ -87,6 +97,21 @@ def decode_text(raw: bytes) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def is_vendored(rel: str) -> bool:
+    """A repository path inside third-party or build output (``vendor/``, ``dist/``, ``build/``,
+    ``node_modules/``)."""
+    return any(part in VENDORED_DIRS for part in rel.split("!", 1)[0].split("/")[:-1])
+
+
+def read_notebook(path: Path) -> str | None:
+    """The virtual source of a Jupyter notebook (code cells + text outputs), or None."""
+    raw = read_bytes(path, MAX_NOTEBOOK_BYTES)
+    if raw is None:
+        return None
+    vs = virtual_source(raw)
+    return vs[0] if vs is not None else None
+
+
 def looks_binary(raw: bytes) -> bool:
     return not raw.startswith((b"\xff\xfe", b"\xfe\xff")) and b"\x00" in raw[:_NUL_PROBE]
 
@@ -102,6 +127,29 @@ class FileWalk:
         self.skipped_oversized: set[str] = set()
         self.skipped_binary: set[str] = set()
         self.skipped_vendored: set[str] = set()
+        # Git history of the tree's own ``.git``: None = read it unless it is a shallow clone, True = read it
+        # even when shallow (history depth opted in), False = never.
+        self.scan_history: bool | None = None
+        self._virtual: list[VirtualFile] | None = None
+        self.archive_budget = ArchiveBudget()
+        self.history_coverage: dict[str, str] = {}
+
+    def virtual_files(self) -> list[VirtualFile]:
+        """Key / certificate files that are not on disk under their own path: members of archives in the tree
+        (``outer.zip!inner/key.pem``, see :mod:`aibom.cbom.archives`) and blobs only in git history
+        (:mod:`aibom.cbom.githistory`). Read once per scan."""
+        if self._virtual is None:
+            from aibom.cbom.githistory import history_key_files
+
+            archives = self.files(lambda p: p.name.lower().endswith(ARCHIVE_SUFFIXES), max_bytes=MAX_ARCHIVE_BYTES)
+            found = archive_members(self.root, archives, self.archive_budget)
+            if self.scan_history is not False:
+                tree = {self.rel(p): p for p in self.files(lambda p: p.name.lower().endswith(KEY_SUFFIXES))}
+                history, self.history_coverage = history_key_files(self.root, tree, force=bool(self.scan_history))
+                skip = skipped_dirs(self.include_vendored)  # the walk's own rule applies to history paths too
+                found.extend(h for h in history if not skip.intersection(h.rel.split("/")[:-1]))
+            self._virtual = found
+        return self._virtual
 
     def _walk(self) -> list[tuple[Path, int]]:
         skip = skipped_dirs(self.include_vendored)
@@ -122,7 +170,9 @@ class FileWalk:
                     if entry.is_dir(follow_symlinks=False):
                         if entry.name in SKIP_DIRS:
                             continue
-                        if entry.name in skip:
+                        if entry.name in skip or Path(current).name == "node_modules":
+                            # opted in, ``node_modules/`` still contributes only its loose files: the packages
+                            # under it are dependencies (the dependency lane's subject), not this project's code
                             self.skipped_vendored.add(rel)
                             continue
                         pending.append(Path(entry.path))
@@ -146,7 +196,8 @@ class FileWalk:
         for path, size in self._files:
             if keep is not None and not keep(path):
                 continue
-            if size > max_bytes:
+            # a notebook's JSON carries its images; its size limit applies to the code read from it (read_text)
+            if size > (max(max_bytes, MAX_NOTEBOOK_BYTES) if is_notebook(path.name) else max_bytes):
                 self.skipped_oversized.add(self.rel(path))
                 continue
             out.append(path)
@@ -159,7 +210,14 @@ class FileWalk:
         return read_bytes(path, max_bytes)
 
     def read_text(self, path: Path, max_bytes: int = MAX_FILE_BYTES) -> str | None:
-        """Decoded source text, or None when the file is unreadable or binary (counted as skipped)."""
+        """Decoded source text, or None when the file is unreadable or binary (counted as skipped). A notebook
+        reads as its virtual source (:mod:`aibom.cbom.notebook`)."""
+        if is_notebook(path.name):
+            text = read_notebook(path)
+            if text is not None and len(text.encode("utf-8", "ignore")) > max_bytes:
+                self.skipped_oversized.add(self.rel(path))
+                return None
+            return text
         raw = read_bytes(path, max_bytes)
         if raw is None:
             return None
@@ -181,6 +239,8 @@ class FileWalk:
                 out[name] = str(len(items))
         if self.include_vendored:
             out["crypto:coverage:vendoredIncluded"] = "true"
+        out.update(self.archive_budget.coverage())
+        out.update(self.history_coverage)
         return out
 
 
@@ -200,7 +260,9 @@ __all__ = [
     "FileWalk",
     "decode_text",
     "file_walk",
+    "is_vendored",
     "looks_binary",
     "read_bytes",
+    "read_notebook",
     "skipped_dirs",
 ]

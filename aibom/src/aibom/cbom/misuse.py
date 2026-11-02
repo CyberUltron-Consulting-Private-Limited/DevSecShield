@@ -33,7 +33,9 @@ those props back into flags; the C8 scorer weights them. No copied OSS source.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 # --------------------------------------------------------------------------- #
 # Crypto-material variable-name vocabulary -> CycloneDX relatedCryptoMaterial
@@ -126,7 +128,8 @@ _FUNC_HEAD_RE = re.compile(
     r"|(?:(?:private|public|internal|override)\s+)*fun\s+(?P<kt>[A-Za-z_]\w*)\s*\("      # Kotlin
     r"|(?:(?:public|private|protected|internal|static|final|synchronized|override|virtual|async|unsafe)\s+)*"
     r"(?!(?:return|new|throw|else|await|yield|case|typeof|delete|echo|print|goto|if|while|for|switch|catch)\b)"
-    r"[A-Za-z_][\w<>\[\],.?*]*\s+\**(?P<typed>[A-Za-z_]\w*)\s*\([^;=]*$"            # Java / C# / C / Kotlin
+    r"[A-Za-z_][\w<>\[\],.?*]*\s+\**(?P<typed>[A-Za-z_]\w*)\s*\("
+    r"(?:[^;=]*$|[^;={}]*\)\s*(?:throws\s+[\w.,\s]+)?\{)"                               # Java / C# / C / Kotlin
     r")"
 )
 # Material words a function name ENDS with (camelCase / snake_case words), and the material kind each produces.
@@ -146,6 +149,8 @@ _WORD_SPLIT = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 
 
 def _function_material_kind(name: str) -> str | None:
+    if name in ("k", "K"):  # ``def k(): return bytes.fromhex('...')`` (only literal-returning lanes read it)
+        return "secret-key"
     words = [w.lower() for w in _WORD_SPLIT.findall(name.rstrip("?!"))]
     if not words:
         return None
@@ -217,7 +222,7 @@ def _returned_rng_lines(lines: list[str], body: range) -> list[tuple[int, str]]:
 # digit) — a plain word (``return "username"`` from a sort-``key()``) is not key material.
 _RETURNED_CONST_RE = re.compile(
     r"\breturn\s+(?:"
-    r"b?[\"'](?:[0-9a-fA-F]{16,}|(?=[A-Za-z+/]*\d)[0-9A-Za-z+/]{16,}={0,2})[\"']\s*[;)]?\s*$"
+    r"b?[\"'](?:[0-9a-fA-F]{16,}|(?=[A-Za-z+/]*\d)[0-9A-Za-z+/]{16,}={0,2})[\"']\s*[;)]?\s*\}?\s*$"
     r"|(?:bytes\.fromhex|unhexlify|(?:base64\.)?b64decode|hex2bin|base64_decode)\(\s*b?[\"'][0-9A-Za-z+/]{16,}={0,2}[\"']\s*\)"
     r"|Buffer\.from\(\s*[\"'][0-9A-Za-z+/]{16,}={0,2}[\"']\s*,\s*[\"'](?:base64|hex)[\"']\s*\)"
     r"|\[\]byte\s*\{\s*(?:0x[0-9a-fA-F]{1,2}\s*,\s*){7,}"
@@ -226,8 +231,20 @@ _RETURNED_CONST_RE = re.compile(
 )
 
 
-def _function_rng_facts(lines: list[str]) -> list[MaterialMisuse]:
+# A key function that RETURNS the digest of a constant (``return hashlib.md5(b'corporate-pass').digest()``): the
+# key is fixed by the source (a hardcoded key behind one hash), and the hash is its only derivation step.
+_RETURNED_DIGEST_RE = re.compile(
+    r"\breturn\s+(?:hashlib\.)?(?P<alg>md5|sha1|sha224|sha256|sha384|sha512)\(\s*b?[\"'][^\"'\n]{4,}[\"']\s*\)"
+    r"\s*\.\s*(?:hex)?digest\(\s*\)",
+    re.IGNORECASE,
+)
+_DIGEST_DISPLAY = {"md5": "MD5", "sha1": "SHA-1", "sha224": "SHA-224", "sha256": "SHA-256", "sha384": "SHA-384",
+                   "sha512": "SHA-512"}
+
+
+def _function_rng_facts(lines: list[str], lang: str = "") -> list[MaterialMisuse]:
     facts: list[MaterialMisuse] = []
+    folded: list[str] | None = None if lang == "java" else lines  # Java constants folded on first need
     for idx, raw in enumerate(lines):
         m = _FUNC_HEAD_RE.match(raw)
         if not m:
@@ -237,13 +254,27 @@ def _function_rng_facts(lines: list[str]) -> list[MaterialMisuse]:
         if kind is None:
             continue
         body = _function_body(lines, idx)
-        for i, rng in _returned_rng_lines(lines, body):
-            facts.append(MaterialMisuse(kind=kind, var=f"{name}()", line=i + 1, weak_rng=rng))
+        if name not in ("k", "K"):  # a one-letter name only counts with a literal value (below)
+            for i, rng in _returned_rng_lines(lines, body):
+                facts.append(MaterialMisuse(kind=kind, var=f"{name}()", line=i + 1, weak_rng=rng))
         if kind in ("secret-key", "salt", "initialization-vector", "nonce"):
+            if folded is None:
+                folded = _fold_java_lines(lines)
             for i in body:
-                if _RETURNED_CONST_RE.search(lines[i]):
+                if _RETURNED_CONST_RE.search(folded[i]):
                     facts.append(MaterialMisuse(kind=kind, var=f"{name}()", line=i + 1, hardcoded=True))
+                elif kind == "secret-key" and (dm := _RETURNED_DIGEST_RE.search(folded[i])):
+                    facts.append(MaterialMisuse(kind=kind, var=f"{name}()", line=i + 1, hardcoded=True,
+                                                derived_with=_DIGEST_DISPLAY[dm.group("alg").lower()]))
     return facts
+
+
+def _fold_java_lines(lines: list[str]) -> list[str]:
+    """Java lines with same-file String constant concatenations folded (``P1 + P2`` -> ``"0011...eeff"``)."""
+    from aibom.cbom.detect import _fold_java_constants, _string_constants
+
+    consts = _string_constants("\n".join(lines))
+    return [_fold_java_constants(ln, consts) for ln in lines] if consts else lines
 # CSPRNGs — a binding that uses one of these is NEVER weak-RNG, even if it also
 # mentions a `random`-rooted module (e.g. `random.SystemRandom`).
 _SECURE_RNG_RE = re.compile(
@@ -305,6 +336,8 @@ class MaterialMisuse:
     static_iv: bool = False   # constant IV/nonce reaching a cipher
     reused: bool = False      # same static IV/nonce feeds >=2 ciphers
     weak_rng: str | None = None  # offending non-crypto PRNG token, else None
+    derived_with: str | None = None  # the hash a hardcoded key is derived through (``MD5(constant)``)
+    defined_at: str | None = None  # ``path:line`` of the configuration entry that holds the key value
 
 
 def _rng_token(rhs: str) -> str | None:
@@ -327,7 +360,9 @@ def _count_cipher_uses(lines: list[str], var: str) -> int:
     return n
 
 
-def detect_material_misuse(text: str, lang: str) -> list[MaterialMisuse]:
+def detect_material_misuse(
+    text: str, lang: str, config_lookup: Callable[[str, str | None], Any] | None = None
+) -> list[MaterialMisuse]:
     """Detect crypto-material misuse facts in one source file.
 
     The binding lane (a material-named VARIABLE) only runs when the file carries
@@ -337,22 +372,34 @@ def detect_material_misuse(text: str, lang: str) -> list[MaterialMisuse]:
     a material-named FUNCTION returns (``token()``, ``generateSalt()``), OpenSSL's
     always-weak ``RAND_pseudo_bytes()``, and a constant ``setSeed`` on a
     SecureRandom. ``lang`` selects the comment syntax those lanes strip.
+
+    Key material whose VALUE proves it (a decoded literal of 16+ bytes, a 128/192/256-bit hex string, a key
+    function returning a literal or the digest of one, a key-named configuration entry the code reads, a key
+    printed in a notebook output) is reported without the file gate. ``config_lookup(key, file_name)`` resolves a
+    configuration entry (:meth:`aibom.cbom.project.ProjectIndex.config_value`).
     """
     facts = _binding_facts(text, lang) if _CRYPTO_CTX_RE.search(text) else []
     covered = {f.line for f in facts}
-    for fact in _context_free_facts(text, lang):
+    for fact in _context_free_facts(text, lang, config_lookup):
         if fact.line not in covered:
             covered.add(fact.line)
             facts.append(fact)
     return facts
 
 
-def _context_free_facts(text: str, lang: str) -> list[MaterialMisuse]:
+def _context_free_facts(
+    text: str, lang: str, config_lookup: Callable[[str, str | None], Any] | None = None
+) -> list[MaterialMisuse]:
     from aibom.cbom.detect import _strip_line_comment, strip_noncode
 
     lines = [_strip_line_comment(ln, lang) for ln in strip_noncode(text).splitlines()]
-    facts = _function_rng_facts(lines)
+    facts = _function_rng_facts(lines, lang)
     seen = {f.line for f in facts}
+    for fact in (*_literal_key_facts(lines, lang), *_config_key_facts(lines, config_lookup),
+                 *_notebook_output_facts(text)):
+        if fact.line not in seen:
+            seen.add(fact.line)
+            facts.append(fact)
     for idx, line in enumerate(lines, start=1):
         if idx not in seen and _ALWAYS_WEAK_RNG_RE.search(line):
             seen.add(idx)
@@ -416,6 +463,150 @@ def _binding_facts(text: str, lang: str) -> list[MaterialMisuse]:
                     kind="secret-key", var=None, line=idx, weak_rng=rng
                 )
             )
+    return facts
+
+
+# --------------------------------------------------------------------------- #
+# Key material proven by its VALUE (no crypto-context gate needed): the shape of the literal is the evidence.
+# --------------------------------------------------------------------------- #
+_HEX_KEY_RE = re.compile(r"^(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{48}|[0-9a-fA-F]{64})$")
+# A literal decoded into bytes in the binding itself: Python / Java / Go / Node decoders.
+_DECODE_CALL_RE = re.compile(
+    r"(?:(?:base64\.)?(?:urlsafe_|standard_)?b64decode|bytes\.fromhex|bytearray\.fromhex"
+    r"|(?:binascii\.)?(?:unhexlify|a2b_hex|a2b_base64)|Hex\.decode(?:Hex)?|DatatypeConverter\.parse(?:Hex|Base64)Binary"
+    r"|Base64\.(?:getDecoder|getUrlDecoder|getMimeDecoder)\(\)\.decode|Buffer\.from|hex\.DecodeString"
+    r"|base64\.(?:Std|URL|RawStd|RawURL)Encoding\.DecodeString)\(\s*b?[\"']([A-Za-z0-9+/=_-]{16,})[\"']"
+)
+_STR_PIECE_RE = re.compile(r"""^\s*b?(["'])([^"'\\]*)\1\s*""")
+# Names that end in ``key`` without being secret key material.
+_NOT_SECRET_KEY = re.compile(
+    r"cache|sort|primary|foreign|partition|idempoten|lookup|index|field|column|row|hash|etag|public|pub_|"
+    r"dedup|unique|registry|object|bucket|redis|map_|dict|lock|group|routing|license|api_?key", re.I)
+
+
+def _strict_key_name(var: str) -> bool:
+    if var in ("k", "K"):
+        return True
+    return _material_kind(var) == "secret-key" and not _NOT_SECRET_KEY.search(var)
+
+
+def _decoded_len(value: str) -> int:
+    import base64
+    import binascii
+
+    if re.fullmatch(r"(?:[0-9a-fA-F]{2})+", value):
+        return len(value) // 2
+    try:
+        alt = b"-_" if ("-" in value or "_" in value) else None
+        return len(base64.b64decode(value + "=" * (-len(value) % 4), altchars=alt, validate=True))
+    except (binascii.Error, ValueError):
+        return 0
+
+
+def _hex_key_like(value: str) -> bool:
+    """A 128/192/256-bit key spelled in hex, not a run of one digit."""
+    return bool(_HEX_KEY_RE.match(value)) and len(set(value.lower())) >= 8
+
+
+def _joined_literal(pieces: list[str]) -> str | None:
+    """``b'0011' b'2233'`` (adjacent literals, Python implicit concatenation) -> ``'00112233'``."""
+    text = " ".join(pieces).strip().rstrip(";").strip()
+    out: list[str] = []
+    while text:
+        m = _STR_PIECE_RE.match(text)
+        if not m:
+            return None
+        out.append(m.group(2))
+        text = text[m.end():]
+    return "".join(out) or None
+
+
+_KEYISH_LINE = re.compile(r"(?i:key|secret)|\b[kK]\s*[:=]")
+
+
+def _literal_key_facts(lines: list[str], lang: str) -> list[MaterialMisuse]:
+    """A key-named binding (``KEY``, ``aes_key``, ``K``) whose value is a decoded literal of 16+ bytes, or a
+    128/192/256-bit hex string (also split over adjacent literals or lines inside parentheses)."""
+    facts: list[MaterialMisuse] = []
+    idx = 0
+    while idx < len(lines):
+        raw = lines[idx]
+        idx += 1
+        if not _KEYISH_LINE.search(raw):
+            continue  # every name this lane accepts contains "key" / "secret" or is ``k`` / ``K``
+        m = _ASSIGN_RE.search(raw)
+        if not m or not _strict_key_name(m.group(1)):
+            continue
+        rhs = m.group(2).strip()
+        line_no = idx
+        dec = _DECODE_CALL_RE.search(rhs)
+        if dec:
+            if _decoded_len(dec.group(1)) >= 16:
+                facts.append(MaterialMisuse(kind="secret-key", var=m.group(1), line=line_no, hardcoded=True))
+            continue
+        rhs = re.sub(r"\.getBytes\([^)]*\)", "", rhs).rstrip(";").strip()
+        pieces = [rhs]
+        if rhs == "(":  # ``KEY = (\n b'0011'\n b'2233'\n)``: the value starts on the next line
+            pieces = []
+            j = idx
+            while j < len(lines) and j < idx + 16 and lines[j].strip() not in (")", "),", ");"):
+                pieces.append(lines[j])
+                j += 1
+            line_no = idx + 1
+        value = _joined_literal(pieces)
+        if value is not None and _hex_key_like(value):
+            facts.append(MaterialMisuse(kind="secret-key", var=m.group(1), line=line_no, hardcoded=True))
+    return facts
+
+
+_CONFIG_FILE_LIT_RE = re.compile(r"""["']([\w./-]+\.(?:properties|ya?ml|ini|cfg|conf))["']""")
+# a configuration key named in code: ``'aes.key='`` (a line prefix), ``getProperty("aes.key")``, ``"${aes.key}"``
+_CONFIG_KEY_LIT_RE = re.compile(r"""["'](?:\$\{)?([A-Za-z][\w-]*(?:\.[\w-]+)+)\}?=?["']""")
+
+
+def _config_key_facts(
+    lines: list[str], config_lookup: Callable[[str, str | None], Any] | None
+) -> list[MaterialMisuse]:
+    """Code that reads a key-named configuration entry whose value is key material (``line.startswith('aes.key=')``
+    on ``keys.properties``): the key is hardcoded in the repository, one file away."""
+    if config_lookup is None:
+        return []
+    named = {m.group(1).rsplit("/", 1)[-1] for ln in lines for m in _CONFIG_FILE_LIT_RE.finditer(ln)}
+    file_name = next(iter(named)) if len(named) == 1 else None
+    facts: list[MaterialMisuse] = []
+    for no, line in enumerate(lines, start=1):
+        for m in _CONFIG_KEY_LIT_RE.finditer(line):
+            key = m.group(1)
+            last = key.rsplit(".", 1)[-1]
+            if not (_strict_key_name(last) or _strict_key_name(key.replace(".", "_").replace("-", "_"))):
+                continue
+            d = config_lookup(key, file_name)
+            if d is None or not (_hex_key_like(d.value) or _decoded_len(d.value) in (16, 24, 32)):
+                continue
+            facts.append(MaterialMisuse(kind="secret-key", var=key, line=no, hardcoded=True, defined_at=d.where))
+            break
+    return facts
+
+
+# A key printed by a notebook cell (``AES key = 0011...``) in its saved output (see :mod:`aibom.cbom.notebook`).
+_OUTPUT_KEY_RE = re.compile(
+    r"\b(?:[A-Za-z0-9_-]+[ _-])?key\s*[=:]\s*['\"]?(?P<v>[0-9a-fA-F]{32,64}|[A-Za-z0-9+/_-]{22,86}={0,2})(?![\w+/=])",
+    re.IGNORECASE,
+)
+
+
+def _notebook_output_facts(text: str) -> list[MaterialMisuse]:
+    from aibom.cbom.notebook import OUTPUT_PREFIX
+
+    if OUTPUT_PREFIX not in text:
+        return []
+    facts: list[MaterialMisuse] = []
+    for no, line in enumerate(text.split("\n"), start=1):
+        if not line.startswith(OUTPUT_PREFIX):
+            continue
+        m = _OUTPUT_KEY_RE.search(line)
+        if m and (_hex_key_like(m.group("v")) or _decoded_len(m.group("v")) in (16, 24, 32)):
+            facts.append(MaterialMisuse(kind="secret-key", var="notebook output", line=no, hardcoded=True))
     return facts
 
 

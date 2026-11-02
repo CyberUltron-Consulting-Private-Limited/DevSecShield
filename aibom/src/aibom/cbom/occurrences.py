@@ -17,7 +17,8 @@ import re
 from pathlib import Path
 
 from aibom.cbom.detect import detect_crypto, strip_noncode
-from aibom.cbom.files import read_bytes
+from aibom.cbom.files import read_bytes, read_notebook
+from aibom.cbom.notebook import MAX_NOTEBOOK_BYTES, cell_of_line, is_notebook, virtual_source
 from aibom.cbom.rules import (
     ALGORITHM_NORMALIZE,
     CRYPTO_IMPORT_MODULES,
@@ -39,6 +40,7 @@ _EXTRA_LANG = {
     ".ts": "typescript", ".swift": "swift", ".m": "objective-c", ".vue": "javascript",
     # code-scan-only sources (rules.CODE_SCAN_EXTENSIONS): their own display names
     ".groovy": "groovy", ".pl": "perl", ".pm": "perl", ".vb": "vbnet", ".sql": "sql", ".bash": "shell",
+    ".ipynb": "jupyter",
 }
 _LOCK_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "cargo.lock", "go.sum", "poetry.lock",
                "pipfile.lock", "composer.lock", "gemfile.lock", "packages.lock.json", "gradle.lockfile"}
@@ -75,7 +77,8 @@ def safe_file(root: Path, rel: str) -> Path | None:
         path = (root / rel)
         real = path.resolve()
         real.relative_to(base)
-        if not real.is_file() or real.stat().st_size > MAX_BYTES:
+        limit = MAX_NOTEBOOK_BYTES if is_notebook(real.name) else MAX_BYTES
+        if not real.is_file() or real.stat().st_size > limit:
             return None
     except (OSError, ValueError, RuntimeError):
         return None
@@ -83,7 +86,10 @@ def safe_file(root: Path, rel: str) -> Path | None:
 
 
 def read_text(path: Path) -> str | None:
-    """Decoded text, or None for binary files. Line endings are kept exactly (no universal newlines)."""
+    """Decoded text, or None for binary files. Line endings are kept exactly (no universal newlines). A notebook
+    reads as its virtual source, the text every lane numbered its lines in."""
+    if is_notebook(path.name):
+        return read_notebook(path)
     raw = read_bytes(path, MAX_BYTES)  # O_NOFOLLOW, regular files only
     if raw is None:
         return None
@@ -117,12 +123,14 @@ def _code_lines(text: str) -> list[str]:
 class _FileIndex:
     """Per-file cache: code lines and detector hits by display name."""
 
-    def __init__(self, text: str, lang: str | None):
+    def __init__(self, text: str, lang: str | None, external: dict | None = None):
         from aibom.cbom.scanners.algorithm_scan import _display_name, _refine_key
 
         self.lines = _code_lines(text)
         self.raw_count = len(split_lines(text))
         self.by_name: dict[str, list[int]] = {}
+        # display name -> where another file spells the algorithm (a cross-file constant)
+        self.defined_at: dict[str, str] = {}
         self.libraries: set[str] = set()
         if lang:  # crypto libraries this file imports (the same module table the library scanner uses)
             modules = CRYPTO_IMPORT_MODULES_BY_LANG.get(lang, CRYPTO_IMPORT_MODULES)
@@ -134,13 +142,16 @@ class _FileIndex:
                     if re.search(rf"(?<![a-z0-9_./]){re.escape(module)}(?![a-z0-9_])", low):
                         self.libraries.add(label)
         if lang in DETECTOR_LANGUAGES:
-            for det in detect_crypto(text, lang):
+            for det in detect_crypto(text, lang, external):
                 refined = _refine_key(det.key, det.key_size)
                 name = _display_name(refined, det.key_size, det.mode, det.parameter, det.variant)
                 self.by_name.setdefault(name.lower(), []).append(det.line_no)
                 base = str(ALGORITHM_NORMALIZE.get(refined, refined)).lower()
                 if base != name.lower():
                     self.by_name.setdefault(base, []).append(det.line_no)
+                if det.defined_at:
+                    self.defined_at.setdefault(name.lower(), det.defined_at)
+                    self.defined_at.setdefault(base, det.defined_at)
 
     def token_lines(self, tokens: list[str]) -> list[int]:
         out: list[int] = []
@@ -172,10 +183,25 @@ def _tokens_for(name: str, props: dict[str, str]) -> list[str]:
     return [name, base, first]
 
 
-def annotate(root: Path, components: list) -> dict[str, int]:
-    """Write line properties onto ``components`` (in place). Returns counters for the scan summary log."""
+def _index(root: Path, rel: str, project) -> _FileIndex | None:
+    path = safe_file(root, rel)
+    text = read_text(path) if path else None
+    if not text:
+        return None
+    lang = source_language(path)
+    external = project.scope_for(rel, lang, text) if project is not None and lang else None
+    return _FileIndex(text, lang, external)
+
+
+def annotate(root: Path, components: list, project=None) -> dict[str, int]:
+    """Write line properties onto ``components`` (in place). Returns counters for the scan summary log.
+
+    With the scan's :class:`~aibom.cbom.project.ProjectIndex`, an algorithm spelled by a constant of another file
+    also gets ``crypto:definedAt`` (``path:line``), and an algorithm used inside a Python function other modules
+    import gets ``crypto:calledFrom`` (their call sites, ``path:line`` comma separated)."""
     root = Path(root)
     cache: dict[str, _FileIndex | None] = {}
+    notebooks: dict[str, list | None] = {}
     stats = {"located": 0, "unlocated": 0, "unreadable": 0}
     for comp in components:
         if comp.kind not in ("crypto_asset", "framework"):
@@ -188,8 +214,9 @@ def annotate(root: Path, components: list) -> dict[str, int]:
         m = re.match(r"^(?P<path>.+?):(?P<line>\d+)$", rel)
         if m:  # some sources already carry path:line (key specs, Kubernetes)
             rel, known = m.group("path"), [int(m.group("line"))]
-        if props.get("crypto:line", "").isdigit():
-            known = [int(props["crypto:line"])]
+        if props.get("crypto:line", "").isdigit():  # a scanner that located the asset itself (all its lines)
+            known = [int(x) for x in str(props.get("crypto:occurrences") or props["crypto:line"]).split(",")
+                     if x.strip().isdigit()] or [int(props["crypto:line"])]
         if not rel:
             continue
         lang = language_of(rel)
@@ -200,38 +227,57 @@ def annotate(root: Path, components: list) -> dict[str, int]:
             props["crypto:language"] = lang
         lines = known
         if rel not in cache and comp.kind == "crypto_asset":
-            path = safe_file(root, rel)
-            text = read_text(path) if path else None
-            cache[rel] = _FileIndex(text, source_language(path)) if text else None
+            cache[rel] = _index(root, rel, project)
         if not lines:
             if rel not in cache:
-                path = safe_file(root, rel)
-                text = read_text(path) if path else None
-                cache[rel] = _FileIndex(text, source_language(path)) if text else None
+                cache[rel] = _index(root, rel, project)
             idx = cache[rel]
             if idx is None:
                 stats["unreadable"] += 1
                 comp.properties = props
                 continue
-            lines = idx.by_name.get(comp.name.lower(), [])
+            key = comp.name.lower()
+            lines = idx.by_name.get(key, [])
             if not lines and props.get("crypto:assetType") == "algorithm":
-                info_name = comp.name.split("-", 1)[0].lower()
-                lines = idx.by_name.get(info_name, [])
+                key = comp.name.split("-", 1)[0].lower()
+                lines = idx.by_name.get(key, [])
+            if lines and key in idx.defined_at and "crypto:definedAt" not in props:
+                props["crypto:definedAt"] = idx.defined_at[key]
             if not lines:
                 lines = idx.token_lines(_tokens_for(comp.name, props))
         idx_libs = cache.get(rel).libraries if cache.get(rel) is not None and comp.kind == "crypto_asset" else set()
         if idx_libs:
             props["crypto:libraries"] = ",".join(sorted(idx_libs))
         lines = sorted(set(lines))
+        if lines and project is not None and props.get("crypto:assetType") == "algorithm" and rel.endswith(".py"):
+            calls = sorted({f"{p}:{n}" for line in lines for p, n in project.call_sites(rel, line)})
+            if calls:
+                props["crypto:calledFrom"] = ",".join(calls[:MAX_OCCURRENCES])
         if lines:
             props["crypto:line"] = str(lines[0])
             props["crypto:occurrences"] = ",".join(str(n) for n in lines[:MAX_OCCURRENCES])
             props["crypto:occurrenceCount"] = str(len(lines))
+            if is_notebook(rel):  # notebook lines are virtual-source lines: say which cell they are in
+                cell = _notebook_cell(root, rel, lines[0], notebooks)
+                if cell:
+                    props["crypto:notebookCell"] = cell
             stats["located"] += 1
         else:
             stats["unlocated"] += 1
         comp.properties = props
     return stats
+
+
+def _notebook_cell(root: Path, rel: str, line: int, cache: dict) -> str | None:
+    """``"<cell number> (code|output)"`` of a notebook's virtual-source line."""
+    if rel not in cache:
+        path = safe_file(root, rel)
+        raw = read_bytes(path, MAX_NOTEBOOK_BYTES) if path else None
+        vs = virtual_source(raw) if raw else None
+        cache[rel] = vs[1] if vs else None
+    origin = cache[rel]
+    hit = cell_of_line(origin, line) if origin else None
+    return f"{hit[0]} ({hit[1]})" if hit else None
 
 
 __all__ = ["annotate", "language_of", "safe_file", "read_text", "split_lines", "MAX_OCCURRENCES"]

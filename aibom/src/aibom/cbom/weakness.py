@@ -191,6 +191,14 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
         # Certificates / related-crypto-material are not algorithm-weakness
         # findings; C5 leaves them to their own (later) checks.
         return None
+    if props.get("crypto:derived") == "true":
+        # A derived row (the inner hash of a composite, the hash a hardcoded key is derived through) has no
+        # finding of its own: the component it was derived from carries it.
+        return None
+    if props.get("crypto:nonSecurityUse") == "true" and props.get("crypto:primitive") == "hash":
+        # A hash used only to name or check content (a cache key, an ETag, a checksum; ``usedforsecurity=False``)
+        # with no secret input: collisions there are not an attack on a secret. Inventoried, not flagged.
+        return None
 
     # 1) Deprecated/broken algorithm by canonical corpus (covers MD5, SHA-1, DES,
     #    RC2, RC4, RSA-512/1024 — strength "weak" — AND 3DES/Blowfish, which the
@@ -238,6 +246,26 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
                 f"{_MIN_ASYMMETRIC_BITS}-bit floor (NIST SP 800-57); use "
                 f"RSA-3072+ or an elliptic-curve / PQC equivalent.",
             )
+
+    # 3b) A signature built on a collision-broken digest (``SHA1withRSA``): the digest is listed as a derived row
+    #     without a finding of its own, so the signature carries it.
+    digest = props.get("crypto:innerDigest") or ""
+    inner = _base_key(digest)
+    if props.get("crypto:primitive") in ("pke", "signature") and inner in _BROKEN_SIG_DIGESTS:
+        return (
+            WEAK_ALGORITHM,
+            _SEV,
+            f"{name} signature over a {digest} digest: {digest} collisions let a signature be reused for a "
+            f"forged message (NIST SP 800-131A disallows it for signatures); sign with SHA-256 or stronger.",
+        )
+    if props.get("crypto:primitive") in ("mac", "kdf") and inner in ("md2", "md4", "md5"):
+        # HMAC-SHA1 / PBKDF2-HMAC-SHA1 remain approved; an MD-family hash is not an approved hash at all.
+        return (
+            WEAK_ALGORITHM,
+            _SEV,
+            f"{name} built on {digest}: {digest} is not an approved hash function (NIST SP 800-131A); use "
+            f"HMAC-SHA256 or stronger.",
+        )
 
     # 4) Fallback: any asset the inventory already marked weak that the corpus
     #    lookup missed (a parametrized variant not in the normalization table).
@@ -355,12 +383,15 @@ def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str
         "private-key",
         "key",
     ):
+        derived = props.get("crypto:derivedWith")
+        how = (f"derived from a constant through {derived}, so it is fixed by the source and the "
+               f"derivation is not a key-derivation function" if derived else "embedded as a source literal")
         findings.append(
             (
                 HARDCODED_KEY,
                 _SEV,
-                f"Hardcoded key {name}: a symmetric/private key is embedded as a "
-                f"source literal (CWE-321); anyone with the code has the key. "
+                f"Hardcoded key {name}: a symmetric/private key is {how} "
+                f"(CWE-321); anyone with the code has the key. "
                 f"Load key material from a secret manager / KMS, never source.",
             )
         )
