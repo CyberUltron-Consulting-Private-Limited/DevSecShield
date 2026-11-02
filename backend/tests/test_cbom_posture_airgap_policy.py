@@ -32,6 +32,8 @@ def _base() -> dict:
             "backend": _service(
                 "backend",
                 command=["uv", "run", "gunicorn"],
+                # The e2e stack is the one place the fixed admin sign-in code is allowed (compose_policy checks it).
+                environment={"DSS_DEV_MODE": "1"},
                 ports=[{"host_ip": "127.0.0.1", "published": "43080", "target": "8080"}],
                 volumes=[
                     {
