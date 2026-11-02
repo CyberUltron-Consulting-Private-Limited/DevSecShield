@@ -90,6 +90,18 @@ Switches `DSS_TAG` back to the previous deployed tag, `up -d`, checks. Two warni
 `CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
 the full list is `backend/.env.example`.
 
+Scan-node mTLS (optional): put the CA that issues scan-node client certificates at
+`$TLS_CERT_DIR/node-client-ca.pem`; nginx then asks the API host's clients for a certificate
+(`ssl_verify_client optional`), refuses one that does not chain to that CA, and ALWAYS overwrites
+`X-ZS-Client-Verify` / `X-ZS-Client-Cert` before proxying (the plain-HTTP site blanks them). In `backend.env` set
+`CBOM_MTLS_HEADER_TRUSTED=1` so the backend reads them (safe only because the backend port is published nowhere
+and nginx is the only way in), `CBOM_MTLS_REQUIRED=1` to refuse node calls without a verified certificate, and
+optionally `CBOM_MTLS_PIN=1` to hold each node to the certificate it enrolled with (a new certificate then needs a
+node reset). Browsers are asked for a certificate only if they hold one from that CA. Nodes set `ZS_CLIENT_CERT`,
+`ZS_CLIENT_KEY` and, for a private server CA, `ZS_CA_FILE`. Refusals are 403 with `X-ZS-Refused`; every node
+answer carries `X-ZS-Deployment` (one id per deployment, created by migration `wp5a0node001`; a migration
+downgrade and upgrade makes a new one, which nodes adopt from their next successful request).
+
 Air-gapped sites: `GIT_ALLOWED_HOSTS` (self-hosted Git; same value for backend and workers),
 `CBOM_IDP_ALLOWED_PRIVATE` + `CBOM_EXTRA_CA_FILE` (identity provider on a private network with a private CA),
 `DSS_SBOM_REGISTRY=0` (no public registry lookups).

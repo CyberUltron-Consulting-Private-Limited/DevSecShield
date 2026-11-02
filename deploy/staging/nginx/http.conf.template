@@ -45,6 +45,9 @@ server {
         # right-most address it does not trust, so a client-supplied X-Forwarded-For cannot spoof its address.
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # No TLS here, so no client certificate: an empty value drops whatever a client sent in these headers.
+        proxy_set_header X-ZS-Client-Verify "";
+        proxy_set_header X-ZS-Client-Cert "";
         proxy_buffering off;       # streamed responses (chat, server-sent events) reach the browser as they come
     }
 }

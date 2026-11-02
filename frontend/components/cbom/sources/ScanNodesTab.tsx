@@ -14,9 +14,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   createCbomScanNode,
   deleteCbomScanNode,
+  getCbomSourcesOverview,
+  getCbomSourcesSettings,
   listCbomScanNodes,
   newCbomNodeRegistration,
   updateCbomScanNode,
+  updateCbomSourcesSettings,
   type CbomScanNode,
 } from "@/utils/backend_api";
 import { apiBaseURL } from "@/utils/interceptors";
@@ -36,6 +39,7 @@ import {
   NodeStatusBadge,
   SectionCard,
   StatCard,
+  StatusBadge,
   Truncate,
 } from "./shared";
 
@@ -232,6 +236,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                     <TableHead>Status</TableHead>
                     <TableHead>Runs as</TableHead>
                     <TableHead>Version</TableHead>
+                    <TableHead>Requests</TableHead>
                     <TableHead>Last seen</TableHead>
                     <TableHead className="text-right">Targets</TableHead>
                     <TableHead className="w-12">
@@ -253,6 +258,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{DEPLOY_LABEL[node.deployment] ?? node.deployment}</TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{node.node_version ?? "—"}</TableCell>
+                      <TableCell>{node.enrolled_at ? <SigningBadge node={node} /> : <span className="text-zinc-500">—</span>}</TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{ago(node.last_heartbeat_at, serverNow)}</TableCell>
                       <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{node.assigned_targets.toLocaleString()}</TableCell>
                       <TableCell>
@@ -295,6 +301,8 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
           </ScrollArea>
         )}
       </SectionCard>
+
+      <RequestSigningCard teamId={teamId} nodes={nodes} />
 
       {wizardOpen && (
         <SectionCard
@@ -545,6 +553,10 @@ function NodeDialog({
               <Detail label="Registered" value={node.enrolled_at ? ago(node.enrolled_at, serverNow) : "Not yet"} />
               <Detail label="Clock" value={node.clock_skew_s == null ? null : `${node.clock_skew_s > 0 ? "+" : ""}${node.clock_skew_s} s vs ZeroShield`} />
               <Detail label="Last job claimed" value={node.last_claim_at ? ago(node.last_claim_at, serverNow) : "Never"} />
+              <Detail label="Request signing" value={!node.enrolled_at ? null : node.signing === "required"
+                ? "Signed: every request carries an Ed25519 signature from the key made at enrollment"
+                : "Legacy: unsigned (enrolled before signing). Reset the node and register it again to sign"} wide />
+              {node.client_cert_sha256 && <Detail label="Client certificate (SHA-256)" value={node.client_cert_sha256} wide />}
               {node.last_node_error && <Detail label="Last error reported" value={node.last_node_error} wide />}
             </dl>
             {node.ssh_public_key && (
@@ -596,6 +608,69 @@ function NodeDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SigningBadge({ node }: { node: CbomScanNode }) {
+  return node.signing === "required" ? (
+    <StatusBadge tone="green" title="Every request from this node is signed with its Ed25519 key">Signed</StatusBadge>
+  ) : (
+    <StatusBadge tone="amber" title="Enrolled before request signing: reset and register it again to sign">Legacy</StatusBadge>
+  );
+}
+
+/** Team setting: refuse nodes that do not sign their requests.  Admins change it; everyone sees it. */
+function RequestSigningCard({ teamId, nodes }: { teamId: number; nodes: CbomScanNode[] }) {
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery({
+    queryKey: cbomSourcesKeys.settings(teamId),
+    queryFn: () => getCbomSourcesSettings(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+  });
+  const overview = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 60_000,
+  });
+  const isAdmin = !!overview.data?.viewer?.is_admin;
+  const settings = settingsQuery.data;
+  const save = useMutation({
+    mutationFn: (on: boolean) =>
+      updateCbomSourcesSettings(teamId, { require_signed_nodes: on, expected_version: settings?.row_version }),
+    onSuccess: (data) => queryClient.setQueryData(cbomSourcesKeys.settings(teamId), data),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.nodes(teamId) }),
+  });
+  if (!settings) return null;
+  const legacy = nodes.filter((n) => n.enrolled_at && n.signing === "legacy");
+  return (
+    <SectionCard
+      title="Request signing"
+      description="Scan nodes sign every request with a key made at enrollment, so a copied node token alone is not enough to act as the node."
+    >
+      <div className="space-y-2" data-testid="require-signed-nodes">
+        {isAdmin ? (
+          <Checkbox2 id="require-signed-nodes" checked={settings.require_signed_nodes}
+            onChange={(on) => { if (!save.isPending) save.mutate(on); }}>
+            Require signed scan nodes (refuse nodes that do not sign their requests)
+          </Checkbox2>
+        ) : (
+          <p className="text-sm text-zinc-700 dark:text-zinc-300">
+            Signed scan nodes are {settings.require_signed_nodes ? "required" : "not required"}. Only a team admin can change this.
+          </p>
+        )}
+        {legacy.length > 0 && (
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            {legacy.length} node{legacy.length === 1 ? " does" : "s do"} not sign ({legacy.map((n) => n.name).slice(0, 5).join(", ")}
+            {legacy.length > 5 ? " and more" : ""}).{" "}
+            {settings.require_signed_nodes ? "They are refused until reset and registered again." : "Reset and register them again before you require signing."}
+          </p>
+        )}
+        {save.isError && <p className="text-sm text-red-600">The setting was not saved: {(save.error as Error)?.message || "try again"}</p>}
+      </div>
+    </SectionCard>
   );
 }
 

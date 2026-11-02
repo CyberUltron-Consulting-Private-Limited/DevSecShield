@@ -59,6 +59,9 @@ server {
     http2 on;
     server_name ${API_HOST};
     add_header Strict-Transport-Security "max-age=31536000" always;
+    # Scan-node mTLS: with certs/node-client-ca.pem mounted, 40-dss-site.sh puts ssl_client_certificate and
+    # "ssl_verify_client optional" here; a presented certificate that does not chain to that CA is refused (400).
+    ${DSS_NODE_MTLS}
     location / {
         set $backend http://backend:8080;
         proxy_pass $backend;
@@ -70,6 +73,11 @@ server {
         # right-most address it does not trust, so a client-supplied X-Forwarded-For cannot spoof its address.
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Client-certificate result, ALWAYS overwritten (never passed through from the client): SUCCESS, FAILED:...
+        # or NONE, and the verified certificate (URL-escaped PEM, empty without one). The backend reads them only
+        # with CBOM_MTLS_HEADER_TRUSTED=1, which is safe because its port is reachable only through this proxy.
+        proxy_set_header X-ZS-Client-Verify $ssl_client_verify;
+        proxy_set_header X-ZS-Client-Cert $ssl_client_escaped_cert;
         proxy_buffering off;       # streamed responses (chat, server-sent events) reach the browser as they come
     }
 }

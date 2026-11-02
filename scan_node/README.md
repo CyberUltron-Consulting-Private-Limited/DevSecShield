@@ -32,6 +32,26 @@ token for its own node token. The public key is shown in ZeroShield: add it to t
 | `ZS_VAULT_PATH_PREFIX` | allow vault credentials under this path only (vault use is **off** without it) |
 | `VAULT_ADDR`, `VAULT_TOKEN` | HashiCorp Vault (KV v2) for vault credentials |
 | AWS role of the host | used for AWS Secrets Manager credentials |
+| `ZS_CLIENT_CERT`, `ZS_CLIENT_KEY` | PEM client certificate and key the node presents to the ZeroShield proxy (mTLS; optional) |
+| `ZS_CA_FILE` | CA bundle trusted for the ZeroShield API instead of the default (private CA, TLS-inspecting proxy) |
+
+### How the node authenticates
+
+* **Signed requests.** On every enrollment the node makes a new Ed25519 signing key (`$ZS_STATE_DIR/signing_ed25519`,
+  0600, written before the key is sent) and registers its public half. Every request then carries
+  `X-ZS-Timestamp`, `X-ZS-Nonce` and `X-ZS-Signature` over `METHOD\nPATH\nTIMESTAMP\nNONCE\nsha256(body)`, and the
+  body is sent as exactly the signed bytes. ZeroShield refuses unsigned requests from a node that has a key (a
+  copied node token alone is useless), replays (nonce seen) and timestamps more than 5 minutes off; a node whose
+  clock is off re-signs once with the time from the server's `Date` header (fix NTP anyway). Nodes enrolled
+  before signing existed show as "Legacy" until they are reset and registered again; a team can refuse them.
+* **Deployment id.** Every ZeroShield node answer carries `X-ZS-Deployment`; the node stores the id at enrollment
+  (older state adopts it from the first successful answer). A 401 clears the node token only when it carries that
+  id. A 401 without it or with another id (a wrong `ZS_API_URL`, a proxy) keeps the token: the node backs off,
+  logs "wrong server or proxy" and reports it in its next successful heartbeat; an enrollment refused that way
+  does not use up the registration token. With `ZS_ALLOW_INSECURE_HTTP` a man in the middle can forge this
+  header like everything else.
+* **mTLS.** With `ZS_CLIENT_CERT`/`ZS_CLIENT_KEY` the node presents a client certificate; the proxy checks it and
+  ZeroShield can require it and pin each node to the certificate it enrolled with (`deploy/staging/README.md`).
 
 The node runs as uid 10001, needs no capabilities, and only needs outbound TCP to the targets and HTTPS to
 ZeroShield. The container is healthy while its heartbeat loop turns: it touches `$ZS_STATE_DIR/alive` on every
@@ -71,6 +91,16 @@ secrets, listed with `fieldSelector=type=kubernetes.io/tls`; only `tls.crt` is p
 
 **Databases.** PostgreSQL, MySQL, Redis, MongoDB. TLS is checked before the password is sent; with
 `require_tls` and no TLS the password is never sent. Only fixed queries and fixed setting names are read.
+PostgreSQL password hash *types* of login roles (never the hashes) come from `pg_authid` (superuser), else the
+DBA-installed `public.zs_role_password_types()` SECURITY DEFINER function (in the grant template), else
+`rds_tools.role_password_encryption_type()` on Amazon RDS/Aurora; otherwise one coverage row names the exact fix
+for that kind of server. Errors are classified by SQLSTATE (42501, 42883, 3F000), not by message text.
+
+**Network gate.** Every connection a collector makes to a target goes through `netutil`: `resolve_checked()`
+resolves once and applies the never-scan list, `checked_ip()` re-checks right before a driver connects,
+`connect()` opens the socket to the checked address and `http_client()` pins an HTTP client to it (Host, SNI and
+the certificate name stay the host name). `tests/test_network_gate.py` fails when a collector module opens
+sockets or HTTP clients any other way, so new collectors must use it.
 
 **Network.** Per open endpoint a capped list of handshakes (`handshakes_per_endpoint`): one full handshake
 (`openssl s_client`), raw ClientHello per protocol version, a TLS 1.3 post-quantum group probe (ML-KEM hybrid
@@ -84,6 +114,7 @@ the stop-all switch apply live, and work stops at the end of the scan window.
 ```sh
 pip install -r requirements.txt pytest
 python -m pytest -q
+sh tests/pg_matrix.sh            # PostgreSQL 16 role hash-type matrix in Docker (needs a Docker daemon)
 # run one collector without a server
 python -m zs_scan_node.collect --kind network_range --scope scope.json
 python -m zs_scan_node.collect --kind linux_servers --job-kind test_connection \
