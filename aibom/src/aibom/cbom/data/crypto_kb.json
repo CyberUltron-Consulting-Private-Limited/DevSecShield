@@ -3116,6 +3116,249 @@
    }
   },
   "node": {
+   "CA_ALLOWS_ANY_NAME": {
+    "attack": "Anyone allowed to request from it can obtain a certificate for another server or user and impersonate it; in AD CS this is the ESC1 privilege-escalation path to domain administrator.",
+    "category": "certificate",
+    "compliance": [
+     "certificates",
+     "auth"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-284",
+     "CWE-295"
+    ],
+    "default_impact": "Medium",
+    "description": "A Vault PKI role has allow_any_name, or an AD CS template with client authentication lets the enrollee supply the subject (ENROLLEE_SUPPLIES_SUBJECT).",
+    "owasp": [
+     "access",
+     "auth"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-284 is in OWASP's mapped CWE list",
+      "id": "A01:2021",
+      "label": "A01:2021 - Broken Access Control"
+     },
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-284 is in OWASP's mapped CWE list",
+      "id": "A01:2025",
+      "label": "A01:2025 - Broken Access Control"
+     },
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Restrict names (allowed_domains, allow_subdomains in Vault; build the subject from Active Directory and require manager approval in AD CS) and limit who may enroll."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "CA issues certificates for names the requester chooses",
+    "verify": [
+     {
+      "command": "certutil -getreg ca\\csp\\CNGHashAlgorithm",
+      "label": "Hash algorithm the CA signs with (on the CA server)"
+     },
+     {
+      "command": "certutil -catemplates",
+      "label": "Certificate templates published on the CA"
+     },
+     {
+      "command": "vault read <pki-mount>/roles/{name}",
+      "label": "PKI role settings (read-only token)"
+     }
+    ]
+   },
+   "CA_ALLOWS_WEAK_KEY": {
+    "attack": "Certificates for factorable keys let an attacker derive the private key from the public certificate and impersonate the holder.",
+    "category": "certificate",
+    "compliance": [
+     "keysize",
+     "certificates"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-326"
+    ],
+    "default_impact": "High",
+    "description": "A certificate template, Vault PKI role or EJBCA profile accepts RSA keys under 2048 bits or EC keys under 224 bits.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-326 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-326 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://csrc.nist.gov/pubs/sp/800/131/a/r2/final"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Raise the template's minimum key size to RSA 2048 (or 3072) / P-256 and re-issue affected certificates."
+    },
+    "standards": [
+     "NIST SP 800-131A Rev. 2 (112-bit minimum)"
+    ],
+    "summary_rules": [],
+    "title": "CA issues certificates for weak keys",
+    "verify": [
+     {
+      "command": "certutil -getreg ca\\csp\\CNGHashAlgorithm",
+      "label": "Hash algorithm the CA signs with (on the CA server)"
+     },
+     {
+      "command": "certutil -catemplates",
+      "label": "Certificate templates published on the CA"
+     },
+     {
+      "command": "vault read <pki-mount>/roles/{name}",
+      "label": "PKI role settings (read-only token)"
+     }
+    ]
+   },
+   "CA_LONG_VALIDITY": {
+    "attack": "A leaked key stays usable for longer, and certificates outlive the algorithms and owners they were made for.",
+    "category": "certificate",
+    "compliance": [
+     "certificates"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-324"
+    ],
+    "default_impact": "Low",
+    "description": "A template or role issues server certificates valid for more than 398 days.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-324 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-324 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://cabforum.org/working-groups/server/baseline-requirements/"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Lower the role's max_ttl or the template's validity to 397 days or less and automate renewal."
+    },
+    "standards": [
+     "CA/Browser Forum Baseline Requirements 6.3.2 (398 days)"
+    ],
+    "summary_rules": [],
+    "title": "CA issues long-lived certificates",
+    "verify": [
+     {
+      "command": "vault read <pki-mount>/roles/{name}",
+      "label": "PKI role settings (read-only token)"
+     }
+    ]
+   },
+   "CA_WEAK_SIGNING": {
+    "attack": "Chosen-prefix collisions let an attacker get a harmless request signed and reuse the signature on a forged certificate (SHA-1: SHAmbles 2020; MD5: the 2008 rogue CA).",
+    "category": "certificate",
+    "compliance": [
+     "algorithms",
+     "certificates"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-327",
+     "CWE-328"
+    ],
+    "default_impact": "High",
+    "description": "An internal CA (AD CS, EJBCA, Vault) or one of its templates signs certificates and CRLs with SHA-1 or MD5.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-327, CWE-328 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-327, CWE-328 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://sha-mbles.github.io/"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "certutil -setreg ca\\csp\\CNGHashAlgorithm SHA256; restart-service certsvc",
+       "platform": "AD CS"
+      }
+     ],
+     "summary": "Switch the CA to SHA-256 and re-issue certificates."
+    },
+    "standards": [
+     "NIST SP 800-131A Rev. 2 (SHA-1 signature generation disallowed)"
+    ],
+    "summary_rules": [],
+    "title": "Certificate authority signs with SHA-1 or MD5",
+    "verify": [
+     {
+      "command": "certutil -getreg ca\\csp\\CNGHashAlgorithm",
+      "label": "Hash algorithm the CA signs with (on the CA server)"
+     },
+     {
+      "command": "certutil -catemplates",
+      "label": "Certificate templates published on the CA"
+     },
+     {
+      "command": "curl --cert client.pem --key client.key https://{host}:{port}/ejbca/ejbca-rest-api/v1/ca",
+      "label": "Certificate authorities (client certificate authentication)"
+     }
+    ]
+   },
    "CBC_ACCEPTED": {
     "attack": "A client limited to CBC suites falls back to MAC-then-encrypt constructions with known timing side channels.",
     "category": "cipher",
@@ -3599,6 +3842,67 @@
      }
     ]
    },
+   "DB_10G_VERIFIER": {
+    "attack": "The 10G verifier is cracked quickly from a stolen hash, and its presence lets old clients use the weak logon protocol.",
+    "category": "database",
+    "compliance": [
+     "auth"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-916",
+     "CWE-328",
+     "CWE-327"
+    ],
+    "default_impact": "High",
+    "description": "Oracle users still have the 10G password verifier, a DES-based, case-insensitive hash.",
+    "owasp": [
+     "crypto",
+     "auth"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-916, CWE-328, CWE-327 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-916, CWE-328, CWE-327 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.oracle.com/en/database/oracle/oracle-database/19/dbseg/configuring-authentication.html"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Set SQLNET.ALLOWED_LOGON_VERSION_SERVER = 12a (or at least 12), then reset each listed user's password so only the 12C verifier is kept."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Oracle users keep the 10G password verifier",
+    "verify": [
+     {
+      "command": "sqlplus -s <login>@//{host}:{port}/<service> <<< \"SELECT username, password_versions FROM dba_users WHERE password_versions LIKE '%10G%' OR password_versions LIKE '%11G%';\"",
+      "label": "Password verifier versions (SELECT_CATALOG_ROLE)"
+     }
+    ]
+   },
    "DB_CLEARTEXT_PW": {
     "attack": "On a non-TLS connection anyone on the path reads the password.",
     "category": "database",
@@ -3670,6 +3974,233 @@
      {
       "command": "psql \"host={host} port={port} sslmode=require\" -c \"SELECT name, setting FROM pg_settings WHERE name IN ('ssl','ssl_min_protocol_version','password_encryption')\" -c \"SELECT line_number, type, database, user_name, auth_method FROM pg_hba_file_rules\"",
       "label": "Server TLS and password settings (as the read-only login)"
+     }
+    ]
+   },
+   "DB_EOL_VERSION": {
+    "attack": "Known vulnerabilities, including in authentication and network encryption, stay unpatched.",
+    "category": "database",
+    "compliance": [
+     "components"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-1104"
+    ],
+    "default_impact": "High",
+    "description": "The Oracle Database release is older than 12.1; every such release is past Oracle's extended support and receives no security fixes.",
+    "owasp": [
+     "components"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-1104 is in OWASP's mapped CWE list",
+      "id": "A06:2021",
+      "label": "A06:2021 - Vulnerable and Outdated Components"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-1104 is in OWASP's mapped CWE list",
+      "id": "A03:2025",
+      "label": "A03:2025 - Software Supply Chain Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://www.oracle.com/us/support/library/lifetime-support-technology-069183.pdf"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Upgrade to a supported release (19c or later)."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Database release past end of support",
+    "verify": [
+     {
+      "command": "sqlplus -s <login>@//{host}:{port}/<service> <<< \"SELECT banner FROM v$version;\"",
+      "label": "Release banner"
+     }
+    ]
+   },
+   "DB_LEGACY_NNE": {
+    "attack": "Without certificate verification a client cannot tell the real database from an impostor on the path; NNE also needed the July 2021 CPU fixes (CVE-2021-2351) and still allows SHA-1 integrity for old clients.",
+    "category": "database",
+    "compliance": [
+     "in_transit"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-295",
+     "CWE-757"
+    ],
+    "default_impact": "Medium",
+    "description": "The listener insists on Oracle Native Network Encryption (SQLNET.ENCRYPTION_SERVER = REQUIRED) for TCP connections. NNE negotiates keys without verifying a server certificate; Oracle recommends TLS.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-757 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-757 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "CWE-295 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.oracle.com/en/database/oracle/oracle-database/23/dbseg/nne-vs-tls.html",
+     "https://nvd.nist.gov/vuln/detail/CVE-2021-2351"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Configure a TCPS listener with a CA-issued certificate, move clients to TLS and then stop requiring NNE."
+    },
+    "standards": [
+     "Oracle Database Security Guide 23ai: Choosing between NNE and TLS"
+    ],
+    "summary_rules": [],
+    "title": "Oracle requires native network encryption instead of TLS",
+    "verify": [
+     {
+      "command": "openssl s_client -connect {host}:{port} </dev/null",
+      "label": "Does the listener offer TLS?"
+     }
+    ]
+   },
+   "DB_LEGACY_PW_HASH": {
+    "attack": "Salted SHA-1 is fast to brute-force once the hashes leak (a backup, a replica, a privileged account).",
+    "category": "database",
+    "compliance": [
+     "auth"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-916",
+     "CWE-328"
+    ],
+    "default_impact": "Medium",
+    "description": "Logins store their password with a SHA-1 based hash: SQL Server logins whose hash is still version 1 (from before SQL Server 2012), or Oracle users with the 11G verifier.",
+    "owasp": [
+     "crypto",
+     "auth"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-916, CWE-328 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-916, CWE-328 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.oracle.com/en/database/oracle/oracle-database/19/dbseg/configuring-authentication.html"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "ALTER LOGIN <login> WITH PASSWORD = '<new>' (stored as SHA-512, hash version 2)",
+       "platform": "SQL Server"
+      },
+      {
+       "how": "Set SQLNET.ALLOWED_LOGON_VERSION_SERVER = 12a in sqlnet.ora, then ALTER USER <user> IDENTIFIED BY <new> so only the 12C verifier remains",
+       "platform": "Oracle"
+      }
+     ],
+     "summary": "Have each listed login set a new password, so it is stored with the current hash."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Logins keep a legacy password hash",
+    "verify": [
+     {
+      "command": "sqlplus -s <login>@//{host}:{port}/<service> <<< \"SELECT username, password_versions FROM dba_users WHERE password_versions LIKE '%10G%' OR password_versions LIKE '%11G%';\"",
+      "label": "Password verifier versions (SELECT_CATALOG_ROLE)"
+     }
+    ]
+   },
+   "DB_LOGIN_NO_POLICY": {
+    "attack": "Short or common passwords and unlimited guessing against those logins.",
+    "category": "database",
+    "compliance": [
+     "auth"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-287"
+    ],
+    "default_impact": "Low",
+    "description": "Enabled SQL Server logins have CHECK_POLICY = OFF: Windows password complexity and lockout do not apply to them.",
+    "owasp": [
+     "auth"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-287 is in OWASP's mapped CWE list",
+      "id": "A07:2021",
+      "label": "A07:2021 - Identification and Authentication Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-287 is in OWASP's mapped CWE list",
+      "id": "A07:2025",
+      "label": "A07:2025 - Authentication Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://learn.microsoft.com/sql/relational-databases/security/password-policy"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "ALTER LOGIN <login> WITH CHECK_POLICY = ON, CHECK_EXPIRATION = ON (or use Windows / Entra authentication)."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "SQL logins skip the password policy",
+    "verify": [
+     {
+      "command": "sqlcmd -S {host},{port} -N -Q \"SELECT name FROM sys.sql_logins WHERE is_policy_checked = 0 AND is_disabled = 0\"",
+      "label": "Logins without the policy"
      }
     ]
    },
@@ -4165,6 +4696,77 @@
      {
       "command": "psql \"host={host} port={port} sslmode=require\" -c \"SELECT name, setting FROM pg_settings WHERE name IN ('ssl','ssl_min_protocol_version','password_encryption')\" -c \"SELECT line_number, type, database, user_name, auth_method FROM pg_hba_file_rules\"",
       "label": "Server TLS and password settings (as the read-only login)"
+     }
+    ]
+   },
+   "DB_TDE_OFF": {
+    "attack": "Data files, backups, snapshots and replicas expose the data to anyone who copies them.",
+    "category": "database",
+    "compliance": [
+     "at_rest"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-311"
+    ],
+    "default_impact": "Low",
+    "description": "A SQL Server database or an Oracle tablespace is not protected by Transparent Data Encryption.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-311 is in OWASP's mapped CWE list",
+      "id": "A04:2021",
+      "label": "A04:2021 - Insecure Design"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-311 is in OWASP's mapped CWE list",
+      "id": "A06:2025",
+      "label": "A06:2025 - Insecure Design"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://learn.microsoft.com/sql/relational-databases/security/encryption/transparent-data-encryption"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256 ENCRYPTION BY SERVER CERTIFICATE <cert>; ALTER DATABASE <db> SET ENCRYPTION ON (back up the certificate first)",
+       "platform": "SQL Server"
+      },
+      {
+       "how": "ALTER TABLESPACE <ts> ENCRYPTION ONLINE USING 'AES256' ENCRYPT",
+       "platform": "Oracle"
+      }
+     ],
+     "summary": "Turn on Transparent Data Encryption with AES-256."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Database not encrypted at rest",
+    "verify": [
+     {
+      "command": "sqlcmd -S {host},{port} -N -Q \"SELECT name, algorithm_desc, key_length FROM sys.symmetric_keys; SELECT DB_NAME(database_id), encryption_state, key_algorithm, key_length FROM sys.dm_database_encryption_keys\"",
+      "label": "Key algorithms in the database (read-only login)"
+     },
+     {
+      "command": "sqlplus -s <login>@//{host}:{port}/<service> <<< \"SELECT tablespace_name, encrypted FROM dba_tablespaces; SELECT * FROM v$encrypted_tablespaces;\"",
+      "label": "Tablespace encryption (SELECT_CATALOG_ROLE)"
      }
     ]
    },
@@ -5976,6 +6578,112 @@
      }
     ]
    },
+   "KEY_COMPROMISED": {
+    "attack": "Data or signatures protected by the key may be read or forged; a compromised key that can still be used for processing keeps the exposure open.",
+    "category": "key",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-324",
+     "CWE-320"
+    ],
+    "default_impact": "High",
+    "description": "The key manager lists the key in the KMIP Compromised state: someone recorded that its value may be known to others, and it still exists.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-324 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-324, CWE-320 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.oasis-open.org/kmip/kmip-spec/v2.0/kmip-spec-v2.0.html"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Re-encrypt or re-sign everything protected by the key with a new key, then destroy it."
+    },
+    "standards": [
+     "KMIP 1.4 / 2.0 (State: Compromised)",
+     "NIST SP 800-57 Part 1 Rev. 5, 8.3"
+    ],
+    "summary_rules": [],
+    "title": "Key marked compromised is still stored",
+    "verify": [
+     {
+      "command": "python3 -c \"from kmip.pie.client import ProxyKmipClient as C; c=C(hostname='{host}', port={port}, cert='client.pem', key='client.key', ca='ca.pem'); c.open(); print(c.get_attributes('<uid>')); c.close()\"",
+      "label": "Attributes of the object (PyKMIP client on a workstation that holds a KMIP client certificate)"
+     }
+    ]
+   },
+   "KEY_EXTRACTABLE": {
+    "attack": "A user of the token can wrap the key under a key they control and unwrap it elsewhere; the HSM then no longer is the only place the key exists.",
+    "category": "key",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-320"
+    ],
+    "default_impact": "Medium",
+    "description": "A private or secret key has CKA_EXTRACTABLE (or KMIP Extractable) set, so it can be wrapped and taken out of the HSM or key manager.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-320 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://docs.oasis-open.org/pkcs11/pkcs11-base/v3.0/pkcs11-base-v3.0.html"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "Keep keys that never need to leave the HSM non-extractable (CKA_EXTRACTABLE=FALSE); where backup needs wrapping, allow it only with CKA_WRAP_WITH_TRUSTED and a trusted wrapping key."
+    },
+    "standards": [
+     "PKCS #11 v3.0 (CKA_EXTRACTABLE)"
+    ],
+    "summary_rules": [],
+    "title": "Key can be exported from the HSM",
+    "verify": [
+     {
+      "command": "pkcs11-tool --module <library.so> --login --list-objects --type secrkey",
+      "label": "Key attributes on the token (pkcs11-tool from OpenSC; prints attributes, never values)"
+     },
+     {
+      "command": "python3 -c \"from kmip.pie.client import ProxyKmipClient as C; c=C(hostname='{host}', port={port}, cert='client.pem', key='client.key', ca='ca.pem'); c.open(); print(c.get_attributes('<uid>')); c.close()\"",
+      "label": "Attributes of the object (PyKMIP client on a workstation that holds a KMIP client certificate)"
+     }
+    ]
+   },
    "KEY_IN_CONFIGMAP": {
     "attack": "Anyone who can read ConfigMaps in the namespace (often far more people and controllers than can read Secrets) gets the private key.",
     "category": "kubernetes",
@@ -6110,6 +6818,132 @@
      }
     ]
    },
+   "KEY_NO_ROTATION": {
+    "attack": "A key version that never changes protects more data for longer; a leak of it exposes everything encrypted since it was created.",
+    "category": "key",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-324"
+    ],
+    "default_impact": "Low",
+    "description": "A Vault transit key has auto_rotate_period 0, so new key versions are made only by hand.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-324 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-324 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://developer.hashicorp.com/vault/api-docs/secret/transit"
+    ],
+    "remediation": {
+     "steps": [],
+     "summary": "vault write transit/keys/<key>/config auto_rotate_period=90d (and set min_decryption_version after rewrapping old data)."
+    },
+    "standards": [
+     "NIST SP 800-57 Part 1 Rev. 5 (cryptoperiods)"
+    ],
+    "summary_rules": [],
+    "title": "Key has no automatic rotation",
+    "verify": [
+     {
+      "command": "vault read transit/keys/{name}",
+      "label": "Transit key settings (read-only token)"
+     }
+    ]
+   },
+   "KEY_PLAINTEXT_EXPORT": {
+    "attack": "Anyone who can use the key (an application token, an HSM user, a Vault policy with export rights) can copy its value; the key then works outside the HSM or Vault, without audit and after revocation.",
+    "category": "key",
+    "compliance": [
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-320",
+     "CWE-522"
+    ],
+    "default_impact": "High",
+    "description": "A private or secret key can leave its key manager unprotected: an HSM object with CKA_SENSITIVE false, or a Vault transit key that is exportable or allows a plaintext backup.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-522 is in OWASP's mapped CWE list",
+      "id": "A04:2021",
+      "label": "A04:2021 - Insecure Design"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-320 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     },
+     {
+      "basis": "CWE-522 is in OWASP's mapped CWE list",
+      "id": "A06:2025",
+      "label": "A06:2025 - Insecure Design"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://developer.hashicorp.com/vault/api-docs/secret/transit",
+     "https://docs.oasis-open.org/pkcs11/pkcs11-base/v3.0/pkcs11-base-v3.0.html"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Generate the key with CKA_SENSITIVE=TRUE, CKA_EXTRACTABLE=FALSE",
+       "platform": "PKCS#11"
+      },
+      {
+       "how": "exportable and allow_plaintext_backup cannot be disabled once set: create a new key with both false, rewrap data (vault write transit/rewrap/<key>) and delete the old one",
+       "platform": "Vault transit"
+      }
+     ],
+     "summary": "Re-create the key as sensitive and non-exportable and move its users to the new key; the flags cannot be turned back on for a key that was already exposed."
+    },
+    "standards": [
+     "PKCS #11 v3.0 (CKA_SENSITIVE, CKA_EXTRACTABLE)",
+     "NIST SP 800-57 Part 1 Rev. 5, 6.2 (key protection)"
+    ],
+    "summary_rules": [],
+    "title": "Key can be read out in plain text",
+    "verify": [
+     {
+      "command": "pkcs11-tool --module <library.so> --login --list-objects --type secrkey",
+      "label": "Key attributes on the token (pkcs11-tool from OpenSC; prints attributes, never values)"
+     },
+     {
+      "command": "vault read transit/keys/{name}",
+      "label": "Transit key settings (read-only token)"
+     }
+    ]
+   },
    "KEY_READABLE": {
     "attack": "Any account with the same access can copy the key.",
     "category": "key",
@@ -6175,6 +7009,79 @@
      {
       "command": "openssl pkey -in '{path}' -pubout 2>/dev/null | openssl pkey -pubin -noout -text | head -1",
       "label": "Key type and size without printing the key"
+     }
+    ]
+   },
+   "KEY_WEAK_SYMMETRIC": {
+    "attack": "Single DES keys are brute-forced in hours; Triple DES and the other 64-bit block ciphers leak plaintext on long-lived keys (Sweet32, CVE-2016-2183); RC4 output is biased.",
+    "category": "key",
+    "compliance": [
+     "algorithms",
+     "key_mgmt"
+    ],
+    "cve_rules": [],
+    "cves": [
+     "CVE-2016-2183"
+    ],
+    "cwe": [
+     "CWE-327",
+     "CWE-326"
+    ],
+    "default_impact": "High",
+    "description": "A stored key (in an HSM, a KMIP server, Vault or a database) is a DES, Triple DES, RC4, RC2, Blowfish, IDEA or CAST5 key, or data is encrypted with one.",
+    "owasp": [
+     "crypto"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-327, CWE-326 is in OWASP's mapped CWE list",
+      "id": "A02:2021",
+      "label": "A02:2021 - Cryptographic Failures"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-327, CWE-326 is in OWASP's mapped CWE list",
+      "id": "A04:2025",
+      "label": "A04:2025 - Cryptographic Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://sweet32.info/",
+     "https://csrc.nist.gov/pubs/sp/800/131/a/r2/final"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "ALTER MASTER KEY REGENERATE WITH ENCRYPTION BY PASSWORD = '<new>' (database master keys made before 2012 are TRIPLE_DES); ALTER DATABASE ENCRYPTION KEY REGENERATE WITH ALGORITHM = AES_256",
+       "platform": "SQL Server"
+      },
+      {
+       "how": "ALTER TABLESPACE <ts> ENCRYPTION ONLINE USING 'AES256' REKEY",
+       "platform": "Oracle"
+      },
+      {
+       "how": "Create an AES-256 key, re-wrap or re-encrypt with it, then revoke and destroy the legacy key",
+       "platform": "HSM / KMIP"
+      }
+     ],
+     "summary": "Generate an AES-256 replacement, re-encrypt (or re-wrap) what the old key protects, then deactivate and destroy the old key."
+    },
+    "standards": [
+     "NIST SP 800-131A Rev. 2 (Triple DES encryption disallowed after 2023)",
+     "RFC 7465 (prohibits RC4 in TLS)"
+    ],
+    "summary_rules": [],
+    "title": "Key uses a broken or deprecated cipher",
+    "verify": [
+     {
+      "command": "pkcs11-tool --module <library.so> --login --list-objects --type secrkey",
+      "label": "Key attributes on the token (pkcs11-tool from OpenSC; prints attributes, never values)"
+     },
+     {
+      "command": "sqlcmd -S {host},{port} -N -Q \"SELECT name, algorithm_desc, key_length FROM sys.symmetric_keys; SELECT DB_NAME(database_id), encryption_state, key_algorithm, key_length FROM sys.dm_database_encryption_keys\"",
+      "label": "Key algorithms in the database (read-only login)"
      }
     ]
    },
@@ -10661,7 +11568,7 @@
    }
   }
  },
- "kb_version": "2026.11.02.5",
+ "kb_version": "2026.11.02.6",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
