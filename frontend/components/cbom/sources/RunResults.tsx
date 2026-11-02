@@ -26,7 +26,9 @@ import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 
 import { cbomSourcesKeys } from "./keys";
 import { pluralize } from "./logic";
+import { RunInsights } from "./ChangesPanel";
 import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
+import { BulkAssignBar, useRunRemediation, WaveBadge } from "./WavesControls";
 import { ErrorBlock, LoadingBlock, StatusBadge, Truncate, type Tone } from "./shared";
 
 export const ASSET_TYPE_LABEL: Record<string, string> = {
@@ -171,6 +173,8 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const waves = useRunRemediation(teamId, runId, active);
   const query = useQuery({
     queryKey: cbomSourcesKeys.runAssets(teamId, runId, JSON.stringify(filters)),
     queryFn: () => getCbomRunAssets(teamId, runId, filters),
@@ -192,6 +196,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
     <div className="space-y-4 min-w-0" data-testid="run-results">
       <TargetsBlock jobs={data.targets} />
       <RunPostureCard teamId={teamId} runId={runId} active={active} />
+      <RunInsights teamId={teamId} runId={runId} active={active} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -293,6 +298,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
         )}
       </div>
 
+      <BulkAssignBar teamId={teamId} target={{ run_id: runId }} keys={[...selected]} onDone={() => setSelected(new Set())} />
       {data.items.length === 0 ? (
         <p className="text-sm text-zinc-500" data-testid="run-results-empty">
           {data.all_total === 0 ? (active ? "Nothing collected yet." : "This run collected no assets.") : "No assets match these filters."}
@@ -304,12 +310,14 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-6"><span className="sr-only">Expand</span></TableHead>
+                  <TableHead className="w-6"><span className="sr-only">Select for wave assignment</span></TableHead>
                   <TableHead>Impact</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Where</TableHead>
                   <TableHead>Algorithm</TableHead>
                   <TableHead>Finding</TableHead>
                   <TableHead>Quantum</TableHead>
+                  <TableHead>Wave</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -321,6 +329,21 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                       data-testid={`run-asset-${asset.id}`}
                     >
                       <TableCell>{expanded === asset.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {waves.byAsset.get(asset.id) && (
+                          <input
+                            type="checkbox"
+                            className="cursor-pointer"
+                            aria-label={`Select ${asset.location} for wave assignment`}
+                            data-testid={`run-asset-select-${asset.id}`}
+                            checked={selected.has(waves.byAsset.get(asset.id)!.asset_key)}
+                            onChange={() => {
+                              const key = waves.byAsset.get(asset.id)!.asset_key;
+                              setSelected((cur) => { const next = new Set(cur); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+                            }}
+                          />
+                        )}
+                      </TableCell>
                       <TableCell><ImpactBadge impact={asset.impact} /></TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{ASSET_TYPE_LABEL[asset.type] ?? asset.type}</TableCell>
                       <TableCell className="max-w-[280px]">
@@ -335,10 +358,11 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                       <TableCell className="text-zinc-600 dark:text-zinc-400">
                         {asset.quantum_vulnerable === true ? "Vulnerable" : asset.quantum_vulnerable === false ? "Safe" : "—"}
                       </TableCell>
+                      <TableCell><WaveBadge item={waves.byAsset.get(asset.id)} /></TableCell>
                     </TableRow>
                     {expanded === asset.id && (
                       <TableRow>
-                        <TableCell colSpan={7} className="bg-zinc-50 dark:bg-zinc-800/50">
+                        <TableCell colSpan={9} className="bg-zinc-50 dark:bg-zinc-800/50">
                           <div className="max-w-[900px] space-y-2 whitespace-normal">
                             {asset.finding && <p className="text-sm text-zinc-900 dark:text-white">{asset.finding}</p>}
                             <p className="text-xs text-zinc-500">

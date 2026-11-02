@@ -117,6 +117,42 @@ def _collect(ctx: ScanContext) -> None:
         if updated == fact.linkage:
             continue
         comp.properties = encode_fact(replace(fact, linkage=updated))
+    _stamp_crypto_assets(ctx, loaded, owners_text, owners_rel, budget)
+
+
+# Business linkage on crypto asset rows too (not only encryption facts): the same mapping entries (path globs; an
+# entry restricted to a fact ``kind`` or a ``resource`` address does not apply to a file-level asset) and the same
+# CODEOWNERS rule, so an RSA key in ``payments/`` carries the payments owner and classification in the CBOM rows.
+BUSINESS_PROPS = (("system", "crypto:businessSystem"), ("owner", "crypto:businessOwner"),
+                  ("data_classification", "crypto:businessDataClassification"),
+                  ("data_lifetime", "crypto:businessDataLifetime"))
+
+
+def _stamp_crypto_assets(ctx: ScanContext, loaded, owners_text: str | None, owners_rel: str | None,
+                         budget: GlobBudget) -> None:
+    for comp in ctx.components:
+        if comp.kind != "crypto_asset":
+            continue
+        props = dict(comp.properties or {})
+        rel = props.get("crypto:source") or props.get("discovery:source")
+        if not rel:
+            continue
+        chosen = None
+        if loaded is not None:
+            chosen = matched_linkage(loaded, "", rel, "crypto_asset", budget)
+        hint = None
+        if owners_text is not None and owners_rel is not None:
+            hint = owner_hint(owners_text, rel, owners_rel)
+        if chosen is None and hint is None:
+            continue
+        for field, name in BUSINESS_PROPS:
+            value = getattr(chosen, field, None) if chosen is not None else None
+            if value:
+                props[name] = value
+        if hint:
+            props["crypto:businessOwnerHint"] = hint
+        props["crypto:businessSource"] = "mapping_file" if chosen is not None else "codeowners"
+        comp.properties = props
 
 
 def _is_owners(rel: str) -> bool:

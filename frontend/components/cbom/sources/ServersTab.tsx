@@ -50,6 +50,7 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
+import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import {
   ago,
   ansibleSnippet,
@@ -657,6 +658,7 @@ function ServerForm({
   const queryClient = useQueryClient();
   // Mounted with a key per source (and per version), so the form starts from the record without a sync effect.
   const [form, setForm] = useState<FormState>(() => initialForm(source, nodes));
+  const [meta, setMeta] = useState<SourceMetadata>(() => metadataFrom(source?.config));
   const [errors, setErrors] = useState<Errors>({});
   const [showAnsible, setShowAnsible] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
@@ -788,8 +790,9 @@ function ServerForm({
   const submit = (test: boolean) => {
     const found = validate();
     setErrors(found);
-    if (Object.keys(found).length) {
-      toast.error("Check the highlighted fields");
+    const metaConfig = metadataConfig(meta);
+    if (Object.keys(found).length || typeof metaConfig === "string") {
+      toast.error(typeof metaConfig === "string" ? metaConfig : "Check the highlighted fields");
       return;
     }
     const secrets: Record<string, string> = {};
@@ -816,6 +819,7 @@ function ServerForm({
         timeout_s: Number(form.timeoutS.trim()),
         window: form.window,
         custom_window: form.window === "custom" ? form.customWindow : null,
+        ...metaConfig,
       },
       secrets,
       ...(source ? { expected_version: source.row_version } : { kind: form.kind }),
@@ -1370,6 +1374,10 @@ function ServerForm({
               </Button>
             </FormSection>
           )}
+
+          <FormSection title="Ownership and data">
+            <MetadataFields value={meta} onChange={setMeta} idPrefix="servers" />
+          </FormSection>
 
           <FormSection title="Limits" last>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

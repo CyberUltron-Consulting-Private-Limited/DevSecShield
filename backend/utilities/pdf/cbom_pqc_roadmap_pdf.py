@@ -53,6 +53,7 @@ from backend.utilities.dashboard.cbom_team_rollup import (
     TIER_A,
     AssetAgg,
     TeamCbomView,
+    plan_key,
 )
 from backend.utilities.pdf import cbom_deliverable_text as authored
 from backend.utilities.pdf.cbom_deliverable_common import (
@@ -171,6 +172,17 @@ _NOTES = (
     "Wave, target date and owner / status are for the assessor to complete. This document "
     "lists assets and the NIST target for each; it does not sequence the migration.",
 )
+# With the team's remediation plan loaded (``view.remediation``) the last note is replaced by this one: the three
+# columns are filled from the plan, and scan-node / cloud assets get their own table.
+_PLAN_NOTE = (
+    "Wave, target date and owner / status come from the team's remediation plan in DevSecShield. "
+    "Where no wave was assigned, the suggested wave is printed with \"(suggested)\": 1 = critical or high "
+    "and internet-facing or harvest-now-decrypt-later, 2 = other critical or high, 3 = medium and low, "
+    "4 = quantum-vulnerable with no other weakness. Blank cells are for the assessor."
+)
+_NODE_HEADERS = ("#", "Asset", "Type", "Algorithm / key", "Impact", "Where found", "Collected", "Wave",
+                 "Target date", "Owner / status")
+_NODE_COLS = (24, 150, 70, 64, 44, 150, 52, 52, 50, 64)
 
 _KEY_BITS_RE = re.compile(r"\s*(\d{1,9})\b")
 _DIGITS_RE = re.compile(r"\d+")
@@ -281,7 +293,26 @@ def _seen(asset: AssetAgg) -> str:
     return f"{span}\n{_plural(max(int(asset.scan_count), 0), 'scan')}"
 
 
-def _roadmap_row(number: int, asset: AssetAgg) -> list[object]:
+def _plan_cells(plan: dict | None, suggested: int | None) -> list[str]:
+    """Wave, target date and owner / status from the team's remediation plan (blank without a plan)."""
+    if plan is None:
+        return ["", "", ""]
+    assigned = plan.get("assigned") or {}
+    wave = assigned.get("wave")
+    wave_text = str(wave) if wave else (f"{suggested} (suggested)" if suggested else "")
+    status = str(assigned.get("status") or "").replace("_", " ")
+    owner = " / ".join(x for x in (assigned.get("owner") or "", status if assigned else "") if x)
+    return [wave_text, str(assigned.get("target_date") or ""), owner]
+
+
+def _asset_plan(view: TeamCbomView, asset: AssetAgg) -> dict | None:
+    """The asset's remediation plan, precomputed into the view by the loader (``code_plans``)."""
+    if view.remediation is None:
+        return None
+    return (view.remediation.get("code_plans") or {}).get(plan_key(asset)) or {"assigned": {}, "suggested": None}
+
+
+def _roadmap_row(number: int, asset: AssetAgg, plan: dict | None = None) -> list[object]:
     return [
         str(number),
         asset.title,
@@ -293,9 +324,7 @@ def _roadmap_row(number: int, asset: AssetAgg) -> list[object]:
         status_chip(asset.impact.upper(), tone_for_impact(asset.impact)),
         _where(asset),
         _seen(asset),
-        "",
-        "",
-        "",
+        *_plan_cells(plan, (plan or {}).get("suggested")),
     ]
 
 
@@ -400,7 +429,12 @@ def _families(rows: list[AssetAgg], styles: Styles, width: float, title: str) ->
 
 
 def _roadmap(
-    rows: list[AssetAgg], styles: Styles, width: float, title: str, max_rows: int
+    rows: list[AssetAgg],
+    styles: Styles,
+    width: float,
+    title: str,
+    max_rows: int,
+    view: TeamCbomView | None = None,
 ) -> list[Flowable]:
     group_style = ParagraphStyle(
         "PqcGroupHeading", parent=styles["finding_title"], spaceBefore=8, spaceAfter=3
@@ -425,11 +459,12 @@ def _roadmap(
         table_rows = []
         for asset in shown:
             number += 1
-            table_rows.append(_roadmap_row(number, asset))
+            table_rows.append(_roadmap_row(number, asset, _asset_plan(view, asset) if view else None))
+        planned = view is not None and view.remediation is not None
         story += [
             CondPageBreak(90),
             Paragraph(pdf_text(heading, limit=200), group_style),
-            dense_table(_ROADMAP_HEADERS, table_rows, widths, manual_cols=_MANUAL_COLS),
+            dense_table(_ROADMAP_HEADERS, table_rows, widths, manual_cols=() if planned else _MANUAL_COLS),
         ]
     omitted = len(rows) - number
     if omitted > 0:
@@ -509,9 +544,44 @@ def _previously_seen(
     return story
 
 
-def _notes_section(styles: Styles, title: str) -> list[Flowable]:
-    lines = [_note(f"{_BULLET} {line}", styles, style="body") for line in _NOTES]
+def _notes_section(styles: Styles, title: str, *, planned: bool = False) -> list[Flowable]:
+    notes = (*_NOTES[:-1], _PLAN_NOTE) if planned else _NOTES
+    lines = [_note(f"{_BULLET} {line}", styles, style="body") for line in notes]
     return [KeepTogether([_heading(title, styles), *lines])]
+
+
+def _node_section(view: TeamCbomView, styles: Styles, width: float, title: str, max_rows: int) -> list[Flowable]:
+    """Quantum-vulnerable assets of each collection source's latest complete run (scan nodes, cloud worker)."""
+    rem = view.remediation or {}
+    rows = rem.get("node_rows") or []
+    table_rows = []
+    for number, item in enumerate(rows[: max(int(max_rows), 0)], start=1):
+        key = item.get("algorithm") or ""
+        if item.get("key_size"):
+            key = f"{key} {item['key_size']}".strip()
+        where = "\n".join(x for x in (item.get("source_name") or "", item.get("target") or "",
+                                       item.get("location") or "") if x)
+        impact = str(item.get("impact") or "Info")
+        plan = {"assigned": item.get("assignment") or {}, "suggested": item.get("suggested_wave")}
+        table_rows.append([
+            str(number), item.get("label") or "", item.get("type") or "", key or _DASH,
+            status_chip(impact.upper(), tone_for_impact(impact)), where,
+            (item.get("collected_at") or "")[:10], *_plan_cells(plan, plan["suggested"]),
+        ])
+    story: list[Flowable] = [
+        *section_heading(title, styles),
+        _note("Quantum-vulnerable assets found by scan nodes and the ZeroShield cloud worker in each source's "
+              "latest complete collection (servers, clusters, databases, cloud accounts, identity providers, "
+              "network endpoints).", styles),
+    ]
+    if table_rows:
+        story.append(dense_table(_NODE_HEADERS, table_rows, _fit(_NODE_COLS, width)))
+    omitted = len(rows) - len(table_rows) + int(rem.get("node_rows_omitted") or 0)
+    if omitted > 0:
+        story += [Spacer(1, 3), _note(_OMITTED_TEMPLATE.format(omitted=_plural(omitted, "further row"),
+                                                               cap=max(int(max_rows), 0)), styles)]
+    story.append(Spacer(1, 4))
+    return story
 
 
 # ---------------------------------------------------------------------------------------------
@@ -533,16 +603,19 @@ def build_body(
     story += _timeline(styles, width, title("Regulatory timeline"))
     if rows:
         story += _families(rows, styles, width, title("Target families"))
-        story += _roadmap(rows, styles, width, title("Per-asset roadmap"), max_rows)
+        story += _roadmap(rows, styles, width, title("Per-asset roadmap"), max_rows, view)
     else:
         story += _no_rows(view, styles, str(next(counter)))
+    if view.remediation is not None and view.remediation.get("node_rows"):
+        story += _node_section(view, styles, width, title("Collected infrastructure (scan nodes and cloud)"),
+                               max_rows)
     if not view.is_empty:
         story += _safe_section(view, styles, width, title("Already quantum-safe and hybrid"))
     if previous:
         story += _previously_seen(
             previous, styles, width, title(authored.PREVIOUSLY_SEEN_TITLE), max_rows
         )
-    story += _notes_section(styles, title("Notes"))
+    story += _notes_section(styles, title("Notes"), planned=view.remediation is not None)
     return story
 
 

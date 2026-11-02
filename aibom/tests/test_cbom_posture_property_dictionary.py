@@ -13,6 +13,14 @@ POSTURE = REPO / "aibom" / "src" / "aibom" / "cbom" / "posture"
 SCANNERS = REPO / "aibom" / "src" / "aibom" / "cbom" / "scanners"
 
 EXTRA_KEYS = (
+    # round 5 (WP10): cbom-mapping.yaml / CODEOWNERS on crypto asset rows (read from crypto:source)
+    "crypto:businessDataClassification",
+    "crypto:businessDataLifetime",
+    "crypto:businessOwner",
+    "crypto:businessOwnerHint",
+    "crypto:businessSource",
+    "crypto:businessSystem",
+    "crypto:source",
     "crypto:algorithm",
     "crypto:assetType",
     "crypto:cipherSuite",

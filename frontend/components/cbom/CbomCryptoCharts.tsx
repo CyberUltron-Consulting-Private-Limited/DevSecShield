@@ -69,6 +69,9 @@ import {
   Rocket,
   CalendarClock,
 } from "lucide-react";
+import CertCalendar from "@/components/cbom/CertCalendar";
+import CryptoHeatmap from "@/components/cbom/CryptoHeatmap";
+import { codeHeatmap, type CodeHeatRow } from "@/components/cbom/heatmapLogic";
 import { BomGraphCard } from "@/components/bom/BomGraphCard";
 import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
@@ -1308,6 +1311,10 @@ export function CbomCryptoCharts({
         />
         <ProtocolTls data={distributions.protocols} />
       </div>
+      <CodeHeatmapAndCalendar
+        findings={findings ?? []}
+        certificates={resolveCertificates(distributions, graph, findings)}
+      />
       {hasGraph && (
         <div className="grid grid-cols-1 gap-6">
           <CryptoDependencyGraph
@@ -1321,6 +1328,35 @@ export function CbomCryptoCharts({
         <div className="grid grid-cols-1 gap-6">
           <CbomComplianceMatrix compliance={compliance!} onAttest={onAttest} />
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Heat-map (algorithm family x asset type, worst impact) from the scan's rows, and the certificate calendar from
+ * ``cbom_distributions.certificates``: the same views a collection run shows, built from data this page has. */
+function CodeHeatmapAndCalendar({ findings, certificates }: { findings: CbomFinding[]; certificates: CertRow[] }) {
+  const heat = useMemo(() => codeHeatmap(findings as unknown as CodeHeatRow[]), [findings]);
+  const certs = useMemo(
+    () => certificates.filter((c) => c.not_valid_after).map((c) => ({ name: c.name, not_after: c.not_valid_after, location: c.location })),
+    [certificates],
+  );
+  if (heat.rows.length === 0 && certs.length === 0) return null;
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      {heat.rows.length > 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <CryptoHeatmap data={heat} title="Algorithm family × asset type" testId="code-heatmap" />
+          </CardContent>
+        </Card>
+      )}
+      {certs.length > 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <CertCalendar certs={certs} testId="code-cert-calendar" />
+          </CardContent>
+        </Card>
       )}
     </div>
   );

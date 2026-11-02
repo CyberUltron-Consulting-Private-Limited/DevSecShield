@@ -198,6 +198,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         backend += ("backend.new_models",)
         # the one finding rule and quantum-readiness definition every CBOM view shares (pure, stdlib only)
         backend += ("backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics")
+        # the remediation plan (waves, owners, target dates; scan-node assets) read by the loader: database only, no AI
+        backend += ("backend.utilities.cbom_sources.waves",)
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (

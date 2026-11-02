@@ -41,7 +41,7 @@ from backend.new_models import (
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
-from backend.utilities.cbom_sources.common import audit, engine_version, iso_z, log, new_ref, new_token, sha256_hex, utcnow
+from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, scrub, warn_if_key_is_weak
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE, VENDOR_LINK_DAYS, clean_answers
 from backend.utilities.cbom_sources.http import (
@@ -60,10 +60,10 @@ from backend.utilities.cbom_sources.http import (
     write_limiter,
 )
 from backend.utilities.cbom_sources import cdx_xml as CDX_XML
-from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
-from backend.utilities.cbom_sources.classify import ASSET_TYPES, CLASSIFIER_VERSION
+from backend.utilities.cbom_sources import runs as RUNS
+from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS, credential_target_problem, validate_secret_value
 from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
@@ -674,7 +674,9 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
         J.cancel_open_jobs(session, source, now, reason="Source deleted")
         J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
         for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
-            job.params = {**(job.params or {}), "source_name": source.name}
+            # the stable uid stays on the job, so the deleted source's runs still compare with each other
+            job.params = {**(job.params or {}), "source_name": source.name,
+                          "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
             job.source_id = None
             session.add(job)
         # collected assets stay with their run; only the link to the deleted source goes
@@ -1251,71 +1253,13 @@ def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[di
     now = utcnow()
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
-        existing = session.exec(select(CbomCollectionRun).where(
-            CbomCollectionRun.team_id == team_id, CbomCollectionRun.client_request_id == body.client_request_id)).first()
-        if existing is not None:
-            return {"run": _run_detail(session, existing, settings, now), "replayed": True}, 200
-        if body.scan_id is not None:
-            scan = session.get(Scan, body.scan_id)
-            if scan is None or scan.team_id != team_id:
-                raise HTTPException(status_code=404, detail="Scan not found")
-            if scan.scan_type != "cbom":
-                raise HTTPException(status_code=400, detail="scan_id: only a CBOM scan can be linked")
-        include = body.include.model_dump()
-        if not any(include.values()):
-            raise HTTPException(status_code=400, detail="include: choose at least one group to scan")
-        plan = plan_run(session, team_id, settings, now, include=include, source_ids=body.source_ids)
-        queued = [i for i in plan.items if i.status == "queued"]
-        if not queued:
-            if plan.items and all((i.reason or "").startswith("Already queued") for i in plan.items):
-                raise HTTPException(status_code=409, detail="Every selected source is already queued in a run")
-            raise HTTPException(status_code=400, detail="Nothing to scan: every selected source is skipped (see 'Will be skipped')")
-        if any(i.group == "network" for i in queued) and not body.soc_ack:
-            raise HTTPException(status_code=400, detail="soc_ack: confirm that your SOC has agreed the network ranges and scan windows")
-        total_c = plan.total_c
-        if body.expected_credits is not None and round(body.expected_credits * 100) != total_c:
-            raise HTTPException(status_code=409, detail=f"The estimate changed to {credits(total_c)} credits. Review it and start again.")
-        if not J.charge_team(session, team_id, total_c):
-            team = session.get(Team, team_id)
-            balance = round(float(team.credit_balance or 0), 2) if team else 0
-            raise HTTPException(status_code=400, detail=f"Not enough credits: this run needs {credits(total_c)}, the team has {balance}")
-        run = CbomCollectionRun(
-            team_id=team_id, owner_user_id=user_id, scan_id=body.scan_id, client_request_id=body.client_request_id,
-            status="queued", include=include, credits_charged_c=total_c,
-            breakdown={"groups": plan.groups(), "skipped": [i.public() for i in plan.items if i.status == "skipped"]},
-            soc_ack_by=user_id if body.soc_ack else None, soc_ack_at=now if body.soc_ack else None,
-            created_at=now, last_updated=now,
-            # what judges this run's facts (classification happens here, on the API)
-            kb_version=(crypto_kb.version() or None), classifier_version=CLASSIFIER_VERSION,
-            engine_version=engine_version(),
-        )
-        session.add(run)
-        try:
-            session.flush()
-        except IntegrityError:  # the same client_request_id raced in from another tab
-            session.rollback()
-            existing = session.exec(select(CbomCollectionRun).where(
-                CbomCollectionRun.team_id == team_id, CbomCollectionRun.client_request_id == body.client_request_id)).one()
-            return {"run": _run_detail(session, existing, settings, now), "replayed": True}, 200
-        sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()}
-        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
-        snapshot = [str(i.get("cidr")) for i in (settings.network_exclusions or []) if isinstance(i, dict)]
-        for item in queued:
-            source = sources[item.source_id]
-            session.add(CbomCollectionJob(
-                team_id=team_id, run_id=run.id, source_id=source.id,
-                node_id=None if KINDS[source.kind].node_less else source.node_id, kind="collect",
-                params={"source_name": source.name, "units": item.units, "unit": item.unit, "exclusions": snapshot,
-                        "conn_v": J.connection_version(source),
-                        # criticality / exposure as of now: posture scores this run with them, whatever changes later
-                        "metadata": J.metadata_snapshot(source, nodes.get(source.node_id or 0))},
-                source_version=source.row_version, weight_c=item.credits_c, created_by_user_id=user_id, created_at=now,
-            ))
-        audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="run.create",
-              object_type="run", object_id=run.id, changed_fields=[k for k, v in include.items() if v])
+        # one code path with the scheduler (plan, SOC acknowledgement, credits, idempotency): runs.queue_run
+        run, replayed = RUNS.queue_run(session, team_id, user_id, body, settings, now)
+        if replayed:
+            return {"run": _run_detail(session, run, settings, now), "replayed": True}, 200
         session.commit()
         session.refresh(run)
-        log("run created", team=team_id, run=run.id, jobs=len(queued), credits=credits(total_c), by=user_id)
+        log("run created", team=team_id, run=run.id, credits=credits(run.credits_charged_c), by=user_id)
         return {"run": _run_detail(session, run, settings, now), "replayed": False}, 201
 
 

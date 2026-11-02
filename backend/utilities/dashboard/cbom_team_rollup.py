@@ -687,6 +687,10 @@ class TeamCbomView:
     compliance_legacy_excluded: int = 0  # current reduced-fidelity sources left out (Appendix B: 1)
     warnings: tuple[str, ...] = ()  # skipped / coerced inputs; capped (renderers may print count)
     posture: PostureView = field(default_factory=PostureView.empty)
+    # the team's remediation plan (``cbom_sources.waves.roadmap_extras``: assignments by stable key and the
+    # quantum-vulnerable assets of each collection source's latest complete run); None = not loaded (hand-made views)
+    # Not part of the fold: excluded from equality and repr (a DB-loaded view equals the in-memory fold of its scans).
+    remediation: dict[str, Any] | None = field(default=None, compare=False, repr=False)
 
     @property
     def is_empty(self) -> bool:
@@ -903,6 +907,11 @@ def source_key_for(
     if _tri(data.get("cbom_file_used")) is True:
         return f"file:{_slug(name)}", f"Uploaded CBOM: {name or '(untitled)'}", SOURCE_FILE
     return f"scan:{scan_id}", f"Scan #{scan_id}", SOURCE_SCAN
+
+
+def plan_key(asset: AssetAgg) -> str:
+    """Key of an asset in ``TeamCbomView.remediation["code_plans"]`` (renderers look plans up with it)."""
+    return f"{asset.source_key}\x1f{asset.asset_type}\x1f{asset.ident}"
 
 
 def cert_identity_key(
@@ -2974,13 +2983,21 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
             ).all()
             return {scan_id: data for scan_id, data in found}
 
-        return fold_scans(
+        view = fold_scans(
             heads,
             load_blobs,
             team_id=team_id,
             team_name=team_name or f"Team {team_id}",
             now=moment,
         )
+        try:  # remediation waves and scan-node assets for the roadmap; a failure leaves the manual columns blank
+            from backend.utilities.cbom_sources.waves import roadmap_extras
+
+            view.remediation = roadmap_extras(session, team_id, view)
+        except Exception as exc:  # pragma: no cover - defensive
+            view.remediation = None
+            view.warnings = (*view.warnings, f"remediation plan not loaded: {type(exc).__name__}")
+        return view
 
 
 __all__ = [

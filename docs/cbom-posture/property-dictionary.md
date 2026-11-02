@@ -7,6 +7,12 @@ Posture facts and the crypto assets this lane adds use the `crypto:` namespace. 
 | --- |
 | crypto:algorithm |
 | crypto:assetType |
+| crypto:businessDataClassification |
+| crypto:businessDataLifetime |
+| crypto:businessOwner |
+| crypto:businessOwnerHint |
+| crypto:businessSource |
+| crypto:businessSystem |
 | crypto:cipherSuite |
 | crypto:coverage:lfsObjectsNotScanned |
 | crypto:coverage:submodulesNotScanned |
@@ -55,6 +61,7 @@ Posture facts and the crypto assets this lane adds use the `crypto:` namespace. 
 | crypto:rotation |
 | crypto:selfSigned |
 | crypto:signatureAlgorithm |
+| crypto:source |
 | crypto:strength |
 | crypto:subjectName |
 | crypto:version |

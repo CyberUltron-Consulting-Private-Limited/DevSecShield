@@ -240,9 +240,15 @@ def _component(row: CbomCollectedAsset, source_name: str | None) -> dict[str, An
         props.append({"name": "zs:finding_code", "value": str(code)})
     name = row.name or row.algorithm or row.location
     if row.cdx_type == "library":
-        return {"type": "library", "bom-ref": ref, "name": str(facts.get("package") or name)[:255],
-                "version": str(facts.get("version") or ""), "evidence": {"occurrences": [{"location": row.location}]},
-                "properties": props}
+        from backend.utilities.cbom_sources.sbom_link import ecosystem_of, library_purl
+
+        package, version = str(facts.get("package") or name)[:255], str(facts.get("version") or "")
+        out = {"type": "library", "bom-ref": ref, "name": package, "version": version,
+               "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
+        purl = library_purl(package, version, ecosystem_of(facts.get("ecosystem") or facts.get("language")))
+        if purl:
+            out["purl"] = purl  # SBOM link: OS packages without an ecosystem are pkg:generic
+        return out
     crypto: dict[str, Any] = {"assetType": row.cdx_type if row.cdx_type in ("certificate", "protocol", "related-crypto-material") else "algorithm"}
     if crypto["assetType"] == "certificate":
         crypto["certificateProperties"] = {

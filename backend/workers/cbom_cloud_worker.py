@@ -194,6 +194,10 @@ def main() -> None:
         reap_all(engine)
         run_once(engine, worker)
         return
+    # schedules and drift run on their own thread: this loop can be busy with one AWS collection for hours
+    from backend.workers.cbom_scheduler import start_thread
+
+    scheduler_stop = start_thread(engine)
     last_reap = 0.0
     while not _stopping:
         if time.monotonic() - last_reap >= REAP_EVERY_S:
@@ -206,6 +210,8 @@ def main() -> None:
             busy = False
         if not busy:
             time.sleep(IDLE_SLEEP_S)
+    if scheduler_stop is not None:
+        scheduler_stop.set()
     log("cloud worker stopped", worker=worker)
 
 

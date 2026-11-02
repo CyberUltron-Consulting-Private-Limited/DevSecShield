@@ -379,6 +379,11 @@ def bom_dict_from_scan_data(
             findings=findings,
             subject_name=subject_name,
         )
+    if scan_type == "cbom":
+        # library components get a purl (SBOM link); every export and its signature are built here, so they agree
+        from backend.utilities.cbom_sources.sbom_link import with_library_purls
+
+        return with_library_purls(bom)
     return bom
 
 

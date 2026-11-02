@@ -29,6 +29,7 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
+import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import { ago, pluralize, readTextFile } from "./logic";
 import {
   Checkbox2,
@@ -727,6 +728,7 @@ function ClusterForm({
   const isAdmin = useIsTeamAdmin(teamId);
   // Mounted with a key per source and save, so it starts from the record without a sync effect.
   const [form, setForm] = useState<ClusterState>(() => initialCluster(source, nodes));
+  const [meta, setMeta] = useState<SourceMetadata>(() => metadataFrom(source?.config));
   const [errors, setErrors] = useState<ClusterErrors>({});
   const caRef = useRef<HTMLInputElement>(null);
   const kubeRef = useRef<HTMLInputElement>(null);
@@ -795,8 +797,9 @@ function ClusterForm({
   const submit = (test: boolean) => {
     const found = validate();
     setErrors(found);
-    if (Object.keys(found).length) {
-      toast.error("Check the highlighted fields");
+    const metaConfig = metadataConfig(meta);
+    if (Object.keys(found).length || typeof metaConfig === "string") {
+      toast.error(typeof metaConfig === "string" ? metaConfig : "Check the highlighted fields");
       return;
     }
     const body: CbomSourceWrite = {
@@ -811,6 +814,7 @@ function ClusterForm({
         tier: form.tier,
         managed: form.managed,
         cloud_source_id: form.managed ? form.cloudSourceId : null,
+        ...metaConfig,
       },
       secrets: form.credentialType === "kubeconfig" && form.kubeconfig ? { kubeconfig: form.kubeconfig } : {},
       ...(source ? { expected_version: source.row_version } : { kind: "kubernetes" }),
@@ -1103,6 +1107,11 @@ function ClusterForm({
           </div>
         </Field>
 
+        <details className="rounded-md border border-zinc-200 dark:border-zinc-800 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-zinc-900 dark:text-white">Ownership and data</summary>
+          <div className="mt-3"><MetadataFields value={meta} onChange={setMeta} idPrefix="k8s" /></div>
+        </details>
+
         <FormButtons
           prefix="k8s"
           editing={!!source}
@@ -1178,6 +1187,7 @@ function DatabaseForm({
 }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<DbState>(() => initialDb(source, nodes));
+  const [meta, setMeta] = useState<SourceMetadata>(() => metadataFrom(source?.config));
   const [errors, setErrors] = useState<DbErrors>({});
   const caRef = useRef<HTMLInputElement>(null);
 
@@ -1267,8 +1277,9 @@ function DatabaseForm({
   const submit = (test: boolean) => {
     const found = validate();
     setErrors(found);
-    if (Object.keys(found).length) {
-      toast.error("Check the highlighted fields");
+    const metaConfig = metadataConfig(meta);
+    if (Object.keys(found).length || typeof metaConfig === "string") {
+      toast.error(typeof metaConfig === "string" ? metaConfig : "Check the highlighted fields");
       return;
     }
     const body: CbomSourceWrite = {
@@ -1284,6 +1295,7 @@ function DatabaseForm({
         require_tls: form.requireTls,
         ca_pem: form.caPem.trim() ? form.caPem : null,
         database_name: form.databaseName.trim() || null,
+        ...metaConfig,
       },
       secrets: form.credentialType === "password" && form.password ? { password: form.password } : {},
       ...(source ? { expected_version: source.row_version } : { kind: "database" }),
@@ -1508,6 +1520,11 @@ function DatabaseForm({
             <NodeSelect id="db-node" nodes={nodes} value={form.nodeId} onChange={(v) => set({ nodeId: v })} />
           </div>
         </Field>
+
+        <details className="rounded-md border border-zinc-200 dark:border-zinc-800 p-3">
+          <summary className="cursor-pointer text-sm font-medium text-zinc-900 dark:text-white">Ownership and data</summary>
+          <div className="mt-3"><MetadataFields value={meta} onChange={setMeta} idPrefix="db" /></div>
+        </details>
 
         <FormButtons
           prefix="db"
