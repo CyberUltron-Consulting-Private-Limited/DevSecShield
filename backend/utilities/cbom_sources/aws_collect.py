@@ -83,11 +83,12 @@ class _Account:
 
 
 def _paginate(client, method: str, key: str, cap: int = PER_SERVICE_CAP, **kwargs) -> tuple[list[Any], bool]:
+    """At most ``cap`` items; truncated only when AWS had more (exactly ``cap`` items is complete)."""
     out: list[Any] = []
     paginator = client.get_paginator(method)
     for page in paginator.paginate(**kwargs):
         out.extend(page.get(key) or [])
-        if len(out) >= cap:
+        if len(out) > cap:
             return out[:cap], True
     return out, False
 
@@ -250,10 +251,70 @@ def _tls_protocol_names(values: list[str]) -> list[str]:
     return out
 
 
-def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> list[tuple[str, str, str | None]]:
+def _exposure(internet_facing: bool | None, basis: str) -> dict[str, Any]:
+    """Facts the risk score reads: is the resource reachable from the internet, and what AWS setting says so."""
+    return {"internet_facing": internet_facing, "exposure_basis": basis[:200]}
+
+
+# --- Glue connections: only these property keys are ever kept (values are booleans or a credential-free URL) ------
+_GLUE_BOOL_KEYS = ("JDBC_ENFORCE_SSL", "SKIP_CUSTOM_JDBC_CERT_VALIDATION", "KAFKA_SSL_ENABLED", "KAFKA_SKIP_CUSTOM_CERT_VALIDATION")
+_GLUE_PRESENCE_KEYS = ("CUSTOM_JDBC_CERT", "KAFKA_CUSTOM_CERT", "SECRET_ID", "ENCRYPTED_PASSWORD", "USERNAME")
+_JDBC_TLS_PARAM = re.compile(r"(?:^|[?&;])(ssl|usessl|requiressl|encrypt|sslmode|ssl-mode|sslenabled)=([^&;]*)", re.I)
+
+
+def _strip_jdbc_url(url: str) -> tuple[str | None, bool]:
+    """(jdbc:<engine>://host[:port][/database], whether the URL itself asks for TLS).  User names, passwords and every
+    query or property part are dropped; Oracle's user/password@ form and descriptors keep only host and port."""
+    text = str(url or "").strip()
+    match = re.match(r"^jdbc:([a-z0-9]+)(?::[a-z0-9]+)*:", text, re.I)
+    if not match:
+        return None, False
+    engine, rest = match.group(1).lower(), text[match.end():]
+    tls = any(value.strip().lower() not in ("false", "0", "disable", "disabled", "allow", "prefer", "preferred", "")
+              for _name, value in _JDBC_TLS_PARAM.findall(rest))
+    if "(" in rest:  # Oracle descriptor: (DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=h)(PORT=p))...)
+        host = re.search(r"\(HOST\s*=\s*([A-Za-z0-9.\-]+)\)", rest, re.I)
+        port = re.search(r"\(PORT\s*=\s*(\d{1,5})\)", rest, re.I)
+        tls = tls or bool(re.search(r"\(PROTOCOL\s*=\s*TCPS\)", rest, re.I))
+        return (f"jdbc:{engine}://{host.group(1)}{':' + port.group(1) if port else ''}" if host else None), tls
+    rest = re.split(r"[?;]", rest, maxsplit=1)[0]
+    if "@" in rest:
+        rest = rest.rsplit("@", 1)[1]  # user[:password]@host or Oracle user/password@host
+    rest = rest.lstrip("/")
+    hostport = re.match(r"^(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.\-]+)(:\d{1,5})?(/[A-Za-z0-9_.\-$]{0,128})?", rest)
+    if not hostport:
+        return None, tls
+    return f"jdbc:{engine}://{hostport.group(1)}{hostport.group(2) or ''}{hostport.group(3) or ''}", tls
+
+
+def _glue_connection_facts(conn: dict[str, Any]) -> dict[str, Any]:
+    """Allow-listed facts of one Glue connection.  No property value leaves this function except booleans, the
+    connection type and a credential-free JDBC URL; a password key is reported as present/absent only."""
+    props = {str(k).upper(): v for k, v in (conn.get("ConnectionProperties") or {}).items()}
+    facts: dict[str, Any] = {"connection_type": conn.get("ConnectionType")}
+    for key in _GLUE_BOOL_KEYS:
+        if key in props:
+            facts[key.lower()] = str(props[key]).strip().lower() == "true"
+    for key in _GLUE_PRESENCE_KEYS:
+        facts[f"has_{key.lower()}"] = bool(props.get(key))
+    facts["has_password_key"] = any(k == "PASSWORD" or (k.endswith("_PASSWORD") and not k.startswith("ENCRYPTED_"))
+                                    for k in props)
+    facts["has_encrypted_password"] = any(k.startswith("ENCRYPTED_") and k.endswith("PASSWORD") for k in props)
+    facts["uses_secrets_manager"] = bool(props.get("SECRET_ID")) or any(k.endswith("SECRETS_ARN") for k in props)
+    url, url_tls = _strip_jdbc_url(props.get("JDBC_CONNECTION_URL") or "")
+    if url:
+        facts["jdbc_url"] = url
+        facts["jdbc_url_requests_tls"] = url_tls
+    return facts
+
+
+def _region_services(acct: _Account, region: str, label: str, emit: Emit,
+                     opts: dict[str, Any] | None = None) -> list[tuple[str, str, str | None]]:
     """Read every regional service.  Returns (service, status, detail) rows."""
+    opts = opts or {}
     rows: list[tuple[str, str, str | None]] = []
     arn_prefix = f"arn:aws:{{svc}}:{region}:{acct.account}"
+    cache: dict[str, Any] = {}
 
     def run(service: str, fn: Callable[[], str | None]) -> None:
         try:
@@ -267,6 +328,31 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
             rows.append((service, status, code))
             emit({"type": "coverage", "target": label, "location": f"{arn_prefix.format(svc=service)}:{service}",
                   "facts": {"check": f"{service} in {region}", "status": status, "detail": code}})
+
+    def reservations() -> tuple[list[Any], bool]:
+        """DescribeInstances once per region (raises, so the service that needs it reports the failure itself)."""
+        if "reservations" not in cache:
+            cache["reservations"] = _paginate(acct.client("ec2", region), "describe_instances", "Reservations")
+        return cache["reservations"]
+
+    def instance_exposure() -> dict[str, dict[str, Any]]:
+        """Instance id -> exposure facts.  A public IPv4 address means internet-facing; an IPv6 address alone is
+        "unknown" (it is reachable only if the subnet routes to an internet gateway)."""
+        if "exposure" not in cache:
+            try:
+                found, _t = reservations()
+            except Exception:  # volumes are still reported, just without exposure facts
+                found = []
+            out: dict[str, dict[str, Any]] = {}
+            for inst in (i for r in found for i in r.get("Instances") or []):
+                public_ip = inst.get("PublicIpAddress")
+                ipv6 = any(a.get("Ipv6Address") for n in inst.get("NetworkInterfaces") or [] for a in n.get("Ipv6Addresses") or [])
+                out[inst["InstanceId"]] = _exposure(True if public_ip else (None if ipv6 else False),
+                                                    f"EC2 instance {inst['InstanceId']} "
+                                                    + ("has a public IP address" if public_ip else
+                                                       "has only an IPv6 address" if ipv6 else "has no public IP address"))
+            cache["exposure"] = out
+        return cache["exposure"]
 
     def kms() -> str | None:
         client = acct.client("kms", region)
@@ -327,42 +413,64 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
               "name": f"EBS encryption by default ({region})", "facts": {"resource": "EBS default", "default_encryption": default}})
         volumes, truncated = _paginate(client, "describe_volumes", "Volumes")
         plain = [v for v in volumes if not v.get("Encrypted")]
+        exposure = instance_exposure() if any(v.get("Attachments") for v in volumes) else {}
         # every volume is inventory (encrypted ones with their KMS key); unencrypted ones first so the cap never hides them
         for volume in (plain + [v for v in volumes if v.get("Encrypted")])[:PER_SERVICE_CAP]:
             encrypted = bool(volume.get("Encrypted"))
             attached = [a.get("InstanceId") for a in volume.get("Attachments") or [] if a.get("InstanceId")]
+            seen = [exposure[i] for i in attached if i in exposure]
             emit({"type": "storage_encryption", "target": label,
                   "location": f"arn:aws:ec2:{region}:{acct.account}:volume/{volume['VolumeId']}", "name": volume["VolumeId"],
                   "facts": {"resource": f"EBS volume {volume['VolumeId']}", "encrypted": encrypted, "size_gib": volume.get("Size"),
                             "kms_key_id": volume.get("KmsKeyId") if encrypted else None, "volume_type": volume.get("VolumeType"),
-                            "attached_to": attached[:5], "identity": volume["VolumeId"]}})
+                            "attached_to": attached[:5], "identity": volume["VolumeId"],
+                            **(max(seen, key=lambda e: {True: 2, None: 1, False: 0}[e["internet_facing"]]) if seen else {})}})
         return f"{len(volumes)} volumes, {len(plain)} unencrypted" + (" (truncated)" if truncated else "")
 
     def lambdas() -> str | None:
-        # ListFunctions returns each function's environment; values are inspected here and only their shape is kept.
-        # Variables under a customer-managed key come back as an error (kms:Decrypt is denied) and are not readable.
+        # ListFunctions returns each function's environment, and Lambda decrypts it with the CALLER's KMS permissions:
+        # under the default aws/lambda key no KMS permission is needed; under a customer-managed key the caller needs
+        # kms:Decrypt on that key, otherwise Environment.Error comes back instead of the variables
+        # (https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars-encryption.html).  Values are inspected
+        # here and only their shape is kept.  FunctionVersion=ALL adds every published version (each has its own,
+        # immutable environment).
         client = acct.client("lambda", region)
-        functions, truncated = _paginate(client, "list_functions", "Functions", cap=CONFIG_SCAN_CAP)
+        functions, truncated = _paginate(client, "list_functions", "Functions", cap=CONFIG_SCAN_CAP, FunctionVersion="ALL")
+        cmk_on = bool(opts.get("decrypt_lambda_cmk"))
         hits = unreadable = 0
         for fn in functions:
             env = fn.get("Environment") or {}
-            if env.get("Error"):  # e.g. KMS decrypt denied: say so per function instead of reporting nothing
+            where = f"{fn.get('FunctionName')}:{fn.get('Version') or '$LATEST'}"
+            if env.get("Error"):  # say so per function version instead of reporting nothing
                 unreadable += 1
                 err = env["Error"] if isinstance(env["Error"], dict) else {}
+                code = str(err.get("ErrorCode") or "not readable")[:80]
+                if fn.get("KMSKeyArn") and not cmk_on:  # the key's ARN is in kms_key_id
+                    detail = (f"{code}: encrypted with a customer-managed key; turn on 'Decrypt Lambda environments "
+                              "under customer-managed keys' for this account to inspect it")
+                elif fn.get("KMSKeyArn"):
+                    detail = (f"{code}: the key policy of the customer-managed key does not let the ZeroShield role "
+                              "decrypt through Lambda; add the role to the key's users")
+                else:
+                    detail = f"{code} (Lambda decrypts environments with the caller's KMS permissions)"
                 emit({"type": "coverage", "target": label, "location": f"{fn['FunctionArn']}#environment",
-                      "facts": {"check": f"lambda {fn.get('FunctionName')} environment variables", "status": "denied",
-                                "detail": str(err.get("ErrorCode") or "not readable")[:120] +
-                                          " (Lambda decrypts them with the caller's KMS permissions)"}})
+                      "facts": {"check": f"lambda {where} environment variables", "status": "denied",
+                                "detail": detail[:200], "kms_key_id": fn.get("KMSKeyArn"), "identity": fn["FunctionArn"]}})
                 continue
             for var, value in sorted((env.get("Variables") or {}).items()):
                 shape = _value_shape(var, value)
                 if not shape:
                     continue
                 hits += 1
-                emit(_embedded_asset(label, f"{fn['FunctionArn']}#environment/{var}", f"{fn.get('FunctionName')} env {var}", shape,
-                                     {"service": "lambda", "store": f"Lambda function {fn.get('FunctionName')} environment",
-                                      "variable": var, "kms_key_id": fn.get("KMSKeyArn") or "aws/lambda"}))
-        return (f"{len(functions)} functions, {hits} secrets in environment"
+                emit(_embedded_asset(label, f"{fn['FunctionArn']}#environment/{var}", f"{where} env {var}", shape,
+                                     {"service": "lambda", "store": f"Lambda function {where} environment",
+                                      "variable": var, "kms_key_id": fn.get("KMSKeyArn") or "aws/lambda",
+                                      "customer_managed_key": bool(fn.get("KMSKeyArn"))}))
+        if truncated:  # the cap is a coverage gap, never a silent "nothing found"
+            emit({"type": "coverage", "target": label, "location": f"arn:aws:lambda:{region}:{acct.account}:functions#cap",
+                  "facts": {"check": f"lambda in {region}", "status": "truncated",
+                            "detail": f"More than {CONFIG_SCAN_CAP} function versions; the first {CONFIG_SCAN_CAP} were inspected"}})
+        return (f"{len(functions)} function versions, {hits} secrets in environment"
                 + (f", {unreadable} environments not readable" if unreadable else "") + (" (truncated)" if truncated else ""))
 
     def ecs_taskdefs() -> str | None:
@@ -389,9 +497,11 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
     def userdata() -> str | None:
         # DescribeInstanceAttribute(userData): bootstrap scripts often carry keys; only shapes and line numbers are kept.
         client = acct.client("ec2", region)
-        reservations, truncated = _paginate(client, "describe_instances", "Reservations", cap=CONFIG_SCAN_CAP)
-        instances = [i for r in reservations for i in r.get("Instances") or []
-                     if (i.get("State") or {}).get("Name") not in ("terminated", "shutting-down")][:CONFIG_SCAN_CAP]
+        found, _t = reservations()
+        exposure = instance_exposure()
+        live = [i for r in found for i in r.get("Instances") or []
+                if (i.get("State") or {}).get("Name") not in ("terminated", "shutting-down")]
+        instances, truncated = live[:CONFIG_SCAN_CAP], len(live) > CONFIG_SCAN_CAP
         hits = 0
         for inst in instances:
             raw = ((client.describe_instance_attribute(InstanceId=inst["InstanceId"], Attribute="userData")
@@ -406,29 +516,122 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
             emit(_embedded_asset(label, f"arn:aws:ec2:{region}:{acct.account}:instance/{inst['InstanceId']}#userData",
                                  f"{inst['InstanceId']} user data", {k: v for k, v in primary.items() if k not in ("line", "variable")},
                                  {"service": "ec2", "store": f"EC2 instance {inst['InstanceId']} user data",
-                                  "line": primary.get("line"), "items": items}))
+                                  "line": primary.get("line"), "items": items, **exposure.get(inst["InstanceId"], {})}))
         return f"{len(instances)} instances, {hits} with secrets in user data" + (" (truncated)" if truncated else "")
+
+    # Parameters read from RDS parameter groups (engine-aware).  Effective values come from DescribeDBParameters /
+    # DescribeDBClusterParameters (rds:Describe* in SecurityAudit); a parameter without ParameterValue is "unknown".
+    rds_params_wanted = ("password_encryption", "rds.force_ssl", "rds.accepted_password_auth_method",
+                         "require_secure_transport", "ssl_min_protocol_version", "tls_version", "rds.tls10", "rds.tls11")
+
+    def rds_params(client, group: str | None, cluster: bool) -> dict[str, str]:
+        if not group:
+            return {}
+        key = f"{'cluster' if cluster else 'instance'}:{group}"
+        if key not in cache:
+            method, arg = (("describe_db_cluster_parameters", "DBClusterParameterGroupName") if cluster
+                           else ("describe_db_parameters", "DBParameterGroupName"))
+            params, _t = _paginate(client, method, "Parameters", cap=5000, **{arg: group})
+            cache[key] = {p["ParameterName"]: str(p["ParameterValue"]) for p in params
+                          if p.get("ParameterName") in rds_params_wanted and p.get("ParameterValue") not in (None, "")}
+        return cache[key]
+
+    def rds_config_facts(engine: str, values: dict[str, str]) -> dict[str, Any]:
+        """database_config facts the classifier reads, from one engine's parameters."""
+        def on(name: str) -> bool | None:
+            value = values.get(name)
+            return None if value is None else value.strip().lower() in ("1", "on", "true")
+
+        facts: dict[str, Any] = {"parameters": dict(sorted(values.items()))}
+        if "postgres" in engine:
+            facts["require_secure_transport"] = on("rds.force_ssl")
+            if values.get("password_encryption"):
+                facts["password_encryption"] = values["password_encryption"]
+            method = values.get("rds.accepted_password_auth_method")
+            if method:
+                facts["accepted_password_auth_method"] = method
+                facts["md5_auth_accepted"] = "md5" in method.lower()
+            if values.get("ssl_min_protocol_version"):
+                facts["min_version"] = values["ssl_min_protocol_version"]
+        elif "mysql" in engine or "mariadb" in engine:
+            facts["require_secure_transport"] = on("require_secure_transport")
+            if values.get("tls_version"):
+                facts["protocols"] = [p.strip() for p in values["tls_version"].split(",") if p.strip()]
+        elif engine.startswith("sqlserver"):
+            facts["require_secure_transport"] = on("rds.force_ssl")
+            old = [label for name, label in (("rds.tls10", "TLSv1.0"), ("rds.tls11", "TLSv1.1"))
+                   if str(values.get(name) or "").lower() == "enabled"]
+            if old:
+                facts["protocols"] = old + ["TLSv1.2"]
+        return facts
 
     def rds() -> str | None:
         client = acct.client("rds", region)
         dbs, truncated = _paginate(client, "describe_db_instances", "DBInstances")
+        clusters: dict[str, dict[str, Any]] = {}
+        if any(db.get("DBClusterIdentifier") for db in dbs):
+            try:
+                found, _t = _paginate(client, "describe_db_clusters", "DBClusters")
+            except Exception as exc:  # instances are still reported; their cluster-level parameters are not
+                found = []
+                emit({"type": "coverage", "target": label, "location": f"arn:aws:rds:{region}:{acct.account}:clusters",
+                      "facts": {"check": f"rds clusters in {region}", "status": "denied" if _code(exc) in _DENIED else "error",
+                                "detail": f"{_code(exc)}: cluster parameter groups (Aurora) not read"}})
+            clusters = {c["DBClusterIdentifier"]: c for c in found}
+        params_failed: list[str] = []
         for db in dbs:
+            endpoint = db.get("Endpoint") or {}
+            address = f"{endpoint.get('Address')}:{endpoint.get('Port')}" if endpoint.get("Address") else None
+            public = db.get("PubliclyAccessible")
+            exposure = _exposure(bool(public) if public is not None else None,
+                                 f"RDS PubliclyAccessible={str(bool(public)).lower()}" if public is not None else "RDS")
             emit({"type": "storage_encryption", "target": label, "location": db["DBInstanceArn"], "name": db["DBInstanceIdentifier"],
                   "facts": {"resource": f"RDS {db.get('Engine')} {db['DBInstanceIdentifier']}", "encrypted": bool(db.get("StorageEncrypted")),
-                            "kms_key_id": db.get("KmsKeyId"), "engine": db.get("Engine")}})
+                            "kms_key_id": db.get("KmsKeyId"), "engine": db.get("Engine"), "endpoint": address, **exposure}})
+            engine = str(db.get("Engine") or "").lower()
+            if not engine.startswith("oracle"):  # Oracle TLS lives in option groups, not parameters
+                cluster = clusters.get(db.get("DBClusterIdentifier") or "")
+                groups = [g.get("DBParameterGroupName") for g in db.get("DBParameterGroups") or []][:1]
+                try:
+                    values = dict(rds_params(client, groups[0] if groups else None, False))
+                    if cluster:  # Aurora / Multi-AZ clusters: cluster-level parameters win
+                        values.update(rds_params(client, cluster.get("DBClusterParameterGroup"), True))
+                except Exception as exc:
+                    params_failed.append(f"{db['DBInstanceIdentifier']}: {_code(exc)}")
+                    emit({"type": "coverage", "target": label, "location": f"{db['DBInstanceArn']}#parameters",
+                          "facts": {"check": f"rds {db['DBInstanceIdentifier']} parameter group", "status":
+                                    "denied" if _code(exc) in _DENIED else "error", "detail": _code(exc)}})
+                    values = None
+                if values is not None:
+                    emit({"type": "database_config", "target": label, "location": f"{db['DBInstanceArn']}#parameters",
+                          "name": f"{db['DBInstanceIdentifier']} parameters",
+                          "facts": {"engine": engine, "engine_version": db.get("EngineVersion"), "endpoint": address,
+                                    "parameter_group": groups[0] if groups else None,
+                                    # pending-reboot: the instance still runs with the previous values
+                                    "parameter_apply_status": ((db.get("DBParameterGroups") or [{}])[0]).get("ParameterApplyStatus"),
+                                    "cluster_parameter_group": (cluster or {}).get("DBClusterParameterGroup"),
+                                    "source": "aws", "identity": db["DBInstanceArn"],
+                                    **rds_config_facts(engine, values), **exposure}})
             details = db.get("CertificateDetails") or {}
             ca_id = details.get("CAIdentifier") or db.get("CACertificateIdentifier")
             if ca_id:
                 emit({"type": "cloud_ca", "target": label, "location": f"{db['DBInstanceArn']}#ca", "name": ca_id,
                       "algorithm": "ECDSA" if "ecc" in ca_id else "RSA", "key_size": 384 if "ecc384" in ca_id else (4096 if "rsa4096" in ca_id else 2048),
                       "facts": {"not_after": _iso(details.get("ValidTill")), "is_ca": True, "source": "aws", "identity": ca_id}})
-        return "truncated" if truncated else None
+        notes = [f"{len(dbs)} instances"] + ([f"parameters not read for {len(params_failed)}"] if params_failed else [])
+        return ", ".join(notes) + (" (truncated)" if truncated else "")
+
+    def scheme_exposure(scheme: Any, what: str) -> dict[str, Any]:
+        text = str(scheme or "")
+        return _exposure(True if text == "internet-facing" else (False if text == "internal" else None),
+                         f"{what} scheme {text or 'unknown'}")
 
     def elbv2() -> str | None:
         client = acct.client("elbv2", region)
         lbs, truncated = _paginate(client, "describe_load_balancers", "LoadBalancers")
         policies: dict[str, dict[str, Any]] = {}
         for lb in lbs:
+            exposure = scheme_exposure(lb.get("Scheme"), f"{lb.get('Type') or 'load balancer'} {lb['LoadBalancerName']}")
             listeners, _t = _paginate(client, "describe_listeners", "Listeners", LoadBalancerArn=lb["LoadBalancerArn"])
             for listener in listeners:
                 proto = listener.get("Protocol")
@@ -436,7 +639,7 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
                     if proto == "HTTP":
                         emit({"type": "load_balancer_tls", "target": label, "location": listener["ListenerArn"],
                               "name": f"{lb['LoadBalancerName']}:{listener.get('Port')}", "protocol": "HTTP",
-                              "facts": {"tls": False, "port": listener.get("Port")}})
+                              "facts": {"tls": False, "port": listener.get("Port"), **exposure}})
                     continue
                 name = listener.get("SslPolicy")
                 if name and name not in policies:
@@ -449,7 +652,46 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
                       "facts": {"ssl_policy": name, "protocols": _tls_protocol_names(policy.get("SslProtocols") or []),
                                 "ciphers": ciphers[:100],
                                 "static_rsa_kex": any(not c.startswith(("ECDHE", "DHE", "TLS_")) for c in ciphers),
-                                "certificates": [c.get("CertificateArn") for c in listener.get("Certificates") or []][:10]}})
+                                "certificates": [c.get("CertificateArn") for c in listener.get("Certificates") or []][:10],
+                                **exposure}})
+        return "truncated" if truncated else None
+
+    def elb_classic() -> str | None:
+        # Classic Load Balancers: listener TLS comes from the SSLNegotiationPolicyType policy attached to the listener
+        # (Protocol-TLSv1 / Protocol-SSLv3 ... and cipher names set to "true").
+        client = acct.client("elb", region)
+        lbs, truncated = _paginate(client, "describe_load_balancers", "LoadBalancerDescriptions")
+        for lb in lbs:
+            name = lb["LoadBalancerName"]
+            exposure = scheme_exposure(lb.get("Scheme"), f"classic load balancer {name}")
+            arn = f"arn:aws:elasticloadbalancing:{region}:{acct.account}:loadbalancer/{name}"
+            for item in lb.get("ListenerDescriptions") or []:
+                listener = item.get("Listener") or {}
+                proto = str(listener.get("Protocol") or "").upper()
+                where = f"{arn}#listener/{listener.get('LoadBalancerPort')}"
+                if proto not in ("HTTPS", "SSL"):
+                    if proto == "HTTP":
+                        emit({"type": "load_balancer_tls", "target": label, "location": where,
+                              "name": f"{name}:{listener.get('LoadBalancerPort')}", "protocol": "HTTP",
+                              "facts": {"tls": False, "port": listener.get("LoadBalancerPort"), "classic": True, **exposure}})
+                    continue
+                attrs: dict[str, str] = {}
+                names = list(item.get("PolicyNames") or [])
+                if names:
+                    described = client.describe_load_balancer_policies(LoadBalancerName=name, PolicyNames=names)
+                    for policy in described.get("PolicyDescriptions") or []:
+                        if policy.get("PolicyTypeName") == "SSLNegotiationPolicyType":
+                            attrs = {a.get("AttributeName"): str(a.get("AttributeValue")) for a in
+                                     policy.get("PolicyAttributeDescriptions") or [] if a.get("AttributeName")}
+                protocols = [n[len("Protocol-"):] for n, v in attrs.items() if n.startswith("Protocol-") and v == "true"]
+                ciphers = [n for n, v in attrs.items() if v == "true" and not n.startswith(("Protocol-", "Server-Defined"))]
+                emit({"type": "load_balancer_tls", "target": label, "location": where,
+                      "name": f"{name}:{listener.get('LoadBalancerPort')}", "protocol": proto,
+                      "facts": {"ssl_policy": attrs.get("Reference-Security-Policy") or (names[0] if names else None),
+                                "protocols": _tls_protocol_names(protocols), "ciphers": ciphers[:100],
+                                "static_rsa_kex": any(not c.startswith(("ECDHE", "DHE")) for c in ciphers),
+                                "certificates": [listener["SSLCertificateId"]] if listener.get("SSLCertificateId") else [],
+                                "classic": True, **exposure}})
         return "truncated" if truncated else None
 
     def apigw() -> str | None:
@@ -457,9 +699,13 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
         items, truncated = _paginate(client, "get_domain_names", "items")
         for item in items:
             policy = item.get("securityPolicy") or "TLS_1_0"
+            types = [str(t) for t in (item.get("endpointConfiguration") or {}).get("types") or []]
+            exposure = _exposure(False if types == ["PRIVATE"] else (True if types else None),
+                                 f"API Gateway {'/'.join(types) or 'unknown'} endpoint")
             emit({"type": "api_tls", "target": label, "location": f"arn:aws:apigateway:{region}::/domainnames/{item['domainName']}",
                   "name": item["domainName"], "protocol": "TLS",
-                  "facts": {"security_policy": policy, "min_version": "TLSv1.0" if policy == "TLS_1_0" else "TLSv1.2"}})
+                  "facts": {"security_policy": policy, "min_version": "TLSv1.0" if policy == "TLS_1_0" else "TLSv1.2",
+                            "endpoint_types": types, **exposure}})
         return "truncated" if truncated else None
 
     def eks() -> str | None:
@@ -468,10 +714,91 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
         for name in names:
             cluster = client.describe_cluster(name=name)["cluster"]
             encrypted = bool(cluster.get("encryptionConfig"))
+            vpc = cluster.get("resourcesVpcConfig") or {}
+            public = vpc.get("endpointPublicAccess")
+            cidrs = [str(c) for c in vpc.get("publicAccessCidrs") or []]
+            basis = (f"EKS API endpoint public access {'on' if public else 'off'}"
+                     + (f" (limited to {len(cidrs)} CIDR range(s))" if public and cidrs and cidrs != ["0.0.0.0/0"] else ""))
             emit({"type": "storage_encryption", "target": label, "location": cluster["arn"], "name": f"EKS {name} secrets",
                   "facts": {"resource": f"EKS cluster {name} Kubernetes secrets", "encrypted": encrypted,
-                            "version": cluster.get("version")}})
+                            "version": cluster.get("version"), "endpoint_public_access": public,
+                            "endpoint_private_access": vpc.get("endpointPrivateAccess"), "public_access_cidrs": cidrs[:20],
+                            **_exposure(bool(public) if public is not None else None, basis)}})
         return "truncated" if truncated else None
+
+    def glue() -> str | None:
+        # Data Catalog encryption, job security configurations and (opt-in) connections.  GetConnections is always
+        # called with HidePassword=True ("retrieve the connection metadata without returning the password",
+        # https://docs.aws.amazon.com/glue/latest/webapi/API_GetConnections.html) and only allow-listed facts are kept.
+        client = acct.client("glue", region)
+        settings = (client.get_data_catalog_encryption_settings().get("DataCatalogEncryptionSettings") or {})
+        at_rest = settings.get("EncryptionAtRest") or {}
+        password = settings.get("ConnectionPasswordEncryption") or {}
+        catalog_mode = str(at_rest.get("CatalogEncryptionMode") or "DISABLED")
+        password_encryption = bool(password.get("ReturnConnectionPasswordEncrypted"))
+        configs, _t = _paginate(client, "get_security_configurations", "SecurityConfigurations")
+        jobs, jobs_truncated = _paginate(client, "get_jobs", "Jobs", cap=CONFIG_SCAN_CAP)
+        databases = client.get_databases(MaxResults=1).get("DatabaseList") or []  # only "is the catalog in use?"
+        connections: list[dict[str, Any]] | None = None
+        if opts.get("read_glue"):
+            connections, _t = _paginate(client, "get_connections", "ConnectionList", HidePassword=True)
+        catalog_arn = f"arn:aws:glue:{region}:{acct.account}:catalog"
+        by_config: dict[str, int] = {}
+        for job in jobs:  # only the name and the security configuration of a job are used
+            by_config[str(job.get("SecurityConfiguration") or "")] = by_config.get(str(job.get("SecurityConfiguration") or ""), 0) + 1
+        for config in configs:
+            enc = config.get("EncryptionConfiguration") or {}
+            s3 = [str(s.get("S3EncryptionMode") or "DISABLED") for s in enc.get("S3Encryption") or []] or ["DISABLED"]
+            cw = str((enc.get("CloudWatchEncryption") or {}).get("CloudWatchEncryptionMode") or "DISABLED")
+            bookmarks = str((enc.get("JobBookmarksEncryption") or {}).get("JobBookmarksEncryptionMode") or "DISABLED")
+            emit({"type": "storage_encryption", "target": label,
+                  "location": f"arn:aws:glue:{region}:{acct.account}:securityConfiguration/{config.get('Name')}",
+                  "name": f"Glue security configuration {config.get('Name')}",
+                  # S3 DISABLED is not "unencrypted": the bucket's default encryption (SSE-S3 at least) still applies, so
+                  # only a KMS/S3 mode is reported as encrypted and DISABLED stays unknown rather than a finding.
+                  "facts": {"resource": f"Glue security configuration {config.get('Name')} (job output in S3)",
+                            "encrypted": True if all(m != "DISABLED" for m in s3) else None, "s3_encryption_mode": s3[0],
+                            "cloudwatch_encryption_mode": cw, "job_bookmarks_encryption_mode": bookmarks,
+                            "jobs_using": by_config.get(str(config.get("Name")), 0), "identity": config.get("Name")}})
+        in_use = bool(databases or jobs or connections)
+        if in_use:
+            emit({"type": "glue_catalog", "target": label, "location": catalog_arn, "name": f"Glue Data Catalog ({region})",
+                  "facts": {"catalog_encryption_mode": catalog_mode, "catalog_kms_key_id": at_rest.get("SseAwsKmsKeyId"),
+                            "connection_password_encryption": password_encryption,
+                            "password_kms_key_id": password.get("AwsKmsKeyId"),
+                            "connections": len(connections) if connections is not None else None,
+                            "connections_read": connections is not None, "jobs": len(jobs),
+                            "jobs_without_security_configuration": by_config.get("", 0), "identity": catalog_arn}})
+        for conn in connections or []:
+            facts = _glue_connection_facts(conn)
+            # Stored in the connection itself: a password key, an encrypted one, or (JDBC, where a credential is
+            # required) a user name without a Secrets Manager reference -- HidePassword may leave the password out.
+            inline = not facts["uses_secrets_manager"] and (
+                facts["has_password_key"] or facts["has_encrypted_password"]
+                or (facts["has_username"] and str(conn.get("ConnectionType") or "").upper() == "JDBC"))
+            # Per connection, ENCRYPTED_PASSWORD shows the password was encrypted ("this field stores the encrypted
+            # password"); otherwise the catalog setting at create/update time decides.  With encryption on now and
+            # neither key visible, the state is unknown (the connection may predate the setting), never "encrypted".
+            if facts["uses_secrets_manager"]:
+                storage = "secrets_manager"
+            elif not inline:
+                storage = "none"
+            elif facts["has_encrypted_password"]:
+                storage = "encrypted"
+            elif facts["has_password_key"] or not password_encryption:
+                storage = "plaintext"
+            else:
+                storage = "unknown"
+            emit({"type": "glue_connection", "target": label,
+                  "location": f"arn:aws:glue:{region}:{acct.account}:connection/{conn.get('Name')}",
+                  "name": f"Glue connection {conn.get('Name')}",
+                  "facts": {**facts, "password_storage": storage,
+                            "catalog_password_encryption": password_encryption, "identity": conn.get("Name")}})
+        if not opts.get("read_glue"):
+            note = "connections not read (option off)"
+        else:
+            note = f"{len(connections or [])} connections"
+        return f"catalog {catalog_mode}, {len(configs)} security configurations, {note}" + (" (jobs truncated)" if jobs_truncated else "")
 
     def keypairs() -> str | None:
         # Public half only (IncludePublicKey): the key type and RSA modulus size; private keys never leave AWS.
@@ -503,7 +830,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit) -> lis
     for service, fn in (("kms", kms), ("acm", acm), ("acm-pca", pca), ("secretsmanager", secrets), ("ec2", ebs),
                         ("ec2-keypairs", keypairs), ("ssm", ssm), ("lambda", lambdas), ("ecs", ecs_taskdefs),
                         ("ec2-userdata", userdata),
-                        ("rds", rds), ("elasticloadbalancing", elbv2), ("apigateway", apigw), ("eks", eks)):
+                        ("rds", rds), ("elasticloadbalancing", elbv2), ("elb-classic", elb_classic), ("apigateway", apigw),
+                        ("eks", eks), ("glue", glue)):
         run(service, fn)
     return rows
 
@@ -574,7 +902,8 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
             emit({"type": "cdn_tls", "target": label, "location": dist["ARN"], "name": dist.get("DomainName"), "protocol": "TLS",
                   "facts": {"min_version": "TLSv1.0" if version == "TLSv1" else version,
                             "minimum_protocol_version": minimum, "default_certificate": bool(viewer.get("CloudFrontDefaultCertificate")),
-                            "acm_certificate_arn": viewer.get("ACMCertificateArn")}})
+                            "acm_certificate_arn": viewer.get("ACMCertificateArn"),
+                            **_exposure(True, "CloudFront distribution (served from the public edge)")}})
         return None
 
     for service, fn in (("iam", iam), ("s3", s3), ("cloudfront", cloudfront)):
@@ -632,7 +961,7 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
                 continue
             t0 = time.monotonic()
             try:
-                rows = _global_services(acct, label, emit) if region == "global" else _region_services(acct, region, label, emit)
+                rows = _global_services(acct, label, emit) if region == "global" else _region_services(acct, region, label, emit, cfg)
             except AwsCollectError as exc:
                 targets.append({"target": f"{label}/{region}", "status": "error", "error": str(exc)[:256], "assets": 0})
                 continue

@@ -23,6 +23,23 @@ DENY_ACTIONS = [
 # The actions the "data-plane deny present" check insists on.
 REQUIRED_DENY = ["kms:Decrypt", "kms:Sign", "secretsmanager:GetSecretValue", "ssm:GetParameter", "s3:GetObject"]
 
+# Opt-in 1 (off by default): Lambda environments encrypted with a customer-managed KMS key.  Lambda decrypts them
+# with the CALLER's permissions when configuration is read ("kms:Decrypt - To view and manage environment variables
+# that are encrypted with a customer managed key", https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars-encryption.html),
+# so kms:Decrypt is carved out of the deny for requests that come through Lambda only.  kms:ViaService is present only
+# on requests an AWS service makes on the caller's behalf (forward access sessions) and its value for Lambda is
+# lambda.<region>.amazonaws.com in every partition (https://docs.aws.amazon.com/kms/latest/developerguide/conditions-kms.html#conditions-kms-via-service).
+# A direct kms:Decrypt call carries no kms:ViaService key, and "If the policy condition requires that the key is not
+# matched, such as StringNotLike ..., and the right key is not present, the condition is true"
+# (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html), so the
+# deny still applies to it.
+LAMBDA_VIA_SERVICE = "lambda.*.amazonaws.com"
+LAMBDA_DECRYPT_CONDITION = {"StringNotLike": {"kms:ViaService": LAMBDA_VIA_SERVICE}}
+# Opt-in 2 (off by default): Glue connections.  SecurityAudit v94 already allows glue:GetDataCatalogEncryptionSettings,
+# glue:GetSecurityConfigurations and glue:GetJobs but not glue:GetConnection(s)
+# (https://docs.aws.amazon.com/aws-managed-policy/latest/reference/SecurityAudit.html), so only these two are added.
+GLUE_OPT_IN_ACTIONS = ["glue:GetConnection", "glue:GetConnections"]
+
 # Must equal scan_node/zs_scan_node/commands.py (TIER1_DISPLAY / tier2_display()); a test checks it.
 TIER1_COMMANDS = [
     "cat /etc/os-release",
@@ -253,9 +270,84 @@ if (-not (Get-ChildItem WSMan:\localhost\Listener | Where-Object { $_.Keys -cont
 Write-Output "OK: $Account is in $rmu and $rmu has Read+Execute on WinRM; the account is not an administrator."
 """
 
+# Azure: read Key Vault metadata, never values.  The built-in Key Vault Reader role (21090545-7ca7-4776-b22c-e363652d74d2)
+# has the data actions "Microsoft.KeyVault/vaults/*/read" and "Microsoft.KeyVault/vaults/secrets/readMetadata/action" and
+# "Cannot read sensitive values such as secret contents or key material"; it has no decrypt, unwrap, sign or getSecret
+# action (https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/security#key-vault-reader).
+AZURE_READER = r"""#!/usr/bin/env bash
+# zs-cbom-azure-reader.sh -- ZeroShield CBOM: read-only access to Azure Key Vault METADATA
+# (vault settings, key type/size/rotation policy, certificate policy, secret expiry). Never secret values or key material.
+# Run in Azure Cloud Shell (bash) as an Owner or User Access Administrator of each subscription.
+set -euo pipefail
+APP_ID="<application (client) id you enter in ZeroShield>"
+SUBSCRIPTIONS=("<subscription id>")   # every subscription ZeroShield should read
+
+for SUB in "${SUBSCRIPTIONS[@]}"; do
+  # 1. List vaults and read their settings (soft delete, purge protection, network access). Control plane only.
+  cat > zs-cbom-vault-lister.json <<JSON
+{
+  "Name": "ZeroShield CBOM Key Vault lister ($SUB)",
+  "Description": "List key vaults and read their properties. No data-plane access.",
+  "Actions": ["Microsoft.KeyVault/vaults/read", "Microsoft.Resources/subscriptions/read"],
+  "NotActions": [], "DataActions": [], "NotDataActions": [],
+  "AssignableScopes": ["/subscriptions/$SUB"]
+}
+JSON
+  az role definition create --role-definition @zs-cbom-vault-lister.json >/dev/null || true
+  az role assignment create --assignee "$APP_ID" --role "ZeroShield CBOM Key Vault lister ($SUB)" --scope "/subscriptions/$SUB"
+
+  # 2. Vaults that use Azure RBAC: built-in Key Vault Reader = keys/certificates read + secrets readMetadata.
+  #    No decrypt, unwrap, sign or getSecret data action.
+  az role assignment create --assignee "$APP_ID" --role "Key Vault Reader" --scope "/subscriptions/$SUB"
+
+  # 3. Vaults that still use access policies: list/get keys and certificates (public parts and policies only),
+  #    LIST secrets (names and attributes; "get" on secrets would return values, so it is not granted).
+  for VAULT in $(az keyvault list --subscription "$SUB" --query "[?properties.enableRbacAuthorization!=\`true\`].name" -o tsv); do
+    az keyvault set-policy --subscription "$SUB" --name "$VAULT" --spn "$APP_ID" \
+      --key-permissions get list --certificate-permissions get list --secret-permissions list >/dev/null
+  done
+done
+# A vault whose firewall denies public access cannot be read from ZeroShield's cloud: its settings are still listed
+# and the run shows a coverage row for its keys, certificates and secrets.
+"""
+
+# Google Cloud: viewer roles only.  roles/cloudkms.viewer has get/list on key rings, keys and versions and no
+# useToDecrypt/useToSign; roles/secretmanager.viewer has secrets.get/list and versions.get/list but NOT
+# secretmanager.versions.access; roles/privateca.auditor is read-only for CA Service
+# (https://cloud.google.com/iam/docs/roles-permissions/cloudkms, .../secretmanager, .../privateca).
+GCP_READER = r"""#!/usr/bin/env bash
+# zs-cbom-gcp-reader.sh -- ZeroShield CBOM: read-only roles for Cloud KMS, CA Service and Secret Manager METADATA.
+# Never secret payloads (no secretmanager.versions.access) and no key use (no cloudkms.cryptoKeyVersions.useTo*).
+set -euo pipefail
+SA="<service account you enter in ZeroShield, e.g. zs-cbom@my-project.iam.gserviceaccount.com>"
+SA_PROJECT="<project that holds the service account>"
+ORG_ID=""                        # numeric organization id, or leave empty and list projects below
+PROJECTS=("<project id>")
+
+ROLES=(roles/cloudkms.viewer roles/privateca.auditor roles/secretmanager.viewer)
+if [ -n "$ORG_ID" ]; then
+  for ROLE in "${ROLES[@]}"; do
+    gcloud organizations add-iam-policy-binding "$ORG_ID" --member "serviceAccount:$SA" --role "$ROLE" --condition=None >/dev/null
+  done
+else
+  for P in "${PROJECTS[@]}"; do
+    for ROLE in "${ROLES[@]}"; do
+      gcloud projects add-iam-policy-binding "$P" --member "serviceAccount:$SA" --role "$ROLE" --condition=None >/dev/null
+    done
+  done
+fi
+# The APIs ZeroShield calls (with an organization id it also searches projects you granted it):
+gcloud services enable cloudkms.googleapis.com privateca.googleapis.com secretmanager.googleapis.com \
+  cloudresourcemanager.googleapis.com --project "$SA_PROJECT"
+# A JSON key for the service account (paste or upload it in ZeroShield; it is stored encrypted and never shown again):
+#   gcloud iam service-accounts keys create zs-cbom-key.json --iam-account "$SA"
+"""
+
 TEMPLATE_NAMES = {
     "sudoers": ("text/plain", "zs-cbom"),
     "windows-setup": ("text/plain", "zs-cbom-windows-setup.ps1"),
+    "azure-reader": ("text/plain", "zs-cbom-azure-reader.sh"),
+    "gcp-reader": ("text/plain", "zs-cbom-gcp-reader.sh"),
     "k8s-tier1": ("application/yaml", "zs-cbom-tier1.yaml"),
     "k8s-tier2": ("application/yaml", "zs-cbom-tier2.yaml"),
     **{f"grant-{engine}": ("text/plain", f"zs-cbom-grant-{engine}.sql") for engine in DB_GRANTS},
@@ -267,6 +359,10 @@ def template_text(name: str) -> str | None:
         return SUDOERS
     if name == "windows-setup":
         return WINDOWS_SETUP
+    if name == "azure-reader":
+        return AZURE_READER
+    if name == "gcp-reader":
+        return GCP_READER
     if name == "k8s-tier1":
         return K8S_TIER1
     if name == "k8s-tier2":
@@ -283,11 +379,14 @@ def zeroshield_account_id() -> str | None:
     return match.group(1) if match else None
 
 
-def cloudformation_template(external_id: str, scope: str) -> str:
+def cloudformation_template(external_id: str, scope: str, read_lambda_cmk: bool = False, read_glue: bool = False) -> str:
+    """The reader role.  The two opt-ins are CloudFormation parameters (so they can also be flipped on the stack);
+    the arguments only choose their defaults, which is what the source's switches in ZeroShield say."""
     if not re.fullmatch(r"zs-ext-[A-Z0-9]{4}(-[A-Z0-9]{4}){3}", external_id):
         raise ValueError("unexpected external id format")
     account = zeroshield_account_id() or "000000000000"
-    deny = "\n".join(f"                  - {action}" for action in DENY_ACTIONS)
+    deny = "\n".join(f"                  - {action}" for action in DENY_ACTIONS if action != "kms:Decrypt")
+    glue_actions = "\n".join(f"                        - {action}" for action in GLUE_OPT_IN_ACTIONS)
     header = (
         "# Deploy as a CloudFormation StackSet to every member account (service-managed permissions).\n"
         if scope == "organization"
@@ -298,12 +397,20 @@ def cloudformation_template(external_id: str, scope: str) -> str:
         if account == "000000000000"
         else ""
     )
-    return f"""{header}{placeholder}AWSTemplateFormatVersion: "2010-09-09"
+    opt_ins = (
+        f"# Opt-ins (off unless you turned them on in ZeroShield): DecryptCustomerKeyLambdaEnvironments="
+        f"{str(read_lambda_cmk).lower()}, ReadGlueConnections={str(read_glue).lower()}.\n"
+        "# With DecryptCustomerKeyLambdaEnvironments=true, each customer-managed key's KEY POLICY must also let this\n"
+        "# role use kms:Decrypt (the default key policy does, through its \"Enable IAM User Permissions\" statement).\n"
+    )
+    return f"""{header}{placeholder}{opt_ins}AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  ZeroShield CBOM read-only cloud scanner role. Grants the AWS-managed SecurityAudit
-  policy and explicitly denies every data-plane read and key-use action, so ZeroShield
-  can inventory cryptographic configuration but can never read secrets, objects or
-  use keys.
+  ZeroShield CBOM read-only cloud scanner role. Grants the AWS-managed SecurityAudit policy and explicitly
+  denies key use and data-plane reads (secret and parameter values, S3 objects, table items, code
+  downloads), so ZeroShield inventories cryptographic configuration without reading stored secrets or
+  using keys. Configuration SecurityAudit already returns (Lambda environments under the default key, ECS
+  task definitions, EC2 user data) is inspected in memory and only its shape is kept. Two opt-ins, off by
+  default, are described on their parameters.
 
 Parameters:
   ZeroShieldAccountId:
@@ -318,6 +425,27 @@ Parameters:
   RoleName:
     Type: String
     Default: ZeroShieldCBOMReader
+  DecryptCustomerKeyLambdaEnvironments:
+    Type: String
+    Default: "{str(read_lambda_cmk).lower()}"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      true lets Lambda decrypt environment variables encrypted with a customer-managed KMS key when
+      ZeroShield reads function configuration. kms:Decrypt stays denied for every request that does not
+      come through Lambda. Each key's key policy must also allow this role.
+  ReadGlueConnections:
+    Type: String
+    Default: "{str(read_glue).lower()}"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      true allows glue:GetConnection(s). ZeroShield always asks with HidePassword=true and keeps only TLS and
+      credential-storage settings, but the permission itself could return a password stored in plain text
+      when Data Catalog connection password encryption is off.
+
+Conditions:
+  LambdaCustomerKey: !Equals [!Ref DecryptCustomerKeyLambdaEnvironments, "true"]
+  GlueConnections: !Equals [!Ref ReadGlueConnections, "true"]
+  AnyOptIn: !Or [!Condition LambdaCustomerKey, !Condition GlueConnections]
 
 Resources:
   ZeroShieldCBOMReaderRole:
@@ -348,6 +476,46 @@ Resources:
                 Action:
 {deny}
                 Resource: "*"
+              # kms:Decrypt is denied on its own so the Lambda opt-in can carve out requests made through Lambda.
+              # A direct Decrypt has no kms:ViaService key, so StringNotLike is true for it and it stays denied.
+              - !If
+                - LambdaCustomerKey
+                - Sid: DenyDecryptUnlessThroughLambda
+                  Effect: Deny
+                  Action: kms:Decrypt
+                  Resource: "*"
+                  Condition:
+                    StringNotLike:
+                      kms:ViaService: "{LAMBDA_VIA_SERVICE}"
+                - Sid: DenyDecrypt
+                  Effect: Deny
+                  Action: kms:Decrypt
+                  Resource: "*"
+        - !If
+          - AnyOptIn
+          - PolicyName: ZeroShieldCBOMReaderOptIn
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - !If
+                  - LambdaCustomerKey
+                  - Sid: AllowDecryptOnlyThroughLambda
+                    Effect: Allow
+                    Action: kms:Decrypt
+                    Resource: "*"
+                    Condition:
+                      StringLike:
+                        kms:ViaService: "{LAMBDA_VIA_SERVICE}"
+                  - !Ref AWS::NoValue
+                - !If
+                  - GlueConnections
+                  - Sid: AllowGlueConnectionMetadata
+                    Effect: Allow
+                    Action:
+{glue_actions}
+                    Resource: "*"
+                  - !Ref AWS::NoValue
+          - !Ref AWS::NoValue
 
 Outputs:
   RoleArn:

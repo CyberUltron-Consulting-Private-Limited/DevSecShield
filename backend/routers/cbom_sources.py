@@ -41,8 +41,8 @@ from backend.new_models import (
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
-from backend.utilities.cbom_sources.common import audit, engine_version, iso_z, log, new_token, sha256_hex, utcnow
-from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, warn_if_key_is_weak
+from backend.utilities.cbom_sources.common import audit, engine_version, iso_z, log, new_ref, new_token, sha256_hex, utcnow
+from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, scrub, warn_if_key_is_weak
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE, VENDOR_LINK_DAYS, clean_answers
 from backend.utilities.cbom_sources.http import (
     PRIVATE,
@@ -499,7 +499,7 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
             session.rollback()
             raise HTTPException(status_code=409, detail=f"A {spec.label.lower()} named {body.name} already exists") from None
         test = None
-        if body.test_after_save and body.kind != "aws_account":
+        if body.test_after_save and body.kind not in _LIVE_TESTS:
             test = _queue_test(session, source, settings, user_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.create",
               object_type="source", object_id=source.id,
@@ -514,8 +514,8 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
 async def create_source(team_id: TeamId, body: SourceCreate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     result = await _run("create source", team_id, _create_source, engine, team_id, user.id, body)
-    if body.test_after_save and body.kind == "aws_account":
-        result["test"] = await _run("test source", team_id, _test_aws, engine, team_id, user.id, result["source"]["id"])
+    if body.test_after_save and body.kind in _LIVE_TESTS:
+        result["test"] = await _run("test source", team_id, _LIVE_TESTS[body.kind], engine, team_id, user.id, result["source"]["id"])
         result["source"] = (await _run("get source", team_id, _get_source, engine, team_id, result["source"]["id"]))["source"]
     return _ok(result, 201)
 
@@ -646,7 +646,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
                 raise HTTPException(status_code=409, detail=f"A {spec.label.lower()} named {body.name} already exists") from None
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.update",
                   object_type="source", object_id=source.id, changed_fields=changed)
-        if body.test_after_save and source.kind != "aws_account":
+        if body.test_after_save and source.kind not in _LIVE_TESTS:
             test = _queue_test(session, source, settings, user_id, now)
         session.commit()
         session.refresh(source)
@@ -660,8 +660,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
 async def update_source(team_id: TeamId, source_id: ObjectId, body: SourceUpdate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     result = await _run("update source", team_id, _update_source, engine, team_id, user.id, source_id, body)
-    if body.test_after_save and result["source"]["kind"] == "aws_account":
-        result["test"] = await _run("test source", team_id, _test_aws, engine, team_id, user.id, source_id)
+    if body.test_after_save and result["source"]["kind"] in _LIVE_TESTS:
+        result["test"] = await _run("test source", team_id, _LIVE_TESTS[result["source"]["kind"]], engine, team_id, user.id, source_id)
         result["source"] = (await _run("get source", team_id, _get_source, engine, team_id, source_id))["source"]
     return _ok(result)
 
@@ -706,6 +706,8 @@ def _test_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
             return {"aws": True}
         if source.kind == "idp":
             return {"idp": True}
+        if source.kind in ("azure_subscription", "gcp_project"):
+            return {"cloud_http": True}
         if not (spec.needs_node(cfg) and spec.collectable(cfg)):
             source.last_test_status = "not_available"
             source.last_test_summary = "Validation for this source is not available yet"
@@ -732,7 +734,8 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         cfg = dict(source.config or {})
         version, external_id = J.connection_version(source), settings.aws_external_id
-    result = validate_aws_role(team_id, cfg.get("role_arn", ""), external_id, cfg.get("regions") or [], cfg.get("scope", "account"))
+    result = validate_aws_role(team_id, cfg.get("role_arn", ""), external_id, cfg.get("regions") or [], cfg.get("scope", "account"),
+                               lambda_cmk=bool(cfg.get("decrypt_lambda_cmk")), read_glue=bool(cfg.get("read_glue")))
     now = utcnow()
     with Session(engine) as session:
         source = session.get(CbomCollectionSource, source_id)
@@ -779,8 +782,51 @@ def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
     return {"status": status, "message": summary, "targets": out["targets"], "tested_at": iso_z(now)}
 
 
+def _test_cloud_http(engine, team_id: int, user_id: int, source_id: int) -> dict:
+    """Azure / Google Cloud: sign in and make one list call now (no job); the same calls collection starts with."""
+    from backend.utilities.cbom_sources.azure_collect import test_azure
+    from backend.utilities.cbom_sources.gcp_collect import test_gcp
+
+    with Session(engine) as session:
+        source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
+        require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
+        if source.kind not in ("azure_subscription", "gcp_project"):
+            raise HTTPException(status_code=400, detail="Not an Azure or Google Cloud source")
+        kind, cfg, version = source.kind, dict(source.config or {}), source.row_version
+        secrets_ = decrypt_secrets(source.secret_encrypted)
+    known = list(secrets_.values())
+    try:
+        out = (test_azure if kind == "azure_subscription" else test_gcp)(cfg, secrets_)
+    except Exception as exc:  # never a 500 for a provider answer we did not expect
+        ref = new_ref()
+        log("cloud test FAILED", ref=ref, team=team_id, source=source_id, error=type(exc).__name__)
+        out = {"status": "error", "message": f"ZeroShield could not run the checks (ref {ref})", "checks": []}
+    secrets_ = {}
+    out["message"] = str(scrub(out.get("message") or "", known))[:512]
+    out["checks"] = [{**c, "detail": str(scrub(c.get("detail") or "", known))[:300]} for c in out.get("checks") or []]
+    now = utcnow()
+    with Session(engine) as session:
+        source = session.get(CbomCollectionSource, source_id)
+        if source is not None and source.row_version == version:
+            passed = sum(1 for c in out["checks"] if c["status"] == "pass")
+            source.last_test_status = out["status"]
+            source.last_test_summary = (f"{passed} of {len(out['checks'])} checks passed" if out["checks"] else out["message"])[:512]
+            source.last_test_at = now
+            source.last_test_result = {"checks": out["checks"], "status": out["status"]}
+            session.add(source)
+            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.validate",
+                  object_type="source", object_id=source_id)
+            session.commit()
+    log("cloud source tested", team=team_id, source=source_id, kind=kind, status=out["status"], by=user_id)
+    return {"status": out["status"], "message": out["message"], "checks": out["checks"], "validated_at": iso_z(now)}
+
+
+# Sources whose test runs live from the API (no scan node job).
+_LIVE_TESTS = {"aws_account": _test_aws, "azure_subscription": _test_cloud_http, "gcp_project": _test_cloud_http}
+
+
 @router.post(BASE + "/items/{source_id}/test", dependencies=WRITE,
-             summary="Test a source: a job for its scan node, live AWS checks, or a read of the IdP's public metadata")
+             summary="Test a source: a job for its scan node, live AWS / Azure / Google Cloud checks, or a read of the IdP's public metadata")
 async def test_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     result = await _run("test source", team_id, _test_source, engine, team_id, user.id, source_id)
@@ -788,6 +834,8 @@ async def test_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthH
         result = await _run("validate aws", team_id, _test_aws, engine, team_id, user.id, source_id)
     elif result.get("idp"):
         result = await _run("test idp", team_id, _test_idp, engine, team_id, user.id, source_id)
+    elif result.get("cloud_http"):
+        result = await _run("test cloud", team_id, _test_cloud_http, engine, team_id, user.id, source_id)
     return _ok(result)
 
 
@@ -955,16 +1003,19 @@ async def stop_all(team_id: TeamId, body: StopAll, Authorization: AuthHeader = N
 
 
 # ============================================================================ templates
-def _aws_template(engine, team_id: int, scope: str) -> str:
+def _aws_template(engine, team_id: int, scope: str, lambda_cmk: bool = False, glue: bool = False) -> str:
     with Session(engine) as session:
-        return cloudformation_template(get_or_create_settings(session, team_id).aws_external_id, scope)
+        return cloudformation_template(get_or_create_settings(session, team_id).aws_external_id, scope,
+                                       read_lambda_cmk=lambda_cmk, read_glue=glue)
 
 
 @router.get(BASE + "/aws/template", dependencies=READ, summary="CloudFormation template for the read-only role")
 async def aws_template(team_id: TeamId, scope: str = Query(default="account", pattern="^(account|organization)$"),
+                       lambda_cmk: bool = Query(default=False, description="Default of DecryptCustomerKeyLambdaEnvironments"),
+                       glue: bool = Query(default=False, description="Default of ReadGlueConnections"),
                        Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    text = await _run("aws template", team_id, _aws_template, engine, team_id, scope)
+    text = await _run("aws template", team_id, _aws_template, engine, team_id, scope, lambda_cmk, glue)
     return Response(text, media_type="application/yaml", headers={
         **PRIVATE, "Content-Disposition": f'attachment; filename="zeroshield-cbom-reader-{scope}.yaml"'})
 

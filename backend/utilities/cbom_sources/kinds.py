@@ -333,6 +333,9 @@ class AwsAccountConfig(_Source):
     scope: Literal["account", "organization"] = "account"
     role_arn: str = Field(max_length=600)
     regions: list[str] = Field(default_factory=lambda: ["ap-south-1"], min_length=1, max_length=32)
+    # Opt-ins, off by default; each needs the matching CloudFormation parameter (validation checks the role matches).
+    decrypt_lambda_cmk: bool = False  # Lambda environments under a customer-managed KMS key (decrypt only via Lambda)
+    read_glue: bool = False  # glue:GetConnections, always called with HidePassword=True
 
     @field_validator("role_arn")
     @classmethod
@@ -363,6 +366,8 @@ class AzureConfig(_Source):
     tenant_id: str
     client_id: str
     subscription_ids: list[str] = Field(default_factory=list, max_length=200)
+    # client_secret, or a certificate (PEM with its unencrypted private key) for a signed client assertion
+    credential_type: Literal["client_secret", "certificate"] = "client_secret"
 
     @field_validator("tenant_id", "client_id")
     @classmethod
@@ -557,10 +562,12 @@ KINDS: dict[str, KindSpec] = {
                          ("host", "port", "login", "engine", "require_tls", "ca_pem", "vault")),
     "aws_account": KindSpec("aws_account", "cloud", "AWS account", AwsAccountConfig, lambda c: set(),
                             frozenset(), _never, _always, ("role_arn",), node_less=True),
-    "azure_subscription": KindSpec("azure_subscription", "cloud", "Azure", AzureConfig, lambda c: {"client_secret"},
-                                   frozenset(), _never, _never, ("tenant_id", "client_id")),
+    # Collected by the cloud worker over HTTPS (Key Vault / Cloud KMS, CA Service, Secret Manager metadata).
+    "azure_subscription": KindSpec("azure_subscription", "cloud", "Azure", AzureConfig,
+                                   lambda c: {"client_certificate"} if c.credential_type == "certificate" else {"client_secret"},
+                                   frozenset(), _never, _always, ("tenant_id", "client_id"), node_less=True),
     "gcp_project": KindSpec("gcp_project", "cloud", "Google Cloud", GcpConfig, lambda c: {"service_account_key"},
-                            frozenset(), _never, _never, ("service_account_email",)),
+                            frozenset(), _never, _always, ("service_account_email",), node_less=True),
     "ca_connector": KindSpec("ca_connector", "identity", "Certificate authority", CaConnectorConfig, _ca_secrets,
                              frozenset(), lambda c: c.provider == "adcs", _never,
                              ("api_url", "login", "provider")),
@@ -586,6 +593,56 @@ def validate_secret_value(field: str, value: str) -> str:
         raise ValueError(f"{field}: contains a NUL byte; upload a text file")
     if field == "kubeconfig":
         check_kubeconfig(value)
+    if field == "client_certificate":
+        check_client_certificate(value)
+        return value.replace("\r\n", "\n")
+    if field == "service_account_key":
+        check_service_account_key(value)
     if field in ("private_key", "ssh_certificate"):
         return value.replace("\r\n", "\n")
     return value
+
+
+def check_client_certificate(text: str) -> None:
+    """An Azure app certificate: one PEM certificate plus its unencrypted private key (RSA, as Entra ID requires)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    data = text.replace("\r\n", "\n").encode()
+    try:
+        certs = x509.load_pem_x509_certificates(data)
+    except Exception:
+        certs = []
+    if not certs:
+        raise ValueError("client_certificate: paste the PEM certificate and its private key")
+    try:
+        key = serialization.load_pem_private_key(data, password=None)
+    except TypeError:
+        raise ValueError("client_certificate: the private key is encrypted; paste it without a passphrase") from None
+    except Exception:
+        raise ValueError("client_certificate: no PEM private key found next to the certificate") from None
+    if not isinstance(key, rsa.RSAPrivateKey):
+        raise ValueError("client_certificate: Entra ID client certificates must use an RSA key")
+    if key.public_key().public_numbers() != certs[0].public_key().public_numbers():  # type: ignore[union-attr]
+        raise ValueError("client_certificate: the private key does not belong to the first certificate")
+
+
+def check_service_account_key(text: str) -> None:
+    """A Google service account JSON key: type, client_email and an unencrypted RSA private key."""
+    import json
+
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise ValueError("service_account_key: not valid JSON; upload the .json key file") from None
+    if not isinstance(data, dict) or data.get("type") != "service_account":
+        raise ValueError("service_account_key: not a service account key (type must be service_account)")
+    if not isinstance(data.get("client_email"), str) or not isinstance(data.get("private_key"), str):
+        raise ValueError("service_account_key: the key file has no client_email or private_key")
+    from cryptography.hazmat.primitives import serialization
+
+    try:
+        serialization.load_pem_private_key(data["private_key"].encode(), password=None)
+    except Exception:
+        raise ValueError("service_account_key: private_key is not a readable PEM key") from None

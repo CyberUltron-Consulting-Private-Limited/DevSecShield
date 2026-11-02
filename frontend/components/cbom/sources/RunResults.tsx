@@ -63,6 +63,9 @@ export const ASSET_TYPE_LABEL: Record<string, string> = {
   identity_provider: "Identity provider",
   signing_key: "Signing key",
   open_port: "Open port",
+  glue_catalog: "Glue Data Catalog",
+  glue_connection: "Glue connection",
+  key_vault: "Key vault",
   coverage: "Not collected",
 };
 

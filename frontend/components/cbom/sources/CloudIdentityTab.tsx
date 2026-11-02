@@ -11,13 +11,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Input } from "@/components/ui/input";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { getCbomAwsReaderTemplate, getCbomCloudReaderScript, type CbomAwsOptIns } from "@/utils/api/cbom_cloud";
 import {
   createCbomSource,
   deleteCbomSource,
-  getCbomAwsTemplate,
   getCbomSourcesSettings,
   listCbomScanNodes,
   listCbomSources,
@@ -63,9 +64,10 @@ type MetadataProvider = "saml_metadata" | "oidc_discovery";
 
 const PROVIDERS: { value: Provider; label: string; description: string }[] = [
   { value: "aws", label: "AWS", description: "About five minutes; no keys are exchanged." },
-  { value: "azure", label: "Azure", description: "Uses an app registration and its client secret." },
-  { value: "gcp", label: "Google Cloud", description: "Uses a service account and its JSON key." },
+  { value: "azure", label: "Azure", description: "Key Vault metadata through an app registration (client secret or certificate)." },
+  { value: "gcp", label: "Google Cloud", description: "Cloud KMS, CA Service and Secret Manager metadata through a service account." },
 ];
+const PROVIDER_LABEL: Record<Provider, string> = { aws: "AWS", azure: "Azure", gcp: "Google Cloud" };
 const PROVIDER_OF_KIND: Record<string, Provider> = { aws_account: "aws", azure_subscription: "azure", gcp_project: "gcp" };
 
 interface CaRow {
@@ -213,11 +215,23 @@ interface AwsConfig {
   scope: AwsScope;
   role_arn: string;
   regions: string[];
+  decrypt_lambda_cmk: boolean;
+  read_glue: boolean;
+}
+
+function cfgFlag(source: CbomSource | null | undefined, key: string): boolean {
+  return source?.config?.[key] === true;
 }
 
 function sameAwsConfig(source: CbomSource, config: AwsConfig): boolean {
-  const saved = { scope: cfgString(source, "scope") || "account", role_arn: cfgString(source, "role_arn"), regions: cfgList(source, "regions") };
-  return JSON.stringify(saved) === JSON.stringify({ scope: config.scope, role_arn: config.role_arn, regions: config.regions });
+  const saved = {
+    scope: cfgString(source, "scope") || "account",
+    role_arn: cfgString(source, "role_arn"),
+    regions: cfgList(source, "regions"),
+    decrypt_lambda_cmk: cfgFlag(source, "decrypt_lambda_cmk"),
+    read_glue: cfgFlag(source, "read_glue"),
+  };
+  return JSON.stringify(saved) === JSON.stringify({ ...config });
 }
 
 interface ValidationView {
@@ -258,10 +272,11 @@ function viewFromSource(source: CbomSource | null | undefined): ValidationView |
   };
 }
 
-function toastValidation(test: CbomTestResponse) {
-  if (test.status === "passed") toast.success("All AWS checks passed");
-  else if (test.status === "failed") toast.error("Some AWS checks did not pass; see Validation");
-  else toast.warning("ZeroShield could not run every AWS check; see Validation");
+function toastValidation(test: CbomTestResponse, provider: Provider = "aws") {
+  const label = PROVIDER_LABEL[provider];
+  if (test.status === "passed") toast.success(`All ${label} checks passed`);
+  else if (test.status === "failed") toast.error(`Some ${label} checks did not pass; see Validation`);
+  else toast.warning(`ZeroShield could not run every ${label} check; see Validation`);
 }
 
 function useInvalidate(teamId: number) {
@@ -380,12 +395,20 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   // A validation result stays shown while its account exists (or is the one being edited, right after it was created).
   const liveValidation =
     validation && (form.source?.id === validation.sourceId || cloudSources.some((s) => s.id === validation.sourceId)) ? validation : null;
-  const editingAws = form.source && form.source.kind === "aws_account" ? awsSources.find((s) => s.id === form.source?.id) : undefined;
-  const latestValidated = [...awsSources]
-    .filter((s) => viewFromSource(s))
+  const editingCloud = form.source ? cloudSources.find((s) => s.id === form.source?.id) : undefined;
+  const latestValidated = cloudSources
+    .filter((s) => PROVIDER_OF_KIND[s.kind] === form.provider && viewFromSource(s))
     .sort((a, b) => (b.last_test_at ?? "").localeCompare(a.last_test_at ?? ""))[0];
-  const shownValidation = liveValidation ?? viewFromSource(editingAws) ?? viewFromSource(latestValidated);
-  const validating = awsMutation.isPending || (testMutation.isPending && testMutation.variables?.kind === "aws_account");
+  const shownValidation = liveValidation ?? viewFromSource(editingCloud) ?? viewFromSource(latestValidated);
+  const validating =
+    awsMutation.isPending || (testMutation.isPending && PROVIDER_OF_KIND[testMutation.variables?.kind ?? ""] === form.provider);
+  const onCloudSaved = (data: CbomSourceSaveResponse) => {
+    if (isAwsResult(data.test)) {
+      setValidation(viewFromTest(data.source, data.test));
+      toastValidation(data.test, PROVIDER_OF_KIND[data.source.kind] ?? "aws");
+    }
+    resetForm();
+  };
 
   const startEdit = (source: CbomSource) => {
     setValidation(null);
@@ -439,10 +462,10 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
             />
           )}
           {form.provider === "azure" && (
-            <AzureForm key={formKey} teamId={teamId} source={form.source} onDone={() => resetForm()} onCancel={() => resetForm()} />
+            <AzureForm key={formKey} teamId={teamId} source={form.source} onSaved={onCloudSaved} onCancel={() => resetForm()} />
           )}
           {form.provider === "gcp" && (
-            <GcpForm key={formKey} teamId={teamId} source={form.source} onDone={() => resetForm()} onCancel={() => resetForm()} />
+            <GcpForm key={formKey} teamId={teamId} source={form.source} onSaved={onCloudSaved} onCancel={() => resetForm()} />
           )}
         </SectionCard>
 
@@ -451,9 +474,9 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           description={
             shownValidation
               ? `${shownValidation.name}${shownValidation.at ? ` · last run ${formatDateTime(shownValidation.at)}` : ""}`
-              : form.provider !== "aws"
-                ? "Not available yet for this provider"
-                : "Results appear after Validate connection"
+              : form.provider === "aws"
+                ? "Results appear after Validate connection"
+                : "Results appear after Save and validate"
           }
         >
           <ValidationPanel view={shownValidation} pending={validating} provider={form.provider} />
@@ -462,7 +485,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
 
       <SectionCard
         title="Connected cloud accounts"
-        description={`${pluralize(cloudSources.length, "account")} · AWS accounts that pass validation are scanned read-only from ZeroShield's cloud (4 credits per account per run). Azure and Google Cloud are listed but not scanned yet.`}
+        description={`${pluralize(cloudSources.length, "account")} · Accounts that pass validation are scanned read-only from ZeroShield's cloud (4 credits per account per run).`}
       >
         {cloudSources.length === 0 ? (
           <EmptyState
@@ -525,17 +548,10 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              {s.kind === "aws_account" ? (
-                                <DropdownMenuItem className="cursor-pointer" disabled={busy} onSelect={() => testMutation.mutate(s)}>
-                                  <ShieldCheck className="h-4 w-4" />
-                                  Validate connection
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem disabled>
-                                  <ShieldCheck className="h-4 w-4" />
-                                  Validation not available yet
-                                </DropdownMenuItem>
-                              )}
+                              <DropdownMenuItem className="cursor-pointer" disabled={busy} onSelect={() => testMutation.mutate(s)}>
+                                <ShieldCheck className="h-4 w-4" />
+                                Validate connection
+                              </DropdownMenuItem>
                               <DropdownMenuItem className="cursor-pointer" onSelect={() => startEdit(s)}>
                                 <Pencil className="h-4 w-4" />
                                 Edit
@@ -777,23 +793,21 @@ function ValidationPanel({ view, pending, provider }: { view: ValidationView | n
   const isAws = provider === "aws";
   return (
     <div data-testid="cloud-validation" aria-live="polite" className="space-y-3">
-      {!isAws && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          {provider === "azure" ? "Azure" : "Google Cloud"} accounts are saved and listed below. {NOT_AVAILABLE}
-        </p>
-      )}
       {pending && (
         <p className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
           <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-          ZeroShield is assuming the role and running read-only checks. This takes up to 20 seconds.
+          {isAws
+            ? "ZeroShield is assuming the role and running read-only checks. This takes up to 20 seconds."
+            : `ZeroShield is signing in to ${PROVIDER_LABEL[provider]} and making one read-only list call.`}
         </p>
       )}
-      {isAws && !pending && !view && (
+      {!pending && !view && (
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Fill in the role ARN and regions, then choose Validate connection. Each check AWS answers is listed here.
+          {isAws
+            ? "Fill in the role ARN and regions, then choose Validate connection. Each check AWS answers is listed here."
+            : "Fill in the form, then choose Save and validate. ZeroShield signs in and lists what it would read; each check is listed here."}
         </p>
       )}
-      {view && !isAws && <p className="text-xs font-medium text-zinc-500">Last AWS validation: {view.name}</p>}
       {view && (
         <ul className={cn("divide-y divide-zinc-200 dark:divide-zinc-800", pending && "opacity-50")}>
           {view.checks.map((check) => {
@@ -820,7 +834,13 @@ function ValidationPanel({ view, pending, provider }: { view: ValidationView | n
           )}
         </ul>
       )}
-      {(isAws || view) && <p className="text-xs text-zinc-500">Every call the role makes lands in your CloudTrail.</p>}
+      <p className="text-xs text-zinc-500">
+        {isAws
+          ? "Every call the role makes lands in your CloudTrail."
+          : provider === "azure"
+            ? "Every call lands in your Azure Activity Log and the vaults' diagnostic logs."
+            : "Every call lands in your Cloud Audit Logs (Data Access logs, where enabled)."}
+      </p>
     </div>
   );
 }
@@ -851,10 +871,14 @@ function AwsForm({
   });
   const [regionInput, setRegionInput] = useState("");
   const [name, setName] = useState(source?.name ?? "");
+  const [lambdaCmk, setLambdaCmk] = useState(cfgFlag(source, "decrypt_lambda_cmk"));
+  const [glue, setGlue] = useState(cfgFlag(source, "read_glue"));
   const [errors, setErrors] = useState<{ name?: string | null; arn?: string | null; region?: string | null }>({});
   const [downloading, setDownloading] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
   const accountId = awsAccountId(roleArn);
+  const optIns: CbomAwsOptIns = { lambdaCmk, glue };
+  const templateKey = `aws-${scope}-lambda${lambdaCmk ? 1 : 0}-glue${glue ? 1 : 0}`;
 
   const addRegion = () => {
     const value = regionInput.trim().toLowerCase();
@@ -878,8 +902,8 @@ function AwsForm({
     setDownloading(true);
     try {
       const text = await queryClient.fetchQuery({
-        queryKey: cbomSourcesKeys.template(teamId, `aws-${scope}`),
-        queryFn: () => getCbomAwsTemplate(teamId, scope),
+        queryKey: cbomSourcesKeys.template(teamId, templateKey),
+        queryFn: () => getCbomAwsReaderTemplate(teamId, scope, optIns),
         staleTime: 60_000,
       });
       saveTextFile(text, `zeroshield-cbom-reader-${scope}.yaml`, "application/yaml");
@@ -900,7 +924,7 @@ function AwsForm({
     };
     setErrors(next);
     if (next.arn || next.region || next.name) return;
-    onSubmit({ name: finalName, config: { scope, role_arn: arn, regions } });
+    onSubmit({ name: finalName, config: { scope, role_arn: arn, regions, decrypt_lambda_cmk: lambdaCmk, read_glue: glue } });
   };
 
   return (
@@ -945,6 +969,39 @@ function AwsForm({
               : "Download the template and create a stack from it in the account you want inventoried."}{" "}
             Then paste the RoleArn output in step 4.
           </p>
+          <div className="mb-4 space-y-3 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="cloud-aws-optins">
+            <p className="text-sm font-medium text-zinc-900 dark:text-white">Optional reads (off by default)</p>
+            <OptInSwitch
+              id="aws-lambda-cmk"
+              checked={lambdaCmk}
+              onChange={setLambdaCmk}
+              title="Decrypt Lambda environments under customer-managed keys"
+              body={
+                <>
+                  Lets Lambda decrypt function environment variables encrypted with your own KMS keys, so ZeroShield can check them for
+                  keys and passwords (only their shape is kept). <span className="font-mono text-xs">kms:Decrypt</span> stays denied for
+                  every request that does not come through Lambda. Each key&apos;s key policy must also allow this role. Environments under
+                  the default <span className="font-mono text-xs">aws/lambda</span> key are inspected either way.
+                </>
+              }
+            />
+            <OptInSwitch
+              id="aws-glue"
+              checked={glue}
+              onChange={setGlue}
+              title="Read Glue connections"
+              body={
+                <>
+                  Reports whether each Glue connection enforces TLS and where its password is stored. ZeroShield always asks with
+                  HidePassword and keeps only those settings, but the permission itself could return a password stored in plain text
+                  when Data Catalog connection password encryption is off.
+                </>
+              }
+            />
+            <p className="text-xs text-zinc-500">
+              The template&apos;s parameters follow these switches. Changing a switch later means updating the stack, then validating again.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button
               className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
@@ -974,7 +1031,14 @@ function AwsForm({
                 ec2:GetPasswordData
               </span>
               <span className="text-zinc-600 dark:text-zinc-400"> and the other data-plane actions</span>
+              {lambdaCmk && <span className="text-zinc-600 dark:text-zinc-400"> (kms:Decrypt except through Lambda)</span>}
             </p>
+            {glue && (
+              <p>
+                <span className="font-medium text-zinc-900 dark:text-white">Also allows: </span>
+                <span className="font-mono text-xs text-zinc-600 dark:text-zinc-400">glue:GetConnection, glue:GetConnections</span>
+              </p>
+            )}
             <button
               type="button"
               className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
@@ -1060,15 +1124,45 @@ function AwsForm({
           </div>
         </li>
       </ol>
-      <PolicyDialog teamId={teamId} scope={scope} open={policyOpen} onOpenChange={setPolicyOpen} />
+      <PolicyDialog teamId={teamId} scope={scope} optIns={optIns} templateKey={templateKey} open={policyOpen} onOpenChange={setPolicyOpen} />
     </div>
   );
 }
 
-function PolicyDialog({ teamId, scope, open, onOpenChange }: { teamId: number; scope: AwsScope; open: boolean; onOpenChange: (v: boolean) => void }) {
+function OptInSwitch({ id, checked, onChange, title, body }: { id: string; checked: boolean; onChange: (v: boolean) => void; title: string; body: ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <Switch id={id} data-testid={id} checked={checked} onCheckedChange={onChange} className="mt-0.5" aria-describedby={`${id}-help`} />
+      <div className="min-w-0">
+        <label htmlFor={id} className="block text-sm text-zinc-900 dark:text-white cursor-pointer">
+          {title}
+        </label>
+        <p id={`${id}-help`} className="text-xs text-zinc-500 break-words">
+          {body}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PolicyDialog({
+  teamId,
+  scope,
+  optIns,
+  templateKey,
+  open,
+  onOpenChange,
+}: {
+  teamId: number;
+  scope: AwsScope;
+  optIns: CbomAwsOptIns;
+  templateKey: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
   const query = useQuery({
-    queryKey: cbomSourcesKeys.template(teamId, `aws-${scope}`),
-    queryFn: () => getCbomAwsTemplate(teamId, scope),
+    queryKey: cbomSourcesKeys.template(teamId, templateKey),
+    queryFn: () => getCbomAwsReaderTemplate(teamId, scope, optIns),
     enabled: open && Number.isFinite(teamId),
     retry: 1,
     staleTime: 60_000,
@@ -1103,22 +1197,36 @@ function PolicyDialog({ teamId, scope, open, onOpenChange }: { teamId: number; s
 }
 
 // ---------------------------------------------------------------------------- Azure
-function AzureForm({ teamId, source, onDone, onCancel }: { teamId: number; source: CbomSource | null; onDone: () => void; onCancel: () => void }) {
+type AzureCredential = "client_secret" | "certificate";
+
+function AzureForm({
+  teamId,
+  source,
+  onSaved,
+  onCancel,
+}: {
+  teamId: number;
+  source: CbomSource | null;
+  onSaved: (data: CbomSourceSaveResponse) => void;
+  onCancel: () => void;
+}) {
   const invalidate = useInvalidate(teamId);
   const [name, setName] = useState(source?.name ?? "");
   const [tenantId, setTenantId] = useState(cfgString(source, "tenant_id"));
   const [clientId, setClientId] = useState(cfgString(source, "client_id"));
   const [subscriptions, setSubscriptions] = useState(cfgList(source, "subscription_ids").join("\n"));
+  const [credential, setCredential] = useState<AzureCredential>(cfgString(source, "credential_type") === "certificate" ? "certificate" : "client_secret");
   const [secret, setSecret] = useState("");
   const [errors, setErrors] = useState<Record<string, string | null>>({});
-  const secretSet = !!source?.secrets_set.includes("client_secret");
+  const secretField = credential === "certificate" ? "client_certificate" : "client_secret";
+  const secretSet = !!source?.secrets_set.includes(secretField);
 
   const save = useMutation({
     mutationFn: (body: { name: string; config: Record<string, unknown>; secrets: Record<string, string> }) =>
       source
-        ? updateCbomSource(teamId, source.id, { ...body, expected_version: source.row_version })
-        : createCbomSource(teamId, { kind: "azure_subscription", ...body }),
-    onSuccess: onDone,
+        ? updateCbomSource(teamId, source.id, { ...body, expected_version: source.row_version, test_after_save: true })
+        : createCbomSource(teamId, { kind: "azure_subscription", ...body, test_after_save: true }),
+    onSuccess: onSaved,
     onError: (err) => {
       if (source && (httpStatus(err) === 409 || httpStatus(err) === 404)) onCancel();
     },
@@ -1130,31 +1238,43 @@ function AzureForm({ teamId, source, onDone, onCancel }: { teamId: number; sourc
     const client = clientId.trim().toLowerCase();
     const subs = splitLines(subscriptions).map((s) => s.toLowerCase());
     const badSub = subs.find((s) => !GUID_RE.test(s));
-    const whereChanged = !!source && (tenant !== cfgString(source, "tenant_id").toLowerCase() || client !== cfgString(source, "client_id").toLowerCase());
+    const whereChanged =
+      !!source &&
+      (tenant !== cfgString(source, "tenant_id").toLowerCase() ||
+        client !== cfgString(source, "client_id").toLowerCase() ||
+        credential !== (cfgString(source, "credential_type") || "client_secret"));
+    const what = credential === "certificate" ? "certificate and private key" : "client secret";
     const next: Record<string, string | null> = {
       name: nameError(name),
       tenant: GUID_RE.test(tenant) ? null : "Enter the directory (tenant) ID, a GUID like 00000000-0000-0000-0000-000000000000",
       client: GUID_RE.test(client) ? null : "Enter the application (client) ID, a GUID",
       subs: badSub ? `${badSub} is not a subscription GUID` : subs.length > 200 ? "At most 200 subscriptions" : null,
       secret:
-        secret || (secretSet && !whereChanged)
-          ? null
-          : secretSet
-            ? "Re-enter the client secret: it is cleared when the tenant or client ID changes"
-            : "Enter the client secret",
+        secret && credential === "certificate" && !(/-----BEGIN CERTIFICATE-----/.test(secret) && /PRIVATE KEY-----/.test(secret))
+          ? "Paste the PEM certificate together with its unencrypted private key"
+          : secret || (secretSet && !whereChanged)
+            ? null
+            : secretSet
+              ? `Re-enter the ${what}: it is cleared when the tenant, client ID or credential type changes`
+              : `Enter the ${what}`,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
     save.mutate({
       name: name.trim(),
-      config: { tenant_id: tenant, client_id: client, subscription_ids: Array.from(new Set(subs)) },
-      secrets: secret ? { client_secret: secret } : {},
+      config: { tenant_id: tenant, client_id: client, subscription_ids: Array.from(new Set(subs)), credential_type: credential },
+      secrets: secret ? { [secretField]: secret } : {},
     });
   };
 
   return (
     <div className="space-y-5">
       {source && <EditingBanner name={source.name} onCancel={onCancel} />}
+      <ReaderScript
+        teamId={teamId}
+        provider="azure"
+        text="Run this script in Azure Cloud Shell. It gives the app read-only access to Key Vault metadata: the built-in Key Vault Reader role (no decrypt, unwrap, sign or secret values), a small role that lists vaults, and list-only secret access on vaults that use access policies."
+      />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Name" htmlFor="azure-name" required error={errors.name}>
           <Input id="azure-name" data-testid="cloud-azure-name" value={name} maxLength={64} placeholder="azure-prod" onChange={(e) => setName(e.target.value)} />
@@ -1183,15 +1303,31 @@ function AzureForm({ teamId, source, onDone, onCancel }: { teamId: number; sourc
             onChange={(e) => setClientId(e.target.value)}
           />
         </Field>
+        <div className="md:col-span-2" data-testid="cloud-azure-credential">
+          <ChoiceCards
+            name="azure-credential"
+            label="Credential"
+            value={credential}
+            onChange={(v) => {
+              setCredential(v);
+              setSecret("");
+            }}
+            options={[
+              { value: "client_secret", title: "Client secret", description: "From Certificates & secrets in the app registration" },
+              { value: "certificate", title: "Certificate", description: "PEM certificate with its private key; ZeroShield signs a client assertion" },
+            ]}
+          />
+        </div>
         <SecretField
           id="azure-secret"
-          label="Client secret"
+          label={credential === "certificate" ? "Certificate and private key (PEM)" : "Client secret"}
           value={secret}
           onChange={setSecret}
           isSet={secretSet}
+          multiline={credential === "certificate"}
           required
           error={errors.secret}
-          hint={secretSet ? "Saved. Leave blank to keep it; changing the tenant or client ID clears it." : STORED_HINT}
+          hint={secretSet ? "Saved. Leave blank to keep it; changing the tenant, client ID or credential clears it." : STORED_HINT}
         />
         <Field
           className="md:col-span-2"
@@ -1217,7 +1353,17 @@ function AzureForm({ teamId, source, onDone, onCancel }: { teamId: number; sourc
 }
 
 // ---------------------------------------------------------------------------- Google Cloud
-function GcpForm({ teamId, source, onDone, onCancel }: { teamId: number; source: CbomSource | null; onDone: () => void; onCancel: () => void }) {
+function GcpForm({
+  teamId,
+  source,
+  onSaved,
+  onCancel,
+}: {
+  teamId: number;
+  source: CbomSource | null;
+  onSaved: (data: CbomSourceSaveResponse) => void;
+  onCancel: () => void;
+}) {
   const invalidate = useInvalidate(teamId);
   const [name, setName] = useState(source?.name ?? "");
   const [orgId, setOrgId] = useState(cfgString(source, "organization_id"));
@@ -1231,9 +1377,9 @@ function GcpForm({ teamId, source, onDone, onCancel }: { teamId: number; source:
   const save = useMutation({
     mutationFn: (body: { name: string; config: Record<string, unknown>; secrets: Record<string, string> }) =>
       source
-        ? updateCbomSource(teamId, source.id, { ...body, expected_version: source.row_version })
-        : createCbomSource(teamId, { kind: "gcp_project", ...body }),
-    onSuccess: onDone,
+        ? updateCbomSource(teamId, source.id, { ...body, expected_version: source.row_version, test_after_save: true })
+        : createCbomSource(teamId, { kind: "gcp_project", ...body, test_after_save: true }),
+    onSuccess: onSaved,
     onError: (err) => {
       if (source && (httpStatus(err) === 409 || httpStatus(err) === 404)) onCancel();
     },
@@ -1289,6 +1435,11 @@ function GcpForm({ teamId, source, onDone, onCancel }: { teamId: number; source:
   return (
     <div className="space-y-5">
       {source && <EditingBanner name={source.name} onCancel={onCancel} />}
+      <ReaderScript
+        teamId={teamId}
+        provider="gcp"
+        text="Run this script with gcloud. It grants the service account viewer roles only: Cloud KMS Viewer (no key use), CA Service Auditor and Secret Manager Viewer (metadata, never secret payloads)."
+      />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Name" htmlFor="gcp-name" required error={errors.name}>
           <Input id="gcp-name" data-testid="cloud-gcp-name" value={name} maxLength={64} placeholder="gcp-prod" onChange={(e) => setName(e.target.value)} />
@@ -1369,13 +1520,48 @@ function GcpForm({ teamId, source, onDone, onCancel }: { teamId: number; source:
   );
 }
 
+function ReaderScript({ teamId, provider, text }: { teamId: number; provider: "azure" | "gcp"; text: string }) {
+  const [open, setOpen] = useState(false);
+  const query = useQuery({
+    queryKey: cbomSourcesKeys.template(teamId, `${provider}-reader`),
+    queryFn: () => getCbomCloudReaderScript(teamId, provider),
+    enabled: open && Number.isFinite(teamId),
+    retry: 1,
+    staleTime: 60_000,
+  });
+  return (
+    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 text-sm space-y-2" data-testid={`cloud-${provider}-reader`}>
+      <p className="text-zinc-600 dark:text-zinc-400">{text}</p>
+      <button
+        type="button"
+        className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        data-testid={`cloud-${provider}-reader-toggle`}
+      >
+        {open ? "Hide the read-only role script" : "Show the read-only role script"}
+      </button>
+      {open &&
+        (query.isLoading ? (
+          <LoadingBlock />
+        ) : query.isError || !query.data ? (
+          <ErrorBlock message="Could not load the script." onRetry={() => query.refetch()} />
+        ) : (
+          <div className="min-w-0">
+            <CodeSnippet code={query.data} language="bash" />
+          </div>
+        ))}
+    </div>
+  );
+}
+
 function FormFooter({ pending, onSave, testId }: { pending: boolean; onSave: () => void; testId: string }) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
-      <p className="text-xs text-zinc-500 mr-auto">{NOT_AVAILABLE}</p>
+      <p className="text-xs text-zinc-500 mr-auto">Saves the account, then ZeroShield signs in and makes one read-only list call.</p>
       <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" disabled={pending} onClick={onSave} data-testid={testId}>
-        {pending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        Save
+        {pending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
+        Save and validate
       </Button>
     </div>
   );

@@ -1,4 +1,5 @@
-"""ZeroShield cloud worker for CBOM Sources: collects node-less sources (AWS accounts, identity providers).
+"""ZeroShield cloud worker for CBOM Sources: collects node-less sources (AWS accounts, Azure Key Vault, Google Cloud
+KMS / CA Service / Secret Manager, identity providers).
 
     python -m backend.workers.cbom_cloud_worker            # loop
     python -m backend.workers.cbom_cloud_worker --once     # one job (tests)
@@ -98,6 +99,22 @@ class _Job:
         try:
             if kind == "aws_account":
                 result = self._aws()
+            elif kind == "azure_subscription":
+                from backend.utilities.cbom_sources.azure_collect import AzureCollectError, collect_azure
+
+                try:
+                    result = collect_azure(team_id, self.source["config"], self.source.get("secrets") or {}, self.emit,
+                                           self.should_stop)
+                except AzureCollectError as exc:
+                    raise _Refused(str(exc)) from exc
+            elif kind == "gcp_project":
+                from backend.utilities.cbom_sources.gcp_collect import GcpCollectError, collect_gcp
+
+                try:
+                    result = collect_gcp(team_id, self.source["config"], self.source.get("secrets") or {}, self.emit,
+                                         self.should_stop)
+                except GcpCollectError as exc:
+                    raise _Refused(str(exc)) from exc
             elif kind == "idp":
                 from backend.utilities.cbom_sources.idp_collect import collect_idp
 
