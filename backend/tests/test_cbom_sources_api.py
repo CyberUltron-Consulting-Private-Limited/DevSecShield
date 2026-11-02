@@ -43,6 +43,7 @@ from backend.new_models import (  # noqa: E402
 from backend.routers import cbom_node, cbom_sources, cbom_vendor_public  # noqa: E402
 from backend.utilities.auth import auth_utils  # noqa: E402
 from backend.utilities.cbom_sources import http as cbom_http  # noqa: E402
+from backend.utilities.cbom_sources import jobs as J  # noqa: E402
 from backend.utilities.cbom_sources import node_auth  # noqa: E402
 from backend.utilities.cbom_sources import targets as T  # noqa: E402
 from backend.utilities.cbom_sources.cleanup import delete_cbom_sources_for_team  # noqa: E402
@@ -612,6 +613,33 @@ def test_assets_are_stored_classified_deduplicated_and_scrubbed(api, world):
     assert any(p["name"] == "zs:gap" and "auth_failed" in p["value"] for p in bom["metadata"]["properties"])
     late = api("POST", f"/cbom/node/jobs/{job['id']}/assets", None, headers=hdr, json={"lease_id": lease, "assets": batch[:1]})
     assert late.status_code == 409
+
+
+def test_a_classifier_error_stores_that_asset_unjudged_and_keeps_the_batch(api, world, monkeypatch):
+    """Regression: the except branch in jobs.add_assets called log.warning on the common.log function, so one asset
+    the classifier could not read turned the whole batch into a 500."""
+    engine, _ = world
+    src, run, claim, hdr = _collect_job(api, engine)
+    job, lease = claim["job"], claim["job"]["lease_id"]
+    real = J.classify
+
+    def flaky(asset_type, *args, **kwargs):
+        if asset_type == "tls_endpoint":
+            raise ValueError("unreadable facts")
+        return real(asset_type, *args, **kwargs)
+
+    monkeypatch.setattr(J, "classify", flaky)
+    batch = [
+        {"type": "tls_endpoint", "target": "10.20.0.1", "location": "10.20.0.1:443", "facts": {"protocols": ["TLSv1.0"]}},
+        {"type": "certificate", "target": "10.20.0.1", "location": "/etc/ssl/pay.pem", "name": "pay", "algorithm": "RSA",
+         "key_size": 1024, "facts": CERT_FACTS},
+    ]
+    r = api("POST", f"/cbom/node/jobs/{job['id']}/assets", None, headers=hdr, json={"lease_id": lease, "batch_id": "b1", "assets": batch})
+    assert r.status_code == 200, r.text
+    assert r.json()["accepted"] == 2
+    by_loc = {a["location"]: a for a in api("GET", f"/1/cbom/sources/runs/{run['id']}/assets").json()["items"]}
+    assert by_loc["10.20.0.1:443"]["impact"] is None and by_loc["10.20.0.1:443"]["finding_codes"] == []
+    assert "RSA_LT_2048" in by_loc["/etc/ssl/pay.pem"]["finding_codes"]
 
 
 def test_failed_or_cancelled_collect_jobs_are_refunded(api, world):

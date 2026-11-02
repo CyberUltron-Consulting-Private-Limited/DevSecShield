@@ -803,9 +803,10 @@ def add_assets(
         keys.add(key)
         try:
             verdict = classify(asset_type, algorithm, key_size, protocol, facts, now)
-        except Exception:  # one malformed asset must not cost the rest of the batch
-            log.warning("classify failed for a %s asset of job %s; stored without a verdict", asset_type, job.id,
-                        exc_info=True)
+        except Exception as exc:  # one malformed asset must not cost the rest of the batch
+            # `log` here is the module's greppable-line function (common.log), not a logging.Logger
+            log("classify FAILED; asset stored without a verdict", asset_type=asset_type, job=job.id,
+                error=type(exc).__name__)
             verdict = {"cdx_type": "other", "quantum_vulnerable": None, "impact": None, "finding_codes": [],
                        "finding": "Not judged: the collected facts could not be read"}
         rows.append({
