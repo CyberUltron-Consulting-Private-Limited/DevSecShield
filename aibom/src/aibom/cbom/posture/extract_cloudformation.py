@@ -14,7 +14,11 @@ from aibom.cbom.posture.extract_terraform import (
 from aibom.cbom.posture.jsonsafe import parse_json
 from aibom.cbom.posture.model import BasisEntry, EncryptionFact
 from aibom.cbom.posture.resolve import Absent, Value, resolve_expr
-from aibom.cbom.posture.tls_policy import protocol_for_policy, weak_suite_for_policy
+from aibom.cbom.posture.tls_policy import (
+    policy_floor_note,
+    protocol_for_policy,
+    weak_suite_for_policy,
+)
 from aibom.cbom.posture.yamlsafe import LineDict, parse_yaml
 
 
@@ -126,6 +130,9 @@ def _apply_tls_policy(
         BasisEntry("policy", name),
         BasisEntry("protocol_min", floor),
     ]
+    inferred = policy_floor_note(name)
+    if inferred is not None:
+        notes.append(inferred)
     suite = weak_suite_for_policy(name)
     if suite is not None:
         notes.append(BasisEntry("cipher_suite", suite))

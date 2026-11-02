@@ -74,7 +74,8 @@ _QUANTUM_NA_TYPES = frozenset({"certificate", "protocol", "key"})
 _CONFIG_TYPE_CODES = frozenset({"TLS_VERIFICATION_DISABLED", "UNENCRYPTED_AT_REST", "AT_REST_ENCRYPTION_WEAK",
                                 "UNENCRYPTED_IN_TRANSIT", "PLAINTEXT_LISTENER", "KNOWN_TLS_VULNERABILITY",
                                 "DOWNGRADE_PROTECTION_MISSING", "KMS_KEY_ROTATION_DISABLED",
-                                "KMS_KEY_DELETION_UNPROTECTED", "KMS_KEY_POLICY_PUBLIC"})
+                                "KMS_KEY_DELETION_UNPROTECTED", "KMS_KEY_POLICY_PUBLIC",
+                                "PROVIDER_MANAGED_KEY", "EOL_BASE_IMAGE"})
 
 
 def _legacy_algorithm_type(row: dict[str, Any]) -> str:

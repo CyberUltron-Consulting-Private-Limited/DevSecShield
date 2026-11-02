@@ -34,7 +34,11 @@ from aibom.cbom.posture.resolve import (
     policy_exposure,
     resolve_expr,
 )
-from aibom.cbom.posture.tls_policy import protocol_for_policy, weak_suite_for_policy
+from aibom.cbom.posture.tls_policy import (
+    policy_floor_note,
+    protocol_for_policy,
+    weak_suite_for_policy,
+)
 from aibom.cbom.posture.verdict import (
     LayerCase,
     LayerResult,
@@ -159,7 +163,17 @@ def extract_terraform(text: str, path: str) -> tuple[EncryptionFact, ...]:
 
 
 # Basis entries that name a decision, not an attribute: the attributes that carry it.
-_BASIS_ATTRS: dict[str, tuple[str, ...]] = {"rotation": ("enable_key_rotation", "rotation_period")}
+_BASIS_ATTRS: dict[str, tuple[str, ...]] = {
+    "rotation": ("enable_key_rotation", "rotation_period"),
+    # a named TLS policy decides the protocol floor: point at the attribute that names it
+    "policy": (
+        "ssl_policy",
+        "viewer_certificate.minimum_protocol_version",
+        "min_tls_version",
+        "profile",
+        "site_config.minimum_tls_version",
+    ),
+}
 
 
 def _attr_line(body: Body, path: str) -> int | None:
@@ -439,6 +453,9 @@ def _named_policy(fact: EncryptionFact, name: str | None) -> EncryptionFact:
             basis=fact.basis + (BasisEntry("ssl_policy", None, "default_unknown"),),
         )
     notes = [BasisEntry("policy", name), BasisEntry("protocol_min", floor)]
+    inferred = policy_floor_note(name)
+    if inferred is not None:
+        notes.append(inferred)
     suite = weak_suite_for_policy(name)
     if suite is not None:
         notes.append(BasisEntry("cipher_suite", suite))

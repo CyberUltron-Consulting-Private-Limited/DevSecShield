@@ -323,4 +323,85 @@ def parse_certificate(der: bytes) -> Certificate | None:
         return None
 
 
-__all__ = ["Certificate", "parse_certificate"]
+@dataclass(frozen=True)
+class PrivateKeyInfo:
+    """What a private key IS (algorithm, size, curve), never the key itself."""
+
+    algorithm: str  # "RSA", "EC", "DSA", "Ed25519", "Ed448"
+    key_size: int | None
+    curve: str | None
+
+
+_INTEGER = 0x02
+_OCTET_STRING = 0x04
+_CTX_0_PARAMS = 0xA0  # SEC1 ECPrivateKey [0] parameters
+_KEY_OIDS = {
+    "1.2.840.113549.1.1.1": "RSA",
+    "1.2.840.10045.2.1": "EC",
+    "1.2.840.10040.4.1": "DSA",
+    "1.3.101.112": "Ed25519",
+    "1.3.101.113": "Ed448",
+}
+
+
+def _int_bits(value: bytes) -> int | None:
+    return int.from_bytes(value, "big").bit_length() or None
+
+
+def _rsa_private_bits(value: bytes) -> int | None:
+    """RSAPrivateKey ::= SEQUENCE { version, modulus, ... } (RFC 8017 A.1.2) -> modulus bit length."""
+    kids = _children(value)
+    return _int_bits(kids[1][1]) if len(kids) > 1 and kids[1][0] == _INTEGER else None
+
+
+def _ec_private_curve(value: bytes) -> tuple[str, int] | None:
+    """ECPrivateKey ::= SEQUENCE { version, privateKey, [0] parameters OID, ... } (RFC 5915)."""
+    for tag, val, _ in _children(value):
+        if tag == _CTX_0_PARAMS:
+            inner = _children(val)
+            if inner and inner[0][0] == _OID:
+                return _CURVE_OIDS.get(_decode_oid(inner[0][1]))
+    return None
+
+
+def parse_private_key(der: bytes, label: str = "PRIVATE KEY") -> PrivateKeyInfo | None:
+    """Algorithm and size of an unencrypted private key (PKCS#1 ``RSA PRIVATE KEY``, SEC1 ``EC PRIVATE KEY`` or
+    PKCS#8 ``PRIVATE KEY``). Returns None (never raises) for anything else, an encrypted key included. The caller
+    keeps only the returned facts; the key bytes are not stored."""
+    try:
+        tag, value, _, _ = _read_tlv(der, 0)
+        if tag != _SEQUENCE:
+            return None
+        if label == "RSA PRIVATE KEY":
+            return PrivateKeyInfo("RSA", _rsa_private_bits(value), None)
+        if label == "EC PRIVATE KEY":
+            ec = _ec_private_curve(value)
+            return PrivateKeyInfo("EC", ec[1] if ec else None, ec[0] if ec else None)
+        if label != "PRIVATE KEY":
+            return None
+        kids = _children(value)  # PrivateKeyInfo ::= SEQUENCE { version, algorithm, privateKey, ... } (RFC 5208)
+        if len(kids) < 3 or kids[1][0] != _SEQUENCE or kids[2][0] != _OCTET_STRING:
+            return None
+        algid = _children(kids[1][1])
+        if not algid or algid[0][0] != _OID:
+            return None
+        algorithm = _KEY_OIDS.get(_decode_oid(algid[0][1]))
+        if algorithm is None:
+            return None
+        if algorithm == "RSA":
+            inner_tag, inner, _, _ = _read_tlv(kids[2][1], 0)
+            bits = _rsa_private_bits(inner) if inner_tag == _SEQUENCE else None
+            return PrivateKeyInfo("RSA", bits, None)
+        if algorithm == "EC":
+            ec = _ec_curve(kids[1][1])
+            return PrivateKeyInfo("EC", ec[1] if ec else None, ec[0] if ec else None)
+        if algorithm == "DSA":
+            params = algid[1][1] if len(algid) > 1 and algid[1][0] == _SEQUENCE else b""
+            p = _children(params) if params else []
+            return PrivateKeyInfo("DSA", _int_bits(p[0][1]) if p else None, None)
+        return PrivateKeyInfo(algorithm, None, None)
+    except (_Asn1Error, IndexError, ValueError):
+        return None
+
+
+__all__ = ["Certificate", "PrivateKeyInfo", "parse_certificate", "parse_private_key"]

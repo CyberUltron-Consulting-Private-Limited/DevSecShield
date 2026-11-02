@@ -37,6 +37,9 @@ def _scored(fact: EncryptionFact) -> dict[str, bool]:
     scored: dict[str, bool] = {}
     if fact.kind in _AT_REST_KINDS:
         scored["at_rest"] = True
+        # encrypted, but only by the provider's default with a provider-owned key (nothing declared)
+        if fact.verdict == "ENCRYPTED_PROVIDER_DEFAULT":
+            scored["PROVIDER_MANAGED_KEY"] = True
     if fact.layers.get("transport") == "NOT_ENCRYPTED":
         scored["in_transit"] = True
     for entry in fact.basis:

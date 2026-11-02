@@ -12,6 +12,7 @@ from pathlib import Path
 
 from aibom.cbom.files import FileWalk, skipped_dirs
 from aibom.cbom.posture.diagnostics import DiagnosticSink
+from aibom.cbom.posture.helm import helm_class, is_ansible
 from aibom.cbom.posture.limits import (
     BYTES_PER_SCAN,
     FILES_PER_SCAN,
@@ -182,9 +183,14 @@ class PostureSink:
         named = classify_name(rel)
         if named is not None:
             return named
+        helm = helm_class(str(self.root), rel)
+        if helm is not None:
+            return helm
         head = self._head(entry)
         if head is None:
             return None
+        if is_ansible(rel, head):
+            return "ansible"
         if sniff_tls_result(head):
             return "tls-result"
         if sniff_cloudformation(head):

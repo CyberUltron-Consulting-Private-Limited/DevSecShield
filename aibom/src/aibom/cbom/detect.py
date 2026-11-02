@@ -43,6 +43,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from aibom.cbom.powershell import POWERSHELL_LITERALS
 from aibom.cbom.rules import (
     LITERAL_ALGO_ALIASES,
     PQC_PARAM_SETS,
@@ -660,6 +661,8 @@ LITERAL_BY_LANG: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     _PERL: PERL_LITERALS,
     _SQL: SQL_LITERALS,
     _SHELL: SHELL_LITERALS,
+    # PowerShell calls the .NET classes, plus the SecureString cmdlets' AES (aibom.cbom.powershell)
+    "powershell": DOTNET_LITERALS + POWERSHELL_LITERALS,
 }
 
 
@@ -707,7 +710,7 @@ def _strip_line_comment(line: str, lang: str) -> str:
         return _PY_COMMENT.sub("", line)
     if lang in ("javascript", "java", "go", "c", "rust", "csharp", "swift"):
         return _C_LINE_COMMENT.sub("", line)
-    if lang in (_SHELL, _PERL):
+    if lang in (_SHELL, _PERL, "powershell"):
         return _HASH_COMMENT.sub("", line)
     if lang == _PHP:  # ``//`` and ``#`` (not a PHP 8 ``#[Attribute]``)
         return _PHP_HASH_COMMENT.sub("", _C_LINE_COMMENT.sub("", line))

@@ -43,8 +43,11 @@ def test_committed_terraform_tree_matches_the_oracle() -> None:
         for row in run["results"]
         if str(row["bom_ref"]).startswith("crypto-cfg_")
     ]
-    assert len(rows) == 1
-    assert rows[0]["finding_codes"] == ["UNENCRYPTED_AT_REST"]
+    # the unencrypted database (High) and the bucket left on the provider's default key (Low)
+    assert sorted((row["impact"], tuple(row["finding_codes"])) for row in rows) == [
+        ("High", ("UNENCRYPTED_AT_REST",)),
+        ("Low", ("PROVIDER_MANAGED_KEY",)),
+    ]
     locked = json.loads((TREE / "cbom_posture_scan.json").read_text(encoding="utf-8"))
     detailed = []
     for comp in result.components:
@@ -62,4 +65,4 @@ def test_committed_terraform_tree_matches_the_oracle() -> None:
         )
     detailed.sort(key=lambda row: (str(row["native_type"]), str(row["address"])))
     assert detailed == locked["facts"]
-    assert locked["posture_flags"] == ["UNENCRYPTED_AT_REST"]
+    assert locked["posture_flags"] == ["PROVIDER_MANAGED_KEY", "UNENCRYPTED_AT_REST"]

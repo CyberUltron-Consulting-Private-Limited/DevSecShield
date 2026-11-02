@@ -41,6 +41,8 @@ flags:
   KMS_KEY_POLICY_PUBLIC: 8
   KMS_KEY_DELETION_UNPROTECTED: 1
   AT_REST_ENCRYPTION_WEAK: 4
+  PROVIDER_MANAGED_KEY: 1     # encrypted only with the provider's own default key (note)
+  EOL_BASE_IMAGE: 4           # Dockerfile base image release past end of life (warning)
 
 # Per-component SEVERITY bands, on the STACKED raw weight (inclusive lower bound).
 # A crypto asset with no flags scores 0 -> low (the inventory floor; a strong

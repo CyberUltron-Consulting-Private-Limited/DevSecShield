@@ -11,6 +11,7 @@ from aibom.cbom.posture.context import posture_sink
 from aibom.cbom.posture.curves import emit_curves
 from aibom.cbom.posture.dhparam import emit_dh, resolve_dh
 from aibom.cbom.posture.extract_databases import extract_databases
+from aibom.cbom.posture.mssql_keys import key_use_assets
 from aibom.cbom.registry import cbom_register
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -28,7 +29,10 @@ def _sibling(rel: str, name: str) -> str:
 def _collect(ctx: ScanContext) -> None:
     sink = posture_sink(ctx)
     indexed = {item.rel.replace("\\", "/") for item in sink.index().files}
+    sql: dict[str, str] = {}
     for decoded in iter_class(sink, _CLASSES):
+        if decoded.cls == "sql":
+            sql[decoded.rel] = decoded.text
         base = PurePosixPath(decoded.rel.replace("\\", "/")).name.casefold()
         hba: str | None = None
         hba_path: str | None = None
@@ -61,6 +65,10 @@ def _collect(ctx: ScanContext) -> None:
                 ctx.add_component(asset)
         emit_dh(ctx, facts)
         emit_curves(ctx, facts)
+    # SQL Server EncryptByKey / DecryptByKey: the algorithm of the key, resolved across the scan's SQL files
+    for asset in key_use_assets(sql):
+        if not ctx.has_ref(asset.bom_ref):
+            ctx.add_component(asset)
 
 
 @cbom_register

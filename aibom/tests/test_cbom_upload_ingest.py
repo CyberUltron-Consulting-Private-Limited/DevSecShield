@@ -229,7 +229,8 @@ def test_reuploading_a_scan_cbom_keeps_every_crypto_finding(tmp_path, fixture):
     """Scan a repository, upload the CBOM it produced: every crypto-asset finding comes back."""
     run = scan_crypto_to_devsecshield(FIXTURES / fixture, level=4)
     up = analyze_cbom_file_to_devsecshield(_write(tmp_path, run["cbom_json"]))
-    scanned = Counter(c for r in run["results"] for c in r["finding_codes"])
+    # crypto-asset findings only: a vulnerable library row is a dependency, not a cryptographic-asset component
+    scanned = Counter(c for r in run["results"] if r.get("algorithm_type") != "library" for c in r["finding_codes"])
     uploaded = Counter(c for r in up["results"] for c in r["finding_codes"])
     assert not scanned - uploaded
 

@@ -12,6 +12,7 @@ import re
 import tomllib
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from importlib.resources import files
 from pathlib import Path
 
@@ -35,7 +36,8 @@ class Advisory:
 
 @dataclass(frozen=True)
 class Pin:
-    """A package version or range declared in the tree."""
+    """A package version or range declared in the tree. ``line`` is the 1-based line of the declaration when the
+    manifest format has lines worth naming (requirements / constraints files, ``go.mod``), else 0."""
 
     ecosystem: str
     name: str
@@ -45,6 +47,7 @@ class Pin:
     path: str
     direct: bool
     declared: str
+    line: int = 0
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,14 @@ def _parts(version: str) -> tuple[list[int], str | None]:
     return nums or [0], pre
 
 
+def _pre_key(pre: str) -> list[tuple[int, int, str]]:
+    """SemVer 2.0.0 section 11.4 pre-release precedence: dot-separated identifiers, numeric ones compared as numbers
+    and below alphanumeric ones. A Go pseudo-version (``v0.0.0-20190308221718-c2843e01d9a2``,
+    ``v1.2.4-0.20191109021931-daa7c04131f5``) carries a fixed-width UTC timestamp first, so this orders pseudo-versions
+    of one base version by commit date, as the Go toolchain does (https://go.dev/ref/mod#pseudo-versions)."""
+    return [(0, int(ident), "") if ident.isdigit() else (1, 0, ident) for ident in pre.split(".")]
+
+
 def compare_versions(left: str, right: str) -> int:
     """-1, 0, or 1. A pre-release sorts before the matching release."""
     ln, lp = _parts(left)
@@ -130,7 +141,7 @@ def compare_versions(left: str, right: str) -> int:
         return 1
     if rp is None:
         return -1
-    return -1 if lp < rp else 1
+    return -1 if _pre_key(lp) < _pre_key(rp) else 1
 
 
 def _below_fixed(version: str, advisory: Advisory) -> bool:
@@ -194,7 +205,8 @@ def _one_specifier(text: str) -> tuple[str | None, str | None, str | None]:
         return None, None, text[1:].strip()
     if text.startswith(">"):
         return None, text[1:].strip(), None
-    if re.fullmatch(r"v?\d+(?:\.\d+){0,3}(?:[-+][0-9A-Za-z.]+)?", text):
+    # an exact version, also a Go pseudo-version (``v0.0.0-20190308221718-c2843e01d9a2``) or ``+incompatible`` tag
+    if re.fullmatch(r"v?\d+(?:\.\d+){0,3}(?:[-+][0-9A-Za-z.]+){0,4}", text):
         return text.lstrip("vV"), None, None
     return None, None, None
 
@@ -227,6 +239,7 @@ def _pin(
     path: str,
     *,
     direct: bool,
+    line: int = 0,
 ) -> Pin | None:
     exact, low, high = parse_specifier(declared)
     if exact is None and low is None and high is None:
@@ -240,6 +253,7 @@ def _pin(
         path=path,
         direct=direct,
         declared=declared.strip(),
+        line=line,
     )
 
 
@@ -283,20 +297,23 @@ def _read(walk: FileWalk, path: Path) -> str | None:
 
 
 def _requirements(text: str, path: str) -> list[Pin]:
+    """A pip requirements or constraints file. An environment marker (``; python_version < "3.8"``) and per-line
+    options (``--hash=…``) after the version are not part of it."""
     pins: list[Pin] = []
-    for raw in text.splitlines():
-        line = raw.split("#", 1)[0].strip()
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.split("#", 1)[0].split(";", 1)[0].strip()
         if not line or line.startswith("-"):
             continue
         name, sep, spec = line.partition("==")
         if sep:
             base = name.split("[", 1)[0].strip()
-            pin = _pin("pypi", base, spec.strip(), path, direct=True)
+            version = spec.strip().split()[0] if spec.strip() else ""
+            pin = _pin("pypi", base, version, path, direct=True, line=number)
         else:
-            matched = re.match(r"([A-Za-z0-9_.\-]+)\s*(>=.+)$", line)
+            matched = re.match(r"([A-Za-z0-9_.\-]+)\s*(>=[^\s]+)", line)
             if not matched:
                 continue
-            pin = _pin("pypi", matched.group(1), matched.group(2), path, direct=True)
+            pin = _pin("pypi", matched.group(1), matched.group(2), path, direct=True, line=number)
         if pin is not None:
             pins.append(pin)
     return pins
@@ -485,7 +502,7 @@ _PARSERS = {
 def _go_mod_pins(text: str, path: str) -> list[Pin]:
     pins: list[Pin] = []
     in_block = False
-    for raw in text.splitlines():
+    for number, raw in enumerate(text.splitlines(), start=1):
         line = raw.split("//", 1)[0].strip()
         if line.startswith("require ("):
             in_block = True
@@ -498,10 +515,22 @@ def _go_mod_pins(text: str, path: str) -> list[Pin]:
         parts = line.removeprefix("require ").split()
         if len(parts) < 2:
             continue
-        pin = _pin("go", parts[0], parts[1], path, direct=True)
+        pin = _pin("go", parts[0], parts[1], path, direct=True, line=number)
         if pin is not None:
             pins.append(pin)
     return pins
+
+
+# pip requirement and constraint files under any of their usual names (``requirements-dev.txt``,
+# ``requirements_test.txt``, ``constraints.txt``); a ``requirements/`` directory of ``*.txt`` files is not read.
+_PIP_FILES = ("requirements*.txt", "constraints*.txt")
+
+
+def _parser_for(name: str):
+    parser = _PARSERS.get(name)
+    if parser is None and any(fnmatchcase(name, pattern) for pattern in _PIP_FILES):
+        return _requirements
+    return parser
 
 
 def iter_pins(root: Path, walk: FileWalk | None = None) -> Iterator[Pin]:
@@ -509,7 +538,8 @@ def iter_pins(root: Path, walk: FileWalk | None = None) -> Iterator[Pin]:
     walk = walk or FileWalk(root)
     go_direct: set[str] = set()
     manifests = walk.files(
-        lambda p: p.name.lower() in _PARSERS or p.name.lower() in {"go.mod", "go.sum"}, max_bytes=_MAX_BYTES
+        lambda p: _parser_for(p.name.lower()) is not None or p.name.lower() in {"go.mod", "go.sum"},
+        max_bytes=_MAX_BYTES,
     )
     for path in manifests:
         name = path.name.lower()
@@ -523,7 +553,7 @@ def iter_pins(root: Path, walk: FileWalk | None = None) -> Iterator[Pin]:
             continue
         if name == "go.sum":
             continue
-        parser = _PARSERS.get(name)
+        parser = _parser_for(name)
         if parser is not None:
             yield from parser(text, rel)
     for path in manifests:
@@ -538,3 +568,47 @@ def iter_pins(root: Path, walk: FileWalk | None = None) -> Iterator[Pin]:
 def find_vulnerable(root: Path, walk: FileWalk | None = None) -> tuple[AdvisoryHit, ...]:
     """Advisory hits for one repository tree."""
     return match_advisories(iter_pins(root, walk), load_advisories())
+
+
+@dataclass(frozen=True)
+class VulnerablePin:
+    """One declared package version with every advisory it matches: one inventory row, not one row per CVE."""
+
+    pin: Pin
+    advisories: tuple[Advisory, ...]
+
+    @property
+    def ref(self) -> str:
+        raw = f"{self.pin.ecosystem}-{self.pin.name}-{self.pin.declared}"
+        slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
+        return f"crypto-advisory-{slug}"[:180]
+
+    @property
+    def upgrade_to(self) -> str | None:
+        """The lowest version that fixes every matched advisory, or None when one of them has no fixed release."""
+        fixes = [advisory.fixed for advisory in self.advisories]
+        if not fixes or any(fix is None for fix in fixes):
+            return None
+        best = fixes[0]
+        for fix in fixes[1:]:
+            if compare_versions(fix, best) > 0:  # type: ignore[arg-type]
+                best = fix
+        return best
+
+
+def group_by_pin(hits: Iterable[AdvisoryHit]) -> tuple[VulnerablePin, ...]:
+    """Hits grouped per declared package version (the first declaration found keeps its path and line)."""
+    order: list[tuple[str, str, str]] = []
+    pins: dict[tuple[str, str, str], Pin] = {}
+    found: dict[tuple[str, str, str], list[Advisory]] = {}
+    for hit in hits:
+        key = (hit.pin.ecosystem, hit.pin.name, hit.pin.declared)
+        if key not in pins:
+            order.append(key)
+            pins[key] = hit.pin
+            found[key] = []
+        if hit.advisory not in found[key]:
+            found[key].append(hit.advisory)
+    return tuple(
+        VulnerablePin(pin=pins[key], advisories=tuple(sorted(found[key], key=lambda a: a.id))) for key in order
+    )
