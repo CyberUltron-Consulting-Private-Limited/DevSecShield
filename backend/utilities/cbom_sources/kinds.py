@@ -54,7 +54,8 @@ class _Source(_Strict):
     * business_criticality scales the risk score of what the source finds;
     * exposure overrides the internet exposure derived from the collected facts (risk x 1.5 when internet-facing);
     * owner, application, data_classification and data_lifetime_years say who answers for the source, which
-      application it serves and how sensitive / long-lived its data is (remediation owners, roadmap, Mosca X).
+      application it serves and how sensitive / long-lived its data is (remediation owners, roadmap, Mosca X);
+    * environment (production, staging, ... as the CMDB names it) comes from a CMDB import or the form.
 
     Every field declared here is metadata (``METADATA_FIELDS``): editing it never cancels a job or resets the
     connection test, a source form that does not send it keeps the stored value (send null to clear), and a run
@@ -66,8 +67,9 @@ class _Source(_Strict):
     application: str | None = Field(default=None, max_length=128)
     data_classification: DataClassification | None = None
     data_lifetime_years: int | None = Field(default=None, ge=0, le=100)
+    environment: str | None = Field(default=None, max_length=32)
 
-    @field_validator("owner", "application")
+    @field_validator("owner", "application", "environment")
     @classmethod
     def _plain_text(cls, v: str | None) -> str | None:
         return _metadata_text(v)

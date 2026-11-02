@@ -18,9 +18,13 @@ from backend.new_models import (
     CbomEvidenceVendor,
     CbomRemediationAssignment,
     CbomScanNode,
+    IntegrationDelivery,
+    TeamIntegration,
 )
 
 _ORDER = (
+    IntegrationDelivery,  # integrations (WP11): deliveries before their integration
+    TeamIntegration,
     CbomDriftEvent,
     CbomRemediationAssignment,
     CbomCollectionSchedule,

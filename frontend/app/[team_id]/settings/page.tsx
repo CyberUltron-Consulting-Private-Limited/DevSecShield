@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
@@ -370,6 +371,17 @@ export default function TeamSettingsPage() {
               </Button>
             )}
           </div>
+        </section>
+
+        {/* Integrations (ServiceNow, SIEM, webhooks, OSCAL): their own page */}
+        <section className="pb-6 mb-6 border-b border-border">
+          <h2 className="text-lg font-medium">Integrations</h2>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">
+            Forward CBOM findings, drift, certificate expiry and finished scans to ServiceNow, syslog / Splunk (SIEM), a signed webhook or a GRC tool (OSCAL), and see the delivery log.
+          </p>
+          <Link href={`/${team_id}/settings/integrations`} className="inline-flex items-center rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white" data-testid="settings-integrations-link">
+            Open integrations
+          </Link>
         </section>
 
         {/* 4. Delete team (bottom, destructive) */}

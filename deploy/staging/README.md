@@ -106,6 +106,15 @@ Air-gapped sites: `GIT_ALLOWED_HOSTS` (self-hosted Git; same value for backend a
 `CBOM_IDP_ALLOWED_PRIVATE` + `CBOM_EXTRA_CA_FILE` (identity provider on a private network with a private CA),
 `DSS_SBOM_REGISTRY=0` (no public registry lookups).
 
+Integrations (Settings > Integrations: ServiceNow, syslog / Splunk HEC, signed webhooks, OSCAL push). Every
+connection goes through one SSRF guard (`backend/utilities/integrations/outbound.py`): loopback, link-local / cloud
+metadata and CGNAT addresses are never contacted; an on-premises destination (Splunk, a syslog collector, an internal
+ServiceNow) must be listed in `INTEGRATION_ALLOWED_PRIVATE` in `backend.env` (comma-separated CIDRs and/or exact host
+names, e.g. `10.20.0.0/16,splunk.corp.local`). Events are delivered by a dispatcher thread in the cloud worker
+(`INTEGRATION_DISPATCHER=0` turns it off there; run `python -m backend.workers.integration_dispatcher` as its own
+service instead); events not delivered within `INTEGRATION_MAX_AGE_HOURS` (default 24) of a failing destination are
+dead-lettered, and admins retry them from the delivery log.
+
 ## GitHub workflow
 
 **Deploy staging** (manual): builds, checks the image contexts, saves the archive as an artifact; with `deploy`

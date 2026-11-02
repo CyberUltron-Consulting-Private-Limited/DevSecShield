@@ -16,6 +16,7 @@ from backend.routers.cbom_ops import router as cbom_ops_router
 from backend.routers.cbom_node import router as cbom_node_router
 from backend.utilities.cbom_sources.node_auth import NodeDeploymentHeader
 from backend.routers.cbom_vendor_public import router as cbom_vendor_public_router
+from backend.routers.integrations import router as integrations_router
 from backend.routers.guardrails import router as guardrails_router
 from backend.routers.cicd import router as cicd_router
 from backend.routers.dast_profiles import router as dast_profiles_router
@@ -157,6 +158,8 @@ app.include_router(cbom_sources_router)
 app.include_router(cbom_ops_router)
 app.include_router(cbom_node_router)
 app.include_router(cbom_vendor_public_router)
+# Integrations: ServiceNow, SIEM (syslog, Splunk HEC), signed webhooks, OSCAL export / push, CMDB import.
+app.include_router(integrations_router)
 # DEPRECATED: Guardrails routers remain for legacy/API callers; product UI no longer exposes Guardrails.
 app.include_router(guardrails_router)
 app.include_router(guardrails_public_router)

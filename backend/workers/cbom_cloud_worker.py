@@ -198,6 +198,10 @@ def main() -> None:
     from backend.workers.cbom_scheduler import start_thread
 
     scheduler_stop = start_thread(engine)
+    # integrations forward events on their own thread too: a slow destination must not delay a schedule
+    from backend.workers.integration_dispatcher import start_thread as start_dispatcher
+
+    dispatcher_stop = start_dispatcher(engine)
     last_reap = 0.0
     while not _stopping:
         if time.monotonic() - last_reap >= REAP_EVERY_S:
@@ -212,6 +216,8 @@ def main() -> None:
             time.sleep(IDLE_SLEEP_S)
     if scheduler_stop is not None:
         scheduler_stop.set()
+    if dispatcher_stop is not None:
+        dispatcher_stop.set()
     log("cloud worker stopped", worker=worker)
 
 

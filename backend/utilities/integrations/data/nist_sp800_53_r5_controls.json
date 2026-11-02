@@ -1,0 +1,70 @@
+{
+ "source": "https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json",
+ "catalog_title": "Electronic (OSCAL) Version of NIST SP 800-53 Rev 5.2.0 Controls and SP 800-53A Rev 5.2.0 Assessment Procedures",
+ "catalog_version": "5.2.0",
+ "catalog_last_modified": "2026-10-22T11:30:00.00000-00:00",
+ "oscal_version": "1.2.3",
+ "catalog_sha256": "64ca6b4161de51ab6af098a7d101d326f14c95e1abf721396cd8a049e8115eeb",
+ "controls": [
+  {
+   "id": "cm-6",
+   "title": "Configuration Settings",
+   "objective_id": "cm-6_obj"
+  },
+  {
+   "id": "ia-5",
+   "title": "Authenticator Management",
+   "objective_id": "ia-5_obj"
+  },
+  {
+   "id": "ia-5.2",
+   "title": "Public Key-based Authentication",
+   "objective_id": "ia-5.2_obj"
+  },
+  {
+   "id": "sa-22",
+   "title": "Unsupported System Components",
+   "objective_id": "sa-22_obj"
+  },
+  {
+   "id": "sc-12",
+   "title": "Cryptographic Key Establishment and Management",
+   "objective_id": "sc-12_obj"
+  },
+  {
+   "id": "sc-13",
+   "title": "Cryptographic Protection",
+   "objective_id": "sc-13_obj"
+  },
+  {
+   "id": "sc-17",
+   "title": "Public Key Infrastructure Certificates",
+   "objective_id": "sc-17_obj"
+  },
+  {
+   "id": "sc-28",
+   "title": "Protection of Information at Rest",
+   "objective_id": "sc-28_obj"
+  },
+  {
+   "id": "sc-28.1",
+   "title": "Cryptographic Protection",
+   "objective_id": "sc-28.1_obj"
+  },
+  {
+   "id": "sc-8",
+   "title": "Transmission Confidentiality and Integrity",
+   "objective_id": "sc-8_obj"
+  },
+  {
+   "id": "sc-8.1",
+   "title": "Cryptographic Protection",
+   "objective_id": "sc-8.1_obj"
+  },
+  {
+   "id": "si-2",
+   "title": "Flaw Remediation",
+   "objective_id": "si-2_obj"
+  }
+ ]
+}
