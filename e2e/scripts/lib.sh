@@ -211,6 +211,11 @@ safe_rm_rf() {
 # code path exercised by the E2E calls AWS. Values are never printed.
 ensure_env_file() {
   if [[ -f "${E2E_ENV_FILE}" ]]; then
+    # files generated before the fixed code needed dev mode: add the one missing key (no value is read)
+    if ! grep -q '^DSS_DEV_MODE=' "${E2E_ENV_FILE}"; then
+      printf 'DSS_DEV_MODE=1\n' >>"${E2E_ENV_FILE}"
+      log "added DSS_DEV_MODE=1 to ${E2E_ENV_FILE#"${REPO_ROOT}"/}"
+    fi
     return 0
   fi
   need_cmd openssl od
@@ -237,6 +242,9 @@ ensure_env_file() {
     printf 'JWT_SECRET_KEY=%s\n' "$(openssl rand -hex 32)"
     printf 'JWT_REFRESH_SECRET_KEY=%s\n' "$(openssl rand -hex 32)"
     printf 'CERTIN_HMAC_SECRET=%s\n' "$(openssl rand -hex 32)"
+    # The admin's fixed one-time code only works on a backend started with DSS_DEV_MODE=1 (never for
+    # /reset_password). This throw-away stack is the only place that sets it.
+    printf 'DSS_DEV_MODE=1\n'
     printf 'LOCAL_DEV_VERIFICATION_EMAIL=%s\n' "${E2E_ADMIN_EMAIL_DEFAULT}"
     printf 'LOCAL_DEV_VERIFICATION_CODE=%s\n' "${otp}"
     printf 'RABBIT_ADMIN_USERNAME=dss-e2e-unused\n'
@@ -245,7 +253,7 @@ ensure_env_file() {
     printf 'AWS_SECRET_ACCESS_KEY=%s\n' "$(openssl rand -hex 20)"
     printf 'AWS_DEFAULT_REGION=us-east-1\n'
     printf 'E2E_ADMIN_EMAIL=%s\n' "${E2E_ADMIN_EMAIL_DEFAULT}"
-    # POST /login accepts passwords of 5 to 24 characters (UserLogin): 16 random hex + "Aa1!" = 20.
+    # New passwords are 8 to 128 characters (POST /login accepts 1 to 128): 16 random hex + "Aa1!" = 20.
     printf 'E2E_ADMIN_PASSWORD=%sAa1!\n' "$(openssl rand -hex 8)"
     printf 'E2E_OTHER_EMAIL=%s\n' "${E2E_OTHER_EMAIL_DEFAULT}"
     printf 'E2E_OTHER_PASSWORD=%sAa1!\n' "$(openssl rand -hex 8)"

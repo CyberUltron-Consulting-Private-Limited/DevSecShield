@@ -18,7 +18,7 @@ from backend.new_models import GuardrailsIntegration
 from backend.mongo_models import GuardrailLogs
 from sqlmodel import Session, select
 from rich.console import Console
-from fastapi_throttle import RateLimiter
+from backend.utilities.ratelimit import RateLimiter, ip_key
 from backend.get_db import get_db , get_mongo_client_db
 from backend.utilities.db.encryption import decrypt_if_encrypted
 
@@ -30,7 +30,8 @@ console = Console()
 router = APIRouter(tags=["Guardrails Public API (deprecated)"])
 
 
-limiter = RateLimiter(times=2, seconds=10) # 2 requests per 60 seconds
+# Deprecated public API: 2 requests per 10 seconds per client address, per worker.
+limiter = RateLimiter("guardrails_public", times=2, seconds=10, key_func=ip_key)
 
 
 @router.post("/public/guardrails/start_scan", summary="Start a new guardrails scan", dependencies=[Depends(limiter)])

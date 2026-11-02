@@ -6,6 +6,7 @@
  */
 import { useMemo, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { makeQueryClient } from "@/utils/query_client"
 import {
   CbomCryptoCharts,
   type CbomDistributions,
@@ -13,7 +14,7 @@ import {
 import type { CbomFinding } from "@/utils/backend_api";
 import payload from "./payload.json";
 
-const queryClient = new QueryClient();
+const queryClient = makeQueryClient();
 
 function Inner() {
   const [mode, setMode] = useState<"fixture" | "scan79">("scan79");

@@ -197,11 +197,12 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         roots |= {"sqlmodel"}  # imported lazily inside load_team_cbom_view
         backend += ("backend.new_models",)
     if path.parent == _ROUTERS:
-        roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "fastapi_throttle", "rich"}
+        roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (
             "backend.get_db",
             "backend.new_models",
             "backend.utilities.auth.auth_utils",
+            "backend.utilities.ratelimit",
             "backend.utilities.team",
         )
     return roots, backend

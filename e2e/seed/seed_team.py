@@ -32,7 +32,8 @@ Teams: 1 "E2E Demo Team" (admin persona), 2 "Other Team" (canary certificate, ot
 3 "Empty Team" (empty persona, no scans), 4 "Perf Team" (admin persona, optional).
 
 Personas log in through the real ``/login``: the admin's one-time code is the backend's
-``LOCAL_DEV_VERIFICATION_CODE`` (its email IS ``LOCAL_DEV_VERIFICATION_EMAIL``); the other personas get a
+``LOCAL_DEV_VERIFICATION_CODE`` (its email IS ``LOCAL_DEV_VERIFICATION_EMAIL``; the backend only accepts it with
+``DSS_DEV_MODE=1``, which ``.env.e2e`` sets and no other deployment does); the other personas get a
 one-time code row in ``verificationcode`` valid for 24 hours (a successful login consumes it, so the specs
 cache the tokens they obtain).
 
@@ -120,9 +121,9 @@ def config_from_env(env: dict[str, str] | None = None) -> Config:
     personas: dict[str, dict[str, str]] = {}
     for name, info in plan.PERSONAS.items():
         email, password = need(f"{info['env']}_EMAIL"), need(f"{info['env']}_PASSWORD")
-        if password and not 5 <= len(password) <= 24:
+        if password and not 8 <= len(password) <= 128:
             problems.append(
-                f"{info['env']}_PASSWORD has {len(password)} characters, but POST /login accepts 5 to 24"
+                f"{info['env']}_PASSWORD has {len(password)} characters, but new passwords are 8 to 128"
             )
         personas[name] = {"email": email, "password": password}
     admin_otp = need("LOCAL_DEV_VERIFICATION_CODE")

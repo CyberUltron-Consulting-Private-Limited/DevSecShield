@@ -1,5 +1,5 @@
 
-import api from "@/utils/interceptors";
+import api, { retryAfterSeconds } from "@/utils/interceptors";
 import { AxiosError } from "axios";
 import { toast } from "sonner";
 
@@ -33,22 +33,49 @@ export const handleLogout = async () => {
   }
 }
 
+/** "Value error, Password must be 8 to 128 characters long" -> "Password must be 8 to 128 characters long". */
+function validationMessage(detail: unknown): string | null {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: unknown; loc?: unknown };
+    if (typeof first?.msg === "string" && first.msg.trim()) {
+      const msg = first.msg.replace(/^(Value error|Assertion failed), /, "");
+      const loc = Array.isArray(first.loc) ? first.loc.filter((p) => p !== "body" && p !== "query" && p !== "path") : [];
+      const field = loc.length ? String(loc[loc.length - 1]) : "";
+      // pydantic's own messages ("String should have at most 128 characters") need the field name
+      return field && !/password|email|code/i.test(msg) ? `${field.replace(/_/g, " ")}: ${msg}` : msg;
+    }
+  }
+  return null;
+}
+
+function waitText(seconds: number): string {
+  if (seconds < 60) return `${Math.max(1, Math.round(seconds))} second${Math.round(seconds) === 1 ? "" : "s"}`;
+  const minutes = Math.ceil(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
 export const handleApiError = (error: unknown): ApiError => {
   if (error instanceof AxiosError) {
     console.log(error);
     const status = error.response?.status;
     const message = error.response?.data?.message || error.response?.data?.detail || error.message;
-    
+
     if (status === 422) {
       return {
-        message: 'Validation error. Please check your input.',
+        message: validationMessage(error.response?.data?.detail) || 'Validation error. Please check your input.',
         status: 422
       };
     }
     // Handle specific status codes
     if (status === 429) {
+      const wait = retryAfterSeconds(error);
+      const detail = error.response?.data?.detail;
+      const reason = typeof detail === "string" && detail && detail !== "Too Many Requests"
+        ? detail.replace(/\s*Try again later\.?$/i, "")
+        : "Too many requests.";
       return {
-        message: 'Too many requests, please try again later',
+        message: wait != null ? `${reason} Please try again in ${waitText(wait)}.` : `${reason} Please try again later.`,
         status: 429
       };
     } else if (status === 401) {

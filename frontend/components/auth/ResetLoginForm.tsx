@@ -19,6 +19,7 @@ import router from "next/navigation"
 import api from "@/utils/interceptors"
 import { useRouter } from "next/navigation"
 import { handleApiError, showErrorToast } from "@/utils/error-handler"
+import { newPasswordProblem, NEW_PASSWORD_HINT } from "@/utils/password_rules"
 
 
 
@@ -39,6 +40,8 @@ export default function ResetLoginForm() {
   const [timer, setTimer] = useState(delay*1000)
   const [ timerId , setTimerId ] = useState<NodeJS.Timeout | null>(null)
   const [timerStarted, setTimerStarted] = useState(false)
+  const [sendingCode, setSendingCode] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if(timer===0){
@@ -46,20 +49,24 @@ export default function ResetLoginForm() {
       setTimerStarted(false)
       setTimer(delay*1000)
     }
-  }, [timer])
+    return () => {
+      if (timerId) clearInterval(timerId)
+    }
+  }, [timer, timerId])
 
   const handleSendVerificationCode = async () => {
     const toastId = toast.loading("Sending verification code...")
     try{
-        if(userData?.email === ""){
+        if(userData?.email.trim() === ""){
             toast.error("Please enter your email address")
             return
         }
+        setSendingCode(true)
         setTimerStarted(true)
         setTimerId(setInterval(() => {
           setTimer(prev=>prev - 1000)
         }, 1000))
-        const response = await api.post("/send_code",{email: userData?.email})
+        const response = await api.post("/send_code",{email: userData?.email.trim()})
         if(response.status === 200){
             toast.success("Verification code sent successfully")
             
@@ -71,6 +78,7 @@ export default function ResetLoginForm() {
         showErrorToast(error, "Error while sending verification code")
     }
     finally{
+        setSendingCode(false)
         toast.dismiss(toastId)
     }
   }
@@ -79,28 +87,38 @@ export default function ResetLoginForm() {
   const router = useRouter()
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    const toastId = toast.loading("Registering...")
+    const problem = newPasswordProblem(userData?.password || "")
+    if (problem) {
+        toast.error(problem)
+        return
+    }
+    if(userData?.password !== userData?.re_password){
+        toast.error("Password and Re-Password do not match")
+        return
+    }
+    const toastId = toast.loading("Resetting password...")
+    setSubmitting(true)
     try{
-        if(userData?.password !== userData?.re_password){
-            toast.error("Password and Re-Password do not match")
-            throw new Error("Password and Re-Password do not match")
-          }
         const response = await api.post("/reset_password",{
             email: userData?.email,
             password: userData?.password,
             verification_code: userData?.verification_code,
         })
         if(response.status === 200){
-            toast.success("Password reset successfully")
+            // the reset signed out every session of this account (earlier tokens are revoked)
+            localStorage.removeItem("access_token")
+            localStorage.removeItem("refresh_token")
+            toast.success("Password reset successfully. Please log in with your new password.")
             router.push("/login")
         }else{
-            toast.error("Error while resetting password",{description: response.data.de})
+            toast.error("Error while resetting password",{description: response.data.detail})
         }
     }
     catch(error:any){
         showErrorToast(error, "Error while resetting password")
     }
     finally{
+        setSubmitting(false)
         toast.dismiss(toastId)
     }
   }
@@ -136,6 +154,7 @@ export default function ResetLoginForm() {
                 <Input
                   id="email"
                   type="email"
+                  autoComplete="username"
                   placeholder="email address"
                   className="pl-9"
                   value={userData?.email}
@@ -152,6 +171,8 @@ export default function ResetLoginForm() {
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="new-password"
+                  aria-describedby="password-rules"
                   placeholder="Password"
                   className="pl-9"
                   value={userData?.password}
@@ -159,6 +180,7 @@ export default function ResetLoginForm() {
                   required
                 />
               </div>
+              <p id="password-rules" className="text-xs text-muted-foreground">{NEW_PASSWORD_HINT}</p>
             </div>
 
             {/* re-password section */}
@@ -169,6 +191,7 @@ export default function ResetLoginForm() {
                 <Input
                     id="re_password"
                     type="password"
+                    autoComplete="new-password"
                     placeholder="Re-Password"
                     className="pl-9"
                     value={userData?.re_password}
@@ -187,6 +210,8 @@ export default function ResetLoginForm() {
                   <Input
                     id="verification_code"
                     type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
                     placeholder="Verification Code"
                     className="pl-2"
                     value={userData?.verification_code}
@@ -196,17 +221,18 @@ export default function ResetLoginForm() {
                 </div>
                 <div className="flex items-center w-full ">
                   <button 
-                    disabled={timerStarted}
+                    type="button"
+                    disabled={timerStarted || sendingCode}
                     className="w-fit cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-sm items-center ml-auto flex flex-row gap-2 hover:text-blue-300 hover:underline" onClick={handleSendVerificationCode}>
-                    {timerStarted ? `Resend in ${timer/1000}s` : "Send Verification Code"} <ArrowUpRight size={18}/>
+                    {sendingCode ? "Sending code..." : timerStarted ? `Resend in ${timer/1000}s` : "Send Verification Code"} <ArrowUpRight size={18}/>
                   </button>
                 </div>
               </div>
   
             
             {/* submit button */}
-            <Button type="submit" className="w-full cursor-pointer">
-              Reset Password
+            <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>
+              {submitting ? "Resetting password..." : "Reset Password"}
             </Button>
 
           </form>

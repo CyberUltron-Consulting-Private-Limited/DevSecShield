@@ -7,6 +7,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
+import { makeQueryClient } from "@/utils/query_client"
 import { checkSuperuser } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
 
@@ -17,7 +18,7 @@ export default function AdminLayout({
 }) {
   const router = useRouter();
   const [status, setStatus] = useState<"checking" | "allowed" | "denied">("checking");
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => makeQueryClient());
 
   useEffect(() => {
     const verify = async () => {

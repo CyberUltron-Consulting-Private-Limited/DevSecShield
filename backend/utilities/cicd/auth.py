@@ -1,10 +1,12 @@
 import secrets
 import hashlib
-from fastapi import Security, HTTPException, status
+from fastapi import Request, Security, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import APIKeyHeader
 from backend.new_models import CicdIntegration
 from sqlmodel import Session, select
 from backend.get_db import get_db
+from backend.utilities.ratelimit import Key, ip_key
 from rich.console import Console
 console = Console()
 
@@ -94,6 +96,25 @@ def require_zip_cicd_key(user_and_integration: dict, requested_type: str) -> Non
         )
 
 api_key_header = APIKeyHeader(name="cicd-api-key")
+
+
+def _verified_integration_id(api_key: str) -> int | None:
+    try:
+        _user_id, integration_id, _team_id, _scan_type = get_user_integration_team_from_api_key(api_key)
+    except HTTPException:
+        return None
+    return integration_id
+
+
+async def ci_key(request: Request) -> Key:
+    """Rate-limit key for the CI routes: the VERIFIED integration id.  A missing or unknown key is charged to the
+    client address, so guessing keys never buys a fresh budget."""
+    api_key = (request.headers.get("cicd-api-key") or "").strip()
+    if api_key and len(api_key) <= 512:
+        integration_id = await run_in_threadpool(_verified_integration_id, api_key)
+        if integration_id is not None:
+            return ("ci", str(integration_id))
+    return await ip_key(request)
 
 def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
     """

@@ -636,16 +636,8 @@ def test_missing_or_invalid_bearer_is_401(api, case, url):
     assert not response.content.startswith(b"%PDF")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "known gap in pre-existing auth_utils (not changed by this feature): a validly signed "
-        "token WITHOUT an exp claim raises TypeError, which these routes turn into the generic "
-        "500. Only the server's own signing key can mint such a token. Remove this marker "
-        "when auth_utils answers 401."
-    ),
-)
 def test_a_signed_token_without_an_exp_claim_should_be_401(api):
+    """auth_utils requires ``exp`` (it used to raise TypeError here, which these routes turned into a 500)."""
     token = api.forged(sub=USERS["alice"][0])
     headers = {"Authorization": f"Bearer {token}"}
     response = api.get(manifest_url(TEAM_ONE), who=None, headers=headers)
@@ -721,26 +713,29 @@ def test_invalid_tokens_are_throttled_before_authentication(api, monkeypatch):
     assert codes == [401, 401, 429]
 
 
-def _request(authorization: str | None) -> Request:
+def _request(authorization: str | None, client: tuple[str, int] = ("203.0.113.9", 4711)) -> Request:
     headers = [] if authorization is None else [(b"authorization", authorization.encode())]
-    scope = {"type": "http", "method": "GET", "path": "/", "headers": headers, "query_string": b""}
+    scope = {"type": "http", "method": "GET", "path": "/", "headers": headers, "query_string": b"",
+             "client": client}
     return Request(scope)
 
 
-def test_the_limiter_key_is_a_token_hash_that_never_contains_the_token():
+def test_the_limiter_key_is_the_verified_subject_and_never_the_token(api):
+    """A verified token is charged to its subject; anything else to the client address, so a forged or
+    garbage token can never open a budget of its own (backend/utilities/ratelimit.py)."""
+    import asyncio
+
     key_func = routes.limiter.key_func
-    assert key_func is not None
-    token = "eyJhbGciOi.secret-payload.signature"
-    key = key_func(_request(f"Bearer {token}"))
-    assert key == hashlib.sha256(token.encode()).hexdigest()[:16]
-    assert re.fullmatch(r"[0-9a-f]{16}", key)
-    assert "secret" not in key and "eyJ" not in key
-    assert key_func(_request(f"Bearer {token}x")) != key
-    # the scheme may be written in any letter case: still ONE budget per token
-    assert key_func(_request(f"bearer {token}")) == key_func(_request(f"BEARER {token}")) == key
-    # anything that is not a well-formed bearer header is hashed as it is (it will get a 401)
-    assert key_func(_request("Token abc")) == hashlib.sha256(b"Token abc").hexdigest()[:16]
-    assert key_func(_request(None)) == hashlib.sha256(b"").hexdigest()[:16]
+    token = api.token("alice")
+    key = asyncio.run(key_func(_request(f"Bearer {token}")))
+    assert key == ("user", USERS["alice"][0])
+    assert token not in repr(key)
+    # the scheme may be written in any letter case: still the same budget
+    assert asyncio.run(key_func(_request(f"BEARER {token}"))) == key
+    soon = int((datetime.now(UTC) + timedelta(minutes=5)).timestamp())
+    for header in (f"Bearer {token}x", "Token abc", None, "Bearer not.a.jwt",
+                   "Bearer " + api.forged(sub=USERS["alice"][0], exp=soon, secret="not-the-server-secret")):
+        assert asyncio.run(key_func(_request(header))) == ("ip", "203.0.113.9"), header
 
 
 def test_changing_the_scheme_case_does_not_buy_a_second_budget(api, monkeypatch):

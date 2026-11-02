@@ -1,9 +1,12 @@
 from typing import Annotated
-from fastapi import FastAPI, HTTPException, Header, status, APIRouter
+from fastapi import Depends, FastAPI, HTTPException, Header, status, APIRouter
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
-from pydantic import BaseModel
-from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception, get_hashed_password , send_email
+from pydantic import BaseModel, field_validator
+from backend.utilities.auth.auth_schema import NoEchoValidationRoute, clean_email, clean_new_password
+from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception, get_hashed_password , send_email, user_by_email
+from backend.utilities.ratelimit import RateLimiter
 from backend.new_models import Team, TeamMembership, User
 from backend.utilities.auth.plans import plans
 from backend.utilities.auth.html_email import create_user_password_email_html
@@ -22,9 +25,12 @@ class CreateUserData(BaseModel):
 
 class CreateAdminUserData(BaseModel):
     email: str
-    password: str
+    password: str  # 8 to 128 characters, the same rules as sign-up
     first_name: str
     last_name: str
+
+    check_email = field_validator("email")(clean_email)
+    check_password = field_validator("password")(clean_new_password)
 
 class UpdateUserPlanData(BaseModel):
     user_id: int
@@ -40,13 +46,16 @@ class ToggleAdminAccessData(BaseModel):
 class DeleteUserData(BaseModel):
     user_id: int
 
-router = APIRouter(tags=["Admin"])
+router = APIRouter(tags=["Admin"], route_class=NoEchoValidationRoute)  # 422s never echo a password
+
+# Per verified user, per worker (backend/utilities/ratelimit.py).
+admin_limiter = RateLimiter("admin", times=60, seconds=60)
 
 
 
 
 
-@router.get('/admin/check_superuser', summary="Check if current user is a superuser")
+@router.get('/admin/check_superuser', summary="Check if current user is a superuser", dependencies=[Depends(admin_limiter)])
 async def check_superuser(Authorization: Annotated[str | None, Header()] = None):
     """
     Check if the current authenticated user is a superuser/admin.
@@ -80,7 +89,7 @@ async def check_superuser(Authorization: Annotated[str | None, Header()] = None)
             detail="Internal server error"
         )
 
-@router.get('/admin/teams', summary="Get all teams (admin only)")
+@router.get('/admin/teams', summary="Get all teams (admin only)", dependencies=[Depends(admin_limiter)])
 async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
     """
     Get a list of all teams in the system.
@@ -136,7 +145,7 @@ async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
             detail="Internal server error"
         )
 
-@router.get('/admin/users', summary="Get all users (admin only)")
+@router.get('/admin/users', summary="Get all users (admin only)", dependencies=[Depends(admin_limiter)])
 async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
     """
     Get a list of all users in the system.
@@ -183,7 +192,7 @@ async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
         )
 
 
-@router.post('/admin/create_admin_user', summary="Create a new admin user (admin only)")
+@router.post('/admin/create_admin_user', summary="Create a new admin user (admin only)", dependencies=[Depends(admin_limiter)])
 async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[str | None, Header()] = None):
 
     try:
@@ -202,10 +211,9 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
         
         
         # Check if user already exists
+        hashed_password = await run_in_threadpool(get_hashed_password, data.password)
         with Session(engine) as session:
-            existing_user = session.exec(
-                select(User).where(User.email == data.email)
-            ).first()
+            existing_user = user_by_email(session, data.email)
             
             if existing_user:
                 raise HTTPException(
@@ -224,7 +232,7 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
             # Create new user
             new_user = User(
                 email=data.email,
-                password=get_hashed_password(data.password),
+                password=hashed_password,
                 first_name=data.first_name,
                 last_name=data.last_name,
                 is_superuser=True,  # New users are not superusers by default
@@ -265,7 +273,7 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
         )
 
 
-@router.post("/admin/update", summary="Update team credit balance (admin only)")
+@router.post("/admin/update", summary="Update team credit balance (admin only)", dependencies=[Depends(admin_limiter)])
 async def update_team_credit_balance(
     data: UpdateTeamCreditBalanceData,
     Authorization: Annotated[str | None, Header()] = None
@@ -329,7 +337,7 @@ async def update_team_credit_balance(
 
 
 
-@router.post('/admin/toggle_admin_access', summary="Toggle admin access for a user (admin only)")
+@router.post('/admin/toggle_admin_access', summary="Toggle admin access for a user (admin only)", dependencies=[Depends(admin_limiter)])
 async def toggle_admin_access(
     data: ToggleAdminAccessData,
     Authorization: Annotated[str | None, Header()] = None
@@ -399,7 +407,7 @@ async def toggle_admin_access(
         )
 
 
-@router.delete('/admin/delete_user', summary="Delete a user (admin only)")
+@router.delete('/admin/delete_user', summary="Delete a user (admin only)", dependencies=[Depends(admin_limiter)])
 async def delete_user(
     data: DeleteUserData,
     Authorization: Annotated[str | None, Header()] = None

@@ -7,7 +7,6 @@
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Annotated, Any, Callable
 
@@ -15,15 +14,15 @@ from fastapi import HTTPException, Path, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-from fastapi_throttle import RateLimiter
 from pydantic import ValidationError
 from sqlmodel import Session, select
 from starlette.responses import JSONResponse, Response
 
 from backend.get_db import get_db
-from backend.new_models import TeamMembership
+from backend.new_models import CbomScanNode, TeamMembership
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
-from backend.utilities.cbom_sources.common import log, new_ref
+from backend.utilities.cbom_sources.common import log, new_ref, sha256_hex
+from backend.utilities.ratelimit import Key, RateLimiter, ip_key, user_key
 from backend.utilities.team import check_if_user_is_in_team
 
 MAX_TEAM_ID = 2_147_483_647
@@ -64,35 +63,36 @@ def bad_request(exc: ValidationError | ValueError) -> HTTPException:
     return HTTPException(status_code=400, detail=str(exc)[:500])
 
 
-def token_key(request: Request) -> str:
-    header = request.headers.get("authorization") or ""
-    parts = header.split(" ")
-    material = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else header
-    return hashlib.sha256(material.encode("utf-8", "replace")).hexdigest()[:16]
-
-
-def node_key(request: Request) -> str:
-    material = request.headers.get("x-zs-node-token") or ""
-    return hashlib.sha256(material.encode("utf-8", "replace")).hexdigest()[:16]
-
-
 def client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
+    """The client address as recorded on nodes.  ``request.client.host`` only: uvicorn has already applied
+    ``X-Forwarded-For`` when (and only when) the proxy is in FORWARDED_ALLOW_IPS; the header itself is
+    client-controlled and never read here."""
     return (request.client.host if request.client else "unknown")[:64]
 
 
-def path_token_key(request: Request) -> str:
-    token = request.path_params.get("token") or ""
-    return hashlib.sha256(str(token).encode()).hexdigest()[:16]
+def _node_id_for_token(token: str) -> int | None:
+    with Session(get_db()) as session:
+        return session.exec(select(CbomScanNode.id).where(CbomScanNode.node_token_hash == sha256_hex(token))).first()
 
 
-read_limiter = RateLimiter(times=300, seconds=60, key_func=token_key)
-write_limiter = RateLimiter(times=60, seconds=60, key_func=token_key)
-node_limiter = RateLimiter(times=120, seconds=60, key_func=node_key)
-enroll_limiter = RateLimiter(times=20, seconds=60, key_func=client_ip)
-vendor_limiter = RateLimiter(times=20, seconds=60, key_func=path_token_key)
+async def node_key(request: Request) -> Key:
+    """A verified scan node is charged by node id; an unknown token falls back to the address, so guessing
+    tokens never buys fresh budgets."""
+    token = request.headers.get("x-zs-node-token") or ""
+    if token.startswith("zsn_") and len(token) <= 128:
+        node_id = await run_in_threadpool(_node_id_for_token, token)
+        if node_id is not None:
+            return ("node", str(node_id))
+    return await ip_key(request)
+
+
+# Team UI routes: by verified user (the CBOM Sources tabs poll every 6 to 30 s).  Vendor links and node
+# enrollment: by client address (a per-token budget would let a guesser use a fresh budget per guess).
+read_limiter = RateLimiter("cbom_sources.read", times=300, seconds=60, key_func=user_key)
+write_limiter = RateLimiter("cbom_sources.write", times=60, seconds=60, key_func=user_key)
+node_limiter = RateLimiter("cbom_sources.node", times=120, seconds=60, key_func=node_key)
+enroll_limiter = RateLimiter("cbom_sources.enroll", times=20, seconds=60, key_func=ip_key)
+vendor_limiter = RateLimiter("cbom_sources.vendor", times=20, seconds=60, key_func=ip_key)
 
 
 async def authorize(team_id: int, authorization: str | None):

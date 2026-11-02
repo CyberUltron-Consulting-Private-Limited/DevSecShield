@@ -12,6 +12,10 @@ fi
 timeout 30 uv run python -c "from backend.utilities.cicd.migrate_dast_logs import migrate_all_dast_cicd_logs; migrate_all_dast_cicd_logs()" \
   || echo "dast cicd log migrate skipped"
 
+# Client addresses (rate limits, node last-seen IP): gunicorn reads FORWARDED_ALLOW_IPS itself (default
+# "127.0.0.1,::1") and the uvicorn worker trusts X-Forwarded-For only from those peers. Behind a reverse proxy
+# on another host, set it to the proxy's address, or every client is seen as the proxy. Never set it to "*"
+# when clients can reach this port directly.
 if [ "$#" -gt 0 ]; then
   exec "$@"
 fi

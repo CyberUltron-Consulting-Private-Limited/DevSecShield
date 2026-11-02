@@ -8,13 +8,23 @@ scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "ag
 
 class VerificationCode(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    email : str
+    # one live code per (lower-cased) email: sending a new code replaces the old one
+    email : str = Field(index=True, unique=True)
     code : str
     created_at : datetime.datetime | None= Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc), sa_type=DateTime)
     expires_at : datetime.datetime | None= Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10), sa_type=DateTime)
-    
+    # wrong codes entered for this email since the code was sent; the code is deleted at the limit
+    attempts : int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+
     class Config:
         arbitrary_types_allowed = True
+
+
+class AuthCounter(SQLModel,table=True):
+    """Fixed-window counters that must hold across workers and replicas (e.g. codes sent per email)."""
+    key : str = Field(primary_key=True, max_length=400)
+    window_start : datetime.datetime = Field(sa_type=DateTime)
+    hits : int = Field(default=0)
 
 
 
@@ -63,6 +73,8 @@ class User(SQLModel,table=True):
     last_active : datetime.datetime | None = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc), sa_type=DateTime)
     is_superuser : bool | None = Field(default=False)
     default_team_id : int | None = Field(default=None,foreign_key="team.id")
+    # tokens carry the version they were issued at ("ver"); bumping it revokes every older token
+    token_version : int = Field(default=0, sa_column_kwargs={"server_default": "0"})
 
     # many-to-many relationship between user and team
     team_memberships : list[TeamMembership] = Relationship(back_populates="user")

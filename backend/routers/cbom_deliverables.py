@@ -16,9 +16,9 @@ user out on a 403.
 
 The limiter is attached in the decorator (``dependencies=[...]``).  The parameter-default form
 ``dependencies=[Depends(limiter)]`` used by older routers is a no-op: FastAPI treats it as a query
-parameter.  One budget (30 requests per 60 seconds) covers both routes and is keyed by a hash of
-the bearer token, not the client address, because behind the production proxy every request
-shares one address.
+parameter.  One budget (30 requests per 60 seconds) covers both routes and is keyed by the subject of
+a VERIFIED access token; a missing or invalid token is charged to the client address instead, so a
+forged token never gets a budget of its own (``backend/utilities/ratelimit.py``).
 
 Hard rules (enforced by ``test_cbom_deliverables_no_llm.py``): no language-model or network
 client, no import of another router, no subprocess; the PDF is built in memory and returned as
@@ -26,7 +26,6 @@ bytes, so there is no temporary file to clean up.
 """
 from __future__ import annotations
 
-import hashlib
 import time
 from datetime import datetime, timezone
 from typing import Annotated, Any
@@ -34,15 +33,14 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Path
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
-from fastapi_throttle import RateLimiter
 from rich.console import Console
 from sqlmodel import Session, select
-from starlette.requests import Request
 
 from backend.get_db import get_db
 from backend.new_models import Scan
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.dashboard.cbom_team_rollup import ScanHead, load_team_cbom_view
+from backend.utilities.ratelimit import RateLimiter, user_key
 from backend.utilities.pdf.cbom_deliverables import (
     DELIVERABLES,
     build_manifest,
@@ -61,25 +59,12 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 _PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 
-def _token_key(request: Request) -> str:
-    """Rate-limit bucket: a hash of the bearer token, never the token itself.
-
-    The auth helper accepts the scheme in any letter case, so hashing the whole header would give
-    ``Bearer x``, ``bearer x`` and ``BEARER x`` three budgets; the token alone gives one.  A header
-    that is not a well-formed bearer (it will be refused with 401) is hashed as it is.
-    """
-    header = request.headers.get("authorization") or ""
-    parts = header.split(" ")
-    material = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else header
-    return hashlib.sha256(material.encode("utf-8", "replace")).hexdigest()[:16]
-
-
-limiter = RateLimiter(times=30, seconds=60, key_func=_token_key)
+limiter = RateLimiter("cbom_deliverables", times=30, seconds=60, key_func=user_key)
 
 _ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"description": "Missing, malformed, invalid or expired bearer token."},
     403: {"description": "Not a member of the team, or the session is not active."},
-    429: {"description": "Rate limit exceeded: 30 requests per 60 seconds per token."},
+    429: {"description": "Rate limit exceeded: 30 requests per 60 seconds per user (Retry-After says when to retry)."},
     500: {"description": "Generic server error; the detail is only in the server log."},
 }
 _MANIFEST_EXAMPLE = {

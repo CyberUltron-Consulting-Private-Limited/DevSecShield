@@ -41,6 +41,14 @@ def env_keys(service: dict) -> set[str]:
     return set(env)
 
 
+def env_value(service: dict, key: str) -> str | None:
+    env = service.get("environment") or {}
+    if isinstance(env, list):
+        env = dict(item.split("=", 1) if "=" in item else (item, None) for item in env)
+    value = env.get(key)
+    return None if value is None else str(value)
+
+
 def _airgap() -> bool:
     return "--airgap" in sys.argv[1:]
 
@@ -212,6 +220,13 @@ def main() -> int:
     )
     mongo = services.get("mongo") or {}
     check(not mongo.get("env_file") and not mongo.get("environment"), "mongo receives no env_file / environment")
+
+    # The admin persona's fixed one-time code needs a dev-mode backend. This throw-away stack is the only place
+    # DSS_DEV_MODE may be set (backend/tests/test_ratelimit.py fails if any other compose/deploy file sets it).
+    check(
+        env_value(services.get("backend") or {}, "DSS_DEV_MODE") == "1",
+        "backend runs with DSS_DEV_MODE=1 (e2e stack only: the fixed admin one-time code works only in dev mode)",
+    )
 
     # The backend must start gunicorn through the image entrypoint (alembic first).
     command = (services.get("backend") or {}).get("command") or []
