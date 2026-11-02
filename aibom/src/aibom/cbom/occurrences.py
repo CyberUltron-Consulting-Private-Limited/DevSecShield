@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 
 from aibom.cbom.detect import detect_crypto, strip_noncode
+from aibom.cbom.files import read_bytes
 from aibom.cbom.rules import (
     ALGORITHM_NORMALIZE,
     CRYPTO_IMPORT_MODULES,
@@ -83,9 +84,8 @@ def safe_file(root: Path, rel: str) -> Path | None:
 
 def read_text(path: Path) -> str | None:
     """Decoded text, or None for binary files. Line endings are kept exactly (no universal newlines)."""
-    try:
-        raw = path.read_bytes()
-    except OSError:
+    raw = read_bytes(path, MAX_BYTES)  # O_NOFOLLOW, regular files only
+    if raw is None:
         return None
     if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
         try:

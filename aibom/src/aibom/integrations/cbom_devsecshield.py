@@ -273,11 +273,15 @@ def scan_crypto_to_devsecshield(
     *,
     level: int = 1,
     progress: ProgressCb | None = None,
+    include_vendored: bool = False,
 ) -> dict[str, Any]:
-    """One-call entry for the worker: scan + normalize -> the CBOM run-object."""
+    """One-call entry for the worker: scan + normalize -> the CBOM run-object.
+
+    ``include_vendored`` is the scan option that also reads ``vendor/``, ``dist/``, ``build/`` and
+    ``node_modules/`` (default off)."""
     _report(progress, 10, "scanning repository for cryptographic assets")
     start = time.monotonic()
-    result = scan_crypto(target, level=level)
+    result = scan_crypto(target, level=level, include_vendored=include_vendored)
     _report(progress, 80, "normalizing crypto findings")
     out = normalize_to_devsecshield(result, duration_of_scan=time.monotonic() - start)
     # Code windows (redacted) are read here, while the checkout still exists, and only for this code-scan path:

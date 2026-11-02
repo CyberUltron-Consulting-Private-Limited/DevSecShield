@@ -61,23 +61,29 @@ def _crypto_assets(result: ScanResult) -> list[AIComponent]:
     return [c for c in result.components if c.kind == "crypto_asset"]
 
 
-def _impact_for(comp: AIComponent, result: ScanResult) -> str:
-    """Stacked per-component severity (scorer) -> Impact, else top-flag, else Low."""
+def _impact_for(comp: AIComponent, result: ScanResult) -> str | None:
+    """Stacked per-component severity (scorer) -> Impact, else the top flag's severity.
+
+    A row with no finding code is clean inventory (an AES-GCM or Ed25519 a CBOM must list): it has no impact
+    (None), so no dashboard, report or ticket counts it as a Low finding. A quantum-vulnerable row keeps its
+    Medium impact and carries its QUANTUM_VULNERABLE code."""
+    flags = result.flags_for(comp.bom_ref)
+    if not flags:
+        return None
     stacked = (result.scores or {}).get("component_severity", {}).get(comp.bom_ref)
     if stacked:
         return str(stacked).capitalize()
-    flags = result.flags_for(comp.bom_ref)
-    if flags:
-        return min(
-            (_SEVERITY_IMPACT.get(f.severity, "Medium") for f in flags),
-            key=lambda imp: _IMPACT_RANK[imp],
-        )
-    return "Low"
+    return min(
+        (_SEVERITY_IMPACT.get(f.severity, "Medium") for f in flags),
+        key=lambda imp: _IMPACT_RANK[imp],
+    )
 
 
 def _risk_score_for(comp: AIComponent, result: ScanResult) -> float:
     """0–10 differentiated risk from stacked flag weight + impact floor."""
     impact = _impact_for(comp, result)
+    if impact is None:
+        return 0.0  # clean inventory: no finding, no risk
     base = {"Critical": 7.5, "High": 5.5, "Medium": 3.5, "Low": 1.2}.get(impact, 1.2)
     by_component = (result.scores or {}).get("by_component", {})
     raw = float(by_component.get(comp.bom_ref, 0.0) or 0.0)
@@ -509,6 +515,29 @@ def _bom(result: ScanResult) -> dict[str, Any]:
     return json.loads(get_reporter("cyclonedx").render(result))
 
 
+def _is_export_row(comp: AIComponent) -> bool:
+    """The components the results table lists: crypto assets, crypto libraries and posture facts."""
+    if comp.kind == "crypto_asset" or _is_fact_component(comp):
+        return True
+    return comp.kind == "framework" and (comp.properties or {}).get("crypto:role") == "library"
+
+
+def _annotate_findings(bom: dict[str, Any], result: ScanResult) -> None:
+    """Carry what the product decided into the downloaded CycloneDX, like the node-run export does: one
+    ``zs:finding_code`` property per finding code and ``zs:impact`` (``Info`` for clean inventory). The renderer
+    stays flag-free (lane rule); this reads the flags and scores the same way the results rows do. Properties
+    may repeat a name in CycloneDX 1.6, so each code is its own entry."""
+    by_ref = {c.bom_ref: c for c in result.components}
+    for entry in bom.get("components", []):
+        comp = by_ref.get(entry.get("bom-ref"))
+        if comp is None or not _is_export_row(comp):
+            continue  # a derived (emit-synthesized) component has no finding of its own
+        codes = sorted({f.code for f in result.flags_for(comp.bom_ref)})
+        props = entry.setdefault("properties", [])
+        props.extend({"name": "zs:finding_code", "value": code} for code in codes)
+        props.append({"name": "zs:impact", "value": _impact_for(comp, result) or "Info"})
+
+
 def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str, Any]:
     """Normalize a scored CBOM ScanResult into the DevSecShield run-object.
 
@@ -524,6 +553,7 @@ def normalize_crypto(result: ScanResult, *, duration_of_scan: float) -> dict[str
         key=lambda f: (_IMPACT_RANK.get(f["impact"], 9), str(f["title"]))
     )
     bom = _bom(result)  # render once; cbom_json + cbom_graph share it
+    _annotate_findings(bom, result)
     full_graph = _crypto_graph(result, bom)
     # Additive compact/expanded projections — full ``cbom_graph`` stays intact
     # for contracts; FE prefers compact for Card, expanded for Dialog.

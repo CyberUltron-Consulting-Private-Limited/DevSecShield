@@ -225,12 +225,12 @@ export function checkMethodology(doc: DocInput, w: World, meta: DocMeta, f: Find
   }
   f.contains(raw, `Total ${ab.occurrences}`, `${L}: 1 total occurrences`);
 
-  // 2. Automated discovery: the nine registered scanners, in order, none of the unwired modules
+  // 2. Automated discovery: the registered scanners, in order, none of the removed scanner modules
   const scanners = m.scanners as Array<{ name: string; order: number }>;
   f.contains(raw, 'Scanner Order Discovers Evidence recorded', `${L}: 2 scanner table header`);
   for (const sc of scanners) f.contains(raw, `${sc.name} ${sc.order}`, `${L}: 2 scanner ${sc.name} order ${sc.order}`);
   f.inOrder(raw, scanners.map((sc) => `${sc.name} ${sc.order}`), `${L}: 2 scanners listed in registry order`);
-  for (const dead of m.unwired_scanner_modules as string[]) f.absent(raw, dead, `${L}: 2 does not describe the unwired module ${dead}`);
+  for (const dead of m.removed_scanner_modules as string[]) f.absent(raw, dead, `${L}: 2 does not describe the removed module ${dead}`);
 
   // 3. Manual discovery checklist (blank)
   f.contains(raw, MANUAL_BANNER, `${L}: 3 manual checklist marked`);

@@ -87,7 +87,7 @@ const MUTATIONS: Array<{ slug: (typeof SLUGS)[number]; name: string; change: (ra
   { slug: 'scope-baseline-register', name: 'per-source assets 8/0/0/9/2 -> 8/0/0/9/3', change: (t) => t.replace('8/0/0/9/2', '8/0/0/9/3') },
   { slug: 'scope-baseline-register', name: 'repository URL keeps its credentials', change: (t) => t.replace('https://github.com/e2e-d', 'https://x-access-token@github.com/e2e-d') },
   { slug: 'methodology-evidence-plan', name: 'scanner order 25 -> 26', change: (t) => t.replace('crypto_misuse 25', 'crypto_misuse 26') },
-  { slug: 'methodology-evidence-plan', name: 'an unwired scanner is described', change: (t) => `${t}\nnative_crypto_scan` },
+  { slug: 'methodology-evidence-plan', name: 'a removed scanner module is described', change: (t) => `${t}\nnative_crypto_scan` },
   { slug: 'third-party-assurance-register', name: 'a control shows as attested', change: (t) => t.replace('Attested 0/5', 'Attested 1/5') },
   { slug: 'third-party-assurance-register', name: 'a library disappears', change: (t) => t.replace('libsodium', 'libsodiumX') },
   { slug: 'pqc-migration-roadmap', name: 'sized target changes', change: (t) => t.replace(/ML-KEM-768/g, 'ML-KEM-512') },

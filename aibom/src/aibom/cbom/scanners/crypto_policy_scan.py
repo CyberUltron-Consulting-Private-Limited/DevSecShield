@@ -34,18 +34,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from aibom.cbom.files import FileWalk, file_walk
 from aibom.cbom.registry import cbom_register
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
-
-_IGNORE_DIRS = frozenset(
-    {
-        ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
-        "dist", "build", ".next", ".nuxt", "target", "vendor", ".tox",
-        ".mypy_cache", ".pytest_cache",
-    }
-)
-_MAX_BYTES = 2_000_000
 
 # Policy artifacts are matched by exact filename (they carry no code extension,
 # so the source-file iterators never see them) — deterministic, no guessing.
@@ -70,18 +62,8 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "x"
 
 
-def _named_files(root: Path, names: frozenset[str]):
-    for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
-            continue
-        if not p.is_file() or p.name.lower() not in names:
-            continue
-        try:
-            if p.stat().st_size > _MAX_BYTES:
-                continue
-        except OSError:
-            continue
-        yield p
+def _named_files(walk: FileWalk, names: frozenset[str]) -> list[Path]:
+    return walk.files(lambda p: p.name.lower() in names)
 
 
 def _logical_lines(text: str) -> list[str]:
@@ -142,18 +124,17 @@ class CryptoPolicyScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        for path in _named_files(ctx.root, _JAVA_SECURITY_NAMES):
-            rel = path.relative_to(ctx.root).as_posix()
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+        walk = file_walk(ctx)
+        for path in _named_files(walk, _JAVA_SECURITY_NAMES):
+            rel = walk.rel(path)
+            text = walk.read_text(path)
+            if text is None:
                 continue
             self._emit_java_security(ctx, rel, text)
-        for path in _named_files(ctx.root, _OPENSSL_CONFIG_NAMES):
-            rel = path.relative_to(ctx.root).as_posix()
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+        for path in _named_files(walk, _OPENSSL_CONFIG_NAMES):
+            rel = walk.rel(path)
+            text = walk.read_text(path)
+            if text is None:
                 continue
             self._emit_openssl(ctx, rel, text)
 

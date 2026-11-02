@@ -270,8 +270,18 @@ def _emit_dataset(comp: DatasetComponent) -> dict[str, Any]:
 
 def _emit_plain(comp: Any, cdx_type: str) -> dict[str, Any]:
     out = _base_component(comp, cdx_type)
-    if comp.properties:
-        out["properties"] = _properties_list(comp.properties)
+    props = comp.properties or {}
+    # A crypto library row (declared or imported) and a configuration-posture fact (Terraform resource, TLS
+    # setting, ...) say where they were found in the standard place too, like a crypto asset does.
+    occurrences: list[dict[str, Any]] = []
+    if props.get("crypto:role") == "library":
+        occurrences = _occurrences(props)
+    elif "crypto:factId" in props:
+        occurrences = _fact_occurrences(props)
+    if occurrences:
+        out["evidence"] = {"occurrences": occurrences}
+    if props:
+        out["properties"] = _properties_list(props)
     return out
 
 
@@ -480,6 +490,8 @@ def _synth_algorithm(
     primitive: str,
     key_size: int | None = None,
     curve: str | None = None,
+    *,
+    derived_from: str,
 ) -> str:
     """Add a minimal algorithm crypto-asset to the synthesis sink; return its ref.
 
@@ -487,11 +499,17 @@ def _synth_algorithm(
     NOT already in the source inventory, so the certificate remains self-describing
     (the cbomkit-theia ``certificates``-plugin behavior, clean-room). Deterministic:
     keyed by ``bom_ref`` so repeated resolutions collapse to one component.
+
+    The component is DERIVED (``crypto:derived=true``, ``crypto:derivedFrom=<certificate ref>``): it was not
+    found in source on its own, has no location and carries no finding of its own, so a reader (or a scorer)
+    never counts it as a separate detection.
     """
     if bom_ref not in synth:
         props: dict[str, str] = {
             "crypto:assetType": "algorithm",
             "crypto:primitive": primitive,
+            "crypto:derived": "true",
+            "crypto:derivedFrom": derived_from,
         }
         algo: dict[str, Any] = {"primitive": primitive}
         if key_size is not None:
@@ -612,6 +630,7 @@ def _certificate_properties(
                 "pke",
                 key_size,
                 curve,
+                derived_from=comp_ref,
             )
         certp["subjectPublicKeyRef"] = key_ref
 
@@ -638,7 +657,7 @@ def _signature_ref(
             ref = _find_hash_ref(index, display)
             if ref is None:
                 ref = _synth_algorithm(
-                    synth, f"{comp_ref}-sigalg", display, "hash"
+                    synth, f"{comp_ref}-sigalg", display, "hash", derived_from=comp_ref
                 )
             return ref
     # No standalone digest (Ed25519 / RSASSA-PSS) -> the key algorithm signs.
@@ -805,16 +824,31 @@ def _emit_crypto_asset(
 _MAX_EVIDENCE_OCCURRENCES = 50
 
 
+def _repo_relative(src: str) -> bool:
+    """A repository-relative source path (never a host path, a URL or a ``..`` escape)."""
+    return bool(src) and not src.startswith(("/", "\\")) and "://" not in src and \
+        ".." not in src.replace("\\", "/").split("/")
+
+
 def _occurrences(props: dict[str, str]) -> list[dict[str, Any]]:
     """CycloneDX 1.6 ``evidence.occurrences`` (file + line) from the occurrence pass, so other CBOM tools and
     reviewers read the locations in the standard place.  Only repository-relative source paths (never a host path
     or URL) and only when a line is known."""
     src = props.get("discovery:source") or ""
-    if not src or src.startswith(("/", "\\")) or "://" in src or ".." in src.replace("\\", "/").split("/"):
+    if not _repo_relative(src):
         return []
     lines = [int(x) for x in (props.get("crypto:occurrences") or props.get("crypto:line") or "").split(",")
              if x.strip().isdigit() and int(x) > 0]
     return [{"location": src, "line": n} for n in lines[:_MAX_EVIDENCE_OCCURRENCES]]
+
+
+def _fact_occurrences(props: dict[str, str]) -> list[dict[str, Any]]:
+    """The file and line a configuration-posture fact was read from (``crypto:factPath`` / ``crypto:factLine``)."""
+    src = props.get("crypto:factPath") or ""
+    line = str(props.get("crypto:factLine") or "")
+    if not _repo_relative(src) or not line.isdigit() or int(line) < 1:
+        return []
+    return [{"location": src, "line": int(line)}]
 
 
 def _emit_component(

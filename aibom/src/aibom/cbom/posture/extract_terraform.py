@@ -153,8 +153,45 @@ def extract_terraform(text: str, path: str) -> tuple[EncryptionFact, ...]:
         fact = _record_declared_spec(fact, native, block.body)
         fact = _apply_tls_policy(fact, native, block.body)
         fact = _ensure_kms_rollup_layers(fact, native)
+        fact = replace(fact, line=_deciding_line(block.body, fact.basis) or fact.line)
         facts.append(fact)
     return tuple(facts)
+
+
+# Basis entries that name a decision, not an attribute: the attributes that carry it.
+_BASIS_ATTRS: dict[str, tuple[str, ...]] = {"rotation": ("enable_key_rotation", "rotation_period")}
+
+
+def _attr_line(body: Body, path: str) -> int | None:
+    """Source line of the attribute (or nested block) at dotted ``path`` in a resource body; None when absent."""
+    current = body
+    parts = [part for part in path.split(".") if part]
+    for index, part in enumerate(parts):
+        attr = next((a for a in reversed(current.attrs) if a.name == part), None)
+        if attr is not None:
+            return attr.line if attr.line > 0 else None
+        block = _block(current, part)
+        if block is None:
+            return None
+        if index == len(parts) - 1:
+            return block.line if block.line > 0 else None
+        current = block.body
+    return None
+
+
+def _deciding_line(body: Body, basis: tuple[BasisEntry, ...]) -> int | None:
+    """The line a reader must look at for this resource's verdict: the attribute named LAST in the basis that is
+    present in the source (the layer attributes come first, the deciding overrides such as the TLS policy or key
+    rotation after them), e.g. ``storage_encrypted = false`` rather than the ``resource`` line. None when no basis
+    attribute is written (an encryption setting that is missing altogether stays on the resource line)."""
+    line: int | None = None
+    for entry in basis:
+        for name in _BASIS_ATTRS.get(entry.name, (entry.name,)):
+            found = _attr_line(body, name)
+            if found:
+                line = found
+                break
+    return line
 
 
 def _ensure_kms_rollup_layers(fact: EncryptionFact, native: str) -> EncryptionFact:

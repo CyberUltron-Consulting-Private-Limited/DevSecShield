@@ -15,7 +15,7 @@ from aibom.cbom.posture.jsonsafe import parse_json
 from aibom.cbom.posture.model import BasisEntry, EncryptionFact
 from aibom.cbom.posture.resolve import Absent, Value, resolve_expr
 from aibom.cbom.posture.tls_policy import protocol_for_policy, weak_suite_for_policy
-from aibom.cbom.posture.yamlsafe import parse_yaml
+from aibom.cbom.posture.yamlsafe import LineDict, parse_yaml
 
 
 def extract_cloudformation(text: str, path: str) -> tuple[EncryptionFact, ...]:
@@ -50,8 +50,46 @@ def extract_cloudformation(text: str, path: str) -> tuple[EncryptionFact, ...]:
                 spec=_cfn_value(props, "KeySpec"),
             )
         fact = _apply_tls_policy(fact, native, props)
+        deciding = _deciding_line(document, lines, address, fact.basis)
+        fact = replace(fact, line=deciding or fact.line)
         facts.append(fact)
     return tuple(facts)
+
+
+# Basis entries that name a decision, not a property: the properties that carry it.
+_BASIS_PROPS: dict[str, tuple[str, ...]] = {"rotation": ("EnableKeyRotation",)}
+
+
+def _property_line(
+    document: object, lines: Mapping[tuple[str, ...], int], resource: str, path: str
+) -> int | None:
+    """Source line of ``Resources.<resource>.Properties.<path>`` (JSON key map or YAML key lines)."""
+    parts = [part for part in path.split(".") if part]
+    if not parts:
+        return None
+    if lines:
+        return lines.get(("Resources", resource, "Properties", *parts))
+    node: object = document
+    for key in ("Resources", resource, "Properties", *parts[:-1]):
+        node = node.get(key) if isinstance(node, dict) else None
+    if isinstance(node, LineDict):
+        return node.key_lines.get(parts[-1])
+    return None
+
+
+def _deciding_line(
+    document: object, lines: Mapping[tuple[str, ...], int], resource: str, basis: tuple[BasisEntry, ...]
+) -> int | None:
+    """The property named LAST in the basis that is written in the template (``StorageEncrypted: false``), like
+    the Terraform extractor; None when no basis property is written."""
+    line: int | None = None
+    for entry in basis:
+        for name in _BASIS_PROPS.get(entry.name, (entry.name,)):
+            found = _property_line(document, lines, resource, name)
+            if found:
+                line = found
+                break
+    return line
 
 
 def _apply_tls_policy(
@@ -144,7 +182,9 @@ def _resources(
             continue
         props = body.get("Properties")
         mapping = _as_map(props)
-        line = lines.get(("Resources", str(key)), 1)
+        line = lines.get(("Resources", str(key))) or (
+            raw.key_lines.get(str(key)) if isinstance(raw, LineDict) else None
+        ) or 1
         found.append((str(key), native, mapping, line if line > 0 else 1))
     return found
 

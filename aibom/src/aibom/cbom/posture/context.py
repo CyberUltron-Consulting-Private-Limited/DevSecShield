@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from aibom.cbom.files import FileWalk, skipped_dirs
 from aibom.cbom.posture.diagnostics import DiagnosticSink
 from aibom.cbom.posture.limits import (
     BYTES_PER_SCAN,
@@ -102,6 +103,7 @@ class PostureSink:
     glob_budget: GlobBudget = field(default_factory=GlobBudget)
     config_ctx: Mapping[str, ConfigContext] | None = None
     ciphers: object | None = None
+    include_vendored: bool = False
     _index: FileIndex | None = None
 
     def enter(self, lane: str) -> None:
@@ -122,7 +124,7 @@ class PostureSink:
             return self._index
         config: list[IndexedFile] = []
         later: list[IndexedFile] = []
-        for rel, entry in iter_entries(self.root):
+        for rel, entry in iter_entries(self.root, skipped_dirs(self.include_vendored)):
             kind = self._classify_entry(rel, entry)
             if kind is None:
                 continue
@@ -289,9 +291,11 @@ class PostureSink:
 
 
 class CbomScanContext(ScanContext):
-    def __init__(self, root: Path, *, file_order=None) -> None:
+    def __init__(self, root: Path, *, file_order=None, include_vendored: bool = False) -> None:
         super().__init__(root)
-        self.posture = PostureSink(root=root, file_order=file_order)
+        self.posture = PostureSink(root=root, file_order=file_order, include_vendored=include_vendored)
+        # the one walk every code lane reads from (no links; vendored/build output only when opted in)
+        self.file_walk = FileWalk(root, include_vendored=include_vendored)
 
 
 def posture_sink(ctx: ScanContext) -> PostureSink:

@@ -204,6 +204,9 @@ async def format_input_for_scan(
                 else:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No zip file or repo context or CBOM file provided")
                 scan_kwargs["scan_binaries"] = start_scan_payload.cbom.scan_binaries
+                # Sent only when on: a default scan's kwargs stay what an older worker accepts.
+                if start_scan_payload.cbom.include_vendored and not start_scan_payload.cbom.cbom_file_used:
+                    scan_kwargs["include_vendored"] = True
                 console.print(f"CBOM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
 

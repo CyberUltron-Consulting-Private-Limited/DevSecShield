@@ -61,8 +61,13 @@ def scan_crypto(
     *,
     seed: list[AIComponent] | None = None,
     subject: MetadataComponent | None = None,
+    include_vendored: bool = False,
 ) -> ScanResult:
     """Scan a repo at ``path`` into a CBOM :class:`ScanResult`.
+
+    ``include_vendored`` (scan option, default off) also reads third-party and build output (``vendor/``,
+    ``dist/``, ``build/``, ``node_modules/``); what the walk left out is reported as ``crypto:coverage:*``
+    scan properties.
 
     Only CBOM scanners with ``scanner.level <= level`` run. Raises
     ``NotADirectoryError`` if ``path`` is not a directory. ``seed`` components
@@ -74,7 +79,7 @@ def scan_crypto(
     if not root.is_dir():
         raise NotADirectoryError(f"scan target is not a directory: {root}")
 
-    ctx = CbomScanContext(root)
+    ctx = CbomScanContext(root, include_vendored=include_vendored)
     for component in seed or []:
         ctx.add_component(component)
     if subject is not None:
@@ -86,7 +91,7 @@ def scan_crypto(
     components = _dedup_by_ref(ctx.components)
     edges = ctx.edges
     flags = ctx.flags
-    properties = ctx.properties
+    properties = {**ctx.properties, **ctx.file_walk.coverage()}
     assembly_failed = False
     try:
         components, edges, flags, properties = finalize_posture(

@@ -476,7 +476,7 @@
       { "name": "crypto_pqc", "order": 50 },
       { "name": "crypto_strength", "order": 55 }
     ],
-    "unwired_scanner_modules": ["jvm_go_crypto_scan", "native_crypto_scan", "web_native_crypto_scan", "jvm_go", "native_crypto", "web_native"],
+    "removed_scanner_modules": ["jvm_go_crypto_scan", "native_crypto_scan", "web_native_crypto_scan", "jvm_go", "native_crypto", "web_native"],
     "kpi_labels": ["Sources", "Scans included", "Crypto assets", "Unique certificates", "Frameworks", "Requirements"],
     "kpis": { "frameworks": 13, "requirements": 109 },
     "type_rows": [

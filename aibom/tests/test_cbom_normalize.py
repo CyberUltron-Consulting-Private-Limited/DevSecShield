@@ -66,7 +66,10 @@ def test_crypto_graph_carries_nodes_and_edges() -> None:
             "quantum_vulnerable",
             "weak",
         }
-        assert node["impact"] in {"Critical", "High", "Medium", "Low"}
+        # a flagged node carries its band; clean inventory carries none (no Low by default)
+        flagged = bool(result.flags_for(node["id"]))
+        assert (node["impact"] in {"Critical", "High", "Medium", "Low"}) is flagged
+        assert (node["impact"] is None) is not flagged
     # every edge endpoint resolves to a real node (no dangling refs)
     ids = {n["id"] for n in graph["nodes"]}
     for edge in graph["edges"]:

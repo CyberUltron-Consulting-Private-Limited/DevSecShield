@@ -1,1 +1,1 @@
-(target: 'str | Path', *, level: 'int' = 1, progress: 'ProgressCb | None' = None) -> 'dict[str, Any]'
+(target: 'str | Path', *, level: 'int' = 1, progress: 'ProgressCb | None' = None, include_vendored: 'bool' = False) -> 'dict[str, Any]'

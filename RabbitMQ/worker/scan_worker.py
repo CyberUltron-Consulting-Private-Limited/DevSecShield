@@ -621,6 +621,7 @@ try:
         zip_dict_context: dict | None = None,
         file_dict_context: dict | None = None,
         scan_binaries: bool = False,
+        include_vendored: bool = False,
     ):
 
         try:
@@ -643,9 +644,11 @@ try:
             # an uploaded CycloneDX CBOM is judged by the same rules. No language model and no
             # network lookups on any CBOM path. run_agent() always removes the temp input.
             if repo_context:
-                agent = CBOMAgent(context=repo_context, state_update_writer=state_update_writer)
+                agent = CBOMAgent(context=repo_context, state_update_writer=state_update_writer,
+                                  include_vendored=include_vendored)
             elif zip_context:
-                agent = CBOMAgent(zip_context=zip_context, state_update_writer=state_update_writer)
+                agent = CBOMAgent(zip_context=zip_context, state_update_writer=state_update_writer,
+                                  include_vendored=include_vendored)
             elif file_context:
                 agent = CBOMAgent(cbom_file_context=file_context, state_update_writer=state_update_writer)
             else:
@@ -771,6 +774,7 @@ try:
         zip_dict_context: dict | None = None,
         file_dict_context: dict | None = None,
         scan_binaries: bool = False,
+        include_vendored: bool = False,
     ):
 
         try:
@@ -791,11 +795,13 @@ try:
                 agent = CBOMAgent(
                     context=repo_context,
                     scan_binaries=scan_binaries,
+                    include_vendored=include_vendored,
                 )
             elif zip_context:
                 agent = CBOMAgent(
                     zip_context=zip_context,
                     scan_binaries=scan_binaries,
+                    include_vendored=include_vendored,
                 )
             elif file_context:
                 agent = CBOMAgent(

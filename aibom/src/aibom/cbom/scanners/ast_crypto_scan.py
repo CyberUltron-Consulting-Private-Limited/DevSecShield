@@ -44,20 +44,18 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from aibom.cbom.files import FileWalk, decode_text, file_walk, read_bytes
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import ALGORITHM_NORMALIZE, algo_info
 from aibom.cbom.scanners.algorithm_scan import _display_name, _refine_key, _slug
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
 
-_IGNORE_DIRS = frozenset(
-    {
-        ".git", ".venv", "venv", "env", "node_modules", "__pycache__",
-        "dist", "build", ".next", ".nuxt", "target", "vendor", ".tox",
-        ".mypy_cache", ".pytest_cache",
-    }
-)
-_MAX_BYTES = 2_000_000
+
+def read_text_safely(path: Path) -> str | None:
+    raw = read_bytes(path)
+    return None if raw is None else decode_text(raw)
+
 
 # Crypto module roots whose presence (as an import) gates the AST rules — a
 # precision guard so a local ``generate_private_key`` in a non-crypto file is
@@ -330,10 +328,14 @@ def _make_asset(key, key_size, mode, curve, context, scope, rel) -> _Asset | Non
                   scope, rel)
 
 
-def _scan_file(path: Path, rel: str) -> tuple[list[_Asset], list[_Material]]:
+def _scan_file(path: Path, rel: str, text: str | None = None) -> tuple[list[_Asset], list[_Material]]:
+    if text is None:
+        text = read_text_safely(path)
+    if text is None:
+        return [], []
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
-    except (SyntaxError, ValueError, OSError):
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
         return [], []
     if not _has_crypto_import(tree):
         return [], []
@@ -468,18 +470,8 @@ def _scan_file(path: Path, rel: str) -> tuple[list[_Asset], list[_Material]]:
     )
 
 
-def _iter_py_files(root: Path):
-    for p in sorted(root.rglob("*.py")):
-        if any(part in _IGNORE_DIRS for part in p.relative_to(root).parts):
-            continue
-        if not p.is_file():
-            continue
-        try:
-            if p.stat().st_size > _MAX_BYTES:
-                continue
-        except OSError:
-            continue
-        yield p
+def _iter_py_files(walk: FileWalk) -> list[Path]:
+    return walk.files(lambda p: p.suffix == ".py")
 
 
 def _library_for(context: str) -> str:
@@ -501,9 +493,13 @@ class AstCryptoScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        for path in _iter_py_files(ctx.root):
-            rel = path.relative_to(ctx.root).as_posix()
-            assets, materials = _scan_file(path, rel)
+        walk = file_walk(ctx)
+        for path in _iter_py_files(walk):
+            rel = walk.rel(path)
+            text = walk.read_text(path)
+            if text is None:
+                continue
+            assets, materials = _scan_file(path, rel, text)
 
             for asset in assets:
                 props: dict[str, str] = {

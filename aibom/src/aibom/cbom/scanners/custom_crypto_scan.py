@@ -3,26 +3,12 @@
 from __future__ import annotations
 
 from aibom.cbom.custom_crypto import detect_custom_crypto
+from aibom.cbom.files import file_walk
 from aibom.cbom.gate import CUSTOM_CRYPTO
 from aibom.cbom.registry import cbom_register
 from aibom.cbom.rules import LANGUAGE_EXTENSIONS
 from aibom.model.component import CryptoAssetComponent
 from aibom.scan.registry import ScanContext, Scanner
-
-_IGNORE = frozenset(
-    {
-        ".git",
-        ".venv",
-        "venv",
-        "node_modules",
-        "vendor",
-        "dist",
-        "build",
-        "target",
-        "__pycache__",
-    }
-)
-_MAX_BYTES = 2_000_000
 
 
 def _slug(text: str) -> str:
@@ -40,23 +26,16 @@ class CustomCryptoScanner(Scanner):
     level = 1
 
     def scan(self, ctx: ScanContext) -> None:
-        root = ctx.root
-        for path in sorted(root.rglob("*")):
-            if any(part in _IGNORE for part in path.relative_to(root).parts):
-                continue
-            if not path.is_file() or path.suffix.lower() not in LANGUAGE_EXTENSIONS:
-                continue
-            try:
-                if path.stat().st_size > _MAX_BYTES:
-                    continue
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+        walk = file_walk(ctx)
+        for path in walk.files(lambda p: p.suffix.lower() in LANGUAGE_EXTENSIONS):
+            text = walk.read_text(path)
+            if text is None:
                 continue
             found = detect_custom_crypto(text)
             if found is None:
                 continue
             kind, display, primitive = found
-            rel = path.relative_to(root).as_posix()
+            rel = walk.rel(path)
             ref = f"crypto-custom-{kind}-{_slug(rel)}"
             if ctx.has_ref(ref):
                 continue

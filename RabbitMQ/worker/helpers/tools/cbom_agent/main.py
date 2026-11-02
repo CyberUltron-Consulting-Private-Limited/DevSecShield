@@ -31,6 +31,7 @@ class CBOMAgent(BaseAgent):
         cbom_file_context: FileContext | None = None,
         scan_binaries: bool = False,
         state_update_writer: StateUpdateWriter | None = None,
+        include_vendored: bool = False,
     ):
         try:
             directory = None
@@ -48,6 +49,8 @@ class CBOMAgent(BaseAgent):
             self.directory = directory
             self.cbom_json_file = file
             self.scan_binaries = scan_binaries
+            # scan option: also read vendor/, dist/, build/ and node_modules/ (third-party / build output)
+            self.include_vendored = include_vendored
             self.state_update_writer: StateUpdateWriter | None = state_update_writer
 
             # Store the ORIGINAL repo url (only present for a repo context).
@@ -80,7 +83,9 @@ class CBOMAgent(BaseAgent):
         )
 
         if self.directory:
-            return scan_crypto_to_devsecshield(str(self.directory), level=4, progress=self._progress)
+            return scan_crypto_to_devsecshield(
+                str(self.directory), level=4, progress=self._progress, include_vendored=self.include_vendored
+            )
         if self.cbom_json_file:
             return analyze_cbom_file_to_devsecshield(self.cbom_json_file, progress=self._progress)
         raise ValueError("Invalid Input, either directory or cbom_json_file is required")
@@ -128,12 +133,13 @@ class CBOMAgent(BaseAgent):
 
     def _measure_directory_size(self) -> tuple[int, float, float]:
         """Size of the files the crypto engine reads (same skip-list and per-file limit), for the credit estimate."""
-        from aibom.integrations.cbom_devsecshield import SKIP_DIRS
+        from aibom.cbom.files import skipped_dirs
 
+        skip = skipped_dirs(self.include_vendored)  # the engine's own walk rule
         total_bytes = 0
         file_count = 0
         for root, dirs, files in os.walk(self.directory):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            dirs[:] = [d for d in dirs if d not in skip]
             for fname in files:
                 if os.path.splitext(fname)[1].lower() in _NOT_SCANNED_EXTENSIONS:
                     continue
