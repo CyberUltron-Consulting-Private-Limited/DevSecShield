@@ -17,9 +17,109 @@ from typing import Any
 
 from backend.utilities.cbom_sources.common import log, new_ref
 from backend.utilities.cbom_sources.kinds import aws_account_id
-from backend.utilities.cbom_sources.templates import REQUIRED_DENY, zeroshield_account_id
+from backend.utilities.cbom_sources.templates import LAMBDA_DECRYPT_CONDITION, REQUIRED_DENY, zeroshield_account_id
 
 DEADLINE_SECONDS = 20.0
+LAMBDA_CHECK = "Lambda customer-key decryption only through Lambda"
+GLUE_CHECK = "Glue connections readable (passwords hidden)"
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    return list(value) if isinstance(value, (list, tuple)) else [value]
+
+
+def _covers(actions: list[str], action: str) -> bool:
+    service = action.split(":", 1)[0]
+    return any(a == action or a == f"{service}:*" or a == "*" for a in actions)
+
+
+def _normalised_condition(condition: Any) -> Any:
+    """Condition values may be a string or a list of strings; compare them as sorted lists."""
+    if not isinstance(condition, dict):
+        return condition
+    return {op: ({k: sorted(_as_list(v)) for k, v in keys.items()} if isinstance(keys, dict) else keys)
+            for op, keys in condition.items()}
+
+
+def check_role_policies(documents: list[dict[str, Any]], *, lambda_cmk: bool) -> tuple[tuple[str, str], tuple[str, str] | None]:
+    """Judge the role's inline policy documents.  Returns ((status, detail) for "Data-plane deny present",
+    (status, detail) for the Lambda opt-in or None when the opt-in is off).
+
+    Every REQUIRED_DENY action must be denied by a statement with no Condition on Resource "*".  The one exception is
+    kms:Decrypt when the source's Lambda opt-in is on: its deny must then carry exactly the Lambda carve-out
+    (StringNotLike kms:ViaService lambda.*.amazonaws.com) -- anything else is refused, because a different condition
+    (another service, IfExists, a set operator) could let ZeroShield decrypt directly or through another service."""
+    unconditional: list[str] = []
+    conditional: list[tuple[list[str], Any]] = []
+    allows: list[tuple[list[str], Any]] = []
+    for document in documents:
+        for statement in _as_list((document or {}).get("Statement")):
+            if not isinstance(statement, dict) or "Action" not in statement:
+                continue  # NotAction statements are never counted as a deny of a named action
+            actions = [str(a) for a in _as_list(statement.get("Action"))]
+            if statement.get("Effect") == "Allow":
+                allows.append((actions, statement.get("Condition")))
+                continue
+            if statement.get("Effect") != "Deny" or "*" not in _as_list(statement.get("Resource")):
+                continue
+            if statement.get("Condition"):
+                conditional.append((actions, statement.get("Condition")))
+            else:
+                unconditional.extend(actions)
+
+    carve_out = _normalised_condition(LAMBDA_DECRYPT_CONDITION)
+    missing: list[str] = []
+    only_conditional: list[str] = []
+    for action in REQUIRED_DENY:
+        if _covers(unconditional, action):
+            continue
+        if action == "kms:Decrypt" and lambda_cmk:
+            continue  # judged below
+        if any(_covers(actions, action) for actions, _c in conditional):
+            only_conditional.append(action)
+        else:
+            missing.append(action)
+
+    lambda_row: tuple[str, str] | None = None
+    decrypt_carved = any(_covers(actions, "kms:Decrypt") and _normalised_condition(cond) == carve_out
+                         for actions, cond in conditional)
+    if lambda_cmk:
+        other_decrypt_conditions = [cond for actions, cond in conditional
+                                    if _covers(actions, "kms:Decrypt") and _normalised_condition(cond) != carve_out]
+        allowed_through_lambda = any(_covers(actions, "kms:Decrypt") for actions, _c in allows)
+        if _covers(unconditional, "kms:Decrypt"):
+            lambda_row = ("fail", "Decrypting Lambda environments is on for this source, but the role still denies "
+                                  "kms:Decrypt everywhere: update the stack with DecryptCustomerKeyLambdaEnvironments=true, "
+                                  "or turn the option off in ZeroShield")
+        elif other_decrypt_conditions or not decrypt_carved:
+            lambda_row = ("fail", "kms:Decrypt must be denied unless the request comes through Lambda, with exactly "
+                                  "Condition StringNotLike kms:ViaService \"lambda.*.amazonaws.com\"; the role has "
+                                  + ("a different condition" if other_decrypt_conditions else "no such deny")
+                                  + ". Redeploy the ZeroShield template")
+        elif not allowed_through_lambda:
+            lambda_row = ("fail", "kms:Decrypt is carved out for Lambda but nothing allows it: redeploy the template "
+                                  "with DecryptCustomerKeyLambdaEnvironments=true (statement AllowDecryptOnlyThroughLambda)")
+        else:
+            lambda_row = ("pass", "kms:Decrypt is denied unless the request comes through Lambda. Each customer-managed "
+                                  "key's key policy must also allow this role")
+    elif decrypt_carved and not _covers(unconditional, "kms:Decrypt"):
+        only_conditional = [a for a in only_conditional if a != "kms:Decrypt"]
+        return (("fail", "The role lets Lambda decrypt environments with customer-managed keys, but this source has "
+                         "that option off: turn it on in ZeroShield, or update the stack with "
+                         "DecryptCustomerKeyLambdaEnvironments=false"
+                 + (f"; also missing: {', '.join(missing + only_conditional)}" if missing or only_conditional else "")),
+                None)
+
+    if missing or only_conditional:
+        parts = []
+        if missing:
+            parts.append("The deny statement is missing: " + ", ".join(missing))
+        if only_conditional:
+            parts.append("Denied only under a condition (the deny must be unconditional): " + ", ".join(only_conditional))
+        return ("fail", "; ".join(parts)), lambda_row
+    return ("pass", "Explicit deny covers key use and secret, parameter and object reads"), lambda_row
 
 
 class NoZeroShieldCredentials(RuntimeError):
@@ -53,7 +153,8 @@ def _row(check: str, status: str, detail: str) -> dict[str, str]:
     return {"check": check, "status": status, "detail": detail}
 
 
-def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: list[str], scope: str) -> dict[str, Any]:
+def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: list[str], scope: str,
+                      lambda_cmk: bool = False, read_glue: bool = False) -> dict[str, Any]:
     started = time.monotonic()
     rows: list[dict[str, str]] = []
     member_accounts: int | None = None
@@ -67,6 +168,10 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
     ]
     if scope == "organization":
         names.append("Organization member accounts listed")
+    if lambda_cmk:
+        names.append(LAMBDA_CHECK)
+    if read_glue:
+        names.append(GLUE_CHECK)
 
     own_account = zeroshield_account_id()
     customer_account = aws_account_id(role_arn)
@@ -137,29 +242,26 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
         else:
             rows.append(_row(names[2], "skipped", "Out of time"))
         if remaining() > 2:
-            denied: set[str] = set()
+            documents: list[dict[str, Any]] = []
             for policy_name in iam.list_role_policies(RoleName=role_name).get("PolicyNames", [])[:20]:
                 document = iam.get_role_policy(RoleName=role_name, PolicyName=policy_name).get("PolicyDocument")
                 if isinstance(document, str):
                     document = json.loads(urllib.parse.unquote(document))
-                for statement in (document or {}).get("Statement", []):
-                    if statement.get("Effect") != "Deny":
-                        continue
-                    actions = statement.get("Action", [])
-                    denied.update([actions] if isinstance(actions, str) else actions)
-            missing = [a for a in REQUIRED_DENY if a not in denied and a.split(":")[0] + ":*" not in denied]
-            if missing:
-                rows.append(_row(names[3], "fail", "The deny statement is missing: " + ", ".join(missing)))
-            else:
-                rows.append(_row(names[3], "pass", "Explicit deny covers key use and secret, parameter and object reads"))
+                documents.append(document or {})
+            deny_row, lambda_row = check_role_policies(documents, lambda_cmk=lambda_cmk)
+            rows.append(_row(names[3], *deny_row))
+            if lambda_row is not None:
+                rows.append(_row(LAMBDA_CHECK, *lambda_row))
         else:
             rows.append(_row(names[3], "skipped", "Out of time"))
     except Exception as exc:
         code = _code(exc)
-        for name in names[2:4]:
+        for name in names[2:4] + ([LAMBDA_CHECK] if lambda_cmk else []):
             if not any(r["check"] == name for r in rows):
                 rows.append(_row(name, "fail" if code.startswith("AccessDenied") else "error",
                                  f"Could not read the role's policies: {code}"))
+    if lambda_cmk and not any(r["check"] == LAMBDA_CHECK for r in rows):
+        rows.append(_row(LAMBDA_CHECK, "skipped", "Out of time"))
 
     region = regions[0] if regions else "us-east-1"
     if remaining() > 2:
@@ -187,6 +289,21 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
                 rows.append(_row(names[5], "error", f"Could not run this check: {code}"))
     else:
         rows.append(_row(names[5], "skipped", "Out of time"))
+
+    if read_glue:
+        if remaining() > 2:
+            try:  # one connection at most, password hidden; the answer is dropped unread
+                assumed_session.client("glue", region_name=region, config=cfg).get_connections(HidePassword=True, MaxResults=1)
+                rows.append(_row(GLUE_CHECK, "pass", f"glue:GetConnections answered in {region} (asked with HidePassword=true)"))
+            except Exception as exc:
+                code = _code(exc)
+                if code in ("AccessDeniedException", "AccessDenied"):
+                    rows.append(_row(GLUE_CHECK, "fail", "glue:GetConnections was denied: update the stack with "
+                                                         "ReadGlueConnections=true, or turn the option off in ZeroShield"))
+                else:
+                    rows.append(_row(GLUE_CHECK, "error", f"Could not run this check: {code}"))
+        else:
+            rows.append(_row(GLUE_CHECK, "skipped", "Out of time"))
 
     if scope == "organization":
         if remaining() > 2:

@@ -405,7 +405,7 @@ def test_aws_needs_a_passed_validation_then_charges_and_runs_in_the_cloud(api, w
     assert est["total_credits"] == 0 and est["skipped"][0]["reason"].startswith("Validate the AWS role first")
     run = api("POST", "/1/cbom/sources/runs", json={"include": {"cloud": True}, "client_request_id": "cloud-only-01"})
     assert run.status_code == 400
-    monkeypatch.setattr(cbom_sources, "validate_aws_role", lambda *a: {"status": "passed", "checks": [
+    monkeypatch.setattr(cbom_sources, "validate_aws_role", lambda *a, **_opts: {"status": "passed", "checks": [
         {"check": "Role assumed with external ID", "status": "pass", "detail": "ok"}]})
     assert api("POST", f"/1/cbom/sources/items/{src['id']}/test").json()["status"] == "passed"
     est = api("POST", "/1/cbom/sources/estimate", json={"include": {"cloud": True}}).json()
@@ -421,7 +421,7 @@ def test_aws_needs_a_passed_validation_then_charges_and_runs_in_the_cloud(api, w
 def test_aws_validation_uses_external_id_and_stores_checks(api, world, monkeypatch):
     calls = {}
 
-    def fake(team_id, role_arn, external_id, regions, scope):
+    def fake(team_id, role_arn, external_id, regions, scope, **_opts):
         calls.update(team_id=team_id, external_id=external_id)
         return {"status": "passed", "checks": [{"check": "Role assumed with external ID", "status": "pass", "detail": "ok"}]}
 

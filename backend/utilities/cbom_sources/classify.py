@@ -503,6 +503,8 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("DB_NO_AUTH", "High", "Database accepts connections without a password")
         if _upper(facts.get("password_encryption")) == "MD5":
             out.add("DB_MD5_DEFAULT", "Medium", "New passwords are stored as MD5 hashes")
+        if facts.get("md5_auth_accepted"):  # RDS PostgreSQL rds.accepted_password_auth_method = md5+scram
+            out.add("DB_MD5_ACCEPTED", "Medium", "The server still accepts md5 password authentication")
         if facts.get("engine") == "mysql" and facts.get("keyring_plugins") == [] and not facts.get("encrypted_tables"):
             out.add("DB_NO_TDE", "Low", "No tables are encrypted at rest (no keyring component)")
         if facts.get("tls_mode") in ("disabled", "allowTLS", "preferTLS"):
