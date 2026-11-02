@@ -756,7 +756,8 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         try:
             sess = open_session(ctx, target, config, creds)
         except TargetFail as fail:
-            sample["reachable"] = fail.status not in ("unreachable", "refused", "timeout", "no_route")
+            sample["reachable"] = None if fail.status.startswith("skipped_") else \
+                fail.status not in ("unreachable", "refused", "timeout", "no_route")
             sample.update(status=fail.status, note=fail.error)
             ctx.samples.append(sample)
             continue

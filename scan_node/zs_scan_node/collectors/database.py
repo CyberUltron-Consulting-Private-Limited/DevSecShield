@@ -512,7 +512,7 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
     if engine not in SUPPORTED:
         raise ConfigError(f"{engine} is not collected by this scan node version")
     host = str(config.get("host") or "").strip()
-    label = host.lower().rstrip(".")
+    label = host.strip("[]").lower().rstrip(".")  # an IPv6 literal may come in brackets
     try:  # the network gate: resolve once, apply never-scan, connect only to the checked address
         target = Target(label, resolve_checked(host, ctx.never_scan)[0])
     except Blocked:
