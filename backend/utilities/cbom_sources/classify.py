@@ -15,14 +15,14 @@ from backend.utilities.cbom_sources import crypto_kb
 IMPACTS = ("Critical", "High", "Medium", "Low")
 _RANK = {name: i for i, name in enumerate(IMPACTS)}
 
-ASSET_TYPES = (
+ASSET_TYPES: set[str] = {
     "certificate", "private_key", "public_key", "keystore", "ssh_host_key", "ssh_server_config", "ssh_endpoint",
     "tls_endpoint", "crypto_library", "process_library", "disk_encryption", "os_crypto_policy", "database_tls",
     "database_config", "database_user_auth", "k8s_cluster", "k8s_tls_secret", "k8s_certificate", "k8s_ingress_tls",
     "k8s_mesh_policy", "kms_key", "cloud_secret", "storage_encryption", "load_balancer_tls", "cdn_tls", "api_tls",
     "cloud_ca", "iam_certificate", "identity_provider", "signing_key", "open_port", "coverage",
     "host_secret", "crypto_config",
-)
+}
 
 CDX_TYPE = {
     **{t: "certificate" for t in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca")},
@@ -32,6 +32,18 @@ CDX_TYPE = {
                                                "cloud_secret", "signing_key", "k8s_certificate", "host_secret")},
     **{t: "library" for t in ("crypto_library", "process_library")},
 }
+
+# Extension rules. A feature module in classify_ext/ owns its asset types: it calls register() at import with a
+# rule(out, facts, algorithm, key_size, now) that adds codes to `out` and returns the quantum verdict (True, False or
+# None). Modules are imported at the bottom of this file, so ASSET_TYPES (a set shared with jobs.py) includes them.
+EXT_RULES: dict[str, Any] = {}
+
+
+def register(asset_type: str, rule: Any, cdx_type: str = "other") -> None:
+    ASSET_TYPES.add(asset_type)
+    EXT_RULES[asset_type] = rule
+    CDX_TYPE[asset_type] = cdx_type
+
 
 # Public-key families broken by a large quantum computer (Shor).
 _QV_FAMILIES = ("RSA", "DSA", "DH", "ECDSA", "ECDH", "EC", "ED25519", "ED448", "X25519", "X448", "ECC", "SM2")
@@ -368,7 +380,9 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     what = {"tls_endpoint": "Endpoint", "database_tls": "Database", "load_balancer_tls": "Load balancer listener",
             "cdn_tls": "CDN distribution", "api_tls": "API domain", "k8s_ingress_tls": "Ingress"}.get(asset_type, "It")
 
-    if asset_type == "certificate" and facts.get("trust_store"):
+    if asset_type in EXT_RULES:
+        qv = EXT_RULES[asset_type](out, facts, algorithm, key_size, now)
+    elif asset_type == "certificate" and facts.get("trust_store"):
         qv = None  # a CA bundle summary (one row per bundle) is inventory, not a finding
     elif asset_type in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca"):
         _cert_rules(out, facts, algorithm, key_size, now)
@@ -574,3 +588,13 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
         out.add("QUANTUM_VULNERABLE", None, "Uses public-key cryptography that a quantum computer can break")
     return {"impact": out.impact, "quantum_vulnerable": qv, "finding_codes": out.codes, "finding": out.finding(),
             "cdx_type": CDX_TYPE.get(asset_type, "other"), "texts": out.by_code, "impacts": out.impacts}
+
+
+# Import extension modules last (they call register()).
+import importlib as _importlib  # noqa: E402
+import pkgutil as _pkgutil  # noqa: E402
+
+from backend.utilities.cbom_sources import classify_ext as _classify_ext  # noqa: E402
+
+for _m in sorted(m.name for m in _pkgutil.iter_modules(_classify_ext.__path__)):
+    _importlib.import_module(f"{_classify_ext.__name__}.{_m}")

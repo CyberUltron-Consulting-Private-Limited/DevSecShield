@@ -12,14 +12,21 @@ from zs_scan_node.log import log
 from zs_scan_node.netutil import NeverScan
 from zs_scan_node.scrub import Scrubber, printable
 
-ASSET_TYPES = frozenset({
+# A set so collector modules can add the asset types they own with register_asset_types() at import.
+ASSET_TYPES: set[str] = {
     "certificate", "private_key", "public_key", "keystore", "ssh_host_key", "ssh_server_config", "ssh_endpoint",
     "tls_endpoint", "crypto_library", "process_library", "disk_encryption", "os_crypto_policy", "database_tls",
     "database_config", "database_user_auth", "k8s_cluster", "k8s_tls_secret", "k8s_certificate", "k8s_ingress_tls",
     "k8s_mesh_policy", "kms_key", "cloud_secret", "storage_encryption", "load_balancer_tls", "cdn_tls", "api_tls",
     "cloud_ca", "iam_certificate", "identity_provider", "signing_key", "open_port", "coverage",
     "host_secret", "crypto_config",
-})
+}
+
+
+def register_asset_types(*names: str) -> None:
+    ASSET_TYPES.update(names)
+
+
 TARGET_STATUSES = frozenset({
     "ok", "unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
     "identity_unverified",

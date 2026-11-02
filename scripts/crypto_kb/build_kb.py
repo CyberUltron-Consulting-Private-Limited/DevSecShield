@@ -23,6 +23,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import kb_compliance  # noqa: E402
 import kb_text  # noqa: E402
+import importlib  # noqa: E402
+
+# Extension modules (kb_ext/<area>.py) register their entries with kb_text.entry() at import and may export
+# NODE_CODES / CODE_CODES lists. One module per feature area keeps parallel work from editing the same lines.
+_EXT_DIR = os.path.join(HERE, "kb_ext")
+EXT_NODE_CODES: list[str] = []
+EXT_CODE_CODES: list[str] = []
+if os.path.isdir(_EXT_DIR):
+    sys.path.insert(0, _EXT_DIR)
+    for _name in sorted(f[:-3] for f in os.listdir(_EXT_DIR) if f.endswith(".py") and not f.startswith("_")):
+        _mod = importlib.import_module(_name)
+        EXT_NODE_CODES += list(getattr(_mod, "NODE_CODES", ()))
+        EXT_CODE_CODES += list(getattr(_mod, "CODE_CODES", ()))
 
 SRC = os.path.join(HERE, "sources")
 NVD = json.load(open(os.path.join(SRC, "nvd_cves.json")))
@@ -65,6 +78,8 @@ WEAK_PROTOCOL WEAK_CIPHER_SUITE WEAK_CERTIFICATE_KEY WEAK_CERTIFICATE_SIGNATURE 
 CERT_NEAR_EXPIRY CUSTOM_CRYPTO QUANTUM_VULNERABLE VULNERABLE_CRYPTO_LIBRARY KMS_KEY_ROTATION_DISABLED
 KMS_KEY_DELETION_UNPROTECTED KMS_KEY_POLICY_PUBLIC UNENCRYPTED_AT_REST UNENCRYPTED_IN_TRANSIT PLAINTEXT_LISTENER
 TLS_VERIFICATION_DISABLED DOWNGRADE_PROTECTION_MISSING KNOWN_TLS_VULNERABILITY AT_REST_ENCRYPTION_WEAK""".split()
+NODE_CODES += [c for c in EXT_NODE_CODES if c not in NODE_CODES]
+CODE_CODES += [c for c in EXT_CODE_CODES if c not in CODE_CODES]
 
 # Same code, different meaning in source code: override the parts that differ.
 CODE_OVERRIDES = {
