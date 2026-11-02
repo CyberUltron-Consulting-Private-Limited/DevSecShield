@@ -10,6 +10,11 @@ Per open endpoint a prioritised list of handshakes runs, capped by ``handshakes_
 ``fragile`` ranges get only steps 1-2.  SNI names from the team settings that resolve into the address add one
 full handshake each.  Every connection goes through the rate limiter, re-checks never-scan, stop-all and the
 deadline, so a stop or a closed window takes effect within one handshake.
+
+IKE (UDP 500, 4500 with the non-ESP marker): ``ikeprobe`` proposal probing, one packet at a time, at least
+``IKE_SPACING`` apart, each through the same gate and limiter, within a per-endpoint packet budget.  OT: OPC UA
+GetEndpoints (``otprobe``), Modbus/TCP (port only, nothing sent), Modbus/TCP Security (TLS).  An address with an open
+OT port is scanned in fragile mode, one endpoint at a time (OT devices may not cope with parallel handshakes).
 """
 from __future__ import annotations
 
@@ -19,18 +24,28 @@ import socket
 import time
 from typing import Any
 
+from zs_scan_node import ikeprobe
+from zs_scan_node import otprobe
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
-from zs_scan_node.jobctx import JobContext, LeaseLost
+from zs_scan_node.jobctx import JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Blocked, checked_ip, iter_line_ips, node_limiter
 
 TCP_PROTOCOLS = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
-                 "tds", "ssh", "rdp"}
-TLS_LIKE = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "rdp"}
+                 "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
+TLS_LIKE = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "rdp",
+            "modbus-tls"}
+OT_PROTOCOLS = {"opcua", "modbus", "modbus-tls"}
 MAX_OPEN_ENDPOINTS = 5000
 TARPIT_TIMEOUTS = 3
 ENDPOINT_MAX_S = 90
+IKE_SPACING = 0.2  # seconds between two packets to the same IKE endpoint (at least)
+IKE_TIMEOUT = 3.0  # wait for an answer per packet
+IKE_FRAGILE_BUDGET = 6
+NON_ESP_MARKER = b"\x00\x00\x00\x00"  # RFC 3948 section 2.2: IKE on port 4500
+
+register_asset_types("ike_endpoint", "ot_endpoint")
 
 
 class Budget:
@@ -164,6 +179,10 @@ class NetworkScan:
                 return self._ssh(ep)
             if ep.protocol == "tds":
                 return self._tds(ep)
+            if ep.protocol == "opcua":
+                return self._opcua(ep)
+            if ep.protocol == "modbus":
+                return self._modbus(ep)
             return "not_supported", f"{ep.protocol} is not supported by this node version", 0
         except _Skip as skip:
             return skip.status, None, 0
@@ -385,6 +404,119 @@ class NetworkScan:
                       facts={"service": "tds", **info, "detail": "TDS PRELOGIN encryption flag only"})
         return "ok", None, 1
 
+    # --------------------------------------------------------------- OT
+    def _modbus(self, ep: Endpoint) -> tuple[str, str | None, int]:
+        """Modbus/TCP has no encryption or authentication.  The sweep's TCP connect is all that happens: no Modbus
+        request (not even a read) is sent to the device."""
+        self.ctx.emit("ot_endpoint", ep.ip, ep.where, name=f"{ep.label or 'Modbus/TCP'} {ep.where}", protocol="modbus",
+                      facts={"service": "modbus", "port": ep.port, "tls": False, "identified_by": "port",
+                             "detail": "TCP port accepts connections; no Modbus request was sent"})
+        return "ok", None, 1
+
+    def _opcua(self, ep: Endpoint) -> tuple[str, str | None, int]:
+        url = f"opc.tcp://{ep.where}"
+
+        def run():
+            sock = _tcp(ep.ip, ep.port, self.ctx.never_scan, 3.0)
+            try:
+                return otprobe.get_endpoints(sock, url, time.monotonic() + min(20.0, max(self.ctx.time_left(), 1)))
+            finally:
+                sock.close()
+
+        try:
+            endpoints = self.handshake(ep, Budget(1), run)
+        except otprobe.UaError as exc:
+            if exc.code == "refused":  # an OPC UA server that refuses discovery on an unsecured channel
+                self.ctx.emit("ot_endpoint", ep.ip, ep.where, name=f"{ep.label or 'OPC UA'} {ep.where}",
+                              protocol="opcua", facts={"service": "opcua", "port": ep.port, "discovery": "refused",
+                                                       "detail": exc.detail[:200]})
+                return "ok", None, 1
+            return ("timeout" if exc.code == "timeout" else "error"), exc.detail[:200], 0
+        facts = {"service": "opcua", "port": ep.port, **otprobe.summarize(endpoints)}
+        n = 0
+        seen: set[str] = set()
+        for e in endpoints:
+            for cert in load_certs(e.get("certificate_der") or b""):
+                cfacts = cert_facts(cert, "opcua")
+                fp = cfacts.get("fingerprint_sha256")
+                if fp in seen:
+                    continue
+                seen.add(fp)
+                self.ctx.emit("certificate", ep.ip, f"{ep.where}#opcua-cert[{len(seen) - 1}]",
+                              name=cfacts.get("subject", ""), algorithm=cfacts.get("key_alg"),
+                              key_size=cfacts.get("key_size"), facts={**cfacts, "role": "opcua-server"})
+                n += 1
+        self.ctx.emit("ot_endpoint", ep.ip, ep.where, name=f"{ep.label or 'OPC UA'} {ep.where}", protocol="opcua",
+                      facts=facts)
+        return "ok", None, n + 1
+
+    # --------------------------------------------------------------- IKE
+    def _pause(self, seconds: float) -> bool:
+        """Wait (for a gateway's half-open IKE SAs to expire) unless a stop, a closed window or the deadline comes."""
+        if self.ctx.time_left() < seconds + 10:
+            return False
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if self.ctx.should_stop(network=True) or self.ctx.cancel.wait(min(1.0, end - time.monotonic())):
+                return False
+        return True
+
+    def scan_ike(self, ep: Endpoint, mode: str, primary: bool) -> tuple[str, str | None, int]:
+        """('ok', None, assets) when the gateway answered, ('no_answer', reason, 0) when it stayed silent."""
+        nat_t = ep.port == 4500
+        budget = IKE_FRAGILE_BUDGET if mode == "fragile" else min(max(2 * self.per_endpoint, 12), 40)
+        last = [0.0]
+        try:
+            sock = netutil.udp_connect(ep.ip, ep.port, self.ctx.never_scan, IKE_TIMEOUT)
+        except Blocked:
+            return "skipped_never_scan", None, 0
+        except OSError as exc:
+            return "no_answer", exc.__class__.__name__, 0
+
+        def send(packet: bytes, ident: bytes) -> bytes | None:
+            gate = self._gate(ep.ip)  # stop-all, never-scan (live), deadline, rate limiter: per packet
+            if gate:
+                raise _Skip(gate)
+            wait = IKE_SPACING - (time.monotonic() - last[0])
+            if wait > 0 and self.ctx.cancel.wait(wait):
+                raise _Skip("skipped_cancelled")
+            with self.limiter.server(ep.ip):
+                last[0] = time.monotonic()
+                try:
+                    sock.send((NON_ESP_MARKER if nat_t else b"") + packet)
+                except OSError:
+                    return None
+                end = time.monotonic() + IKE_TIMEOUT
+                while time.monotonic() < end:
+                    sock.settimeout(max(end - time.monotonic(), 0.05))
+                    try:
+                        data = sock.recv(65535)
+                    except socket.timeout:
+                        return None
+                    except OSError:  # ICMP port unreachable on a connected socket
+                        return None
+                    if nat_t:
+                        if data[:4] != NON_ESP_MARKER:
+                            continue
+                        data = data[4:]
+                    if data[:8] == ident:  # an answer to this message (late answers to older ones are dropped)
+                        return data
+                return None
+
+        try:
+            facts = ikeprobe.IkeProber(send, budget, mode, primary, pause=self._pause).run()
+        finally:
+            sock.close()
+        if not ikeprobe.answered(facts):
+            return "no_answer", "no IKE answer", 0
+        v2, v1 = facts.get("ikev2") or {}, facts.get("ikev1") or {}
+        version = "IKEv2" if v2.get("supported") and v2.get("proposals_accepted") is not False else \
+            ("IKEv1" if v1.get("accepts") else "IKE")
+        chosen = (v2.get("chosen") or v1.get("chosen") or {}).get("encryption")
+        self.ctx.emit("ike_endpoint", ep.ip, ep.where, name=f"{ep.label or 'IKE'} {ep.where}/udp", algorithm=chosen,
+                      protocol=version, facts={"service": "ike", "port": ep.port, "nat_t": nat_t, **facts})
+        return "ok", None, 1
+
 
 class _Skip(Exception):
     def __init__(self, status: str) -> None:
@@ -409,9 +541,8 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
     """Returns a summary line.  Outcomes are recorded per address (and per endpoint for failures)."""
     scan = NetworkScan(ctx, scope)
     ports = _ports(scope)
-    if any(p["protocol"] == "ike" for p in ports):
-        ctx.coverage("", "ike", "not_supported", "IKE (UDP 500/4500) is not supported by this node version", once=True)
     tcp_ports = [p for p in ports if p["protocol"] in TCP_PROTOCOLS]
+    ike_ports = [] if discovery_only else [p for p in ports if p["protocol"] == "ike"]  # discovery is a TCP sweep
     ranges = _scope_ranges(scope)
     if not ranges:
         return "no ranges in scope"
@@ -457,13 +588,19 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
         failures: list[str] = []
         assets = 0
         skip_status = None
+        workers = per_server
+        if any(ep.protocol in OT_PROTOCOLS for ep in open_eps):
+            # an OT device: fragile mode for every endpoint of the address, one connection at a time
+            mode, workers = "fragile", 1
+            ctx.coverage(ip, "ot fragile mode", "truncated", "OT port open: only fragile-mode checks were run on this "
+                         "address, one connection at a time")
 
         def one(ep: Endpoint):
             t0 = time.monotonic()
             status, err, n = scan.scan_endpoint(ep, mode)
             return ep, status, err, n, t0
 
-        with cf.ThreadPoolExecutor(max_workers=per_server) as eps_pool:
+        with cf.ThreadPoolExecutor(max_workers=workers) as eps_pool:
             for ep, status, err, n, t0 in eps_pool.map(one, open_eps):
                 assets += n
                 if status.startswith("skipped_"):
@@ -472,6 +609,29 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
                 if status != "ok":
                     failures.append(f"{ep.port}:{status}")
                     ctx.outcome(ep.where, status, err, started=t0, assets=n, counted=False)
+        # IKE over UDP: no connect to tell an open port, so every listed IKE port gets a probe; the first silent one
+        # (no answer to IKEv2 or IKEv1) ends IKE on this address
+        for i, p in enumerate(ike_ports):
+            ep = Endpoint(ip, p["port"], "ike", p["label"])
+            t0 = time.monotonic()
+            try:
+                status, err, n = scan.scan_ike(ep, mode, primary=i == 0)
+            except _Skip as skip:
+                status, err, n = skip.status, None, 0
+            except LeaseLost:
+                raise
+            except Exception as exc:  # a hostile gateway must cost one endpoint, never the whole job
+                ctx.log("ike probe error", endpoint=ep.where, error=exc.__class__.__name__, level="warn")
+                status, err, n = "error", f"unexpected answer ({exc.__class__.__name__})", 0
+            assets += n
+            if status.startswith("skipped_"):
+                skip_status = skip_status or status
+                break
+            if status == "no_answer":
+                break
+            if status != "ok":
+                failures.append(f"{ep.port}/udp:{status}")
+                ctx.outcome(f"{ep.where}/udp", status, err, started=t0, assets=n, counted=False)
         if skip_status and assets == 0:
             ctx.outcome(ip, skip_status, started=started)
             return len(open_eps)

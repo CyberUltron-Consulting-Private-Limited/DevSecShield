@@ -1,0 +1,59 @@
+### show running-config | include ^ip ssh|^ip http
+ip http secure-server
+ip http secure-ciphersuite 3des-ede-cbc-sha aes-128-cbc-sha rc4-128-md5
+ip http tls-version TLSv1.0
+ip ssh version 1
+ip ssh server algorithm encryption aes128-ctr aes256-ctr 3des-cbc
+ip ssh server algorithm mac hmac-sha1 hmac-sha2-256
+ip ssh server algorithm kex diffie-hellman-group1-sha1 diffie-hellman-group14-sha1
+### show running-config | section crypto
+crypto pki trustpoint TP-self-signed-4294967295
+ enrollment selfsigned
+ subject-name cn=IOS-Self-Signed-Certificate-4294967295
+ revocation-check none
+ rsakeypair TP-self-signed-4294967295
+crypto ikev2 proposal PROP-LEGACY
+ encryption aes-cbc-256 aes-cbc-128 3des
+ integrity sha256 sha1 md5
+ group 14 5 2
+crypto ikev2 proposal PROP-GCM
+ encryption aes-gcm-256
+ prf sha384
+ group 20
+crypto ikev2 policy POL-1
+ proposal PROP-LEGACY
+crypto isakmp policy 10
+ encr 3des
+ hash md5
+ authentication pre-share
+ group 2
+crypto isakmp policy 20
+ encr aes 256
+ hash sha256
+ authentication rsa-sig
+ group 14
+crypto isakmp key 6 FIXTURE-NOT-A-SECRET address 0.0.0.0
+crypto ipsec transform-set TS-OLD esp-3des esp-md5-hmac
+ mode tunnel
+crypto ipsec transform-set TS-NEW esp-gcm 256
+ mode tunnel
+### show crypto key mypubkey rsa
+% Key pair was generated at: 10:22:03 UTC Jan 7 2026
+Key name: TP-self-signed-4294967295
+Key type: RSA KEYS
+ Storage Device: private-config
+ Usage: General Purpose Key
+ Key is not exportable. Redundancy enabled.
+ Key Data:
+  30819F30 0D06092A 864886F7 0D010101 05000381 8D003081 89028181 00D53AE6
+  A47AFB6D A0F3E91B 4D84E2A1 9EA657DD 37F97321 2DC01A44 0728C841 BCF2B843
+  F33C2DAB 0B5A4F3E 46CABCAA 98A20F7C 24667AA7 467243AE 3D29D700 7A739DA1
+  9BB45276 4BED21FB BA929FB3 52E5B480 2447EC9F 7C3A8853 095EFB7C 8E772351
+  375F8394 C684EF66 F8E9077C 6DAFF932 29686A5F 98C61255 6AD1C0A8 61020301
+  0001
+% Key pair was generated at: 10:25:41 UTC Jan 7 2026
+Key name: VPN-KEY
+Key type: RSA KEYS
+ Storage Device: private-config
+ Usage: General Purpose Key
+ Modulus Size (bits): 4096

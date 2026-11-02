@@ -31,7 +31,7 @@ CONNECTORS = {"psycopg.connect", "redis.Redis", "pymongo.MongoClient", "winrm.Se
               "paramiko.SSHClient", "_strict_mysql", "T.probe", "T.s_client", "T.python_handshake", "T.open_tls_socket",
               "T.ssh_kexinit", "T.ssh_host_key"}
 GATES = {"netutil.connect", "netutil.checked_ip", "netutil.resolve_checked", "netutil.http_client", "checked_ip",
-         "resolve_checked", "http_client"}
+         "resolve_checked", "http_client", "netutil.udp_connect"}
 # Reviewed exceptions: (module, function, call) with the reason.
 ALLOWED = {
     ("network.py", "_sni_for", "netutil.resolve"): "matches SNI names against the address being scanned; no connection",

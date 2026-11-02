@@ -91,7 +91,8 @@ zs-cbom ALL=(root) NOPASSWD: ZS_CBOM_TIER2
 
 # Exactly what the collector reads (scan_node/zs_scan_node/collectors/kubernetes.py; a test keeps the two in step):
 # namespaces (connection test), nodes, configmaps (CA bundles, pasted keys), ingresses, cert-manager Certificates,
-# Istio PeerAuthentications (security.istio.io) and DestinationRules (networking.istio.io: their API group).
+# Istio PeerAuthentications (security.istio.io) and DestinationRules (networking.istio.io: their API group), and the
+# Linkerd policy objects (policy.linkerd.io) that decide whether a Server accepts clients without a mesh identity.
 K8S_TIER1 = """apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -111,6 +112,9 @@ rules:
     verbs: ["get", "list"]
   - apiGroups: ["networking.istio.io"]
     resources: ["destinationrules"]
+    verbs: ["get", "list"]
+  - apiGroups: ["policy.linkerd.io"]
+    resources: ["servers", "serverauthorizations", "authorizationpolicies", "meshtlsauthentications", "networkauthentications"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

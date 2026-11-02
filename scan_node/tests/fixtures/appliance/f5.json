@@ -1,0 +1,20 @@
+{
+  "client-ssl": {"kind": "tm:ltm:profile:client-ssl:client-sslcollectionstate",
+                 "items": [
+                   {"name": "clientssl", "fullPath": "/Common/clientssl", "ciphers": "DEFAULT", "cipherGroup": "none",
+                    "options": ["dont-insert-empty-fragments", "no-tlsv1.3"]},
+                   {"name": "legacy-app", "fullPath": "/Common/legacy-app", "ciphers": "DEFAULT:RC4-SHA:DES-CBC3-SHA:TLSv1",
+                    "cipherGroup": "none", "options": ["dont-insert-empty-fragments"]},
+                   {"name": "modern", "fullPath": "/Common/modern", "ciphers": "ECDHE+AES-GCM:!SSLv3:!RC4:!3DES:!TLSv1",
+                    "cipherGroup": "none", "options": ["no-tlsv1", "no-tlsv1.1"]}
+                 ]},
+  "crypto-key": {"kind": "tm:sys:crypto:key:keycollectionstate",
+                 "items": [
+                   {"name": "default.key", "fullPath": "/Common/default.key", "keyType": "rsa-private", "keySize": 2048,
+                    "securityType": "normal"},
+                   {"name": "legacy-app.key", "fullPath": "/Common/legacy-app.key", "keyType": "rsa-private",
+                    "keySize": 1024, "securityType": "normal"},
+                   {"name": "ec.key", "fullPath": "/Common/ec.key", "keyType": "ec-private", "keySize": 256,
+                    "curveName": "prime256v1", "securityType": "fips"}
+                 ]}
+}

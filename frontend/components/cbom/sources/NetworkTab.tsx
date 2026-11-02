@@ -33,6 +33,7 @@ import {
   type CbomSourcesSettings,
 } from "@/utils/backend_api";
 
+import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import {
   ago,
@@ -80,6 +81,10 @@ const PROTOCOLS: { value: string; label: string }[] = [
   { value: "ssh", label: "SSH" },
   { value: "rdp", label: "RDP" },
   { value: "ike", label: "IKE (IPsec)" },
+  // OT: an address with one of these open is scanned in fragile mode, one connection at a time
+  { value: "opcua", label: "OPC UA (OT)" },
+  { value: "modbus", label: "Modbus/TCP (OT, port check only)" },
+  { value: "modbus-tls", label: "Modbus/TCP Security (OT, TLS)" },
 ];
 const PROTOCOL_LABEL: Record<string, string> = Object.fromEntries(PROTOCOLS.map((p) => [p.value, p.label]));
 const TIMEZONES = [
@@ -783,6 +788,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
             </Section>
           </div>
         </SectionCard>
+
+        <AppliancesSection teamId={teamId} nodes={nodes} onNavigate={onNavigate} />
 
         {/* ------------------------------------------------------------------ Safety */}
         <SectionCard title="Safety" description="When, how fast, and who to tell.">

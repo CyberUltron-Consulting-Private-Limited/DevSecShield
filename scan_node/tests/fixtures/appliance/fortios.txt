@@ -1,0 +1,52 @@
+### show full-configuration system global
+config system global
+    set admin-concurrent enable
+    set admin-https-ssl-versions tlsv1-1 tlsv1-2 tlsv1-3
+    set admin-port 80
+    set admin-sport 443
+    set admin-ssh-port 22
+    set admin-ssh-v1 enable
+    set hostname "FGT-LAB"
+    set ssl-min-proto-version TLSv1-1
+    set strong-crypto disable
+    set timezone 04
+end
+### show full-configuration vpn ipsec phase1-interface
+config vpn ipsec phase1-interface
+    edit "to-branch-legacy"
+        set type static
+        set interface "wan1"
+        set ike-version 1
+        set authmethod psk
+        set mode aggressive
+        set peertype any
+        set proposal des-md5 3des-sha1 aes128-sha256
+        set dhgrp 2 5
+        set remote-gw 198.51.100.7
+        set psksecret ENC FIXTURE-NOT-A-SECRET
+    next
+    edit "to-dc"
+        set type static
+        set interface "wan1"
+        set ike-version 2
+        set authmethod signature
+        set proposal aes256gcm-prfsha384 chacha20poly1305-prfsha256
+        set dhgrp 20 21
+        set remote-gw 203.0.113.9
+    next
+end
+### show full-configuration vpn ipsec phase2-interface
+config vpn ipsec phase2-interface
+    edit "to-branch-legacy-p2"
+        set phase1name "to-branch-legacy"
+        set proposal 3des-md5 aes128-sha1
+        set pfs enable
+        set dhgrp 2
+    next
+    edit "to-dc-p2"
+        set phase1name "to-dc"
+        set proposal aes256gcm
+        set pfs enable
+        set dhgrp 20
+    next
+end

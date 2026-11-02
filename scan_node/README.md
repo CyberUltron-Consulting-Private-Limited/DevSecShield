@@ -88,6 +88,13 @@ suite order, BitLocker, RDP security layer.
 `insecure-skip-tls-verify` are refused). Tier 1: version, nodes, ingress TLS, cert-manager Certificates, Istio
 mTLS, ConfigMap CA bundles and private keys pasted into ConfigMaps (type and size only). Tier 2 adds TLS
 secrets, listed with `fieldSelector=type=kubernetes.io/tls`; only `tls.crt` is parsed, `tls.key` is dropped.
+Service mesh (Tier 1): Istio PeerAuthentications with the root namespace read from the `istio` mesh ConfigMap
+(`rootNamespace`); when Istio is installed and no mesh-wide policy exists, a "(mesh default)" row records that
+Istio applies PERMISSIVE. DestinationRules (`networking.istio.io`): `trafficPolicy.tls.mode` for the host, each
+port and each subset (certificate paths are not kept). Linkerd (`policy.linkerd.io`, versions found by API
+discovery): Servers with their `accessPolicy`, ServerAuthorizations, AuthorizationPolicies, MeshTLS- and
+NetworkAuthentications, giving one row per Server that says whether clients without a mesh identity are allowed
+and why; the `linkerd-identity-trust-roots` certificates are tagged `linkerd-trust-root`.
 
 **Databases.** PostgreSQL, MySQL, Redis, MongoDB. TLS is checked before the password is sent; with
 `require_tls` and no TLS the password is never sent. Only fixed queries and fixed setting names are read.
@@ -105,9 +112,39 @@ sockets or HTTP clients any other way, so new collectors must use it.
 **Network.** Per open endpoint a capped list of handshakes (`handshakes_per_endpoint`): one full handshake
 (`openssl s_client`), raw ClientHello per protocol version, a TLS 1.3 post-quantum group probe (ML-KEM hybrid
 via HelloRetryRequest), TLS_FALLBACK_SCSV, and weak cipher classes. STARTTLS for SMTP, IMAP, LDAP, PostgreSQL,
-MySQL; SSH algorithm lists; RDP negotiation; SQL Server PRELOGIN encryption flag. IKE is reported as not
-supported. Connections are rate-limited (connections per second, parallel per server), the never-scan list and
-the stop-all switch apply live, and work stops at the end of the scan window.
+MySQL; SSH algorithm lists; RDP negotiation; SQL Server PRELOGIN encryption flag. Connections are rate-limited
+(connections per second, parallel per server), the never-scan list and the stop-all switch apply live, and work
+stops at the end of the scan window.
+
+**IKE / VPN (UDP 500, 4500).** `ikeprobe.py` sends only the first message of an exchange: IKEv2 IKE_SA_INIT
+(RFC 7296) and IKEv1 Main/Aggressive Mode message 1 (RFC 2409); no SA is ever completed and no credential is used.
+One proposal set per packet finds what the gateway accepts: an IKEv2 baseline, the weak classes (DH groups
+1/2/5/22-25, DES/3DES/Blowfish, MD5/SHA-1 integrity and PRF), an ML-KEM additional key exchange (RFC 9370, ids
+35-37) and IKEv1 (all-weak set, weak classes, Aggressive Mode). Weak classes are read from INVALID_KE_PAYLOAD
+answers, which leave no half-open SA on the gateway (strongSwan stops answering a peer with 5 half-open SAs; one
+32 s pause is made if a gateway that answered goes silent). Every packet passes the network gate and the rate
+limiter, packets to one endpoint are at least 200 ms apart, and the budget is `2 x handshakes_per_endpoint`
+(12-40) packets, 6 in fragile mode (one strong and one all-weak IKEv2 proposal, one IKEv1 message). Port 4500
+uses the RFC 3948 non-ESP marker and gets the baseline only. The node sends from an unprivileged source port:
+IKEv1 gateways that answer only to source port 500 look silent. An Aggressive Mode answer's hash is never kept.
+
+**OT.** OPC UA (`opcua`, 4840): `otprobe.py` opens one connection and sends HEL, OpenSecureChannel with
+SecurityPolicy None, GetEndpoints and CloseSecureChannel (OPC UA Part 6): security policies and modes, user token
+policies and the server certificate; no session, no read, write or call. Modbus/TCP (`modbus`, 502): the TCP
+connect of the port sweep only; no Modbus request is sent (the protocol has no security to read). Modbus/TCP
+Security (`modbus-tls`, 802) goes through the TLS probe; a requested client certificate is reported, not a
+failure. An address with an open OT port is scanned in fragile mode, one connection at a time. OT protocols are
+not in the default port list: add them for OT ranges.
+
+**Appliances (source kind `appliance`).** Read-only configuration of Cisco IOS/IOS XE, Cisco ASA and FortiOS over
+SSH (the Linux login code: pinned host key for passwords, one authentication attempt) and of PAN-OS (XML API,
+`type=config&action=show`) and F5 BIG-IP (iControl REST GET) over verified HTTPS. Only the commands in
+`collectors/appliance.py` `COMMANDS` are sent (all `show ...`, plus the ASA's session-only `terminal pager 0`);
+the ASA has no exec channel, so its commands are typed into one shell. The output is parsed on the node
+(`appliance_parsers.py`): SSH versions and algorithms, management TLS versions and ciphers, IKE and IPsec
+proposals, key sizes; nothing else (pre-shared keys, passwords) leaves it. Only configured values are judged;
+vendor defaults that the configuration does not print are not assumed. `tests/sim_appliance.py` is a SIMULATED
+appliance (paramiko) used by the tests and the lab proof; no real device was available.
 
 ## Develop and test
 

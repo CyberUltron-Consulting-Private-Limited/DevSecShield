@@ -4111,6 +4111,7 @@ export {
 export type CbomSourceKind =
     | "linux_servers" | "windows_servers" | "active_directory" | "kubernetes" | "database"
     | "aws_account" | "azure_subscription" | "gcp_project" | "ca_connector" | "idp" | "network_range"
+    | "appliance"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
 export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"

@@ -254,7 +254,7 @@ def create_test_job(
     cancel_open_jobs(session, source, now, reason="Replaced by a newer connection test", kinds=("test_connection",))
     params: dict[str, Any] = {"exclusions": _snapshot_exclusions(settings), "conn_v": connection_version(source)}
     spec = KINDS[source.kind]
-    if spec.group == "servers":
+    if spec.group == "servers" or source.kind == "appliance":
         parsed = T.parse_targets((source.config or {}).get("targets") or [], allow_empty=True)
         excl = T.parse_exclusions(((source.config or {}).get("exclusions") or []) + params["exclusions"])
         params["samples"] = T.sample_targets(parsed, excl, 5)
@@ -381,7 +381,7 @@ def _scope_for(job: CbomCollectionJob, source: CbomCollectionSource | None, sett
     ends = None if job.kind == "test_connection" else window_end(_job_window(source, settings), settings.window_timezone, now)
     scope["window_ends_at"] = ends.strftime("%Y-%m-%dT%H:%M:%SZ") if ends else None
     cfg = (source.config or {}) if source else {}
-    if source is not None and KINDS[source.kind].group == "servers":
+    if source is not None and (KINDS[source.kind].group == "servers" or source.kind == "appliance"):
         scope["targets"] = cfg.get("targets") or []
         scope["never_scan"] = sorted(set(exclusions) | set(cfg.get("exclusions") or []))
         if job.kind == "test_connection":

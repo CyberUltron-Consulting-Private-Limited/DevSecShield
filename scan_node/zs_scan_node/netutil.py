@@ -87,6 +87,7 @@ def resolve(name: str, timeout: float = 5.0) -> list[str]:
 #   resolve_checked(host, never)        resolve once; drop (or, with every=True, refuse) never-scan addresses
 #   checked_ip(ip, never)               re-check an address just before a driver (psycopg, paramiko ...) connects to it
 #   connect(ip, port, never, timeout)   check + open the TCP socket to that address
+#   udp_connect(ip, port, never, ...)   check + a connected UDP socket to that address (IKE)
 #   http_client(url, ip, never, ...)    an httpx client pinned to the checked address (Host/SNI/certificate name kept)
 # tests/test_network_gate.py fails when a collector module opens sockets or HTTP clients any other way.
 
@@ -137,6 +138,20 @@ def connect(ip: str, port: int, never: NeverScan, timeout: float) -> socket.sock
     """TCP connection to a checked address.  Raises Blocked or OSError (socket.timeout, ConnectionRefusedError ...)."""
     checked_ip(ip, never)
     return socket.create_connection((ip, int(port)), timeout=timeout)
+
+
+def udp_connect(ip: str, port: int, never: NeverScan, timeout: float) -> socket.socket:
+    """A connected UDP socket to a checked address (IKE).  Connected, so only that address's datagrams are read and
+    an ICMP port-unreachable shows up as ConnectionRefusedError.  Raises Blocked or OSError."""
+    checked_ip(ip, never)
+    sock = socket.socket(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.settimeout(timeout)
+        sock.connect((ip, int(port)))
+    except BaseException:
+        sock.close()
+        raise
+    return sock
 
 
 def http_client(url: str, ip: str, never: NeverScan, **kwargs):
