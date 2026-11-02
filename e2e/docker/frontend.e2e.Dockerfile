@@ -1,6 +1,15 @@
 # syntax=docker.io/docker/dockerfile:1
+#
+#   docker buildx build --build-arg NEXT_PUBLIC_BACKEND_URL=https://<api host> -f frontend/Dockerfile frontend
+#
+# NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so the API URL is required: an image built
+# without it would send every browser to a default host. Optional: NEXT_PUBLIC_CBOM_NODE_IMAGE (the scan-node image
+# shown in the deployment instructions; the UI default is registry.zeroshield.ai/cbom/scan-node:1.0).
+# Behind a TLS-intercepting proxy or with a private registry mirror: --build-arg NODE_BASE_IMAGE=<node:20-alpine
+# image that trusts the proxy CA>.
+ARG NODE_BASE_IMAGE=node:20-alpine
 
-FROM node:20-alpine AS base
+FROM ${NODE_BASE_IMAGE} AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -24,13 +33,18 @@ WORKDIR /frontend
 COPY --from=deps /frontend/node_modules ./node_modules
 COPY . .
 
-ARG NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:9001
-ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
+ARG NEXT_PUBLIC_BACKEND_URL
+ARG NEXT_PUBLIC_CBOM_NODE_IMAGE=
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL \
+    NEXT_PUBLIC_CBOM_NODE_IMAGE=$NEXT_PUBLIC_CBOM_NODE_IMAGE
 
-# Next.js collects completely anonymous telemetry data about general usage.
-# Learn more here: https://nextjs.org/telemetry
-# Uncomment the following line in case you want to disable telemetry during the build.
-# ENV NEXT_TELEMETRY_DISABLED=1
+# No telemetry call during the build (air-gapped builders have no route to it anyway).
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN case "$NEXT_PUBLIC_BACKEND_URL" in \
+      http://?*|https://?*) echo "NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL" ;; \
+      *) echo "ERROR: build with --build-arg NEXT_PUBLIC_BACKEND_URL=https://<api host> (got '$NEXT_PUBLIC_BACKEND_URL')" >&2; exit 1 ;; \
+    esac
 
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
@@ -43,9 +57,8 @@ RUN \
 FROM base AS runner
 WORKDIR /frontend
 
-ENV NODE_ENV=production
-# Uncomment the following line in case you want to disable telemetry during runtime.
-# ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

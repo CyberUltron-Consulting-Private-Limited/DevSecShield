@@ -1,0 +1,44 @@
+# Release the CBOM scan-node image as a file: build registry.zeroshield.ai/cbom/scan-node:<version>, docker save it
+# to scan-node-<version>.tar.gz with a SHA-256 file, upload both as the run's artifact
+# (scripts/release/scan_node_image.sh). Customers: sha256sum -c ... && docker load -i scan-node-<version>.tar.gz
+name: Scan node image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version, e.g. 1.1"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node tests
+        working-directory: scan_node
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --require-hashes --no-deps -r requirements.lock
+          .venv/bin/pip install pytest
+          .venv/bin/python -m pytest -q tests
+
+      - name: Build, check and save the image
+        env:
+          VERSION: ${{ inputs.version }}
+        run: scripts/release/scan_node_image.sh build "$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scan-node-${{ inputs.version }}
+          path: |
+            dist/scan-node/scan-node-*.tar.gz
+            dist/scan-node/scan-node-*.tar.gz.sha256
+          compression-level: 0
+          if-no-files-found: error

@@ -12,3 +12,19 @@ mongo-compose.yml
 testing.py
 *.pdf
 db_confs/
+# Secrets never enter the image: they are passed at run time (deploy/staging/.env, docs/security/secret-rotation.md).
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+*.pem
+**/*.pem
+# Local tool state and caches
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/node_modules/
+.claude-flow/
+*.rvf
+*.rvf.lock

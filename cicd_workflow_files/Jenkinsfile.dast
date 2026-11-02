@@ -24,13 +24,33 @@ pipeline {
                     if (env.DAST_TARGET_URL?.trim()) {
                         payload = "{\"profile_id\": ${profileId}, \"target_url\": \"${env.DAST_TARGET_URL}\"}"
                     }
-                    def response = sh(script: """
-                        curl -sS -X POST \\
-                          -H "cicd-api-key: \$CICD_API_KEY" \\
-                          -H "Content-Type: application/json" \\
-                          -d '${payload}' \\
-                          "\$DAST_API_URL"
-                    """, returnStdout: true).trim()
+                    // --fail-with-body (curl 7.76+): an HTTP error fails the build and still prints the reason.
+                    // 429 (rate limited): wait Retry-After seconds (30 if absent, 300 at most), up to 5 tries.
+                    writeFile(file: 'devsecshield-dast-request.json', text: payload)
+                    sh '''#!/bin/bash
+set -uo pipefail
+for attempt in 1 2 3 4 5; do
+  rc=0
+  code=$(curl --fail-with-body -sS --max-time 120 -o devsecshield-dast-response.json -D devsecshield-headers.txt \
+    -w '%{http_code}' -H "cicd-api-key: ${CICD_API_KEY}" -H "Content-Type: application/json" \
+    --data @devsecshield-dast-request.json "${DAST_API_URL}") || rc=$?
+  if [ "${code}" = "429" ] && [ "${attempt}" -lt 5 ]; then
+    delay=$(awk 'tolower($1) == "retry-after:" {print $2 + 0}' devsecshield-headers.txt | tail -n 1)
+    [ -n "${delay}" ] && [ "${delay}" -gt 0 ] || delay=30
+    [ "${delay}" -le 300 ] || delay=300
+    echo "DevSecShield is rate limiting this key; retrying in ${delay}s (attempt ${attempt} of 5)"
+    sleep "${delay}"
+    continue
+  fi
+  break
+done
+if [ "${rc}" -ne 0 ]; then
+  echo "DAST dispatch failed (curl exit ${rc}, HTTP ${code:-none}):"
+  cat devsecshield-dast-response.json 2>/dev/null || true
+  exit 1
+fi
+'''
+                    def response = readFile('devsecshield-dast-response.json').trim()
                     echo "DAST dispatch: ${response}"
                     def jsonResponse = readJSON(text: response)
                     if (!jsonResponse.scan_id) {

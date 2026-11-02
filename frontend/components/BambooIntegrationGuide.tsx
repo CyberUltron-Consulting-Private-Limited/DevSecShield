@@ -7,6 +7,7 @@ import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiBaseURL } from "@/utils/interceptors";
+import { scanRequestScript, zipCommand } from "@/components/cicd/ciScanScript";
 
 interface BambooIntegrationGuideProps {
   apiKey: string;
@@ -19,72 +20,33 @@ export function BambooGuide({ apiKey, scanType = "sast" }: BambooIntegrationGuid
   const label = kind.toUpperCase();
   const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
 
-  // Generate script content based on selections (full content for copying)
+  // Generate script content based on selections. The key is read from the Bamboo variable, never written into the
+  // script, so the copied and the displayed scripts are the same.
   const scriptContent = useMemo(() => {
     // Escape $ to prevent template literal interpolation
     const dollar = '$';
     const bambooVar = 'bamboo';
-    return `# Compress the project files excluding unnecessary ones
-zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
+    const scan = scanRequestScript({
+      zipPath: `${dollar}{zip_file}`,
+      url: endpoint,
+      keyRef: `${dollar}{${bambooVar}.cicd_api_key}`,
+      responseFile: "devsecshield-response.json",
+    });
+    return `# Everything but .git is scanned (vendored code, build output and nested archives included); installed
+# dependency trees stay out. The zip is written outside the working directory. Uploads are capped at 50 MB.
+zip_file="${dollar}(mktemp -d)/project.zip"
+${zipCommand(`${dollar}{zip_file}`)}
 
 # Call the API for ${label} scan
-RESPONSE=$(curl -X POST \\
-  -H "cicd-api-key: ${dollar}{${bambooVar}.cicd_api_key}" \\
-  -F "zip_file=@project.zip" \\
-  ${endpoint})
+${scan}
 
-# Parse JSON response
-FINDINGS=$(echo "$RESPONSE" | grep -o '"finding_count":[0-9]*' | grep -o '[0-9]*' || echo "0")
-
-echo "Findings found during ${label}: $FINDINGS"
-
-# Check for error in response
-if echo "$RESPONSE" | grep -q '"error"'; then
-  ERROR=$(echo "$RESPONSE" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
-  echo "Error: $ERROR"
-  exit 1
-fi
-
-echo "$RESPONSE"`;
+FINDINGS=${dollar}(grep -o '"finding_count":[0-9]*' devsecshield-response.json | grep -o '[0-9]*' || echo "0")
+echo "Findings found during ${label}: ${dollar}FINDINGS"
+cat devsecshield-response.json`;
   }, [endpoint, label]);
 
-  // Generate masked script content for display
-  const displayedScriptContent = useMemo(() => {
-    // Helper function to mask API key
-    const maskApiKey = (key: string) => {
-      if (key.length <= 8) {
-        return "•".repeat(key.length);
-      }
-      const start = key.substring(0, 4);
-      const end = key.substring(key.length - 4);
-      return `${start}${"•".repeat(12)}${end}`;
-    };
-    const maskedKey = maskApiKey(apiKey);
-    const dollar = '$';
-    const bambooVar = 'bamboo';
-    return `# Compress the project files excluding unnecessary ones
-zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
-
-# Call the API for ${label} scan
-RESPONSE=$(curl -X POST \\
-  -H "cicd-api-key: ${dollar}{${bambooVar}.cicd_api_key}" \\
-  -F "zip_file=@project.zip" \\
-  ${endpoint})
-
-# Parse JSON response
-FINDINGS=$(echo "$RESPONSE" | grep -o '"finding_count":[0-9]*' | grep -o '[0-9]*' || echo "0")
-
-echo "Findings found during ${label}: $FINDINGS"
-
-# Check for error in response
-if echo "$RESPONSE" | grep -q '"error"'; then
-  ERROR=$(echo "$RESPONSE" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)
-  echo "Error: $ERROR"
-  exit 1
-fi
-
-echo "$RESPONSE"`;
-  }, [apiKey, endpoint, label]);
+  // Displayed script (it holds no key)
+  const displayedScriptContent = scriptContent;
 
   const copyToClipboard = async () => {
     try {

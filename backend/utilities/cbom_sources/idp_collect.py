@@ -1,7 +1,8 @@
 """Identity-provider signing keys from public OIDC discovery/JWKS documents and SAML metadata.
 
 Only public documents are read (no client secret is used or needed): the keys an IdP signs tokens
-and assertions with are published for every relying party.  Fetches go through ``safe_fetch``.
+and assertions with are published for every relying party.  Fetches go through ``safe_fetch``; an IdP on a private
+network is reachable only when the operator lists it in ``CBOM_IDP_ALLOWED_PRIVATE`` (API and cloud worker).
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from backend.utilities.cbom_sources.safe_fetch import FetchError, fetch
+from backend.utilities.cbom_sources.safe_fetch import FetchError, fetch, idp_private_allowlist
 
 _NS = {"md": "urn:oasis:names:tc:SAML:2.0:metadata", "ds": "http://www.w3.org/2000/09/xmldsig#"}
 _DTD = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
@@ -120,7 +121,7 @@ def cert_facts(der: bytes, source: str) -> tuple[str | None, int | None, dict[st
 def _oidc(url: str, label: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     assets: list[dict[str, Any]] = []
     gaps: list[dict[str, Any]] = []
-    doc = fetch(url)
+    doc = fetch(url, private_allowlist=idp_private_allowlist())
     if doc.status != 200:
         raise FetchError(f"discovery document returned HTTP {doc.status}")
     try:
@@ -135,7 +136,7 @@ def _oidc(url: str, label: str) -> tuple[list[dict[str, Any]], list[dict[str, An
                              "id_token_signing_alg_values_supported": meta.get("id_token_signing_alg_values_supported"),
                              "token_endpoint_auth_methods_supported": meta.get("token_endpoint_auth_methods_supported"),
                              "jwks_uri": meta["jwks_uri"][:500]}})
-    jwks = fetch(meta["jwks_uri"])
+    jwks = fetch(meta["jwks_uri"], private_allowlist=idp_private_allowlist())
     try:
         keys = json.loads(jwks.body).get("keys") or []
     except (ValueError, AttributeError) as exc:
@@ -210,7 +211,8 @@ def saml_assets_from_xml(body: bytes, location: str, label: str) -> list[dict[st
 
 
 def _saml(url: str, label: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    doc = fetch(url, accept="application/samlmetadata+xml, application/xml, text/xml")
+    doc = fetch(url, accept="application/samlmetadata+xml, application/xml, text/xml",
+                private_allowlist=idp_private_allowlist())
     if doc.status != 200:
         raise FetchError(f"SAML metadata returned HTTP {doc.status}")
     assets = saml_assets_from_xml(doc.body, url, label)
