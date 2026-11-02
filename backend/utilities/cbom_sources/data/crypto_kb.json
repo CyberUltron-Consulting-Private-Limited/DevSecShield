@@ -1314,6 +1314,69 @@
      }
     ]
    },
+   "EOL_CRYPTO_LIBRARY": {
+    "attack": "New OpenSSL / GnuTLS advisories after the end of life stay exploitable in the shipped library unless a vendor back-ports them (paid extended support), and the build gets no further fixes.",
+    "category": "library",
+    "compliance": [
+     "components"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-1104",
+     "CWE-1395"
+    ],
+    "default_impact": "Medium",
+    "description": "A container image, firmware image or binary ships (or links against) a crypto library release line its upstream project no longer maintains, for example OpenSSL 1.0.2 or 1.1.x, so vulnerabilities published after the end-of-life date are not fixed upstream.",
+    "owasp": [
+     "components"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-1104 is in OWASP's mapped CWE list",
+      "id": "A06:2021",
+      "label": "A06:2021 - Vulnerable and Outdated Components"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-1104, CWE-1395 is in OWASP's mapped CWE list",
+      "id": "A03:2025",
+      "label": "A03:2025 - Software Supply Chain Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://openssl-library.org/policies/releasestrat/index.html",
+     "https://endoflife.date/openssl"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "move the FROM line to a supported release (debian:12-slim, ubuntu:24.04, alpine:3.22) and rebuild; replace bundled copies (a Python wheel built with its own OpenSSL) with current releases",
+       "platform": "Container image"
+      },
+      {
+       "how": "rebuild against OpenSSL 3.x and ship a firmware update",
+       "platform": "Firmware / static binary"
+      }
+     ],
+     "summary": "Rebuild on a supported release line (OpenSSL 3.5 LTS, or the distribution's current release), or confirm and record the vendor's extended support for the line in use."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "End-of-life crypto library in an image, binary or firmware",
+    "verify": [
+     {
+      "command": "docker run --rm --entrypoint sh IMAGE -c \"dpkg -s {name} 2>/dev/null | grep Version || rpm -q {name} 2>/dev/null || apk info -v {name}\"",
+      "label": "Show the package version inside the image (replace IMAGE with the image name)"
+     },
+     {
+      "command": "strings -a '{path}' | grep -m3 'OpenSSL [0-9]'",
+      "label": "OpenSSL version text inside the file"
+     }
+    ]
+   },
    "EXPIRED_CERTIFICATE": {
     "attack": "Clients either fail closed (an outage) or are configured to ignore validation errors, which removes protection against impersonation.",
     "category": "certificate",
@@ -1765,6 +1828,76 @@
      {
       "command": "testssl.sh --vulnerable {host}:{port}",
       "label": "Re-run the named checks"
+     }
+    ]
+   },
+   "LIBRARY_CVE_RANGE": {
+    "attack": "If the fix is not in the build, the published exploit for the CVE works against every service in the image or device that loads the library (memory corruption, side channels, certificate parsing flaws).",
+    "category": "library",
+    "compliance": [
+     "components"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-1395"
+    ],
+    "default_impact": "Low",
+    "description": "A crypto library shipped in a container image, a firmware image or a binary (an OS package such as libssl1.1, or the OpenSSL version text compiled into a library) has a version inside the affected range the CVE records publish. Distributions back-port fixes without changing the upstream version, so the hit is a triage item until the package's changelog shows whether each fix is in.",
+    "owasp": [
+     "components"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "category of the finding",
+      "id": "A06:2021",
+      "label": "A06:2021 - Vulnerable and Outdated Components"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-1395 is in OWASP's mapped CWE list",
+      "id": "A03:2025",
+      "label": "A03:2025 - Software Supply Chain Failures"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://security-tracker.debian.org/tracker/",
+     "https://access.redhat.com/security/security-updates/backporting"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "apt-get update && apt-get install --only-upgrade <package> in the Dockerfile (or rebuild on a current base image); check security-tracker.debian.org / ubuntu.com/security/cves for the CVE",
+       "platform": "Debian / Ubuntu image"
+      },
+      {
+       "how": "dnf upgrade <package>; dnf updateinfo list --cve <CVE-ID> shows whether the fix is in",
+       "platform": "RHEL / Alma / Amazon Linux image"
+      },
+      {
+       "how": "apk upgrade --no-cache <package> (or a newer alpine base)",
+       "platform": "Alpine image"
+      },
+      {
+       "how": "rebuild against a fixed upstream release and ship a firmware update",
+       "platform": "Firmware / static binary"
+      }
+     ],
+     "summary": "Rebuild the image or firmware with the distribution's current security update for the package (or an upstream release past the fixed version), then redeploy everything built from it."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Crypto library version inside a published CVE range (image, binary or firmware)",
+    "verify": [
+     {
+      "command": "docker run --rm --entrypoint sh IMAGE -c \"dpkg -s {name} 2>/dev/null | grep Version || rpm -q {name} 2>/dev/null || apk info -v {name}\"",
+      "label": "Show the package version inside the image (replace IMAGE with the image name)"
+     },
+     {
+      "command": "docker run --rm --entrypoint sh IMAGE -c \"zgrep -i cve /usr/share/doc/{name}/changelog.Debian.gz | head\"",
+      "label": "Back-ported fixes in the Debian changelog (inside the image)"
      }
     ]
    },
@@ -11568,7 +11701,7 @@
    }
   }
  },
- "kb_version": "2026.11.02.6",
+ "kb_version": "2026.11.02.7",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
