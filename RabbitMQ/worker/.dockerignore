@@ -1,3 +1,5 @@
+# Applies only when this directory itself is the build context. RabbitMQ/worker/Dockerfile builds from the
+# repository root and uses RabbitMQ/worker/Dockerfile.dockerignore instead (keep the two in step).
 .venv/
 __pycache__/
 *.pyc
@@ -8,3 +10,18 @@ testing.py
 garak_results.json
 docker-compose.yml
 archive/
+# Secrets never enter an image (they are passed at run time).
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+*.pem
+**/*.pem
+# Caches and tool state
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+.claude-flow/
+*.rvf
+*.rvf.lock

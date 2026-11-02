@@ -34,7 +34,23 @@ token for its own node token. The public key is shown in ZeroShield: add it to t
 | AWS role of the host | used for AWS Secrets Manager credentials |
 
 The node runs as uid 10001, needs no capabilities, and only needs outbound TCP to the targets and HTTPS to
-ZeroShield.
+ZeroShield. The container is healthy while its heartbeat loop turns: it touches `$ZS_STATE_DIR/alive` on every
+pass (at most 60 s apart) and the image health check fails when that file is older than 180 s or missing (a node
+that has not enrolled yet is therefore unhealthy).
+
+### Without registry access
+
+Each release is also published as a file (`scripts/release/scan_node_image.sh build <version>`, or the
+**Scan node image** workflow): copy `scan-node-<version>.tar.gz` and its `.sha256` to the host, then
+
+```sh
+sha256sum -c scan-node-<version>.tar.gz.sha256
+docker load -i scan-node-<version>.tar.gz     # registry.zeroshield.ai/cbom/scan-node:<version>
+```
+
+The image installs `requirements.lock`: every Python package pinned with sha256 hashes. After editing
+`requirements.txt`, run `scripts/release/scan_node_image.sh lock`; the image build refuses a lock that does not
+match `requirements.txt`.
 
 ## What it runs
 

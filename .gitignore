@@ -29,3 +29,25 @@ agentdb.rvf*
 .claude/*
 .agents/*
 
+# Secrets: no NEW env file or private key may be added. Files already tracked stay tracked (an ignore rule does not
+# untrack them); their values are in git history and are rotated (docs/security/secret-rotation.md). Names of the
+# variables go in .env.example files.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Deliberate detection fixtures: planted secrets/keys that the scanners' tests must find.
+!aibom/tests/fixtures/**/.env
+!aibom/tests/fixtures/**/.env.*
+!aibom/tests/fixtures/**/*.pem
+!aibom/tests/fixtures/**/*.key
+!aibom/examples/shadow-demo/.env
+# Staging deploy: env files (.env, backend.env), TLS certificates and saved image archives
+deploy/staging/*.env
+deploy/staging/certs/
+deploy/staging/images/
+deploy/staging/deploy-history
+# Scan-node release archives (scripts/release/scan_node_image.sh)
+dist/scan-node/
+

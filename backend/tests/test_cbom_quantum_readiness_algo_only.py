@@ -15,6 +15,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from backend.utilities.dashboard import scan_list  # noqa: E402
 from backend.utilities.dashboard.scan_list import generate_cbom_dashboard_data  # noqa: E402
 
 
@@ -26,7 +27,10 @@ def _scan(results: list[dict]) -> types.SimpleNamespace:
     )
 
 
-def test_quantum_readiness_excludes_na_never_unknown() -> None:
+def test_quantum_readiness_excludes_na_never_unknown(monkeypatch) -> None:
+    # Hermetic like its siblings (test_cbom_chart_contract, test_cbom_posture_consumers): the remediation
+    # roll-up reads finding states from Mongo, which this test is not about.
+    monkeypatch.setattr(scan_list, "get_findings_for_scan_id", lambda *a, **k: [])
     rows = [
         {
             "algorithm_name": "AES-256-GCM",
@@ -76,10 +80,10 @@ def test_quantum_readiness_excludes_na_never_unknown() -> None:
     ]
     out = generate_cbom_dashboard_data([_scan(rows)])
     qr = out["quantum_readiness"]
+    # No Unknown bucket at all (scan_list.generate_cbom_dashboard_data; the frontend type has `unknown?`).
     assert qr == {
         "quantum_safe": 1,
         "quantum_vulnerable": 1,
-        "unknown": 0,
     }
     assert out["card_data"]["quantum_readiness_score"] == 50.0
     assert out["card_data"]["total_quantum_vulnerable"] == 1

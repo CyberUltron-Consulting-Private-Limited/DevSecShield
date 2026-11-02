@@ -1,7 +1,22 @@
+# Build from the repository root (scripts/deploy/build_images.sh does exactly this):
+#   docker buildx build --build-context migrations=prod_database_migrations -f backend/Dockerfile backend
+#
+# The Alembic bundle lives in prod_database_migrations/, outside this build context. The named context "migrations"
+# replaces the stage of the same name below; without it the stage falls back to backend/_migrations (git-ignored,
+# populated by e2e/scripts/build.sh). Either way only alembic.ini and migrations/ reach the image, never a .env, and a
+# build with neither fails here instead of producing an image that cannot migrate.
+#
+# Behind a TLS-intercepting proxy or with a private registry mirror, pass a uv/python3.12 base that trusts the proxy
+# CA: --build-arg UV_BASE_IMAGE=<image>.
+ARG UV_BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+FROM scratch AS migrations
+COPY _migrations /
+
 # ============================================================
 # Stage 1: Builder — install dependencies and compile bytecode
 # ============================================================
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+FROM ${UV_BASE_IMAGE} AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -25,7 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ============================================================
 # Stage 2: Runtime — slim image with only what's needed
 # ============================================================
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ${UV_BASE_IMAGE}
 
 # `uv run` at start (entrypoint, alembic, gunicorn) must never resolve or download: the venv is complete from the
 # build and an air-gapped site has no package index.
@@ -40,7 +55,8 @@ WORKDIR /backend
 # Copy the entire app + venv from builder
 COPY --from=builder /backend /backend
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-COPY _migrations /prod_database_migrations
+COPY --from=migrations /alembic.ini /prod_database_migrations/alembic.ini
+COPY --from=migrations /migrations /prod_database_migrations/migrations
 RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 8080

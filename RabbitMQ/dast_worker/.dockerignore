@@ -8,3 +8,19 @@ mock_data.json
 docker-compose.yml
 helpers - Shortcut.lnk
 markdown_output/
+# Secrets never enter the image (they are passed at run time).
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+*.pem
+**/*.pem
+# Caches and tool state
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/node_modules/
+.claude-flow/
+*.rvf
+*.rvf.lock

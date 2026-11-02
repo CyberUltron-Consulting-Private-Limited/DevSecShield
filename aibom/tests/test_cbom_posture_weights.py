@@ -27,12 +27,21 @@ BASE = {
 }
 
 
+# Flags weighted after Base_Commit (emitted by crypto_advisory_scan and the custom-crypto detector). They do not
+# change the pinned divisor: "max_raw: 112 # Base_Commit weight sum. Do not let new flags rescore old scans."
+# A further flag must be added here on purpose.
+ADDED_AFTER_BASE = {
+    "VULNERABLE_CRYPTO_LIBRARY": 8,
+    "CUSTOM_CRYPTO": 4,
+}
+
+
 def test_base_weights_and_pin() -> None:
     loaded = yaml.safe_load(WEIGHTS.read_text(encoding="utf-8"))
     flags = loaded["flags"]
-    for name, weight in BASE.items():
+    for name, weight in {**BASE, **ADDED_AFTER_BASE}.items():
         assert flags[name] == weight
-    assert set(flags) == set(BASE) | POSTURE_CODES
+    assert set(flags) == set(BASE) | set(ADDED_AFTER_BASE) | POSTURE_CODES
     assert loaded["scale"]["max_raw"] == 112
     assert sum(BASE.values()) == 112
     assert loaded["severity"]["critical"] == 13

@@ -1,0 +1,300 @@
+# DevSecShield staging: production images behind nginx (deploy/staging/README.md).
+#
+#   cp .env.example .env && cp backend.env.example backend.env    # then set real values (never commit them)
+#   docker compose -f deploy/staging/docker-compose.yml up -d      # scripts/deploy/staging.sh does this for you
+#
+# Exposure: only nginx publishes ports (HTTP_PORT, HTTPS_PORT). It serves FRONTEND_HOST -> frontend:3000 and
+# API_HOST -> backend:8080, with TLS when deploy/staging/certs/{fullchain,privkey}.pem exist, plain HTTP otherwise.
+# The backend port is not published; the backend trusts X-Forwarded-For only from nginx's fixed address
+# (FORWARDED_ALLOW_IPS = DSS_PROXY_IP), so it logs and rate-limits the real client address.
+#
+# Env files: .env       shared values (images, infrastructure credentials, S3), read by compose for ${...} and by
+#                       every application container;
+#            backend.env API-only secrets (JWT, encryption key, mail), read by the backend-image containers only.
+# DSS_DEV_MODE must never be set here.
+
+name: ${COMPOSE_PROJECT_NAME:-dss-staging}
+
+x-backend-image: &backend-image ${DSS_IMAGE_PREFIX:-dss-staging}/devsecshield-backend:${DSS_TAG:?set DSS_TAG in deploy/staging/.env}
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+x-backend-env-files: &backend-env-files
+  - path: .env
+  - path: backend.env
+x-backend-service: &backend-service
+  image: *backend-image
+  pull_policy: never
+  env_file: *backend-env-files
+  logging: *logging
+  networks: [internal]
+  volumes:
+    # rbi_posture / cert-in rollups resolve at /aibom/config; the backend image does not contain them.
+    - ../../compose/aibom-config-overlay:/aibom/config:ro
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${PG_USER:?set PG_USER}
+      POSTGRES_PASSWORD: ${PG_USER_PASS:?set PG_USER_PASS}
+      POSTGRES_DB: ${PG_DB:?set PG_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      # -h 127.0.0.1: TCP, so it passes only once the real server (not the init-time socket server) is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  mongo:
+    image: mongo:8.0.6
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?set MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongodata:/data/db
+      - mongoconfig:/data/configdb
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--norc", "--eval", "quit(db.adminCommand({ping: 1}).ok === 1 ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_ADMIN_USERNAME:?set RABBIT_ADMIN_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_ADMIN_PASSWORD:?set RABBIT_ADMIN_PASSWORD}
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 20s
+
+  # Optional S3-compatible store (profile "minio"); without it set AWS_* in .env for real S3 and leave
+  # AWS_ENDPOINT_URL_S3 empty. The application uses the bucket devsecshield-storage (created by minio-init).
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    profiles: ["minio"]
+    restart: unless-stopped
+    logging: *logging
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      - miniodata:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  minio-init:
+    <<: *backend-service
+    profiles: ["minio"]
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/backend/.venv/bin/python", "-c"]
+    command:
+      - |
+        import os, boto3
+        s3 = boto3.client("s3", endpoint_url=os.environ["AWS_ENDPOINT_URL_S3"], region_name=os.environ["AWS_DEFAULT_REGION"])
+        if "devsecshield-storage" not in [b["Name"] for b in s3.list_buckets().get("Buckets", [])]:
+            s3.create_bucket(Bucket="devsecshield-storage")
+        print("bucket devsecshield-storage ready")
+
+  # One-shot: alembic upgrade head (the entrypoint; env.py holds a Postgres advisory lock) and the DAST log data
+  # migration, then exits 0. Everything that uses the database waits for it to complete.
+  migrate:
+    <<: *backend-service
+    restart: "no"
+    environment:
+      SKIP_ALEMBIC: "0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["true"]
+
+  backend:
+    <<: *backend-service
+    restart: unless-stopped
+    environment:
+      SKIP_ALEMBIC: "1"
+      FORWARDED_ALLOW_IPS: ${DSS_PROXY_IP:-172.30.250.10}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    command: ["uv", "run", "gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker",
+              "--workers", "${BACKEND_WORKERS:-4}", "--bind", "0.0.0.0:8080", "--timeout", "300",
+              "--graceful-timeout", "30", "--keep-alive", "5"]
+    volumes:
+      - backend-data:/backend/data
+      - ../../compose/aibom-config-overlay:/aibom/config:ro
+    networks: [internal, edge]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 30
+      start_period: 60s
+
+  # CBOM sources: AWS accounts and identity-provider metadata (node-less sources); reaps expired jobs.
+  cbom-cloud-worker:
+    <<: *backend-service
+    restart: unless-stopped
+    environment:
+      SKIP_ALEMBIC: "1"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["uv", "run", "python", "-m", "backend.workers.cbom_cloud_worker"]
+
+  dast-scheduler:
+    <<: *backend-service
+    restart: unless-stopped
+    environment:
+      SKIP_ALEMBIC: "1"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    command: ["uv", "run", "python", "-m", "backend.utilities.dast.beat"]
+
+  scan-worker:
+    image: ${DSS_IMAGE_PREFIX:-dss-staging}/scan-worker:${DSS_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    logging: *logging
+    env_file: [.env]
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["uv", "run", "celery", "-A", "scan_worker", "worker", "-P", "threads", "--loglevel=info", "-Q", "scan_worker_queue"]
+    networks: [internal]
+
+  cicd-worker:
+    image: ${DSS_IMAGE_PREFIX:-dss-staging}/scan-worker:${DSS_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    logging: *logging
+    env_file: [.env]
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["uv", "run", "celery", "-A", "scan_worker", "worker", "-P", "threads", "--loglevel=info", "-Q", "cicd_worker_queue"]
+    networks: [internal]
+
+  dast-worker:
+    image: ${DSS_IMAGE_PREFIX:-dss-staging}/dast-worker:${DSS_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    logging: *logging
+    init: true
+    mem_limit: ${DAST_MEM_LIMIT:-4g}
+    memswap_limit: ${DAST_MEM_LIMIT:-4g}
+    pids_limit: 2048
+    env_file: [.env]
+    environment:
+      IS_DOCKER_CONTAINER: "True"
+      DAST_REAP_BROWSERS: "1"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    command: ["uv", "run", "celery", "-A", "dast_worker", "worker", "-P", "threads", "--concurrency=1", "--loglevel=info",
+              "-Q", "dast_worker_queue", "--time-limit=43200", "--soft-time-limit=41400"]
+    networks: [internal]
+
+  # NEXT_PUBLIC_BACKEND_URL is baked in at build time (scripts/deploy/build_images.sh); nothing secret here.
+  frontend:
+    image: ${DSS_IMAGE_PREFIX:-dss-staging}/devsecshield-frontend:${DSS_TAG}
+    pull_policy: never
+    restart: unless-stopped
+    logging: *logging
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/login', (r) => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 6s
+      retries: 18
+      start_period: 20s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    environment:
+      FRONTEND_HOST: ${FRONTEND_HOST:-devsec-staging.zeroshield.ai}
+      API_HOST: ${API_HOST:-devsec-staging-api.zeroshield.ai}
+    ports:
+      - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"
+      - "${HTTP_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/40-dss-site.sh:/docker-entrypoint.d/40-dss-site.sh:ro
+      - ./nginx/http.conf.template:/etc/dss-nginx/http.conf.template:ro
+      - ./nginx/https.conf.template:/etc/dss-nginx/https.conf.template:ro
+      - ${TLS_CERT_DIR:-./certs}:/etc/nginx/certs:ro
+    networks:
+      edge:
+        ipv4_address: ${DSS_PROXY_IP:-172.30.250.10}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 5s
+
+volumes:
+  pgdata:
+  mongodata:
+  mongoconfig:
+  rabbitmq:
+  miniodata:
+  backend-data:
+
+networks:
+  internal:
+  edge:
+    ipam:
+      config:
+        - subnet: ${DSS_EDGE_SUBNET:-172.30.250.0/24}

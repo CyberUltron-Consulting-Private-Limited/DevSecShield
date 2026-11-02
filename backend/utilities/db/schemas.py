@@ -2,7 +2,8 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from fastapi import HTTPException, status
 from pydantic import model_validator
-from urllib.parse import urlparse
+
+from backend.utilities.git_hosts import check_repo_url
 
 class CreateScanData(BaseModel):
     title: str = Field(min_length=1, max_length=256)
@@ -59,30 +60,16 @@ class CreateTicketData(BaseModel):
 
 def _validate_repo_url(repo_url: str, provider_host: str, provider_label: str) -> None:
     """
-    Validate that `repo_url` is an http(s) URL whose host is exactly the
-    expected provider host (e.g. 'github.com') or a subdomain of it
-    (e.g. 'gist.github.com'). Uses exact host / suffix matching so that
-    look-alike hosts such as 'github.com.evil.tld' are rejected.
+    Validate that `repo_url` is an https URL of the provider host (e.g. 'github.com') or a subdomain of it, or of a
+    self-hosted Git server the operator listed in GIT_ALLOWED_HOSTS (plain http only for hosts listed as http://).
+    Exact host / suffix matching rejects look-alike hosts such as 'github.com.evil.tld'. The scan worker applies the
+    same rules (backend/utilities/git_hosts.py is shared byte for byte with it).
 
     Raises ValueError on failure. Pydantic converts the ValueError raised
     inside a `mode="after"` validator into a ValidationError, which the
     scan handlers map to a 422 response.
     """
-    if not repo_url or not repo_url.strip():
-        raise ValueError(f"{provider_label} repo_url is required")
-
-    parsed = urlparse(repo_url.strip())
-    if parsed.scheme not in ("https", "http"):
-        raise ValueError(
-            f"{provider_label} repo_url must start with https:// or http://"
-        )
-
-    host = (parsed.hostname or "").lower()
-    if host != provider_host and not host.endswith("." + provider_host):
-        raise ValueError(
-            f"{provider_label} repo_url host must be '{provider_host}' "
-            f"(or a subdomain of it), got '{host or parsed.netloc}'"
-        )
+    check_repo_url(repo_url, provider_host, provider_label)
 
 
 class GithubContextSchema(BaseModel):

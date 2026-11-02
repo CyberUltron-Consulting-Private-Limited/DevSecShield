@@ -1,0 +1,43 @@
+# Ignore file for RabbitMQ/worker/Dockerfile. Its build context is the REPOSITORY ROOT:
+#   docker buildx build -f RabbitMQ/worker/Dockerfile .
+# BuildKit reads "<Dockerfile>.dockerignore" next to the Dockerfile in preference to a .dockerignore at the context
+# root, so these patterns are relative to the repository root (RabbitMQ/worker/.dockerignore does not apply here).
+#
+# Allowlist: the image needs the engine (aibom/) and the worker (RabbitMQ/worker/) only. Everything else in the
+# repository (the root SSH key, other services' .env files, frontend/, e2e/ ...) stays out of the build context.
+*
+!aibom
+!RabbitMQ/worker
+
+# Secrets never enter the image (they are passed at run time).
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+
+# Engine tests, fixtures (planted keys and secrets), benchmarks, examples and reports are not used at run time.
+aibom/tests
+aibom/bench
+aibom/examples
+aibom/state
+
+# Local environments, caches and tool state.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.claude-flow
+**/*.rvf
+**/*.rvf.lock
+
+# Same exclusions as RabbitMQ/worker/.dockerignore.
+RabbitMQ/worker/Notes.md
+RabbitMQ/worker/DataSpecs.md
+RabbitMQ/worker/celery_test.py
+RabbitMQ/worker/testing.py
+RabbitMQ/worker/garak_results.json
+RabbitMQ/worker/docker-compose.yml
+RabbitMQ/worker/archive

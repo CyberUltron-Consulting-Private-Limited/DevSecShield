@@ -5,8 +5,8 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
 import json
+from helpers.context import git_hosts
 from helpers.context.s3_utils import download_zip_file, download_file
 import zipfile
 import errno
@@ -23,12 +23,13 @@ def clone_repo(
         # tmp = Path(tempfile.mkdtemp(prefix="repo_"))
         with tempfile.TemporaryDirectory(delete=False,prefix="repo_") as temp_dir:
             tmp = Path(temp_dir)
-        Console().print(f":package: Cloning [blue]{url}[/] → {tmp} Branch:{branch}")
+        # The URL carries the access token: never log or report it.
+        Console().print(f":package: Cloning [blue]{git_hosts.redact(url)}[/] → {tmp} Branch:{branch}")
 
         Repo.clone_from(url, tmp, depth=1 , branch=branch)
     except GitCommandError as e:
         shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(f"Clone failed: {e}") from e
+        raise RuntimeError(git_hosts.redact(f"Clone failed: {e}")) from None
     return tmp
 
 def snippet_with_numbers(fp: Path, start: int, end: int) -> str:
@@ -43,17 +44,13 @@ def snippet_with_numbers(fp: Path, start: int, end: int) -> str:
 
 
 def _is_provider_url(url: str, host: str) -> bool:
+    """True when a scan may clone ``url`` as this provider: https on the provider host (or a sub-domain), or a
+    self-hosted server listed in GIT_ALLOWED_HOSTS (helpers/context/git_hosts.py)."""
     try:
-        parsed = urlparse(url)
+        git_hosts.check_repo_url(url, host, host)
     except ValueError:
         return False
-    if parsed.scheme not in ("http", "https"):
-        return False
-    hostname = parsed.hostname
-    if not hostname:
-        return False
-    hostname = hostname.lower()
-    return hostname == host or hostname.endswith("." + host)
+    return True
 
 def is_github_url(url: str) -> bool:
     return _is_provider_url(url, "github.com")
@@ -63,6 +60,9 @@ def is_gitlab_url(url: str) -> bool:
 
 def is_bitbucket_url(url: str) -> bool:
     return _is_provider_url(url, "bitbucket.org")
+
+# The clone URL is rebuilt from the checked scheme, host, port and path (git_hosts.clone_url), so a self-hosted host
+# or a sub-domain is kept as it is and nothing in the path can redirect the clone to another host.
 
 class GithubContext(BaseModel):
     mode : Literal["github"] = "github"
@@ -74,24 +74,19 @@ class GithubContext(BaseModel):
     def check_valid_url_and_add_PAT(self):
         if not self.repo_url:
             raise ValueError("repo_url is required")
-        if is_github_url(self.repo_url):
-            pat = (self.PAT or "").strip()
-            # Ignore accidental paste of a repo URL into the PAT field.
-            # Using a URL as username produces: https://https://github.com/...@github.com/...
-            if pat and ("://" in pat or "github.com" in pat.lower() or "@" in pat):
-                Console().print(
-                    "Ignoring PAT that looks like a URL/host (not a token); cloning as public repo",
-                    style="bold yellow",
-                )
-                pat = ""
-            if pat:
-                ind = self.repo_url.find("github.com")
-                repo = self.repo_url[ind:]
-                repo = f"https://{pat}@{repo}"
-                self.repo_url = repo
-            # else: public repo, keep original URL as-is
-        else:
-            raise ValueError(f"Invalid GitHub URL: {self.repo_url}")
+        pat = (self.PAT or "").strip()
+        # Ignore accidental paste of a repo URL into the PAT field.
+        # Using a URL as username produces: https://https://github.com/...@github.com/...
+        if pat and ("://" in pat or "github.com" in pat.lower() or "@" in pat):
+            Console().print(
+                "Ignoring PAT that looks like a URL/host (not a token); cloning as public repo",
+                style="bold yellow",
+            )
+            pat = ""
+        try:
+            self.repo_url = git_hosts.clone_url(self.repo_url, "github.com", "GitHub", user=pat or None)
+        except ValueError as e:
+            raise ValueError(f"Invalid GitHub URL: {e}") from None
         return self
 
 class GitlabContext(BaseModel):
@@ -104,13 +99,10 @@ class GitlabContext(BaseModel):
     def check_valid_url_and_add_PAT(self):
         if not self.PAT or not self.repo_url:
             raise ValueError("PAT and repo_url are required")
-        if is_gitlab_url(self.repo_url):
-            ind = self.repo_url.find("gitlab.com")
-            repo = self.repo_url[ind:]
-            repo = f"https://oauth2:{self.PAT}@{repo}"
-            self.repo_url = repo
-        else:
-            raise ValueError(f"Invalid GitLab URL: {self.repo_url}")
+        try:
+            self.repo_url = git_hosts.clone_url(self.repo_url, "gitlab.com", "GitLab", user="oauth2", secret=self.PAT)
+        except ValueError as e:
+            raise ValueError(f"Invalid GitLab URL: {e}") from None
         return self
 
 class BitbucketContext(BaseModel):
@@ -123,13 +115,11 @@ class BitbucketContext(BaseModel):
     def check_valid_url_and_add_PAT(self):
         if not self.PAT or not self.repo_url:
             raise ValueError("PAT and repo_url are required")
-        if is_bitbucket_url(self.repo_url):
-            ind = self.repo_url.find("bitbucket.org")
-            repo = self.repo_url[ind:]
-            repo = f"https://x-token-auth:{self.PAT}@{repo}"
-            self.repo_url = repo
-        else:
-            raise ValueError(f"Invalid Bitbucket URL: {self.repo_url}")
+        try:
+            self.repo_url = git_hosts.clone_url(self.repo_url, "bitbucket.org", "Bitbucket", user="x-token-auth",
+                                                secret=self.PAT)
+        except ValueError as e:
+            raise ValueError(f"Invalid Bitbucket URL: {e}") from None
         return self
 
 def validate_dict_with_context(dict_context: dict) -> GithubContext | GitlabContext | BitbucketContext:

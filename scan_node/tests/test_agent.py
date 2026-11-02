@@ -262,3 +262,32 @@ def test_bad_registration_token_is_not_retried_in_a_loop(server, tmp_path, monke
     threading.Timer(1.0, ag.shutdown.set).start()
     ag.ensure_enrolled()
     assert api.calls.count("/cbom/node/enroll") == 1 and not ag.state.node_token
+
+
+def test_heartbeat_loop_marks_the_node_alive_even_when_the_server_fails(server, tmp_path, monkeypatch):
+    """The image HEALTHCHECK reads the age of <state dir>/alive: every pass of the heartbeat loop refreshes it, whether
+    the heartbeat succeeded or not (the loop is turning; a stuck loop is what must turn the container unhealthy)."""
+    api, url = server
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+    alive = os.path.join(ag.state.directory, A.ALIVE_FILE)
+    assert not os.path.exists(alive)
+    t = threading.Thread(target=ag.heartbeat_loop, daemon=True)
+    t.start()
+    assert _wait(lambda: os.path.exists(alive))
+    assert api.heartbeats and time.time() - os.path.getmtime(alive) < 5
+    ag.shutdown.set()
+    t.join(10)
+
+    def down():
+        raise A.ApiError("server down")
+
+    stale = time.time() - 600
+    os.utime(alive, (stale, stale))
+    ag.shutdown.clear()
+    monkeypatch.setattr(ag, "heartbeat_once", down)
+    t = threading.Thread(target=ag.heartbeat_loop, daemon=True)
+    t.start()
+    assert _wait(lambda: os.path.getmtime(alive) > stale + 60)
+    ag.shutdown.set()
+    t.join(10)

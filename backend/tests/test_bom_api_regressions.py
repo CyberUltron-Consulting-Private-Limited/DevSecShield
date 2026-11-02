@@ -4,51 +4,31 @@ Integration regression tests for CBOM + AI-BOM API hardening (cross-tenant IDOR,
 
 Requires the local backend running on :8081 with the seeded demo data
 (user cbom-demo@cyberultron.com, team 1, a success CBOM scan + AI-BOM scan).
-Tests SELF-SKIP if the backend is unreachable. JWTs are minted from backend/.env.
+Tests SELF-SKIP if the backend is unreachable. JWTs are signed with the exported JWT_SECRET_KEY.
 
 Run from backend:  uv run pytest tests/test_bom_api_regressions.py -q
 """
-import datetime
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 
 import pytest
 
+from backend.tests.support.live_backend import mint_token, require_live_backend
+
 BASE = os.getenv("REGRESSION_BASE_URL", "http://localhost:8081")
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _env():
-    env = {}
-    path = os.path.join(BACKEND_DIR, ".env")
-    if not os.path.exists(path):
-        return env
-    for line in open(path):
-        m = re.match(r"^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$", line.strip())
-        if not m:
-            continue
-        k, v = m.group(1), m.group(2).strip()
-        if v and v[0] in "\"'":
-            q = v[0]
-            v = v[1:]
-            v = v[: v.index(q)] if q in v else v
-        else:
-            v = v.split("#")[0].strip()
-        if v:
-            env[k] = v
-    return env
+@pytest.fixture(autouse=True, scope="module")
+def _live_backend():
+    """Skip the module cleanly unless the backend is up and accepts tokens signed with the exported secret."""
+    require_live_backend(BASE, DEMO, 1)
 
 
 def _token(sub):
-    import jwt as jwtlib
-    secret = _env().get("JWT_SECRET_KEY")
-    if not secret:
-        pytest.skip("JWT_SECRET_KEY not available")
-    exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
-    return jwtlib.encode({"exp": exp, "sub": sub}, secret, algorithm="HS256")
+    return mint_token(sub)
 
 
 def _req(method, path, token=None, body=None):

@@ -8,25 +8,45 @@ jobs:
   sast-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
+      # Everything but .git is scanned: vendored code, build output and nested archives are handled by DevSecShield.
+      # Installed dependency trees (node_modules, virtualenvs) stay out; their manifests and lockfiles are scanned.
+      # The zip is written outside the workspace so it never contains itself. Uploads are capped at 50 MB.
       - name: Create project zip
         run: |
-          zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
-      
+          zip -q -r "$RUNNER_TEMP/project.zip" . -x '.git/*' '*/.git/*' 'node_modules/*' '*/node_modules/*' \
+            'venv/*' '.venv/*' '*/.venv/*'
+
       - name: Perform SAST Scan
-        id: sast
+        env:
+          CICD_API_KEY: ${{ secrets.CICD_API_KEY }}
+          # Self-hosted DevSecShield: set the repository variable DEVSECSHIELD_API_URL.
+          DEVSECSHIELD_API_URL: ${{ vars.DEVSECSHIELD_API_URL || 'https://devsecshieldapi.zeroshield.ai' }}
         run: |
-          RESPONSE=$(curl -X POST       -H "cicd-api-key: ${{ secrets.CICD_API_KEY }}"                         -F "zip_file=@project.zip"             -F "app_lang=python"             https://devsecshieldapi.zeroshield.ai/cicd/sast/scan)          
-          
-          
-          # Check for error in response
-          ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
-          if [ ! -z "$ERROR" ]; then
-            echo "Error: $ERROR"
+          set -uo pipefail
+          # A failed scan fails the job: --fail-with-body (curl 7.76+) exits non-zero on any HTTP error and still
+          # prints the reason. 429 (rate limited): wait Retry-After seconds (30 if absent, 300 at most), up to 5 tries.
+          for attempt in 1 2 3 4 5; do
+            rc=0
+            code=$(curl --fail-with-body -sS --max-time 900 -o response.json -D headers.txt -w '%{http_code}' \
+              -H "cicd-api-key: ${CICD_API_KEY}" -F "zip_file=@${RUNNER_TEMP}/project.zip" \
+              "${DEVSECSHIELD_API_URL}/cicd/sast/scan") || rc=$?
+            if [ "${code}" = "429" ] && [ "${attempt}" -lt 5 ]; then
+              delay=$(awk 'tolower($1) == "retry-after:" {print $2 + 0}' headers.txt | tail -n 1)
+              [ -n "${delay}" ] && [ "${delay}" -gt 0 ] || delay=30
+              [ "${delay}" -le 300 ] || delay=300
+              echo "DevSecShield is rate limiting this key; retrying in ${delay}s (attempt ${attempt} of 5)"
+              sleep "${delay}"
+              continue
+            fi
+            break
+          done
+          if [ "${rc}" -ne 0 ]; then
+            echo "DevSecShield scan failed (curl exit ${rc}, HTTP ${code:-none}):"
+            cat response.json 2>/dev/null || true
             exit 1
-          else
-            VULNS=$(echo "$RESPONSE" | jq -r '.vulnerabilities')
-            echo "Vulnerabilities:"
-            echo "$VULNS"
           fi
+          echo "SAST findings: $(jq '.finding_count // 0' response.json)"
+          jq -r '(.results | if type == "object" then (.results // []) elif type == "array" then . else [] end)[]
+                 | (.impact // "unknown") + " " + (.title // .name // "")' response.json

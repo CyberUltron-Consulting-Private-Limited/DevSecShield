@@ -6,9 +6,17 @@ from __future__ import annotations
 
 import pathlib
 
-from aibom.compliance.engine import run_all
-from aibom.deliverables import available_formats, get_writer
-from aibom.scan.pipeline import scan_repo
+import pytest
+
+# The writers need the optional "report" extra (openpyxl, reportlab, python-docx): without it they cannot be imported
+# at all, so the module is skipped with that reason instead of failing on an ImportError (a venv synced without
+# extras, e.g. the scan-worker image).
+for _module, _package in (("openpyxl", "openpyxl"), ("reportlab", "reportlab"), ("docx", "python-docx")):
+    pytest.importorskip(_module, reason=f"{_package} is not installed (the aibom 'report' extra)")
+
+from aibom.compliance.engine import run_all  # noqa: E402
+from aibom.deliverables import available_formats, get_writer  # noqa: E402
+from aibom.scan.pipeline import scan_repo  # noqa: E402
 
 _EX = pathlib.Path(__file__).resolve().parent.parent / "examples"
 
@@ -81,7 +89,7 @@ def test_docx_tolerates_missing_disclaimer(tmp_path: pathlib.Path) -> None:
 
 def test_pdf_includes_source_citation(tmp_path: pathlib.Path) -> None:
     """The PDF readiness report carries each requirement's regulatory citation."""
-    from pypdf import PdfReader
+    PdfReader = pytest.importorskip("pypdf", reason="pypdf is not installed (aibom dev dependency)").PdfReader
 
     out = tmp_path / "report.pdf"
     get_writer("pdf")(_compliance(), out, "Subject")

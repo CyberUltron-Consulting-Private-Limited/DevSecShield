@@ -2,57 +2,71 @@ pipeline {
     agent any
 
     environment {
-        CICD_API_KEY = '${CICD_API_KEY}'
-        SAST_API_URL = 'https://devsecshieldapi.zeroshield.ai/cicd/sast/scan'
-        APP_LANG = 'javascript'
+        // Jenkins "Secret text" credential holding the DevSecShield CI/CD API key.
+        CICD_API_KEY = credentials('CICD_API_KEY')
+        // Self-hosted DevSecShield: change to your API URL.
+        DEVSECSHIELD_API_URL = 'https://devsecshieldapi.zeroshield.ai'
+        SCAN_TYPE = 'sast'
     }
 
     stages {
-        stage('Clean Up Old Files') {
-            steps {
-                script {
-                    sh 'rm -rf venv'
-                    sh 'rm -rf project.zip'
-                    sh 'rm -rf *.json'
-                    sh 'rm -rf *.csv'
-                    sh 'rm -rf *.sh'
-                }
-            }
-        }
-
         stage('Checkout Code') {
             steps {
                 checkout scm
             }
         }
 
-        stage('Create ZIP Files') {
+        // Everything but .git is scanned: vendored code, build output and nested archives are handled by
+        // DevSecShield. Installed dependency trees (node_modules, virtualenvs) stay out; their manifests and lockfiles
+        // are scanned. The zip is written outside the workspace so it never contains itself. Uploads are capped at 50 MB.
+        stage('Create ZIP File') {
             steps {
-                script {
-                    sh 'rm -rf project_folder'
-                    sh 'mkdir project_folder'
-                    sh 'find . -maxdepth 1 -not -name "." -not -name ".." -not -name ".git" -not -name "venv" -not -name "project_folder" -exec mv {} project_folder/ \;'
-                    sh 'zip -r project.zip project_folder'
-                }
+                sh '''#!/bin/bash
+set -euo pipefail
+zip_file="${WORKSPACE_TMP:-/tmp}/devsecshield-project.zip"
+rm -f "${zip_file}"
+zip -q -r "${zip_file}" . -x '.git/*' '*/.git/*' 'node_modules/*' '*/node_modules/*' 'venv/*' '.venv/*' '*/.venv/*'
+'''
             }
         }
 
-
-        stage('Perform SAST Scan') {
+        // A failed scan fails the build: --fail-with-body (curl 7.76+) exits non-zero on any HTTP error and still
+        // prints the reason. 429 (rate limited): wait Retry-After seconds (30 if absent, 300 at most), up to 5 tries.
+        stage('Perform Scan') {
             steps {
+                sh '''#!/bin/bash
+set -uo pipefail
+zip_file="${WORKSPACE_TMP:-/tmp}/devsecshield-project.zip"
+for attempt in 1 2 3 4 5; do
+  rc=0
+  code=$(curl --fail-with-body -sS --max-time 900 -o devsecshield-response.json -D devsecshield-headers.txt \
+    -w '%{http_code}' -H "cicd-api-key: ${CICD_API_KEY}" -F "zip_file=@${zip_file}" \
+    "${DEVSECSHIELD_API_URL}/cicd/${SCAN_TYPE}/scan") || rc=$?
+  if [ "${code}" = "429" ] && [ "${attempt}" -lt 5 ]; then
+    delay=$(awk 'tolower($1) == "retry-after:" {print $2 + 0}' devsecshield-headers.txt | tail -n 1)
+    [ -n "${delay}" ] && [ "${delay}" -gt 0 ] || delay=30
+    [ "${delay}" -le 300 ] || delay=300
+    echo "DevSecShield is rate limiting this key; retrying in ${delay}s (attempt ${attempt} of 5)"
+    sleep "${delay}"
+    continue
+  fi
+  break
+done
+if [ "${rc}" -ne 0 ]; then
+  echo "DevSecShield scan failed (curl exit ${rc}, HTTP ${code:-none}):"
+  cat devsecshield-response.json 2>/dev/null || true
+  exit 1
+fi
+'''
                 script {
-                    def response = sh(script: """
-                        #!/bin/bash
-                        curl -v -X POST                         -H "cicd-api-key: ${CICD_API_KEY}"                         -F "zip_file=@project.zip"                         -F "app_lang=${APP_LANG}"                         "${SAST_API_URL}"
-                    """, returnStdout: true).trim()
+                    def jsonResponse = readJSON(file: 'devsecshield-response.json')
+                    def payload = jsonResponse.results
+                    def findings = payload instanceof Map ? payload.results : payload
 
-                    def jsonResponse = readJSON(text: response)
-                    def vulnerabilities = jsonResponse.vulnerabilities
+                    echo "Findings found during ${env.SCAN_TYPE.toUpperCase()}: ${jsonResponse.finding_count}"
+                    (findings ?: []).each { echo "${it.impact} ${it.title}" }
 
-                    echo "Vulnerabilities found during SAST:"
-                    echo "${vulnerabilities}"
-
-                    env.VULNERABILITIES = vulnerabilities.toString()
+                    env.FINDINGS = jsonResponse.finding_count?.toString()
                 }
             }
         }

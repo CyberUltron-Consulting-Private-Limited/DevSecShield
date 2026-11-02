@@ -9,6 +9,7 @@ import { Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiBaseURL } from "@/utils/interceptors";
+import { indent, scanRequestScript, zipCommand } from "@/components/cicd/ciScanScript";
 
 interface GitHubActionsIntegrationGuideProps {
   apiKey: string;
@@ -26,6 +27,12 @@ export function GitHubActionsGuide({ apiKey, scanType = "sast" }: GitHubActionsI
   const yamlContent = useMemo(() => {
     // Use string concatenation to avoid parsing ${{ }} as template literal syntax
     const githubActionsSecret = '${{ secrets.CICD_API_KEY }}';
+    const scan = scanRequestScript({
+      zipPath: "$RUNNER_TEMP/project.zip",
+      url: endpoint,
+      keyRef: "$CICD_API_KEY",
+      responseFile: "response.json",
+    });
     return `name: ${label} Check
 on:
   push:
@@ -36,31 +43,22 @@ jobs:
   ${kind}-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
+      # Everything but .git is scanned (vendored code, build output and nested archives included); installed
+      # dependency trees stay out. The zip is written outside the workspace. Uploads are capped at 50 MB.
       - name: Create project zip
         run: |
-          zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
-      
+          ${zipCommand("$RUNNER_TEMP/project.zip")}
+
       - name: Perform ${label} Scan
         id: ${kind}
+        env:
+          CICD_API_KEY: ${githubActionsSecret}
         run: |
-          RESPONSE=$(curl -X POST \\
-            -H "cicd-api-key: ${githubActionsSecret}" \\
-            -F "zip_file=@project.zip" \\
-            ${endpoint})          
-          
-          
-          # Check for error in response
-          ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
-          if [ ! -z "$ERROR" ]; then
-            echo "Error: $ERROR"
-            exit 1
-          else
-            COUNT=$(echo "$RESPONSE" | jq '.finding_count // 0')
-            echo "${label} findings: $COUNT"
-            echo "$RESPONSE" | jq -r '(.results.results // [])[] | "\\(.impact // "unknown") \\(.title // .name // "")"'
-          fi`;
+${indent(scan, 10)}
+          echo "${label} findings: $(jq '.finding_count // 0' response.json)"
+          jq -r '(.results | if type == "object" then (.results // []) elif type == "array" then . else [] end)[] | (.impact // "unknown") + " " + (.title // .name // "")' response.json`;
   }, [branch, endpoint, kind, label]);
 
   const copyToClipboard = async () => {

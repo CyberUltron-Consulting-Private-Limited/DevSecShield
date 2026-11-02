@@ -32,6 +32,7 @@ from zs_scan_node.tlsprobe import have_openssl
 
 POLL_SECONDS = 5
 CLAIM_GRACE = 0  # the heartbeat reports running jobs immediately after claim
+ALIVE_FILE = "alive"  # touched by every heartbeat-loop pass; the Docker HEALTHCHECK checks its age
 # A job whose collector has not returned this long after its deadline (a target that stopped answering) is ended
 # so it cannot hold a job slot forever.  Generous: a target started just before the deadline may run its full
 # command list (each command has its own timeout).  After a cancel the job only has to stop, so less is allowed.
@@ -190,7 +191,19 @@ class Agent:
                 log("heartbeat failed", error=str(exc), level="warn")
             except Exception as exc:  # keep the heartbeat alive whatever happens
                 log("heartbeat error", error=exc.__class__.__name__, level="error")
+            self.mark_alive()
             self.shutdown.wait(max(5, min(self.heartbeat_interval, 60)))
+
+    def mark_alive(self) -> None:
+        """Touch <state dir>/alive once per heartbeat-loop pass (at most every 60 s). The image HEALTHCHECK reads its
+        age: a node whose loop has stopped turning goes unhealthy even though its process still exists."""
+        path = os.path.join(self.state.directory, ALIVE_FILE)
+        try:
+            with open(path, "a", encoding="utf-8"):
+                pass
+            os.utime(path, None)
+        except OSError as exc:
+            log("cannot mark the node alive", error=exc.__class__.__name__, level="warn")
 
     def on_unauthorized(self) -> None:
         log("ZeroShield no longer accepts this node's token (node reset or deleted); stopping jobs and waiting for "

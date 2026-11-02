@@ -1,0 +1,103 @@
+# Build the production images, save them as one archive (artifact), and optionally copy them to the staging host
+# and deploy them there (scripts/deploy/staging.sh; deploy/staging/README.md).
+#
+# Deploy needs, in the "staging" environment of this repository (never in the repo itself):
+#   secrets  STAGING_SSH_KEY          private key of a deploy user on the staging host (docker group)
+#            STAGING_SSH_KNOWN_HOSTS  the host's known_hosts line(s) (ssh-keyscan -t ed25519 <host>, verified)
+#            STAGING_SSH_TARGET       user@host
+#   vars     STAGING_DIR              directory on the host (default /opt/devsecshield-staging) holding
+#                                     deploy/staging/.env, backend.env and certs/
+name: Deploy staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Copy the images to the staging host and deploy them (off: build and upload the archive only)"
+        type: boolean
+        default: false
+      api_url:
+        description: "API URL baked into the frontend bundle"
+        type: string
+        default: "https://devsec-staging-api.zeroshield.ai"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image tag
+        id: tag
+        run: echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: No secret file can enter an image context
+        run: scripts/deploy/check_image_contexts.sh
+
+      - name: Build images
+        env:
+          DSS_TAG: ${{ steps.tag.outputs.tag }}
+          NEXT_PUBLIC_BACKEND_URL: ${{ inputs.api_url }}
+        run: scripts/deploy/staging.sh build
+
+      - name: Save images
+        env:
+          DSS_TAG: ${{ steps.tag.outputs.tag }}
+        run: scripts/deploy/staging.sh save
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dss-staging-${{ steps.tag.outputs.tag }}
+          path: |
+            deploy/staging/images/*.tar.gz
+            deploy/staging/images/*.sha256
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    if: ${{ inputs.deploy }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dss-staging-${{ needs.build.outputs.tag }}
+          path: deploy/staging/images
+
+      - name: SSH identity
+        env:
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$STAGING_SSH_KEY" > "$HOME/.ssh/staging_key"
+          chmod 600 "$HOME/.ssh/staging_key"
+          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Copy and deploy
+        env:
+          DSS_TAG: ${{ needs.build.outputs.tag }}
+          STAGING_SSH_TARGET: ${{ secrets.STAGING_SSH_TARGET }}
+          STAGING_DIR: ${{ vars.STAGING_DIR || '/opt/devsecshield-staging' }}
+        run: |
+          export SSH_OPTS="-i $HOME/.ssh/staging_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          scripts/deploy/staging.sh push "$STAGING_SSH_TARGET" "$STAGING_DIR"
+
+      - name: Remove the SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/staging_key"

@@ -914,7 +914,9 @@ def test_haproxy_weak_curve_is_printed(tmp_path: Path) -> None:
     blob = _scan(tmp_path / "run.json", tree)
     text = pdf_text(network_pdf(_view(blob)))
     collapsed = "".join(text.split())
-    assert "haproxy.frontend[1]" in text
+    # The endpoint column prints the address the config declares (endpoint_label: matched > endpoint > listen >
+    # fact address), like "listen 22" for sshd and "app.example.test:8443" for Tomcat; the file names the source.
+    assert "listen :443" in text and "haproxy.cfg" in text
     assert "P-192" in text
     assert "WEAK_ALGORITHM" in collapsed
 
@@ -1477,7 +1479,8 @@ def test_tomcat_host_config_cipher_is_printed(tmp_path: Path) -> None:
     )
     blob = _scan(tmp_path / "run.json", tree)
     text = pdf_text(network_pdf(_view(blob)))
-    assert "tomcat.connector[1]" in text
+    # declared address (no host: the port), not the fact address tomcat.connector[1]
+    assert "listen 8443" in text and "server.xml" in text
     assert "TLS_RSA_WITH_3DES_EDE_CBC_SHA" in text
 
 
@@ -1495,7 +1498,8 @@ def test_tomcat_weak_cipher_is_printed(tmp_path: Path) -> None:
     )
     blob = _scan(tmp_path / "run.json", tree)
     text = pdf_text(network_pdf(_view(blob)))
-    assert "tomcat.connector[1]" in text
+    # declared address (no host: the port), not the fact address tomcat.connector[1]
+    assert "listen 8443" in text and "server.xml" in text
     assert "TLS_RSA_WITH_3DES_EDE_CBC_SHA" in text
 
 
@@ -1613,7 +1617,8 @@ def test_haproxy_tls_10_is_printed_as_offered(tmp_path: Path) -> None:
     )
     blob = _scan(tmp_path / "run.json", tree)
     text = pdf_text(network_pdf(_view(blob)))
-    assert "haproxy.frontend[1]" in text
+    # declared address, not the fact address haproxy.frontend[1]
+    assert "listen :443" in text and "haproxy.cfg" in text
     assert "offered" in text
 
 

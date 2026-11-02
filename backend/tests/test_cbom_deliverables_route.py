@@ -507,7 +507,8 @@ def test_manifest_shape_order_and_basis_for_the_appendix_b_team(api):
     }
     rows = manifest["deliverables"]
     assert [r["slug"] for r in rows] == SLUGS
-    assert [r["number"] for r in rows] == [1, 3, 7, 10, 15, 16]
+    # NUMBERS is the module's own slug -> number table (it grew with D05, D06 and D09; this literal had not)
+    assert [r["number"] for r in rows] == [NUMBERS[s] for s in SLUGS]
     for row in rows:
         spec = DELIVERABLES[row["slug"]]
         assert set(row) == {

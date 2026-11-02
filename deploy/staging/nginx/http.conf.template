@@ -1,0 +1,50 @@
+# Plain-HTTP site (no certificates mounted). Rendered by 40-dss-site.sh into /etc/nginx/conf.d/default.conf.
+# Use it only behind a TLS-terminating load balancer or for a first boot; mount certificates for direct TLS.
+
+server_tokens off;
+client_max_body_size 64m;          # uploads are capped at 50 MB by the API; it answers 413 itself
+proxy_read_timeout 600s;           # CI/CD scans hold the request while the worker runs
+proxy_send_timeout 600s;
+# Docker's DNS, re-resolved at run time: a recreated container gets a new address and nginx follows it.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# Unknown host names: closed without a response. /nginx-health is the container health check.
+server {
+    listen 80 default_server;
+    server_name _;
+    location = /nginx-health { access_log off; default_type text/plain; return 200 "ok\n"; }
+    location / { return 444; }
+}
+
+server {
+    listen 80;
+    server_name ${FRONTEND_HOST};
+    location / {
+        set $frontend http://frontend:3000;
+        proxy_pass $frontend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 80;
+    server_name ${API_HOST};
+    location / {
+        set $backend http://backend:8080;
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # The backend trusts this header only from this proxy's address (FORWARDED_ALLOW_IPS) and takes the
+        # right-most address it does not trust, so a client-supplied X-Forwarded-For cannot spoof its address.
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;       # streamed responses (chat, server-sent events) reach the browser as they come
+    }
+}

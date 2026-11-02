@@ -638,21 +638,24 @@ def test_scan_appendix_lists_every_team_scan_newest_first_with_its_disposition(t
     }
     fidelity = {8: "Legacy", 9: "\u2014", 10: "\u2014", 11: "\u2014", 13: "\u2014"}
     included = {1, 2, 3, 4, 5, 6, 7, 8}
+    header = "Scan Title Source Created (UTC) Disposition Fidelity Assets"
     positions = []
     for scan in expected_order:
         sid = scan["id"]
         # asset rows of an included scan = len(results) in the raw JSON (plain loop, no product)
         assets = str(len(scan["scan_data"]["results"])) if sid in included else "\u2014"
+        # A row ends at the next row, at the end, or at the header row the table repeats after a page break.
         row = re.compile(
             rf"#{sid} {re.escape(scan['title'])} (?P<source>.+?) {scan['created_at'][:10]} "
-            rf"{re.escape(disposition[sid])} {fidelity.get(sid, 'Full')} {assets}(?= #\d+ |$)"
+            rf"{re.escape(disposition[sid])} {fidelity.get(sid, 'Full')} {assets}"
+            rf"(?= #\d+ | {re.escape(header)} |$)"
         )
         match = row.search(listing)
         assert match, f"scan #{sid}: no row with the expected cells"
         assert " #" not in match.group("source"), match.group(0)  # the row did not run on
         positions.append(match.start())
     assert positions == sorted(positions)
-    assert "Scan Title Source Created (UTC) Disposition Fidelity Assets" in listing
+    assert header in listing
 
 
 def test_scan_appendix_never_lists_other_teams_or_other_scan_types(text):

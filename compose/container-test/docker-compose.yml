@@ -18,7 +18,7 @@ services:
       MONGO_PORT: "27017"
       QDRANT_HOST: "host.docker.internal"
       QDRANT_PORT: "7333"
-      RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@host.docker.internal:27017/"
+      RABBIT_MONGO_CONNECTION_URL: "${RABBIT_MONGO_CONNECTION_URL:?export RABBIT_MONGO_CONNECTION_URL (the Mongo URL of the infra stack) before compose up}"
     command: uv run celery -A scan_worker worker -P threads --loglevel=info -Q scan_worker_queue
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -68,7 +68,7 @@ services:
       RABBITMQ_PORT: "4672"
       MONGO_HOST: "host.docker.internal"
       MONGO_PORT: "27017"
-      RABBIT_MONGO_CONNECTION_URL: "mongodb://MongoAdmin:a7461e23ed6c5856cce30b7a0a2a42a929c4c02b39c3a7c627664ed8d7304f21@host.docker.internal:27017/"
+      RABBIT_MONGO_CONNECTION_URL: "${RABBIT_MONGO_CONNECTION_URL:?export RABBIT_MONGO_CONNECTION_URL (the Mongo URL of the infra stack) before compose up}"
     command: uv run celery -A dast_worker worker -P threads --concurrency=1 --loglevel=info -Q dast_worker_queue
     init: true
     mem_limit: 6g

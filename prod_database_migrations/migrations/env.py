@@ -4,6 +4,7 @@ from urllib.parse import quote_plus
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 from sqlmodel import SQLModel
 from alembic import context
 from backend.new_models import *
@@ -32,6 +33,9 @@ def _database_url() -> str:
 
 
 DATABASE_URL = _database_url()
+
+# pg_advisory_lock key reserved for schema migrations ("DSS" + 1).
+MIGRATION_LOCK_KEY = 0x44535301
 
 
 # this is the Alembic Config object, which provides
@@ -96,6 +100,12 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        if connection.dialect.name == "postgresql":
+            # One migrator at a time: containers that start together (the migrate one-shot, a backend or worker
+            # started with migrations on) would otherwise run the same revision twice. The session-level lock is
+            # held until this connection closes; a second migrator waits here, then finds the database at head.
+            connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
+            connection.commit()  # end the implicit transaction so Alembic opens (and commits) its own
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

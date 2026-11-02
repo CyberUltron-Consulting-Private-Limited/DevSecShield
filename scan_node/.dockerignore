@@ -1,0 +1,23 @@
+# The image needs requirements.lock, requirements.txt and zs_scan_node/ only (see Dockerfile).
+.venv/
+**/__pycache__/
+**/*.pyc
+tests/
+zs-node-state/
+# Secrets never enter the image (the node gets ZS_* values at run time; its state lives in a volume).
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+*.pem
+**/*.pem
+*.key
+**/*.key
+# Caches and tool state
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+.claude-flow/
+*.rvf
+*.rvf.lock

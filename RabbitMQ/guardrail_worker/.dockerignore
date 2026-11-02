@@ -5,3 +5,18 @@ __pycache__/
 README.md
 input_guardrail_results_testing.json
 worker_test.py
+# Secrets never enter the image (they are passed at run time).
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+*.pem
+**/*.pem
+# Caches and tool state
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+.claude-flow/
+*.rvf
+*.rvf.lock
