@@ -1,7 +1,7 @@
 """cbom scan nodes: deployment id, Ed25519 request signing, replay nonces, mTLS pin, require-signed team setting
 
 Revision ID: wp5a0node001
-Revises: wp1a0auth001
+Revises: wp9a0outputs001
 Create Date: 2026-11-02 12:00:00.000000
 
 """
@@ -15,7 +15,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'wp5a0node001'
-down_revision: Union[str, Sequence[str], None] = 'wp1a0auth001'
+down_revision: Union[str, Sequence[str], None] = 'wp9a0outputs001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
