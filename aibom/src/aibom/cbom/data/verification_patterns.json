@@ -110,7 +110,47 @@
       "id": "openssl.verify_none",
       "matcher": "literal",
       "pattern": "SSL_VERIFY_NONE"
+    },
+    {
+      "anchor": "validate_certs",
+      "id": "ansible.validate_certs",
+      "matcher": "anchor_window",
+      "tail": "validate_certs\\s*[:=]\\s*[\"']?(?:no|No|NO|false|False|FALSE|n|N|0)\\b",
+      "window": 1
+    },
+    {
+      "id": "pip.trusted_host",
+      "matcher": "literal",
+      "pattern": "--trusted-host"
+    },
+    {
+      "anchor": "PYTHONHTTPSVERIFY",
+      "id": "python.https_verify_env",
+      "matcher": "anchor_window",
+      "tail": "PYTHONHTTPSVERIFY\\s*[=:]\\s*[\"']?0\\b",
+      "window": 1
+    },
+    {
+      "anchor": "GIT_SSL_NO_VERIFY",
+      "id": "git.ssl_no_verify_env",
+      "matcher": "anchor_window",
+      "tail": "GIT_SSL_NO_VERIFY\\s*[=:]\\s*[\"']?(?:1|true|True|TRUE)\\b",
+      "window": 1
+    },
+    {
+      "anchor": "sslVerify",
+      "id": "git.ssl_verify_false",
+      "matcher": "anchor_window",
+      "tail": "sslVerify\\s*[= ]\\s*[\"']?(?:false|False|FALSE|0)\\b",
+      "window": 1
+    },
+    {
+      "anchor": "strict-ssl",
+      "id": "npm.strict_ssl_false",
+      "matcher": "anchor_window",
+      "tail": "strict-ssl\\s*[= ]\\s*[\"']?false\\b",
+      "window": 1
     }
   ],
-  "valid_as_of": "2026-10-25"
+  "valid_as_of": "2026-11-02"
 }

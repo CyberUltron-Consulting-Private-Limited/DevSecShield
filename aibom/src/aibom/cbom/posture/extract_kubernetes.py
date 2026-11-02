@@ -18,7 +18,7 @@ from aibom.cbom.posture.extract_compose import (
 )
 from aibom.cbom.posture.model import BasisEntry, EncryptionFact, path_context
 from aibom.cbom.posture.resolve import Absent
-from aibom.cbom.posture.tls_policy import protocol_for_policy
+from aibom.cbom.posture.tls_policy import policy_floor_note, protocol_for_policy
 from aibom.cbom.posture.verdict import (
     LayerCase,
     assess_layer,
@@ -892,7 +892,9 @@ def _policy_basis(notes: Mapping[str, object]) -> tuple[BasisEntry, ...]:
     floor = protocol_for_policy(raw)
     if floor is None:
         return (BasisEntry("ssl_policy", None, "default_unknown"),)
-    return (BasisEntry("policy", raw), BasisEntry("protocol_min", floor))
+    inferred = policy_floor_note(raw)
+    extra = (inferred,) if inferred is not None else ()
+    return (BasisEntry("policy", raw), BasisEntry("protocol_min", floor), *extra)
 
 
 def _cipher_basis(notes: Mapping[str, object]) -> tuple[BasisEntry, ...]:

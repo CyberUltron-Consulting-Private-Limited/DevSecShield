@@ -181,13 +181,16 @@ def _kill_m18() -> None:
 
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
+        # a fact with a finding (the unencrypted stream) sorts ahead of one without (a rotated KMS key); an
+        # S3 bucket no longer serves as the finding-free one: its provider-default key is PROVIDER_MANAGED_KEY
         (root / "main.tf").write_text(
             'resource "aws_kinesis_stream" "events" {}\n'
-            'resource "aws_s3_bucket" "logs" {}\n',
+            'resource "aws_kms_key" "k" {\n  enable_key_rotation = true\n}\n',
             encoding="utf-8",
         )
         block = build_posture_block(scan_crypto(root))
     assert block["facts"][0]["kind"] == "data_stream"
+    assert block["facts"][-1]["finding_codes"] == []
 
 
 def _kill_m21() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import PurePosixPath
 
+from aibom.cbom.files import file_walk
 from aibom.cbom.posture.assemble import iter_class
 from aibom.cbom.posture.business import (
     MAPPING_ORDER,
@@ -19,6 +20,12 @@ from aibom.cbom.posture.context import posture_sink
 from aibom.cbom.posture.diagnostics import DIAGNOSTIC_CODES
 from aibom.cbom.posture.limits import GlobBudget
 from aibom.cbom.posture.model import Linkage
+from aibom.cbom.posture.repo_links import (
+    LFS_PROPERTY,
+    SUBMODULES_PROPERTY,
+    lfs_pointers,
+    missing_submodules,
+)
 from aibom.cbom.registry import cbom_register
 from aibom.scan.registry import ScanContext, Scanner
 
@@ -50,8 +57,25 @@ def _stamp(current: Linkage, chosen: Linkage | None, hint: str | None) -> Linkag
     )
 
 
+def _repository_links(ctx: ScanContext) -> None:
+    """Submodules not checked out and Git LFS pointers: what the scan could not read, said out loud."""
+    sink = posture_sink(ctx)
+    walk = file_walk(ctx)
+    submodules = missing_submodules(walk)
+    for rel in submodules:
+        sink.diagnostics.add("submodule_not_scanned", rel, 0)
+    pointers = lfs_pointers(walk)
+    for rel in pointers:
+        sink.diagnostics.add("lfs_object_not_scanned", rel, 0)
+    if submodules:
+        ctx.properties[SUBMODULES_PROPERTY] = str(len(submodules))
+    if pointers:
+        ctx.properties[LFS_PROPERTY] = str(len(pointers))
+
+
 def _collect(ctx: ScanContext) -> None:
     sink = posture_sink(ctx)
+    _repository_links(ctx)
     found = {decoded.rel: decoded for decoded in iter_class(sink, _CLASSES)}
     owners_rel = first_named(
         {rel: decoded for rel, decoded in found.items() if _is_owners(rel)},
@@ -101,7 +125,7 @@ def _is_owners(rel: str) -> bool:
 
 @cbom_register
 class PostureLinkageScanner(Scanner):
-    """CODEOWNERS and cbom-mapping entries. No component and no flag."""
+    """CODEOWNERS and cbom-mapping entries; submodule and Git LFS coverage notes. No component and no flag."""
 
     name = "posture_linkage"
     order = 38

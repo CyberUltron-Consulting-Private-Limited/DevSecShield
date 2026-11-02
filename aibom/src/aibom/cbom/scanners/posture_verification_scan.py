@@ -8,7 +8,9 @@ from aibom.cbom.posture.verification import detect_verification
 from aibom.cbom.registry import cbom_register
 from aibom.scan.registry import ScanContext, Scanner
 
-_CLASSES = frozenset({"source", "shell", "dockerfile", "compose", "kubernetes"})
+_CLASSES = frozenset(
+    {"source", "shell", "dockerfile", "compose", "kubernetes", "ansible", "helm-values", "helm-template"}
+)
 
 
 def _collect(ctx: ScanContext) -> None:

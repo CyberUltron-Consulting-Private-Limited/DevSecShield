@@ -6,8 +6,10 @@ from aibom.cbom.posture.findings import POSTURE_CODES, VERDICT_DERIVED, derive_f
 from aibom.cbom.weakness import WEAK_CRYPTO_CODES
 
 
-def test_catalog_is_the_ten_codes() -> None:
-    assert len(POSTURE_CODES) == 10
+def test_catalog_is_the_twelve_codes() -> None:
+    # round 5 (WP3a) added PROVIDER_MANAGED_KEY and EOL_BASE_IMAGE to the original ten
+    assert len(POSTURE_CODES) == 12
+    assert {"PROVIDER_MANAGED_KEY", "EOL_BASE_IMAGE"} <= POSTURE_CODES
     assert POSTURE_CODES.isdisjoint(WEAK_CRYPTO_CODES)
 
 

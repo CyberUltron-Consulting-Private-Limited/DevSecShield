@@ -20,6 +20,7 @@ from aibom.cbom.detect import detect_crypto, strip_noncode
 from aibom.cbom.files import read_bytes
 from aibom.cbom.rules import (
     ALGORITHM_NORMALIZE,
+    CODE_SCAN_EXTENSIONS,
     CRYPTO_IMPORT_MODULES,
     CRYPTO_IMPORT_MODULES_BY_LANG,
     DETECTOR_LANGUAGES,
@@ -39,7 +40,9 @@ _EXTRA_LANG = {
     ".ts": "typescript", ".swift": "swift", ".m": "objective-c", ".vue": "javascript",
     # code-scan-only sources (rules.CODE_SCAN_EXTENSIONS): their own display names
     ".groovy": "groovy", ".pl": "perl", ".pm": "perl", ".vb": "vbnet", ".sql": "sql", ".bash": "shell",
+    ".ps1": "powershell", ".psm1": "powershell",
 }
+DETECTOR_SUFFIXES = frozenset(LANGUAGE_EXTENSIONS) | frozenset(CODE_SCAN_EXTENSIONS)
 _LOCK_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "cargo.lock", "go.sum", "poetry.lock",
                "pipfile.lock", "composer.lock", "gemfile.lock", "packages.lock.json", "gradle.lockfile"}
 _COMMENT = re.compile(r"^\s*(#|//|\*|/\*|--(?!---(?:BEGIN|END) )|;|<!--)")  # PEM armour is not a SQL comment
@@ -57,6 +60,8 @@ def language_of(rel: str) -> str | None:
     if name == "dockerfile" or name.startswith("dockerfile.") or name.endswith(".dockerfile"):
         return "dockerfile"
     suffix = Path(name).suffix
+    if suffix == ".txt" and Path(Path(name).stem).suffix in DETECTOR_SUFFIXES:  # ``Payments.java.txt``
+        suffix = Path(Path(name).stem).suffix
     if suffix in (".ts", ".tsx"):
         return "typescript"
     return LANGUAGE_EXTENSIONS.get(suffix) or _EXTRA_LANG.get(suffix)

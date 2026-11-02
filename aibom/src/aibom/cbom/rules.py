@@ -15,6 +15,7 @@ turns these facts into ``crypto_asset`` components.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 # --------------------------------------------------------------------------- #
 # Language detection (port: LANGUAGE_EXTENSIONS)
@@ -58,7 +59,49 @@ CODE_SCAN_EXTENSIONS: dict[str, str] = {
     ".sql": "sql",
     ".sh": "shell",
     ".bash": "shell",
+    # PowerShell scripts and modules (often UTF-16 with a byte-order mark; read_source decodes it).
+    ".ps1": "powershell",
+    ".psm1": "powershell",
 }
+
+# A plain ``.txt`` file is read as code only when its first code line is unmistakably a source declaration (a Java
+# or Go ``package``/``import``, a Python crypto import, a C ``#include``, ``<?php``). Manifests and notes
+# (``requirements.txt``, ``CMakeLists.txt``, ``LICENSE.txt``) never start like that. ``Foo.java.txt`` style double
+# extensions are read as the inner language directly.
+_TXT_SNIFF = (
+    (re.compile(rb"^package\s+[\w.]+\s*;"), "java"),
+    (re.compile(rb"^import\s+(?:javax?|org|com)\.[\w.*]+\s*;"), "java"),
+    (re.compile(rb"^package\s+\w+\s*$"), "go"),
+    (re.compile(rb"^import\s+(?:hashlib|hmac|ssl|Crypto|cryptography|nacl)\b"), "python"),
+    (re.compile(rb"^from\s+(?:Crypto|cryptography|hashlib|nacl)\b"), "python"),
+    (re.compile(rb"^#include\s*[<\"]"), "c"),
+    (re.compile(rb"^<\?php\b"), "php"),
+)
+_TXT_SKIP = re.compile(
+    r"^(?:requirements|constraints|cmakelists|license|licence|notice|readme|changelog|copying|authors)", re.I
+)
+
+
+def _inner_language(path) -> str | None:
+    """``Payments.java.txt`` -> the language of ``.java``."""
+    inner = Path(path.stem).suffix.lower()
+    return LANGUAGE_EXTENSIONS.get(inner) or CODE_SCAN_EXTENSIONS.get(inner)
+
+
+def _sniff_text(path) -> str | None:
+    if _TXT_SKIP.match(path.name):
+        return None
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(2048)
+    except OSError:
+        return None
+    for raw in head.splitlines():
+        line = raw.strip()
+        if not line or line.startswith((b"//", b"/*", b"*", b"#!")):
+            continue
+        return next((lang for pattern, lang in _TXT_SNIFF if pattern.match(line)), None)
+    return None
 
 # Files whose language is not in their suffix: Dockerfiles (``RUN openssl enc …`` lines are shell) and
 # extension-less scripts that name their interpreter on a ``#!`` line (``scripts/cryptohelper``).
@@ -73,6 +116,8 @@ def source_language(path) -> str | None:
     lang = LANGUAGE_EXTENSIONS.get(path.suffix.lower()) or CODE_SCAN_EXTENSIONS.get(path.suffix.lower())
     if lang:
         return lang
+    if path.suffix.lower() == ".txt":
+        return _inner_language(path) or _sniff_text(path)
     name = path.name.lower()
     if name == "dockerfile" or name.startswith("dockerfile.") or name.endswith(".dockerfile"):
         return "shell"
@@ -408,7 +453,7 @@ CRYPTO_IMPORT_MODULES: dict[str, str] = {
 # --------------------------------------------------------------------------- #
 CRYPTO_IMPORT_MODULES_BY_LANG: dict[str, dict[str, str]] = {
     # Languages added for the algorithm lanes only: no import-library lane (and never the Python table).
-    "swift": {}, "perl": {}, "vbnet": {}, "sql": {}, "shell": {},
+    "swift": {}, "perl": {}, "vbnet": {}, "sql": {}, "shell": {}, "powershell": {},
     "javascript": {
         "node:crypto": "Node.js crypto (stdlib)",
         "crypto": "Node.js crypto (stdlib)",

@@ -1,16 +1,263 @@
 {
   "data_version": 1,
-  "valid_as_of": "2026-10-29",
-  "note": "Curated offline subset of published crypto-library advisories. A scan reads only this file.",
+  "valid_as_of": "2026-11-02",
+  "note": "Curated offline subset of published crypto-library advisories. A scan reads only this file. Rows for pycrypto, cryptography (PyPI) and golang.org/x/crypto (Go) were taken from the OSV database (https://api.osv.dev/v1/query for the affected version, 2026-11-02): one row per CVE, the package's own ECOSYSTEM/SEMVER range; each row's source is its OSV record. A Go fixed version may be a pseudo-version (v0.0.0-<UTC timestamp>-<commit>), compared by its timestamp.",
   "advisories": [
     {
-      "id": "CVE-2022-29217",
-      "ecosystem": "pypi",
-      "name": "pyjwt",
-      "introduced": "1.5.0",
-      "fixed": "2.4.0",
-      "summary": "Key confusion through non-blocklisted public key formats",
-      "source": "https://github.com/jpadilla/pyjwt/security/advisories/GHSA-ffqj-6fqr-9h24"
+      "id": "RUSTSEC-2022-0093",
+      "ecosystem": "cargo",
+      "name": "ed25519-dalek",
+      "fixed": "2.0.0",
+      "summary": "Double public key signing oracle in ed25519-dalek 1.x",
+      "source": "https://rustsec.org/advisories/RUSTSEC-2022-0093.html"
+    },
+    {
+      "id": "CVE-2019-11840",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.0.0-20190320223903-b7391e95e576",
+      "summary": "golang.org/x/crypto/salsa20/salsa uses insufficiently random values",
+      "source": "https://osv.dev/vulnerability/GHSA-r5c5-pr8j-pfp7"
+    },
+    {
+      "id": "CVE-2019-11841",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.0.0-20190424203555-c05e17bb3b2d",
+      "summary": "Golang/x/crypto message forgery vulnerability",
+      "source": "https://osv.dev/vulnerability/GHSA-x3jr-pf6g-c48f"
+    },
+    {
+      "id": "CVE-2020-29652",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.0.0-20201216223049-8b5274cf687f",
+      "summary": "golang.org/x/crypto/ssh NULL Pointer Dereference vulnerability",
+      "source": "https://osv.dev/vulnerability/GHSA-3vm4-22fp-5rfm"
+    },
+    {
+      "id": "CVE-2020-7919",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.0.0-20200124225646-8b5121be2f68",
+      "summary": "Helm uses crypto package vulnerable to panic from malformed X.509 certificate",
+      "source": "https://osv.dev/vulnerability/GHSA-cjjc-xp8v-855w"
+    },
+    {
+      "id": "CVE-2020-9283",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.0.0-20200220183623-bac4c82f6975",
+      "summary": "Improper Verification of Cryptographic Signature in golang.org/x/crypto",
+      "source": "https://osv.dev/vulnerability/GHSA-ffhg-7mh4-33c4"
+    },
+    {
+      "id": "CVE-2021-43565",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.0.0-20211202192323-5770296d904e",
+      "summary": "x/crypto/ssh vulnerable to panic via malformed packets",
+      "source": "https://osv.dev/vulnerability/GHSA-gwc9-m7rh-j2ww"
+    },
+    {
+      "id": "CVE-2022-27191",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.0.0-20220314234659-1baeb1ce4c0b",
+      "summary": "golang.org/x/crypto/ssh Denial of service via crafted Signer",
+      "source": "https://osv.dev/vulnerability/GHSA-8c26-wmh5-6g9v"
+    },
+    {
+      "id": "CVE-2022-30636",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.0.0-20220525230936-793ad666bf5e",
+      "summary": "Limited directory traversal vulnerability on Windows in golang.org/x/crypto",
+      "source": "https://osv.dev/vulnerability/GO-2024-2961"
+    },
+    {
+      "id": "CVE-2023-48795",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.17.0",
+      "summary": "SSH Terrapin prefix truncation",
+      "source": "https://nvd.nist.gov/vuln/detail/CVE-2023-48795"
+    },
+    {
+      "id": "CVE-2024-45337",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.31.0",
+      "summary": "Misuse of ServerConfig.PublicKeyCallback may cause authorization bypass in golang.org/x/crypto",
+      "source": "https://osv.dev/vulnerability/GHSA-v778-237x-gjrc"
+    },
+    {
+      "id": "CVE-2025-22869",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.35.0",
+      "summary": "golang.org/x/crypto Vulnerable to Denial of Service (DoS) via Slow or Incomplete Key Exchange",
+      "source": "https://osv.dev/vulnerability/GHSA-hcg3-q754-cr77"
+    },
+    {
+      "id": "CVE-2025-47913",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.43.0",
+      "summary": "Potential denial of service in golang.org/x/crypto/ssh/agent",
+      "source": "https://osv.dev/vulnerability/GO-2025-4116"
+    },
+    {
+      "id": "CVE-2025-47914",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.45.0",
+      "summary": "golang.org/x/crypto/ssh/agent vulnerable to panic if message is malformed due to out of bounds read",
+      "source": "https://osv.dev/vulnerability/GHSA-f6x5-jh6r-wrfv"
+    },
+    {
+      "id": "CVE-2025-58181",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.45.0",
+      "summary": "golang.org/x/crypto/ssh allows an attacker to cause unbounded memory consumption",
+      "source": "https://osv.dev/vulnerability/GHSA-j5w8-q4qc-rx2x"
+    },
+    {
+      "id": "CVE-2026-39827",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto: Invoking memory leak when rejecting channels can lead to DoS",
+      "source": "https://osv.dev/vulnerability/GHSA-qpw4-5x99-6vjp"
+    },
+    {
+      "id": "CVE-2026-39828",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto vulnerable to invoking bypass of certificate restrictions",
+      "source": "https://osv.dev/vulnerability/GHSA-45gg-vh54-h5m9"
+    },
+    {
+      "id": "CVE-2026-39829",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto: Invoking pathological RSA/DSA parameters may cause DoS",
+      "source": "https://osv.dev/vulnerability/GHSA-w879-237q-wc7r"
+    },
+    {
+      "id": "CVE-2026-39830",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto: Invoking client can cause server deadlock on unexpected responses",
+      "source": "https://osv.dev/vulnerability/GHSA-vgwf-h737-ff37"
+    },
+    {
+      "id": "CVE-2026-39831",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto: FIDO/U2F security key physical presence check can be bypassed",
+      "source": "https://osv.dev/vulnerability/GHSA-89gr-r52h-f8rx"
+    },
+    {
+      "id": "CVE-2026-39832",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto doesn't drop invoking agent constraints when forwarding keys",
+      "source": "https://osv.dev/vulnerability/GHSA-f5wc-c3c7-36mc"
+    },
+    {
+      "id": "CVE-2026-39833",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto doesn't enforce invoking key constraints",
+      "source": "https://osv.dev/vulnerability/GHSA-jppx-rxg9-jmrx"
+    },
+    {
+      "id": "CVE-2026-39834",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto vulnerable to infinite loop on large channel writes",
+      "source": "https://osv.dev/vulnerability/GHSA-rm3j-f69w-wqmq"
+    },
+    {
+      "id": "CVE-2026-39835",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto is vulnerable to invoking server panic during CheckHostKey/Authenticate flow",
+      "source": "https://osv.dev/vulnerability/GHSA-78mq-xcr3-xm33"
+    },
+    {
+      "id": "CVE-2026-42508",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto vulnerable to auth bypass via unenforced @revoked status",
+      "source": "https://osv.dev/vulnerability/GHSA-5cgq-3rg8-m6cv"
+    },
+    {
+      "id": "CVE-2026-46595",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto: Invoking VerifiedPublicKeyCallback permissions skip enforcement",
+      "source": "https://osv.dev/vulnerability/GHSA-x527-x647-q7gg"
+    },
+    {
+      "id": "CVE-2026-46597",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto: Invoking byte arithmetic causes underflow and panic",
+      "source": "https://osv.dev/vulnerability/GHSA-q4h4-gmj2-qvw2"
+    },
+    {
+      "id": "CVE-2026-46598",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.52.0",
+      "summary": "golang.org/x/crypto: Invoking pathological inputs can lead to client panic",
+      "source": "https://osv.dev/vulnerability/GHSA-9m57-25v3-79x9"
+    },
+    {
+      "id": "CVE-2026-56854",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.55.0",
+      "summary": "Source-address critical option not enforced for non-public-key auth callbacks in golang.org/x/crypto/ssh",
+      "source": "https://osv.dev/vulnerability/GO-2026-6303"
+    },
+    {
+      "id": "CVE-2026-56855",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.56.0",
+      "summary": "Prevent DoS on deadlocked established channel in golang.org/x/crypto/ssh",
+      "source": "https://osv.dev/vulnerability/GO-2026-6355"
+    },
+    {
+      "id": "CVE-2026-78662",
+      "ecosystem": "go",
+      "name": "golang.org/x/crypto",
+      "fixed": "0.56.0",
+      "summary": "Prevent DoS on deadlocked undecided channel in golang.org/x/crypto/ssh",
+      "source": "https://osv.dev/vulnerability/GO-2026-6354"
+    },
+    {
+      "id": "CVE-2023-33201",
+      "ecosystem": "maven",
+      "name": "org.bouncycastle:bcprov-jdk15on",
+      "fixed": "1.74",
+      "summary": "Bouncy Castle LDAP certificate parsing flaw",
+      "source": "https://nvd.nist.gov/vuln/detail/CVE-2023-33201"
     },
     {
       "id": "CVE-2022-23540",
@@ -29,36 +276,136 @@
       "source": "https://nvd.nist.gov/vuln/detail/CVE-2022-24771"
     },
     {
-      "id": "CVE-2023-48795",
-      "ecosystem": "go",
-      "name": "golang.org/x/crypto",
-      "fixed": "0.17.0",
-      "summary": "SSH Terrapin prefix truncation",
-      "source": "https://nvd.nist.gov/vuln/detail/CVE-2023-48795"
-    },
-    {
-      "id": "CVE-2023-33201",
-      "ecosystem": "maven",
-      "name": "org.bouncycastle:bcprov-jdk15on",
-      "fixed": "1.74",
-      "summary": "Bouncy Castle LDAP certificate parsing flaw",
-      "source": "https://nvd.nist.gov/vuln/detail/CVE-2023-33201"
-    },
-    {
-      "id": "RUSTSEC-2022-0093",
-      "ecosystem": "cargo",
-      "name": "ed25519-dalek",
-      "fixed": "2.0.0",
-      "summary": "Double public key signing oracle in ed25519-dalek 1.x",
-      "source": "https://rustsec.org/advisories/RUSTSEC-2022-0093.html"
-    },
-    {
       "id": "CVE-2023-33201",
       "ecosystem": "nuget",
       "name": "bouncycastle.cryptography",
       "fixed": "2.2.1",
       "summary": "Bouncy Castle .NET certificate processing flaw",
       "source": "https://github.com/bcgit/bc-csharp/releases/tag/2.2.1"
+    },
+    {
+      "id": "CVE-2020-25659",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "fixed": "3.2.1",
+      "summary": "python-cryptography 3.2 is vulnerable to Bleichenbacher timing attacks in the RSA decryption API, via timed processing of valid PKCS#1 v1.5 ciphertext.",
+      "source": "https://osv.dev/vulnerability/GHSA-hggm-jpg3-v476"
+    },
+    {
+      "id": "CVE-2020-36242",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "introduced": "3.1",
+      "fixed": "3.3.2",
+      "summary": "PyCA Cryptography symmetrically encrypting large values can lead to integer overflow",
+      "source": "https://osv.dev/vulnerability/GHSA-rhm9-p9w5-fwm7"
+    },
+    {
+      "id": "CVE-2023-0286",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "introduced": "0.8.1",
+      "fixed": "39.0.1",
+      "summary": "Vulnerable OpenSSL included in cryptography wheels",
+      "source": "https://osv.dev/vulnerability/GHSA-x4qr-2fvf-3mr5"
+    },
+    {
+      "id": "CVE-2023-23931",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "introduced": "1.8",
+      "fixed": "39.0.1",
+      "summary": "Cipher.update_into can corrupt memory if passed an immutable python object as the outbuf",
+      "source": "https://osv.dev/vulnerability/GHSA-w7pp-m8wf-vj6r"
+    },
+    {
+      "id": "CVE-2023-49083",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "introduced": "3.1",
+      "fixed": "41.0.6",
+      "summary": "cryptography vulnerable to NULL-dereference when loading PKCS7 certificates",
+      "source": "https://osv.dev/vulnerability/GHSA-jfhm-5ghh-2f97"
+    },
+    {
+      "id": "CVE-2023-50782",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "fixed": "42.0.0",
+      "summary": "Python Cryptography package vulnerable to Bleichenbacher timing oracle attack",
+      "source": "https://osv.dev/vulnerability/GHSA-3ww4-gg4f-jr7f"
+    },
+    {
+      "id": "CVE-2024-0727",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "fixed": "42.0.2",
+      "summary": "Null pointer dereference in PKCS12 parsing",
+      "source": "https://osv.dev/vulnerability/GHSA-9v9h-cgj8-h64p"
+    },
+    {
+      "id": "CVE-2024-26130",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "introduced": "38.0.0",
+      "fixed": "42.0.4",
+      "summary": "cryptography is a package designed to expose cryptographic primitives and recipes to Python developers. Starting in version 38.0.0 and prior to version 42.0.4, ",
+      "source": "https://osv.dev/vulnerability/GHSA-6vqw-3v5j-54x4"
+    },
+    {
+      "id": "CVE-2026-26007",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "fixed": "46.0.5",
+      "summary": "cryptography Vulnerable to a Subgroup Attack Due to Missing Subgroup Validation for SECT Curves",
+      "source": "https://osv.dev/vulnerability/GHSA-r6ph-v2qm-q3c2"
+    },
+    {
+      "id": "CVE-2026-34073",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "fixed": "46.0.6",
+      "summary": "cryptography has incomplete DNS name constraint enforcement on peer names",
+      "source": "https://osv.dev/vulnerability/GHSA-m959-cc7f-wv43"
+    },
+    {
+      "id": "CVE-2026-69248",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "fixed": "49.0.0",
+      "summary": "python-cryptography verifier accepts wildcard DNS names allowing escape from permittedSubtrees",
+      "source": "https://osv.dev/vulnerability/GHSA-m2h6-j472-rp4c"
+    },
+    {
+      "id": "CVE-2026-69249",
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "fixed": "49.0.0",
+      "summary": "python-cryptography: Duplicate self-signed intermediates can cause exponential path-building",
+      "source": "https://osv.dev/vulnerability/GHSA-jwv3-5hgf-82ww"
+    },
+    {
+      "id": "CVE-2013-7459",
+      "ecosystem": "pypi",
+      "name": "pycrypto",
+      "summary": "Buffer Overflow in pycrypto (every release through 2.6.1; no fixed release)",
+      "source": "https://osv.dev/vulnerability/GHSA-cq27-v7xp-c356"
+    },
+    {
+      "id": "CVE-2018-6594",
+      "ecosystem": "pypi",
+      "name": "pycrypto",
+      "summary": "Pycrypto generates weak key parameters (every release through 2.6.1; no fixed release)",
+      "source": "https://osv.dev/vulnerability/GHSA-6528-wvf6-f6qg"
+    },
+    {
+      "id": "CVE-2022-29217",
+      "ecosystem": "pypi",
+      "name": "pyjwt",
+      "introduced": "1.5.0",
+      "fixed": "2.4.0",
+      "summary": "Key confusion through non-blocklisted public key formats",
+      "source": "https://github.com/jpadilla/pyjwt/security/advisories/GHSA-ffqj-6fqr-9h24"
     }
   ]
 }

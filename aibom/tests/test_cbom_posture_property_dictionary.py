@@ -35,6 +35,19 @@ EXTRA_KEYS = (
     "crypto:rotation",
     "crypto:strength",
     "crypto:subjectName",
+    # round 5 (WP3a): Dockerfile crypto packages, Kubernetes Secret certificates, submodule / LFS coverage
+    "crypto:coverage:lfsObjectsNotScanned",
+    "crypto:coverage:submodulesNotScanned",
+    "crypto:ecosystem",
+    "crypto:isCertificateAuthority",
+    "crypto:issuerName",
+    "crypto:line",
+    "crypto:notValidBefore",
+    "crypto:publicKeyAlgorithm",
+    "crypto:role",
+    "crypto:selfSigned",
+    "crypto:signatureAlgorithm",
+    "crypto:version",
 )
 
 

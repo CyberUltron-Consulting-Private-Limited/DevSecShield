@@ -38,6 +38,7 @@ def main() -> int:
         print("refusing: aibom tree is dirty (pass --allow-dirty)", file=sys.stderr)
         return 2
     from aibom.cbom.pipeline import scan_crypto
+    from aibom.cbom.posture.findings import POSTURE_CODES
 
     result = scan_crypto(TREE)
     facts = []
@@ -55,23 +56,7 @@ def main() -> int:
             }
         )
     facts.sort(key=lambda row: (str(row["native_type"]), str(row["address"])))
-    flags = sorted(
-        flag.code
-        for flag in result.flags
-        if flag.code
-        in {
-            "UNENCRYPTED_AT_REST",
-            "UNENCRYPTED_IN_TRANSIT",
-            "PLAINTEXT_LISTENER",
-            "TLS_VERIFICATION_DISABLED",
-            "DOWNGRADE_PROTECTION_MISSING",
-            "KNOWN_TLS_VULNERABILITY",
-            "KMS_KEY_ROTATION_DISABLED",
-            "KMS_KEY_POLICY_PUBLIC",
-            "KMS_KEY_DELETION_UNPROTECTED",
-            "AT_REST_ENCRYPTION_WEAK",
-        }
-    )
+    flags = sorted(flag.code for flag in result.flags if flag.code in POSTURE_CODES)
     OUT.write_text(
         json.dumps({"facts": facts, "posture_flags": flags}, indent=2) + "\n",
         encoding="utf-8",

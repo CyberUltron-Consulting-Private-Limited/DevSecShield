@@ -339,6 +339,10 @@ def detect_material_misuse(text: str, lang: str) -> list[MaterialMisuse]:
     SecureRandom. ``lang`` selects the comment syntax those lanes strip.
     """
     facts = _binding_facts(text, lang) if _CRYPTO_CTX_RE.search(text) else []
+    if lang == "powershell":  # a byte-literal key handed to a SecureString cmdlet
+        from aibom.cbom.powershell import securestring_key_facts
+
+        facts.extend(securestring_key_facts(text))
     covered = {f.line for f in facts}
     for fact in _context_free_facts(text, lang):
         if fact.line not in covered:

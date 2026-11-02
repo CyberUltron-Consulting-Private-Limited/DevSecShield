@@ -9,13 +9,14 @@
     },
     {
       "address": "aws_s3_bucket.logs",
-      "finding_codes": "[]",
+      "finding_codes": "[\"PROVIDER_MANAGED_KEY\"]",
       "kind": "object_store",
       "native_type": "aws_s3_bucket",
       "verdict": "ENCRYPTED_PROVIDER_DEFAULT"
     }
   ],
   "posture_flags": [
+    "PROVIDER_MANAGED_KEY",
     "UNENCRYPTED_AT_REST"
   ]
 }

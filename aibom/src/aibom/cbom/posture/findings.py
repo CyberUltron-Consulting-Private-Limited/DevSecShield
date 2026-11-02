@@ -16,6 +16,12 @@ POSTURE_CODES = frozenset(
         "KMS_KEY_POLICY_PUBLIC",
         "KMS_KEY_DELETION_UNPROTECTED",
         "AT_REST_ENCRYPTION_WEAK",
+        # Stored data encrypted only by the provider's default, with a key the provider owns and manages (no key
+        # choice declared). RBI, CERT-In and NIST SP 800-57 expect key custody under the organisation's control
+        # (customer-managed / BYOK keys) for regulated data; Low, because the data is encrypted.
+        "PROVIDER_MANAGED_KEY",
+        # A Dockerfile builds on a base image whose distribution release is past its end of life.
+        "EOL_BASE_IMAGE",
     }
 )
 
@@ -40,6 +46,8 @@ SEVERITY = {
     "KMS_KEY_POLICY_PUBLIC": "error",
     "KMS_KEY_DELETION_UNPROTECTED": "note",
     "AT_REST_ENCRYPTION_WEAK": "warning",
+    "PROVIDER_MANAGED_KEY": "note",
+    "EOL_BASE_IMAGE": "warning",
 }
 
 WEIGHT = {

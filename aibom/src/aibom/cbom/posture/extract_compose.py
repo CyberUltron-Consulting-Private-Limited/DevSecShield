@@ -158,9 +158,10 @@ def extract_compose(
 def extract_dockerfile(
     text: str, path: str = "Dockerfile"
 ) -> tuple[EncryptionFact, ...]:
-    """No Dockerfile instruction produces a fact by itself."""
-    del text, path
-    return ()
+    """A fact per ``FROM`` whose base image release is past its end of life (:mod:`.dockerfile`)."""
+    from aibom.cbom.posture.dockerfile import extract_dockerfile_images
+
+    return extract_dockerfile_images(text, path)
 
 
 def _registry(host: str) -> bool:

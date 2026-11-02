@@ -100,7 +100,9 @@ def test_dashboard_semantics_are_meaningful() -> None:
     quantum_vulnerable = [r for r in rows if r["quantum_safe"] is False]
     assert quantum_vulnerable, "no quantum-vulnerable asset for the PQC card"
     for r in rows:
-        if r["algorithm_type"] in {"certificate", "protocol", "key"}:
+        # a vulnerable library row (the fixture pins cryptography==42.0.5, which has published advisories) is not
+        # an algorithm either: quantum readiness does not apply to it
+        if r["algorithm_type"] in {"certificate", "protocol", "key", "library"}:
             assert r["quantum_safe"] is None
         else:
             assert isinstance(r["quantum_safe"], bool)
@@ -160,6 +162,9 @@ def test_flagged_findings_carry_owasp_and_compliance_maps() -> None:
         assert isinstance(compliance, dict) and compliance, (
             f"{r['title']}: empty compliance_controls"
         )
+        if r["algorithm_type"] == "library":  # a vulnerable dependency is A06, not A02
+            assert owasp == {"VULNERABLE_AND_OUTDATED_COMPONENTS": "A06:2021 - Vulnerable and Outdated Components"}
+            continue
         assert owasp.get("CRYPTOGRAPHIC_FAILURES") == owasp_label
         assert compliance.get("ISO27001_A10_CRYPTOGRAPHY") == iso_label
         assert compliance.get("NIST80053_SC") == nist_label
