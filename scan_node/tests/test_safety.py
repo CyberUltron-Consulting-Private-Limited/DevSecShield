@@ -299,7 +299,7 @@ def test_postgres_is_held_to_scram_unless_the_ca_is_actually_checked(monkeypatch
                           ({"require_tls": True}, "/x/ca.pem", ("verify-ca", None, None)),
                           ({"require_tls": False}, "/x/ca.pem", ("prefer", "scram-sha-256", None))]:
         with pytest.raises(D.DbFail):
-            D._postgres(None, Target("db", "127.0.0.1"), {**cfg, "login": "u"}, "pw", Ca(ca))
+            D._postgres(_ctx(), Target("db", "127.0.0.1"), {**cfg, "login": "u"}, "pw", Ca(ca))
         assert (seen.get("sslmode"), seen.get("require_auth"), seen.get("channel_binding")) == want, (cfg, ca, seen)
 
 
@@ -309,7 +309,9 @@ def test_winrm_name_must_not_resolve_to_a_never_scan_address(monkeypatch):
 
     ctx = _ctx()
     ctx.never_scan = NeverScan(["10.0.0.6/32"])
-    monkeypatch.setattr(W, "resolve", lambda name: ["10.0.0.5", "10.0.0.6"])
+    from zs_scan_node import netutil
+
+    monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: ["10.0.0.5", "10.0.0.6"])
     with pytest.raises(W._Fail) as err:
         W.check_name(ctx, Target("winhost.corp", "10.0.0.5"))
     assert err.value.status == "skipped_never_scan"

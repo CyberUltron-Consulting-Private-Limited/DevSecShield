@@ -22,7 +22,8 @@ from typing import Any
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.jobctx import JobContext, LeaseLost
-from zs_scan_node.netutil import iter_line_ips, node_limiter
+from zs_scan_node import netutil
+from zs_scan_node.netutil import Blocked, checked_ip, iter_line_ips, node_limiter
 
 TCP_PROTOCOLS = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
                  "tds", "ssh", "rdp"}
@@ -70,14 +71,27 @@ def _sni_for(scope: dict, ip: str, cache: dict) -> list[str]:
     names = scope.get("sni_hostnames") or []
     out = []
     for name in names[:200]:
-        if name not in cache:
+        if name not in cache:  # only matched against the address being scanned, never connected to
             try:
-                cache[name] = {i[4][0] for i in socket.getaddrinfo(name, None, proto=socket.IPPROTO_TCP)}
+                cache[name] = set(netutil.resolve(name))
             except OSError:
                 cache[name] = set()
         if ip in cache[name]:
             out.append(name)
     return out
+
+
+def _tcp(ip: str, port: int, never, timeout: float) -> socket.socket:
+    """A TCP connection through the network gate, with tlsprobe's error codes."""
+    try:
+        return netutil.connect(ip, port, never, timeout)
+    except socket.timeout:
+        raise T.ProbeError("timeout", "connect timed out") from None
+    except ConnectionRefusedError:
+        raise T.ProbeError("refused", "connection refused") from None
+    except OSError as exc:
+        code = "no_route" if getattr(exc, "errno", None) in (101, 113, 51, 65) else "unreachable"
+        raise T.ProbeError(code, exc.__class__.__name__) from None
 
 
 class Endpoint:
@@ -105,7 +119,9 @@ class NetworkScan:
         stop = self.ctx.should_stop(network=True)
         if stop:
             return stop
-        if self.ctx.never_scan.blocks_ip(ip):
+        try:
+            checked_ip(ip, self.ctx.never_scan)  # the network gate: the list can change while the job runs
+        except Blocked:
             return "skipped_never_scan"
         if not self.limiter.acquire(self.ctx.cancel, self.ctx.deadline):
             return self.ctx.should_stop(network=True) or self.ctx.deadline_reason
@@ -117,9 +133,11 @@ class NetworkScan:
         if gate:
             return gate
         try:
-            sock = T.connect(ip, port, 2.0)
+            sock = _tcp(ip, port, self.ctx.never_scan, 2.0)
             sock.close()
             return "open"
+        except Blocked:
+            return "skipped_never_scan"
         except T.ProbeError as exc:
             return "closed" if exc.code in ("refused", "timeout", "unreachable", "no_route") else "closed"
 
@@ -149,6 +167,8 @@ class NetworkScan:
             return "not_supported", f"{ep.protocol} is not supported by this node version", 0
         except _Skip as skip:
             return skip.status, None, 0
+        except Blocked:
+            return "skipped_never_scan", None, 0
         except T.ProbeError as exc:
             if exc.code == "timeout":
                 self.timeouts[ep.ip] = self.timeouts.get(ep.ip, 0) + 1
@@ -354,7 +374,7 @@ class NetworkScan:
         budget = Budget(1)
 
         def run():
-            sock = T.connect(ep.ip, ep.port, 3.0)
+            sock = _tcp(ep.ip, ep.port, self.ctx.never_scan, 3.0)
             try:
                 return T.tds_prelogin(sock, time.monotonic() + 8.0)
             finally:
@@ -501,9 +521,12 @@ def test_range(ctx: JobContext, scope: dict) -> str:
                 note = gate
                 break
             try:
-                T.connect(ip, p["port"], 2.0).close()
+                _tcp(ip, p["port"], ctx.never_scan, 2.0).close()
                 open_ports.append(p["port"])
                 answered = True
+            except Blocked:
+                note = "skipped_never_scan"
+                break
             except T.ProbeError as exc:
                 if exc.code == "refused":
                     answered = True

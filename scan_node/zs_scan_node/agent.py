@@ -8,9 +8,16 @@ Environment:
   ZS_VAULT_PATH_PREFIX    allow vault credentials under this path prefix only (vault use is off without it)
   VAULT_ADDR / VAULT_TOKEN  HashiCorp Vault for vault credentials; AWS Secrets Manager uses the node's IAM role
   HTTPS_PROXY / NO_PROXY  outbound proxy to ZeroShield (customer targets are always reached directly)
+  ZS_CLIENT_CERT / ZS_CLIENT_KEY  PEM client certificate and key for mTLS to the ZeroShield proxy (optional)
+  ZS_CA_FILE              CA bundle that replaces the default trust for the ZeroShield API (optional)
+
+Every request is signed with a per-enrollment Ed25519 key (api.py).  The node clears its token only on a 401 from
+the ZeroShield deployment it enrolled with (X-ZS-Deployment); a 401 from anything else is a wrong server or proxy:
+the token is kept, the node backs off and reports it in its next successful heartbeat.
 """
 from __future__ import annotations
 
+import base64
 import datetime as _dt
 import hashlib
 import os
@@ -21,7 +28,7 @@ import time
 import traceback
 
 from zs_scan_node import VERSION
-from zs_scan_node.api import Api, ApiError, Unauthorized
+from zs_scan_node.api import Api, ApiError, Unauthorized, WrongServer
 from zs_scan_node.collectors import CAPABILITIES, run_job
 from zs_scan_node.jobctx import JobContext, LeaseLost
 from zs_scan_node.log import global_scrubber, log
@@ -71,9 +78,12 @@ class Agent:
         self.state = NodeState.load(os.environ.get("ZS_STATE_DIR", "/var/lib/zs-node"))
         self.max_jobs = max(1, min(int(os.environ.get("ZS_MAX_JOBS", "2") or 2), 8))
         self.vault_prefix = os.environ.get("ZS_VAULT_PATH_PREFIX") or None
-        self.api = Api(self.api_url, self.state.node_token)
         self.running: dict[int, Running] = {}
         self.lock = threading.Lock()
+        self.shutdown = threading.Event()
+        self.api = Api(self.api_url, self.state.node_token, signing_key=self.state.signing_key(),
+                       deployment_id=self.state.deployment_id, on_deployment=self._adopt_deployment,
+                       stop=self.shutdown)
         self.team_never: list[str] | None = None  # latest team never-scan list from the heartbeat
         self.stop_network = threading.Event()
         # When the requests behind the cached stop flag and never-scan list were sent (monotonic).  A claim is
@@ -81,7 +91,6 @@ class Agent:
         # Kept apart: only a network claim says anything about the stop flag.
         self.stop_sent = 0.0
         self.never_sent = 0.0
-        self.shutdown = threading.Event()
         self.heartbeat_interval = 30
         self.last_error: str | None = None
         self.server_skew_s = 0.0
@@ -104,16 +113,32 @@ class Agent:
                     "ZeroShield (Scan nodes > Reset) and restart with it", level="error")
                 self.shutdown.wait(300)
                 continue
+            # A new signing key for this enrollment, on disk before its public half is sent: if the answer is lost,
+            # the key ZeroShield stored is still the one this node signs with.
+            key = self.state.new_signing_key()
+            self.api.signing_key = key
             body = {"registration_token": reg, "hostname": socket.gethostname()[:255], "version": VERSION,
                     "source_ips": local_ips(), "ssh_public_key": self.state.ssh_public_key(),
-                    "capabilities": self.capabilities(), "clock": _now_iso()}
+                    "capabilities": self.capabilities(), "clock": _now_iso(),
+                    "signing_public_key": base64.b64encode(key.public_key().public_bytes_raw()).decode()}
             try:
                 data = self.api.enroll(body)
-            except Unauthorized:
-                log("registration token is invalid or expired; create a new one in ZeroShield", level="error")
-                self.state.enrolled_with = digest
-                self.state.save()
+            except Unauthorized as exc:
+                if self.state.deployment_id and exc.deployment == self.state.deployment_id:
+                    # our own ZeroShield refused it: the token is spent or expired, do not try it again
+                    log("registration token is invalid or expired; create a new one in ZeroShield", level="error")
+                    self.state.enrolled_with = digest
+                    self.state.save()
+                else:
+                    # a fresh node cannot tell which ZeroShield answered: keep the token usable and retry slowly
+                    log("registration token refused; check that ZS_API_URL is your ZeroShield and the token is "
+                        "current (retrying in 5 minutes)", deployment=exc.deployment, level="error")
                 self.shutdown.wait(300)
+                continue
+            except WrongServer as exc:
+                log("enrollment refused by a wrong server or proxy; the registration token was kept", error=str(exc),
+                    level="error")
+                self.shutdown.wait(60)
                 continue
             except ApiError as exc:
                 log("enrollment failed, retrying", error=str(exc), level="error")
@@ -123,11 +148,23 @@ class Agent:
             self.state.node_id = data.get("node_id")
             self.state.team_id = data.get("team_id")
             self.state.enrolled_with = digest
+            if data.get("deployment_id"):
+                self.state.deployment_id = str(data["deployment_id"])
+                self.api.deployment_id = self.state.deployment_id
             self.state.save()
             global_scrubber().add(self.state.node_token)
             self.api.token = self.state.node_token
             self.heartbeat_interval = int(data.get("heartbeat_interval_s") or 30)
-            log("enrolled", node=self.state.node_id, team=self.state.team_id)
+            log("enrolled", node=self.state.node_id, team=self.state.team_id, deployment=self.state.deployment_id,
+                signing=data.get("signing") or "legacy")
+
+    def _adopt_deployment(self, deployment: str) -> None:
+        """Remember the deployment id a successful answer carried (nodes enrolled before deployment ids adopt it
+        from their first successful request)."""
+        with self.lock:
+            if self.state.deployment_id != deployment:
+                self.state.deployment_id = deployment
+                self.state.save()
 
     def capabilities(self) -> dict:
         return {"collectors": CAPABILITIES, "openssl": have_openssl(), "ipv6": has_ipv6(), "max_jobs": self.max_jobs,
@@ -187,6 +224,9 @@ class Agent:
                 self.heartbeat_once()
             except Unauthorized:
                 self.on_unauthorized()
+            except WrongServer as exc:
+                self.last_error = str(exc)  # reported in the next successful heartbeat
+                log("heartbeat refused by a wrong server or proxy; token kept", error=str(exc), level="error")
             except ApiError as exc:
                 log("heartbeat failed", error=str(exc), level="warn")
             except Exception as exc:  # keep the heartbeat alive whatever happens
@@ -232,6 +272,11 @@ class Agent:
             except Unauthorized:
                 self.on_unauthorized()
                 continue
+            except WrongServer as exc:
+                self.last_error = str(exc)
+                log("claim refused by a wrong server or proxy; token kept", error=str(exc), level="error")
+                self.shutdown.wait(60)
+                continue
             except ApiError as exc:
                 log("claim failed", error=str(exc), level="warn")
                 self.shutdown.wait(POLL_SECONDS * 3)
@@ -263,7 +308,11 @@ class Agent:
         lease_id = str(job.get("lease_id") or "")
 
         def poster(assets: list[dict], batch_id: str) -> dict:
-            return self.api.assets(job_id, attempt, lease_id, batch_id, assets)
+            try:
+                return self.api.assets(job_id, attempt, lease_id, batch_id, assets)
+            except Unauthorized:  # our ZeroShield revoked the token: stop every job, post nothing more
+                self.on_unauthorized()
+                raise LeaseLost("ZeroShield no longer accepts this node's token") from None
 
         ctx = JobContext(job_id=job_id, attempt=attempt, run_id=job.get("run_id"), kind=str(job.get("kind")),
                          source_kind=(source or {}).get("kind"), scrubber=scrubber, never_scan=never,
@@ -327,7 +376,10 @@ class Agent:
                     duration_s=result["duration_s"])
         except LeaseLost:
             ctx.log("lease lost before the result was accepted", level="warn")
-        except (ApiError, Unauthorized) as exc:
+        except Unauthorized:
+            ctx.log("ZeroShield no longer accepts this node's token; result not delivered", level="error")
+            self.on_unauthorized()
+        except ApiError as exc:
             self.last_error = f"job {running.job_id}: result not delivered ({exc})"
             ctx.log("result not delivered", error=str(exc), level="error")
         finally:

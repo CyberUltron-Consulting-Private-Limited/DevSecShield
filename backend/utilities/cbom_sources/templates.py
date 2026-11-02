@@ -89,25 +89,28 @@ Cmnd_Alias ZS_CBOM_TIER2 = \
 zs-cbom ALL=(root) NOPASSWD: ZS_CBOM_TIER2
 """
 
+# Exactly what the collector reads (scan_node/zs_scan_node/collectors/kubernetes.py; a test keeps the two in step):
+# namespaces (connection test), nodes, configmaps (CA bundles, pasted keys), ingresses, cert-manager Certificates,
+# Istio PeerAuthentications (security.istio.io) and DestinationRules (networking.istio.io: their API group).
 K8S_TIER1 = """apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: zs-cbom-tier1
 rules:
   - apiGroups: [""]
-    resources: ["namespaces", "nodes", "pods", "services", "serviceaccounts", "configmaps"]
+    resources: ["namespaces", "nodes", "configmaps"]
     verbs: ["get", "list"]
   - apiGroups: ["networking.k8s.io"]
-    resources: ["ingresses", "ingressclasses"]
+    resources: ["ingresses"]
     verbs: ["get", "list"]
   - apiGroups: ["cert-manager.io"]
-    resources: ["certificates", "issuers", "clusterissuers", "certificaterequests"]
+    resources: ["certificates"]
     verbs: ["get", "list"]
   - apiGroups: ["security.istio.io"]
-    resources: ["peerauthentications", "destinationrules"]
+    resources: ["peerauthentications"]
     verbs: ["get", "list"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets", "daemonsets"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["destinationrules"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -125,20 +128,42 @@ subjects:
 """
 
 K8S_TIER2 = K8S_TIER1.replace("zs-cbom-tier1", "zs-cbom-tier2").replace(
-    '    resources: ["namespaces", "nodes", "pods", "services", "serviceaccounts", "configmaps"]\n    verbs: ["get", "list"]\n',
-    '    resources: ["namespaces", "nodes", "pods", "services", "serviceaccounts", "configmaps"]\n    verbs: ["get", "list"]\n'
+    '    resources: ["namespaces", "nodes", "configmaps"]\n    verbs: ["get", "list"]\n',
+    '    resources: ["namespaces", "nodes", "configmaps"]\n    verbs: ["get", "list"]\n'
     '  - apiGroups: [""]\n    resources: ["secrets"]\n    verbs: ["get", "list"]  # Tier 2: Kubernetes cannot grant names without values\n',
     1,
 )
+assert "secrets" in K8S_TIER2  # the replace above must have matched
 
 DB_GRANTS = {
     "postgres": (
         "CREATE ROLE zs_cbom LOGIN PASSWORD '<from your vault>';\n"
         "GRANT pg_monitor, pg_read_all_settings TO zs_cbom;\n"
-        "-- Run these two in the database you enter in ZeroShield (blank means postgres);\n"
-        "-- catalog grants are per database.\n"
+        "-- Run the rest in the database you enter in ZeroShield (blank means postgres);\n"
+        "-- catalog grants and functions are per database.\n"
         "GRANT SELECT ON pg_hba_file_rules TO zs_cbom;\n"
         "GRANT EXECUTE ON FUNCTION pg_hba_file_rules() TO zs_cbom;\n"
+        "\n"
+        "-- Password hash TYPES of login roles (md5 / scram-sha-256 / none / other), never the hashes.\n"
+        "-- Only a superuser can read pg_authid, so create this function as a superuser: it runs as its owner,\n"
+        "-- with a fixed search_path, and only zs_cbom may call it.\n"
+        "-- Amazon RDS / Aurora: skip it and run CREATE EXTENSION IF NOT EXISTS rds_tools; as the master user\n"
+        "-- (ZeroShield then reads rds_tools.role_password_encryption_type()).\n"
+        "CREATE OR REPLACE FUNCTION public.zs_role_password_types()\n"
+        "  RETURNS TABLE (rolname name, password_type text)\n"
+        "  LANGUAGE sql STABLE SECURITY DEFINER\n"
+        "  SET search_path = pg_catalog, pg_temp\n"
+        "AS $$\n"
+        "  SELECT a.rolname,\n"
+        "         CASE WHEN a.rolpassword IS NULL OR a.rolpassword = '' THEN 'none'\n"
+        "              WHEN a.rolpassword LIKE 'md5%' THEN 'md5'\n"
+        "              WHEN a.rolpassword LIKE 'SCRAM-SHA-256$%' THEN 'scram-sha-256'\n"
+        "              ELSE 'other' END\n"
+        "  FROM pg_catalog.pg_authid a\n"
+        "  WHERE a.rolcanlogin\n"
+        "$$;\n"
+        "REVOKE EXECUTE ON FUNCTION public.zs_role_password_types() FROM PUBLIC;\n"
+        "GRANT EXECUTE ON FUNCTION public.zs_role_password_types() TO zs_cbom;\n"
     ),
     "mysql": (
         "CREATE USER 'zs_cbom'@'%' IDENTIFIED BY '<from your vault>';\n"
@@ -167,6 +192,7 @@ DB_GRANTS = {
 
 DB_READS = {
     "postgres": ["TLS on or off, minimum TLS version and ciphers", "Password hashing setting and the method of each HBA rule",
+                 "Password hash type of each login role (md5 or SCRAM; never the hash itself)",
                  "TLS used by live client connections", "pgcrypto use"],
     "mysql": ["require_secure_transport and TLS versions", "Authentication plugin per user",
               "TLS used by live client connections", "Table encryption (InnoDB) and keyring"],

@@ -4146,6 +4146,10 @@ export interface CbomScanNode {
     last_claim_at: string | null
     last_seen_ip: string | null
     last_node_error: string | null
+    /** "required": every request is signed with the node's Ed25519 key; "legacy": enrolled before signing existed */
+    signing: "required" | "legacy"
+    /** SHA-256 of the client certificate the proxy verified at enrollment (mTLS), or null */
+    client_cert_sha256: string | null
     assigned_targets: number
     sources: number
     row_version: number
@@ -4346,6 +4350,8 @@ export interface CbomSourcesSettings {
     /** Mosca inputs in years: X = how long data must stay secret, Y = migration time, Z = years until a quantum computer. */
     risk_model: CbomRiskModel
     stop_all_network: boolean
+    /** Refuse scan nodes that do not sign their requests (legacy nodes must be reset and enrolled again). */
+    require_signed_nodes: boolean
     stop_all_changed_by: number | null
     stop_all_changed_at: string | null
     next_window_start: string | null

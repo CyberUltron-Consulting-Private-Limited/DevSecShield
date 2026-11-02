@@ -19,7 +19,7 @@ from typing import Any
 
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import Target, expand_targets, resolve
+from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, resolve_checked
 from zs_scan_node.scrub import printable
 
 SCRIPTS = {
@@ -260,21 +260,24 @@ def _is_ip(text: str) -> bool:
 def check_name(ctx: JobContext, target: Target) -> None:
     """WinRM connects by the name (so the certificate can prove the server), and the HTTP client resolves it again.
     Every address the name has must therefore be allowed, not just the one checked when targets were expanded."""
-    if _is_ip(target.label):
-        # checked again per target: a never-scan entry added after the job started applies to the rest of it
-        if target.ip and ctx.never_scan.blocks_ip(target.ip):
-            raise _Fail("skipped_never_scan", f"{target.label} is on the never-scan list")
-        return
     try:
-        addresses = resolve(target.label)
+        if _is_ip(target.label):
+            # checked again per target: a never-scan entry added after the job started applies to the rest of it
+            checked_ip(target.ip or target.label, ctx.never_scan)
+            return
+        resolve_checked(target.label, ctx.never_scan, every=True)
+    except Blocked:
+        raise _Fail("skipped_never_scan", f"{target.label} is on the never-scan list or resolves to an address on "
+                                          "it") from None
     except OSError:
         raise _Fail("unreachable", f"could not resolve {target.label}") from None
-    if any(ctx.never_scan.blocks_ip(ip) for ip in addresses):
-        raise _Fail("skipped_never_scan", f"{target.label} also resolves to an address on the never-scan list")
 
 
-def _session(target: Target, config: dict, password: str, ca_path: str | None = None):
+def _session(ctx: JobContext, target: Target, config: dict, password: str, ca_path: str | None = None):
+    """The WinRM session for one target, opened only after the name passed the network gate (check_name)."""
     import winrm
+
+    check_name(ctx, target)
 
     return winrm.Session(endpoint(target, config), auth=(str(config.get("login_user") or "svc-zscbom"), password),
                          transport="ntlm", server_cert_validation="validate",
@@ -333,8 +336,7 @@ def _stderr(err: str) -> str:
 
 
 def collect_target(ctx: JobContext, target: Target, config: dict, password: str, ca_path: str | None = None) -> int:
-    check_name(ctx, target)
-    sess = _session(target, config, password, ca_path)
+    sess = _session(ctx, target, config, password, ca_path)
     loc = target.label
     n = 0
     code, out, err = _run(sess, "os")
@@ -444,8 +446,7 @@ def _test_one(ctx: JobContext, target: Target, config: dict, password: str, ca_p
         sample.update(status="unreachable", note=target.error or "")
     else:
         try:
-            check_name(ctx, target)
-            code, out, err = _run(_session(target, config, password, ca_path), "os")
+            code, out, err = _run(_session(ctx, target, config, password, ca_path), "os")
             # Any answer from the shell means the login worked; a failing read is a privilege note, not a login failure.
             info = (_json_list(out) or [{}])[0] if code == 0 else {}
             note = (f"{info.get('Caption') or 'Windows'} {info.get('Version') or ''}".strip() if code == 0

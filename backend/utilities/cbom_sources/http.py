@@ -128,8 +128,9 @@ def check_version(row: Any, expected: int | None) -> None:
         raise HTTPException(status_code=409, detail="This was changed elsewhere. Reload to see the latest version.")
 
 
-async def read_capped_json(request: Request, limit: int) -> Any:
-    """Read the body with a hard cap before parsing it (FastAPI would otherwise buffer it all)."""
+async def read_capped_body(request: Request, limit: int) -> bytes:
+    """Read the raw body with a hard cap (FastAPI would otherwise buffer it all).  Signed scan-node requests are
+    verified on exactly these bytes before anything parses them."""
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > limit:
         raise HTTPException(status_code=413, detail=f"Body larger than {limit // 1024} KB")
@@ -140,13 +141,21 @@ async def read_capped_json(request: Request, limit: int) -> Any:
         if total > limit:
             raise HTTPException(status_code=413, detail=f"Body larger than {limit // 1024} KB")
         chunks.append(chunk)
-    raw = b"".join(chunks)
+    return b"".join(chunks)
+
+
+def parse_json(raw: bytes) -> Any:
     if not raw:
         return {}
     try:
         return json.loads(raw)
     except (ValueError, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail="Body is not valid JSON") from exc
+
+
+async def read_capped_json(request: Request, limit: int) -> Any:
+    """Read the body with a hard cap before parsing it (FastAPI would otherwise buffer it all)."""
+    return parse_json(await read_capped_body(request, limit))
 
 
 def server_error(what: str, exc: BaseException, **fields: Any) -> HTTPException:

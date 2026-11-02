@@ -77,6 +77,7 @@ const DB_READS: Record<Engine, string[]> = {
   postgres: [
     "TLS on or off, minimum TLS version and ciphers",
     "Password hashing setting and the method of each HBA rule",
+    "Password hash type of each login role (md5 or SCRAM; never the hash itself)",
     "TLS used by live client connections",
     "pgcrypto use",
   ],

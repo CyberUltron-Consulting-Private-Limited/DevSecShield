@@ -27,12 +27,13 @@ from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, key_facts, load_certs
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import resolve
+from zs_scan_node.netutil import Blocked, http_client, resolve_checked
 
 PAGE = 200
 MAX_ITEMS = 5000
 MAX_PAGES = MAX_ITEMS // PAGE + 20  # a server that keeps sending "continue" cannot keep the job forever
 MAX_BODY = 32 * 1024 * 1024  # bytes per API response
+ISTIO_ROOT_NAMESPACE = "istio-system"  # meshConfig.rootNamespace default: its selector-less policy is mesh-wide
 
 
 class Api:
@@ -45,13 +46,14 @@ class Api:
         self.host, self.port = parts.hostname, parts.port or 443
         self._tmp = tempfile.mkdtemp(prefix="zsk8s-")
         os.chmod(self._tmp, 0o700)
+        self.client: httpx.Client | None = None  # built by check_scope(), pinned to the address it checked
         try:
-            self.client = self._client(config, secrets)
+            self._ssl, self._headers = self._tls(config, secrets)
         except BaseException:
             shutil.rmtree(self._tmp, ignore_errors=True)
             raise
 
-    def _client(self, config: dict, secrets: dict) -> httpx.Client:
+    def _tls(self, config: dict, secrets: dict) -> tuple[ssl.SSLContext, dict[str, str]]:
         text = secrets.get("kubeconfig")
         if config.get("credential_type") == "vault":
             from zs_scan_node import vault
@@ -108,20 +110,26 @@ class Api:
                         pass
         else:
             raise ConfigError("the kubeconfig user has neither a token nor client certificate data")
-        return httpx.Client(base_url=self.api_url, verify=sslctx, headers=headers, timeout=20.0, follow_redirects=False,
-                            trust_env=False)
+        return sslctx, headers
 
     def check_scope(self) -> str:
+        """Resolve the API server once, apply never-scan, and pin the HTTP client to the checked address (the
+        certificate is still checked against the name in api_url)."""
         try:
-            ips = [self.host] if _is_ip(self.host) else resolve(self.host)
+            ip = resolve_checked(self.host, self.ctx.never_scan)[0]
+        except Blocked:
+            raise _Skip("skipped_never_scan") from None
         except OSError:
             raise ConfigError(f"could not resolve {self.host}") from None
-        for ip in ips:
-            if self.ctx.never_scan.blocks_ip(ip):
-                raise _Skip("skipped_never_scan")
-        return ips[0]
+        if self.client is not None:
+            self.client.close()
+        self.client = http_client(self.api_url, ip, self.ctx.never_scan, verify=self._ssl, headers=self._headers,
+                                  timeout=20.0)
+        return ip
 
     def get(self, path: str, params: dict | None = None) -> tuple[int, Any]:
+        if self.client is None:
+            raise _Fail("error", "internal: the API server address was not checked before use")
         try:
             with self.client.stream("GET", path, params=params) as r:
                 status, raw, size = r.status_code, bytearray(), 0
@@ -150,6 +158,8 @@ class Api:
         return status, body
 
     def post(self, path: str, body: dict) -> tuple[int, Any]:
+        if self.client is None:
+            return 0, {"error": "not checked"}
         try:
             r = self.client.post(path, json=body)
             return r.status_code, r.json()
@@ -201,7 +211,8 @@ class Api:
 
     def close(self) -> None:
         try:
-            self.client.close()
+            if self.client is not None:
+                self.client.close()
         finally:
             shutil.rmtree(self._tmp, ignore_errors=True)
 
@@ -349,9 +360,16 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                 ctx.coverage(loc, "istio peer authentication", kind, "", once=False)
                 continue
             ns, name = _meta(item)
-            mode = ((item.get("spec") or {}).get("mtls") or {}).get("mode") or "UNSET"
+            spec = item.get("spec") or {}
+            mode = str((spec.get("mtls") or {}).get("mode") or "UNSET").upper()
+            # UNSET inherits from the namespace / mesh-wide policy; on the mesh-wide policy (root namespace, no
+            # selector) Istio then applies PERMISSIVE, so the classifier needs the policy's scope.
+            selector = (spec.get("selector") or {}).get("matchLabels")
+            scope_ = "workload" if selector else ("mesh" if ns == ISTIO_ROOT_NAMESPACE else "namespace")
+            ports = {str(p): str((v or {}).get("mode") or "UNSET").upper()
+                     for p, v in list((spec.get("portLevelMtls") or {}).items())[:50] if isinstance(v, dict)}
             ctx.emit("k8s_mesh_policy", loc, f"{ns}/peerauthentication/{name}", name=f"{ns}/{name}", protocol="mtls",
-                     facts={"namespace": ns, "name": name, "mtls_mode": mode})
+                     facts={"namespace": ns, "name": name, "mtls_mode": mode, "scope": scope_, "port_modes": ports})
             n += 1
         # ConfigMaps: CA bundles (public certificates) and private keys that should not be there
         cm_rows = 0

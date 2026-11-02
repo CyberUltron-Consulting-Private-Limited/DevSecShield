@@ -525,8 +525,27 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("DB_TRUST", "High", f"{hba['trust']} HBA rule(s) let clients in without a password (trust)")
         if hba.get("password"):
             out.add("DB_CLEARTEXT_PW", "High", "An HBA rule sends passwords in clear text (password method)")
+        # PostgreSQL login roles by stored password hash type (pg_authid, zs_role_password_types() or rds_tools);
+        # roles without a password are skipped, rds_iam roles (IAM token sign-in on RDS) are named.
+        roles = facts.get("role_hash_types") if isinstance(facts.get("role_hash_types"), dict) else {}
+        iam = {str(r) for r in facts.get("iam_auth_roles") or []}
+
+        def _names(found: list[str]) -> str:
+            shown = ", ".join(f"{r} (rds_iam)" if r in iam else r for r in found[:10])
+            return shown + (f" and {len(found) - 10} more" if len(found) > 10 else "")
+
+        plain = sorted(str(r) for r, t in roles.items() if str(t).lower() == "other")
+        md5_roles = sorted(str(r) for r, t in roles.items() if str(t).lower() == "md5")
+        if plain:
+            out.add("DB_PLAINTEXT_PW", "High", f"{len(plain)} login role(s) store a password that is neither an MD5 nor "
+                                               f"a SCRAM hash (plain text): {_names(plain)}")
+        weak = []
         if hba.get("md5"):
-            out.add("DB_WEAK_HASH", "Medium", f"{hba['md5']} HBA rule(s) use md5 authentication")
+            weak.append(f"{hba['md5']} HBA rule(s) use md5 authentication")
+        if md5_roles:
+            weak.append(f"{len(md5_roles)} login role(s) have MD5 password hashes: {_names(md5_roles)}")
+        if weak:
+            out.add("DB_WEAK_HASH", "Medium", "; ".join(weak))
         if _upper(facts.get("password_encryption")) == "MD5":
             out.add("DB_MD5_DEFAULT", "Medium", "New passwords are stored as MD5 hashes")
         plugins = facts.get("plugins") if isinstance(facts.get("plugins"), dict) else {}
@@ -543,11 +562,23 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("DB_OLD_PASSWORD", "Critical", "Authentication uses mysql_old_password")
         qv = None
     elif asset_type == "k8s_mesh_policy":
-        mode = _upper(facts.get("mode"))
+        # The collector reports "mtls_mode" (older rows and other sources may say "mode").  UNSET inherits from the
+        # namespace / mesh-wide policy, except on the mesh-wide policy itself, where Istio then applies PERMISSIVE.
+        mode = _upper(facts.get("mtls_mode") or facts.get("mode"))
+        ports = facts.get("port_modes") if isinstance(facts.get("port_modes"), dict) else {}
+        off_ports = sorted(str(p) for p, m in ports.items() if _upper(m) == "DISABLE")
+        open_ports = sorted(str(p) for p, m in ports.items() if _upper(m) == "PERMISSIVE")
         if mode == "DISABLE":
             out.add("MESH_MTLS_OFF", "High", "Mesh mTLS is disabled")
-        elif mode == "PERMISSIVE":
+        elif off_ports:
+            out.add("MESH_MTLS_OFF", "High", f"Mesh mTLS is disabled on port(s) {', '.join(off_ports[:10])}")
+        if mode == "PERMISSIVE":
             out.add("MESH_MTLS_PERMISSIVE", "Medium", "Mesh mTLS is permissive (plaintext still accepted)")
+        elif mode == "UNSET" and facts.get("scope") == "mesh":
+            out.add("MESH_MTLS_PERMISSIVE", "Medium", "The mesh-wide PeerAuthentication leaves the mTLS mode unset, so "
+                                                      "Istio applies PERMISSIVE (plaintext still accepted)")
+        elif open_ports:
+            out.add("MESH_MTLS_PERMISSIVE", "Medium", f"Mesh mTLS is permissive on port(s) {', '.join(open_ports[:10])}")
         qv = None
     elif asset_type == "storage_encryption":
         if facts.get("encrypted") is False:
@@ -589,7 +620,8 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
         qv = None
         status = str(facts.get("status") or "")
         detail = str(facts.get("detail") or facts.get("check") or "")
-        out.add(f"COVERAGE_{status.upper()}"[:32], None, f"Not collected: {detail}"[:200])
+        # a coverage row may name its fix (a GRANT, a function to install): keep it whole (the finding column holds 512)
+        out.add(f"COVERAGE_{status.upper()}"[:32], None, f"Not collected: {detail}"[:500])
     elif asset_type in ("k8s_cluster", "open_port"):
         qv = None
 

@@ -33,6 +33,7 @@ from zs_scan_node import linux_parsers as P
 from zs_scan_node.certparse import public_key_facts_from_pem
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
+from zs_scan_node import netutil
 from zs_scan_node.netutil import Target, expand_targets
 
 OUTPUT_CAP = 4 * 1024 * 1024
@@ -213,13 +214,17 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
     user = str(config.get("login_user") or "zs-cbom")
     policy = config.get("host_key_policy") or "tofu"
     host_port = f"{target.ip}:{port}"
+    if ctx.never_scan.blocks_ip(str(target.ip)):  # a never-scan target is skipped before anything else is judged
+        raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list")
     if "password" in creds and "key" not in creds and policy != "pinned":
         # a first-seen host key proves nothing, so a password could go to an impostor (whole ranges make that
         # easy): passwords go only to hosts pinned in known_hosts.  Key logins never reveal the key.
         raise TargetFail("identity_unverified", "password logins need a pinned host key (known_hosts); the password "
                          "was not sent")
     try:
-        sock = socket.create_connection((target.ip, port), timeout=10)
+        sock = netutil.connect(target.ip, port, ctx.never_scan, 10)  # the network gate: never-scan at connect time
+    except netutil.Blocked:
+        raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list") from None
     except socket.timeout:
         raise TargetFail("timeout", f"no answer on port {port}") from None
     except ConnectionRefusedError:
@@ -716,9 +721,6 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         if target.ip is None:
             ctx.outcome(target.label, "unreachable", target.error, started=started)
             return
-        if ctx.never_scan.blocks_ip(target.ip):
-            ctx.outcome(target.label, "skipped_never_scan", started=started)
-            return
         try:
             status, err, n = collect_target(ctx, target, config, creds)
             ctx.outcome(target.label, status, err, started=started, assets=n)
@@ -754,7 +756,8 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         try:
             sess = open_session(ctx, target, config, creds)
         except TargetFail as fail:
-            sample["reachable"] = fail.status not in ("unreachable", "refused", "timeout", "no_route")
+            sample["reachable"] = None if fail.status.startswith("skipped_") else \
+                fail.status not in ("unreachable", "refused", "timeout", "no_route")
             sample.update(status=fail.status, note=fail.error)
             ctx.samples.append(sample)
             continue

@@ -1,4 +1,6 @@
 """The node loop against a fake ZeroShield API that follows the contract (enroll, heartbeat, claim, assets, result)."""
+import base64
+import email.utils
 import json
 import os
 import socket
@@ -7,8 +9,10 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from zs_scan_node import agent as A
+from zs_scan_node.api import signing_message
 
 
 class FakeApi:
@@ -23,17 +27,58 @@ class FakeApi:
         self.stop = False
         self.enrolled = False
         self.lock = threading.Lock()
+        # like the real server: a deployment id on every answer, signatures checked with the key sent at enrollment
+        self.deployment = "dep-A"
+        self.send_deployment = True
+        self.pubkey: str | None = None
+        self.state_dir: str | None = None  # where the node keeps its signing key (checked at enrollment)
+        self.nonces: set[str] = set()
+        self.signed: list[str] = []
+        self.clock_offset = 0  # the server clock minus real time
+        self.force_401: str | None = None  # "own" | "other" | "none": answer every node call with that 401
 
-    def handle(self, path, body, headers):
+    def check_signature(self, method, path, headers, raw, key):
+        ts, nonce, sig = (headers.get(h) for h in ("X-ZS-Timestamp", "X-ZS-Nonce", "X-ZS-Signature"))
+        if not (ts and nonce and sig):
+            return 403, {"detail": "signature headers missing"}, {"X-ZS-Refused": "signature_required"}
+        if abs(int(ts) - (time.time() + self.clock_offset)) > 300:
+            return 403, {"detail": "clock"}, {"X-ZS-Refused": "clock_skew"}
+        Ed25519PublicKey.from_public_bytes(base64.b64decode(key)).verify(
+            base64.b64decode(sig), signing_message(method, path, ts, nonce, raw))  # raises on a bad signature
+        assert nonce not in self.nonces, "nonce reused"
+        self.nonces.add(nonce)
+        self.signed.append(path)
+        return None
+
+    def handle(self, path, body, headers, raw=b""):
         self.calls.append(path)
+        if self.force_401:
+            dep = {"own": self.deployment, "other": "dep-OTHER", "none": None}[self.force_401]
+            return 401, {"detail": "Invalid node token"}, ({"X-ZS-Deployment": dep} if dep else {"X-ZS-Deployment": ""})
         if path == "/cbom/node/enroll":
             if body.get("registration_token") != "zsr_good_token_0123456789":
                 return 401, {"detail": "Registration token is invalid or expired"}
             assert body["ssh_public_key"].startswith("ssh-ed25519 ")
+            if body.get("signing_public_key"):
+                refused = self.check_signature("POST", path, headers, raw, body["signing_public_key"])
+                if refused:
+                    return refused
+                if self.state_dir:  # the private half was on disk before the key was sent
+                    with open(os.path.join(self.state_dir, "signing_ed25519"), "rb") as f:
+                        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+                        on_disk = Ed25519PrivateKey.from_private_bytes(f.read()).public_key().public_bytes_raw()
+                    assert base64.b64encode(on_disk).decode() == body["signing_public_key"]
+                self.pubkey = body["signing_public_key"]
             self.enrolled = True
-            return 200, {"node_id": 7, "team_id": 3, "node_token": "zsn_node_token_ABCDEFGHIJKLMNOP", "heartbeat_interval_s": 5}
+            return 200, {"node_id": 7, "team_id": 3, "node_token": "zsn_node_token_ABCDEFGHIJKLMNOP", "heartbeat_interval_s": 5,
+                         "deployment_id": self.deployment, "signing": "required" if self.pubkey else "legacy"}
         if headers.get("X-ZS-Node-Token") != "zsn_node_token_ABCDEFGHIJKLMNOP":
             return 401, {"detail": "Invalid node token"}
+        if self.pubkey:
+            refused = self.check_signature("POST", path, headers, raw, self.pubkey)
+            if refused:
+                return refused
         if path == "/cbom/node/heartbeat":
             self.heartbeats.append(body)
             return 200, {"cancel_job_ids": sorted(self.cancel), "never_scan": [], "stop_all_network": self.stop,
@@ -66,16 +111,25 @@ def server():
     class H(BaseHTTPRequestHandler):
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(length) or b"null") if length else None
-            status, data = api.handle(self.path, body or {}, self.headers)
+            raw = self.rfile.read(length) if length else b""
+            body = json.loads(raw or b"null") if length else None
+            status, data, *extra = api.handle(self.path, body or {}, self.headers, raw)
+            headers = {"X-ZS-Deployment": api.deployment} if api.send_deployment else {}
+            headers.update(extra[0] if extra else {})
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            for k, v in headers.items():
+                if v:
+                    self.send_header(k, v)
             self.end_headers()
             if data is not None:
                 self.wfile.write(json.dumps(data).encode())
 
         def log_message(self, *a):
             pass
+
+        def date_time_string(self, timestamp=None):  # the server's clock, which may differ from the node's
+            return email.utils.formatdate(time.time() + api.clock_offset, usegmt=True)
 
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()

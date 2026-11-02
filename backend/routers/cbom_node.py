@@ -7,7 +7,9 @@ Enrollment itself carries the single-use registration token in the body instead.
 * An unknown, missing or revoked token is a 401 with no detail about why.
 * A job can only be claimed by the node its source points at, in the same team, at the same source
   version; the claim response is the only place stored secrets are ever decrypted.
-* Bodies are size-capped before they are parsed.
+* Bodies are size-capped before they are parsed, and a signed request's signature is checked on the raw bytes
+  before anything parses them (``node_auth``: Ed25519 signatures, replay nonces, mTLS headers; refusals are 403
+  with ``X-ZS-Refused``, never 401).  Every response carries ``X-ZS-Deployment`` (``node_auth.NodeDeploymentHeader``).
 """
 from __future__ import annotations
 
@@ -25,6 +27,7 @@ from sqlmodel import Session, select
 from backend.get_db import get_db
 from backend.new_models import CbomCollectionJob, CbomScanNode
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import node_auth as NA
 from backend.utilities.cbom_sources.common import audit, clean_text, iso_z, log, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import scrub
 from backend.utilities.cbom_sources.http import (
@@ -34,7 +37,8 @@ from backend.utilities.cbom_sources.http import (
     client_ip,
     enroll_limiter,
     node_limiter,
-    read_capped_json,
+    parse_json,
+    read_capped_body,
     server_error,
 )
 from backend.utilities.cbom_sources.schemas import AssetIn, AssetsBody, EnrollBody, HeartbeatBody, ResultBody
@@ -90,6 +94,27 @@ def _node_for(token: str | None, session: Session) -> CbomScanNode:
     return node
 
 
+def _authenticate(session: Session, token: str | None, req: NA.NodeRequest, raw: bytes,
+                  now: _dt.datetime) -> CbomScanNode:
+    """Token (401), then client certificate and request signature (403 with a refusal code), all before the body is
+    parsed.  A node with a signing key must sign; a legacy node is refused when its team requires signed nodes."""
+    node = _node_for(token, session)
+    NA.check_mtls(node, req)
+    if node.signing_public_key:
+        NA.verify_signature(session, node.id, node.signing_public_key, req, raw, now)  # type: ignore[arg-type]
+        return node
+    if get_or_create_settings(session, node.team_id).require_signed_nodes:
+        message = ("Refused: this team requires signed scan nodes. Reset the node in ZeroShield and enroll it again "
+                   "with scan node 1.1 or later")
+        if node.last_node_error != message:
+            node.last_node_error = message
+            session.add(node)
+            session.commit()
+        log("node request refused", team=node.team_id, node=node.id, reason="signed_nodes_required", path=req.path)
+        raise NA.refuse("signed_nodes_required", message)
+    return node
+
+
 async def _guard(what: str, fn, *args):
     try:
         return await run_in_threadpool(fn, *args)
@@ -100,15 +125,24 @@ async def _guard(what: str, fn, *args):
 
 
 # ----------------------------------------------------------------------------- enroll
-def _enroll(body: EnrollBody, ip: str) -> dict:
+def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
     now = utcnow()
     engine = get_db()
     token = new_token("zsn_")
     with Session(engine) as session:
         node = session.exec(select(CbomScanNode).where(
             CbomScanNode.registration_token_hash == sha256_hex(body.registration_token))).first()
-        if node is None:
+        if (node is None or node.enrolled_at is not None or node.registration_expires_at is None
+                or node.registration_expires_at <= now):
             raise HTTPException(status_code=401, detail="Registration token is invalid or expired")
+        # Checked before the token is used, so a refused enrollment leaves the registration token valid.
+        fingerprint = NA.check_mtls(None, req)
+        if body.signing_public_key:  # proof that the node holds the key it registers; the nonce is recorded
+            NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now)  # type: ignore[arg-type]
+        elif get_or_create_settings(session, node.team_id).require_signed_nodes:
+            log("node enroll refused", team=node.team_id, node=node.id, reason="signed_nodes_required")
+            raise NA.refuse("signed_nodes_required", "This team requires signed scan nodes: install scan node 1.1 or "
+                                                     "later and enroll with this registration token")
         changed = session.exec(
             update(CbomScanNode)
             .where(CbomScanNode.id == node.id,
@@ -119,30 +153,37 @@ def _enroll(body: EnrollBody, ip: str) -> dict:
                     hostname=clean_text(body.hostname, 255), node_version=clean_text(body.version, 32),
                     source_ips=_ips(body.source_ips), ssh_public_key=clean_text(body.ssh_public_key, 8192),
                     capabilities=scrub(body.capabilities), clock_skew_s=_clock_skew(body.clock, now),
-                    last_heartbeat_at=now, last_seen_ip=ip, row_version=node.row_version + 1, last_updated=now)
+                    last_heartbeat_at=now, last_seen_ip=ip, row_version=node.row_version + 1, last_updated=now,
+                    signing_public_key=body.signing_public_key, client_cert_sha256=fingerprint, last_node_error=None)
         ).rowcount
         if changed != 1:
             raise HTTPException(status_code=401, detail="Registration token is invalid or expired")
         audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action="node.enroll",
               object_type="node", object_id=node.id)
         session.commit()
-        log("node enrolled", team=node.team_id, node=node.id)
+        signing = "required" if body.signing_public_key else "legacy"
+        log("node enrolled", team=node.team_id, node=node.id, signing=signing, client_cert=bool(fingerprint))
         return {"node_id": node.id, "team_id": node.team_id, "node_token": token,
-                "heartbeat_interval_s": HEARTBEAT_SECONDS, "server_time": iso_z(now)}
+                "heartbeat_interval_s": HEARTBEAT_SECONDS, "server_time": iso_z(now),
+                "deployment_id": NA.deployment_id(engine), "signing": signing}
 
 
 @router.post("/cbom/node/enroll", dependencies=[Depends(enroll_limiter)],
              summary="Exchange a single-use registration token for a node token")
 async def enroll(request: Request):
-    body = _parse(EnrollBody, await read_capped_json(request, SMALL_BODY))
-    return JSONResponse(await _guard("enroll", _enroll, body, client_ip(request)), headers=PRIVATE)
+    raw = await read_capped_body(request, SMALL_BODY)
+    body = _parse(EnrollBody, parse_json(raw))  # the key to verify with is in the body
+    return JSONResponse(await _guard("enroll", _enroll, body, NA.NodeRequest.of(request), raw, client_ip(request)),
+                        headers=PRIVATE)
 
 
 # ----------------------------------------------------------------------------- heartbeat
-def _heartbeat(token: str | None, body: HeartbeatBody, ip: str) -> dict:
+def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
     now = utcnow()
     with Session(get_db()) as session:
-        node = _node_for(token, session)
+        node = _authenticate(session, token, req, raw, now)
+        body = _parse(HeartbeatBody, parse_json(raw))
+        NA.sweep_nonces(session, now)
         gap = (now - node.last_heartbeat_at).total_seconds() if node.last_heartbeat_at else None
         node.hostname = clean_text(body.hostname, 255) or node.hostname
         node.node_version = clean_text(body.version, 32) or node.node_version
@@ -188,15 +229,16 @@ def _heartbeat(token: str | None, body: HeartbeatBody, ip: str) -> dict:
 
 @router.post("/cbom/node/heartbeat", dependencies=[Depends(node_limiter)], summary="Report that the node is alive")
 async def heartbeat(request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
-    body = _parse(HeartbeatBody, await read_capped_json(request, SMALL_BODY))
-    return JSONResponse(await _guard("heartbeat", _heartbeat, token, body, client_ip(request)), headers=PRIVATE)
+    raw = await read_capped_body(request, SMALL_BODY)
+    return JSONResponse(await _guard("heartbeat", _heartbeat, token, NA.NodeRequest.of(request), raw, client_ip(request)),
+                        headers=PRIVATE)
 
 
 # ----------------------------------------------------------------------------- claim
-def _claim(token: str | None, ip: str) -> dict | None:
+def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict | None:
     now = utcnow()
     with Session(get_db()) as session:
-        node = _node_for(token, session)
+        node = _authenticate(session, token, req, raw, now)
         node.last_seen_ip = ip
         node.last_heartbeat_at = now
         session.add(node)
@@ -209,24 +251,26 @@ def _claim(token: str | None, ip: str) -> dict | None:
 @router.post("/cbom/node/jobs/claim", dependencies=[Depends(node_limiter)],
              summary="Claim the next job (204 when there is nothing to do)")
 async def claim(request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
-    payload = await _guard("claim", _claim, token, client_ip(request))
+    raw = await read_capped_body(request, SMALL_BODY)
+    payload = await _guard("claim", _claim, token, NA.NodeRequest.of(request), raw, client_ip(request))
     if payload is None:
         return Response(status_code=204, headers=PRIVATE)
     return JSONResponse(payload, headers=PRIVATE)
 
 
 # ----------------------------------------------------------------------------- assets
-def _assets(token: str | None, job_id: int, body: AssetsBody) -> dict:
+def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
-    valid: list[dict[str, Any]] = []
-    rejected = 0
-    for raw in body.assets:
-        try:
-            valid.append(AssetIn.model_validate(raw).model_dump())
-        except (ValidationError, TypeError):
-            rejected += 1
     with Session(get_db()) as session:
-        node = _node_for(token, session)
+        node = _authenticate(session, token, req, raw, now)
+        body = _parse(AssetsBody, parse_json(raw))
+        valid: list[dict[str, Any]] = []
+        rejected = 0
+        for item in body.assets:
+            try:
+                valid.append(AssetIn.model_validate(item).model_dump())
+            except (ValidationError, TypeError):
+                rejected += 1
         out = J.add_assets(session, node, job_id, body.lease_id, valid, now)
         session.commit()
         out["rejected"] += rejected
@@ -239,15 +283,16 @@ def _assets(token: str | None, job_id: int, body: AssetsBody) -> dict:
 async def assets(job_id: int, request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
     if job_id < 1 or job_id > 2_147_483_647:
         raise HTTPException(status_code=404, detail="Job not found")
-    body = _parse(AssetsBody, await read_capped_json(request, ASSETS_BODY))
-    return JSONResponse(await _guard("assets", _assets, token, job_id, body), headers=PRIVATE)
+    raw = await read_capped_body(request, ASSETS_BODY)
+    return JSONResponse(await _guard("assets", _assets, token, job_id, NA.NodeRequest.of(request), raw), headers=PRIVATE)
 
 
 # ----------------------------------------------------------------------------- result
-def _result(token: str | None, job_id: int, body: ResultBody) -> dict:
+def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
     with Session(get_db()) as session:
-        node = _node_for(token, session)
+        node = _authenticate(session, token, req, raw, now)
+        body = _parse(ResultBody, parse_json(raw))
         job = J.finish_job(session, node, job_id, body.lease_id, body.status, body.result, body.error, now)
         session.commit()
         return {"job_id": job.id, "status": job.status, "server_time": iso_z(now)}
@@ -258,5 +303,5 @@ def _result(token: str | None, job_id: int, body: ResultBody) -> dict:
 async def result(job_id: int, request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
     if job_id < 1 or job_id > 2_147_483_647:
         raise HTTPException(status_code=404, detail="Job not found")
-    body = _parse(ResultBody, await read_capped_json(request, RESULT_BODY))
-    return JSONResponse(await _guard("result", _result, token, job_id, body), headers=PRIVATE)
+    raw = await read_capped_body(request, RESULT_BODY)
+    return JSONResponse(await _guard("result", _result, token, job_id, NA.NodeRequest.of(request), raw), headers=PRIVATE)

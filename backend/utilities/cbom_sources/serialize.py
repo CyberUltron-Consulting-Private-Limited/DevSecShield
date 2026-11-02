@@ -49,6 +49,10 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
         "last_claim_at": iso_z(node.last_claim_at),
         "last_seen_ip": node.last_seen_ip,
         "last_node_error": node.last_node_error,
+        # "required": every request is Ed25519-signed with the key sent at enrollment; "legacy": enrolled before
+        # signing existed (unsigned until the node is reset and enrolled again)
+        "signing": "required" if node.signing_public_key else "legacy",
+        "client_cert_sha256": node.client_cert_sha256,
         "assigned_targets": assigned_targets,
         "sources": sources,
         "row_version": node.row_version,
@@ -170,6 +174,7 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
         "soc_email": row.soc_email,
         "emergency_contact": row.emergency_contact,
         "stop_all_network": row.stop_all_network,
+        "require_signed_nodes": bool(row.require_signed_nodes),
         "risk_model": {k: (row.risk_model or {}).get(k) for k in ("data_shelf_life_years", "migration_years", "threat_years")},
         "stop_all_changed_by": row.stop_all_changed_by,
         "stop_all_changed_at": iso_z(row.stop_all_changed_at),

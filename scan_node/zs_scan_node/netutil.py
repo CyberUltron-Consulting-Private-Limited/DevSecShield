@@ -81,6 +81,96 @@ def resolve(name: str, timeout: float = 5.0) -> list[str]:
     return out
 
 
+# ----------------------------------------------------------------------------- the network gate
+# Every connection a collector makes to a customer target goes through one of these, so the never-scan list is applied
+# to the exact address that is connected to, at the moment of connecting (it can change while a job runs):
+#   resolve_checked(host, never)        resolve once; drop (or, with every=True, refuse) never-scan addresses
+#   checked_ip(ip, never)               re-check an address just before a driver (psycopg, paramiko ...) connects to it
+#   connect(ip, port, never, timeout)   check + open the TCP socket to that address
+#   http_client(url, ip, never, ...)    an httpx client pinned to the checked address (Host/SNI/certificate name kept)
+# tests/test_network_gate.py fails when a collector module opens sockets or HTTP clients any other way.
+
+
+class Blocked(Exception):
+    """The target (name or address) is on the never-scan list."""
+
+    status = "skipped_never_scan"
+
+    def __init__(self, what: str) -> None:
+        super().__init__(f"{what} is on the never-scan list")
+        self.what = what
+
+
+def _is_ip(text: str) -> bool:
+    try:
+        ipaddress.ip_address(text)
+        return True
+    except ValueError:
+        return False
+
+
+def checked_ip(ip: str, never: NeverScan) -> str:
+    """The address itself, after checking it against the current never-scan list (raises Blocked)."""
+    if never.blocks_ip(ip):
+        raise Blocked(ip)
+    return ip
+
+
+def resolve_checked(host: str, never: NeverScan, every: bool = False, timeout: float = 5.0) -> list[str]:
+    """Resolve once and apply never-scan.  Returns the allowed addresses (IPv4 first); connect only to one of them.
+    every=True: refuse the whole name if ANY address is blocked (for clients that resolve the name again themselves).
+    Raises Blocked, or OSError when the name does not resolve."""
+    text = str(host or "").strip().strip("[]")
+    if _is_ip(text):
+        return [checked_ip(text, never)]
+    name = text.lower().rstrip(".")
+    if never.blocks_host(name):
+        raise Blocked(name)
+    addresses = resolve(name, timeout)
+    allowed = [ip for ip in addresses if not never.blocks_ip(ip)]
+    if not allowed or (every and len(allowed) != len(addresses)):
+        raise Blocked(f"{name} (resolves to a never-scan address)")
+    return allowed
+
+
+def connect(ip: str, port: int, never: NeverScan, timeout: float) -> socket.socket:
+    """TCP connection to a checked address.  Raises Blocked or OSError (socket.timeout, ConnectionRefusedError ...)."""
+    checked_ip(ip, never)
+    return socket.create_connection((ip, int(port)), timeout=timeout)
+
+
+def http_client(url: str, ip: str, never: NeverScan, **kwargs):
+    """An httpx.Client for ``url`` that connects only to ``ip`` (checked here), while the Host header, TLS SNI and
+    certificate name check still use the URL's host name.  So the HTTP client never resolves the name again: DNS
+    cannot move it to an address that was not checked.  kwargs go to httpx.Client (verify, headers, timeout ...);
+    redirects are never followed and the environment's proxies are not used."""
+    import httpx
+    from urllib.parse import urlsplit
+
+    checked_ip(ip, never)
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    default_port = port == (443 if parts.scheme == "https" else 80)
+    literal = f"[{ip}]" if ":" in ip else ip
+    pinned = f"{parts.scheme}://{literal}:{port}{parts.path or ''}"
+    host_header = (f"[{host}]" if ":" in host else host) + ("" if default_port else f":{port}")
+    sni = None if _is_ip(host) else host
+
+    class _Pinned(httpx.HTTPTransport):
+        def handle_request(self, request):
+            if sni:
+                request.extensions = {**request.extensions, "sni_hostname": sni}
+            return super().handle_request(request)
+
+    verify = kwargs.pop("verify", True)
+    headers = {**(kwargs.pop("headers", None) or {}), "Host": host_header}
+    kwargs.pop("follow_redirects", None)
+    kwargs.pop("trust_env", None)
+    return httpx.Client(base_url=pinned, headers=headers, transport=_Pinned(verify=verify), follow_redirects=False,
+                        trust_env=False, **kwargs)
+
+
 def iter_line_ips(line: str) -> Iterator[str] | None:
     """Addresses of an IP / CIDR / range line, or None if the line is a hostname."""
     text = line.strip()
