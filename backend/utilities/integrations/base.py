@@ -34,7 +34,13 @@ class Context:
     secrets: dict[str, str]
     engine: Any = None
     integration_id: int | None = None
+    deadline: float | None = None  # time.monotonic() after which a per-event connector stops (the rest stay queued)
     extra: dict[str, Any] = field(default_factory=dict)
+
+    def expired(self) -> bool:
+        import time
+
+        return self.deadline is not None and time.monotonic() >= self.deadline
 
 
 class Cfg(BaseModel):

@@ -280,6 +280,8 @@ def send(ctx: Context, events: list[dict[str, Any]]) -> list[Outcome]:
     out: list[Outcome] = []
     secret = ctx.secrets.get("signing_secret") or ""
     for event in events:
+        if out and ctx.expired():  # the dispatcher's time budget: the rest stay queued, in order
+            break
         if event["kind"] != "scan_finished":
             out.append(Outcome("ok", "not a scan-finished event; nothing to push"))
             continue

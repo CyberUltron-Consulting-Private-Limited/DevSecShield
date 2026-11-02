@@ -102,6 +102,8 @@ def send(ctx: Context, events: list[dict[str, Any]]) -> list[Outcome]:
     secret = ctx.secrets.get("signing_secret") or ""
     out: list[Outcome] = []
     for event in events:
+        if out and ctx.expired():  # the dispatcher's time budget: the rest stay queued, in order
+            break
         outcome = post_signed(ctx.config.url, secret, event["id"], event["type"], json_body(event), ctx.config.ca_pem)
         out.append(outcome)
         if outcome.status == "retry":

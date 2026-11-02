@@ -27,7 +27,7 @@ from backend.utilities.cbom_sources.crypto import decrypt_secrets
 from backend.utilities.integrations.base import Context, Outcome
 from backend.utilities.integrations.registry import SPECS, validate_config
 
-LEASE = _dt.timedelta(seconds=120)
+LEASE = _dt.timedelta(seconds=300)  # > BUDGET_S + one slow event (ServiceNow: 3 requests x 20 s)
 BUDGET_S = 45.0  # per integration per tick; well inside the lease
 BACKOFF_BASE_S = 30.0
 BACKOFF_MAX_S = 1800.0
@@ -85,7 +85,7 @@ def deliver_integration(engine, integration_id: int, now: _dt.datetime | None = 
             return counts
     started = time.monotonic()
     try:
-        while time.monotonic() - started < BUDGET_S:
+        while True:  # at least one batch per claim, then batches until the time budget is used
             with Session(engine) as session:
                 integration = session.get(TeamIntegration, integration_id)
                 if integration is None or not integration.enabled:
@@ -98,13 +98,14 @@ def deliver_integration(engine, integration_id: int, now: _dt.datetime | None = 
                     break
                 try:
                     ctx = context_for(integration, engine)
+                    ctx.deadline = started + BUDGET_S
                     outcomes = spec.send(ctx, [dict(d.payload or {}) for d in batch])
                 except Exception as exc:  # a stored config the current rules reject, or a connector bug
                     outcomes = [Outcome("retry", f"the integration could not run ({type(exc).__name__}); check its settings")]
                 current = now + _dt.timedelta(seconds=time.monotonic() - started)  # the caller's clock, advanced
                 stop = _record(session, integration, batch, outcomes, current, counts)
                 session.commit()
-                if stop:
+                if stop or time.monotonic() - started >= BUDGET_S:
                     break
     finally:
         with Session(engine) as session:

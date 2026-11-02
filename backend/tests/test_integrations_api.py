@@ -228,6 +228,26 @@ def test_one_dispatcher_per_integration(api, world, monkeypatch):
     assert len(calls) == 1 and sorted(r["delivered"] for r in results) == [0, 0, 1]
 
 
+def test_the_time_budget_stops_a_slow_batch_inside_the_lease(api, world, monkeypatch):
+    """A slow receiver cannot hold a batch past the lease (another dispatcher would then send out of order)."""
+    engine, _ = world
+    assert D.LEASE.total_seconds() > D.BUDGET_S + 3 * 20  # one ServiceNow event = up to 3 requests of 20 s
+    assert api("PUT", "/1/integrations/webhook", json=HOOK).status_code == 200
+    receiver = Receiver()
+    monkeypatch.setattr(webhook.outbound, "request", receiver)
+    monkeypatch.setattr(D, "BUDGET_S", 0.0)  # already used up: one event per claim, the rest stay queued
+    _drift(engine, 3)
+    EV.enqueue_drift(engine, dt.datetime.utcnow())
+    with Session(engine) as s:
+        integration_id = s.exec(select(TeamIntegration)).one().id
+    assert D.deliver_integration(engine, integration_id)["delivered"] == 1
+    assert D.deliver_integration(engine, integration_id)["delivered"] == 1
+    assert [r["body"]["asset"]["label"] for r in receiver.received] == ["asset-0", "asset-1"]  # still in order
+    with Session(engine) as s:
+        pending = s.exec(select(IntegrationDelivery).where(IntegrationDelivery.status == "pending")).all()
+        assert len(pending) == 1 and pending[0].attempts == 0
+
+
 def test_disabled_integration_and_subscriptions(api, world, monkeypatch):
     engine, _ = world
     receiver = Receiver()
