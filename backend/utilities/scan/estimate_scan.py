@@ -1,5 +1,6 @@
 import datetime
 import asyncio
+import re
 from typing import Annotated, Literal
 from bson import ObjectId
 from celery.result import AsyncResult
@@ -22,6 +23,39 @@ console = Console()
 # SAST estimation clones repos and builds embeddings; 60s was too tight (prod task ~59.6s).
 ESTIMATION_POLL_INTERVAL_SEC = 2
 ESTIMATION_POLL_MAX_ATTEMPTS = 300  # up to ~600s (multi-engine SBOM / large clones)
+
+
+_REMOTE_BRANCH = re.compile(r"Remote branch (\S{1,255}) not found in upstream")
+
+
+def _clone_failure(text: str) -> HTTPException | None:
+    """A repository the worker could not clone ("Clone failed: ..." with git's stderr) is a wrong URL, branch or token,
+    not an outage: say which, so the customer fixes the input instead of retrying (found in the lab UI run: a typo in
+    the branch and a missing repository both came back as "Internal server error. Please try again later.").
+    Only fixed sentences and the branch the customer typed are returned, never git's output (it can name hosts)."""
+    if "clone failed" not in text.lower():
+        return None
+    branch = _REMOTE_BRANCH.search(text)
+    if branch:
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail=f"The branch '{branch.group(1)[:100]}' was not found in the repository. "
+                                    "Check the branch name (leave it empty for main).")
+    lowered = text.lower()
+    if any(token in lowered for token in ("repository not found", "could not read username", "authentication failed",
+                                          "could not be found", "invalid username or", "access denied",
+                                          "requested url returned error: 403",
+                                          "requested url returned error: 404")):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail="The repository was not found or cannot be read with the given access. Check "
+                                    "the URL; a private repository needs a Personal Access Token with read access.")
+    if any(token in lowered for token in ("could not resolve host", "failed to connect", "timed out",
+                                          "connection refused", "unable to access")):
+        # 400, not 502: a proxy in front of the API may replace a 5xx body, and the customer must see this sentence
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail="The scanner could not reach the repository host. Check that the host is "
+                                    "reachable from the scanner, then try again.")
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                         detail="The repository could not be cloned. Check the URL, the branch and the access token.")
 
 
 def _estimation_failure(task_result) -> HTTPException:
@@ -47,6 +81,9 @@ def _estimation_failure(task_result) -> HTTPException:
         reason = text.rsplit(":", 1)[-1].strip() or "unreadable archive"
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail=f"The uploaded file is not a readable zip archive ({reason[:120]})")
+    clone = _clone_failure(text)
+    if clone is not None:
+        return clone
     return HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Credit estimation failed, please try again later",

@@ -35,7 +35,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         _meta = scan.scan_metadata or {}
         repo_url = _meta.get("repo_url") if _meta.get("repo_url") else None
         zip_file_used = bool(_meta.get("zip_file_used"))
-        branch = _meta.get("branch") or "main"
+        branch = _meta.get("branch") or ("main" if repo_url else None)  # a zip or an uploaded BOM has no branch
 
         files_scanned = 0
         total_files = 0
@@ -171,7 +171,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         _meta = scan.scan_metadata or {}
         repo_url = _meta.get("repo_url") if _meta.get("repo_url") else None
         zip_file_used = bool(_meta.get("zip_file_used"))
-        branch = _meta.get("branch") or "main"
+        branch = _meta.get("branch") or ("main" if repo_url else None)  # a zip or an uploaded BOM has no branch
         cbom_file_used = bool(_meta.get("cbom_file_used"))
         scan_binaries = bool(_meta.get("scan_binaries"))
 
@@ -282,7 +282,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         _meta = scan.scan_metadata or {}
         repo_url = _meta.get("repo_url") if _meta.get("repo_url") else None
         zip_file_used = bool(_meta.get("zip_file_used"))
-        branch = _meta.get("branch") or "main"
+        branch = _meta.get("branch") or ("main" if repo_url else None)  # a zip or an uploaded BOM has no branch
         ai_bom_file_used = bool(_meta.get("ai_bom_file_used"))
         scan_binaries = bool(_meta.get("scan_binaries"))
 

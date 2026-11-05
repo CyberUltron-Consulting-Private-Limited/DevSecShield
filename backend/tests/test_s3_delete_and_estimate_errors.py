@@ -37,6 +37,45 @@ def test_an_unreadable_archive_is_bad_input_not_an_outage(worker_error) -> None:
     assert exc.status_code == 400 and exc.detail.startswith("The uploaded file is not a readable zip archive (")
 
 
+# The worker's own messages from the lab UI run (u2, round 5): a typo in the branch and a repository that does not
+# exist (GitHub answers a missing or private repository with a credential prompt) both came back as
+# "Internal server error. Please try again later."
+_CLONE = ("Error in initializing CBOMAgent: Clone failed: Cmd('git') failed due to: exit code(128)\n"
+          "  cmdline: git clone -v --depth=1 --branch={branch} -- https://github.com/{repo} /tmp/repo_9z7m403x\n"
+          "  stderr: 'Cloning into '/tmp/repo_9z7m403x'...\n{fatal}'")
+
+
+def test_a_missing_branch_names_the_branch() -> None:
+    exc = _estimation_failure(_Result(_CLONE.format(
+        branch="no-such-branch-u2", repo="ricmoo/pyaes",
+        fatal="warning: Could not find remote branch no-such-branch-u2 to clone.\n"
+              "fatal: Remote branch no-such-branch-u2 not found in upstream origin")))
+    assert exc.status_code == 400
+    assert exc.detail.startswith("The branch 'no-such-branch-u2' was not found in the repository.")
+
+
+@pytest.mark.parametrize("fatal", [
+    "fatal: could not read Username for 'https://github.com': No such device or address",
+    "remote: Repository not found.\nfatal: repository 'https://github.com/x/y/' not found",
+    "remote: Invalid username or token. Password authentication is not supported for Git operations.\n"
+    "fatal: Authentication failed for 'https://github.com/x/y/'",
+    "fatal: unable to access 'https://bitbucket.org/x/y/': The requested URL returned error: 403",
+])
+def test_a_missing_or_private_repository_says_so(fatal) -> None:
+    exc = _estimation_failure(_Result(_CLONE.format(branch="main", repo="zs-lab-u2-nonexistent/nope-nope",
+                                                    fatal=fatal)))
+    assert exc.status_code == 400
+    assert exc.detail.startswith("The repository was not found or cannot be read with the given access.")
+    assert "github.com" not in exc.detail and "/tmp/" not in exc.detail, "git's output is never echoed"
+
+
+def test_an_unreachable_git_host_is_not_blamed_on_the_customer() -> None:
+    exc = _estimation_failure(_Result(_CLONE.format(
+        branch="main", repo="x/y", fatal="fatal: unable to access 'https://github.com/x/y/': Could not resolve host: "
+                                         "github.com")))
+    assert exc.status_code == 400 and "could not reach the repository host" in exc.detail
+
+
 def test_other_estimation_failures_stay_credit_errors() -> None:
     exc = _estimation_failure(_Result("broker connection refused"))
     assert exc.status_code == 500
