@@ -1,4 +1,7 @@
 {{- if .Values.agent.enabled }}
+{{- if and .Values.agent.sysPtrace (not (and .Values.agent.runAsRoot .Values.agent.hostPID)) }}
+{{- fail "agent.sysPtrace needs agent.runAsRoot=true (capabilities apply to uid 0 only) and agent.hostPID=true (the processes it reads)" }}
+{{- end }}
 {{- $uid := ternary 0 10001 .Values.agent.runAsRoot }}
 apiVersion: apps/v1
 kind: DaemonSet
@@ -23,10 +26,13 @@ spec:
         app.kubernetes.io/name: {{ include "cbom-scan-node.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: host-agent
-      {{- with .Values.podAnnotations }}
       annotations:
+        # a new pool token restarts the pods, so a pod waiting to enroll (its node was reset or deleted after the
+        # old token expired or was revoked) reads it
+        checksum/pool-token: {{ printf "%s/%s" (include "cbom-scan-node.agentSecretName" .) .Values.agent.poolToken | sha256sum | quote }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       automountServiceAccountToken: false
       hostPID: {{ .Values.agent.hostPID }}
@@ -92,7 +98,7 @@ spec:
             capabilities:
               drop: ["ALL"]
               {{- if .Values.agent.runAsRoot }}
-              add: ["DAC_READ_SEARCH"]
+              add: {{ ternary (list "DAC_READ_SEARCH" "SYS_PTRACE") (list "DAC_READ_SEARCH") .Values.agent.sysPtrace | toJson }}
               {{- end }}
           {{- include "cbom-scan-node.readiness" . | nindent 10 }}
           resources:
@@ -101,6 +107,19 @@ spec:
             - name: host-root
               mountPath: /host
               readOnly: true
+              {{- if semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version }}
+              # submounts too (/proc, /sys, ... of the host) where the kubelet and the runtime support it
+              recursiveReadOnly: IfPossible
+              {{- end }}
+            {{- range .Values.agent.hiddenHostPaths }}
+            {{- $dest := printf "/host/%s" (trimPrefix "/" .) | clean }}
+            {{- if eq $dest "/host" }}
+            {{- fail "agent.hiddenHostPaths lists directories under the host root, not the root itself" }}
+            {{- end }}
+            - name: hidden
+              mountPath: {{ $dest | quote }}
+              readOnly: true
+            {{- end }}
             - name: state
               mountPath: /var/lib/zs-node
             - name: tmp
@@ -110,9 +129,14 @@ spec:
           hostPath:
             path: {{ .Values.agent.hostRoot | quote }}
             type: Directory
+        {{- if .Values.agent.hiddenHostPaths }}
+        - name: hidden
+          emptyDir:
+            sizeLimit: 1Mi
+        {{- end }}
         - name: state
           hostPath:
-            path: {{ .Values.agent.statePath | quote }}
+            path: {{ include "cbom-scan-node.agentStatePath" . | quote }}
             type: DirectoryOrCreate
         - name: tmp
           emptyDir:

@@ -6,5 +6,8 @@ It shows as online on CBOM Sources > Scan nodes once it has enrolled; the regist
 {{- if .Values.agent.enabled }}
 Host agents: {{ include "cbom-scan-node.fullname" . }}-agent (DaemonSet). Each pod enrolls as its own scan node,
 named after its Kubernetes node, and reads only that node's files (read-only /host mount); it never receives credentials.
+Node state on each host: {{ include "cbom-scan-node.agentStatePath" . }}. A node reset in ZeroShield is enrolled again
+by its pod with the pool token while that token is active; after it expires, install a new one with
+helm upgrade --set agent.poolToken=... (the pods restart and read it).
   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=host-agent -o wide
 {{- end }}

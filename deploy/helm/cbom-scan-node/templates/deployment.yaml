@@ -22,10 +22,12 @@ spec:
         app.kubernetes.io/name: {{ include "cbom-scan-node.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: scan-node
-      {{- with .Values.podAnnotations }}
       annotations:
+        # a new registration token (after a Reset) restarts the node, so it reads it
+        checksum/registration-token: {{ printf "%s/%s" (include "cbom-scan-node.secretName" .) .Values.registrationToken | sha256sum | quote }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
     spec:
       # the node never calls the Kubernetes API of the cluster it runs in (a cluster source brings its own kubeconfig)
       automountServiceAccountToken: false
