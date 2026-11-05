@@ -26,7 +26,10 @@ ENGINE_PY   ?= aibom/.venv/bin/python
 NODE_PY     ?= scan_node/.venv/bin/python
 WORKER_PY   ?= RabbitMQ/worker/.venv/bin/python
 
+# Exported only when given: an empty DSS_TAG in the environment would override deploy/staging/.env for Compose.
+ifneq ($(strip $(DSS_TAG)),)
 export DSS_TAG
+endif
 
 ##@ Local stack (the production images, run from deploy/staging on this machine)
 
