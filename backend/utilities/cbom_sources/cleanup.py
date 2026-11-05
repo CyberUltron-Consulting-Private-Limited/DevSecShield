@@ -17,6 +17,7 @@ from backend.new_models import (
     CbomEvidenceArea,
     CbomEvidenceVendor,
     CbomRemediationAssignment,
+    CbomNodePool,
     CbomScanNode,
     IntegrationDelivery,
     TeamIntegration,
@@ -33,6 +34,7 @@ _ORDER = (
     CbomCollectionRun,
     CbomCollectionSource,
     CbomScanNode,
+    CbomNodePool,  # agent pool tokens (WP8b): after the nodes that point at them
     CbomCollectionSettings,
     CbomEvidenceVendor,
     CbomEvidenceArea,

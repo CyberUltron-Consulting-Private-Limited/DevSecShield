@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Circle, KeyRound, Loader2, MoreVertical, Pencil, Plus, RotateCcw, Server, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -25,7 +25,8 @@ import {
 import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
-import { ago, installCommand, readTextFile, type DeployMethod } from "./logic";
+import { AgentPoolsCard } from "./AgentPoolsCard";
+import { DEPLOY_SUPPORT, ago, installCommand, readTextFile, type DeployMethod } from "./logic";
 import {
   Checkbox2,
   ChoiceCards,
@@ -46,12 +47,25 @@ import {
 const NODE_IMAGE = process.env.NEXT_PUBLIC_CBOM_NODE_IMAGE || "registry.zeroshield.ai/cbom/scan-node:1.0";
 const SEGMENTS = ["Data centre", "DMZ", "Branch office", "OT / plant", "Cloud VPC"];
 const TIMEZONES = ["Asia/Kolkata", "UTC", "Asia/Dubai", "Asia/Singapore", "Europe/London", "America/New_York"];
-const DEPLOY_OPTIONS: { value: DeployMethod; title: string; description: string }[] = [
-  { value: "docker", title: "Docker container", description: "Any Linux VM with Docker" },
-  { value: "ova", title: "OVA appliance", description: "VMware or Hyper-V" },
-  { value: "ami", title: "AWS AMI", description: "Launch in your VPC" },
-  { value: "helm", title: "Helm chart", description: "Runs in your Kubernetes cluster" },
-];
+const DEPLOY_OPTIONS: { value: DeployMethod; title: string; description: ReactNode }[] = (
+  [
+    { value: "docker", title: "Docker container", description: "Any Linux VM with Docker" },
+    { value: "ova", title: "OVA appliance", description: "VMware (vApp properties)" },
+    { value: "ami", title: "AWS AMI", description: "Launch in your VPC" },
+    { value: "helm", title: "Helm chart", description: "Runs in your Kubernetes cluster" },
+  ] as const
+).map((o) => ({
+  ...o,
+  description: (
+    <>
+      {o.description}
+      <span className={`block mt-1 font-medium ${DEPLOY_SUPPORT[o.value].proven ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}`}
+        data-testid={`deploy-support-${o.value}`}>
+        {DEPLOY_SUPPORT[o.value].proven ? (o.value === "helm" ? "Proven on k3s (Deployment and agent DaemonSet)" : "Proven") : "Build it yourself (template provided)"}
+      </span>
+    </>
+  ),
+}));
 const DEPLOY_LABEL: Record<string, string> = { docker: "Docker", ova: "OVA appliance", ami: "AWS AMI", helm: "Helm chart" };
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 
@@ -256,7 +270,16 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                       <TableCell>
                         <NodeStatusBadge status={node.status} />
                       </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">{DEPLOY_LABEL[node.deployment] ?? node.deployment}</TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        <span className="inline-flex items-center gap-2">
+                          {DEPLOY_LABEL[node.deployment] ?? node.deployment}
+                          {node.mode === "agent" && (
+                            <StatusBadge tone="blue" title="Agent mode: collects only its own host, from read-only mounts; never given a credential">
+                              Host agent
+                            </StatusBadge>
+                          )}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{node.node_version ?? "—"}</TableCell>
                       <TableCell>{node.enrolled_at ? <SigningBadge node={node} /> : <span className="text-zinc-500">—</span>}</TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{ago(node.last_heartbeat_at, serverNow)}</TableCell>
@@ -302,6 +325,8 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         )}
       </SectionCard>
 
+      <AgentPoolsCard teamId={teamId} image={NODE_IMAGE} apiUrl={apiBaseURL} />
+
       <RequestSigningCard teamId={teamId} nodes={nodes} />
 
       {wizardOpen && (
@@ -346,6 +371,13 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
               {created && (
                 <div className="mt-4 space-y-2">
                   <CodeSnippet code={command} language={wizard.deployment === "ami" ? "yaml" : "bash"} />
+                  {!DEPLOY_SUPPORT[createdNode?.deployment ?? wizard.deployment].proven && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="deploy-build-yourself">
+                      Build it yourself: ZeroShield does not publish this image yet. The Packer template and the steps are in
+                      {" "}<span className="font-mono">deploy/node-images/</span> (README); the node reads the values above from
+                      {" "}<span className="font-mono">/etc/zs-node/env</span>. Docker and Helm are the proven ways to run a node.
+                    </p>
+                  )}
                   <p className="text-xs text-zinc-500">
                     The registration token works once and expires in {expiresIn(createdNode?.registration_expires_at ?? null, serverNow) || "24 h"}.
                     It is shown only here; if you refresh this page, use <span className="font-medium">New registration token</span>.

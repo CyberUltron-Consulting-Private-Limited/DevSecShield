@@ -4111,7 +4111,7 @@ export {
 export type CbomSourceKind =
     | "linux_servers" | "windows_servers" | "active_directory" | "kubernetes" | "database"
     | "aws_account" | "azure_subscription" | "gcp_project" | "ca_connector" | "idp" | "network_range"
-    | "appliance" | "key_manager"
+    | "appliance" | "key_manager" | "host_agent" | "container_images"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
 export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
@@ -4151,6 +4151,9 @@ export interface CbomScanNode {
     signing: "required" | "legacy"
     /** SHA-256 of the client certificate the proxy verified at enrollment (mTLS), or null */
     client_cert_sha256: string | null
+    /** "agent": collects only its own host, never given a credential (ZS_MODE=agent); pool_id: its agent pool token */
+    mode?: "agent" | "agentless"
+    pool_id?: number | null
     assigned_targets: number
     sources: number
     row_version: number

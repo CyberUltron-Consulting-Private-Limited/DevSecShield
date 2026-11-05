@@ -1,0 +1,19 @@
+[Unit]
+Description=ZeroShield CBOM scan node
+Documentation=https://zeroshield.ai
+Requires=docker.service
+After=docker.service network-online.target cloud-final.service zs-ovf-env.service
+Wants=network-online.target
+# Starts once first boot has written the settings (cloud-init user data on EC2, vApp properties on VMware).
+ConditionPathExists=/etc/zs-node/env
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm -f zs-scan-node
+ExecStart=/usr/local/sbin/zs-node-run
+ExecStop=/usr/bin/docker stop -t 30 zs-scan-node
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -127,6 +127,7 @@ class JobContext:
     state_dir: str = "/var/lib/zs-node"
     node_private_key_path: str | None = None
     vault_prefix: str | None = None
+    agent_mode: bool = False  # ZS_MODE=agent: only host_agent jobs, never a job that carries credentials
     started: float = field(default_factory=time.monotonic)
     _buffer: list[dict] = field(default_factory=list)
     _seq: int = 0

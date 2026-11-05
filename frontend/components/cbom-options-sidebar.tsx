@@ -440,6 +440,25 @@ export function CBOMOptionsSidebar({
                 </span>
               </label>
             )}
+            {!cbom_file_used && (
+              <label className="flex items-start gap-2 mt-3 text-sm text-zinc-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-blue-600"
+                  checked={scan_binaries}
+                  onChange={(e) => setScanBinaries(e.target.checked)}
+                  data-testid="cbom-scan-binaries"
+                />
+                <span>
+                  Scan binaries, container images and firmware
+                  <span className="block text-xs text-zinc-500 mt-0.5">
+                    Reads compiled binaries, docker save / OCI image archives and firmware images in the upload or
+                    repository: linked crypto libraries, crypto constants, embedded keys and the packages inside images.
+                    Adds 1 credit per 5 MB of binary content. Off by default.
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
 
           <Separator className="bg-zinc-800" />
@@ -479,6 +498,7 @@ export function CBOMOptionsSidebar({
                 {minimumCredits && estimatedCredits != null && estimatedCredits <= minimumCredits
                   ? `Includes the minimum charge of ${minimumCredits} credit for a code scan.`
                   : "A repository or zip code scan costs at least 1 credit (1 credit per 0.5 MB scanned)."}
+                {scan_binaries && " Scanning binaries, container images and firmware adds 1 credit per 5 MB of binary content."}
                 {" "}If the files or options change before you start, the scan is estimated again.
               </p>
             )}

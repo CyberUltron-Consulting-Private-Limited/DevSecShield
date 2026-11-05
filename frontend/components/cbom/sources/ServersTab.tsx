@@ -366,7 +366,8 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
     retry: 1,
   });
   const nodes = useMemo(() => nodesQuery.data?.nodes ?? [], [nodesQuery.data]);
-  const sources = useMemo(() => sourcesQuery.data?.sources ?? [], [sourcesQuery.data]);
+  // host agents (agent-mode nodes, one source each) are listed on the Scan nodes tab, not here
+  const sources = useMemo(() => (sourcesQuery.data?.sources ?? []).filter((s) => s.kind !== "host_agent"), [sourcesQuery.data]);
   const serverNow = sourcesQuery.data?.server_time;
   const jobQuery = usePolledJob(teamId, testView?.jobId ?? null);
   const testedSource = testView ? sources.find((s) => s.id === testView.sourceId) ?? null : null;

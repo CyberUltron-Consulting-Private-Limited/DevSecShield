@@ -1,0 +1,69 @@
+# ZeroShield CBOM scan node.  The command on CBOM Sources > Scan nodes sets image, apiUrl, registrationToken and
+# (optionally) httpsProxy; "Create agent pool token" gives the DaemonSet command (agent.enabled, agent.poolToken).
+
+image:
+  repository: registry.zeroshield.ai/cbom/scan-node
+  tag: ""            # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# ZeroShield API URL (https://). Required.
+apiUrl: ""
+# Lab only: allow an http:// apiUrl (credentials would travel unencrypted).
+allowInsecureHttp: false
+
+# Single-use registration token from "Add scan node" (only needed until the node has enrolled). Stored in a Secret
+# this chart creates; or name your own Secret (key: registration-token) in existingSecret.
+registrationToken: ""
+existingSecret: ""
+
+# Outbound proxy to ZeroShield (targets are always reached directly).
+httpsProxy: ""
+noProxy: ""
+
+# Extra environment for the node (for example ZS_VAULT_PATH_PREFIX, VAULT_ADDR, ZS_MAX_JOBS, ZS_CA_FILE).
+extraEnv: []
+
+# The agentless node: reaches your servers, clusters, databases and networks with the credentials you store.
+deployment:
+  enabled: true
+
+# Node state (enrollment, SSH key, request-signing key). One replica only: two pods must never share a node token.
+persistence:
+  size: 1Gi
+  storageClass: ""      # "" = the cluster default
+  existingClaim: ""
+
+resources:
+  requests: {cpu: 50m, memory: 128Mi}
+  limits: {memory: 512Mi}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+
+# Agent mode: one pod per Kubernetes node (DaemonSet). Each pod reads ONLY its own node from read-only host mounts,
+# enrolls as its own scan node named after the Kubernetes node, and is never given a credential.
+agent:
+  enabled: false
+  # Agent pool token from "Create agent pool token" (zsp_...); or name your own Secret (key: pool-token).
+  poolToken: ""
+  existingSecret: ""
+  # The host's / is mounted read-only here inside the pod.
+  hostRoot: /
+  # Per-node state on the host (the node token survives pod restarts, so a pod does not enroll again).
+  statePath: /var/lib/zs-node-agent
+  # Share the host's PID namespace to read which crypto libraries running processes have loaded.
+  hostPID: false
+  # Run as root (uid 0, read-only mounts, only CAP_DAC_READ_SEARCH added) to read root-only files (for example
+  # /etc/kubernetes/pki/*.key: only the public half, key type and size leave the node) and other users' processes.
+  # Default: uid 10001, world-readable files only; the rest is reported as not readable.
+  runAsRoot: false
+  resources:
+    requests: {cpu: 20m, memory: 96Mi}
+    limits: {memory: 384Mi}
+  nodeSelector: {}
+  # Run on every node, control-plane nodes included.
+  tolerations:
+    - operator: Exists
+  priorityClassName: ""

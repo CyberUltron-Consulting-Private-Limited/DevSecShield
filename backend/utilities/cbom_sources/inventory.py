@@ -248,9 +248,13 @@ def _component(row: CbomCollectedAsset, source_name: str | None) -> dict[str, An
         package, version = str(facts.get("package") or name)[:255], str(facts.get("version") or "")
         out = {"type": "library", "bom-ref": ref, "name": package, "version": version,
                "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
-        purl = library_purl(package, version, ecosystem_of(facts.get("ecosystem") or facts.get("language")))
+        # an OS package the node read from a package database carries its own purl (pkg:deb/ubuntu/libssl3@...,
+        # agent mode and registry images, WP8b); otherwise build one (OS packages without an ecosystem: pkg:generic)
+        own = str(facts.get("purl") or "")
+        purl = own[:512] if own.startswith(("pkg:deb/", "pkg:apk/", "pkg:rpm/")) else \
+            library_purl(package, version, ecosystem_of(facts.get("ecosystem") or facts.get("language")))
         if purl:
-            out["purl"] = purl  # SBOM link: OS packages without an ecosystem are pkg:generic
+            out["purl"] = purl
         return out
     crypto: dict[str, Any] = {"assetType": row.cdx_type if row.cdx_type in ("certificate", "protocol", "related-crypto-material") else "algorithm"}
     if crypto["assetType"] == "certificate":

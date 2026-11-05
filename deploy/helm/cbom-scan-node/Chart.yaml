@@ -1,0 +1,12 @@
+apiVersion: v2
+name: cbom-scan-node
+description: >-
+  ZeroShield CBOM scan node: a Deployment that reaches servers, clusters, databases and networks from inside a
+  segment (agentless), and an optional DaemonSet of agent-mode nodes that each read only their own Kubernetes node
+  from read-only host mounts.
+type: application
+version: 1.0.0
+appVersion: "1.0"
+kubeVersion: ">=1.25.0-0"
+home: https://zeroshield.ai
+keywords: [cbom, cryptography, inventory, zeroshield]

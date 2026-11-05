@@ -55,7 +55,7 @@ import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, postCertInAttestation, postCertInSign, getCertInVex, getCertInEvidencePack, type CbomScanDashboardData, type CbomFinding, type CbomScanMetadata, type CbomGraph, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
-import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomImportReport } from "@/utils/api/cbom_outputs";
+import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
@@ -1101,6 +1101,8 @@ export default function CbomResults({
   const meta = scanMetadata as CbomScanMetadata | null;
   // An uploaded CBOM file's import report: notes say what was skipped or truncated (null for code scans)
   const importReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_input ?? null) as CbomImportReport | null;
+  // A code scan's coverage: archives, images, binaries and firmware it skipped or only counted (null when none)
+  const coverageReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_coverage ?? null) as CbomCoverageReport | null;
   const informationalRows = dashboard?.card_data?.total_informational ?? 0;
 
   // Crypto-asset charts from the aibom CBOM lane's run-object (C9). Present only
@@ -1302,6 +1304,31 @@ export default function CbomResults({
           <CardContent>
             <ul className="list-disc pl-5 space-y-1 text-sm text-amber-900 dark:text-amber-200 break-words">
               {importReport.notes.map((note, i) => <li key={i}>{note}</li>)}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {coverageReport && coverageReport.notes.length > 0 && (
+        <Card className={`mb-6 ${coverageReport.skipped > 0 ? "border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20" : "border-zinc-200 dark:border-zinc-800"}`}
+          role={coverageReport.skipped > 0 ? "alert" : undefined} data-testid="cbom-coverage-notes">
+          <CardHeader className="pb-2">
+            <CardTitle className={`text-sm flex items-center gap-2 ${coverageReport.skipped > 0 ? "text-amber-800 dark:text-amber-300" : "text-zinc-800 dark:text-zinc-200"}`}>
+              <AlertTriangle className="h-4 w-4 shrink-0" /> What this scan covered
+            </CardTitle>
+            <CardDescription className={coverageReport.skipped > 0 ? "text-amber-900/80 dark:text-amber-200/80" : undefined}>
+              {coverageReport.skipped > 0
+                ? `${coverageReport.skipped} kind(s) of input were skipped or only partly read; the CycloneDX file lists the same counts (crypto:coverage:*).`
+                : "Everything in the upload was read; these counts are also in the CycloneDX file (crypto:coverage:*)."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="list-disc pl-5 space-y-1 text-sm break-words">
+              {coverageReport.notes.map((note) => (
+                <li key={note.key} className={note.kind === "skipped" ? "text-amber-900 dark:text-amber-200" : "text-zinc-700 dark:text-zinc-300"}>
+                  {note.text}
+                </li>
+              ))}
             </ul>
           </CardContent>
         </Card>

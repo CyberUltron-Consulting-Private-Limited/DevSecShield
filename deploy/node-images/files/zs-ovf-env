@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""OVA first boot: turn the vApp properties of this VM (OVF environment, VMware guestinfo transport) into
+/etc/zs-node/env for the scan node.  Properties (set when the OVA is deployed, as the "Add scan node" wizard shows):
+zs.api_url, zs.registration_token, zs.https_proxy (optional), zs.mode (optional: agent).
+
+Runs before zs-scan-node.service; does nothing once /etc/zs-node/env exists.  Reads the environment with
+`vmtoolsd --cmd "info-get guestinfo.ovfEnv"` (open-vm-tools); the XML is the OVF 1.1 "Environment" document
+(DSP0243 section 11): <Property oe:key="..." oe:value="..."/>.
+"""
+import os
+import re
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+ENV = os.environ.get("ZS_NODE_ENV", "/etc/zs-node/env")
+OE = "{http://schemas.dmtf.org/ovf/environment/1}"
+KEYS = {"zs.api_url": "ZS_API_URL", "zs.registration_token": "ZS_REGISTRATION_TOKEN", "zs.https_proxy": "HTTPS_PROXY",
+        "zs.mode": "ZS_MODE"}
+SAFE = re.compile(r"^[A-Za-z0-9_.:/@%+=,~-]{1,2048}$")  # no spaces, quotes or newlines: docker --env-file is literal
+
+
+def main() -> int:
+    if os.path.exists(ENV):
+        return 0
+    try:
+        xml = subprocess.run(["vmtoolsd", "--cmd", "info-get guestinfo.ovfEnv"], capture_output=True, text=True,
+                             timeout=30, check=True).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"zs-ovf-env: no OVF environment ({exc.__class__.__name__}); write {ENV} by hand", file=sys.stderr)
+        return 0
+    values = {}
+    for prop in ET.fromstring(xml).iter(f"{OE}Property"):
+        key, value = prop.get(f"{OE}key"), (prop.get(f"{OE}value") or "").strip()
+        if key in KEYS and value:
+            if not SAFE.match(value):
+                print(f"zs-ovf-env: {key} has characters that are not allowed; skipped", file=sys.stderr)
+                continue
+            values[KEYS[key]] = value
+    if "ZS_API_URL" not in values:
+        print("zs-ovf-env: zs.api_url is not set; the scan node will not start", file=sys.stderr)
+        return 0
+    os.makedirs(os.path.dirname(ENV), mode=0o700, exist_ok=True)
+    fd = os.open(ENV, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.writelines(f"{k}={v}\n" for k, v in values.items())
+    print(f"zs-ovf-env: wrote {ENV} ({', '.join(sorted(values))})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

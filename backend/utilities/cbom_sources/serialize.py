@@ -53,6 +53,9 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
         # signing existed (unsigned until the node is reset and enrolled again)
         "signing": "required" if node.signing_public_key else "legacy",
         "client_cert_sha256": node.client_cert_sha256,
+        # "agent": collects only its own host, never given a credential (ZS_MODE=agent, WP8b); pool it enrolled with
+        "mode": node.mode or "agentless",
+        "pool_id": node.pool_id,
         "assigned_targets": assigned_targets,
         "sources": sources,
         "row_version": node.row_version,

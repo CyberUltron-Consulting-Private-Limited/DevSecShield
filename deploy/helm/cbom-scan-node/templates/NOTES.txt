@@ -1,0 +1,10 @@
+{{- if .Values.deployment.enabled }}
+Scan node: {{ include "cbom-scan-node.fullname" . }} (Deployment, 1 replica, state on PVC {{ default (printf "%s-state" (include "cbom-scan-node.fullname" .)) .Values.persistence.existingClaim }}).
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "cbom-scan-node.fullname" . }} -f
+It shows as online on CBOM Sources > Scan nodes once it has enrolled; the registration token is then no longer needed.
+{{- end }}
+{{- if .Values.agent.enabled }}
+Host agents: {{ include "cbom-scan-node.fullname" . }}-agent (DaemonSet). Each pod enrolls as its own scan node,
+named after its Kubernetes node, and reads only that node's files (read-only /host mount); it never receives credentials.
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=host-agent -o wide
+{{- end }}

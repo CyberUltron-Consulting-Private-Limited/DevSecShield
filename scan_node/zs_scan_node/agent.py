@@ -10,6 +10,11 @@ Environment:
   HTTPS_PROXY / NO_PROXY  outbound proxy to ZeroShield (customer targets are always reached directly)
   ZS_CLIENT_CERT / ZS_CLIENT_KEY  PEM client certificate and key for mTLS to the ZeroShield proxy (optional)
   ZS_CA_FILE              CA bundle that replaces the default trust for the ZeroShield API (optional)
+  ZS_MODE                 ``agentless`` (default: reaches other systems with stored credentials) or ``agent``: collect
+                          only this node's own host from read-only mounts; never runs another job, never takes a
+                          credential, vault use is off.  ZS_REGISTRATION_TOKEN may then be an agent pool token (zsp_).
+  ZS_NODE_NAME            agent mode: the name to enroll under (the Helm DaemonSet passes the Kubernetes node name)
+  ZS_HOST_ROOT / ZS_HOST_PROC  agent mode: where the host's / is mounted read-only (default /host), and its /proc
 
 Every request is signed with a per-enrollment Ed25519 key (api.py).  The node clears its token only on a 401 from
 the ZeroShield deployment it enrolled with (X-ZS-Deployment); a 401 from anything else is a wrong server or proxy:
@@ -29,7 +34,7 @@ import traceback
 
 from zs_scan_node import VERSION
 from zs_scan_node.api import Api, ApiError, Unauthorized, WrongServer
-from zs_scan_node.collectors import CAPABILITIES, run_job
+from zs_scan_node.collectors import AGENT_CAPABILITIES, CAPABILITIES, run_job
 from zs_scan_node.jobctx import JobContext, LeaseLost
 from zs_scan_node.log import global_scrubber, log
 from zs_scan_node.netutil import NeverScan, has_ipv6, local_ips
@@ -77,7 +82,14 @@ class Agent:
                 level="warn")
         self.state = NodeState.load(os.environ.get("ZS_STATE_DIR", "/var/lib/zs-node"))
         self.max_jobs = max(1, min(int(os.environ.get("ZS_MAX_JOBS", "2") or 2), 8))
+        mode = (os.environ.get("ZS_MODE") or "agentless").strip().lower()
+        if mode not in ("agent", "agentless"):
+            raise SystemExit("ZS_MODE must be 'agent' (collect only this host) or 'agentless' (the default)")
+        self.agent_mode = mode == "agent"
         self.vault_prefix = os.environ.get("ZS_VAULT_PATH_PREFIX") or None
+        if self.agent_mode and self.vault_prefix:
+            log("agent mode never uses credentials: ZS_VAULT_PATH_PREFIX is ignored", level="warn")
+            self.vault_prefix = None
         self.running: dict[int, Running] = {}
         self.lock = threading.Lock()
         self.shutdown = threading.Event()
@@ -121,6 +133,9 @@ class Agent:
                     "source_ips": local_ips(), "ssh_public_key": self.state.ssh_public_key(),
                     "capabilities": self.capabilities(), "clock": _now_iso(),
                     "signing_public_key": base64.b64encode(key.public_key().public_bytes_raw()).decode()}
+            if self.agent_mode:
+                body["mode"] = "agent"
+                body["node_name"] = (os.environ.get("ZS_NODE_NAME") or socket.gethostname())[:253]
             try:
                 data = self.api.enroll(body)
             except Unauthorized as exc:
@@ -167,8 +182,9 @@ class Agent:
                 self.state.save()
 
     def capabilities(self) -> dict:
-        return {"collectors": CAPABILITIES, "openssl": have_openssl(), "ipv6": has_ipv6(), "max_jobs": self.max_jobs,
-                "vault": bool(self.vault_prefix)}
+        return {"collectors": AGENT_CAPABILITIES if self.agent_mode else CAPABILITIES, "openssl": have_openssl(),
+                "ipv6": has_ipv6(), "max_jobs": self.max_jobs, "vault": bool(self.vault_prefix),
+                "mode": "agent" if self.agent_mode else "agentless"}
 
     # ------------------------------------------------------------------ heartbeat
     def heartbeat_once(self) -> None:
@@ -317,7 +333,8 @@ class Agent:
         ctx = JobContext(job_id=job_id, attempt=attempt, run_id=job.get("run_id"), kind=str(job.get("kind")),
                          source_kind=(source or {}).get("kind"), scrubber=scrubber, never_scan=never,
                          deadline=deadline, deadline_reason=reason, poster=poster, state_dir=self.state.directory,
-                         node_private_key_path=self.state.key_path, vault_prefix=self.vault_prefix)
+                         node_private_key_path=self.state.key_path, vault_prefix=self.vault_prefix,
+                         agent_mode=self.agent_mode)
         if self.stop_network.is_set() and is_network:
             ctx.stop_network.set()
         running = Running(job_id, lease_id, ctx, is_network, scope_never)

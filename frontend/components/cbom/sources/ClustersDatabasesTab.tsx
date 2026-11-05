@@ -28,6 +28,7 @@ import {
   type CbomSourceWrite,
 } from "@/utils/backend_api";
 
+import ContainerImagesSection from "./ContainerImagesSection";
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import { ago, pluralize, readTextFile } from "./logic";
@@ -267,7 +268,9 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
   });
 
   const nodes = useMemo(() => nodesQuery.data?.nodes ?? [], [nodesQuery.data]);
-  const clusters = useMemo(() => clustersQuery.data?.sources ?? [], [clustersQuery.data]);
+  // the kubernetes group also holds registry image sources (kind container_images, own section below)
+  const clusters = useMemo(() => (clustersQuery.data?.sources ?? []).filter((s) => s.kind === "kubernetes"), [clustersQuery.data]);
+  const isAdminForImages = useIsTeamAdmin(teamId);
   // the databases group also holds HSMs and KMIP servers (kind key_manager)
   const databases = useMemo(() => databasesQuery.data?.sources ?? [], [databasesQuery.data]);
   const keyManagerCount = databases.filter((s) => s.kind === "key_manager").length;
@@ -412,6 +415,8 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
           />
         </div>
       )}
+
+      <ContainerImagesSection teamId={teamId} nodes={nodes} isAdmin={isAdminForImages} />
 
       <SectionCard
         title="Configured clusters and databases"

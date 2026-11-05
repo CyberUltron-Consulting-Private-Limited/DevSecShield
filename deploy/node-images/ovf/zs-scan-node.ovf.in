@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ZeroShield CBOM scan node @VERSION@ (OVF 1.0, DSP0243). make-ova.sh fills @DISK@, @SIZE@ and @CAPACITY@.
+     The ProductSection properties are asked for at deploy time and reach the VM through the VMware guestinfo
+     transport; zs-ovf-env writes them to /etc/zs-node/env. -->
+<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1"
+          xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1"
+          xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData"
+          xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData"
+          xmlns:vmw="http://www.vmware.com/schema/ovf">
+  <References>
+    <File ovf:id="file1" ovf:href="@DISK@" ovf:size="@SIZE@"/>
+  </References>
+  <DiskSection>
+    <Info>Virtual disk</Info>
+    <Disk ovf:diskId="vmdisk1" ovf:fileRef="file1" ovf:capacity="@CAPACITY@" ovf:capacityAllocationUnits="byte"
+          ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>
+  </DiskSection>
+  <NetworkSection>
+    <Info>Logical network</Info>
+    <Network ovf:name="VM Network">
+      <Description>A network that reaches your targets and, outbound, ZeroShield over HTTPS</Description>
+    </Network>
+  </NetworkSection>
+  <VirtualSystem ovf:id="zeroshield-cbom-scan-node">
+    <Info>ZeroShield CBOM scan node</Info>
+    <Name>zeroshield-cbom-scan-node</Name>
+    <OperatingSystemSection ovf:id="94" vmw:osType="ubuntu64Guest">
+      <Info>Ubuntu 24.04 LTS (64-bit)</Info>
+    </OperatingSystemSection>
+    <ProductSection ovf:required="true">
+      <Info>Scan node settings (the "Add scan node" wizard shows the values)</Info>
+      <Product>ZeroShield CBOM scan node</Product>
+      <Vendor>ZeroShield</Vendor>
+      <Version>@VERSION@</Version>
+      <Property ovf:key="zs.api_url" ovf:type="string" ovf:userConfigurable="true" ovf:value="">
+        <Label>ZeroShield API URL</Label>
+        <Description>https:// URL of the ZeroShield API</Description>
+      </Property>
+      <Property ovf:key="zs.registration_token" ovf:type="string" ovf:userConfigurable="true" ovf:value="" ovf:password="true">
+        <Label>Registration token</Label>
+        <Description>Single-use token from "Add scan node" (zsr_...)</Description>
+      </Property>
+      <Property ovf:key="zs.https_proxy" ovf:type="string" ovf:userConfigurable="true" ovf:value="">
+        <Label>HTTPS proxy (optional)</Label>
+        <Description>Outbound proxy to ZeroShield, for example http://proxy.example.local:8080</Description>
+      </Property>
+      <Property ovf:key="zs.mode" ovf:type="string" ovf:userConfigurable="true" ovf:value="" ovf:qualifiers="ValueMap{&quot;&quot;,&quot;agent&quot;}">
+        <Label>Mode (optional)</Label>
+        <Description>Empty: reach other systems (agentless). agent: collect only this VM</Description>
+      </Property>
+    </ProductSection>
+    <VirtualHardwareSection ovf:transport="com.vmware.guestInfo">
+      <Info>2 vCPU, 2 GB memory, one disk, one network adapter</Info>
+      <System>
+        <vssd:ElementName>Virtual Hardware Family</vssd:ElementName>
+        <vssd:InstanceID>0</vssd:InstanceID>
+        <vssd:VirtualSystemIdentifier>zeroshield-cbom-scan-node</vssd:VirtualSystemIdentifier>
+        <vssd:VirtualSystemType>vmx-14</vssd:VirtualSystemType>
+      </System>
+      <Item>
+        <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
+        <rasd:ElementName>2 virtual CPUs</rasd:ElementName>
+        <rasd:InstanceID>1</rasd:InstanceID>
+        <rasd:ResourceType>3</rasd:ResourceType>
+        <rasd:VirtualQuantity>2</rasd:VirtualQuantity>
+      </Item>
+      <Item>
+        <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
+        <rasd:ElementName>2048 MB of memory</rasd:ElementName>
+        <rasd:InstanceID>2</rasd:InstanceID>
+        <rasd:ResourceType>4</rasd:ResourceType>
+        <rasd:VirtualQuantity>2048</rasd:VirtualQuantity>
+      </Item>
+      <Item>
+        <rasd:Address>0</rasd:Address>
+        <rasd:ElementName>SCSI controller 0</rasd:ElementName>
+        <rasd:InstanceID>3</rasd:InstanceID>
+        <rasd:ResourceSubType>lsilogic</rasd:ResourceSubType>
+        <rasd:ResourceType>6</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:AddressOnParent>0</rasd:AddressOnParent>
+        <rasd:ElementName>Hard disk 1</rasd:ElementName>
+        <rasd:HostResource>ovf:/disk/vmdisk1</rasd:HostResource>
+        <rasd:InstanceID>4</rasd:InstanceID>
+        <rasd:Parent>3</rasd:Parent>
+        <rasd:ResourceType>17</rasd:ResourceType>
+      </Item>
+      <Item>
+        <rasd:AddressOnParent>7</rasd:AddressOnParent>
+        <rasd:AutomaticAllocation>true</rasd:AutomaticAllocation>
+        <rasd:Connection>VM Network</rasd:Connection>
+        <rasd:ElementName>Network adapter 1</rasd:ElementName>
+        <rasd:InstanceID>5</rasd:InstanceID>
+        <rasd:ResourceSubType>VmxNet3</rasd:ResourceSubType>
+        <rasd:ResourceType>10</rasd:ResourceType>
+      </Item>
+    </VirtualHardwareSection>
+  </VirtualSystem>
+</Envelope>
