@@ -141,6 +141,12 @@ node reset). Browsers are asked for a certificate only if they hold one from tha
 answer carries `X-ZS-Deployment` (one id per deployment, created by migration `wp5a0node001`; a migration
 downgrade and upgrade makes a new one, which nodes adopt from their next successful request).
 
+AI analysis: SAST, IaC and the SCA + SBOM chat call Amazon Bedrock with the `AWS_*` of `.env` and need a Qdrant
+vector store (`QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_API_KEY`; not part of this compose file). Without them those
+scans end as "failed"; CBOM and AI-BOM code scans need neither. SCA + SBOM downloads Grype's vulnerability database
+(about 1 GB) into the scan-worker container on its first scan: keep that much free disk, and on an air-gapped site
+that download is not possible.
+
 Air-gapped sites: `GIT_ALLOWED_HOSTS` (self-hosted Git; same value for backend and workers),
 `CBOM_IDP_ALLOWED_PRIVATE` + `CBOM_EXTRA_CA_FILE` (identity provider on a private network with a private CA),
 `DSS_SBOM_REGISTRY=0` (no public registry lookups).
