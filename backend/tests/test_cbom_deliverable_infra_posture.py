@@ -91,12 +91,12 @@ def _visible(raw: bytes) -> str:
     return re.sub(r"\s+", " ", pdf_text(raw))
 
 
-def test_report_key_and_ten_finding_actions():
+def test_report_key_and_every_posture_finding_action():
     assert infra.REPORT_KEY == "cbom_infra_posture"
     assert infra.REPORT_KEY in REPORT_META
     assert list(authored.FINDING_LABELS) == list(authored.FINDING_CODES)
     assert set(authored.FINDING_ACTIONS) == set(authored.FINDING_CODES)
-    assert len(authored.FINDING_CODES) == 10
+    assert len(authored.FINDING_CODES) == 12  # the engine's POSTURE_CODES (test_cbom_finding_code_tables)
     for action in authored.FINDING_ACTIONS.values():
         assert "\n" not in action
         assert action.endswith(".")

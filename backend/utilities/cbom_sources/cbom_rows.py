@@ -10,11 +10,19 @@ from __future__ import annotations
 
 from typing import Any
 
-LIBRARY_CODES = frozenset({"VULNERABLE_CRYPTO_LIBRARY"})
+# The row TYPE a code gives, as the engine's adapter writes it (aibom/integrations/cbom_devsecshield.py
+# _LIBRARY_TYPE_CODES / _CONFIG_TYPE_CODES): a library row, or a configuration (posture) row.
+LIBRARY_CODES = frozenset({"VULNERABLE_CRYPTO_LIBRARY", "LIBRARY_CVE_RANGE", "EOL_CRYPTO_LIBRARY"})
 CONFIG_CODES = frozenset({"TLS_VERIFICATION_DISABLED", "UNENCRYPTED_AT_REST", "AT_REST_ENCRYPTION_WEAK",
                           "UNENCRYPTED_IN_TRANSIT", "PLAINTEXT_LISTENER", "KNOWN_TLS_VULNERABILITY",
-                          "DOWNGRADE_PROTECTION_MISSING"})
-WEAK_EXTRA_CODES = LIBRARY_CODES | CONFIG_CODES | {"CUSTOM_CRYPTO"}
+                          "DOWNGRADE_PROTECTION_MISSING", "KMS_KEY_ROTATION_DISABLED", "KMS_KEY_DELETION_UNPROTECTED",
+                          "KMS_KEY_POLICY_PUBLIC", "PROVIDER_MANAGED_KEY", "EOL_BASE_IMAGE"})
+# The codes that make a library or configuration row WEAK, as the engine marks them (aibom/cbom/normalize.py
+# CONFIG_WEAKNESS_CODES, plus CUSTOM_CRYPTO). A provider-managed key, a key-management setting, an end-of-life base
+# image or a library inside a CVE range is a finding, not a weak algorithm.
+WEAK_EXTRA_CODES = frozenset({"VULNERABLE_CRYPTO_LIBRARY", "TLS_VERIFICATION_DISABLED", "UNENCRYPTED_AT_REST",
+                              "AT_REST_ENCRYPTION_WEAK", "UNENCRYPTED_IN_TRANSIT", "PLAINTEXT_LISTENER",
+                              "KNOWN_TLS_VULNERABILITY", "DOWNGRADE_PROTECTION_MISSING", "CUSTOM_CRYPTO"})
 
 
 def display_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -22,7 +30,7 @@ def display_row(row: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(row, dict):
         return row
     codes = {c for c in (row.get("finding_codes") or []) if isinstance(c, str)}
-    if not codes & WEAK_EXTRA_CODES:
+    if not codes & (WEAK_EXTRA_CODES | LIBRARY_CODES | CONFIG_CODES):
         return row
     out = dict(row)
     if str(out.get("algorithm_type") or "other").lower() in ("other", "", "unknown", "none"):
@@ -30,9 +38,10 @@ def display_row(row: dict[str, Any]) -> dict[str, Any]:
             out["algorithm_type"] = "library"
         elif codes & CONFIG_CODES:
             out["algorithm_type"] = "configuration"
-    if str(out.get("crypto_strength") or "").lower() in ("strong", "", "unknown", "not-applicable", "quantum_safe"):
-        out["crypto_strength"] = "weak"
-    out["weak"] = True
+    if codes & WEAK_EXTRA_CODES:
+        if str(out.get("crypto_strength") or "").lower() in ("strong", "", "unknown", "not-applicable", "quantum_safe"):
+            out["crypto_strength"] = "weak"
+        out["weak"] = True
     return out
 
 

@@ -212,6 +212,8 @@ FINDING_LABELS = {
     "VULNERABLE_CRYPTO_LIBRARY": "Crypto library version with a published advisory",
     "LIBRARY_CVE_RANGE": "Crypto library version inside a published CVE range",
     "EOL_CRYPTO_LIBRARY": "End-of-life crypto library branch",
+    # Product text: private algorithm constants (aibom/src/aibom/cbom/scanners/custom_crypto_scan.py).
+    "CUSTOM_CRYPTO": "Home-grown or private cryptographic algorithm",
 }
 FINDING_ACTIONS = {
     # Source: SP 800-131A Rev 2, transitioning algorithms and key lengths: https://csrc.nist.gov/pubs/sp/800/131/a/r2/final
@@ -307,6 +309,11 @@ FINDING_ACTIONS = {
         "Move to a supported release branch of the library; the end-of-life branch receives "
         "no security fixes."
     ),
+    # Source: CWE-1240, use of a cryptographic primitive with a risky implementation: https://cwe.mitre.org/data/definitions/1240.html
+    "CUSTOM_CRYPTO": (
+        "Replace the home-grown algorithm with a vetted library implementation of an approved "
+        "algorithm (for example AES-GCM from the platform's crypto library)."
+    ),
 }
 # Product text: codes that describe a certificate (#7 labels them; #16 groups them).
 CERT_FINDING_CODES = (
@@ -322,17 +329,26 @@ def _code(code: object) -> str:
     return str(code).strip().upper() if code is not None else ""
 
 
+def _posture_text():
+    # the configuration-posture codes (TLS verification off, unencrypted store, provider-managed key ...) are labelled
+    # once, in cbom_posture_text; imported here on use because that module imports this one
+    from backend.utilities.pdf import cbom_posture_text
+
+    return cbom_posture_text
+
+
 def finding_label(code: object) -> str:
     """Human label for a finding code; unknown codes are humanised, never dropped."""
     key = _code(code)
     if not key:
         return ""
-    return FINDING_LABELS.get(key) or key.replace("_", " ").capitalize()
+    return FINDING_LABELS.get(key) or _posture_text().FINDING_LABELS.get(key) or key.replace("_", " ").capitalize()
 
 
 def finding_action(code: object) -> str:
     """Recommended action for a finding code; unknown codes get the generic action."""
-    return FINDING_ACTIONS.get(_code(code), GENERIC_FINDING_ACTION)
+    key = _code(code)
+    return FINDING_ACTIONS.get(key) or _posture_text().FINDING_ACTIONS.get(key) or GENERIC_FINDING_ACTION
 
 
 # ---------------------------------------------------------------------------------------------

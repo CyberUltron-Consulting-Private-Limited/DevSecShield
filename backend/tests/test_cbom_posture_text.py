@@ -14,8 +14,8 @@ from backend.utilities.pdf import cbom_posture_text as text  # noqa: E402
 _BANNED = ("bedrock", "anthropic", "openai", "get_llm", "chatbedrock")
 
 
-def test_ten_findings_have_labels_impacts_and_actions() -> None:
-    assert len(text.FINDING_CODES) == 10
+def test_every_posture_finding_has_a_label_impact_and_action() -> None:
+    assert len(text.FINDING_CODES) == 12  # the engine's POSTURE_CODES (test_cbom_finding_code_tables)
     for code in text.FINDING_CODES:
         assert text.finding_label(code)
         assert text.finding_action(code)
