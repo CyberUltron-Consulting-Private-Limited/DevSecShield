@@ -62,6 +62,26 @@ def test_private_addresses_need_the_operator_allowlist(monkeypatch):
         outbound.resolve("siem.corp.local", 0)
 
 
+def test_site_local_ipv6_is_private_not_public(monkeypatch):
+    """rev5 #7: fec0::/10 (deprecated site-local, RFC 3879) is_global in Python, so it was treated as a public
+    address. It is private now: refused unless the operator lists it, in the integrations guard and in safe_fetch."""
+    from backend.utilities.cbom_sources import safe_fetch
+
+    for address in ("fec0::1", "fec0:0:0:ffff::1", "feff:ffff::1"):
+        assert not safe_fetch.public_address(address)
+    assert safe_fetch.public_address("2001:4860:4860::8888")  # a global unicast address stays public
+    monkeypatch.delenv(outbound.ENV_ALLOWED_PRIVATE, raising=False)
+    _fake_dns(monkeypatch, {"siem.corp.example": ["fec0::10"]})
+    with pytest.raises(outbound.Refused, match="INTEGRATION_ALLOWED_PRIVATE"):
+        outbound.resolve("siem.corp.example", 6514)
+    with pytest.raises(outbound.Refused, match="INTEGRATION_ALLOWED_PRIVATE"):
+        outbound.resolve("fec0::10", 6514)
+    with pytest.raises(safe_fetch.FetchError, match="private or reserved"):
+        safe_fetch._resolve("siem.corp.example", 443, False)
+    monkeypatch.setenv(outbound.ENV_ALLOWED_PRIVATE, "fec0::/10")
+    assert outbound.resolve("siem.corp.example", 6514) == ["fec0::10"]
+
+
 def test_https_url_rules():
     with pytest.raises(outbound.Refused, match="https"):
         outbound.check_https_url("http://hooks.example/x")

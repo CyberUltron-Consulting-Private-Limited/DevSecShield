@@ -8,9 +8,9 @@ The destination is customer-supplied, so each connection is an SSRF risk. The ru
 * loopback, link-local (169.254.169.254, the cloud metadata service), CGNAT (100.64.0.0/10), unspecified, multicast,
   reserved, AWS's IPv6 metadata range (fd00:ec2::/32), IETF protocol assignments (192.0.0.0/24), "this network"
   (0.0.0.0/8) and IPv4 carried in IPv6 for a translator are refused ALWAYS, whatever the operator lists;
-* private addresses (RFC 1918, unique-local IPv6, other non-global ranges) are refused unless the operator lists them in
-  ``INTEGRATION_ALLOWED_PRIVATE`` (comma-separated CIDRs and/or exact host names, the same format as
-  ``CBOM_IDP_ALLOWED_PRIVATE``): an on-premises Splunk, syslog collector or ServiceNow MID endpoint;
+* private addresses (RFC 1918, unique-local and site-local IPv6, other non-global ranges) are refused unless the
+  operator lists them in ``INTEGRATION_ALLOWED_PRIVATE`` (comma-separated CIDRs and/or exact host names, the same
+  format as ``CBOM_IDP_ALLOWED_PRIVATE``): an on-premises Splunk, syslog collector or ServiceNow MID endpoint;
 * HTTP is https only, TLS 1.2+, certificates are always verified (a destination may add its own CA bundle, ``ca_pem``,
   next to the system store and ``CBOM_EXTRA_CA_FILE``); redirects are never followed; no proxy from the environment
   (a proxy would resolve the name itself and bypass the pin);

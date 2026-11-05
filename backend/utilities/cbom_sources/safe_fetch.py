@@ -2,7 +2,7 @@
 
 * https only, port 443 or 1024-65535, no user info in the URL;
 * every address the name resolves to must be public (not private, loopback, link-local, CGNAT,
-  unique-local, multicast, reserved, or an IPv4-mapped form of one), and the connection goes to
+  unique-local, site-local, multicast, reserved, or an IPv4-mapped form of one), and the connection goes to
   the addresses that were checked (each in turn, those this host can route first, so a dual-stack name works in
   an IPv4-only container), so a DNS answer cannot change between the check and the fetch;
 * no proxy from the environment; at most 3 redirects, each checked the same way;
@@ -71,6 +71,9 @@ def public_address(text: str) -> bool:
     if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT:
         return False
     if isinstance(ip, ipaddress.IPv6Address) and any(ip in net for net in _V4_IN_V6):
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.is_site_local:
+        # fec0::/10, deprecated site-local (RFC 3879): an internal network like RFC 1918, though Python calls it global
         return False
     return bool(ip.is_global) and not ip.is_multicast
 
