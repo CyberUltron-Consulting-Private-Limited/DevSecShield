@@ -1310,7 +1310,7 @@ export default function CbomResults({
             <CardDescription className={coverageReport.skipped > 0 ? "text-amber-900/80 dark:text-amber-200/80" : undefined}>
               {coverageReport.skipped > 0
                 ? `${coverageReport.skipped} kind(s) of input were skipped or only partly read; the CycloneDX file lists the same counts (crypto:coverage:*).`
-                : "Everything in the upload was read; these counts are also in the CycloneDX file (crypto:coverage:*)."}
+                : "Nothing was skipped; these notes say what was read and are also in the CycloneDX file (crypto:coverage:*)."}
             </CardDescription>
           </CardHeader>
           <CardContent>
