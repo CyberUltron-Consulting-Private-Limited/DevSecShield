@@ -100,11 +100,88 @@ def test_a_401_from_a_wrong_server_keeps_the_token_and_is_reported(server, tmp_p
     t.join(10)
     assert ag.state.node_token == "zsn_node_token_ABCDEFGHIJKLMNOP"  # kept, in memory and on disk
     assert json.load(open(os.path.join(ag.state.directory, "state.json")))["node_token"]
-    assert "not by the ZeroShield this node enrolled with" in ag.last_error
+    assert f"server at {url} did not accept this node" in ag.last_error
+    assert "not the ZeroShield this node enrolled with?" in ag.last_error
     api.force_401 = None  # the right server answers again: the next heartbeat reports what happened
     ag.heartbeat_once()
-    assert "not by the ZeroShield this node enrolled with" in api.heartbeats[-1]["last_error"]
+    assert "did not accept this node" in api.heartbeats[-1]["last_error"]
     assert ag.last_error is None
+
+
+@pytest.mark.parametrize("how", ["proxy-drops-token", "own-implicit", "forbidden-other", "forbidden-none"])
+def test_only_an_explicit_revocation_from_its_own_deployment_ends_the_credential(server, tmp_path, monkeypatch,  # noqa: F811
+                                                                                 how):
+    """A proxy in front of the right ZeroShield that drops the token header (the server answers 401
+    node_token_missing), a 401 from its own deployment that does not say the token was revoked, and a 403 from a
+    wrong server or a proxy: the node keeps its credential, backs off and says which server did not accept it."""
+    api, url = server
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+    monkeypatch.setattr(ag.api, "_wait", lambda s: None)
+    if how == "proxy-drops-token":
+        api.strip_token = True
+    elif how == "own-implicit":
+        api.force_401 = "own-implicit"
+    else:
+        api.force_403 = how.split("-", 1)[1]
+    t = threading.Thread(target=ag.heartbeat_loop, daemon=True)
+    t.start()
+    assert _wait(lambda: ag.last_error is not None, 10)
+    ag.shutdown.set()
+    t.join(10)
+    assert ag.state.node_token == "zsn_node_token_ABCDEFGHIJKLMNOP"
+    assert json.load(open(os.path.join(ag.state.directory, "state.json")))["node_token"]
+    assert f"server at {url} did not accept this node" in ag.last_error
+    if how == "proxy-drops-token":
+        assert "did not reach ZeroShield" in ag.last_error
+    api.strip_token, api.force_401, api.force_403 = False, None, None
+    ag.heartbeat_once()  # the path is fixed: the same credential works and the problem is reported
+    assert "did not accept this node" in api.heartbeats[-1]["last_error"]
+
+
+def test_a_pool_pod_enrolls_again_only_after_an_explicit_revocation(server, tmp_path, monkeypatch):  # noqa: F811
+    """Agent pool (zsp_) pods: a 401 that is not an explicit revocation keeps the node (no new enrollment); ZeroShield
+    saying the node token is revoked (node reset) makes the pod enroll again with its pool token and its node id."""
+    api, url = server
+    pool = "zsp_" + "P" * 43
+    api.registration_tokens.add(pool)
+    monkeypatch.setenv("ZS_MODE", "agent")
+    monkeypatch.setenv("ZS_NODE_NAME", "k8s-worker-a")
+    ag = _agent(tmp_path, url, monkeypatch)
+    monkeypatch.setenv("ZS_REGISTRATION_TOKEN", pool)
+    ag.ensure_enrolled()
+    assert ag.state.node_id == 7 and len(api.enroll_bodies) == 1
+    monkeypatch.setattr(ag.api, "_wait", lambda s: None)
+    for how in ("own-implicit", "other", "none"):
+        api.force_401 = how
+        with pytest.raises(api_mod.WrongServer):
+            ag.heartbeat_once()
+    assert ag.state.node_token and len(api.enroll_bodies) == 1
+    api.force_401 = "own"
+    t = threading.Thread(target=ag.heartbeat_loop, daemon=True)
+    t.start()
+    assert _wait(lambda: ag.state.node_token is None, 10)
+    ag.shutdown.set()
+    t.join(10)
+    ag.shutdown.clear()
+    api.force_401 = None
+    ag.ensure_enrolled()
+    assert ag.state.node_token and len(api.enroll_bodies) == 2
+    assert api.enroll_bodies[-1]["registration_token"] == pool and api.enroll_bodies[-1]["node_id"] == 7
+
+
+def test_a_403_refusal_from_its_own_deployment_is_not_a_wrong_server(server, tmp_path, monkeypatch):  # noqa: F811
+    api, url = server
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+    api.pubkey = "AAAA"  # the server now holds another key: every signature is refused (403 with a refusal code)
+    orig = api.check_signature
+    api.check_signature = lambda *a: (403, {"detail": "bad signature"}, {"X-ZS-Refused": "signature_invalid"})
+    with pytest.raises(api_mod.ApiError) as err:
+        ag.heartbeat_once()
+    assert not isinstance(err.value, api_mod.WrongServer) and err.value.refused == "signature_invalid"
+    assert ag.state.node_token
+    api.check_signature = orig
 
 
 def test_a_401_from_its_own_deployment_clears_the_token(server, tmp_path, monkeypatch):  # noqa: F811

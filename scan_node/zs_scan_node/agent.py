@@ -17,9 +17,11 @@ Environment:
   ZS_NODE_NAME            agent mode: the name to enroll under (the Helm DaemonSet passes the Kubernetes node name)
   ZS_HOST_ROOT / ZS_HOST_PROC  agent mode: where the host's / is mounted read-only (default /host), and its /proc
 
-Every request is signed with a per-enrollment Ed25519 key (api.py).  The node clears its token only on a 401 from
-the ZeroShield deployment it enrolled with (X-ZS-Deployment); a 401 from anything else is a wrong server or proxy:
-the token is kept, the node backs off and reports it in its next successful heartbeat.
+Every request is signed with a per-enrollment Ed25519 key (api.py).  The node clears its token only when the
+ZeroShield deployment it enrolled with (X-ZS-Deployment) says explicitly that the token is revoked (401 with
+X-ZS-Refused: node_token_revoked); any other 401, or a 403 from another server, is a wrong server or proxy: the token
+is kept, the node backs off, logs "server at <ZS_API_URL> did not accept this node ...; not the ZeroShield this node
+enrolled with?" and reports it in its next successful heartbeat (the node's last error in ZeroShield).
 """
 from __future__ import annotations
 

@@ -121,6 +121,39 @@ def test_wrong_server_401_two_backends_with_different_deployment_ids(api, world,
     assert err.value.deployment == data["deployment_id"]
 
 
+def test_only_an_explicit_revocation_ends_a_node_credential(api, world):
+    """The 401s say why (X-ZS-Refused).  A proxy in front of the right backend that drops the token header: the
+    backend answers node_token_missing and the real node client keeps its token (WrongServer naming the server).
+    A reset node: node_token_revoked from the node's own deployment ends the credential.  A spent registration
+    token: registration_token_refused from the own deployment."""
+    node_id, client, data = _enroll_signed(api)
+    c = api.client
+    r = c.post("/cbom/node/heartbeat", json={})
+    assert r.status_code == 401 and r.headers["X-ZS-Refused"] == "node_token_missing"
+    r = c.post("/cbom/node/heartbeat", headers={"X-ZS-Node-Token": "not-a-node-token"}, json={})
+    assert r.status_code == 401 and r.headers["X-ZS-Refused"] == "node_token_missing"
+    r = c.post("/cbom/node/heartbeat", headers={"X-ZS-Node-Token": "zsn_" + "u" * 40}, json={})
+    assert r.status_code == 401 and r.headers["X-ZS-Refused"] == "node_token_revoked"
+    r = c.post("/cbom/node/enroll", json={"registration_token": "zsr_" + "x" * 30})
+    assert r.status_code == 401 and r.headers["X-ZS-Refused"] == "registration_token_refused"
+
+    token = client.token
+    client.token = None  # what the backend sees when a proxy drops X-ZS-Node-Token
+    with pytest.raises(node_api.WrongServer) as err:
+        client.heartbeat({})
+    assert "server at http://testserver did not accept this node" in str(err.value)
+    assert "did not reach ZeroShield" in str(err.value)
+    client.token = token  # the path is fixed: the kept credential still works
+    assert client.heartbeat({})["pending_jobs"] == 0
+
+    assert api("POST", f"/1/cbom/sources/nodes/{node_id}/reset").status_code == 200
+    with pytest.raises(node_api.Unauthorized) as revoked:
+        client.heartbeat({})
+    assert revoked.value.deployment == data["deployment_id"]
+    with pytest.raises(node_api.Unauthorized):  # the spent registration token, refused by the own deployment
+        client.enroll({"registration_token": "zsr_" + "x" * 30})
+
+
 # ----------------------------------------------------------------------------- signed requests
 def test_signed_node_full_round_trip(api, world):
     engine, _ = world

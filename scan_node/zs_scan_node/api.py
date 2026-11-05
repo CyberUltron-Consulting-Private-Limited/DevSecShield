@@ -6,10 +6,14 @@
   learned from the server's ``Date`` header.
 * mTLS: ``ZS_CLIENT_CERT`` + ``ZS_CLIENT_KEY`` (PEM files) present a client certificate to the TLS proxy;
   ``ZS_CA_FILE`` replaces the trusted CAs for the ZeroShield API (for a private CA or a TLS-inspecting proxy).
-* 401 is ``Unauthorized`` (the node token was revoked) only when it carries the ``X-ZS-Deployment`` of the ZeroShield
-  this node enrolled with (or, for state from before deployment ids, any ZeroShield deployment id).  A 401 without it
-  or with another id came from a wrong server or a proxy: it is retried like a 5xx and finally raised as
-  ``WrongServer``, and the token is kept.  The id is adopted from successful answers (``on_deployment``).
+* 401 is ``Unauthorized`` (the credential is revoked) only when the ZeroShield this node enrolled with says so
+  explicitly: the answer carries that deployment's ``X-ZS-Deployment`` (pinned at enrollment; for state from before
+  deployment ids, any ZeroShield deployment id) AND a revocation code in ``X-ZS-Refused`` (``node_token_revoked``:
+  ZeroShield received the node token and no node has it, i.e. the node was reset or deleted;
+  ``registration_token_refused`` on enrollment).  Any other 401, and a 403 without this node's deployment id, came
+  from a wrong server or a proxy (another deployment, no deployment id, or a token that never reached ZeroShield,
+  ``node_token_missing``): it is retried like a 5xx and finally raised as ``WrongServer`` naming the server, and
+  the credential is kept.  The id is adopted from successful answers (``on_deployment``).
 * 409/404 on a job call means the job is no longer leased to this node: ``LeaseLost``.
 * 429, 5xx and network errors are retried with exponential backoff capped at 60 s (well under half the 15-minute
   lease); a 5xx body's ``ref`` is logged so the node log can be matched with the server log.
@@ -37,6 +41,8 @@ from zs_scan_node.log import log
 MAX_BACKOFF = 60.0
 DEPLOYMENT_HEADER = "X-ZS-Deployment"
 REFUSED_HEADER = "X-ZS-Refused"
+# The only 401 codes that end a credential (backend/routers/cbom_node.py), and only from this node's deployment.
+REVOKED_CODES = frozenset({"node_token_revoked", "registration_token_refused"})
 
 
 class Unauthorized(Exception):
@@ -54,12 +60,22 @@ class ApiError(Exception):
 
 
 class WrongServer(ApiError):
-    """A 401 that did not come from this node's ZeroShield deployment (wrong ZS_API_URL, a proxy): token kept."""
+    """A 401/403 that is not an explicit revocation by this node's ZeroShield deployment (wrong ZS_API_URL, a proxy):
+    the credential is kept."""
 
-    def __init__(self, path: str, deployment: str | None) -> None:
-        who = f"deployment {deployment}" if deployment else "a server that is not ZeroShield (no deployment id)"
-        super().__init__(401, f"{path} was refused by {who}, not by the ZeroShield this node enrolled with; check "
-                              "ZS_API_URL and any proxy in between")
+    def __init__(self, base: str, path: str, status: int, deployment: str | None, expected: str | None,
+                 refused: str | None) -> None:
+        if not deployment:
+            why = "the answer carries no ZeroShield deployment id: another server or a proxy answered"
+        elif expected and deployment != expected:
+            why = f"it is ZeroShield deployment {deployment}, this node enrolled with deployment {expected}"
+        elif refused == "node_token_missing":
+            why = "the node token did not reach ZeroShield: a proxy in between dropped or changed the header"
+        else:
+            why = f"HTTP {status} without a revocation from ZeroShield"
+        super().__init__(status, f"server at {base} did not accept this node ({path}: {why}); not the ZeroShield this "
+                                 "node enrolled with? The node keeps its credential and retries; check ZS_API_URL and "
+                                 "any proxy in between", refused)
         self.deployment = deployment
 
 
@@ -116,9 +132,13 @@ class Api:
         sig = self.signing_key.sign(signing_message(method, path, ts, nonce, data))
         return {"X-ZS-Timestamp": ts, "X-ZS-Nonce": nonce, "X-ZS-Signature": base64.b64encode(sig).decode()}
 
-    def _authoritative(self, deployment: str | None) -> bool:
-        """Did this 401 come from the ZeroShield this node belongs to?"""
+    def _ours(self, deployment: str | None) -> bool:
+        """Did this answer come from the ZeroShield this node belongs to?"""
         return bool(deployment) and (self.deployment_id is None or deployment == self.deployment_id)
+
+    def _revoked(self, deployment: str | None, refused: str | None) -> bool:
+        """Did the ZeroShield this node belongs to say explicitly that it no longer accepts the credential?"""
+        return refused in REVOKED_CODES and self._ours(deployment)
 
     def _seen(self, deployment: str | None) -> None:
         """A successful answer: the server knows our token, so it is our deployment (adopt or follow a change)."""
@@ -159,18 +179,21 @@ class Api:
                 delay = min(delay * 2, MAX_BACKOFF)
                 continue
             deployment = r.headers.get(DEPLOYMENT_HEADER) or None
-            if r.status_code == 401:
-                if self._authoritative(deployment):
-                    raise Unauthorized(path, deployment)
+            refused = r.headers.get(REFUSED_HEADER) or None
+            if r.status_code == 401 and self._revoked(deployment, refused):
+                raise Unauthorized(path, deployment)
+            # Any other 401, and a 403 that did not come from this node's ZeroShield: a wrong server or a proxy.
+            if r.status_code == 401 or (r.status_code == 403 and not self._ours(deployment)):
                 if attempt >= retries:
-                    raise WrongServer(path, deployment)
-                log("wrong server or proxy: a 401 without this node's ZeroShield deployment id; keeping the token and "
-                    "retrying", path=path, deployment=deployment, expected=self.deployment_id, wait_s=int(delay),
-                    level="warn")
+                    raise WrongServer(self.base, path, r.status_code, deployment, self.deployment_id, refused)
+                log("the server did not accept this node and did not say its credential was revoked (wrong server "
+                    "or proxy?); keeping the credential and retrying", server=self.base, path=path,
+                    status=r.status_code, deployment=deployment, expected=self.deployment_id, refused=refused,
+                    wait_s=int(delay), level="warn")
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
                 continue
-            if r.status_code == 403 and r.headers.get(REFUSED_HEADER) == "clock_skew" and not skew_retried:
+            if r.status_code == 403 and refused == "clock_skew" and not skew_retried:
                 skew_retried = True
                 self._learn_skew(r)
                 continue
@@ -199,7 +222,6 @@ class Api:
             except ValueError:
                 data_out = None
             if r.status_code >= 400:
-                refused = r.headers.get(REFUSED_HEADER)
                 if refused:
                     log("ZeroShield refused the request", path=path, reason=refused, detail=_detail(r), level="error")
                 raise ApiError(r.status_code, _detail(r), refused)

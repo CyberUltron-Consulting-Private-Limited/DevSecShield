@@ -35,7 +35,14 @@ class FakeApi:
         self.nonces: set[str] = set()
         self.signed: list[str] = []
         self.clock_offset = 0  # the server clock minus real time
-        self.force_401: str | None = None  # "own" | "other" | "none": answer every node call with that 401
+        # Answer every node call with a 401: "own" (this deployment says the credential is revoked), "own-implicit"
+        # (this deployment's id, no revocation code), "other" (another ZeroShield deployment, which does not know
+        # the token either) or "none" (no deployment id: not ZeroShield, or a proxy answered).
+        self.force_401: str | None = None
+        self.force_403: str | None = None  # "other" | "none": a wrong server or a proxy forbids every node call
+        self.strip_token = False  # a proxy in front of this server drops the X-ZS-Node-Token header
+        self.registration_tokens = {"zsr_good_token_0123456789"}  # accepted at enrollment (add an agent pool token)
+        self.enroll_bodies: list[dict] = []
 
     def check_signature(self, method, path, headers, raw, key):
         ts, nonce, sig = (headers.get(h) for h in ("X-ZS-Timestamp", "X-ZS-Nonce", "X-ZS-Signature"))
@@ -52,12 +59,19 @@ class FakeApi:
 
     def handle(self, path, body, headers, raw=b""):
         self.calls.append(path)
+        # like the real server: a 401 says explicitly why (backend/routers/cbom_node.py)
+        revoked = "registration_token_refused" if path == "/cbom/node/enroll" else "node_token_revoked"
         if self.force_401:
-            dep = {"own": self.deployment, "other": "dep-OTHER", "none": None}[self.force_401]
-            return 401, {"detail": "Invalid node token"}, ({"X-ZS-Deployment": dep} if dep else {"X-ZS-Deployment": ""})
+            dep, code = {"own": (self.deployment, revoked), "own-implicit": (self.deployment, None),
+                         "other": ("dep-OTHER", revoked), "none": (None, None)}[self.force_401]
+            return 401, {"detail": "Invalid node token"}, {"X-ZS-Deployment": dep or "", "X-ZS-Refused": code or ""}
+        if self.force_403:
+            dep = {"other": "dep-OTHER", "none": None}[self.force_403]
+            return 403, {"detail": "Forbidden"}, {"X-ZS-Deployment": dep or ""}
         if path == "/cbom/node/enroll":
-            if body.get("registration_token") != "zsr_good_token_0123456789":
-                return 401, {"detail": "Registration token is invalid or expired"}
+            self.enroll_bodies.append(body)
+            if body.get("registration_token") not in self.registration_tokens:
+                return 401, {"detail": "Registration token is invalid or expired"}, {"X-ZS-Refused": revoked}
             assert body["ssh_public_key"].startswith("ssh-ed25519 ")
             if body.get("signing_public_key"):
                 refused = self.check_signature("POST", path, headers, raw, body["signing_public_key"])
@@ -73,8 +87,10 @@ class FakeApi:
             self.enrolled = True
             return 200, {"node_id": 7, "team_id": 3, "node_token": "zsn_node_token_ABCDEFGHIJKLMNOP", "heartbeat_interval_s": 5,
                          "deployment_id": self.deployment, "signing": "required" if self.pubkey else "legacy"}
-        if headers.get("X-ZS-Node-Token") != "zsn_node_token_ABCDEFGHIJKLMNOP":
-            return 401, {"detail": "Invalid node token"}
+        token = None if self.strip_token else headers.get("X-ZS-Node-Token")
+        if token != "zsn_node_token_ABCDEFGHIJKLMNOP":
+            return 401, {"detail": "Invalid node token"}, {"X-ZS-Refused": "node_token_revoked" if token else
+                                                           "node_token_missing"}
         if self.pubkey:
             refused = self.check_signature("POST", path, headers, raw, self.pubkey)
             if refused:
