@@ -146,6 +146,20 @@ def test_mosca_merge_keeps_unsent_fields_and_null_clears(api, world):
     assert not any((gone.json()["settings"]["risk_model"] or {}).values())  # risk_model: null clears all three
 
 
+def test_mosca_values_are_whole_years_from_0_to_100_and_a_refused_update_changes_nothing(api, world):
+    full = {"data_shelf_life_years": 10, "migration_years": 5, "threat_years": 12}
+    assert api("PATCH", "/1/cbom/sources/settings", json={"risk_model": full}).status_code == 200
+    for bad in (True, 7.5, 7.0, "7", -1, 101, [7], {"years": 7}):
+        r = api("PATCH", "/1/cbom/sources/settings", json={"risk_model": {"migration_years": bad}})
+        assert r.status_code in (400, 422), (bad, r.status_code)
+    for bad_body in ({"threat_yrs": 9}, [1, 2, 3], "10,5,12"):
+        assert api("PATCH", "/1/cbom/sources/settings", json={"risk_model": bad_body}).status_code in (400, 422), bad_body
+    edges = api("PATCH", "/1/cbom/sources/settings", json={"risk_model": {"data_shelf_life_years": 0, "threat_years": 100}})
+    assert edges.status_code == 200
+    assert edges.json()["settings"]["risk_model"] == {"data_shelf_life_years": 0, "migration_years": 5, "threat_years": 100}
+    assert api("GET", "/1/cbom/sources/settings").json()["settings"]["risk_model"] == edges.json()["settings"]["risk_model"]
+
+
 # ------------------------------------------------------------------------------------------- library end of life
 def test_library_end_of_life_is_as_of_the_run_and_today_when_it_differs(api, world):
     from sqlmodel import Session
