@@ -125,7 +125,9 @@ services:
         print("bucket devsecshield-storage ready")
 
   # One-shot: alembic upgrade head (the entrypoint; env.py holds a Postgres advisory lock) and the DAST log data
-  # migration, then exits 0. Everything that uses the database waits for it to complete.
+  # migration, then exits 0. Everything that uses the database waits for it to complete. An older image fails here
+  # on a database a newer release migrated ("Can't locate revision"): go back with `staging.sh rollback`, which
+  # downgrades the database with the newer image first (README "Rollback").
   migrate:
     <<: *backend-service
     restart: "no"

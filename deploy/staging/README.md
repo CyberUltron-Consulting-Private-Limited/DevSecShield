@@ -41,8 +41,11 @@ scripts/deploy/staging.sh release deploy@staging-host /opt/devsecshield-staging
 = `build` (all images, tag = short commit; the frontend gets `NEXT_PUBLIC_BACKEND_URL=https://<API_HOST>`),
 `save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256`), `push` (scp of the bundle and the archive,
 then `staging.sh deploy <tag>` on the host over ssh). On the host, `deploy` verifies the checksum, `docker load`s
-the archive, writes `DSS_TAG` into `.env`, runs `docker compose up -d --wait`, then the checks below. The previous
-tag's images are kept and recorded in `deploy-history`.
+the archive, writes `DSS_TAG` into `.env`, runs `docker compose up -d --wait`, then the checks below; a failed
+`compose up` fails the deploy (recorded as `FAILED` in `deploy-history`). The previous tag's images are kept and
+recorded in `deploy-history`; each tag's deploy files (compose file, nginx config, rollup overlay, `staging.sh`) and
+the head of its migrations are kept in `releases/<tag>/` for a rollback. `deploy` refuses a tag whose migrations do
+not contain the database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
 
 Without registry access on the host, add `STAGING_INCLUDE_INFRA=1` to ship the postgres, mongo, rabbitmq and nginx
 images in the same archive. Behind a TLS-intercepting proxy, build with `UV_BASE_IMAGE` / `NODE_BASE_IMAGE` set to
@@ -51,7 +54,9 @@ base images that trust the proxy CA. Plain-HTTP staging (no certificates): build
 
 ## Checks
 
-`staging.sh check` (run by `deploy` and `rollback`) talks to nginx on this host with the real host names:
+`staging.sh check` (run by `deploy` and `rollback`) first asks compose: every service (or each of
+`STAGING_SERVICES`) has a container from `DSS_TAG`'s images that is running, and healthy when it has a health check;
+the one-shots (`migrate`, `minio-init`) exited 0. Then it talks to nginx on this host with the real host names:
 * `GET https://<API_HOST>/health` answers 200 `healthy`;
 * `GET https://<FRONTEND_HOST>/login` answers 200, references `/_next/static/chunks/*.js` that all load, and
   carries no `next dev` marker (HMR client chunk, `"development"` build id, `webpack-hmr`, `react-refresh`). A
@@ -67,14 +72,28 @@ python3 scripts/deploy/staging_browser_check.py --frontend-url https://<FRONTEND
 ## Rollback
 
 ```sh
-scripts/deploy/staging.sh rollback     # on the host
+scripts/deploy/staging.sh rollback [--allow-downgrade]     # on the host
+make rollback-staging HOST=user@host [ALLOW_DOWNGRADE=1]    # from the build machine (rollback-prod: production)
 ```
-Switches `DSS_TAG` back to the previous deployed tag, `up -d`, checks. Two warnings it also prints:
-* **Migrations are not reversed.** The older code runs on the newer schema (fine for the additive migrations this
-  project writes; check the revision list before rolling back across a destructive one).
+Goes back to the tag that was running before the current one (`deploy-history`; also after a failed deploy) with
+that release's own deploy files from `releases/<tag>/`: puts them back in place, switches `DSS_TAG`, `up -d`, checks.
+* **Migrations.** An older image cannot start on a database a newer release migrated: its `migrate` one-shot fails
+  with "Can't locate revision identified by ..." and the backend, cloud worker and DAST scheduler wait for it
+  forever. So when the older tag's migrations do not contain the database's revision, rollback first stops the
+  application services and runs `alembic downgrade <older head>` with the **current** image (its migrations contain
+  both revisions), then starts the older tag. The downgrade **drops the tables and columns the newer migrations
+  added, with their data**: rollback lists the migrations it reverses and asks you to type `downgrade`, or takes
+  `--allow-downgrade` (`ALLOW_DOWNGRADE=1` for make); without a terminal and without the flag it refuses and changes
+  nothing. Take a database backup first. When the current image has no path down to the older head (squashed
+  migrations) rollback refuses and changes nothing: restore a backup instead. When the downgrade fails (Alembic runs
+  it in one transaction), the current release is started again.
 * **Argon2.** After the round-5 password change, a sign-in rehashes bcrypt passwords to Argon2id. An image from
   before that change cannot verify Argon2 hashes: those users cannot sign in after a rollback to it until they
   reset their password.
+* A tag deployed before `releases/` existed has no recorded files: rollback starts it with the current files and
+  says so.
+* To go forward again, push the newer release from the build machine, or run `staging.sh deploy <tag>` on the host:
+  it puts that tag's recorded files back in place.
 
 ## Behind a load balancer
 
