@@ -196,3 +196,28 @@ export function credits(value: number | null | undefined): string {
   if (value == null) return "—"
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
 }
+
+// ---- source metadata: internet exposure (an override of what the collected facts say; "auto" = no override)
+
+export type ExposureChoice = "auto" | "internet" | "internal" | "unknown"
+
+export const EXPOSURE_CHOICES: { value: ExposureChoice; label: string }[] = [
+  { value: "auto", label: "From collected facts" },
+  { value: "internet", label: "Internet-facing" },
+  { value: "internal", label: "Internal" },
+  { value: "unknown", label: "Unknown" },
+]
+
+export function exposureFrom(config: Record<string, unknown> | null | undefined): ExposureChoice {
+  const value = config?.exposure
+  return value === "internet" || value === "internal" || value === "unknown" ? value : "auto"
+}
+
+/** The source config with new metadata fields and exposure (null clears; the connection settings are kept). */
+export function withMetadata(
+  config: Record<string, unknown> | null | undefined,
+  fields: Record<string, unknown>,
+  exposure: ExposureChoice,
+): Record<string, unknown> {
+  return { ...(config ?? {}), ...fields, exposure: exposure === "auto" ? null : exposure }
+}

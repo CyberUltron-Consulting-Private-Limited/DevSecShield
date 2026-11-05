@@ -9,11 +9,13 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { listCbomSources, updateCbomSource, type CbomSource } from "@/utils/backend_api";
 
 import { cbomSourcesKeys } from "./keys";
+import { EXPOSURE_CHOICES, exposureFrom, withMetadata, type ExposureChoice } from "./logic";
 import { Field, SectionCard, StatusBadge, Truncate } from "./shared";
 
 export const CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"] as const;
@@ -85,6 +87,68 @@ export function MetadataFields({ value, onChange, idPrefix }: {
                onChange={(e) => set({ environment: e.target.value })} />
       </Field>
     </div>
+  );
+}
+
+/** One source's owner, application, data classification and lifetime, internet exposure and environment, saved on
+ * their own: a metadata edit never re-tests the connection or stops a job (backend METADATA_FIELDS). */
+export function SourceMetadataDialog({ teamId, source, onClose }: {
+  teamId: number;
+  source: CbomSource;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [meta, setMeta] = useState<SourceMetadata>(() => metadataFrom(source.config));
+  const [exposure, setExposure] = useState<ExposureChoice>(() => exposureFrom(source.config));
+  const [error, setError] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: async () => {
+      const fields = metadataConfig(meta);
+      if (typeof fields === "string") throw new Error(fields);
+      return updateCbomSource(teamId, source.id, {
+        config: withMetadata(source.config, fields, exposure),
+        expected_version: source.row_version,
+      });
+    },
+    onSuccess: () => {
+      toast.success(`Saved ownership and data for ${source.name}`);
+      onClose();
+    },
+    onError: (err) => setError(err instanceof Error && !("response" in err)
+      ? err.message : "Could not save: the source changed or was removed. Reload and try again."),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+  });
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-2xl" data-testid={`source-metadata-dialog-${source.id}`}>
+        <DialogHeader>
+          <DialogTitle>Ownership and data: {source.name}</DialogTitle>
+          <DialogDescription>
+            Who answers for this source and how sensitive its data is. Saving does not re-test the connection or stop a scan.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <MetadataFields value={meta} onChange={(v) => { setMeta(v); setError(null); }} idPrefix={`source-${source.id}`} />
+          <Field label="Internet exposure" htmlFor={`source-${source.id}-exposure`}
+                 hint="Overrides what the collected facts say; internet-facing raises the risk score">
+            <Select value={exposure} onValueChange={(v) => setExposure(v as ExposureChoice)}>
+              <SelectTrigger id={`source-${source.id}-exposure`} className="cursor-pointer"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {EXPOSURE_CHOICES.map((c) => <SelectItem key={c.value} value={c.value} className="cursor-pointer">{c.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Field>
+          {error && <p className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" className="cursor-pointer" onClick={onClose} disabled={save.isPending}>Cancel</Button>
+          <Button className="cursor-pointer" onClick={() => save.mutate()} disabled={save.isPending}
+                  data-testid={`source-metadata-save-${source.id}`}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

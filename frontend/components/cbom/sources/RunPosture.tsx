@@ -32,7 +32,7 @@ import {
 } from "@/utils/api/cbom_outputs";
 
 import { cbomSourcesKeys } from "./keys";
-import { pluralize } from "./logic";
+import { EXPOSURE_CHOICES, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
 
 const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
@@ -357,13 +357,6 @@ function CriticalitySelect({ teamId, source }: { teamId: number; source: CbomSou
     </Select>
   );
 }
-
-const EXPOSURE_CHOICES: { value: CbomExposure | "auto"; label: string }[] = [
-  { value: "auto", label: "From collected facts" },
-  { value: "internet", label: "Internet-facing" },
-  { value: "internal", label: "Internal" },
-  { value: "unknown", label: "Unknown" },
-];
 
 function ExposureSelect({ teamId, source }: { teamId: number; source: CbomSource }) {
   const queryClient = useQueryClient();
