@@ -99,6 +99,7 @@ FINDING_LABELS = {
     "REUSED_NONCE": "Reused nonce",
     "SELF_SIGNED_LEAF": "Self-signed leaf certificate",
     "STATIC_IV": "Static or predictable IV",
+    "VULNERABLE_CRYPTO_LIBRARY": "Crypto library version with a published advisory",
     "WEAK_ALGORITHM": "Weak or deprecated algorithm",
     "WEAK_CERTIFICATE_KEY": "Certificate with an undersized key",
     "WEAK_CERTIFICATE_SIGNATURE": "Certificate signed with a weak hash",
@@ -106,7 +107,8 @@ FINDING_LABELS = {
     "WEAK_PROTOCOL": "Weak protocol version",
     "WEAK_RNG": "Non-cryptographic random number generator",
 }
-# Appendix B, "Finding codes (current)": occurrences per code over the 68 current assets
+# Appendix B, "Finding codes (current)": occurrences per code over the 69 current assets
+# (WP13 regeneration: + 2 VULNERABLE_CRYPTO_LIBRARY from the WP3a offline advisory data)
 FINDING_COUNTS = {
     "EXPIRED_CERTIFICATE": 1,
     "HARDCODED_KEY": 1,
@@ -114,6 +116,7 @@ FINDING_COUNTS = {
     "REUSED_NONCE": 1,
     "SELF_SIGNED_LEAF": 3,
     "STATIC_IV": 1,
+    "VULNERABLE_CRYPTO_LIBRARY": 2,
     "WEAK_ALGORITHM": 8,
     "WEAK_CERTIFICATE_KEY": 3,
     "WEAK_CERTIFICATE_SIGNATURE": 3,
@@ -595,13 +598,13 @@ def test_front_matter_is_the_shared_shell(pdf, lines):
 # =============================================================================================
 def test_executive_kpis_equal_appendix_b(sec):
     block = sec[H1]
-    assert value_after(block, "Crypto assets") == "68"
-    assert value_after(block, "Issue assets") == "29"
+    assert value_after(block, "Crypto assets") == "69"  # 68 - 1 (WP2) + 2 (WP3a advisory rows)
+    assert value_after(block, "Issue assets") == "31"  # + the two High advisory rows
     assert value_after(block, "Sources") == "7"
     assert value_after(block, "Scans included") == "8"
     assert value_after(block, "Unique certificates") == "14"
-    assert value_after(block, "Quantum readiness") == "86.5%"
-    assert "Critical 1 \u00b7 High 23 \u00b7 Medium 5 \u00b7 Low 0" in joined(block)
+    assert value_after(block, "Quantum readiness") == "86.1%"  # 31 / 36 (WP2 duplicate removed)
+    assert "Critical 1 \u00b7 High 25 \u00b7 Medium 5 \u00b7 Low 0" in joined(block)
     assert "of 9 eligible" in joined(block)
 
 
@@ -609,18 +612,18 @@ def test_grade_card_shows_grade_f_score_100_and_band(sec):
     block = sec[H1]
     start = block.index("Posture grade")
     assert block[start : start + 5] == ["Posture grade", "F", "Risk score", "100", "Critical risk"]
-    # independent arithmetic: (10*1 + 5*23 + 2*5) = 135 weighted points; min(100, 4*135) = 100
-    assert 10 * 1 + 5 * 23 + 2 * 5 == 135 and min(100, 4 * 135) == 100
+    # independent arithmetic: (10*1 + 5*25 + 2*5) = 145 weighted points; min(100, 4*145) = 100
+    assert 10 * 1 + 5 * 25 + 2 * 5 == 145 and min(100, 4 * 145) == 100
 
 
 def test_executive_sentences_carry_the_live_numbers(sec):
     text = joined(sec[H1])
     assert "7 sources and 8 completed scans" in text
-    assert "68 cryptographic asset occurrences" in text
-    assert "Findings were raised on 29 of them: Critical 1, High 23, Medium 5, Low 0." in text
+    assert "69 cryptographic asset occurrences" in text
+    assert "Findings were raised on 31 of them: Critical 1, High 25, Medium 5, Low 0." in text
     assert "Posture grade F (Critical risk, score 100 of 100)" in text
     assert "not a regulatory rating" in text
-    assert "Quantum readiness is 86.5%: 5 of 37 gradeable algorithm occurrences" in text
+    assert "Quantum readiness is 86.1%: 5 of 36 gradeable algorithm occurrences" in text
     assert "1 certificate has expired and 1 expires within 90 days." in text
 
 
@@ -667,7 +670,7 @@ def test_material_risks_helper_orders_like_the_plan(view, raw):
 
 def test_material_risks_note_counts_the_issue_assets(sec):
     text = joined(sec[H2])
-    assert "Top 10 of 29 issue assets" in text
+    assert "Top 10 of 31 issue assets" in text
 
 
 def test_material_risks_exclude_non_current_and_inventory_only_assets():
@@ -699,9 +702,9 @@ def test_quantum_readiness_numbers(raw, sec):
         for row in current_rows(raw)
         if row.get("asset_type") == "algorithm" and row.get("hybrid") is True
     )
-    assert value_after(block, "Readiness") == "86.5%"
+    assert value_after(block, "Readiness") == "86.1%"
     assert value_after(block, "Quantum-vulnerable") == "5"
-    assert value_after(block, "Quantum-safe") == "32"
+    assert value_after(block, "Quantum-safe") == "31"  # WP2: the AES-CBC duplicate is gone
     assert value_after(block, "Not gradeable") == "0"
     assert f"of which {hybrid} hybrid" in joined(block)
 
@@ -970,10 +973,10 @@ def test_appendix_a_prints_the_formula_and_the_worked_calculation(sec):
     assert norm(authored.GRADE_INPUT) in text
     assert norm(authored.GRADE_DISCLAIMER) in text
     assert "10 x Critical + 5 x High + 2 x Medium + 1 x Low" in text
-    assert "Weighted points: 135. Score = min(100, 4 x 135) = 100. Grade F (Critical risk)." in text
+    assert "Weighted points: 145. Score = min(100, 4 x 145) = 100. Grade F (Critical risk)." in text
     for level, count, weight, points in (
         ("Critical", "1", "10", "10"),
-        ("High", "23", "5", "115"),
+        ("High", "25", "5", "125"),  # + the two WP3a advisory rows
         ("Medium", "5", "2", "10"),
         ("Low", "0", "1", "0"),
     ):
@@ -1175,8 +1178,8 @@ def test_posture_grade_helper_matches_the_documented_formula(view):
     posture = board.posture_grade(view)
     assert posture.assessed and (posture.grade, posture.score) == ("F", 100)
     assert posture.band == "Critical risk"
-    assert (posture.critical, posture.high, posture.medium, posture.low) == (1, 23, 5, 0)
-    assert posture.weighted_points == 135
+    assert (posture.critical, posture.high, posture.medium, posture.low) == (1, 25, 5, 0)
+    assert posture.weighted_points == 145
     none = board.posture_grade(empty_view())
     assert (none.assessed, none.grade, none.score, none.band) == (
         False,

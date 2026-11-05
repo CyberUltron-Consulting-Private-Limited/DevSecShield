@@ -59,7 +59,7 @@ edited) and the scan each one feeds::
     4  crypto-misuse-lab      synthetic-crypto-misuse
     5  pqc-pilot              synthetic-crypto-pqc
     6  cert-lifecycle-lab     expired.crt (-35 d) + expiring-soon.crt (+20 d)       [authored]
-    7  vendor-sdk-manifests   synthetic-crypto-manifests           (0 rows, 18 libraries)
+    7  vendor-sdk-manifests   synthetic-crypto-manifests           (1 advisory row, 19 libraries)
     8  legacy-billing         backend/tests/fixtures/cbom_export_scandata.json (Tier B, verbatim)
     14 other-team-app         other-team-canary.crt                                 [authored]
 
@@ -213,10 +213,21 @@ APPENDIX_B: dict[str, Any] = {
     "cert_raw": 18,
     "cert_unique": 14,
     "bands": {"EXPIRED": 1, "LE_30": 1, "VALID": 12},
-    "occurrences": 68,
-    "impact": {"Critical": 1, "High": 23, "Medium": 5, "Low": 39},
-    "issue": {"Critical": 1, "High": 23, "Medium": 5},
-    "risk": (100, "F"),
+    # 68 -> 67 (WP2 df6b7ec, "one call is one asset"): crypto-misuse-lab weak_crypto.js:9
+    # createCipheriv("aes-256-cbc") was two algorithm rows (AES-256-CBC + a bare AES-CBC); the sized
+    # key now absorbs the bare one.  67 -> 69 (WP3a 82b81f8, offline OSV advisory file 7 -> 50
+    # entries): cryptography 42.0.5 (payments-service requirements.txt, CVE-2026-26007 etc.) and
+    # golang.org/x/crypto v0.24.0 (vendor-sdk-manifests go.mod, CVE-2024-45337 etc.) now match, one
+    # VULNERABLE_CRYPTO_LIBRARY library row each (High).
+    "occurrences": 69,
+    # Was {"Critical": 1, "High": 23, "Medium": 5, "Low": 39}.  WP2 (df6b7ec) "clean rows": a row
+    # with no finding code has no impact (None) - 33 clean rows of the scans written by this
+    # generator; the 5 Low rows are the legacy Tier-B scan's verbatim rows (no finding_codes key,
+    # kept as stored); the removed AES-CBC duplicate was the 39th Low.  High 23 -> 25: the two
+    # WP3a advisory rows above.
+    "impact": {"Critical": 1, "High": 25, "Medium": 5, "Low": 5, None: 33},
+    "issue": {"Critical": 1, "High": 25, "Medium": 5},  # High +2: the WP3a advisory rows
+    "risk": (100, "F"),  # weighted sum grows by 10; the score was already capped at 100
     "codes": {
         "EXPIRED_CERTIFICATE": 1,
         "HARDCODED_KEY": 1,
@@ -224,6 +235,7 @@ APPENDIX_B: dict[str, Any] = {
         "REUSED_NONCE": 1,
         "SELF_SIGNED_LEAF": 3,
         "STATIC_IV": 1,
+        "VULNERABLE_CRYPTO_LIBRARY": 2,  # WP3a advisory data, see "occurrences"
         "WEAK_ALGORITHM": 8,
         "WEAK_CERTIFICATE_KEY": 3,
         "WEAK_CERTIFICATE_SIGNATURE": 3,
@@ -233,9 +245,15 @@ APPENDIX_B: dict[str, Any] = {
     },
     "top_critical": "rsa1024_sha1.pem",
     "qv": 5,
-    "safe": 32,
-    "readiness": 86.5,
-    "libs": 23,
+    "safe": 31,  # 32 -> 31: the WP2 AES-CBC duplicate (quantum-safe algorithm row) is gone
+    "readiness": 86.1,  # 31 / (31 + 5)
+    # 23 -> 24 (ab0a446, pre-round-5): the import lane reads CommonJS require("crypto") anywhere on
+    # the line, so crypto-misuse-lab weak_crypto.js adds "Node.js crypto (stdlib)".  24 -> 26 (WP3a):
+    # each advisory row is a library component named <package>@<version> ("cryptography@42.0.5",
+    # "golang.org/x/crypto@v0.24.0"), next to the import-lane "pyca/cryptography" /
+    # "golang.org/x/crypto" rows - the advisory lane has named its rows this way since before
+    # round 5; only the advisory data changed.
+    "libs": 26,
     "libs_multi": ["hashlib (stdlib)", "pyca/cryptography", "pyopenssl", "ssl (stdlib)"],
     "pooled": 6,
     "legacy": 1,

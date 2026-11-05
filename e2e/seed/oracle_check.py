@@ -85,15 +85,17 @@ def source_of(scan: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def asset_class(row: dict[str, Any]) -> str:
-    """alg | cert | proto | mat - from ``asset_type``, else the legacy ``algorithm_type`` (plan 3.1)."""
+    """alg | cert | proto | mat | other - from ``asset_type``, else the legacy ``algorithm_type`` (plan 3.1).
+
+    A current-engine library row (advisory / CVE range / end of life) or declared-configuration row has no
+    crypto ``asset_type`` by design: it is ``other``, never an algorithm (so never in quantum readiness)."""
     kind = row.get("asset_type")
     if kind:
         return {"certificate": "cert", "protocol": "proto", "related-crypto-material": "mat"}.get(
             str(kind), "alg"
         )
-    return {"certificate": "cert", "key": "mat", "protocol": "proto"}.get(
-        str(row.get("algorithm_type")), "alg"
-    )
+    return {"certificate": "cert", "key": "mat", "protocol": "proto", "library": "other",
+            "configuration": "other"}.get(str(row.get("algorithm_type")), "alg")
 
 
 def _props(component: dict[str, Any]) -> dict[str, str]:
@@ -281,7 +283,7 @@ def derive(
         bucket["hybrid"] += 1 if row.get("hybrid") else 0
     out["qsl"] = dict(sorted(qsl.items()))
     by_class: dict[str, dict[str, int]] = {}
-    for klass in ("alg", "cert", "proto", "mat"):
+    for klass in ("alg", "cert", "proto", "mat", "other"):
         group = [r for r in rows if asset_class(r) == klass]
         counts = Counter(r.get("impact") for r in group)
         by_class[klass] = {**{name: counts[name] for name in IMPACT_ORDER}, "total": len(group)}
@@ -381,6 +383,7 @@ def derive(
             "cert": klass["cert"],
             "proto": klass["proto"],
             "mat": klass["mat"],
+            "other": klass["other"],
             "libs": len(libraries),
             "total": len(data_rows),
             "impact": {name: impact[name] for name in IMPACT_ORDER},

@@ -741,6 +741,10 @@ _LEGACY_ASSET_TYPE = {  # pre-reconcile ``algorithm_type`` -> CycloneDX assetTyp
     "key": ASSET_MATERIAL,
     "protocol": ASSET_PROTOCOL,
 }
+# Current-engine rows that have no CycloneDX crypto ``assetType`` by design: a crypto library with a
+# finding (advisory, CVE range, end of life) and a declared configuration fact (posture lanes).  They
+# are typed rows, not pre-reconcile output, and they are not algorithms (never in quantum readiness).
+_UNTYPED_BY_DESIGN = frozenset({"library", "configuration"})
 _REPO_SCHEMES = frozenset({"http", "https", "ssh", "git"})
 _DEFAULT_PORTS = {"http": 80, "https": 443, "ssh": 22, "git": 9418}
 _SCP_RE = re.compile(r"^[\w.-]+@([\w.-]+):(?!//)(.+)$")  # git@host:org/repo.git
@@ -1018,7 +1022,16 @@ def _asset_type_of(row: Mapping[str, Any]) -> str:
         folded = declared.casefold()
         return folded if folded in ASSET_TYPES else ASSET_OTHER
     legacy = (_text(row.get("algorithm_type")) or "").casefold()
+    if legacy in _UNTYPED_BY_DESIGN:
+        return ASSET_OTHER
     return _LEGACY_ASSET_TYPE.get(legacy, ASSET_ALGORITHM)
+
+
+def _untyped(row: Mapping[str, Any]) -> bool:
+    """A row without ``asset_type`` that is not a library / configuration row: pre-reconcile output."""
+    if _text(row.get("asset_type")) is not None:
+        return False
+    return (_text(row.get("algorithm_type")) or "").casefold() not in _UNTYPED_BY_DESIGN
 
 
 def _impact_of(value: Any) -> str | None:
@@ -1096,7 +1109,7 @@ def _read_rows(
         if not isinstance(row, dict):
             warnings.append(f"results[{index}] is not an object (skipped)")
             continue
-        untyped = untyped or _text(row.get("asset_type")) is None
+        untyped = untyped or _untyped(row)
         asset = _asset_from_row(row, facts)
         identity = (asset.asset_type, asset.ident)
         if identity in seen:
@@ -1450,7 +1463,9 @@ def extract_scan_facts(head: ScanHead, scan_data: Any) -> ScanFacts:
     dict, or has neither a list ``results`` nor a dict ``cbom_json``, gets
     ``exclusion=EXCLUDED_NO_DATA``.  A valid but empty scan (``results == []`` with a
     ``cbom_json``) is INCLUDED.  Tier-C rows derive ``asset_type`` from ``algorithm_type``
-    (certificate / key -> related-crypto-material / protocol / else algorithm).  Never prints or
+    (certificate / key -> related-crypto-material / protocol / else algorithm).  A current-engine
+    library or configuration row has no ``asset_type`` by design: it is typed ``other`` and does not
+    make the scan reduced.  Never prints or
     copies ``cbom_compliance["disclaimer"]`` or ``cbom_json.metadata`` (AIBOM text, plan F-05).
     """
     return _safe_fill(_head_facts(head), scan_data)

@@ -4,8 +4,9 @@ ORACLE RULE (plan 8.4).  Every expected number and sentence in this module is a 
 from plan Appendix B (hand / openssl derived), decision D-06 and Appendix C (timeline wording and
 URLs), or from a stdlib probe of the committed raw fixture.  Nothing is recomputed with the
 renderer.  The headline facts of team 1 (Appendix B): 5 current quantum-vulnerable occurrences
-(payments RSA-1024 + RSA-2048, pqc-pilot RSA-2048, legacy-billing RSA-1024 + RSA-2048), 32
-quantum-safe, readiness 86.5 %, 3 of the 5 rows from full-fidelity scans and 2 from the legacy
+(payments RSA-1024 + RSA-2048, pqc-pilot RSA-2048, legacy-billing RSA-1024 + RSA-2048), 31
+quantum-safe, readiness 86.1 % (WP13 regeneration: 32 / 86.5 % before WP2 dropped a duplicate
+AES-CBC row), 3 of the 5 rows from full-fidelity scans and 2 from the legacy
 (Tier B) scan, which has no sized target.
 
 The document is a pure function of a ``TeamCbomView``: the fixture view is produced by the real
@@ -162,14 +163,14 @@ FIXTURE_LEVELS = {
     "Level 3": ("2", "1"),
     "Level 4": ("1", "0"),
     "Level 5": ("6", "1"),
-    "Not recorded": ("19", "0"),
-    "Total quantum-safe": ("32", "2"),
+    "Not recorded": ("18", "0"),  # 19 -> 18: the WP2 AES-CBC duplicate (no NIST level) is gone
+    "Total quantum-safe": ("31", "2"),
 }
 FIXTURE_KPIS = {
     "Quantum-vulnerable": "5",
     "Distinct kinds": "2",
-    "Quantum readiness": "86.5%",
-    "Quantum-safe": "32",
+    "Quantum readiness": "86.1%",  # 31 / (31 + 5); was 86.5% before WP2 removed a duplicate row
+    "Quantum-safe": "31",
     "Hybrid": "2",
     "Not gradeable": "0",
 }
@@ -740,7 +741,7 @@ def test_sections_are_numbered_in_the_planned_order(team_body):
 
 
 # =============================================================================================
-# Summary KPIs (readiness 86.5 %)
+# Summary KPIs (readiness 86.1 %)
 # =============================================================================================
 def test_kpi_strip_carries_the_appendix_b_numbers(team_body):
     cards = kpi_cards(team_body)
@@ -748,8 +749,8 @@ def test_kpi_strip_carries_the_appendix_b_numbers(team_body):
     assert list(cards) == list(FIXTURE_KPIS)  # the planned order
 
 
-def test_readiness_is_86_5_percent_in_the_pdf_text(team_text):
-    assert has(team_text, "86.5%")
+def test_readiness_is_86_1_percent_in_the_pdf_text(team_text):
+    assert has(team_text, "86.1%")
     assert has(team_text, "Quantum readiness")
 
 
