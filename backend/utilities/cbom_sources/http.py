@@ -15,6 +15,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import ValidationError
+from sqlalchemy import update
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlmodel import Session, select
 from starlette.responses import JSONResponse, Response
 
@@ -123,9 +125,28 @@ def require_admin(session: Session, user_id: int, team_id: int, what: str) -> No
         raise HTTPException(status_code=400, detail=f"Only a team admin can change {what}")
 
 
+CHANGED_ELSEWHERE = "This was changed elsewhere. Reload to see the latest version."
+
+
 def check_version(row: Any, expected: int | None) -> None:
     if expected is not None and getattr(row, "row_version", None) != expected:
-        raise HTTPException(status_code=409, detail="This was changed elsewhere. Reload to see the latest version.")
+        raise HTTPException(status_code=409, detail=CHANGED_ELSEWHERE)
+
+
+def bump_version(session: Session, row: Any) -> None:
+    """``row.row_version += 1`` as a compare-and-set on the version this request read (``UPDATE ... WHERE row_version =
+    :read``), instead of an ORM read-modify-write: two edits that both passed ``check_version`` (READ COMMITTED lets
+    them read the same version) cannot both be saved; the one that writes second gets the same 409.  Call it where the
+    row is changed, before the commit (the transaction is rolled back with the 409)."""
+    model = type(row)
+    read = row.row_version
+    won = session.exec(  # type: ignore[call-overload]
+        update(model).where(model.id == row.id, model.row_version == read)
+        .values(row_version=read + 1).execution_options(synchronize_session=False)
+    ).rowcount
+    if won != 1:
+        raise HTTPException(status_code=409, detail=CHANGED_ELSEWHERE)
+    set_committed_value(row, "row_version", read + 1)
 
 
 async def read_capped_body(request: Request, limit: int) -> bytes:

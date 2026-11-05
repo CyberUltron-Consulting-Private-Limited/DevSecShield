@@ -35,6 +35,7 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys } from "./keys";
+import { keepLiveValidation } from "./liveValidation";
 import { SourceMetadataDialog } from "./SourceMetadata";
 import { formatDateTime, pluralize, readTextFile, splitLines } from "./logic";
 import {
@@ -401,9 +402,10 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   const metadataSources = idpSources.filter((s) => s.config?.provider === "saml_metadata" || s.config?.provider === "oidc_discovery");
   const identityNames = idpSources.map((s) => s.name);
 
-  // A validation result stays shown while its account exists (or is the one being edited, right after it was created).
-  const liveValidation =
-    validation && (form.source?.id === validation.sourceId || cloudSources.some((s) => s.id === validation.sourceId)) ? validation : null;
+  // The result this browser just received stays shown while the server still holds it (or while the account, just
+  // created, is not in the list yet); once a newer list shows that account's test differently (re-tested, or reset
+  // by a connection change so runs skip it) the server's state wins.
+  const liveValidation = keepLiveValidation(validation, cloudSources, cloudQuery.data?.server_time, form.source?.id) ? validation : null;
   const editingCloud = form.source ? cloudSources.find((s) => s.id === form.source?.id) : undefined;
   const latestValidated = cloudSources
     .filter((s) => PROVIDER_OF_KIND[s.kind] === form.provider && viewFromSource(s))
