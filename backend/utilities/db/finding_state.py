@@ -38,7 +38,9 @@ def mark_finding_fixed(collection, finding_doc: dict[str, Any], team: Team | Non
 
 def mark_code_findings_fixed(engine, *, team_id: int, scan_id: int, identities: Iterable[str], resolved_in_scan: int,
                              now: _dt.datetime, mongo_db=None) -> int:
-    """Mark the findings of CBOM scan ``scan_id`` whose line-independent identity is in ``identities`` fixed."""
+    """Mark the findings of CBOM scan ``scan_id`` whose line-independent identity is in ``identities`` fixed. The
+    identity is ``code_identity`` of the stored ``finding_data``, exactly as ``drift.code_views`` keys the scan's
+    stored rows (never ``display_row``'s copy), so what drift resolves is what gets marked."""
     from backend.utilities.cbom_sources.identity import code_identity
 
     wanted = set(identities)

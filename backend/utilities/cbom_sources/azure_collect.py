@@ -257,6 +257,7 @@ def _vault_data_plane(http: CloudHttp, data_token: str, vault: dict[str, Any], l
             return out
     try:
         items, truncated = http.azure_pages(f"{uri}/certificates?api-version={KV_API}&maxresults=25", data_token, cap=ITEM_CAP)
+        unparsed = 0
         for item in items:
             cid = own(item.get("id"))
             if not cid:
@@ -265,12 +266,13 @@ def _vault_data_plane(http: CloudHttp, data_token: str, vault: dict[str, Any], l
             try:
                 asset = _certificate_asset(bundle, name, label)
             except ValueError:  # one certificate that does not parse is a gap of its own, not the end of the list
+                unparsed += 1
                 asset = {"type": "coverage", "target": label, "location": f"{cid}#parse",
                          "facts": {"check": f"key vault {name} certificate {cid.rsplit('/', 1)[-1]}", "status": "error",
-                                   "detail": "the certificate could not be parsed"}}
+                                   "detail": "the certificate could not be parsed", "scope": [cid]}}
             if asset:
                 emit(asset)
-        out["certificates"] = "truncated" if truncated else "ok"
+        out["certificates"] = "truncated" if truncated else ("partial" if unparsed else "ok")
     except CloudHttpError as exc:
         gap("certificates", exc)
     try:
@@ -285,7 +287,8 @@ def _vault_data_plane(http: CloudHttp, data_token: str, vault: dict[str, Any], l
         if status == "truncated":
             emit({"type": "coverage", "target": label, "location": f"{vault.get('id') or uri}#{part}-cap",
                   "facts": {"check": f"key vault {name} {part}", "status": "truncated",
-                            "detail": f"More than {ITEM_CAP} {part}; the first {ITEM_CAP} were read"}})
+                            "detail": f"More than {ITEM_CAP} {part}; the first {ITEM_CAP} were read",
+                            "scope": [f"{uri}/{part}/"]}})
     return out
 
 
@@ -353,7 +356,7 @@ def collect_azure(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], em
                 targets.append({"target": label, "status": "auth_failed" if status == "denied" else "error",
                                 "error": str(exc)[:256], "assets": 0, "duration_ms": int((time.monotonic() - t0) * 1000)})
                 continue
-            if truncated:
+            if truncated:  # no scope: the vaults past the cap (and their keys) are unknown, so it covers the target
                 emit({"type": "coverage", "target": label, "location": f"/subscriptions/{sub}/providers/Microsoft.KeyVault#cap",
                       "facts": {"check": f"key vaults in subscription {sub}", "status": "truncated",
                                 "detail": f"More than {VAULT_CAP} vaults; the first {VAULT_CAP} were read"}})
@@ -374,16 +377,25 @@ def collect_azure(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], em
                     parts[str(vault.get("name"))] = "error"
                     continue
                 result = _vault_data_plane(http, data_token, vault, label, emit)
-                parts[str(vault.get("name"))] = "ok" if all(s in ("ok", "truncated") for s in result.values()) else "partial"
-            bad = sorted(n for n, s in parts.items() if s != "ok")
-            targets.append({"target": label, "status": "ok" if not bad else "error",
-                            "error": (f"{len(bad)} vault(s) not fully read: " + ", ".join(bad))[:256] if bad else None,
+                parts[str(vault.get("name"))] = (
+                    "error" if any(s not in ("ok", "truncated", "partial") for s in result.values())
+                    else ("partial" if any(s != "ok" for s in result.values()) else "ok"))
+            bad = sorted(n for n, s in parts.items() if s == "error")
+            # a cut list (vaults, or a vault's keys / certificates / secrets) or an unparsable certificate: read, not
+            # complete -- the target is partial, never "ok"; each gap row carries the scope drift must not call gone
+            gappy = sorted(n for n, s in parts.items() if s == "partial") + (["(vault list)"] if truncated else [])
+            status = "error" if bad else ("partial" if gappy else "ok")
+            error = ((f"{len(bad)} vault(s) not fully read: " + ", ".join(bad)) if bad else
+                     (f"read with gaps: {', '.join(gappy)}" if gappy else None))
+            targets.append({"target": label, "status": status, "error": error[:256] if error else None,
                             "duration_ms": int((time.monotonic() - t0) * 1000), "vaults": len(vaults)})
     ok = sum(1 for t in targets if t["status"] == "ok")
+    partial = sum(1 for t in targets if t["status"] == "partial")
     skipped = sum(1 for t in targets if t["status"].startswith("skipped"))
-    log("azure collected", team=team_id, subscriptions=len(targets), ok=ok, duration_s=int(time.monotonic() - started))
-    return {"targets": targets, "counts": {"total": len(targets), "ok": ok, "failed": len(targets) - ok - skipped,
-                                           "skipped": skipped},
+    log("azure collected", team=team_id, subscriptions=len(targets), ok=ok, partial=partial,
+        duration_s=int(time.monotonic() - started))
+    return {"targets": targets, "counts": {"total": len(targets), "ok": ok, "partial": partial,
+                                           "failed": len(targets) - ok - partial - skipped, "skipped": skipped},
             "duration_s": int(time.monotonic() - started)}
 
 

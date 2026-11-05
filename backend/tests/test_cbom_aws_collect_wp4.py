@@ -154,7 +154,9 @@ def test_301_function_versions_hit_the_cap_and_say_so():
         pages.append(("list_functions", response, params))
     services, found = _run({"lambda": pages})
     cap = [a for a in found if a["type"] == "coverage" and a["facts"]["status"] == "truncated"]
-    assert services["lambda"] == "ok" and len(cap) == 1 and "300" in cap[0]["facts"]["detail"]
+    # read, not complete: the service (and its target) is partial, and the gap names what drift must not call gone
+    assert services["lambda"] == "partial" and len(cap) == 1 and "300" in cap[0]["facts"]["detail"]
+    assert cap[0]["facts"]["scope"] == [f"arn:aws:lambda:{REGION}:{ACCOUNT}:function:"]
 
 
 def test_exactly_300_function_versions_are_complete():
@@ -351,9 +353,10 @@ def test_rds_parameter_group_denied_is_a_coverage_row_not_silence():
         ("describe_db_parameters", "AccessDenied", None),
     ]}
     services, found = _run(plan)
-    assert services["rds"] == "ok"
+    assert services["rds"] == "partial"  # the instance was read, its parameters were not
     gap = next(a for a in found if a["type"] == "coverage")
     assert gap["location"].endswith("#parameters") and gap["facts"]["status"] == "denied"
+    assert gap["facts"]["scope"] == [gap["location"]]
     assert not [a for a in found if a["type"] == "database_config"]
 
 

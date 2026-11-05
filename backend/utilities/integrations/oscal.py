@@ -146,8 +146,11 @@ def _text(value: Any, fallback: str) -> str:
 
 def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str, start: _dt.datetime | None,
                        end: _dt.datetime | None, views: Iterable[tuple[str | None, Any]], kb_version: str | None,
-                       description: str) -> dict[str, Any]:
-    """Build the document from drift ``View``s (``drift.node_views`` / ``drift.code_views``) of finding assets."""
+                       description: str, not_read: Iterable[str] = (),
+                       partly_read: Iterable[tuple[str, str]] = ()) -> dict[str, Any]:
+    """Build the document from drift ``View``s (``drift.node_views`` / ``drift.code_views``) of finding assets.
+    ``not_read``: sources whose collection failed; ``partly_read``: (source, what was not read). Neither is claimed
+    as reviewed: they are listed in the result's props and in the reviewed-controls remarks."""
     from backend.utilities.cbom_sources.crypto_kb import entry
 
     findings_views = [(src, v) for src, v in views if v.finding and v.codes]
@@ -197,14 +200,27 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
                 finding["links"] = links
             findings.append(finding)
     all_controls = sorted({c for cs in COMPLIANCE_TO_CONTROLS.values() for c in cs} & set(known))
+    not_read, partly_read = list(dict.fromkeys(not_read)), list(partly_read)
+    gaps = []
+    if not_read:
+        gaps.append(f"Not reviewed for {len(not_read)} source(s) whose collection failed: {', '.join(not_read)}.")
+    if partly_read:
+        gaps.append(f"Reviewed only in part for {len(partly_read)} source(s): "
+                    + "; ".join(f"{name} ({what})" for name, what in partly_read)
+                    + ". What was not read has no finding here because it was not checked, not because it passed.")
     result: dict[str, Any] = {
         "uuid": _uuid(team_id, anchor, "result"), "title": title, "description": description,
         "start": _ts(start), "reviewed-controls": {
             "description": ("NIST SP 800-53 Rev. 5 controls the ZeroShield CBOM knowledge base maps its cryptographic "
                             "checks to. Automated checks only: a control without a finding here is reviewed by these "
-                            "checks, not attested as satisfied."),
+                            "checks, not attested as satisfied"
+                            + (", and only for what was read (see remarks)." if gaps else ".")),
             "control-selections": [{"include-controls": [{"control-id": c} for c in all_controls]}]},
     }
+    if gaps:
+        result["reviewed-controls"]["remarks"] = " ".join(gaps)[:20000]
+        result["props"] = (_props(*[("source-not-read", name) for name in not_read])
+                           + _props(*[("source-partly-read", f"{name}: {what}") for name, what in partly_read]))
     if end is not None:
         result["end"] = _ts(end)
     if items:
@@ -235,6 +251,8 @@ def run_document(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == run.team_id)).all()}
     views: list[tuple[str | None, Any]] = []
+    not_read: list[str] = []
+    partly_read: list[tuple[str, str]] = []
     jobs = session.exec(select(CbomCollectionJob).where(
         CbomCollectionJob.team_id == run.team_id, CbomCollectionJob.run_id == run.id,
         CbomCollectionJob.kind == "collect").order_by(CbomCollectionJob.id)).all()
@@ -245,10 +263,26 @@ def run_document(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
         src = sources.get(job.source_id or 0)
         ref, name = ID.job_source_ref(job, src), ID.job_source_name(job, src)
         views += [(name, v) for v in DRIFT.node_views(rows, ref, reclassify=False).values()]
+        # a source is "reviewed" only for what was read: a failed collection is not reviewed at all, and the targets
+        # and coverage gaps of a partial one are named (a missing finding there means "not checked")
+        if job.status != "success" or job.outcome == "failed":
+            not_read.append(f"{name} ({job.status if job.status != 'success' else 'nothing read'})")
+            continue
+        result = job.result if isinstance(job.result, dict) else {}
+        counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+        gaps = sum(1 for r in rows if r.asset_type == "coverage")
+        unread = [f"{counts[k]} target(s) {label}" for k, label in (("failed", "not read"), ("skipped", "skipped"),
+                                                                     ("partial", "read in part"))
+                  if isinstance(counts.get(k), int) and counts[k] > 0]
+        unread += ([f"{gaps} check(s) not collected"] if gaps else [])
+        unread += (["truncated at the asset limit"] if result.get("truncated") else [])
+        if unread:
+            partly_read.append((name, ", ".join(unread)))
     return assessment_results(
         team_id=run.team_id, anchor=f"run-{run.id}", title=f"ZeroShield CBOM collection run #{run.id}",
         namespace="node", start=run.created_at, end=run.finished_at, views=views, kb_version=run.kb_version,
-        description=f"Cryptographic inventory collected from {len(jobs)} source(s); run status {run.status}.")
+        description=f"Cryptographic inventory collected from {len(jobs)} source(s); run status {run.status}.",
+        not_read=not_read, partly_read=partly_read)
 
 
 def scan_document(scan: Scan) -> dict[str, Any]:
@@ -261,7 +295,9 @@ def scan_document(scan: Scan) -> dict[str, Any]:
     return assessment_results(
         team_id=scan.team_id, anchor=f"scan-{scan.id}", title=f"ZeroShield CBOM code scan #{scan.id}",
         namespace="code", start=scan.created_at, end=scan.last_updated, views=views, kb_version=None,
-        description=f"Cryptographic inventory of {label} (CBOM code scan).")
+        description=f"Cryptographic inventory of {label} (CBOM code scan).",
+        partly_read=[(label, "the uploaded CBOM was truncated at its component limit")]
+        if DRIFT.scan_truncated(scan) else ())
 
 
 def document_for(engine, team_id: int, *, run_id: int | None = None, scan_id: int | None = None) -> dict | None:

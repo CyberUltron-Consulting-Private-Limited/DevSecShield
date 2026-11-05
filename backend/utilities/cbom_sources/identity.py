@@ -82,7 +82,9 @@ def code_identity_parts(asset_type: str, location: str | None, title: str | None
 
 def code_identity(row: Mapping[str, Any]) -> str:
     """Line-independent identity of a code-scan row; the asset type and title are read exactly as the team roll-up
-    reads them, so a roll-up asset (``asset_agg_identity``) and its row get the same identity."""
+    reads them, so a roll-up asset (``asset_agg_identity``) and its row get the same identity. Pass the row as
+    stored (scan results / Mongo ``finding_data``), never ``display_row``'s copy: that one retypes legacy library and
+    configuration rows, and drift, the roll-up and the "fixed" marking must all key the same row the same way."""
     from backend.utilities.dashboard.cbom_team_rollup import _asset_type_of
 
     title = str(row.get("title") or "").strip() or str(row.get("algorithm_name") or "").strip() or None

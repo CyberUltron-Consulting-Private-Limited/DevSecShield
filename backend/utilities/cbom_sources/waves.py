@@ -136,7 +136,7 @@ def code_items(session: Session, team_id: int, scan: Scan) -> list[dict[str, Any
         if not isinstance(raw, dict):
             continue
         row = display_row(raw)
-        key = ID.stable_key("code", ref, ID.code_identity(row))
+        key = ID.stable_key("code", ref, ID.code_identity(raw))  # the stored row, as drift and the roll-up key it
         finding = is_finding(row)
         codes = [c for c in row.get("finding_codes") or [] if isinstance(c, str)] or (["FINDING"] if finding else [])
         qv = code_row_quantum_vulnerable(row)
