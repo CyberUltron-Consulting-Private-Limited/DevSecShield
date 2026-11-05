@@ -538,3 +538,44 @@ def test_an_untrusted_registry_certificate_is_refused(lab_factory):
     status, _e, _ = run_job(ctx, {"id": 1, "kind": "collect"}, {}, {"kind": "container_images", "config": cfg,
                                                                     "secrets": {}})
     assert status == "failure" and ctx.outcomes[0].status in ("tls_unavailable", "error")
+
+
+def test_an_application_ca_bundle_is_one_trust_store_row_but_a_chain_file_is_not(tmp_path, monkeypatch):
+    """AWS lab, round 5: the host agent on a real Ubuntu VM reported AWS CLI v2's botocore/cacert.pem as 126
+    certificate rows, 16 of them "expired" roots.  A bundle of CA roots is a trust store whatever its file name; an
+    operator's chain file (leaf + intermediate + root) keeps a row per certificate."""
+    root = _host_root(tmp_path)
+    bundle_dir = root / "usr/local/aws-cli/v2/dist/awscli/botocore"
+    bundle_dir.mkdir(parents=True)
+    roots = []
+    for i in range(6):
+        k = ec.generate_private_key(ec.SECP256R1())
+        roots.append(_cert(k, f"Public Root {i}", ca=True).public_bytes(serialization.Encoding.PEM))
+    (bundle_dir / "cacert.pem").write_bytes(b"".join(roots))
+    ca_key = ec.generate_private_key(ec.SECP256R1())
+    ca = _cert(ca_key, "Internal Root", ca=True)
+    leaf_key = ec.generate_private_key(ec.SECP256R1())
+    leaf = _cert(leaf_key, "svc.internal", issuer=ca.subject, issuer_key=ca_key)
+    (root / "opt/app/chain.pem").write_bytes(leaf.public_bytes(serialization.Encoding.PEM) +
+                                            ca.public_bytes(serialization.Encoding.PEM))
+    monkeypatch.setenv("ZS_HOST_ROOT", str(root))
+    monkeypatch.delenv("ZS_HOST_PROC", raising=False)
+    ctx = _ctx(agent=True)
+    status, error, _ = run_job(ctx, {"id": 1, "kind": "collect"}, {}, {"kind": "host_agent", "config": {}, "secrets": {}})
+    ctx.flush()
+    assert (status, error) == ("success", None), error
+    certs = [r for r in ctx.collected if r["type"] == "certificate"]
+    bundle = [r for r in certs if r["location"].startswith("/usr/local/aws-cli")]
+    assert len(bundle) == 1 and bundle[0]["facts"]["trust_store"] is True and bundle[0]["facts"]["count"] == 6
+    assert sorted(r["location"] for r in certs if r["location"].startswith("/opt/app/chain.pem")) == \
+        ["/opt/app/chain.pem#0", "/opt/app/chain.pem#1"]
+
+
+def test_is_ca_bundle_needs_five_ca_roots():
+    from zs_scan_node import linux_parsers as P
+
+    roots = [{"is_ca": True, "self_signed": True}] * 5
+    assert P.is_ca_bundle(roots)
+    assert not P.is_ca_bundle(roots[:4])
+    assert not P.is_ca_bundle(roots + [{"is_ca": False, "self_signed": False}])  # a leaf: an operator's file
+    assert not P.is_ca_bundle([{"is_ca": True, "self_signed": False}] * 6)  # intermediates only

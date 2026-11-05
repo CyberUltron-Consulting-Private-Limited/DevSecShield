@@ -167,7 +167,7 @@ def _inspect(ctx: JobContext, fs: HostFS, loc: str, path: str) -> int:
     mode_facts = {"mode": format(mode, "04o"), "world_readable": bool(mode & 0o004)} if mode is not None else {}
     if kind in ("pem", "cert"):
         certs = [cert_facts(c, "file") for c in load_certs(got.data, 500)]
-        if len(certs) > 1 and _is_trust_store(shown):
+        if len(certs) > 1 and (_is_trust_store(shown) or P.is_ca_bundle(certs)):
             ctx.emit("certificate", loc, shown, name=f"Trust store ({len(certs)} CA certificates)",
                      facts={"path": shown, **_trust_summary(certs)})
             return 1

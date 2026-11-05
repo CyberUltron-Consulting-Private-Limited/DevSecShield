@@ -516,7 +516,7 @@ def _inspect_file(ctx: JobContext, sess: Session, loc: str, real_path: str) -> i
     if kind in ("pem", "cert"):
         status, out, err, timed_out = sess.run(_file_cmd(C.CERTS_IN_FILE, real_path), FILE_CMD_TIMEOUT)
         certs = P.storeutl_certs(out) if status == 0 else []
-        if len(certs) > 1 and _is_trust_store(path):
+        if len(certs) > 1 and (_is_trust_store(path) or P.is_ca_bundle(certs)):
             # a system CA bundle: one summary row instead of 100+ certificate rows
             ctx.emit("certificate", loc, path, name=f"Trust store ({len(certs)} CA certificates)",
                      facts={"path": path, **_trust_summary(certs)})

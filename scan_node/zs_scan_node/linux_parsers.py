@@ -272,6 +272,19 @@ def classify_file(path: str) -> str:
 
 
 # ----------------------------------------------------------------------------- openssl storeutl -text
+# An application's own CA bundle (certifi / botocore cacert.pem, a JDK or Node copy, ...) is a trust store whatever its
+# name: AWS lab, round 5, the host agent reported AWS CLI v2's botocore/cacert.pem as 126 certificate rows (16 "expired"
+# roots).  Five or more certificates, all CAs, nearly all self-signed roots: a bundle, not a chain an operator issued
+# (an internal chain file holds a leaf or one or two intermediates, so it keeps its per-certificate rows).
+CA_BUNDLE_MIN = 5
+
+
+def is_ca_bundle(certs: list[dict[str, Any]]) -> bool:
+    if len(certs) < CA_BUNDLE_MIN or not all(c.get("is_ca") for c in certs):
+        return False
+    return sum(1 for c in certs if c.get("self_signed")) >= 0.9 * len(certs)
+
+
 def storeutl_certs(text: str) -> list[dict[str, Any]]:
     """Certificates from ``openssl storeutl -noout -text -certs`` (or ``x509 -text``) output."""
     blocks = re.split(r"(?m)^(?:\d+: Certificate\s*$|Certificate:\s*$)", text)
