@@ -33,7 +33,9 @@ HAS_PRIVATE_KEY = "grep -c 'PRIVATE KEY-----' {file}"
 SSH_KEY_FINGERPRINT = "ssh-keygen -l -f {file}"
 # No -storepass: with stdin closed keytool lists a JKS/JCEKS without verifying integrity (public metadata only;
 # private entries stay encrypted).  PKCS#12 needs the password and is reported as password-protected.
-KEYSTORE_LIST = "keytool -list -v -keystore {file}"
+# -J-XX:-UsePerfData: otherwise the JVM creates /tmp/hsperfdata_<login user> on the server (AWS lab, round 5: the
+# host audit showed that directory as the only file the scan left behind).
+KEYSTORE_LIST = "keytool -J-XX:-UsePerfData -list -v -keystore {file}"
 # Permission bits of a key file the login user could read (world-readable unencrypted keys are a finding).
 FILE_MODE = "stat -c %a {file}"
 # LUKS header version per block device (FSVER needs util-linux 2.36+; older lsblk fails and the check is skipped).

@@ -57,7 +57,7 @@ TIER1_COMMANDS = [
     "openssl pkey -pubout -passin pass: -in <file>",
     "grep -c 'PRIVATE KEY-----' <file>",
     "ssh-keygen -l -f <file>",
-    "keytool -list -v -keystore <file>",
+    "keytool -J-XX:-UsePerfData -list -v -keystore <file>",
     "stat -c %a <file>",
     "lsblk -nr -o MAJ:MIN,FSTYPE,FSVER",
     "systemctl show --type=service --state=running -p Id -p FragmentPath -p Environment -p ExecStart '*'",

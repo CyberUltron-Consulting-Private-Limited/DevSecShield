@@ -126,3 +126,12 @@ def test_rdp_missing_nla_value_is_unknown_not_off():
     assert W.parse_rdp("")["nla"] is None
     assert W.parse_rdp('{"SecurityLayer":2,"UserAuthentication":0}')["nla"] is False
     assert W.parse_rdp('{"SecurityLayer":2,"UserAuthentication":1}')["nla"] is True
+
+
+def test_keytool_never_writes_jvm_perf_data_on_the_server():
+    """AWS lab, round 5: the host audit after a Linux scan found /tmp/hsperfdata_zs-cbom, created by keytool's JVM,
+    as the only file the scanner left behind.  -J-XX:-UsePerfData keeps the listing read-only."""
+    from zs_scan_node import commands as C
+
+    assert C.KEYSTORE_LIST.startswith("keytool -J-XX:-UsePerfData ")
+    assert any(line.startswith("keytool -J-XX:-UsePerfData ") for line in C.TIER1_DISPLAY)
