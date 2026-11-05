@@ -84,7 +84,7 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
             
         
         # STEP [ 2 ] : ======================================== Start the guardrails scan and get status  ====================================
-        task_id , status = None , None 
+        task_id , task_status = None , None 
         celery_app = get_celery_app()
         if not integration_kwargs:
             console.print(f"Integration kwargs not found", style="bold orange1")
@@ -95,8 +95,8 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
         }
         task = celery_app.send_task(name="guardrail_worker.input_guardrail", kwargs=input_guardrail_kwargs , queue="guardrail_worker_queue")
         task_id = task.id
-        status = AsyncResult(task_id, app=celery_app).status.lower()
-        if not status or not task_id:
+        task_status = AsyncResult(task_id, app=celery_app).status.lower()
+        if not task_status or not task_id:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error starting guardrails scan")
 
         # STEP [ 3 ] : ======================================== Create a new mongo db log ====================================
@@ -104,7 +104,7 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
         result = guardrails_logs_collection.insert_one(GuardrailLogs(
             integration_id=integration.id,
             task_id=task.id,
-            status=status,
+            status=task_status,
             input_prompt=data.input_prompt,
             created_at=datetime.now(timezone.utc),
             settings=integration.settings,
@@ -123,7 +123,7 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
         
         return {
             "result_id": inserted_id,
-            "status": status,
+            "status": task_status,
         }
 
 
@@ -174,23 +174,23 @@ async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get
         results = log["results"] if log["results"] else None
 
         celery_app = get_celery_app()
-        status = AsyncResult(log["task_id"], app=celery_app).status.lower()
+        task_status = AsyncResult(log["task_id"], app=celery_app).status.lower()
 
-        if not status:
+        if not task_status:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error getting scan status")
-        console.print(f"Scan status is {status}", style="bold yellow")
-        if status == "success" and log["results"] is None:
+        console.print(f"Scan status is {task_status}", style="bold yellow")
+        if task_status == "success" and log["results"] is None:
             console.print(f"Scan status is success, getting results", style="bold green")
             results = AsyncResult(log["task_id"], app=celery_app).result
             if not results:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error getting scan results")
-            guardrails_logs_collection.update_one({"_id": ObjectId(scan_id)}, {"$set": {"results": results , "status": status}})
+            guardrails_logs_collection.update_one({"_id": ObjectId(scan_id)}, {"$set": {"results": results , "status": task_status}})
         else:
-            guardrails_logs_collection.update_one({"_id": ObjectId(scan_id)}, {"$set": {"status": status}})
+            guardrails_logs_collection.update_one({"_id": ObjectId(scan_id)}, {"$set": {"status": task_status}})
         
         # STEP [ 3 ] : ======================================== Return the scan status and results  ====================================
         return {
-            "status": status,
+            "status": task_status,
             "results": results
         }
 
