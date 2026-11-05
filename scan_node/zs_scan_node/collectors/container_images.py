@@ -12,19 +12,26 @@ package URL.  Nothing outside those files is kept.
 Safety:
 * HTTPS only.  Every host (the registry, its token service, a blob redirect such as S3 or a CDN) is resolved and
   connected through the network gate (``netutil.resolve_checked`` + ``netutil.http_client``), so the never-scan list
-  applies and DNS cannot move a connection after the check.  Redirects are followed by hand (at most 5).
+  applies and DNS cannot move a connection after the check.  Redirects are followed by hand (at most 5).  A token
+  service or redirect target the registry names is never a loopback address (unless the registry itself is on
+  loopback), a link-local one (cloud metadata, 169.254.169.254), an unspecified one or AWS's IPv6 metadata range.
 * Credentials (anonymous, or a vault reference read on the node: ``username``/``password`` or ``token``) are sent
   only to the registry's own origin: as Basic to the registry, or to a Bearer token service (``WWW-Authenticate:
-  Bearer realm=...``) on the SAME origin.  A token service on another host gets an anonymous token request; the
-  registry's bearer token is never sent to a redirect target on another origin.
+  Bearer realm=...``) on the SAME origin, or to the token service of a registry in ``TOKEN_SERVICES`` (Docker Hub:
+  auth.docker.io; GitLab.com: gitlab.com).  Any other token service gets an anonymous token request; the registry's
+  bearer token is never sent to a redirect target on another origin.
 * Caps: manifests 4 MB, 128 layers, each layer and the whole image (``max_image_mb``, default 2048) by compressed
-  size before download, inflated output per layer, files read from a layer 64 MB.  zstd layers (no decompressor in
-  the standard library) and foreign / non-distributable layers are reported as coverage, not read.
+  size before download, and each blob stops at its descriptor's size as it streams; inflated output per layer
+  (200 times its size plus 64 MB, 8 GB at most, inflated 1 MB at a time); one member's tar headers (long names, pax
+  records, sparse maps) 1 MB; the inventory files kept for an image 128 MB in total (64 MB per file) and 1,000 dpkg
+  ``status.d`` entries.  The job's stop flag and deadline are checked as every chunk arrives.  zstd layers (no
+  decompressor in the standard library) and foreign / non-distributable layers are reported as coverage, not read.
 """
 from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
 import re
 import ssl
@@ -32,7 +39,7 @@ import tarfile
 import time
 import zlib
 from dataclasses import dataclass, field
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 from urllib.parse import urlencode, urljoin, urlsplit
 
 from zs_scan_node import linux_parsers as P
@@ -47,7 +54,14 @@ MAX_LAYERS = 128
 MAX_LAYER_BYTES = 1024 * 1024 * 1024
 DEFAULT_IMAGE_MB = 2048
 MAX_INFLATE_RATIO = 200
+MAX_INFLATED = 8 * 1024 * 1024 * 1024  # inflated output of one layer, whatever its descriptor says
+INFLATE_STEP = 1024 * 1024  # output per inflate step: one compressed chunk never becomes one large buffer
 MAX_FILE = pkgdb.MAX_DB_BYTES
+MAX_KEPT = 128 * 1024 * 1024  # inventory files held for one image: the merged view plus the layer being read
+MAX_STATUS_D = 1000  # dpkg status.d entries (files and whiteouts) held for one image
+MAX_TAR_HEADER = 1024 * 1024  # one member's long-name, long-link, pax and sparse headers; the global pax records
+MAX_TAR_CHAIN = 16  # extended headers in front of one member
+MAX_PATH = 4096
 MAX_REDIRECTS = 5
 TIMEOUT = 30.0
 ACCEPT = ", ".join((
@@ -64,6 +78,16 @@ _TAG = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 _HOST = re.compile(r"^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$")
 WANTED = set(pkgdb.DPKG_STATUS) | set(pkgdb.APK_INSTALLED) | set(pkgdb.RPM_SQLITE) | set(pkgdb.OS_RELEASE)
 UNPARSED = set(pkgdb.RPM_UNPARSED)
+# Registries whose Bearer token service is on another host (Docker token authentication): the registry's API host ->
+# the token service's host (HTTPS on 443), which may receive the registry credentials.  ghcr.io, quay.io, gcr.io,
+# *.pkg.dev, *.azurecr.io, public.ecr.aws, nvcr.io, registry.redhat.io, Harbor, Nexus and Artifactory answer on the
+# registry's own host and need no entry.  Any other token service host gets an anonymous token request (a
+# self-managed GitLab whose registry and GitLab have different host names, for example).
+TOKEN_SERVICES = {
+    "registry-1.docker.io": "auth.docker.io",  # Docker Hub (docker.io)
+    "registry.gitlab.com": "gitlab.com",  # GitLab.com
+}
+_AWS_V6_METADATA = ipaddress.ip_network("fd00:ec2::/32")
 
 
 class ImageError(Exception):
@@ -134,6 +158,7 @@ class Registry:
         self.public_tls = _tls(ca_pem, public=True)
         self.auth: str | None = None  # Authorization header for the registry origin only
         self.clients: dict[tuple[str, str, int], Any] = {}
+        self.registry_ip: str | None = None  # the address the registry's own host was pinned to
         self.notes: list[str] = []
 
     def close(self) -> None:
@@ -141,7 +166,8 @@ class Registry:
             client.close()
 
     def _client(self, url: str):
-        """A client pinned to a gate-checked address of the URL's host (one per origin)."""
+        """A client pinned to a gate-checked address of the URL's host (one per origin).  A host the registry named
+        (its token service, a redirect) must not be one of the node's own or cloud-internal addresses."""
         origin = _origin(url)
         if origin[0] != "https":
             raise ImageError("tls_unavailable", f"{origin[1]} is not HTTPS; the node does not use plain HTTP")
@@ -152,6 +178,14 @@ class Registry:
                 raise ImageError("skipped_never_scan", f"{origin[1]} is on the never-scan list") from None
             except OSError:
                 raise ImageError("unreachable", f"{origin[1]} does not resolve") from None
+            if origin == self.origin:
+                self.registry_ip = ip
+            else:
+                problem = _internal_address(ip, self.registry_ip)
+                if problem:
+                    self.ctx.log("registry pointed at an internal address; refused", registry=self.ref.registry,
+                                 host=origin[1], level="warn")
+                    raise ImageError("error", f"the registry sent the node to {origin[1]}, {problem}; refused")
             verify = self.registry_tls if origin == self.origin else self.public_tls
             self.clients[origin] = netutil.http_client(f"https://{origin[1]}:{origin[2]}", ip, self.ctx.never_scan,
                                                        verify=verify, timeout=TIMEOUT)
@@ -213,13 +247,15 @@ class Registry:
             raise ImageError("auth_failed", "the registry's token service is not HTTPS")
         query = {"service": params.get("service", ""), "scope": f"repository:{self.ref.repository}:pull"}
         query = {k: v for k, v in query.items() if v}
-        same_origin = _origin(realm) == self.origin
+        realm_origin = _origin(realm)
+        trusted = realm_origin == self.origin or realm_origin == ("https", TOKEN_SERVICES.get(self.ref.api_host, ""), 443)
         headers = {"Accept": "application/json", "Accept-Encoding": "identity"}
-        if basic and same_origin:
+        if basic and trusted:
             headers["Authorization"] = basic
         elif basic:
             # RFC 6750 / Docker token auth: the realm is whatever the registry says; credentials go to the
-            # registry's own origin only, so a registry (or a man in the middle) cannot send them elsewhere
+            # registry's own origin or its known token service only, so a registry (or a man in the middle) cannot
+            # send them elsewhere
             self.notes.append(f"token service {_origin(realm)[1]} is on another host: credentials were not sent "
                               "to it (anonymous token requested)")
             self.ctx.log("registry token service on another host; credentials not sent", registry=self.ref.registry,
@@ -257,6 +293,24 @@ def _tls(ca_pem: str | None, public: bool = True) -> ssl.SSLContext:
             context.load_verify_locations(cadata=ca_pem)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     return context
+
+
+def _internal_address(ip: str, registry_ip: str | None) -> str | None:
+    """Why the node must not connect to ``ip`` for a host a registry named (its token service or a redirect), or None:
+    link-local (cloud metadata at 169.254.169.254, fe80::/10), unspecified, multicast and AWS's IPv6 metadata range
+    always; loopback unless the registry itself is on loopback (the node's own host, by the operator's choice)."""
+    addr = ipaddress.ip_address(ip)
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    if addr.is_link_local or addr.is_unspecified or addr.is_multicast or addr in _AWS_V6_METADATA:
+        return f"a link-local or metadata address ({ip})"
+    if addr.is_loopback:
+        own = ipaddress.ip_address(registry_ip) if registry_ip else None
+        if isinstance(own, ipaddress.IPv6Address) and own.ipv4_mapped is not None:
+            own = own.ipv4_mapped
+        if own is None or not own.is_loopback:
+            return f"a loopback address ({ip})"
+    return None
 
 
 def _http_status(exc: Exception) -> str:
@@ -336,57 +390,75 @@ def _platform(manifests: list[Any]) -> str | None:
 
 # ----------------------------------------------------------------------------- layers
 class _Inflate:
-    """A file-like over a blob response: hashes the compressed bytes, inflates gzip with a capped output."""
+    """A file-like over a blob response: hashes the compressed bytes and refuses any byte past the descriptor's size as
+    it arrives, inflates gzip at most ``INFLATE_STEP`` bytes at a time with a capped total output, and checks the
+    job's stop flag (cancel, deadline) before every chunk."""
 
-    def __init__(self, response, limit: int) -> None:
+    def __init__(self, response, size: int, limit: int, stop: Callable[[], str | None] | None = None) -> None:
         self.chunks: Iterator[bytes] = response.iter_raw(65536)
-        self.response = response
+        self.size, self.limit, self.stop = size, limit, stop
         self.hash = hashlib.sha256()
         self.raw_bytes = 0
         self.out_bytes = 0
-        self.limit = limit
         self.inflater = None
         self.sniffed = False
+        self.pending = b""  # compressed bytes not inflated yet
         self.buffer = bytearray()
         self.done = False
 
-    def _pull(self) -> bool:
-        try:
-            chunk = next(self.chunks)
-        except StopIteration:
-            self.done = True
-            return False
-        self.hash.update(chunk)
-        self.raw_bytes += len(chunk)
-        if not self.sniffed:
-            # the compression is read from the bytes, not trusted from the media type
-            self.sniffed = True
-            if chunk[:4] == b"\x28\xb5\x2f\xfd":
-                raise ImageError("not_supported", "a layer is zstd-compressed (not read: no decompressor in the "
-                                                  "standard library)")
-            if chunk[:2] == b"\x1f\x8b":
-                self.inflater = zlib.decompressobj(31)
-        if self.inflater is None:
-            data = chunk
-        else:
-            data = b""
-            try:
-                while chunk:
-                    if self.inflater.eof:
-                        if not chunk.strip(b"\x00"):
-                            break  # zero padding after the last gzip member
-                        self.inflater = zlib.decompressobj(31)  # concatenated gzip members
-                    data += self.inflater.decompress(chunk, max(self.limit - self.out_bytes - len(data), 0) + 1)
-                    if self.inflater.unconsumed_tail:
-                        raise ImageError("error", "layer inflates past the size cap (refused as a compression bomb)")
-                    chunk = self.inflater.unused_data if self.inflater.eof else b""
-            except zlib.error:
-                raise ImageError("error", "a layer is not valid gzip") from None
+    def _raw(self) -> bytes | None:
+        """The next compressed chunk (None at the end of the blob), hashed and counted against the descriptor."""
+        if self.stop is not None:
+            reason = self.stop()
+            if reason:
+                raise ImageError(reason, "the job stopped while a layer was being read")
+        for chunk in self.chunks:
+            if not chunk:
+                continue
+            self.hash.update(chunk)
+            self.raw_bytes += len(chunk)
+            if self.raw_bytes > self.size:
+                raise ImageError("error", "a layer is larger than its descriptor says; the image was not read")
+            return chunk
+        return None
+
+    def _out(self, data: bytes) -> None:
         self.out_bytes += len(data)
         if self.out_bytes > self.limit:
             raise ImageError("error", "layer inflates past the size cap (refused as a compression bomb)")
         self.buffer += data
-        return True
+
+    def _pull(self) -> None:
+        if not self.pending:
+            chunk = self._raw()
+            if chunk is None:
+                self.done = True
+                return
+            if not self.sniffed:
+                # the compression is read from the bytes, not trusted from the media type
+                while len(chunk) < 4 and (more := self._raw()) is not None:
+                    chunk += more
+                self.sniffed = True
+                if chunk[:4] == b"\x28\xb5\x2f\xfd":
+                    raise ImageError("not_supported", "a layer is zstd-compressed (not read: no decompressor in the "
+                                                      "standard library)")
+                if chunk[:2] == b"\x1f\x8b":
+                    self.inflater = zlib.decompressobj(31)
+            if self.inflater is None:
+                self._out(chunk)
+                return
+            self.pending = chunk
+        if self.inflater.eof:
+            if not self.pending.strip(b"\x00"):
+                self.pending = b""  # zero padding after the last gzip member
+                return
+            self.inflater = zlib.decompressobj(31)  # concatenated gzip members
+        try:
+            data = self.inflater.decompress(self.pending, INFLATE_STEP)
+        except zlib.error:
+            raise ImageError("error", "a layer is not valid gzip") from None
+        self.pending = self.inflater.unused_data if self.inflater.eof else self.inflater.unconsumed_tail
+        self._out(data)
 
     def read(self, n: int = -1) -> bytes:
         while (n < 0 or len(self.buffer) < n) and not self.done:
@@ -398,10 +470,12 @@ class _Inflate:
         return out
 
     def drain(self) -> None:
-        """Hash the rest of the blob (tar padding after the end-of-archive blocks)."""
-        while not self.done:
-            self.buffer.clear()
-            self._pull()
+        """Hash the rest of the blob (tar padding after the end-of-archive blocks); nothing more is inflated."""
+        self.buffer.clear()
+        self.pending = b""
+        while self._raw() is not None:
+            pass
+        self.done = True
 
 
 def _norm(name: str) -> str | None:
@@ -415,44 +489,145 @@ def _wanted(path: str) -> bool:
     return path in WANTED or (path.startswith(pkgdb.DPKG_STATUS_DIR) and "/" not in path[len(pkgdb.DPKG_STATUS_DIR):])
 
 
+_LOCATIONS = (*sorted(WANTED), pkgdb.DPKG_STATUS_DIR)
+
+
+def _hides_wanted(path: str) -> bool:
+    """Can a whiteout of ``path`` (or an opaque marker in it) hide something the merged view keeps?  The merged view
+    holds only wanted paths, so only those paths and their parent directories matter."""
+    return path == "" or _wanted(path) or any(loc.startswith(path + "/") for loc in _LOCATIONS)
+
+
+class _HeaderBudget:
+    """The stream as tarfile sees it while it reads one member's extended headers (GNU long names and links, pax
+    records, GNU sparse maps): at most ``MAX_TAR_HEADER`` bytes and ``MAX_TAR_CHAIN`` headers, refused before they
+    are read."""
+
+    def __init__(self, stream) -> None:
+        self.stream, self.left, self.chain = stream, MAX_TAR_HEADER, 1
+
+    def read(self, n: int = -1) -> bytes:
+        if n is None or n < 0 or n > self.left:
+            raise ImageError("error", f"a layer has tar headers over {MAX_TAR_HEADER // 1048576} MB for one member "
+                                      "(refused)")
+        self.left -= n
+        return self.stream.read(n)
+
+    def __getattr__(self, name: str):
+        return getattr(self.stream, name)
+
+
+_EXTENDED = (tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK, tarfile.GNUTYPE_SPARSE, tarfile.XHDTYPE,
+             tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE)
+
+
+class _TarInfo(tarfile.TarInfo):
+    """tarfile reads a member's extended headers into memory before the caller sees the member (a long-name header
+    may claim gigabytes): read them through a ``_HeaderBudget``.  ``_proc_member`` is the hook tarfile documents for
+    subclasses."""
+
+    def _proc_member(self, tar):
+        if self.type not in _EXTENDED:
+            return super()._proc_member(tar)
+        if isinstance(tar.fileobj, _HeaderBudget):  # a header chained to an extended header: the same budget
+            tar.fileobj.chain += 1
+            if tar.fileobj.chain > MAX_TAR_CHAIN:
+                raise ImageError("error", f"a layer chains more than {MAX_TAR_CHAIN} tar headers (refused)")
+            member = super()._proc_member(tar)
+        else:
+            stream = tar.fileobj
+            tar.fileobj = _HeaderBudget(stream)
+            try:
+                member = super()._proc_member(tar)
+            finally:
+                tar.fileobj = stream
+        if self.type == tarfile.XGLTYPE and sum(len(k) + len(v) for k, v in tar.pax_headers.items()) > MAX_TAR_HEADER:
+            raise ImageError("error", f"a layer's global pax headers exceed {MAX_TAR_HEADER // 1048576} MB (refused)")
+        return member
+
+
 @dataclass
 class LayerDiff:
     files: dict[str, bytes | None] = field(default_factory=dict)  # None: something that is not a regular file
-    whiteouts: list[str] = field(default_factory=list)
-    opaque: list[str] = field(default_factory=list)
-    notes: list[str] = field(default_factory=list)
+    whiteouts: list[str] = field(default_factory=list)  # only those that can hide a wanted path
+    opaque: list[str] = field(default_factory=list)  # likewise
+    notes: dict[str, int] = field(default_factory=dict)  # coverage key -> tar members
 
 
-def read_layer(fileobj) -> LayerDiff:
-    """The inventory files, whiteouts and opaque directories of one layer tar stream (nothing is extracted)."""
+@dataclass
+class Budget:
+    """What the inventory files of one image may still hold (the merged view plus the layer being read)."""
+    bytes: int = MAX_KEPT
+    status_d: int = MAX_STATUS_D
+
+    @classmethod
+    def left(cls, merged: dict[str, bytes | None]) -> "Budget":
+        return cls(MAX_KEPT - sum(len(v) for v in merged.values() if v),
+                   MAX_STATUS_D - sum(1 for p in merged if p.startswith(pkgdb.DPKG_STATUS_DIR)))
+
+
+def read_layer(fileobj, budget: Budget | None = None) -> LayerDiff:
+    """The inventory files, whiteouts and opaque directories of one layer tar stream (nothing is extracted).  Memory
+    stays bounded whatever the layer holds: extended headers are capped (``_TarInfo``), tarfile's list of members is
+    emptied as the stream advances, only whiteouts that can hide a wanted path are kept, and the files kept count
+    against ``budget``."""
+    budget = budget if budget is not None else Budget()
     diff = LayerDiff()
+
+    def note(key: str) -> None:
+        diff.notes[key] = diff.notes.get(key, 0) + 1
+
+    def status_d(path: str) -> None:
+        if path.startswith(pkgdb.DPKG_STATUS_DIR):
+            budget.status_d -= 1
+            if budget.status_d < 0:
+                raise ImageError("not_supported", f"the image has more than {MAX_STATUS_D} dpkg status.d entries "
+                                                  "(not read)")
+
     try:
-        with tarfile.open(fileobj=fileobj, mode="r|") as tar:
-            for member in tar:
+        with tarfile.open(fileobj=fileobj, mode="r|", tarinfo=_TarInfo) as tar:
+            while (member := tar.next()) is not None:
+                tar.members.clear()  # in stream mode tarfile keeps every member it has seen (~400 bytes each)
+                if len(member.name) > MAX_PATH:
+                    note("pathTooLong")
+                    continue
                 path = _norm(member.name)
                 if path is None:
-                    diff.notes.append("pathTraversal")
+                    note("pathTraversal")
                     continue
                 directory, _, base = path.rpartition("/")
                 if base == ".wh..wh..opq":
-                    diff.opaque.append(directory)
+                    if _hides_wanted(directory) and directory not in diff.opaque:
+                        diff.opaque.append(directory)
                     continue
                 if base.startswith(".wh."):
-                    diff.whiteouts.append(f"{directory}/{base[4:]}" if directory else base[4:])
+                    target = f"{directory}/{base[4:]}" if directory else base[4:]
+                    if _hides_wanted(target) and target not in diff.whiteouts:
+                        status_d(target)
+                        diff.whiteouts.append(target)
                     continue
                 if path in UNPARSED:
-                    diff.notes.append("rpmBerkeleyDbNotParsed")
+                    note("rpmBerkeleyDbNotParsed")
                 if not _wanted(path):
                     continue
+                if path not in diff.files:
+                    status_d(path)
+                budget.bytes += len(diff.files.pop(path, None) or b"")  # a later member of the same path wins
                 if not member.isreg():
                     diff.files[path] = None
                     continue
                 if member.size > MAX_FILE:
-                    diff.notes.append("databaseTooLarge")
+                    note("databaseTooLarge")
                     diff.files[path] = None
                     continue
+                if member.size > budget.bytes:
+                    raise ImageError("not_supported", f"the image's package databases exceed {MAX_KEPT // 1048576} "
+                                                      "MB in total (not read)")
                 handle = tar.extractfile(member)
-                diff.files[path] = handle.read(MAX_FILE) if handle is not None else None
+                # exactly the member's size: read(n) allocates n bytes up front
+                data = handle.read(member.size) if handle is not None else None
+                budget.bytes -= len(data or b"")
+                diff.files[path] = data
     except tarfile.TarError:
         raise ImageError("error", "a layer is not a readable tar archive") from None
     return diff
@@ -501,36 +676,43 @@ def pull(reg: Registry, max_image_bytes: int) -> tuple[str, dict[str, bytes | No
     layers = [d for d in manifest["layers"] if isinstance(d, dict)]
     if len(layers) > MAX_LAYERS:
         raise ImageError("not_supported", f"the image has {len(layers)} layers (cap {MAX_LAYERS})")
-    total = sum(int(d.get("size") or 0) for d in layers)
+    for desc in layers:  # every descriptor is checked before any is used (a negative size must not lower the total)
+        size = desc.get("size")
+        if (not _DIGEST.match(str(desc.get("digest") or "")) or isinstance(size, bool) or not isinstance(size, int)
+                or not 0 <= size <= MAX_LAYER_BYTES):
+            raise ImageError("not_supported", "a layer descriptor has an unsupported digest or size")
+    total = sum(d["size"] for d in layers)
     if total > max_image_bytes:
         raise ImageError("not_supported", f"the image is {total // 1048576} MB compressed (cap "
                                           f"{max_image_bytes // 1048576} MB); raise max_image_mb to read it")
     merged: dict[str, bytes | None] = {}
     coverage: dict[str, int] = {}
     for desc in layers:
-        media, ldigest, size = str(desc.get("mediaType") or ""), str(desc.get("digest") or ""), int(desc.get("size") or 0)
-        if not _DIGEST.match(ldigest) or size < 0 or size > MAX_LAYER_BYTES:
-            raise ImageError("not_supported", "a layer descriptor has an unsupported digest or size")
+        media, ldigest, size = str(desc.get("mediaType") or ""), str(desc["digest"]), int(desc["size"])
         if media in FOREIGN or desc.get("urls"):
             coverage["foreignLayersNotRead"] = coverage.get("foreignLayersNotRead", 0) + 1
             continue
         if "zstd" in media:
             coverage["zstdLayersNotRead"] = coverage.get("zstdLayersNotRead", 0) + 1
             continue
+        stop = reg.ctx.should_stop()
+        if stop:
+            raise ImageError(stop, "the job stopped before every layer was read")
         response = reg.get(f"/v2/{reg.ref.repository}/blobs/{ldigest}", stream=True)
         if response.status_code != 200:
             response.close()
             raise ImageError("error", f"layer download answered {response.status_code}")
         try:
-            stream = _Inflate(response, max(size, 1) * MAX_INFLATE_RATIO + 64 * 1024 * 1024)
-            diff = read_layer(stream)
+            limit = min(max(size, 1) * MAX_INFLATE_RATIO + 64 * 1024 * 1024, MAX_INFLATED)
+            stream = _Inflate(response, size, limit, stop=reg.ctx.should_stop)
+            diff = read_layer(stream, Budget.left(merged))
             stream.drain()
         finally:
             response.close()
         if stream.raw_bytes != size or "sha256:" + stream.hash.hexdigest() != ldigest:
             raise ImageError("error", "a layer does not match its digest; the image was not read")
-        for note in diff.notes:
-            coverage[note] = coverage.get(note, 0) + 1
+        for note, count in diff.notes.items():
+            coverage[note] = coverage.get(note, 0) + count
         apply_layer(merged, diff)
     return digest, merged, coverage
 
@@ -609,7 +791,8 @@ def _emit(ctx: JobContext, ref: ImageRef, digest: str, merged: dict[str, bytes |
     labels = {"zstdLayersNotRead": "zstd-compressed layers are not read",
               "foreignLayersNotRead": "foreign (non-distributable) layers are not downloaded",
               "rpmBerkeleyDbNotParsed": "the rpm database is in the Berkeley DB format, which is not parsed",
-              "databaseTooLarge": "a package database is larger than 64 MB", "pathTraversal": "tar members with '..' skipped"}
+              "databaseTooLarge": "a package database is larger than 64 MB", "pathTraversal": "tar members with '..' skipped",
+              "pathTooLong": f"tar members with names over {MAX_PATH} characters skipped"}
     for key, count in sorted(coverage.items()):
         ctx.coverage(ref.label, "image layers", "not_supported", f"{labels.get(key, key)} ({count})")
     return n

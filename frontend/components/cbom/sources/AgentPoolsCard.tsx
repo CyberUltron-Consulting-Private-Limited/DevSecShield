@@ -134,7 +134,8 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
               <p className="text-xs text-zinc-500">
                 The token is shown only here. It enrolls at most {created.pool.max_enrollments} nodes until{" "}
                 {formatDateTime(created.pool.expires_at)}. Each pod keeps its node credential on its Kubernetes node
-                (<span className="font-mono">/var/lib/zs-node-agent</span>), so a restarted pod does not enroll again. Add
+                (<span className="font-mono">/var/lib/zs-node-agent/&lt;namespace&gt;.&lt;release&gt;</span>), so a restarted pod does not
+                enroll again; a pod whose node you reset or delete enrolls again with this token while it is active. Add
                 {" "}<span className="font-mono">--set agent.runAsRoot=true</span> to read root-only files, and
                 {" "}<span className="font-mono">--set agent.hostPID=true</span> to see the crypto libraries running processes load.
               </p>
@@ -188,7 +189,7 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
         open={!!revoking}
         onOpenChange={(v) => !v && setRevoking(null)}
         title="Revoke this agent pool token?"
-        description={revoking ? `No new node can enroll with ${revoking.name}. The ${revoking.enrollments} node(s) that enrolled keep working; delete them in the node list to stop them.` : ""}
+        description={revoking ? `No node can enroll with ${revoking.name} any more, not even again. The ${revoking.enrollments} node(s) that enrolled keep working; a node of this pool that you reset or delete from now on goes offline, and its pod enrolls again (as a new node) only once you install a new pool token (helm upgrade --set agent.poolToken=...). To stop a node for good, keep its pod off that Kubernetes node (agent.nodeSelector) and delete the node.` : ""}
         confirmLabel="Revoke"
         destructive
         pending={revoke.isPending}

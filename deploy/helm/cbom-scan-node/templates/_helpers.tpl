@@ -30,6 +30,11 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- default (printf "%s-tokens" (include "cbom-scan-node.fullname" .)) .Values.agent.existingSecret -}}
 {{- end -}}
 
+{{/* The host directory that keeps the agents' node state: one per release unless agent.statePath is set. */}}
+{{- define "cbom-scan-node.agentStatePath" -}}
+{{- default (printf "/var/lib/zs-node-agent/%s.%s" .Release.Namespace .Release.Name) .Values.agent.statePath -}}
+{{- end -}}
+
 {{/* Environment shared by both workloads: the API, the proxy, extra variables. */}}
 {{- define "cbom-scan-node.commonEnv" -}}
 - name: ZS_API_URL

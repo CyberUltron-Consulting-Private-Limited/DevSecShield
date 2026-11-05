@@ -73,14 +73,20 @@ wizard. With `agent.enabled=true` it adds a DaemonSet of **agent-mode** nodes, o
 | `ZS_HOST_PROC` | the host's `/proc` (chart value `agent.hostPID`): crypto libraries mapped by running processes |
 
 A DaemonSet enrolls with an **agent pool token** (`zsp_...`, Scan nodes > *Create agent pool token*): it expires,
-caps how many nodes enroll and can be revoked; each pod becomes its own node with its own `host_agent` source.
+caps how many nodes enroll and can be revoked; each pod becomes its own node with its own `host_agent` source. A pod
+whose node is reset or deleted gets a 401 and enrolls again with the same pool token (a reset node is taken back
+without using an enrollment) while the token is active; a pool token ZeroShield refused is not tried again until the
+pod restarts with another one (`helm upgrade --set agent.poolToken=...` restarts the pods).
 ZeroShield enforces the rest: a source that holds credentials cannot be given to an agent node, a claim never hands
 an agent node another job or decrypts a secret for it, and the node refuses such a job too. The host is read
-through `hostfs.py` (symlinks resolved inside the host root, regular files only, size caps, one device per walk):
+through `hostfs.py` (paths resolved on descriptors inside the host root, so a directory swapped for a symlink cannot
+lead outside it; the host's `/proc`, `/sys` and `/dev` are not read; regular files only, size caps; the walk holds
+one open directory per level, stays on one device, caps entries and depth and stops at the job's deadline):
 os-release, the package databases (`pkgdb.py`, byte-identical to the engine's), crypto policy, FIPS flag,
 `sshd_config`, SSH host keys and the key and certificate files under the Tier 2 search roots. As uid 10001 it
 reads world-readable files only (unreadable ones are coverage rows); `agent.runAsRoot=true` adds root with
-`CAP_DAC_READ_SEARCH` only. A `docker run` or VM node becomes a single host agent with `ZS_MODE=agent` and `/`
+`CAP_DAC_READ_SEARCH` only, and `agent.sysPtrace=true` adds `CAP_SYS_PTRACE`, which reading another user's
+`/proc/<pid>/maps` needs. A `docker run` or VM node becomes a single host agent with `ZS_MODE=agent` and `/`
 mounted read-only at `/host` (`deploy/node-images/files/zs-node-run` does this on the AMI/OVA).
 
 ### Container images from a registry
@@ -89,10 +95,14 @@ A *Container images* source (`container_images`) lists images (`registry/reposit
 node fetches each manifest (Distribution API v2 / OCI; an index is followed to linux/amd64), streams every layer
 once without writing it to disk, checks it against its digest and size, applies the layers with OCI whiteouts and
 parses the package databases with `pkgdb.py`: crypto packages become library rows with a package URL. HTTPS only;
-every host (registry, token service, blob redirect) passes the network gate; credentials (anonymous, or a vault
-reference with `username`/`password` or `token`) go only to the registry's own origin, never to a token service or
-redirect on another host. Caps: 50 images per source, 128 layers, `max_image_mb` (default 2048) of compressed layers,
-inflated size per layer; zstd and foreign layers are reported, not read.
+every host (registry, token service, blob redirect) passes the network gate, and a token service or redirect the
+registry names is never a loopback (unless the registry is), link-local or metadata address; credentials
+(anonymous, or a vault reference with `username`/`password` or `token`) go only to the registry's own origin or to
+the token service of Docker Hub (`auth.docker.io`) or GitLab.com (`gitlab.com`) (`TOKEN_SERVICES`), never to another
+token service or a redirect on another host. Caps: 50 images per source, 128 layers, `max_image_mb` (default 2048)
+of compressed layers, each blob stops at its descriptor's size, inflated size per layer (8 GB at most), 1 MB of tar
+headers per member, 128 MB of package databases and 1,000 dpkg `status.d` entries per image; zstd and foreign layers
+are reported, not read.
 
 ### Without registry access
 

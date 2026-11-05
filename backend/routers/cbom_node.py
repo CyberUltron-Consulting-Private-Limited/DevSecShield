@@ -42,7 +42,7 @@ from backend.utilities.cbom_sources.http import (
     read_capped_body,
     server_error,
 )
-from backend.utilities.cbom_sources.schemas import AssetIn, AssetsBody, EnrollBody, HeartbeatBody, ResultBody
+from backend.utilities.cbom_sources.schemas import AssetIn, AssetsBody, ClaimBody, EnrollBody, HeartbeatBody, ResultBody
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions
 
 router = APIRouter(tags=["cbom-node"], route_class=CbomRoute)
@@ -126,10 +126,44 @@ async def _guard(what: str, fn, *args):
 
 
 # ----------------------------------------------------------------------------- enroll
+def _rebind_pool_node(session: Session, pool: CbomNodePool, node: CbomScanNode, body: EnrollBody,
+                      req: NA.NodeRequest, raw: bytes, ip: str, token: str, fingerprint: str | None,
+                      now: _dt.datetime) -> dict:
+    """A pod enrolling again with its pool token after its node was reset: the same node gets a new credential and
+    signing key (no enrollment is used; any registration token the reset issued stops working)."""
+    changed = session.exec(
+        update(CbomScanNode)
+        .where(CbomScanNode.id == node.id, CbomScanNode.pool_id == pool.id,
+               CbomScanNode.node_token_hash.is_(None))  # type: ignore[union-attr]
+        .values(node_token_hash=sha256_hex(token), enrolled_at=now, registration_token_hash=None,
+                hostname=clean_text(body.hostname, 255), node_version=clean_text(body.version, 32),
+                source_ips=_ips(body.source_ips), ssh_public_key=clean_text(body.ssh_public_key, 8192),
+                capabilities=scrub(body.capabilities), clock_skew_s=_clock_skew(body.clock, now),
+                last_heartbeat_at=now, last_seen_ip=ip, row_version=node.row_version + 1, last_updated=now,
+                signing_public_key=body.signing_public_key, client_cert_sha256=fingerprint, last_node_error=None,
+                mode=AG.AGENT)
+    ).rowcount
+    if changed != 1:  # another request took this node back at the same moment; the pod retries
+        raise HTTPException(status_code=409, detail="This node is enrolling from another request; retry")
+    AG.ensure_host_source(session, node, pool.owner_user_id, now)
+    if body.signing_public_key:  # proof that the node holds the key it registers (nothing is kept if it fails)
+        NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now)  # type: ignore[arg-type]
+    audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action="node.enroll",
+          object_type="node", object_id=node.id, changed_fields=["node_token", "pool_id"])
+    session.commit()
+    signing = "required" if body.signing_public_key else "legacy"
+    log("agent node enrolled again", team=node.team_id, node=node.id, pool=pool.id, signing=signing)
+    return {"node_id": node.id, "team_id": node.team_id, "node_token": token,
+            "heartbeat_interval_s": HEARTBEAT_SECONDS, "server_time": iso_z(now),
+            "deployment_id": NA.deployment_id(get_db()), "signing": signing, "mode": AG.AGENT}
+
+
 def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
     """Enroll one agent-mode node with an agent pool token (a DaemonSet pod): a new node named after its Kubernetes
     node, in agent mode, with its own host_agent source.  The pool's enrollment count is taken with one conditional
-    UPDATE, so pods enrolling at once cannot pass the cap; a refused enrollment changes nothing."""
+    UPDATE, so pods enrolling at once cannot pass the cap; the team's agent-node cap is counted under the team lock;
+    a refused enrollment changes nothing.  A pod whose node was reset takes that node back (``AG.node_to_rebind``)
+    while the token is neither expired nor revoked, even when every enrollment is used."""
     now = utcnow()
     engine = get_db()
     token = new_token("zsn_")
@@ -137,19 +171,28 @@ def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> 
     with Session(engine) as session:
         pool = session.exec(select(CbomNodePool).where(
             CbomNodePool.token_hash == sha256_hex(body.registration_token))).first()
-        if pool is None or AG.pool_status(pool, now) != "active":
+        status = AG.pool_status(pool, now) if pool is not None else None
+        if pool is None or status in ("revoked", "expired"):
             if pool is not None:
-                log("agent pool enroll refused", team=pool.team_id, pool=pool.id, reason=AG.pool_status(pool, now))
+                log("agent pool enroll refused", team=pool.team_id, pool=pool.id, reason=status)
             raise refused
+        fingerprint = NA.check_mtls(None, req)
+        settings = get_or_create_settings(session, pool.team_id)
+        if not body.signing_public_key and settings.require_signed_nodes:
+            log("node enroll refused", team=pool.team_id, pool=pool.id, reason="signed_nodes_required")
+            raise NA.refuse("signed_nodes_required", "This team requires signed scan nodes: install scan node 1.1 or "
+                                                     "later and enroll with this registration token")
+        previous = AG.node_to_rebind(session, pool, body.node_id, body.node_name or body.hostname)
+        if previous is not None:
+            return _rebind_pool_node(session, pool, previous, body, req, raw, ip, token, fingerprint, now)
+        if status != "active":
+            log("agent pool enroll refused", team=pool.team_id, pool=pool.id, reason=status)
+            raise refused
+        AG.lock_team(session, pool.team_id)  # held to the commit: concurrent enrollments count one after another
         agents = session.exec(select(CbomScanNode.id).where(CbomScanNode.team_id == pool.team_id,
                                                             CbomScanNode.mode == AG.AGENT)).all()
         if len(agents) >= AG.MAX_AGENT_NODES:
             raise HTTPException(status_code=400, detail=f"A team can have at most {AG.MAX_AGENT_NODES} agent nodes")
-        fingerprint = NA.check_mtls(None, req)
-        if not body.signing_public_key and get_or_create_settings(session, pool.team_id).require_signed_nodes:
-            log("node enroll refused", team=pool.team_id, pool=pool.id, reason="signed_nodes_required")
-            raise NA.refuse("signed_nodes_required", "This team requires signed scan nodes: install scan node 1.1 or "
-                                                     "later and enroll with this registration token")
         # the slot first: verify_signature commits (to record the nonce), so the slot, the node and its source are
         # committed together or, when anything before that fails, not at all
         taken = session.exec(
@@ -259,10 +302,11 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
             node.source_ips = _ips(body.source_ips)
         if body.capabilities:
             node.capabilities = scrub(body.capabilities)
+        mode_note = AG.reconcile_mode(session, node, (body.capabilities or {}).get("mode"), now)
         skew = _clock_skew(body.clock, now)
         if skew is not None:
             node.clock_skew_s = skew
-        node.last_node_error = clean_text(scrub(body.last_error), 512) if body.last_error else None
+        node.last_node_error = clean_text(scrub(body.last_error), 512) if body.last_error else mode_note
         if node.last_node_error:
             log("node error", team=node.team_id, node=node.id, error=node.last_node_error)
         node.last_heartbeat_at = now
@@ -307,9 +351,12 @@ def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict 
     now = utcnow()
     with Session(get_db()) as session:
         node = _authenticate(session, token, req, raw, now)
+        body = _parse(ClaimBody, parse_json(raw)) if raw else None  # older nodes send no body
         node.last_seen_ip = ip
         node.last_heartbeat_at = now
         session.add(node)
+        # a node restarted in agent mode may claim before its first heartbeat: it is never given a secret again
+        AG.reconcile_mode(session, node, body.mode if body else None, now)
         settings = get_or_create_settings(session, node.team_id)
         payload = J.claim_next(session, node, settings, now)
         session.commit()

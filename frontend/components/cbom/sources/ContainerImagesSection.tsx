@@ -188,7 +188,9 @@ function ImagesForm({ teamId, nodes, isAdmin, onDone, onSaved }: {
         </Field>
         <div className="space-y-4">
           <Field label="Registry credentials" htmlFor="images-cred"
-            hint={cred === "vault" ? "Read on the scan node (ZS_VAULT_PATH_PREFIX); sent only to the registry's own host" : "Public or anonymous pulls"}>
+            hint={cred === "vault"
+              ? "Read on the scan node (ZS_VAULT_PATH_PREFIX). Sent only to the registry's own host, or to the token service of Docker Hub (auth.docker.io) or GitLab.com (gitlab.com). A token service on any other host gets an anonymous request, so a private image there is not read (for example a self-managed GitLab whose registry has its own host name)"
+              : "Public or anonymous pulls"}>
             <Select value={cred} onValueChange={(v) => setCred(v as "anonymous" | "vault")}>
               <SelectTrigger id="images-cred" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
               <SelectContent>

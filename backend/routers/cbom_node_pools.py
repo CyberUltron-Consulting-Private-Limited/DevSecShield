@@ -3,9 +3,13 @@ node).  Routes are ``/{team_id}/cbom/sources/node-pools`` and follow the CBOM So
 another team's pool is a 404; revoking needs the pool's creator or a team admin, else a 400).
 
 The token (``zsp_...``) is shown once, at creation; only its SHA-256 is stored.  It expires, caps its enrollments
-and can be revoked; revoking stops new enrollments, while nodes that already enrolled keep their own credentials
-(delete or reset them on the Scan nodes tab).  Agent nodes collect only their own host and never receive a
-credential (see ``utilities/cbom_sources/agents.py``).
+and can be revoked.  Nodes that enrolled keep their own credentials after the token expires or is revoked.  While
+the token is active, a pod whose node is reset on the Scan nodes tab enrolls again by itself and takes that node
+back, and a pod whose node is deleted enrolls as a new node (within the cap); after the token expires or is revoked
+those pods stay offline, and enroll as new nodes once a new pool token is installed (``helm upgrade --set
+agent.poolToken=...``; the pods restart with it).  To stop a node for good, remove its pod (the DaemonSet's node
+selector) and delete the node.
+Agent nodes collect only their own host and never receive a credential (see ``utilities/cbom_sources/agents.py``).
 """
 from __future__ import annotations
 
@@ -33,6 +37,7 @@ from backend.utilities.cbom_sources.http import (
     write_limiter,
 )
 from backend.utilities.cbom_sources.schemas import PoolCreate
+from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 router = APIRouter(tags=["cbom-sources"], route_class=CbomRoute)
 AuthHeader = Annotated[str | None, Header()]
@@ -76,6 +81,8 @@ def _create(engine, team_id: int, user_id: int, body: PoolCreate) -> dict:
     now = utcnow()
     token = new_token(AG.POOL_PREFIX)
     with Session(engine) as session:
+        get_or_create_settings(session, team_id)
+        AG.lock_team(session, team_id)  # held to the commit: two creations count one after the other
         live = [p for p in session.exec(select(CbomNodePool).where(CbomNodePool.team_id == team_id)).all()
                 if AG.pool_status(p, now) == "active"]
         if len(live) >= AG.MAX_POOLS:
@@ -122,7 +129,7 @@ def _revoke(engine, team_id: int, user_id: int, pool_id: int) -> dict:
 
 
 @router.post(BASE + "/{pool_id}/revoke", dependencies=[Depends(write_limiter)],
-             summary="Revoke an agent pool token (stops new enrollments; enrolled nodes keep working)")
+             summary="Revoke an agent pool token (no enrollment with it any more; enrolled nodes keep working)")
 async def revoke_pool(team_id: TeamId, pool_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return JSONResponse(await _run("revoke", team_id, _revoke, engine, team_id, user.id, pool_id), headers=PRIVATE)

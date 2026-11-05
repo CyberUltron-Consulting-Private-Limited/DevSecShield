@@ -28,6 +28,7 @@ class NodeState:
     team_id: int | None = None
     enrolled_with: str | None = None  # sha256 of the registration token used (never the token itself)
     deployment_id: str | None = None  # X-ZS-Deployment of the ZeroShield this node enrolled with
+    refused_with: str | None = None  # sha256 of a registration token this node's ZeroShield refused (not tried again)
 
     @property
     def key_path(self) -> str:
@@ -49,6 +50,7 @@ class NodeState:
             st.team_id = data.get("team_id")
             st.enrolled_with = data.get("enrolled_with")
             st.deployment_id = data.get("deployment_id")
+            st.refused_with = data.get("refused_with")
         except (OSError, ValueError):
             pass
         return st
@@ -59,7 +61,8 @@ class NodeState:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"node_token": self.node_token, "node_id": self.node_id, "team_id": self.team_id,
-                       "enrolled_with": self.enrolled_with, "deployment_id": self.deployment_id}, f)
+                       "enrolled_with": self.enrolled_with, "deployment_id": self.deployment_id,
+                       "refused_with": self.refused_with}, f)
         os.replace(tmp, path)
 
     def clear_token(self) -> None:
