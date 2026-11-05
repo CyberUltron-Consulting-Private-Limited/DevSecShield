@@ -48,12 +48,12 @@ def test_private_addresses_need_the_operator_allowlist(monkeypatch):
     monkeypatch.delenv(outbound.ENV_ALLOWED_PRIVATE, raising=False)
     with pytest.raises(outbound.Refused, match="INTEGRATION_ALLOWED_PRIVATE"):
         outbound.resolve("siem.corp.local", 6514)
-    assert outbound.resolve("public.example", 443) == "93.184.216.34"
+    assert outbound.resolve("public.example", 443) == ["93.184.216.34"]
     with pytest.raises(outbound.Refused):  # one bad address is enough: DNS may pick it later
         outbound.resolve("mixed.example", 443)
     monkeypatch.setenv(outbound.ENV_ALLOWED_PRIVATE, "10.20.0.0/16, splunk.corp.local")
-    assert outbound.resolve("siem.corp.local", 6514) == "10.20.30.40"  # CIDR rule
-    assert outbound.resolve("splunk.corp.local", 8088) == "192.168.7.9"  # host-name rule
+    assert outbound.resolve("siem.corp.local", 6514) == ["10.20.30.40"]  # CIDR rule
+    assert outbound.resolve("splunk.corp.local", 8088) == ["192.168.7.9"]  # host-name rule
     with pytest.raises(outbound.Refused):
         outbound.resolve("10.99.0.1", 514)  # outside the listed range
     with pytest.raises(outbound.TransportError, match="does not resolve"):
@@ -88,11 +88,87 @@ def test_the_connection_goes_to_the_checked_address_not_a_second_lookup(monkeypa
     assert seen == [("10.1.1.1", 443)]
 
 
+DUAL_STACK = ["2600:1f18:1234::1", "52.10.1.1"]  # 2600:... sorts before 52....: the old pin chose IPv6
+
+
+def _ipv4_only_host(monkeypatch, port_for_v4: int) -> list[tuple[str, int]]:
+    """This host cannot reach IPv6 (the compose files enable none): an IPv6 connect fails at once with ENETUNREACH;
+    the IPv4 address lands on a local test server. Returns the connect attempts."""
+    import errno
+
+    from backend.utilities.cbom_sources import safe_fetch
+
+    attempts: list[tuple[str, int]] = []
+
+    def create_connection(address, timeout=None, *a, **k):
+        attempts.append(address)
+        if ":" in address[0]:
+            raise OSError(errno.ENETUNREACH, "Network is unreachable")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # no name lookup: getaddrinfo is faked
+        sock.settimeout(timeout)
+        sock.connect(("127.0.0.1", port_for_v4))
+        return sock
+
+    monkeypatch.setattr(socket, "create_connection", create_connection)
+    monkeypatch.setattr(safe_fetch, "_routable", lambda address, port: ":" not in address)
+    return attempts
+
+
+def test_a_dual_stack_destination_is_reached_over_the_family_this_host_can_route(tmp_path, monkeypatch):
+    """rev5 #6: the pin was the lexically first checked address, so a dual-stack name always got its IPv6 address and
+    failed in an IPv4-only container. Every address is still checked; they are tried in turn, routable first."""
+    from backend.utilities.cbom_sources import safe_fetch
+
+    _fake_dns(monkeypatch, {"hec.example.com": DUAL_STACK})
+    monkeypatch.setattr(safe_fetch, "_routable", lambda address, port: True)
+    assert outbound.resolve("hec.example.com", 443) == DUAL_STACK  # all routable: the resolver's order
+    monkeypatch.setattr(safe_fetch, "_routable", lambda address, port: ":" not in address)
+    assert outbound.resolve("hec.example.com", 443) == ["52.10.1.1", "2600:1f18:1234::1"]
+    _fake_dns(monkeypatch, {"hec.example.com": [*DUAL_STACK, "10.0.0.9"]})
+    with pytest.raises(outbound.Refused):  # each address is checked: one private address refuses the host
+        outbound.resolve("hec.example.com", 443)
+
+    pki = make_pki(tmp_path / "pki", ["hec.example.com"])
+    srv, port = https_server(pki, lambda h, b: (200, {}, b'{"code":0}'))
+    try:
+        _fake_dns(monkeypatch, {"hec.example.com": DUAL_STACK})
+        attempts = _ipv4_only_host(monkeypatch, port)
+        resp = outbound.request("POST", f"https://hec.example.com:{port}/services/collector/event", body=b"{}",
+                                ca_pem=pki["ca_pem"])
+        assert resp.status == 200 and attempts == [("52.10.1.1", port)]
+        # even when the resolver's order puts the unreachable family first, the connection falls back to the next
+        monkeypatch.setattr(safe_fetch, "_routable", lambda address, port: True)
+        attempts.clear()
+        assert outbound.request("GET", f"https://hec.example.com:{port}/", ca_pem=pki["ca_pem"]).status == 200
+        assert attempts == [("2600:1f18:1234::1", port), ("52.10.1.1", port)]
+    finally:
+        srv.shutdown()
+
+
+def test_safe_fetch_reaches_a_dual_stack_host_over_ipv4(tmp_path, monkeypatch):
+    """The same address choice in safe_fetch (IdP metadata, URL sources)."""
+    from backend.utilities.cbom_sources import safe_fetch
+
+    pki = make_pki(tmp_path / "pki", ["idp.example.com"])
+    monkeypatch.setenv("CBOM_EXTRA_CA_FILE", pki["ca"])
+    monkeypatch.delenv("CBOM_LAB_CA_FILE", raising=False)
+    srv, port = https_server(pki, lambda h, b: (200, {"Content-Type": "application/json"}, b'{"issuer":"x"}'))
+    try:
+        monkeypatch.setattr(safe_fetch.socket, "getaddrinfo",
+                            lambda host, p, *a, **k: [(socket.AF_INET6 if ":" in ip else socket.AF_INET,
+                                                       socket.SOCK_STREAM, 6, "", (ip, p)) for ip in DUAL_STACK])
+        attempts = _ipv4_only_host(monkeypatch, port)
+        got = safe_fetch.fetch(f"https://idp.example.com:{port}/.well-known/openid-configuration")
+        assert got.status == 200 and got.body == b'{"issuer":"x"}' and attempts == [("52.10.1.1", port)]
+    finally:
+        srv.shutdown()
+
+
 @pytest.fixture()
 def tls(tmp_path, monkeypatch):
     pki = make_pki(tmp_path / "pki", ["hooks.wp11.test"])
     # transport tests: the guard is proven above; here "hooks.wp11.test" is pinned to a local test server
-    monkeypatch.setattr(outbound, "resolve", lambda host, port, **k: "127.0.0.1")
+    monkeypatch.setattr(outbound, "resolve", lambda host, port, **k: ["127.0.0.1"])
     return pki
 
 
@@ -127,7 +203,7 @@ def test_a_large_response_is_capped(tls):
 
 
 def test_a_silent_server_times_out_within_the_total_budget(monkeypatch):
-    monkeypatch.setattr(outbound, "resolve", lambda host, port, **k: "127.0.0.1")
+    monkeypatch.setattr(outbound, "resolve", lambda host, port, **k: ["127.0.0.1"])
     sock, port = silent_server()
     try:
         start = time.monotonic()

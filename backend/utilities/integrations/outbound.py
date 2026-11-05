@@ -3,7 +3,8 @@
 The destination is customer-supplied, so each connection is an SSRF risk. The rules:
 
 * the host name is resolved ONCE per connection and every address it resolves to is checked; the connection then goes
-  to the address that was checked (pinned), so a DNS answer cannot change between the check and the connect;
+  to the addresses that were checked (pinned), tried in turn with those this host can route first, so a DNS answer
+  cannot change between the check and the connect and a dual-stack name works in an IPv4-only container;
 * loopback, link-local (169.254.169.254, the cloud metadata service), CGNAT (100.64.0.0/10), unspecified, multicast,
   reserved, AWS's IPv6 metadata range (fd00:ec2::/32), IETF protocol assignments (192.0.0.0/24), "this network"
   (0.0.0.0/8) and IPv4 carried in IPv6 for a translator are refused ALWAYS, whatever the operator lists;
@@ -34,6 +35,8 @@ from backend.utilities.cbom_sources.common import log
 from backend.utilities.cbom_sources.safe_fetch import (
     PrivateAllowlist,
     always_blocked,
+    connect_first,
+    connection_order,
     parse_private_allowlist,
     public_address,
 )
@@ -93,8 +96,11 @@ def check_address(host: str, address: str, rules: PrivateAllowlist | None = None
     return None
 
 
-def resolve(host: str, port: int, *, kind: int = socket.SOCK_STREAM) -> str:
-    """Resolve once, check every address, return the one to connect to. Raises Refused or TransportError."""
+def resolve(host: str, port: int, *, kind: int = socket.SOCK_STREAM) -> list[str]:
+    """Resolve once and check every address; return them all in the order to try (``connection_order``: the
+    resolver's order, addresses this host can route first). A connection tries them in turn, each pinned, so a
+    dual-stack name whose IPv6 address an IPv4-only container cannot reach still works. Raises Refused or
+    TransportError."""
     name = (host or "").strip().rstrip(".")
     if not name:
         raise Refused("no host")
@@ -107,7 +113,7 @@ def resolve(host: str, port: int, *, kind: int = socket.SOCK_STREAM) -> str:
             infos = socket.getaddrinfo(name, port, type=kind)
         except (socket.gaierror, UnicodeError) as exc:
             raise TransportError(f"{name} does not resolve") from exc
-        addresses = sorted({info[4][0] for info in infos})
+        addresses = list(dict.fromkeys(info[4][0] for info in infos))
     if not addresses:
         raise TransportError(f"{name} does not resolve")
     rules = allowlist()
@@ -116,10 +122,10 @@ def resolve(host: str, port: int, *, kind: int = socket.SOCK_STREAM) -> str:
         if why:
             log("integration destination REFUSED", host=name[:100], address=address)
             raise Refused(why)
-    chosen = addresses[0]
-    if not public_address(chosen):
-        log("integration private destination allowed", host=name[:100], address=chosen, rule=ENV_ALLOWED_PRIVATE)
-    return chosen
+    for address in addresses:
+        if not public_address(address):
+            log("integration private destination allowed", host=name[:100], address=address, rule=ENV_ALLOWED_PRIVATE)
+    return connection_order(addresses, int(port))
 
 
 def tls_context(ca_pem: str | None = None) -> ssl.SSLContext:
@@ -141,13 +147,14 @@ def _tls_reason(exc: ssl.SSLError) -> str:
 
 
 class _PinnedHTTPS(http.client.HTTPSConnection):
-    def __init__(self, host: str, address: str, port: int, context: ssl.SSLContext):
+    def __init__(self, host: str, addresses: list[str], port: int, context: ssl.SSLContext, deadline: float):
         super().__init__(host, port, timeout=READ_TIMEOUT, context=context)
-        self._address = address
+        self._addresses = addresses
+        self._deadline = deadline
         self.fds: list[int] = []
 
-    def connect(self) -> None:  # connect to the checked address, verify the certificate for the name
-        sock = socket.create_connection((self._address, self.port), CONNECT_TIMEOUT)
+    def connect(self) -> None:  # connect to a checked address (each in turn), verify the certificate for the name
+        sock = connect_first(self._addresses, self.port, CONNECT_TIMEOUT, self._deadline)
         sock.settimeout(READ_TIMEOUT)
         self.fds.append(sock.fileno())  # the deadline timer can shut it even during the TLS handshake
         self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
@@ -193,9 +200,9 @@ def request(method: str, url: str, *, headers: dict[str, str] | None = None, bod
     """One HTTPS request to a checked, pinned address. Redirects are returned as they are (never followed).
     At most ``max_body`` bytes of the response are read (64 KB unless a caller reads data, e.g. a CMDB page)."""
     host, port, path = check_https_url(url)
-    address = resolve(host, port)
-    conn = _PinnedHTTPS(host, address, port, tls_context(ca_pem))
+    addresses = resolve(host, port)
     deadline = time.monotonic() + total
+    conn = _PinnedHTTPS(host, addresses, port, tls_context(ca_pem), deadline)
     timer = threading.Timer(total, _abort, (conn.fds,))
     timer.daemon = True
     timer.start()
@@ -249,7 +256,7 @@ def send_stream(host: str, port: int, frames: list[bytes], *, tls: bool, ca_pem:
     """Write ``frames`` on one TCP (or TLS) connection to a checked, pinned address, then close it gracefully.
     Returns the number of frames written. Raises Refused or TransportError (nothing is known to be delivered then),
     including when the receiver resets the connection while it is being closed: a reset discards unread data."""
-    address = resolve(host, port)
+    addresses = resolve(host, port)
     deadline = time.monotonic() + total
     sock: socket.socket | None = None
     fds: list[int] = []
@@ -257,7 +264,7 @@ def send_stream(host: str, port: int, frames: list[bytes], *, tls: bool, ca_pem:
     timer.daemon = True
     timer.start()
     try:
-        raw = socket.create_connection((address, port), CONNECT_TIMEOUT)
+        raw = connect_first(addresses, port, CONNECT_TIMEOUT, deadline)
         raw.settimeout(READ_TIMEOUT)
         fds.append(raw.fileno())
         sock = tls_context(ca_pem).wrap_socket(raw, server_hostname=host) if tls else raw
@@ -302,14 +309,21 @@ def send_stream(host: str, port: int, frames: list[bytes], *, tls: bool, ca_pem:
 
 
 def send_datagrams(host: str, port: int, datagrams: list[bytes]) -> int:
-    """One UDP datagram per message to a checked, pinned address (RFC 5426: no delivery confirmation exists)."""
-    address = resolve(host, port, kind=socket.SOCK_DGRAM)
-    family = socket.AF_INET6 if ipaddress.ip_address(address).version == 6 else socket.AF_INET
-    with socket.socket(family, socket.SOCK_DGRAM) as sock:
-        sock.settimeout(READ_TIMEOUT)
+    """One UDP datagram per message to a checked, pinned address (RFC 5426: no delivery confirmation exists). The
+    checked addresses are tried in turn until one takes the first datagram (an unroutable family fails at once)."""
+    last: OSError | None = None
+    for address in resolve(host, port, kind=socket.SOCK_DGRAM):
+        family = socket.AF_INET6 if ipaddress.ip_address(address).version == 6 else socket.AF_INET
+        sent = 0
         try:
-            for datagram in datagrams:
-                sock.sendto(datagram, (address, port))
+            with socket.socket(family, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(READ_TIMEOUT)
+                for datagram in datagrams:
+                    sock.sendto(datagram, (address, port))
+                    sent += 1
+            return len(datagrams)
         except OSError as exc:
-            raise TransportError(f"{host}:{port} {_socket_reason(exc)}") from exc
-    return len(datagrams)
+            if sent:  # part of the batch went out: never send it again to a second address
+                raise TransportError(f"{host}:{port} {_socket_reason(exc)}") from exc
+            last = exc
+    raise TransportError(f"{host}:{port} {_socket_reason(last or OSError())}") from last
