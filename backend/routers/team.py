@@ -204,7 +204,14 @@ async def update_team(
             team.name = data.name
             team.description = data.description
             if data.integration_settings is not None:
-                if data.integration_settings.jira is not None:
+                if data.integration_settings.jira is None and "jira" in data.integration_settings.model_fields_set:
+                    # An explicit "jira": null is the settings page with the three Jira fields emptied: remove the
+                    # integration and its stored token. Before, it was ignored and the page still said "Team
+                    # updated successfully" while the old values came back on reload.
+                    settings_dict = (team.integration_settings or {}).copy()
+                    settings_dict["jira"] = None
+                    team.integration_settings = settings_dict
+                elif data.integration_settings.jira is not None:
                     specific_settings_dict = data.integration_settings.model_dump()
                     settings_dict = (team.integration_settings or {}).copy()
                     
