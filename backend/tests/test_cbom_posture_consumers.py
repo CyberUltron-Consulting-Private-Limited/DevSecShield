@@ -32,11 +32,20 @@ class _Record:
 
 
 def test_dashboard_count_includes_fact_components(monkeypatch) -> None:
+    """A configuration-posture fact the engine flagged is a row of the inventory table, so it counts as a crypto asset.
+
+    rev4 M2: the card is those rows (``CodeRowSummary.crypto_assets``: findings + informational) on the scan page and
+    the scan list alike, no longer ``len(cbom_json.components)``, which also counted the crypto libraries and clean
+    facts the table never lists and so disagreed with the scan list."""
+    from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+
     monkeypatch.setattr(dashboard, "get_findings_for_scan_id", lambda **_kwargs: [])
+    rows = [{"title": "AES", "impact": None, "finding_codes": []},
+            {"impact": "High", "name": "plain", "finding_codes": ["UNENCRYPTED_AT_REST"]}]
     scan = types.SimpleNamespace(
         id=7,
         scan_data={
-            "results": [{"impact": "High", "name": "plain"}],
+            "results": rows,
             "cbom_json": {
                 "components": [
                     {"bom-ref": "crypto-algo-aes", "name": "AES"},
@@ -50,7 +59,8 @@ def test_dashboard_count_includes_fact_components(monkeypatch) -> None:
         },
     )
     out = dashboard.generate_scan_dashboard("cbom", scan_object=scan)
-    assert out["card_data"]["total_crypto_assets"] == 2
+    assert out["card_data"]["total_crypto_assets"] == 2 == summarize_code_rows(rows).crypto_assets
+    assert out["card_data"]["total_crypto_vulnerabilities"] == 1 and out["card_data"]["total_informational"] == 1
 
 
 def test_metadata_does_not_surface_cbom_posture() -> None:

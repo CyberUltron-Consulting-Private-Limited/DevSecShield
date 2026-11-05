@@ -127,4 +127,37 @@ assert.ok(
   ]);
 }
 
+{
+  // Two MD5 calls in two files are two crypto assets: never merged by name@version, bom-refs kept (rev4 H2: the
+  // merge dropped crypto-algo-md5-src-b-py, so a dependency or finding pointing at it dangled).
+  const md5 = (file: string) => ({
+    type: "cryptographic-asset",
+    "bom-ref": `crypto-algo-md5-src-${file}-py`,
+    name: "MD5",
+    cryptoProperties: { assetType: "algorithm", algorithmProperties: { primitive: "hash" } },
+    evidence: { occurrences: [{ location: `src/${file}.py`, line: 3 }] },
+    properties: [{ name: "crypto:quantumVulnerable", value: "false" }],
+  });
+  const out = overlayBomCompliance(
+    {
+      bomFormat: "CycloneDX",
+      components: [
+        md5("a"),
+        { type: "library", "bom-ref": "lib-x", name: "x", version: "1" },
+        md5("b"),
+        { type: "library", "bom-ref": "lib-x-2", name: "x", version: "1" },
+      ],
+    },
+    { nist_800_57: { pass: 1, fail: 0 } },
+  ) as {
+    components: Array<{ "bom-ref"?: string; type?: string; evidence?: { occurrences?: Array<{ location?: string; line?: number }> } }>;
+  };
+  assert.deepEqual(
+    out.components.map((c) => c["bom-ref"]),
+    ["crypto-algo-md5-src-a-py", "lib-x", "crypto-algo-md5-src-b-py"],
+    "crypto assets keep their slot and bom-ref; identical libraries still fold",
+  );
+  assert.deepEqual(out.components[2].evidence?.occurrences, [{ location: "src/b.py", line: 3 }]);
+}
+
 console.log("overlayBomCompliance.test.ts: ok");

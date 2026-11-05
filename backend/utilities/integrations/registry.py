@@ -30,6 +30,8 @@ class Spec:
 
 
 def _syslog_test(ctx: Context, event: dict[str, Any]) -> Outcome:
+    """TCP / TLS: passed when the receiver closed cleanly after the event. UDP: ``confirmed=False`` (nothing comes
+    back, not even from a port with no listener), so the test reports "sent (unconfirmed)", not "passed"."""
     return siem.syslog_send(ctx, [event])[0]
 
 

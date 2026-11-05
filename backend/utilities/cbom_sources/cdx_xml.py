@@ -12,7 +12,9 @@ are ordered; JSON objects are not).
 * Text that XML 1.0 cannot carry (control characters other than tab / newline / carriage return, lone surrogates,
   U+FFFE / U+FFFF) is removed; ``<`` / ``&`` / quotes are escaped by the XML library.
 * A ``bom-ref`` that repeats (the XSD makes every bom-ref unique) is renamed ``<ref>#2``, ``#3`` ... in document
-  order and logged; references keep pointing at the first holder.
+  order, skipping any name the document already holds, and logged; references keep pointing at the first holder.
+  A ``bom-ref`` (or a dependency reference) that is empty once cleaned becomes ``zs-empty-ref`` (the XSD requires at
+  least one character); an empty optional reference element (``algorithmRef`` ...) is left out.
 * A key with no place in the mapping is left out and logged by its path (never its value); the tests assert that
   the product's own exports leave nothing out.
 
@@ -161,14 +163,54 @@ def clean_text(value: Any) -> str:
     return _INVALID_XML.sub("", str(value))
 
 
+EMPTY_REF = "zs-empty-ref"  # stands in for a bom-ref that is empty once cleaned (the XSD refType has minLength 1)
+# refType text elements: optional, so an empty one is left out (a reference to nothing)
+_REF_TEXT = frozenset({"signatureAlgorithmRef", "subjectPublicKeyRef", "algorithmRef", "cryptoRef", "algorithm"})
+
+
+def _all_refs(value: Any) -> set[str]:
+    """Every cleaned ``bom-ref`` in the document (components, nested components, occurrences, vulnerabilities ...)."""
+    found: set[str] = set()
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            ref = item.get("bom-ref")
+            if ref is not None and not isinstance(ref, (dict, list)):
+                found.add(clean_text(ref))
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return found
+
+
 class _Writer:
-    def __init__(self) -> None:
+    def __init__(self, bom: dict[str, Any]) -> None:
         from lxml import etree
 
         self.etree = etree
         self.dropped: list[str] = []
-        self.seen_refs: dict[str, int] = {}
         self.renamed: list[str] = []
+        # a rename never takes a ref the document already holds (bom-refs a, a, a#2: the second a becomes a#3, not a
+        # second a#2), nor one given out earlier
+        self.taken: set[str] = _all_refs(bom)
+        self.used: set[str] = set()
+        self.empty_ref = self._free(EMPTY_REF)
+        self.taken.add(self.empty_ref)
+
+    def _free(self, base: str) -> str:
+        if base not in self.taken:
+            return base
+        n = 2
+        while f"{base}#{n}" in self.taken:
+            n += 1
+        return f"{base}#{n}"
+
+    def link(self, value: Any) -> str:
+        """A reference to a bom-ref (dependency ``ref`` / ``dependsOn`` / ``provides``): an empty one points at the
+        placeholder an empty bom-ref was given."""
+        text = clean_text(value)
+        return text or self.empty_ref
 
     def el(self, parent: Any, name: str) -> Any:
         return self.etree.SubElement(parent, f"{{{NS}}}{name}")
@@ -176,18 +218,26 @@ class _Writer:
     def text(self, parent: Any, name: str, value: Any) -> None:
         if value is None or isinstance(value, (dict, list)):
             return
-        self.el(parent, name).text = clean_text(value)
+        text = clean_text(value)
+        if name in _REF_TEXT and not text:
+            return
+        if name == "ref":  # a vulnerability's affected target: required, so an empty one points at the placeholder
+            text = self.link(text)
+        self.el(parent, name).text = text
 
     def attr(self, node: Any, name: str, value: Any) -> None:
         if value is None or isinstance(value, (dict, list)):
             return
         text = clean_text(value)
         if name == "bom-ref":
-            count = self.seen_refs.get(text, 0) + 1
-            self.seen_refs[text] = count
-            if count > 1:  # the XSD makes every bom-ref unique: keep the first, rename the repeats
+            text = text or self.empty_ref
+            if text in self.used:  # the XSD makes every bom-ref unique: keep the first, rename the repeats
                 self.renamed.append(text)
-                text = f"{text}#{count}"
+                text = self._free(text)
+                self.taken.add(text)
+            self.used.add(text)
+        elif name == "ref":
+            text = self.link(text)
         node.set(name, text)
 
     def fill(self, node: Any, data: dict[str, Any], spec: Spec, path: str) -> None:
@@ -231,7 +281,7 @@ class _Writer:
             elif kind.startswith("refs:"):
                 for item in value if isinstance(value, list) else []:
                     if item is not None and not isinstance(item, (dict, list)):
-                        self.el(node, kind[5:]).set("ref", clean_text(item))
+                        self.el(node, kind[5:]).set("ref", self.link(item))
             elif kind.startswith("wrap:"):
                 if not isinstance(value, list):
                     self.dropped.append(here)
@@ -287,7 +337,7 @@ def to_xml(bom: dict[str, Any], *, strict: bool = False) -> bytes:
 
     if not isinstance(bom, dict):
         raise ValueError("not a CycloneDX JSON document")
-    writer = _Writer()
+    writer = _Writer(bom)
     root = etree.Element(f"{{{NS}}}bom", nsmap={None: NS})
     writer.fill(root, bom, BOM, "$")
     if writer.dropped:

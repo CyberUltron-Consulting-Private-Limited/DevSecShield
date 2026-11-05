@@ -24,6 +24,14 @@ _LABELS: dict[str, tuple[str, str]] = {
     "skippedOversized": ("{n} file(s) over the size cap were skipped", "skipped"),
     "skippedBinary": ("{n} binary file(s) were skipped (turn on \"Scan binaries, container images and firmware\" to "
                       "read them)", "skipped"),
+    "skippedVendoredDirs": ("{n} vendored or build director(ies) (vendor/, dist/, build/, node_modules/) were not "
+                            "scanned (turn on \"Scan vendored and build directories\" to read them; packages installed "
+                            "under node_modules/ are left to the dependency scan)", "skipped"),
+    # the two scan options, recorded as "true" when they were on: what was read, never something skipped
+    "binariesIncluded": ("\"Scan binaries, container images and firmware\" was on: binaries, container images and "
+                         "firmware in the tree were read", "info"),
+    "vendoredIncluded": ("\"Scan vendored and build directories\" was on: vendor/, dist/, build/ and node_modules/ "
+                         "were read", "info"),
     "binariesRead": ("{n} binary file(s) were read for crypto imports, constants and embedded keys", "info"),
     "binariesTooLarge": ("{n} binary file(s) over the size cap were not read", "skipped"),
     "firmwareImagesRead": ("{n} firmware image(s) were unpacked and read", "info"),

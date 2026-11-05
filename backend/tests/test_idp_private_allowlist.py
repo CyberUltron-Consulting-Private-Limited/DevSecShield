@@ -72,7 +72,7 @@ def test_resolve_uses_the_allowlist_only_when_given(monkeypatch):
         safe_fetch._resolve(IDP_HOST, 443, False)  # every other caller of safe_fetch stays public-only
     monkeypatch.setenv("CBOM_IDP_ALLOWED_PRIVATE", "10.250.0.0/16,meta.corp")
     allow = safe_fetch.idp_private_allowlist()
-    assert safe_fetch._resolve(IDP_HOST, 443, False, allow) == PRIVATE_IP
+    assert safe_fetch._resolve(IDP_HOST, 443, False, allow) == [PRIVATE_IP]
     with pytest.raises(safe_fetch.FetchError) as err:
         safe_fetch._resolve("meta.corp", 443, False, allow)  # listed by name, but the metadata service never opens
     assert "CBOM_IDP_ALLOWED_PRIVATE" not in str(err.value)

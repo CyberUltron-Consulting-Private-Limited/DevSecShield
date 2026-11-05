@@ -276,13 +276,19 @@ def _test(engine, team_id: int, user_id: int, kind: str) -> dict:
     except Exception as exc:  # a connector bug must not become a 500 with details
         outcome = Outcome("retry", f"the test could not run ({type(exc).__name__})")
     now = utcnow()
+    ok = outcome.status == "ok"
+    # "unconfirmed": sent, but the destination cannot acknowledge it (syslog over UDP): never shown as passed
+    status = ("ok" if outcome.confirmed else "unconfirmed") if ok else "failed"
     with Session(engine) as session:
         session.exec(update(TeamIntegration).where(TeamIntegration.id == integration_id).values(
-            last_test_status="ok" if outcome.status == "ok" else "failed", last_test_at=now,
-            last_test_message=outcome.reason[:255]))
+            last_test_status=status, last_test_at=now, last_test_message=outcome.reason[:255]))
+        # a test sends data (or, for ServiceNow, reads a record) at an external destination: audited like a change
+        audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="integration.test",
+              object_type="integration", object_id=integration_id, changed_fields=["last_test_status"])
         session.commit()
-    log("integration tested", team=team_id, kind=kind, by=user_id, ok=outcome.status == "ok")
-    return {"ok": outcome.status == "ok", "message": outcome.reason, "at": iso_z(now)}
+    log("integration tested", team=team_id, kind=kind, by=user_id, ok=ok, status=status)
+    return {"ok": ok, "confirmed": ok and outcome.confirmed, "status": status, "message": outcome.reason,
+            "at": iso_z(now)}
 
 
 @router.post(BASE + "/{kind}/test", dependencies=WRITE,

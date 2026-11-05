@@ -1107,7 +1107,9 @@ def test_legacy_only_scans_without_finding_data_are_not_assessed():
         ]  # fmt: skip
     }
     view = run_fold([synth(1, legacy)])
-    assert view.included == 1 and view.asset_occurrences == 1 and not view.issue_by_impact
+    # rev4 M3: the legacy row is a High finding in the roll-up, as on the scan page (cbom_rows.is_finding); it
+    # carries no finding codes, so the board report still does not grade a team that has only such rows
+    assert view.included == 1 and view.asset_occurrences == 1 and view.issue_by_impact == {"High": 1}
     _assert_not_assessed(build_pdf(view), REASON_LEGACY)
 
 
@@ -1231,9 +1233,12 @@ def test_unknown_impact_and_missing_optional_fields_are_tolerated():
         _row("bare", impact="Low", codes=("WEAK_RNG",), bom_ref=None),
     ]
     rows[1].pop("description")
-    out = build_pdf(run_fold([synth(1, full_blob(rows))]))
-    text = full_text(out)
-    assert "Catastrophic" in text  # kept verbatim, ranked last
+    view = run_fold([synth(1, full_blob(rows))])
+    # rev4 M3: an impact outside Critical..Low is a Low finding, as on the scan page and the scan PDF
+    # (cbom_metrics.finding_severity); it used to be kept verbatim and left out of the grade
+    assert view.issue_by_impact == {"Low": 2}
+    text = full_text(build_pdf(view))
+    assert "Catastrophic" not in text
     assert not re.search(r"\b(None|nan)\b", text)
 
 

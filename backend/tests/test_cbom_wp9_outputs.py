@@ -143,6 +143,42 @@ def test_xml_strips_control_characters_and_keeps_bom_refs_unique():
     assert comps[0].find("c:properties/c:property", ns).text == "tab\tokbad"
 
 
+def test_xml_renames_into_free_bom_refs_and_fills_empty_ones():
+    """rev5 #11: bom-refs a, a, a#2 renamed the second a to a#2 (a duplicate key), and a bom-ref that is empty or only
+    control characters became '' (refType minLength 1): the XML failed its own XSD. Validated against the bundled
+    XSD."""
+    from lxml import etree
+
+    from backend.utilities.cbom_sources.cdx_xml import EMPTY_REF, NS, to_xml, validate_xml
+
+    def algo(ref, name):
+        return {"type": "cryptographic-asset", "bom-ref": ref, "name": name,
+                "cryptoProperties": {"assetType": "algorithm"}}
+
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,
+           "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+           "components": [algo("a", "one"), algo("a", "two"), algo("a#2", "three"), algo("", "four"),
+                          algo("\x00\x1b", "five"), algo("a#3", "six"),
+                          {"type": "cryptographic-asset", "bom-ref": "cert", "name": "c",
+                           "cryptoProperties": {"assetType": "certificate",
+                                                "certificateProperties": {"signatureAlgorithmRef": "\x01",
+                                                                          "subjectPublicKeyRef": "a"}}}],
+           "dependencies": [{"ref": "a", "dependsOn": ["a#2", "", "\x02"]}, {"ref": "", "dependsOn": ["a"]}]}
+    xml = to_xml(bom, strict=True)
+    assert validate_xml(xml) == []
+    doc = etree.fromstring(xml)
+    ns = {"c": NS}
+    refs = [c.get("bom-ref") for c in doc.findall("c:components/c:component", ns)]
+    assert refs == ["a", "a#4", "a#2", EMPTY_REF, f"{EMPTY_REF}#2", "a#3", "cert"]
+    assert len(set(refs)) == len(refs)
+    cert = doc.findall("c:components/c:component", ns)[-1]
+    assert cert.find(".//c:signatureAlgorithmRef", ns) is None  # an empty optional reference is left out
+    assert cert.findtext(".//c:subjectPublicKeyRef", namespaces=ns) == "a"
+    deps = [(d.get("ref"), [x.get("ref") for x in d.findall("c:dependency", ns)])
+            for d in doc.findall("c:dependencies/c:dependency", ns)]
+    assert deps == [("a", ["a#2", EMPTY_REF, EMPTY_REF]), (EMPTY_REF, ["a"])]
+
+
 def test_xml_strict_mode_names_keys_without_a_mapping():
     from backend.utilities.cbom_sources.cdx_xml import to_xml
 
@@ -428,3 +464,36 @@ def test_scan_bom_download_json_and_xml(http):
     assert x.headers["x-zs-signature-scope"] == "json" and validate_xml(x.content) == []
     assert client.get("/1/sbom_sca/scan/3/bom?format=xml", headers=hdr).status_code == 400
     assert client.get("/1/cbom/scan/1/bom", headers=hdr).status_code == 400  # not finished
+
+
+def test_scan_bom_json_download_is_the_signed_server_document(http):
+    """rev4 H2: the scan page's "CycloneDX JSON" button downloads this response (frontend
+    utils/api/cbom_outputs.test.ts proves it saves it unchanged). It is the document the BOM signature covers: every
+    crypto asset with its own bom-ref (two MD5 calls stay two assets), library purls, no client-side stamps."""
+    import copy
+
+    from backend.routers import certin as certin_router
+    from backend.utilities.compliance.certin_attest import bom_dict_from_scan_data
+
+    client, engine, _calls = http
+    data = copy.deepcopy(FIXTURE)
+    md5 = next(c for c in data["cbom_json"]["components"] if c["name"] == "MD5")
+    data["cbom_json"]["components"].append({**copy.deepcopy(md5), "bom-ref": "crypto-algo-md5-other-py",
+                                            "evidence": {"occurrences": [{"location": "other.py", "line": 9}]}})
+    with Session(engine) as s:
+        s.add(Scan(id=5, team_id=1, owner_user_id=1, scan_type="cbom", scan_status="success",
+                   created_at=dt.datetime.now(dt.timezone.utc), scan_data=data))
+        s.commit()
+    hdr = {"Authorization": "Bearer t"}
+    signature = client.post("/1/cbom/scan/5/sign", headers=hdr).json()["bom_signature"]
+    downloaded = json.loads(client.get("/1/cbom/scan/5/bom?format=json", headers=hdr).content)
+    assert downloaded == bom_dict_from_scan_data("cbom", data)
+    assert [c["bom-ref"] for c in downloaded["components"]] == [c["bom-ref"] for c in data["cbom_json"]["components"]]
+    assert sum(1 for c in downloaded["components"] if c["name"] == "MD5") == 2
+    assert next(c for c in downloaded["components"] if c["name"] == "pyca/cryptography")["purl"] == "pkg:pypi/cryptography"
+    assert not any(p.get("name") == "dss:compliance" for c in downloaded["components"] for p in c.get("properties") or [])
+    sign = certin_router._load_certin_module("sign")
+    assert sign.verify_signature(downloaded, signature, secret=certin_router._hmac_secret())
+    tampered = copy.deepcopy(downloaded)
+    tampered["components"].pop()  # what the old client-side merge did to the second MD5
+    assert not sign.verify_signature(tampered, signature, secret=certin_router._hmac_secret())

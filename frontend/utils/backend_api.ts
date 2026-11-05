@@ -2314,6 +2314,8 @@ export interface CBOMDashboardData {
     total_certificates: number
     total_keys: number
     quantum_readiness_score: number
+    /** false: no asset has a quantum verdict; quantum_readiness_score is then a 0 placeholder (show "n/a") */
+    quantum_readiness_judged?: boolean
     average_risk_score: number
   }
 }

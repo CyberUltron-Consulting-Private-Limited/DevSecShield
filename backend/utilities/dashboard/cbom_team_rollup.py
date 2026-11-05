@@ -131,7 +131,8 @@ IMPACT_LEVELS = ("Critical", "High", "Medium", "Low")
 # A clean inventory row (``cbom_rows.is_finding`` is False: an empty finding-code list, not weak, not
 # quantum-vulnerable) has no impact: it is listed under INFO and never counted as an issue, in old scans (stored "Low")
 # and new ones (None) alike, as on the scan dashboard and PDF.  A legacy row stored before ``finding_codes`` existed
-# keeps its stored impact (Tier C: shown, but never graded, because it carries no finding data).
+# is a finding with its stored impact (Low when it has none), counted as an issue exactly as the scan dashboard, the
+# scan list and the scan PDF count it (``cbom_metrics.finding_severity``).
 INFO = "Info"
 
 # Certificate validity bands (``classify_expiry``), in display / sort order.
@@ -675,13 +676,15 @@ class TeamCbomView:
     asset_occurrences: int = 0
     assets_by_type: dict[str, int] = field(default_factory=dict)  # current, by ASSET_*
     assets_by_impact: dict[str, int] = field(default_factory=dict)  # current, by IMPACT_LEVELS
-    # current assets with >= 1 finding code, by impact (D-03 grade input; Appendix B: C1 H23 M5)
+    # current FINDINGS (cbom_rows.is_finding: impact != INFO), by impact (D-03 grade input; Appendix B: C1 H25 M5 L5)
     issue_by_impact: dict[str, int] = field(default_factory=dict)
     finding_counts: dict[str, int] = field(default_factory=dict)  # current occurrences per code
-    pqc_vulnerable: int = 0  # current algorithm rows with quantum_vulnerable is True
-    pqc_safe: int = 0  # current algorithm rows with quantum_vulnerable is False (hybrid included)
+    # quantum verdicts are cbom_metrics.code_row_quantum_vulnerable (the stored quantum_safe tri-state): the current
+    # engine grades algorithms only; a legacy worker row may also grade a certificate or key
+    pqc_vulnerable: int = 0  # current assets with quantum_vulnerable is True
+    pqc_safe: int = 0  # current assets with quantum_vulnerable is False (hybrid included)
     pqc_hybrid: int = 0  # subset of pqc_safe flagged hybrid
-    pqc_ungraded: int = 0  # quantum_vulnerable is None (left out of the readiness denominator)
+    pqc_ungraded: int = 0  # current ALGORITHM assets without a verdict (left out of the readiness denominator)
     readiness_pct: float | None = None  # round(100 * safe / (safe + vulnerable), 1); None if 0
     compliance_sources_pooled: int = 0  # current full-fidelity sources (Appendix B: 6)
     compliance_legacy_excluded: int = 0  # current reduced-fidelity sources left out (Appendix B: 1)
@@ -1034,11 +1037,6 @@ def _untyped(row: Mapping[str, Any]) -> bool:
     return (_text(row.get("algorithm_type")) or "").casefold() not in _UNTYPED_BY_DESIGN
 
 
-def _impact_of(value: Any) -> str | None:
-    text = _text(value)
-    return None if text is None else _IMPACT_BY_FOLD.get(text.casefold(), text)
-
-
 def _codes_of(value: Any) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple)):
         return ()
@@ -1047,18 +1045,22 @@ def _codes_of(value: Any) -> tuple[str, ...]:
 
 
 def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
-    """One ``results[]`` row (any tier) as a single-scan ``AssetAgg`` observation."""
-    # the one read-time finding rule of every CBOM view (a pure, stdlib-only module)
-    from backend.utilities.cbom_sources.cbom_rows import is_finding
+    """One ``results[]`` row (any tier) as a single-scan ``AssetAgg`` observation.
+
+    Impact and the quantum verdict come from ``cbom_metrics`` (the rules of the scan page, the scan list and the scan
+    PDF): ``finding_severity`` (a finding without a recognised impact is Low; clean inventory is INFO) and
+    ``code_row_quantum_vulnerable`` (the row's stored ``quantum_safe`` tri-state; certificates, keys and protocols of
+    the current engine keep None, so only rows the engine graded count towards readiness)."""
+    # one set of numbers for every CBOM view (pure modules: stdlib plus cbom_rows)
+    from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable, finding_severity
 
     asset_type = _asset_type_of(row)
     title = _text(row.get("title")) or _text(row.get("algorithm_name")) or "(unnamed)"
     location = _text(row.get("location")) or ""
     bom_ref = _text(row.get("bom_ref"))
     quantum_safe = _tri(row.get("quantum_safe"))
-    quantum_vulnerable = _tri(row.get("quantum_vulnerable"))
-    if quantum_vulnerable is None and quantum_safe is not None:
-        quantum_vulnerable = not quantum_safe  # pre-reconcile rows only carry ``quantum_safe``
+    quantum_vulnerable = code_row_quantum_vulnerable(dict(row))
+    severity = finding_severity(dict(row))
     primitive = _text(row.get("primitive"))
     if primitive is None and asset_type == ASSET_ALGORITHM:
         primitive = _text(row.get("algorithm_type"))
@@ -1069,7 +1071,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         ident=bom_ref or f"{_slug(title)}#{location}",
         title=title,
         location=location,
-        impact=(_impact_of(row.get("impact")) or "Low") if is_finding(row) else INFO,
+        impact=INFO if severity is None else severity.capitalize(),
         finding_codes=_codes_of(row.get("finding_codes")),
         bom_ref=bom_ref,
         description=_text(row.get("description")) or "",
@@ -2866,11 +2868,13 @@ def fold_scans(
         )
     source_rows.sort(key=lambda source: (source.label.casefold(), source.key))
 
-    # 4. headline counts: CURRENT state only, computed once so every document agrees
-    algorithms = [asset for asset in live if asset.asset_type == ASSET_ALGORITHM]
-    vulnerable = sum(1 for asset in algorithms if asset.quantum_vulnerable is True)
-    safe = sum(1 for asset in algorithms if asset.quantum_vulnerable is False)
-    hybrid = sum(1 for a in algorithms if a.quantum_vulnerable is False and a.hybrid is True)
+    # 4. headline counts: CURRENT state only, computed once so every document agrees.  Readiness is
+    # cbom_metrics.quantum_readiness_pct over every asset with a verdict (the scan page's rule): the current engine
+    # grades algorithms only, a legacy worker row also graded its certificates and keys.
+    vulnerable = sum(1 for asset in live if asset.quantum_vulnerable is True)
+    safe = sum(1 for asset in live if asset.quantum_vulnerable is False)
+    hybrid = sum(1 for a in live if a.quantum_vulnerable is False and a.hybrid is True)
+    ungraded_algorithms = sum(1 for a in live if a.asset_type == ASSET_ALGORITHM and a.quantum_vulnerable is None)
     codes = Counter(code for asset in live for code in asset.finding_codes)
 
     posture_view = _finish_posture(posture_accs, sources, attempt, moment)
@@ -2935,14 +2939,13 @@ def fold_scans(
         asset_occurrences=len(live),
         assets_by_type=_ordered_counts(Counter(a.asset_type for a in live), ASSET_TYPES),
         assets_by_impact=_ordered_counts(Counter(a.impact for a in live), IMPACT_LEVELS),
-        issue_by_impact=_ordered_counts(
-            Counter(a.impact for a in live if a.finding_codes and a.impact != INFO), IMPACT_LEVELS
-        ),
+        # a finding is impact != INFO (cbom_rows.is_finding): a legacy row has no finding codes and is still one
+        issue_by_impact=_ordered_counts(Counter(a.impact for a in live if a.impact != INFO), IMPACT_LEVELS),
         finding_counts=dict(sorted(codes.items())),
         pqc_vulnerable=vulnerable,
         pqc_safe=safe,
         pqc_hybrid=hybrid,
-        pqc_ungraded=len(algorithms) - vulnerable - safe,
+        pqc_ungraded=ungraded_algorithms,
         readiness_pct=quantum_readiness_pct(vulnerable, safe + vulnerable),
         compliance_sources_pooled=len(full),
         compliance_legacy_excluded=legacy_excluded,

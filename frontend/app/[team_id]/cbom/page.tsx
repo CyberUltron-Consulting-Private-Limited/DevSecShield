@@ -47,6 +47,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
+import { readinessText, readinessTone, type ReadinessTone } from "@/utils/cbomReadiness";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -139,6 +140,20 @@ function deliverableFileName(slug: CbomDeliverableSlug, teamId: number, now: Dat
 }
 
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
+
+// unjudged readiness (no asset has a quantum verdict) is "n/a" in a neutral colour, never a red 0 %
+const READINESS_BOX: Record<ReadinessTone, string> = {
+  good: "bg-green-500/15 dark:bg-green-500/10",
+  fair: "bg-amber-500/15 dark:bg-amber-500/10",
+  poor: "bg-red-500/15 dark:bg-red-500/10",
+  none: "bg-zinc-500/15 dark:bg-zinc-500/10",
+};
+const READINESS_ICON: Record<ReadinessTone, string> = {
+  good: "text-green-500",
+  fair: "text-amber-500",
+  poor: "text-red-500",
+  none: "text-zinc-500",
+};
 
 function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboardData }) {
   const card = dashboardData.card_data;
@@ -264,12 +279,12 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
         <Card className="border-zinc-200 dark:border-zinc-800 py-3 px-3">
           <CardContent className="p-0">
             <div className="flex flex-col items-start gap-2">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.quantum_readiness_score >= 70 ? "bg-green-500/15 dark:bg-green-500/10" : card.quantum_readiness_score >= 40 ? "bg-amber-500/15 dark:bg-amber-500/10" : "bg-red-500/15 dark:bg-red-500/10"}`}>
-                <Shield className={`h-4 w-4 ${card.quantum_readiness_score >= 70 ? "text-green-500" : card.quantum_readiness_score >= 40 ? "text-amber-500" : "text-red-500"}`} />
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${READINESS_BOX[readinessTone(card)]}`}>
+                <Shield className={`h-4 w-4 ${READINESS_ICON[readinessTone(card)]}`} />
               </div>
               <div>
                 <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Quantum Readiness</p>
-                <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.quantum_readiness_score}%</p>
+                <p className="text-xl font-bold text-zinc-900 dark:text-white" title={readinessTone(card) === "none" ? "No asset has a quantum verdict yet (hashes, certificates and protocols are not graded)" : undefined}>{readinessText(card)}</p>
               </div>
             </div>
           </CardContent>

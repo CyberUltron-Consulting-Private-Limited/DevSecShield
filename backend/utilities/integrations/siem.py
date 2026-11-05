@@ -11,8 +11,9 @@ Syslog message (RFC 5424 section 6)::
   BOM is needed (RFC 5424 6.4 asks for one only before UTF-8 text).
 * Framing: TCP and TLS use octet counting, ``MSG-LEN SP SYSLOG-MSG`` (RFC 6587 3.4.1, RFC 5425 4.3; TLS default port
   6514); UDP sends one message per datagram (RFC 5426 3.1), at most 2048 octets (3.2: receivers SHOULD accept 2048).
-  UDP has no delivery confirmation; TCP and TLS are confirmed when the whole batch was written and the connection
-  closed cleanly.
+  UDP has no delivery confirmation (a connection test says "sent (unconfirmed)"); TCP and TLS are confirmed when the
+  whole batch was written and the connection closed cleanly (a reset while closing means the receiver discarded
+  unread data: the batch is retried).
 
 CEF (ArcSight CEF Implementation Standard)::
 
@@ -173,7 +174,8 @@ def syslog_send(ctx: Context, events: list[dict[str, Any]]) -> list[Outcome]:
     try:
         if cfg.transport == "udp":
             outbound.send_datagrams(cfg.host, int(cfg.port or 514), [m[:UDP_MAX] for m in messages])
-            return [Outcome("ok", "sent over UDP (no delivery confirmation)") for _ in events]
+            return [Outcome("ok", "sent over UDP (unconfirmed: UDP has no delivery confirmation)", confirmed=False)
+                    for _ in events]
         outbound.send_stream(cfg.host, int(cfg.port or 514), [frame(m) for m in messages], tls=cfg.transport == "tls",
                              ca_pem=cfg.ca_pem)
     except Exception as exc:

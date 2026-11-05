@@ -2,8 +2,9 @@
 
 * https only, port 443 or 1024-65535, no user info in the URL;
 * every address the name resolves to must be public (not private, loopback, link-local, CGNAT,
-  unique-local, multicast, reserved, or an IPv4-mapped form of one), and the connection goes to the
-  address that was checked, so a DNS answer cannot change between the check and the fetch;
+  unique-local, site-local, multicast, reserved, or an IPv4-mapped form of one), and the connection goes to
+  the addresses that were checked (each in turn, those this host can route first, so a dual-stack name works in
+  an IPv4-only container), so a DNS answer cannot change between the check and the fetch;
 * no proxy from the environment; at most 3 redirects, each checked the same way;
 * 1 MB body cap, 10 s per read and 30 s for the whole fetch, identity encoding only.
 
@@ -70,6 +71,9 @@ def public_address(text: str) -> bool:
     if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT:
         return False
     if isinstance(ip, ipaddress.IPv6Address) and any(ip in net for net in _V4_IN_V6):
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.is_site_local:
+        # fec0::/10, deprecated site-local (RFC 3879): an internal network like RFC 1918, though Python calls it global
         return False
     return bool(ip.is_global) and not ip.is_multicast
 
@@ -152,12 +156,50 @@ def idp_private_allowlist() -> PrivateAllowlist:
     return parse_private_allowlist(os.environ.get("CBOM_IDP_ALLOWED_PRIVATE"), "CBOM_IDP_ALLOWED_PRIVATE")
 
 
-def _resolve(host: str, port: int, allow_private: bool, allowlist: PrivateAllowlist | None = None) -> str:
+def _routable(address: str, port: int) -> bool:
+    """Whether this host has a route to ``address``. A UDP ``connect`` sends nothing; it only picks a route, and fails
+    at once for a family the host cannot reach (IPv6 in an IPv4-only container)."""
+    family = socket.AF_INET6 if ipaddress.ip_address(address).version == 6 else socket.AF_INET
+    try:
+        with socket.socket(family, socket.SOCK_DGRAM) as probe:
+            probe.connect((address, port or 9))
+        return True
+    except OSError:
+        return False
+
+
+def connection_order(addresses: list[str], port: int) -> list[str]:
+    """Checked addresses in the order to try them: the resolver's order (RFC 6724 where the resolver applies it),
+    addresses this host can route first. Every one of them was checked; each attempt stays pinned to its address."""
+    unique = list(dict.fromkeys(addresses))
+    if len(unique) < 2:
+        return unique
+    return sorted(unique, key=lambda address: not _routable(address, port))  # stable: resolver order otherwise
+
+
+def connect_first(addresses: list[str], port: int, timeout: float, deadline: float | None = None) -> socket.socket:
+    """A TCP connection to the first of the (checked) ``addresses`` that accepts one, tried in turn: a dual-stack name
+    whose IPv6 address this host cannot reach falls back to its IPv4 address. Raises the last connect error."""
+    last: OSError | None = None
+    for address in addresses:
+        wait = timeout if deadline is None else min(timeout, deadline - time.monotonic())
+        if wait <= 0:
+            break
+        try:
+            return socket.create_connection((address, port), wait)
+        except OSError as exc:
+            last = exc
+    raise last if last is not None else TimeoutError("no time left to connect")
+
+
+def _resolve(host: str, port: int, allow_private: bool, allowlist: PrivateAllowlist | None = None) -> list[str]:
+    """Every address ``host`` resolves to, each checked (one refused address refuses the host: DNS may hand it out
+    later), in ``connection_order``."""
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise FetchError(f"{host} does not resolve") from exc
-    addresses = sorted({info[4][0] for info in infos})
+    addresses = list(dict.fromkeys(info[4][0] for info in infos))
     if not addresses:
         raise FetchError(f"{host} does not resolve")
     for address in addresses:
@@ -170,7 +212,7 @@ def _resolve(host: str, port: int, allow_private: bool, allowlist: PrivateAllowl
             raise FetchError(f"{host} resolves to a private or reserved address; only public metadata URLs can be "
                              f"read{hint}")
         log("private fetch allowed", source=allowlist.source, host=host, address=address, rule=rule)
-    return addresses[0]
+    return connection_order(addresses, port)
 
 
 _ca_warned: set[tuple[str, str]] = set()
@@ -192,12 +234,12 @@ def _context() -> ssl.SSLContext:
 
 
 class _PinnedHTTPS(http.client.HTTPSConnection):
-    def __init__(self, host: str, address: str, port: int, context: ssl.SSLContext):
+    def __init__(self, host: str, addresses: list[str], port: int, context: ssl.SSLContext):
         super().__init__(host, port, timeout=TIMEOUT, context=context)
-        self._address = address
+        self._addresses = addresses
 
-    def connect(self) -> None:  # connect to the checked address, verify the certificate for the name
-        sock = socket.create_connection((self._address, self.port), TIMEOUT)
+    def connect(self) -> None:  # connect to a checked address, verify the certificate for the name
+        sock = connect_first(self._addresses, self.port, TIMEOUT)
         self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
 
 
@@ -242,8 +284,8 @@ def fetch(url: str, *, accept: str = "application/json", private_allowlist: Priv
         port = parts.port or 443
         if port != 443 and port < 1024:
             raise FetchError("URL port must be 443 or above 1023")
-        address = _resolve(parts.hostname, port, allow_private, private_allowlist)
-        conn = _PinnedHTTPS(parts.hostname, address, port, _context())
+        addresses = _resolve(parts.hostname, port, allow_private, private_allowlist)
+        conn = _PinnedHTTPS(parts.hostname, addresses, port, _context())
         path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
         left = deadline - time.monotonic()
         if left <= 0:

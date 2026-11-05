@@ -118,8 +118,14 @@ def test_list_item_and_multi_scan_dashboard_agree(run, expected, mongo):
     assert multi["remediation_actions_required"]["total_findings"] == expected["findings"]
     single = __import__("backend.utilities.dashboard.scan", fromlist=["x"]).generate_scan_dashboard(
         scan_type="cbom", scan_object=_scan(run))
-    for key in ("average_risk_score", "quantum_readiness_score", "total_weak_algorithms", "total_quantum_vulnerable"):
+    for key in ("average_risk_score", "quantum_readiness_score", "total_weak_algorithms", "total_quantum_vulnerable",
+                "total_crypto_assets", "total_crypto_vulnerabilities", "total_informational", "total_certificates",
+                "total_keys", "quantum_readiness_judged"):
         assert item.get(key, multi["card_data"][key]) == multi["card_data"][key] == single["card_data"][key], key
+    # rev4 M2: "Crypto assets" is the inventory rows on every surface (findings + informational), not the CycloneDX
+    # component count (17 here: it also lists the 4 crypto libraries the files import)
+    assert len(run["cbom_json"]["components"]) == 17
+    assert single["card_data"]["total_crypto_assets"] == len(run["results"]) == expected["findings"] + expected["inventory"]
 
 
 def test_mongo_read_path_lists_findings_only(run, expected, mongo):
@@ -176,6 +182,44 @@ def test_team_rollup_counts_the_same_issues(run, expected):
     assert issues == expected["severity"]
     assert view.assets_by_impact.get("Info", 0) == expected["inventory"]
     assert "Low" not in view.assets_by_impact or expected["severity"]["low"]
+    from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+
+    assert view.readiness_pct == summarize_code_rows(run["results"]).readiness_pct
+
+
+# rows the pre-reconcile worker stored: no finding_codes, certificates and keys graded quantum_safe False
+LEGACY_ROWS = [
+    {"algorithm_name": "RSA-2048", "algorithm_type": "pke", "quantum_safe": False, "crypto_strength": "strong",
+     "impact": "Medium", "location": "a.py"},
+    {"algorithm_name": "server.crt", "algorithm_type": "certificate", "quantum_safe": False, "crypto_strength": "strong",
+     "impact": "Medium", "location": "certs/server.crt"},
+    {"algorithm_name": "id_rsa", "algorithm_type": "key", "quantum_safe": False, "crypto_strength": "strong",
+     "impact": "High", "location": "keys/id_rsa"},
+    {"algorithm_name": "AES-256-GCM", "algorithm_type": "block-cipher", "quantum_safe": True,
+     "crypto_strength": "quantum_safe", "impact": "Low", "location": "b.py"},
+    {"algorithm_name": "DES", "algorithm_type": "block-cipher", "impact": "Severe", "location": "c.py"},
+]
+
+
+def test_team_rollup_agrees_with_the_scan_page_for_legacy_rows():
+    """rev4 M3: for a legacy scan the scan page, list and PDF said 4 findings and 25.0 % readiness while the team
+    roll-up (and its roadmap / board PDFs) said no issues and 50.0 % (readiness over algorithm rows only, issues only
+    with finding codes). The roll-up now reads cbom_metrics.finding_severity / code_row_quantum_vulnerable."""
+    from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+    from backend.utilities.dashboard.cbom_team_rollup import ScanHead, fold_scans
+
+    now = dt.datetime(2026, 11, 5, tzinfo=dt.timezone.utc)
+    head = ScanHead(id=1, team_id=7, scan_type="cbom", title="t", status="success", created_at=now,
+                    last_updated=now, scan_metadata={"repo_url": "https://example.com/r.git", "branch": "main"})
+    run = {"results": LEGACY_ROWS}
+    view = fold_scans([head], lambda ids: {i: run for i in ids}, team_id=7, team_name="T", now=now)
+    summary = summarize_code_rows(LEGACY_ROWS)
+    assert summary.readiness_pct == 25.0 and summary.findings == 5  # the scan page's numbers
+    assert view.readiness_pct == summary.readiness_pct
+    assert (view.pqc_vulnerable, view.pqc_safe) == (summary.quantum["quantum_vulnerable"], summary.quantum["quantum_safe"])
+    assert {s: view.issue_by_impact.get(s.capitalize(), 0) for s in SEVERITIES} == summary.severity
+    assert sum(view.issue_by_impact.values()) == summary.findings
+    assert view.pqc_ungraded == 1  # DES: an algorithm with no verdict
 
 
 def test_cyclonedx_json_and_xml_carry_the_same_findings(run, expected):

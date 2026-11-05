@@ -308,6 +308,25 @@ def test_coverage_report_turns_engine_counts_into_notes():
     assert coverage_report({"metadata": {"properties": []}}) is None and coverage_report(None) is None
 
 
+def test_the_scan_options_are_info_not_skipped_input():
+    """rev6 #6: with "Scan binaries" (and "Scan vendored") on, the engine records crypto:coverage:binariesIncluded=true
+    and vendoredIncluded=true (aibom/src/aibom/cbom/files.py coverage()); both fell through to the unknown-key branch
+    as "skipped", so turning the option on showed the amber alert "2 kind(s) of input were skipped"."""
+    bom = {"metadata": {"properties": [
+        {"name": "crypto:coverage:binariesIncluded", "value": "true"},
+        {"name": "crypto:coverage:vendoredIncluded", "value": "true"},
+        {"name": "crypto:coverage:binariesRead", "value": "12"}]}}
+    report = coverage_report(bom)
+    assert report["skipped"] == 0 and {n["kind"] for n in report["notes"]} == {"info"}
+    by_key = {n["key"]: n["text"] for n in report["notes"]}
+    assert by_key["binariesIncluded"].startswith('"Scan binaries, container images and firmware" was on')
+    assert by_key["vendoredIncluded"].startswith('"Scan vendored and build directories" was on')
+    # with vendored code off, the walk counts the directories it left out: a labelled skipped note
+    off = coverage_report({"metadata": {"properties": [{"name": "crypto:coverage:skippedVendoredDirs", "value": "3"}]}})
+    assert off["skipped"] == 1 and off["notes"][0]["kind"] == "skipped"
+    assert off["notes"][0]["text"].startswith("3 vendored or build director(ies) (vendor/, dist/, build/, node_modules/)")
+
+
 def test_scan_metadata_carries_the_coverage_notes_of_a_code_scan_only():
     import types
 

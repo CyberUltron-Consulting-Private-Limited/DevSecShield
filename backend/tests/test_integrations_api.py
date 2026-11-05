@@ -107,6 +107,45 @@ def test_test_button_goes_through_the_ssrf_guard(api, monkeypatch):
     assert api("POST", "/1/integrations/webhook/test", "bob").status_code == 400
 
 
+def test_a_udp_syslog_test_is_sent_unconfirmed_never_passed(api, monkeypatch):
+    """rev4 M1: UDP has no delivery confirmation (a port with no listener looks the same), yet the test said "Test
+    passed". It now reports status "unconfirmed" (ok, confirmed False); TCP / TLS keep "ok"."""
+    from backend.utilities.integrations import siem
+
+    monkeypatch.setenv(outbound.ENV_ALLOWED_PRIVATE, "10.0.0.0/8")
+    sent: list[bytes] = []
+    monkeypatch.setattr(siem.outbound, "send_datagrams", lambda host, port, grams: sent.extend(grams) or len(grams))
+    monkeypatch.setattr(siem.outbound, "send_stream", lambda host, port, frames, **k: len(frames))
+    assert api("PUT", "/1/integrations/syslog", json={"enabled": True, "config": {"host": "10.1.2.3",
+                                                                                "transport": "udp"}}).status_code == 200
+    r = api("POST", "/1/integrations/syslog/test").json()
+    assert (r["ok"], r["confirmed"], r["status"]) == (True, False, "unconfirmed") and "unconfirmed" in r["message"]
+    assert len(sent) == 1
+    listed = {i["kind"]: i for i in api("GET", "/1/integrations").json()["integrations"]}
+    assert listed["syslog"]["last_test"]["status"] == "unconfirmed"
+    assert api("PUT", "/1/integrations/syslog", json={"enabled": True, "config": {"host": "10.1.2.3",
+                                                                                "transport": "tcp"}}).status_code == 200
+    r = api("POST", "/1/integrations/syslog/test").json()
+    assert (r["ok"], r["confirmed"], r["status"]) == (True, True, "ok")
+
+
+def test_a_connection_test_is_audited(api, world, monkeypatch):
+    """rev4 L4: a test sends data to an external destination but left no audit row (save / delete / retry did)."""
+    from backend.new_models import CbomCollectionAuditEvent
+
+    engine, _ = world
+    assert api("PUT", "/1/integrations/webhook", json=HOOK).status_code == 200
+    monkeypatch.setattr(webhook.outbound, "request", Receiver([200, 503]))
+    assert api("POST", "/1/integrations/webhook/test").json()["ok"] is True
+    assert api("POST", "/1/integrations/webhook/test").json()["ok"] is False  # a failed test is audited too
+    with Session(engine) as s:
+        rows = s.exec(select(CbomCollectionAuditEvent).where(CbomCollectionAuditEvent.action == "integration.test")).all()
+        integration = s.exec(select(TeamIntegration).where(TeamIntegration.kind == "webhook")).one()
+    assert [(r.team_id, r.actor_type, r.object_type, r.object_id) for r in rows] == \
+        [(1, "user", "integration", integration.id)] * 2
+    assert all(r.actor_id is not None and r.changed_fields == ["last_test_status"] for r in rows)
+
+
 # ----------------------------------------------------------------------------- dispatcher
 def test_drift_events_are_delivered_once_in_order_with_stable_ids(api, world, monkeypatch):
     engine, _ = world
@@ -175,6 +214,26 @@ def test_rejected_events_go_to_the_dead_letter_list_and_can_be_retried(api, worl
     assert r.json() == {"requeued": 1}
     assert D.tick(engine)["delivered"] == 1
     assert receiver.received[-1]["id"] == dead[0]["event_id"]
+
+
+def test_a_batch_whose_every_event_was_refused_is_not_a_delivery(api, world, monkeypatch):
+    """rev4 L4: when the destination refused every event of a batch (all dead-lettered), the integration was recorded
+    as delivered (last_delivery_at set, last_error cleared) while the dead-letter badge showed the refusals."""
+    engine, _ = world
+    assert api("PUT", "/1/integrations/webhook", json=HOOK).status_code == 200
+    receiver = Receiver([400, 400])
+    monkeypatch.setattr(webhook.outbound, "request", receiver)
+    _drift(engine, 2)
+    out = D.tick(engine)
+    assert out["dead"] == 2 and out["delivered"] == 0
+    listed = {i["kind"]: i for i in api("GET", "/1/integrations").json()["integrations"]}["webhook"]
+    assert listed["last_delivery_at"] is None and listed["queue"].get("dead") == 2
+    assert listed["last_error"] == "the destination refused every event of the last batch: HTTP 400"
+    assert listed["failures"] == 0 and listed["next_attempt_at"] is None  # it answered: no back-off
+    _drift(engine, 1, start=50)
+    assert D.tick(engine)["delivered"] == 1  # the next delivery clears the problem
+    listed = {i["kind"]: i for i in api("GET", "/1/integrations").json()["integrations"]}["webhook"]
+    assert listed["last_delivery_at"] is not None and listed["last_error"] is None
 
 
 def test_events_older_than_the_max_age_are_dead_lettered_on_failure(api, world, monkeypatch):

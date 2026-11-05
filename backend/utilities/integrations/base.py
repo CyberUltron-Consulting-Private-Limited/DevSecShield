@@ -19,11 +19,14 @@ _HOST_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9
 class Outcome:
     """``ok``: delivered. ``retry``: the destination failed (down, auth, TLS, throttled): the queue waits and backs
     off. ``reject``: the destination refused THIS event for good (e.g. HTTP 400): it goes to the dead-letter list and
-    the queue moves on. ``reason`` is short and safe to show; never a response body."""
+    the queue moves on. ``reason`` is short and safe to show; never a response body. ``confirmed`` is False for an
+    ``ok`` the destination cannot acknowledge (syslog over UDP): sent, not known to be received, so a connection
+    test says "sent (unconfirmed)", never "passed"."""
     status: Status
     reason: str
     retry_after: float | None = None
     ref: str | None = None
+    confirmed: bool = True
 
 
 @dataclass

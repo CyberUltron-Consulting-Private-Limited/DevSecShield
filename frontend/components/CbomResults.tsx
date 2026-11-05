@@ -57,7 +57,7 @@ import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, pos
 import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
-import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
+import { readinessText } from "@/utils/cbomReadiness";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
@@ -333,7 +333,7 @@ function CbomDashboardCharts({
           { label: "Quantum vulnerable", value: cardData.total_quantum_vulnerable, icon: AlertTriangle, box: "bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400" },
           { label: "Certificates", value: cardData.total_certificates, icon: ShieldCheck, box: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" },
           { label: "Keys", value: cardData.total_keys, icon: Key, box: "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400" },
-          { label: "Quantum ready", value: `${cardData.quantum_readiness_score}%`, icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
+          { label: "Quantum ready", value: readinessText(cardData), icon: Shield, box: "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" },
           { label: "Avg risk score", value: cardData.average_risk_score?.toFixed(1) ?? "N/A", icon: Activity, box: "bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400" },
         ].map(({ label, value, icon: Icon, box }) => (
           <Card key={label} className="border-zinc-200 dark:border-zinc-800">
@@ -1013,23 +1013,12 @@ export default function CbomResults({
     onError: (err) => showErrorToast(err, "Error exporting PDF"),
   });
 
+  // The server's CycloneDX document as stored: the file bom_signature signs and the XML is written from. A copy
+  // rebuilt in the browser merged crypto assets and dropped library purls, so it never verified against the signature.
   const handleDownloadCBOMJson = () => {
-    const meta = scanMetadata as Record<string, unknown> | null;
-    const cbomJson = meta?.cbom_json ?? (data as Record<string, unknown> | null)?.cbom_json;
-    if (!cbomJson) { toast.error("No CBOM JSON available"); return; }
-    try {
-      const bom = overlayBomCompliance(cbomJson, meta?.cbom_compliance);
-      const blob = new Blob([JSON.stringify(bom, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `cbom-cyclonedx-${scan_id}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("CycloneDX CBOM JSON downloaded");
-    } catch (err) {
-      showErrorToast(err, "Failed to download CycloneDX CBOM JSON");
-    }
+    void downloadCbomScanBom(team_id as string, scan_id as string, "json")
+      .then(() => toast.success("CycloneDX CBOM JSON downloaded"))
+      .catch(() => undefined);
   };
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -1216,7 +1205,9 @@ export default function CbomResults({
             <Button
               variant="outline"
               className="cursor-pointer"
+              title="The scan's CycloneDX 1.6 document as stored on the server: the file the BOM signature covers"
               onClick={handleDownloadCBOMJson}
+              data-testid="cbom-download-json"
             >
               <Download className="h-4 w-4 mr-2" />
               CycloneDX JSON
@@ -1319,7 +1310,7 @@ export default function CbomResults({
             <CardDescription className={coverageReport.skipped > 0 ? "text-amber-900/80 dark:text-amber-200/80" : undefined}>
               {coverageReport.skipped > 0
                 ? `${coverageReport.skipped} kind(s) of input were skipped or only partly read; the CycloneDX file lists the same counts (crypto:coverage:*).`
-                : "Everything in the upload was read; these counts are also in the CycloneDX file (crypto:coverage:*)."}
+                : "Nothing was skipped; these notes say what was read and are also in the CycloneDX file (crypto:coverage:*)."}
             </CardDescription>
           </CardHeader>
           <CardContent>
