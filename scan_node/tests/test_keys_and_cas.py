@@ -412,6 +412,8 @@ ADCS_TEMPLATES = json.dumps([
     {"Name": "ApprovedUser", "Cached": True, "MinKeySize": 2048, "NameFlag": 1, "EnrollmentFlag": 2, "RASignature": 0,
      "EKU": ["1.3.6.1.5.5.7.3.2"], "Validity": -315360000000000, "Schema": 2},
     {"Name": "NotCached", "Cached": False, "EKU": []},
+    # what an older script produced from certutil's last line, "CertUtil: -CATemplates command completed successfully."
+    {"Name": "CertUtil", "Cached": False, "EKU": []},
 ])
 
 
@@ -429,6 +431,22 @@ def test_adcs_recorded_powershell_output():
     assert templates["ApprovedUser"]["enrollee_supplies_subject"] is False  # manager approval stops ESC1
     assert templates["NotCached"]["cached"] is False
     assert ca.parse_adcs_ca("") is None and ca.parse_adcs_templates("not json") == []
+    assert "CertUtil" not in templates  # certutil's status line is not a template (AWS lab, round 5)
+
+
+def test_adcs_template_script_skips_the_certutil_status_line():
+    """Real `certutil -catemplates` output on Windows Server 2022 (AWS lab DC): templates, then the tool's status."""
+    import re
+
+    from zs_scan_node.collectors import ca
+
+    script = ca.ADCS_SCRIPTS["adcs_templates"]
+    assert "if ($_ -match '^([^:\\s]+):' -and $Matches[1] -ne 'CertUtil')" in script
+    lines = ["DirectoryEmailReplication: Directory Email Replication -- Auto-Enroll: Access is denied.",
+             "WebServer: Web Server -- Auto-Enroll: Access is denied.",
+             "CertUtil: -CATemplates command completed successfully."]
+    names = [m.group(1) for m in (re.match(r"^([^:\s]+):", x) for x in lines) if m and m.group(1) != "CertUtil"]
+    assert names == ["DirectoryEmailReplication", "WebServer"]
 
 
 # ----------------------------------------------------------------------------- EJBCA over mutual TLS (recorded API)

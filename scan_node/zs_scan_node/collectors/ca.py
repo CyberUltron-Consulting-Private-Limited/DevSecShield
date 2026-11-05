@@ -349,7 +349,8 @@ ADCS_SCRIPTS = {
     # Templates the CA publishes, with their settings from the CA server's own template cache (no AD second hop)
     "adcs_templates": (
         "& { $c='HKLM:\\SOFTWARE\\Microsoft\\Cryptography\\CertificateTemplateCache'; "
-        "certutil -catemplates 2>$null | ForEach-Object { if ($_ -match '^([^:\\s]+):') { $n=$Matches[1]; "
+        "certutil -catemplates 2>$null | ForEach-Object { if ($_ -match '^([^:\\s]+):' -and $Matches[1] -ne 'CertUtil') { "
+        "$n=$Matches[1]; "
         "$v=Get-ItemProperty (Join-Path $c $n) -ErrorAction SilentlyContinue; [pscustomobject]@{ Name=$n; "
         "Cached=[bool]$v; MinKeySize=$v.'msPKI-Minimal-Key-Size'; NameFlag=$v.'msPKI-Certificate-Name-Flag'; "
         "EnrollmentFlag=$v.'msPKI-Enrollment-Flag'; RASignature=$v.'msPKI-RA-Signature'; "
@@ -420,7 +421,9 @@ def parse_adcs_templates(text: str) -> list[dict[str, Any]]:
     out = []
     for raw in _json_list(text):
         name = printable(str(raw.get("Name") or ""), 128)
-        if not name:
+        # certutil ends with its own status line, "CertUtil: -CATemplates command completed successfully." (AWS lab,
+        # round 5): that is the tool, not a template.  The script skips it; a node running an older script is covered.
+        if not name or name.lower() == "certutil":
             continue
         ekus = {str(e) for e in (raw.get("EKU") or []) + (raw.get("AppPolicy") or []) if e}
         name_flag, enroll_flag, ra = _int(raw.get("NameFlag")) or 0, _int(raw.get("EnrollmentFlag")) or 0, _int(raw.get("RASignature")) or 0

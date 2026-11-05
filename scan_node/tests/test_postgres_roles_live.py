@@ -148,6 +148,30 @@ def test_a_server_that_looks_like_rds_is_told_about_rds_tools(roles):
         auth, gaps, _ = _run("zs_cbom", READER_PW)
         assert auth["server_type"] == "rds" and len(gaps) == 1
         assert "CREATE EXTENSION IF NOT EXISTS rds_tools;" in gaps[0]["detail"]
+        # RDS: the extension's function is executable only by rds_superuser until granted (AWS lab, round 5)
+        assert 'GRANT EXECUTE ON FUNCTION rds_tools.role_password_encryption_type() TO "zs_cbom";' in gaps[0]["detail"]
     finally:
         with _admin() as c:
             c.execute("DROP ROLE IF EXISTS rdsadmin")
+
+
+def test_rds_hba_denial_points_at_the_parameter_group(roles):
+    """RDS: the master user cannot grant pg_hba_file_rules (AWS lab, round 5), so the row names where the policy is."""
+    with _admin() as c:
+        c.execute("REVOKE SELECT ON pg_hba_file_rules FROM zs_cbom")
+        c.execute("REVOKE EXECUTE ON FUNCTION pg_hba_file_rules() FROM zs_cbom")
+    try:
+        _, _, others = _run("zs_cbom", READER_PW)  # self-managed: the server's own message
+        hba = [g for g in others if g["check"] == "postgres HBA rules"]
+        assert len(hba) == 1 and hba[0]["status"] == "denied" and "parameter group" not in hba[0]["detail"]
+        with _admin() as c:
+            c.execute("CREATE ROLE rdsadmin NOLOGIN")
+        _, _, others = _run("zs_cbom", READER_PW)
+        hba = [g for g in others if g["check"] == "postgres HBA rules"]
+        assert len(hba) == 1 and hba[0]["status"] == "denied"
+        assert "rds.accepted_password_auth_method" in hba[0]["detail"] and "cannot grant" in hba[0]["detail"]
+    finally:
+        with _admin() as c:
+            c.execute("DROP ROLE IF EXISTS rdsadmin")
+            c.execute("GRANT SELECT ON pg_hba_file_rules TO zs_cbom")
+            c.execute("GRANT EXECUTE ON FUNCTION pg_hba_file_rules() TO zs_cbom")

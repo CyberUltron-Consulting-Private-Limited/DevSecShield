@@ -168,10 +168,21 @@ def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
         own = q("SELECT version, cipher, bits FROM pg_stat_ssl WHERE pid = pg_backend_pid()", "own connection TLS")
         live = q("SELECT s.ssl, s.version, s.cipher, count(*) FROM pg_stat_ssl s JOIN pg_stat_activity a USING (pid) "
                  "WHERE a.backend_type = 'client backend' GROUP BY 1, 2, 3", "live connection TLS")
-        hba = q("SELECT type, database, user_name, address, auth_method FROM pg_hba_file_rules LIMIT 500", "HBA rules")
+        hba, hba_state, hba_message = _pg_try(
+            conn, "SELECT type, database, user_name, address, auth_method FROM pg_hba_file_rules LIMIT 500")
         exts = q("SELECT extname, extversion FROM pg_extension", "extensions")
         hashes = pg_role_hashes(conn, {str(e[0]) for e in exts or []}, str(config.get("login") or ""),
                                 str(config.get("database_name") or "postgres"))
+        if hba is None:
+            hba_status = _PG_STATUS.get(hba_state or "", "error")
+            if hba_status == "denied" and hashes.server_type == "rds":
+                # Measured on RDS for PostgreSQL 16 (AWS lab): the master user reads pg_hba_file_rules through
+                # rds_superuser but "GRANT SELECT ON pg_hba_file_rules" fails with permission denied, so no grant
+                # script can open it.  The same policy lives in the DB parameter group.
+                hba_message = ("Amazon RDS: only rds_superuser can read pg_hba_file_rules and the master user cannot "
+                               "grant it; add the AWS account as a source to read the parameter group instead "
+                               "(rds.accepted_password_auth_method, rds.force_ssl)")
+            ctx.coverage(target.label, "postgres HBA rules", hba_status, hba_message)
         if hashes.gap:
             ctx.coverage(target.label, "postgres role password hash types", hashes.gap[0], hashes.gap[1])
         ctx.emit("database_config", target.label, loc, name=f"PostgreSQL {settings.get('server_version', '')}".strip(),
@@ -297,9 +308,12 @@ def pg_role_hashes(conn, extensions: set[str], login: str, database: str) -> PgR
     if fn_state == "42501":  # the function is installed, this login may not call it
         fix = f"GRANT EXECUTE ON FUNCTION {PG_HASH_FUNCTION}() TO {who};  (as a superuser, in database {db})"
     elif out.server_type == "rds":
-        fix = ("CREATE EXTENSION IF NOT EXISTS rds_tools;  (as the master user, in database "
-               f"{db}); ZeroShield then reads rds_tools.role_password_encryption_type()") if "rds_tools" not in extensions \
-            else f"GRANT EXECUTE ON FUNCTION rds_tools.role_password_encryption_type() TO {who};  (as the master user)"
+        # Measured on RDS for PostgreSQL 16: the function's ACL is {rds_superuser=X/rds_superuser}, so creating the
+        # extension is not enough; the login also needs EXECUTE on it.
+        grant = f"GRANT EXECUTE ON FUNCTION rds_tools.role_password_encryption_type() TO {who};"
+        fix = (f"CREATE EXTENSION IF NOT EXISTS rds_tools; {grant}  (as the master user, in database {db}); "
+               "ZeroShield then reads rds_tools.role_password_encryption_type()") if "rds_tools" not in extensions \
+            else f"{grant}  (as the master user)"
     elif out.server_type in ("cloudsql", "azure"):
         out.gap = ("not_supported", "this managed PostgreSQL lets no login read password hash types; set "
                                     "password_encryption = scram-sha-256 and have every user reset their password")

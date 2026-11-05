@@ -116,3 +116,5 @@ def test_postgres_grant_installs_a_locked_down_hash_type_function():
     body = sql.split("AS $$", 1)[1].split("$$;", 1)[0]
     assert "rolpassword" in body and not re.search(r"SELECT[^;]*\brolpassword\b\s*(,|FROM)", body)  # types only
     assert "rds_tools" in sql
+    # on RDS the extension alone is not enough: its function is executable only by rds_superuser (AWS lab, round 5)
+    assert "GRANT EXECUTE ON FUNCTION rds_tools.role_password_encryption_type() TO zs_cbom;" in sql

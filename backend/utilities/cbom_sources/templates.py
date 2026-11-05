@@ -168,8 +168,10 @@ DB_GRANTS = {
         "-- Password hash TYPES of login roles (md5 / scram-sha-256 / none / other), never the hashes.\n"
         "-- Only a superuser can read pg_authid, so create this function as a superuser: it runs as its owner,\n"
         "-- with a fixed search_path, and only zs_cbom may call it.\n"
-        "-- Amazon RDS / Aurora: skip it and run CREATE EXTENSION IF NOT EXISTS rds_tools; as the master user\n"
-        "-- (ZeroShield then reads rds_tools.role_password_encryption_type()).\n"
+        "-- Amazon RDS / Aurora: skip it and, as the master user, run both of these (the extension's function is\n"
+        "-- executable only by rds_superuser until it is granted; ZeroShield then reads it):\n"
+        "--   CREATE EXTENSION IF NOT EXISTS rds_tools;\n"
+        "--   GRANT EXECUTE ON FUNCTION rds_tools.role_password_encryption_type() TO zs_cbom;\n"
         "CREATE OR REPLACE FUNCTION public.zs_role_password_types()\n"
         "  RETURNS TABLE (rolname name, password_type text)\n"
         "  LANGUAGE sql STABLE SECURITY DEFINER\n"
@@ -263,8 +265,13 @@ param(
     [switch]$CreateLocalAccount                  # create the local account (prompts for its password)
 )
 $ErrorActionPreference = 'Stop'
+$name = $Account.Split('\')[-1]
+# A domain controller (DomainRole 4 or 5) has no local accounts or groups: its Remote Management Users is the
+# domain's builtin group, managed with the ActiveDirectory module (AD CS often runs on a domain controller).
+$isDc = (Get-CimInstance Win32_ComputerSystem).DomainRole -ge 4
 
 if ($CreateLocalAccount -and $Account -notmatch '\\') {
+    if ($isDc) { throw 'This is a domain controller, which has no local accounts: create a domain account (New-ADUser) and pass -Account DOMAIN\name' }
     if (-not (Get-LocalUser -Name $Account -ErrorAction SilentlyContinue)) {
         $pw = Read-Host -AsSecureString "Password for $Account"
         New-LocalUser -Name $Account -Password $pw -PasswordNeverExpires -AccountNeverExpires `
@@ -274,7 +281,12 @@ if ($CreateLocalAccount -and $Account -notmatch '\\') {
 
 # 1. Remote Management Users (S-1-5-32-580): may log in over WinRM
 $rmu = (New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-580').Translate([System.Security.Principal.NTAccount]).Value
-if (-not (Get-LocalGroupMember -SID 'S-1-5-32-580' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*\$($Account.Split('\')[-1])" })) {
+if ($isDc) {
+    Import-Module ActiveDirectory
+    if (-not (Get-ADGroupMember -Identity 'S-1-5-32-580' | Where-Object { $_.SamAccountName -eq $name })) {
+        Add-ADGroupMember -Identity 'S-1-5-32-580' -Members $name
+    }
+} elseif (-not (Get-LocalGroupMember -SID 'S-1-5-32-580' -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*\$name" })) {
     Add-LocalGroupMember -SID 'S-1-5-32-580' -Member $Account
 }
 

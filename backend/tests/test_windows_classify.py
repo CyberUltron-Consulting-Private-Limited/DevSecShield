@@ -60,6 +60,17 @@ def test_windows_setup_script_is_least_privilege():
     assert "Administrators" not in text  # never adds the account to an admin group
 
 
+def test_windows_setup_script_works_on_a_domain_controller():
+    """AWS lab, round 5: on the AD CS domain controller the script stopped at Add-LocalGroupMember ("Group
+    S-1-5-32-580 was not found": a DC has no local groups), so the RootSDDL step never ran."""
+    text = template_text("windows-setup")
+    assert "DomainRole -ge 4" in text
+    assert "Add-ADGroupMember -Identity 'S-1-5-32-580' -Members $name" in text
+    dc, member = text.split("if ($isDc) {\n    Import-Module ActiveDirectory", 1)[1].split("} elseif", 1)
+    assert "Add-LocalGroupMember" not in dc and "Add-LocalGroupMember" in member
+    assert text.index("Add-ADGroupMember") < text.index("RootSDDL'")  # membership first, then the WinRM ACL
+
+
 def test_eol_openssl_mapped_by_a_container_process_is_flagged():
     """AWS lab: `openssl s_server` from a Debian buster container (OpenSSL 1.1.1n) on the host network."""
     facts = {"exe": "/usr/bin/openssl", "lib": "/usr/lib/x86_64-linux-gnu/libssl.so.1.1", "pids": [6996],
