@@ -280,9 +280,34 @@ class CbomScanNode(SQLModel, table=True):
     signing_public_key: str | None = Field(default=None, max_length=64)
     # SHA-256 of the client certificate the proxy verified at enrollment (mTLS; only when CBOM_MTLS_HEADER_TRUSTED=1).
     client_cert_sha256: str | None = Field(default=None, max_length=64)
+    # "agentless" (reaches other systems with stored credentials) or "agent": collects only its own host (ZS_MODE=agent,
+    # the Helm DaemonSet); an agent node is only ever given host_agent jobs, and never a credential.
+    mode: str = Field(default="agentless", max_length=16, sa_column_kwargs={"server_default": "agentless"})
+    # the agent pool token it enrolled with (one node per Kubernetes node of a DaemonSet)
+    pool_id: int | None = Field(default=None, foreign_key="cbomnodepool.id", index=True, ondelete="SET NULL")
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+class CbomNodePool(SQLModel, table=True):
+    """An agent pool registration token: many agent-mode nodes (a DaemonSet's pods) enroll with it, each as its own
+    node named after its Kubernetes node.  Only the token's SHA-256 is stored; it expires, caps its enrollments and
+    can be revoked (revoking stops new enrollments; enrolled nodes keep their own credentials)."""
+    __tablename__ = "cbomnodepool"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    owner_user_id: int
+    name: str = Field(max_length=64)
+    segment: str = Field(default="", max_length=64)
+    token_hash: str = Field(max_length=64, unique=True, index=True)
+    expires_at: datetime.datetime = Field(sa_type=DateTime)
+    max_enrollments: int = Field(default=50)
+    enrollments: int = Field(default=0)
+    revoked_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    revoked_by_user_id: int | None = Field(default=None)
+    last_enrolled_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
 
 
 class CbomNodeNonce(SQLModel, table=True):

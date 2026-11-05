@@ -1,0 +1,13 @@
+[Unit]
+Description=ZeroShield scan node settings from the OVA's vApp properties
+After=vgauth.service open-vm-tools.service
+Before=zs-scan-node.service
+ConditionPathExists=!/etc/zs-node/env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zs-ovf-env
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

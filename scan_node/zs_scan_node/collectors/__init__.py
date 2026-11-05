@@ -18,10 +18,15 @@ SUPPORTED = {
     ("collect", "ca_connector"), ("test_connection", "ca_connector"),
 }
 SUPPORTED |= {("collect", "appliance"), ("test_connection", "appliance")}
+SUPPORTED |= {("collect", "container_images"), ("test_connection", "container_images")}
+# Agent mode (ZS_MODE=agent) runs only these: the node's own host, read from read-only mounts, no credentials.
+AGENT_SUPPORTED = {("collect", "host_agent"), ("test_connection", "host_agent")}
 CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql", "redis", "mongodb", "network_tls",
                 "starttls", "ssh_kexinit", "rdp", "tds_prelogin", "discovery", "pq_hybrid_probe",
                 "mssql", "oracle", "pkcs11", "kmip", "vault_pki", "ejbca", "adcs"]
 CAPABILITIES += ["ike", "ike_pq_probe", "opcua", "modbus", "appliance_config", "mesh_istio_linkerd"]
+CAPABILITIES += ["registry_v2"]
+AGENT_CAPABILITIES = ["host_agent"]
 
 
 class ConfigError(Exception):
@@ -35,11 +40,24 @@ def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tup
     config = (source or {}).get("config") or {}
     secrets = (source or {}).get("secrets") or {}
     summary = None
+    if ctx.agent_mode:
+        # Defence in depth: ZeroShield never sends an agent node other work or credentials; refuse it if it does.
+        if (kind, source_kind) not in AGENT_SUPPORTED:
+            return "failure", ("This scan node runs in agent mode (ZS_MODE=agent): it collects only its own host and "
+                               f"does not run {source_kind or kind} jobs"), None
+        if any(secrets.values()) if isinstance(secrets, dict) else bool(secrets):
+            return "failure", "An agent-mode scan node refused a job that carries credentials", None
+    elif source_kind == "host_agent":
+        return "failure", "Host agent sources need a scan node started with ZS_MODE=agent", None
     try:
         if kind == "discovery":
             from zs_scan_node.collectors.network import run_network
 
             summary = run_network(ctx, scope, discovery_only=True)
+        elif source_kind == "host_agent":
+            from zs_scan_node.collectors import host_agent
+
+            summary = (host_agent.test if kind == "test_connection" else host_agent.collect)(ctx, config, secrets, scope)
         elif (kind, source_kind) not in SUPPORTED:
             return "failure", f"{source_kind or kind} is not supported by this scan node version", None
         elif source_kind == "linux_servers":
@@ -59,6 +77,11 @@ def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tup
             from zs_scan_node.collectors import database
 
             summary = (database.test if kind == "test_connection" else database.collect)(ctx, config, secrets, scope)
+        elif source_kind == "container_images":
+            from zs_scan_node.collectors import container_images
+
+            summary = (container_images.test if kind == "test_connection" else container_images.collect)(
+                ctx, config, secrets, scope)
         elif source_kind == "appliance":
             from zs_scan_node.collectors import appliance
 

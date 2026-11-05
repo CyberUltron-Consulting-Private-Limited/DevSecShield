@@ -1,0 +1,19 @@
+{{- if and .Values.deployment.enabled (not .Values.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cbom-scan-node.fullname" . }}-state
+  labels:
+    {{- include "cbom-scan-node.labels" . | nindent 4 }}
+  annotations:
+    # the node's enrollment and keys live here: keep them when the release is uninstalled and installed again
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

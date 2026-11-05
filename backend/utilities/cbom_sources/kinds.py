@@ -683,6 +683,56 @@ def _appliance_secrets(cfg: ApplianceConfig) -> set[str]:
     return {"api_key"} if cfg.vendor == "panos" else {"password"}
 
 
+# ----------------------------------------------------------------------------- agent mode and container images (WP8b)
+class HostAgentConfig(_Source):
+    """The host an agent-mode node runs on (created when the node enrolls; one per agent node).  Nothing to
+    configure: the node reads its own host from read-only mounts and is never given a credential."""
+
+
+# Same grammar as the node's parser (zs_scan_node/collectors/container_images.py parse_ref): optional registry host
+# (with a dot or a port, or localhost), a lower-case repository path, then :tag or @sha256:digest.
+_IMAGE_RE = re.compile(
+    r"^(?:(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d{1,5})?|localhost(?::\d{1,5})?|[A-Za-z0-9-]+:\d{1,5})/)?"
+    r"[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*"
+    r"(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$")
+MAX_IMAGES = 50
+
+
+class ContainerImagesConfig(_Source):
+    """Images the node pulls from a registry (Distribution API v2, HTTPS only) to inventory their crypto packages.
+    Credentials are anonymous or a vault reference resolved on the node; ZeroShield never stores a registry password."""
+    images: list[str] = Field(min_length=1, max_length=MAX_IMAGES)
+    credential_type: Literal["anonymous", "vault"] = "anonymous"
+    vault: VaultRef | None = None
+    ca_pem: str | None = Field(default=None, max_length=MAX_PEM_BYTES)
+    max_image_mb: int = Field(default=2048, ge=1, le=8192)
+
+    @field_validator("images")
+    @classmethod
+    def _images(cls, v: list[str]) -> list[str]:
+        out: list[str] = []
+        for raw in v:
+            ref = str(raw).strip()
+            if not ref or len(ref) > 512 or not _IMAGE_RE.match(ref):
+                raise ValueError(f"images: {ref[:80]!r} is not an image reference (registry/repository:tag or @sha256:...)")
+            if ref not in out:
+                out.append(ref)
+        return out
+
+    @field_validator("ca_pem")
+    @classmethod
+    def _ca(cls, v: str | None) -> str | None:
+        return check_pem_certificates(v)
+
+    @model_validator(mode="after")
+    def _check(self) -> "ContainerImagesConfig":
+        if self.credential_type == "vault" and self.vault is None:
+            raise ValueError("vault: choose a vault and enter the secret path")
+        if self.credential_type != "vault":
+            self.vault = None
+        return self
+
+
 # ----------------------------------------------------------------------------- registry
 @dataclass(frozen=True)
 class KindSpec:
@@ -756,6 +806,12 @@ KINDS["appliance"] = KindSpec("appliance", "network", "Network appliance", Appli
                               frozenset(), _always, _always,
                               ("targets", "port", "login_user", "vendor", "host_key_policy", "known_hosts", "ca_pem",
                                "vault"))
+# Agent mode: created for each agent-mode node; collected by that node only, never with a credential.
+KINDS["host_agent"] = KindSpec("host_agent", "servers", "Host agent", HostAgentConfig, lambda c: set(), frozenset(),
+                               _always, _always, ())
+KINDS["container_images"] = KindSpec("container_images", "kubernetes", "Container images", ContainerImagesConfig,
+                                     lambda c: set(), frozenset(), _always, _always,
+                                     ("images", "credential_type", "vault", "ca_pem"))
 
 KIND_NAMES = tuple(KINDS)
 # Config fields that describe the source rather than how it is reached (declared on ``_Source``).

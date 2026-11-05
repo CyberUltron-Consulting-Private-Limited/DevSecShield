@@ -74,6 +74,8 @@ const KIND_SHORT: Record<string, string> = {
   gcp_project: "Google Cloud",
   ca_connector: "CA",
   idp: "IdP",
+  host_agent: "Host agent",
+  container_images: "Container images",
 };
 
 const JOB_ORDER: CbomJobStatus[] = ["pending", "claimed", "success", "failure", "cancelled", "expired"];

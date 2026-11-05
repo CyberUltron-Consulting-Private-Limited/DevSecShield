@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionJob, CbomCollectionSettings, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import targets as T
+from backend.utilities.cbom_sources.agents import kind_problem
 from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.settings import team_exclusions
 
@@ -21,6 +22,8 @@ ONLINE_SECONDS = 120
 
 # Rates chosen by product (per target): server 0.2, cluster 2, database 1, cloud account 4, network 1 per /24.
 RATES_C = {"server": 20, "kubernetes": 200, "database": 100, "cloud_account": 400, "network_block": 100}
+# WP8b: a host agent is charged like one server; a registry image like one code scan (1 credit, decision D3).
+RATES_C["image"] = 100
 
 
 def credits(centi: int) -> float:
@@ -44,6 +47,10 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
     cfg = source.config or {}
     spec = KINDS.get(source.kind)
     group = spec.group if spec else "other"
+    if source.kind == "host_agent":  # the node's own host
+        return {"units": 1, "unit": "hosts"}
+    if source.kind == "container_images":
+        return {"units": len(cfg.get("images") or []), "unit": "images"}
     if group == "servers" or source.kind == "appliance":  # appliances list devices like servers do
         try:
             parsed = T.parse_targets(cfg.get("targets") or [], allow_empty=True)
@@ -183,6 +190,8 @@ def plan_run(
             item.reason = "No scan node assigned"
         elif needs_node and status in ("pending_registration", "registration_expired"):
             item.reason = f"Scan node {node.name} has not registered yet"
+        elif needs_node and kind_problem(node, source.kind):
+            item.reason = kind_problem(node, source.kind)
         elif source.kind == "aws_account" and source.last_test_status != "passed":
             item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
         elif source.last_test_status == "failed":
@@ -196,7 +205,9 @@ def plan_run(
         else:
             item.status = "queued"
             item.waiting = status == "offline"
-            if group == "servers" or source.kind == "appliance":
+            if source.kind == "container_images":
+                item.credits_c = RATES_C["image"] * units
+            elif group == "servers" or source.kind == "appliance":
                 item.credits_c = RATES_C["server"] * units
             elif group == "kubernetes":
                 item.credits_c = RATES_C["kubernetes"]

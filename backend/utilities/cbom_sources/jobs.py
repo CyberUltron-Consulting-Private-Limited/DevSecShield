@@ -416,6 +416,11 @@ def _invalid_reason(job: CbomCollectionJob, source: CbomCollectionSource | None,
     """Why a job must not run (or must stop), or None.  ``node`` is None for jobs the cloud worker runs."""
     if job.cancel_requested_at is not None:
         return job.cancel_reason or "Cancelled"
+    if node is not None and (node.mode or "agentless") == "agent" and (source is None or source.kind != "host_agent"):
+        # an agent-mode node collects only its own host, without credentials (WP8b)
+        return "Agent-mode scan nodes collect only their own host"
+    if node is not None and (node.mode or "agentless") != "agent" and source is not None and source.kind == "host_agent":
+        return "Host agent sources need a scan node in agent mode"
     if job.source_id is None:
         return None if job.kind == "discovery" else "Source no longer exists"
     if source is None or source.team_id != job.team_id:
@@ -505,7 +510,8 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
         if source is not None:
             payload["source"] = {
                 "id": source.id, "kind": source.kind, "name": source.name, "config": source.config or {},
-                "secrets": decrypt_secrets(source.secret_encrypted),
+                # an agent-mode node is never given a credential, whatever a source holds (WP8b)
+                "secrets": {} if (node.mode or "agentless") == "agent" else decrypt_secrets(source.secret_encrypted),
             }
         log("job claimed", team=job.team_id, job=job.id, node=node.id, kind=job.kind, attempt=job.attempts)
         return payload

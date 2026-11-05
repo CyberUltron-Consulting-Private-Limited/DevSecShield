@@ -252,12 +252,15 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             bom_signature = scan.scan_data.get("bom_signature")
             vex_json = scan.scan_data.get("vex_json")
             cbom_input = _cbom_input(scan.scan_data.get("cbom_input"))
+        from backend.utilities.dashboard.cbom_coverage import coverage_report
 
         return {
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
             "cbom_file_used": cbom_file_used,
+            # a code scan: what it left out (archives, images, binaries, firmware ...) from crypto:coverage:* (WP8b)
+            "cbom_coverage": None if cbom_file_used else coverage_report(cbom_json),
             # an uploaded CBOM file: what was read, skipped or truncated, and the notes to show the user
             "cbom_input": cbom_input,
             "scan_binaries": scan_binaries,

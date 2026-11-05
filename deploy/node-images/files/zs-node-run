@@ -1,0 +1,20 @@
+#!/bin/sh
+# ZeroShield CBOM scan node on a VM (AMI or OVA): run the node container with the settings in /etc/zs-node/env.
+#
+# /etc/zs-node/env is written at first boot: by cloud-init from the EC2 user data the "Add scan node" wizard shows
+# (AMI), or by zs-ovf-env from the vApp properties (OVA).  One KEY=value per line, no quotes (docker --env-file
+# format): ZS_API_URL, ZS_REGISTRATION_TOKEN, optionally HTTPS_PROXY, ZS_MODE=agent.
+# With ZS_MODE=agent the node reads only this VM, through a read-only mount of / at /host, and is never given a
+# credential.  The node's state (enrollment, keys) lives in the Docker volume zs-node.
+set -eu
+ENV_FILE=${ZS_NODE_ENV:-/etc/zs-node/env}
+IMAGE=$(cat "${ZS_NODE_IMAGE_FILE:-/etc/zs-node/image}")
+[ -r "$ENV_FILE" ] || { echo "zs-node-run: $ENV_FILE is missing; write ZS_API_URL and ZS_REGISTRATION_TOKEN there" >&2; exit 64; }
+grep -q '^ZS_API_URL=' "$ENV_FILE" || { echo "zs-node-run: ZS_API_URL is not set in $ENV_FILE" >&2; exit 64; }
+if grep -q '^ZS_MODE=agent$' "$ENV_FILE"; then
+  set -- -v /:/host:ro -e ZS_HOST_ROOT=/host -e "ZS_NODE_NAME=$(hostname)"
+else
+  set --
+fi
+exec "${ZS_DOCKER:-/usr/bin/docker}" run --rm --name "${ZS_NODE_CONTAINER:-zs-scan-node}" --env-file "$ENV_FILE" \
+  -v "${ZS_NODE_VOLUME:-zs-node}:/var/lib/zs-node" "$@" "$IMAGE"

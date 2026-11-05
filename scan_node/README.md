@@ -59,6 +59,41 @@ ZeroShield. The container is healthy while its heartbeat loop turns: it touches 
 pass (at most 60 s apart) and the image health check fails when that file is older than 180 s or missing (a node
 that has not enrolled yet is therefore unhealthy).
 
+### Kubernetes (Helm) and agent mode
+
+`deploy/helm/cbom-scan-node` runs the same image as a Deployment (one replica, `Recreate`, state on a PVC, uid
+10001, read-only root file system, no capabilities, no service-account token): the **Helm chart** command of the
+wizard. With `agent.enabled=true` it adds a DaemonSet of **agent-mode** nodes, one per Kubernetes node:
+
+| Variable | Meaning |
+|---|---|
+| `ZS_MODE` | `agent`: collect only this node's own host; never run another kind of job; never take a credential (vault use is off) |
+| `ZS_NODE_NAME` | the name to enroll under (the chart passes the Kubernetes node name) |
+| `ZS_HOST_ROOT` | where the host's `/` is mounted read-only (default `/host`) |
+| `ZS_HOST_PROC` | the host's `/proc` (chart value `agent.hostPID`): crypto libraries mapped by running processes |
+
+A DaemonSet enrolls with an **agent pool token** (`zsp_...`, Scan nodes > *Create agent pool token*): it expires,
+caps how many nodes enroll and can be revoked; each pod becomes its own node with its own `host_agent` source.
+ZeroShield enforces the rest: a source that holds credentials cannot be given to an agent node, a claim never hands
+an agent node another job or decrypts a secret for it, and the node refuses such a job too. The host is read
+through `hostfs.py` (symlinks resolved inside the host root, regular files only, size caps, one device per walk):
+os-release, the package databases (`pkgdb.py`, byte-identical to the engine's), crypto policy, FIPS flag,
+`sshd_config`, SSH host keys and the key and certificate files under the Tier 2 search roots. As uid 10001 it
+reads world-readable files only (unreadable ones are coverage rows); `agent.runAsRoot=true` adds root with
+`CAP_DAC_READ_SEARCH` only. A `docker run` or VM node becomes a single host agent with `ZS_MODE=agent` and `/`
+mounted read-only at `/host` (`deploy/node-images/files/zs-node-run` does this on the AMI/OVA).
+
+### Container images from a registry
+
+A *Container images* source (`container_images`) lists images (`registry/repository:tag` or `@sha256:...`). The
+node fetches each manifest (Distribution API v2 / OCI; an index is followed to linux/amd64), streams every layer
+once without writing it to disk, checks it against its digest and size, applies the layers with OCI whiteouts and
+parses the package databases with `pkgdb.py`: crypto packages become library rows with a package URL. HTTPS only;
+every host (registry, token service, blob redirect) passes the network gate; credentials (anonymous, or a vault
+reference with `username`/`password` or `token`) go only to the registry's own origin, never to a token service or
+redirect on another host. Caps: 50 images per source, 128 layers, `max_image_mb` (default 2048) of compressed layers,
+inflated size per layer; zstd and foreign layers are reported, not read.
+
 ### Without registry access
 
 Each release is also published as a file (`scripts/release/scan_node_image.sh build <version>`, or the

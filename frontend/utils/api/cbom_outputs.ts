@@ -30,7 +30,14 @@ export interface CbomImportReport {
   notes: string[]
 }
 
-export type CbomTopRisk = CbomRunPosture["top_risks"][number] & {
+/** What a code scan left out or only counted (scan metadata ``cbom_coverage``, from the CycloneDX
+ * ``crypto:coverage:*`` properties): archives, container images, binaries, firmware, symlinks, oversized files. */
+export interface CbomCoverageReport {
+  notes: { key: string; text: string; kind: "skipped" | "info" }[]
+  skipped: number
+}
+
+export type CbomTopRisk =CbomRunPosture["top_risks"][number] & {
   exposure?: CbomExposure
   exposure_basis?: string
 }

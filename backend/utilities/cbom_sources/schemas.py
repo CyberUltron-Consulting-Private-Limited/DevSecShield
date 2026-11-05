@@ -304,6 +304,10 @@ class EnrollBody(_Body):
     clock: str | None = Field(default=None, max_length=40)
     # base64 of the raw 32-byte Ed25519 key the node signs its requests with (absent: an older, unsigned node)
     signing_public_key: str | None = Field(default=None, max_length=64)
+    # ZS_MODE=agent: the node collects only its own host (a pool token always enrolls agent nodes); node_name is the
+    # Kubernetes node name a DaemonSet pod enrolls under (WP8b)
+    mode: Literal["agent", "agentless"] | None = None
+    node_name: str | None = Field(default=None, max_length=253)
 
     @field_validator("signing_public_key")
     @classmethod
@@ -313,6 +317,23 @@ class EnrollBody(_Body):
         from backend.utilities.cbom_sources.node_auth import load_public_key
 
         load_public_key(v)  # ValueError -> 400
+        return v
+
+
+class PoolCreate(_Body):
+    """An agent pool registration token (WP8b): many agent-mode nodes enroll with it, each as its own node."""
+    name: str = Field(max_length=64)
+    segment: str = Field(default="", max_length=64)
+    expires_in_hours: int = Field(default=24 * 7, ge=1, le=24 * 90)
+    max_enrollments: int = Field(default=50, ge=1, le=1000)
+
+    _n = field_validator("name")(classmethod(lambda cls, v: _name(v)))
+
+    @field_validator("segment")
+    @classmethod
+    def _seg(cls, v: str) -> str:
+        if v and not NAME_RE.match(v):
+            raise ValueError("use letters, digits, spaces, dots, dashes or underscores")
         return v
 
 

@@ -21,7 +21,7 @@ _PEM_PRIVATE = re.compile(
     r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)", re.DOTALL
 )
 # ZeroShield tokens, HashiCorp Vault tokens and AWS session tokens.
-_TOKENS = re.compile(r"\bzs[rnv]_[A-Za-z0-9_-]{16,}|\bhv[sbr]\.[A-Za-z0-9_-]{20,}|(?:IQoJb3JpZ2lu|FwoGZXIvYXdz)[A-Za-z0-9/+=]{40,}")
+_TOKENS = re.compile(r"\bzs[rnvp]_[A-Za-z0-9_-]{16,}|\bhv[sbr]\.[A-Za-z0-9_-]{20,}|(?:IQoJb3JpZ2lu|FwoGZXIvYXdz)[A-Za-z0-9/+=]{40,}")
 _SECRET_KEYS = re.compile(r"(password|passwd|secret|token|private_key|privatekey|kubeconfig|api_key|apikey|credential)", re.I)
 # Collected facts legitimately use words like "password_encryption" or "token_endpoint", so for them only
 # these exact keys are value-redacted.

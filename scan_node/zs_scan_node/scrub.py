@@ -18,7 +18,7 @@ _PEM_PRIVATE = re.compile(
 )
 _OPENSSH_PRIVATE = re.compile(r"-----BEGIN OPENSSH PRIVATE KEY-----.*?(?:-----END OPENSSH PRIVATE KEY-----|\Z)", re.S)
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\bzs[rnv]_[A-Za-z0-9_\-]{16,}"), REDACTED),  # ZeroShield registration / node / vendor tokens
+    (re.compile(r"\bzs[rnvp]_[A-Za-z0-9_\-]{16,}"), REDACTED),  # ZeroShield registration / node / vendor / pool tokens
     (re.compile(r"\bhv[sbr]\.[A-Za-z0-9_\-]{20,}"), REDACTED),  # HashiCorp Vault tokens
     (re.compile(r"(?i)(aws_secret_access_key|secretaccesskey)(\s*[=:]\s*)[A-Za-z0-9/+]{40}"), r"\1\2" + REDACTED),
     (re.compile(r"(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._\-]{10,}"), r"\1" + REDACTED),

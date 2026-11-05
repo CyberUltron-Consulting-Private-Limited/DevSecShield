@@ -38,6 +38,7 @@ from backend.new_models import (
     Scan,
     Team,
 )
+from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
@@ -252,7 +253,8 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
     now = utcnow()
     with Session(engine) as session:
         existing = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()
-        if len(existing) >= MAX_NODES:
+        # agent-mode nodes (one per Kubernetes node of a DaemonSet) have their own cap (agents.MAX_AGENT_NODES)
+        if sum(1 for n in existing if not AG.is_agent(n)) >= MAX_NODES:
             raise HTTPException(status_code=400, detail=f"A team can have at most {MAX_NODES} scan nodes")
         if any(n.name.lower() == body.name.lower() for n in existing):
             raise HTTPException(status_code=409, detail=f"A scan node named {body.name} already exists")
@@ -379,6 +381,11 @@ def _delete_node(engine, team_id: int, user_id: int, node_id: int) -> dict:
         node = _get_owned(session, CbomScanNode, node_id, team_id, "Scan node")
         require_owner_or_admin(session, user_id, team_id, node.owner_user_id, "scan node")
         users = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.node_id == node.id)).all()
+        if AG.is_agent(node):  # an agent node's own host source goes with it (it can serve no other node)
+            for source in [s for s in users if s.kind == AG.HOST_KIND]:
+                _remove_source(session, source, team_id, user_id, now)
+            session.flush()
+            users = [s for s in users if s.kind != AG.HOST_KIND]
         if users:
             names = ", ".join(s.name for s in users[:5]) + (" and more" if len(users) > 5 else "")
             raise HTTPException(status_code=400, detail=f"Move or delete the sources that use this node first: {names}")
@@ -478,6 +485,7 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
         if needs_node and body.node_id is None:
             raise HTTPException(status_code=400, detail="node_id: choose the scan node that reaches these targets")
         node = _team_node(session, team_id, body.node_id if needs_node else None)
+        AG.check_node_for_kind(node, body.kind)
         _check_refs(session, team_id, body.kind, cfg)
         if getattr(cfg, "credential_type", None) == "vault":
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
@@ -588,6 +596,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
             new_node_id = None
         elif new_node_id is None:
             raise HTTPException(status_code=400, detail="node_id: choose the scan node that reaches these targets")
+        if new_node_id != source.node_id:
+            AG.check_node_for_kind(session.get(CbomScanNode, new_node_id) if new_node_id else None, source.kind)
         _check_refs(session, team_id, source.kind, cfg)
         old_dump = old_cfg.model_dump(mode="json") if old_cfg else {}
         new_dump = cfg.model_dump(mode="json")
@@ -671,23 +681,28 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
     with Session(engine) as session:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
-        J.cancel_open_jobs(session, source, now, reason="Source deleted")
-        J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
-        for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
-            # the stable uid stays on the job, so the deleted source's runs still compare with each other
-            job.params = {**(job.params or {}), "source_name": source.name,
-                          "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
-            job.source_id = None
-            session.add(job)
-        # collected assets stay with their run; only the link to the deleted source goes
-        session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))
-        session.flush()
-        audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.delete",
-              object_type="source", object_id=source.id)
-        session.delete(source)
+        _remove_source(session, source, team_id, user_id, now)
         session.commit()
         log("source deleted", team=team_id, source=source_id, by=user_id)
         return {"deleted": source_id}
+
+
+def _remove_source(session: Session, source: CbomCollectionSource, team_id: int, user_id: int, now) -> None:
+    """Delete a source in the caller's transaction: its open jobs end, its runs and assets stay (unlinked)."""
+    J.cancel_open_jobs(session, source, now, reason="Source deleted")
+    J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
+    for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
+        # the stable uid stays on the job, so the deleted source's runs still compare with each other
+        job.params = {**(job.params or {}), "source_name": source.name,
+                      "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
+        job.source_id = None
+        session.add(job)
+    # collected assets stay with their run; only the link to the deleted source goes
+    session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))
+    session.flush()
+    audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.delete",
+          object_type="source", object_id=source.id)
+    session.delete(source)
 
 
 @router.delete(BASE + "/items/{source_id}", dependencies=WRITE, summary="Delete a source")

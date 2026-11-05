@@ -128,6 +128,31 @@ export function installCommand(
   ].join("\n")
 }
 
+/** How far each way of running a node has been proven. Docker and the Helm chart (Deployment and the agent
+ * DaemonSet) ran end to end on k3s; the AMI and OVA are Packer templates in deploy/node-images/ to build yourself. */
+export const DEPLOY_SUPPORT: Record<DeployMethod, { proven: boolean; note: string }> = {
+  docker: { proven: true, note: "Proven" },
+  helm: { proven: true, note: "Proven on Kubernetes (k3s): Deployment and agent DaemonSet" },
+  ami: { proven: false, note: "Build it yourself: Packer template provided (deploy/node-images/)" },
+  ova: { proven: false, note: "Build it yourself: Packer template provided (deploy/node-images/)" },
+}
+
+/** The Helm command for agent mode: a DaemonSet whose pods each enroll with the agent pool token as their own node
+ * (named after the Kubernetes node) and read only that node, from a read-only mount of its file system. */
+export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string }): string {
+  const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  const [repo, tag] = opts.image.includes(":") ? [opts.image.slice(0, opts.image.lastIndexOf(":")), opts.image.slice(opts.image.lastIndexOf(":") + 1)] : [opts.image, "latest"]
+  return [
+    "helm upgrade --install zs-host-agents oci://registry.zeroshield.ai/charts/cbom-scan-node \\",
+    "  --namespace zs-cbom --create-namespace \\",
+    `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
+    `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+    "  --set deployment.enabled=false --set agent.enabled=true \\",
+    `  --set agent.poolToken=${shQuote(opts.poolToken)}${proxy ? " \\" : ""}`,
+    ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
+  ].join("\n")
+}
+
 export function ansibleSnippet(publicKey: string, user: string): string {
   return [
     "- name: ZeroShield CBOM read-only account",

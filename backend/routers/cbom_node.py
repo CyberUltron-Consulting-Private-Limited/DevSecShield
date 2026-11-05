@@ -25,7 +25,8 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.get_db import get_db
-from backend.new_models import CbomCollectionJob, CbomScanNode
+from backend.new_models import CbomCollectionJob, CbomNodePool, CbomScanNode
+from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import node_auth as NA
 from backend.utilities.cbom_sources.common import audit, clean_text, iso_z, log, new_token, sha256_hex, utcnow
@@ -125,10 +126,73 @@ async def _guard(what: str, fn, *args):
 
 
 # ----------------------------------------------------------------------------- enroll
-def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
+def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
+    """Enroll one agent-mode node with an agent pool token (a DaemonSet pod): a new node named after its Kubernetes
+    node, in agent mode, with its own host_agent source.  The pool's enrollment count is taken with one conditional
+    UPDATE, so pods enrolling at once cannot pass the cap; a refused enrollment changes nothing."""
     now = utcnow()
     engine = get_db()
     token = new_token("zsn_")
+    refused = HTTPException(status_code=401, detail="Registration token is invalid or expired")
+    with Session(engine) as session:
+        pool = session.exec(select(CbomNodePool).where(
+            CbomNodePool.token_hash == sha256_hex(body.registration_token))).first()
+        if pool is None or AG.pool_status(pool, now) != "active":
+            if pool is not None:
+                log("agent pool enroll refused", team=pool.team_id, pool=pool.id, reason=AG.pool_status(pool, now))
+            raise refused
+        agents = session.exec(select(CbomScanNode.id).where(CbomScanNode.team_id == pool.team_id,
+                                                            CbomScanNode.mode == AG.AGENT)).all()
+        if len(agents) >= AG.MAX_AGENT_NODES:
+            raise HTTPException(status_code=400, detail=f"A team can have at most {AG.MAX_AGENT_NODES} agent nodes")
+        fingerprint = NA.check_mtls(None, req)
+        if not body.signing_public_key and get_or_create_settings(session, pool.team_id).require_signed_nodes:
+            log("node enroll refused", team=pool.team_id, pool=pool.id, reason="signed_nodes_required")
+            raise NA.refuse("signed_nodes_required", "This team requires signed scan nodes: install scan node 1.1 or "
+                                                     "later and enroll with this registration token")
+        # the slot first: verify_signature commits (to record the nonce), so the slot, the node and its source are
+        # committed together or, when anything before that fails, not at all
+        taken = session.exec(
+            update(CbomNodePool)
+            .where(CbomNodePool.id == pool.id, CbomNodePool.revoked_at.is_(None),  # type: ignore[union-attr]
+                   CbomNodePool.expires_at > now, CbomNodePool.enrollments < CbomNodePool.max_enrollments)
+            .values(enrollments=CbomNodePool.enrollments + 1, last_enrolled_at=now)
+        ).rowcount
+        if taken != 1:
+            raise refused
+        name = AG.unique_node_name(session, pool.team_id,
+                                   AG.node_name_from(body.node_name or body.hostname, f"agent-{pool.id}"))
+        node = CbomScanNode(
+            team_id=pool.team_id, owner_user_id=pool.owner_user_id, updated_by_user_id=pool.owner_user_id, name=name,
+            segment=pool.segment, timezone="UTC", deployment="helm", mode=AG.AGENT, pool_id=pool.id, enrolled_at=now,
+            node_token_hash=sha256_hex(token), hostname=clean_text(body.hostname, 255),
+            node_version=clean_text(body.version, 32), source_ips=_ips(body.source_ips),
+            ssh_public_key=clean_text(body.ssh_public_key, 8192), capabilities=scrub(body.capabilities),
+            clock_skew_s=_clock_skew(body.clock, now), last_heartbeat_at=now, last_seen_ip=ip,
+            signing_public_key=body.signing_public_key, client_cert_sha256=fingerprint, created_at=now,
+            last_updated=now)
+        session.add(node)
+        session.flush()
+        AG.ensure_host_source(session, node, pool.owner_user_id, now)
+        if body.signing_public_key:  # proof that the node holds the key it registers (nothing is kept if it fails)
+            NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now)  # type: ignore[arg-type]
+        audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action="node.enroll",
+              object_type="node", object_id=node.id, changed_fields=["mode", "pool_id"])
+        session.commit()
+        signing = "required" if body.signing_public_key else "legacy"
+        log("agent node enrolled", team=node.team_id, node=node.id, pool=pool.id, signing=signing)
+        return {"node_id": node.id, "team_id": node.team_id, "node_token": token,
+                "heartbeat_interval_s": HEARTBEAT_SECONDS, "server_time": iso_z(now),
+                "deployment_id": NA.deployment_id(engine), "signing": signing, "mode": AG.AGENT}
+
+
+def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
+    if body.registration_token.startswith(AG.POOL_PREFIX):
+        return _enroll_pool(body, req, raw, ip)
+    now = utcnow()
+    engine = get_db()
+    token = new_token("zsn_")
+    mode = AG.AGENT if body.mode == AG.AGENT else AG.AGENTLESS
     with Session(engine) as session:
         node = session.exec(select(CbomScanNode).where(
             CbomScanNode.registration_token_hash == sha256_hex(body.registration_token))).first()
@@ -154,18 +218,22 @@ def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
                     source_ips=_ips(body.source_ips), ssh_public_key=clean_text(body.ssh_public_key, 8192),
                     capabilities=scrub(body.capabilities), clock_skew_s=_clock_skew(body.clock, now),
                     last_heartbeat_at=now, last_seen_ip=ip, row_version=node.row_version + 1, last_updated=now,
-                    signing_public_key=body.signing_public_key, client_cert_sha256=fingerprint, last_node_error=None)
+                    signing_public_key=body.signing_public_key, client_cert_sha256=fingerprint, last_node_error=None,
+                    mode=mode)
         ).rowcount
         if changed != 1:
             raise HTTPException(status_code=401, detail="Registration token is invalid or expired")
+        if mode == AG.AGENT:  # a single host agent (docker run / AMI with ZS_MODE=agent): its own host source
+            session.refresh(node)
+            AG.ensure_host_source(session, node, node.owner_user_id, now)
         audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action="node.enroll",
               object_type="node", object_id=node.id)
         session.commit()
         signing = "required" if body.signing_public_key else "legacy"
-        log("node enrolled", team=node.team_id, node=node.id, signing=signing, client_cert=bool(fingerprint))
+        log("node enrolled", team=node.team_id, node=node.id, signing=signing, client_cert=bool(fingerprint), mode=mode)
         return {"node_id": node.id, "team_id": node.team_id, "node_token": token,
                 "heartbeat_interval_s": HEARTBEAT_SECONDS, "server_time": iso_z(now),
-                "deployment_id": NA.deployment_id(engine), "signing": signing}
+                "deployment_id": NA.deployment_id(engine), "signing": signing, "mode": mode}
 
 
 @router.post("/cbom/node/enroll", dependencies=[Depends(enroll_limiter)],
