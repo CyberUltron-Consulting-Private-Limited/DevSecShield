@@ -9,6 +9,7 @@ Run (no .env is read):
 import concurrent.futures
 import datetime as dt
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -431,6 +432,27 @@ def test_the_app_does_not_boot_with_weak_secrets(monkeypatch, world):
     with pytest.raises(RuntimeError, match="Refusing to start"):
         with TestClient(app):  # runs the lifespan
             pass
+
+
+def test_no_credential_debug_trace_is_left_in_the_backend():
+    """A developer trace (DSS_AGENT_DEBUG_LOG) logged an access-key suffix, the secret's length and the dotenv path,
+    and compared the key against the endings of a real key pair.  It is gone, with the trace file that was
+    committed from it."""
+    markers = re.compile(r"DSS_AGENT_DEBUG_LOG|#region agent log|_agent_debug_log|key_matches_(?:in)?valid_pair")
+    offenders = []
+    for path in (_REPO_ROOT / "backend").rglob("*.py"):
+        if ".venv" in path.parts or "tests" in path.parts:
+            continue
+        if markers.search(path.read_text(encoding="utf-8", errors="replace")):
+            offenders.append(str(path.relative_to(_REPO_ROOT)))
+    assert offenders == []
+    import subprocess
+
+    tracked = subprocess.run(["git", "-C", str(_REPO_ROOT), "ls-files", "--", ".cursor"], capture_output=True, text=True)
+    if tracked.returncode == 0:  # a source checkout (not an image without .git)
+        assert not [p for p in tracked.stdout.splitlines() if re.fullmatch(r"\.cursor/debug-[^/]*\.log", p)]
+    ignored = subprocess.run(["git", "-C", str(_REPO_ROOT), "check-ignore", "-q", ".cursor/debug-abc123.log"])
+    assert ignored.returncode in (0, 128), "Cursor debug traces are git-ignored"
 
 
 # ------------------------------------------------------------------------------------------- emails / admin
