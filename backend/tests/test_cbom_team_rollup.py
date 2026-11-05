@@ -1477,22 +1477,28 @@ def test_the_manifest_only_source_is_in_scope_with_its_advisory_row_and_its_libr
 def test_library_and_configuration_rows_keep_a_current_scan_full_and_are_not_algorithms():
     """The engine writes a vulnerable-library row and a declared-configuration row without a crypto
     ``asset_type`` (no CycloneDX assetType exists for them).  Before the fix any such row made a
-    current scan Tier C "reduced" and was counted as a quantum-safe ALGORITHM in readiness."""
+    current scan Tier C "reduced" and was counted as a quantum-safe ALGORITHM in readiness.
+
+    Like the engine (``cbom_devsecshield._legacy_quantum_safe``), those rows carry ``quantum_safe=None``: readiness
+    reads the stored verdict on every surface (cbom_metrics), so the scan page and the roll-up agree."""
     rows = [
         _row("RSA-2048", impact="Medium", codes=("QUANTUM_VULNERABLE",), quantum_vulnerable=True,
              quantum_safe=False),
         _row("AES-GCM", impact=None),
         _row("cryptography@42.0.5", asset_type=None, impact="High",
              codes=("VULNERABLE_CRYPTO_LIBRARY",), algorithm_type="library",
-             location="requirements.txt"),
+             location="requirements.txt", quantum_safe=None),
         _row("aws_s3_bucket.logs", asset_type=None, impact="High", codes=("UNENCRYPTED_AT_REST",),
-             algorithm_type="configuration", location="main.tf"),
+             algorithm_type="configuration", location="main.tf", quantum_safe=None),
     ]  # fmt: skip
     view, _ = run_fold([synth(1, data=_blob(rows))])
     scan = only(s for s in view.scans if s.included)
     assert (scan.tier, scan.fidelity, scan.fidelity_reasons) == (TIER_A, FIDELITY_FULL, ())
     assert view.assets_by_type == {"algorithm": 2, "other": 2}
     assert (view.pqc_vulnerable, view.pqc_safe, view.readiness_pct) == (1, 1, 50.0)
+    from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+
+    assert summarize_code_rows(rows).readiness_pct == view.readiness_pct
     # a truly untyped (pre-reconcile) row still marks the scan reduced, whatever else it carries
     legacy = {k: v for k, v in _row("RC4", impact="High", codes=("WEAK_ALGORITHM",)).items()
               if k != "asset_type"}  # fmt: skip

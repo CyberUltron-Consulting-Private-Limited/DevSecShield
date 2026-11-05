@@ -207,10 +207,12 @@ def _not_assessed_reason(view: TeamCbomView) -> str | None:
         return REASON_NO_ASSETS
     if (
         view.compliance_sources_pooled == 0
-        and not view.issue_by_impact
+        and not any(asset.current and asset.finding_codes for asset in view.assets)
         and not posture_active(view)
     ):
-        return REASON_LEGACY_ONLY  # only legacy rows: they carry no finding codes to grade
+        # only legacy rows: they carry no finding codes to grade (they are still counted as findings with their
+        # stored impact in issue_by_impact, as on the scan page; the grade is not built from them alone)
+        return REASON_LEGACY_ONLY
     return None
 
 
