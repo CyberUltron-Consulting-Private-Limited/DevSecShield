@@ -425,3 +425,33 @@ def test_a_legacy_library_row_that_drift_resolves_is_the_row_marked_fixed(world,
     with Session(engine) as s:  # drift keys the stored row exactly as the roll-up does
         view = next(iter(D.code_views([legacy], "k").values()))
     assert view.identity == ID.code_identity(legacy)
+
+
+# ----------------------------------------------------------------------------- scan-node gaps are typed
+def _view(ident: str, asset_type: str, location: str, target: str = "host-a") -> "D.View":
+    return D.View(identity=ident, key=ident, label=ident, asset_type=asset_type, codes=frozenset({"CERT_EXPIRED"}),
+                  impact="High", quantum_vulnerable=True, finding=True, judged=True,
+                  extra={"target": target, "location": location})
+
+
+def test_a_node_gap_hides_only_the_asset_types_its_check_reads():
+    """AWS lab, round 5: the host agent's run had "process crypto libraries: denied" and "key and certificate files:
+    denied" rows.  Without a type scope one such persistent gap muted every removal and resolution on the host."""
+    before = {"cert": _view("cert", "certificate", "/etc/app/a.pem"), "lib": _view("lib", "process_library", "pid 42"),
+              "other-host": _view("other-host", "process_library", "pid 7", target="host-b")}
+    gaps = D.job_gaps([SimpleNamespace(asset_type="coverage", target="host-a",
+                                       facts={"check": "process crypto libraries", "status": "denied"})])
+    assert gaps[0].types == ("process_library",) and gaps[0].prefixes == ()
+    out = D.compare(before, {}, gaps)
+    assert sorted(v.identity if hasattr(v, "identity") else v["key"] for v in out["removed"]) == ["cert", "other-host"]
+    assert [x["key"] for x in out["not_read"]] == ["lib"]
+    # a check the server does not know still covers its whole target (the safe default)
+    unknown = D.job_gaps([SimpleNamespace(asset_type="coverage", target="host-a",
+                                          facts={"check": "something new", "status": "error"})])
+    out = D.compare(before, {}, unknown)
+    assert sorted(x["key"] for x in out["not_read"]) == ["cert", "lib"]
+    # a row with an explicit scope (cloud collectors) keeps its prefixes and is never typed
+    scoped = D.job_gaps([SimpleNamespace(asset_type="coverage", target="host-a",
+                                         facts={"check": "process crypto libraries", "status": "denied",
+                                                "scope": ["/etc/app/"]})])
+    assert scoped[0].types == () and scoped[0].prefixes == ("/etc/app/",)

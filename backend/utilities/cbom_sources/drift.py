@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
@@ -184,6 +185,7 @@ class Gap:
     target: str  # "" = every target of the job
     prefixes: tuple[str, ...]  # () = the whole target
     incomplete: bool  # assets under it may be listed with facts missing
+    types: tuple[str, ...] = ()  # () = every asset type; else only these types (node checks, NODE_CHECK_TYPES)
 
     def covers(self, view: View, *, listed: bool) -> bool:
         if listed and not self.incomplete:
@@ -191,10 +193,36 @@ class Gap:
         target, location = str(view.extra.get("target") or ""), str(view.extra.get("location") or "")
         if self.target and self.target != target:
             return False
+        if self.types and view.asset_type not in self.types:
+            return False
         return not self.prefixes or any(location.startswith(p) for p in self.prefixes)
 
 
 NOT_GAPS = ("not_supported", "not_installed")  # what a target does not have, not what was missed
+
+# Scan-node coverage rows carry no location scope, so on their own they would hide every asset of their host from
+# removal and resolution, and a host with one persistent gap (sudo denied for process maps, a root-only key) would
+# never drift again (AWS lab, round 5: the host agent's first run had two such rows).  Each check below can only
+# have missed assets of these types; a check not listed still covers the whole target.  ``True``: the assets are
+# still listed with facts missing (their findings may be incomplete), so vanished findings are not resolved either.
+_KEYS = ("private_key", "public_key", "certificate", "keystore", "key_store", "ssh_host_key")
+_DB = ("database_config", "database_tls", "database_user_auth", "db_crypto_policy", "db_login_policy", "db_encryption")
+NODE_CHECK_TYPES: tuple[tuple[re.Pattern[str], tuple[str, ...], bool], ...] = (
+    (re.compile(r"^key and certificate files\b"), _KEYS, False),
+    (re.compile(r"^process crypto libraries\b"), ("process_library",), False),
+    (re.compile(r"^package list\b"), ("crypto_library",), False),
+    (re.compile(r"^sshd configuration\b"), ("ssh_server_config",), True),
+    (re.compile(r"^(postgres|mysql|mssql|oracle|redis|mongodb)\b"), _DB, True),
+    (re.compile(r"^AD CS template"), ("ca_template",), True),
+    (re.compile(r"^(Certificate stores|TLS secrets|cert-manager certificates)\b"), ("certificate",), False),
+)
+
+
+def _node_check_types(check: str) -> tuple[tuple[str, ...], bool] | None:
+    for pattern, types, incomplete in NODE_CHECK_TYPES:
+        if pattern.search(check):
+            return types, incomplete
+    return None
 
 
 def job_gaps(rows: Iterable[CbomCollectedAsset]) -> list[Gap]:
@@ -208,6 +236,10 @@ def job_gaps(rows: Iterable[CbomCollectedAsset]) -> list[Gap]:
             continue
         scope = facts.get("scope")
         prefixes = tuple(p for p in scope if isinstance(p, str) and p) if isinstance(scope, list) else ()
+        typed = None if prefixes or "scope" in facts else _node_check_types(str(facts.get("check") or ""))
+        if typed is not None:
+            out.append(Gap(target=str(row.target or ""), prefixes=(), incomplete=typed[1], types=typed[0]))
+            continue
         # no scope: nothing says which assets the gap left out, so it covers its whole target, listed ones included
         out.append(Gap(target=str(row.target or ""), prefixes=prefixes,
                        incomplete=bool(facts.get("incomplete")) or not prefixes))
