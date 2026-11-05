@@ -80,27 +80,52 @@ export function shQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`
 }
 
+/** The sudoers file download.  Its first lines say `sudo install -m 0440 zs-cbom /etc/sudoers.d/zs-cbom`, so it must
+ * save as exactly "zs-cbom": Chromium appends ".txt" to an extensionless text/plain download (zs-cbom.txt), so the
+ * file goes out as a generic binary type, which keeps the name as given. */
+export const SUDOERS_DOWNLOAD = { filename: "zs-cbom", type: "application/octet-stream" } as const
+
+/** The message for a secret field left blank, or null when blank is fine.  A stored secret is kept only while the
+ * targets and the way their identity is checked stay the same (the server clears it otherwise and refuses the save,
+ * backend kinds.py where_fields), so then it must be entered again. */
+export function blankSecretError(stored: boolean, whereChanged: boolean, missing: string): string | null {
+  if (stored && !whereChanged) return null
+  return stored ? "Enter it again: the targets, port, login, host key check, vault path or scan node changed" : missing
+}
+
 export type DeployMethod = "docker" | "helm" | "ami" | "ova"
+
+/** Names of the Docker container, its state volume and the Helm release for one scan node, taken from the node's
+ * name.  They must differ per node: the state volume holds the node's credential, so a second node started with the
+ * first node's volume would silently run as the first node (and never register), and a second `docker run` or
+ * `helm upgrade --install` under the same name fails or replaces the first node.  Lowercase letters, digits and
+ * dashes only (valid for Docker names and Helm release names, at most 53 characters). */
+export function nodeInstallNames(nodeName: string): { container: string; volume: string; release: string } {
+  const slug = nodeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 40).replace(/-+$/, "")
+  if (!slug) return { container: "zs-scan-node", volume: "zs-node", release: "zs-scan-node" }
+  return { container: `zs-scan-node-${slug}`, volume: `zs-node-${slug}`, release: `zs-scan-node-${slug}` }
+}
 
 export function installCommand(
   method: DeployMethod,
   opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  const names = nodeInstallNames(opts.name)
   if (method === "docker") {
     return [
-      "docker run -d --name zs-scan-node --restart unless-stopped \\",
+      `docker run -d --name ${names.container} --restart unless-stopped \\`,
       `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
       `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
       ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
-      "  -v zs-node:/var/lib/zs-node \\",
+      `  -v ${names.volume}:/var/lib/zs-node \\`,
       `  ${opts.image}`,
     ].join("\n")
   }
   if (method === "helm") {
     const [repo, tag] = opts.image.includes(":") ? [opts.image.slice(0, opts.image.lastIndexOf(":")), opts.image.slice(opts.image.lastIndexOf(":") + 1)] : [opts.image, "latest"]
     return [
-      "helm upgrade --install zs-scan-node oci://registry.zeroshield.ai/charts/cbom-scan-node \\",
+      `helm upgrade --install ${names.release} oci://registry.zeroshield.ai/charts/cbom-scan-node \\`,
       "  --namespace zs-cbom --create-namespace \\",
       `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
       `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
