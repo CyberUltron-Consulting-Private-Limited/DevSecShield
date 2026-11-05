@@ -236,10 +236,19 @@ def _socket_reason(exc: BaseException) -> str:
     return f"connection failed ({type(exc).__name__})"
 
 
+def _close_reason(exc: OSError) -> str:
+    if isinstance(exc, ssl.SSLError):
+        return f"ended TLS with an error ({exc.reason or type(exc).__name__})"
+    if isinstance(exc, ConnectionError):
+        return "reset the connection"
+    return f"closed the connection abnormally ({type(exc).__name__})"
+
+
 def send_stream(host: str, port: int, frames: list[bytes], *, tls: bool, ca_pem: str | None = None,
                 total: float = TOTAL_TIMEOUT) -> int:
     """Write ``frames`` on one TCP (or TLS) connection to a checked, pinned address, then close it gracefully.
-    Returns the number of frames written. Raises Refused or TransportError (nothing is known to be delivered then)."""
+    Returns the number of frames written. Raises Refused or TransportError (nothing is known to be delivered then),
+    including when the receiver resets the connection while it is being closed: a reset discards unread data."""
     address = resolve(host, port)
     deadline = time.monotonic() + total
     sock: socket.socket | None = None
@@ -256,7 +265,7 @@ def send_stream(host: str, port: int, frames: list[bytes], *, tls: bool, ca_pem:
             if time.monotonic() >= deadline:
                 raise TransportError(f"{host}:{port} took longer than {int(total)} s")
             sock.sendall(frame)
-        # graceful close: the peer sees FIN after the last frame; wait briefly for it to close its side
+        # graceful close: the peer sees close_notify (TLS) and FIN after the last frame; wait briefly for its side
         try:
             if tls:
                 sock = sock.unwrap()  # type: ignore[union-attr]
@@ -264,8 +273,14 @@ def send_stream(host: str, port: int, frames: list[bytes], *, tls: bool, ca_pem:
             sock.settimeout(2.0)
             while sock.recv(4096):
                 pass
-        except OSError:
+        except (TimeoutError, ssl.SSLEOFError):
+            # still open after the wait, or (TLS) closed after reading our close_notify without answering it (RFC 5425
+            # 4.4 asks for an answer): everything was written and the receiver read up to the end
             pass
+        except OSError as exc:
+            # a reset (or a TLS alert) while closing: the receiver discarded what it had not read, so nothing in
+            # this batch is known to be delivered; the queue retries it
+            raise TransportError(f"{host}:{port} {_close_reason(exc)} before the batch was confirmed") from exc
         return len(frames)
     except ssl.SSLError as exc:
         if time.monotonic() >= deadline:

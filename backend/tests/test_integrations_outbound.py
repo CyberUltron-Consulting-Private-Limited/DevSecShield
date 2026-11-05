@@ -15,7 +15,7 @@ if str(_REPO) not in sys.path:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from backend.utilities.integrations import outbound  # noqa: E402
-from integrations_helpers import https_server, make_pki, silent_server  # noqa: E402
+from integrations_helpers import https_server, make_pki, server_context, silent_server  # noqa: E402
 
 ALWAYS_BLOCKED = ["127.0.0.1", "127.9.9.9", "::1", "169.254.169.254", "fd00:ec2::254", "100.64.0.1", "100.100.100.200",
                   "0.0.0.0", "0.1.2.3", "192.0.0.192", "224.0.0.1", "240.0.0.1", "::ffff:127.0.0.1",
@@ -140,6 +140,68 @@ def test_a_silent_server_times_out_within_the_total_budget(monkeypatch):
         assert time.monotonic() - start < 6
     finally:
         sock.close()
+
+
+def _stream_receiver(mode: str, pki: dict[str, str] | None = None) -> tuple[int, dict]:
+    """A one-connection syslog receiver. ``reset``: reads nothing, then aborts (RST: unread data is discarded);
+    ``clean``: reads to the end, answers close_notify (TLS) and closes; ``ragged``: reads to the end (our close_notify
+    included) and closes TCP without answering it."""
+    import ssl
+    import struct
+    import threading
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    got: dict = {"data": b""}
+
+    def run() -> None:
+        conn, _ = srv.accept()
+        srv.close()
+        if pki is not None:
+            conn = server_context(pki).wrap_socket(conn, server_side=True)
+        if mode == "reset":
+            time.sleep(0.3)  # the client has written everything and started closing
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+            conn.close()
+            return
+        while True:
+            try:
+                chunk = conn.recv(4096)
+            except ssl.SSLZeroReturnError:
+                break
+            if not chunk:
+                break
+            got["data"] += chunk
+        if mode == "clean" and pki is not None:
+            conn.unwrap().close()
+        else:
+            conn.close()
+
+    threading.Thread(target=run, daemon=True).start()
+    return srv.getsockname()[1], got
+
+
+@pytest.mark.parametrize("tls_on", [False, True], ids=["tcp", "tls"])
+def test_a_receiver_that_resets_while_closing_is_not_a_delivery(tls, tls_on):
+    """rev4 M1: the reset was swallowed around unwrap / shutdown / recv, so a receiver that discarded the batch was
+    recorded "delivered". A reset while closing now raises (the queue retries)."""
+    port, _got = _stream_receiver("reset", tls if tls_on else None)
+    with pytest.raises(outbound.TransportError, match="reset the connection before the batch was confirmed"):
+        outbound.send_stream("hooks.wp11.test", port, [b"5 hello", b"5 world"], tls=tls_on, ca_pem=tls["ca_pem"])
+
+
+@pytest.mark.parametrize("mode,tls_on", [("clean", False), ("clean", True), ("ragged", True)])
+def test_a_receiver_that_read_everything_confirms_the_batch(tls, mode, tls_on):
+    """A clean close confirms the batch; so does a TLS receiver that read up to our close_notify and closed TCP
+    without answering it (RFC 5425 asks for an answer, but it consumed every frame)."""
+    port, got = _stream_receiver(mode, tls if tls_on else None)
+    assert outbound.send_stream("hooks.wp11.test", port, [b"5 hello", b"5 world"], tls=tls_on,
+                                ca_pem=tls["ca_pem"]) == 2
+    deadline = time.monotonic() + 5
+    while got["data"] != b"5 hello5 world" and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert got["data"] == b"5 hello5 world"
 
 
 def test_stream_and_datagrams_use_the_same_guard(monkeypatch):

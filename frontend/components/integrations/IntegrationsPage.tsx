@@ -216,7 +216,9 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
   const test = useMutation({
     mutationFn: () => testIntegration(teamId, kind),
     onSuccess: (r) => {
-      if (r.ok) toast.success(`Test passed: ${r.message}`);
+      // syslog over UDP: sent, but nothing can confirm it arrived (a port with no listener looks the same)
+      if (r.ok && r.confirmed === false) toast.warning(`Test sent (unconfirmed): ${r.message}`);
+      else if (r.ok) toast.success(`Test passed: ${r.message}`);
       else toast.error(`Test failed: ${r.message}`);
       refresh();
     },
@@ -232,7 +234,9 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
   });
 
   const lastTest = integration.last_test;
-  const testTone: Tone = lastTest?.status === "ok" ? "green" : lastTest?.status === "failed" ? "red" : "zinc";
+  const testTone: Tone = lastTest?.status === "ok" ? "green" : lastTest?.status === "failed" ? "red"
+    : lastTest?.status === "unconfirmed" ? "amber" : "zinc";
+  const testLabel = lastTest?.status === "ok" ? "passed" : lastTest?.status === "unconfirmed" ? "sent (unconfirmed)" : "failed";
   const disabled = !isAdmin || save.isPending;
   const prefix = `int-${kind}`;
   return (
@@ -243,7 +247,7 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
           {integration.label}
           <StatusBadge tone={integration.enabled ? "green" : "zinc"}>{integration.enabled ? "On" : integration.configured ? "Off" : "Not set up"}</StatusBadge>
           {lastTest && lastTest.status !== "never" && (
-            <StatusBadge tone={testTone} title={lastTest.message ?? undefined}>Test {lastTest.status === "ok" ? "passed" : "failed"}</StatusBadge>
+            <StatusBadge tone={testTone} title={lastTest.message ?? undefined}>Test {testLabel}</StatusBadge>
           )}
           {(integration.queue.pending ?? 0) > 0 && <StatusBadge tone="blue">{integration.queue.pending} queued</StatusBadge>}
           {(integration.queue.dead ?? 0) > 0 && <StatusBadge tone="red">{integration.queue.dead} dead-lettered</StatusBadge>}

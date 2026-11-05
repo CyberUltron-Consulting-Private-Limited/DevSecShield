@@ -107,6 +107,28 @@ def test_test_button_goes_through_the_ssrf_guard(api, monkeypatch):
     assert api("POST", "/1/integrations/webhook/test", "bob").status_code == 400
 
 
+def test_a_udp_syslog_test_is_sent_unconfirmed_never_passed(api, monkeypatch):
+    """rev4 M1: UDP has no delivery confirmation (a port with no listener looks the same), yet the test said "Test
+    passed". It now reports status "unconfirmed" (ok, confirmed False); TCP / TLS keep "ok"."""
+    from backend.utilities.integrations import siem
+
+    monkeypatch.setenv(outbound.ENV_ALLOWED_PRIVATE, "10.0.0.0/8")
+    sent: list[bytes] = []
+    monkeypatch.setattr(siem.outbound, "send_datagrams", lambda host, port, grams: sent.extend(grams) or len(grams))
+    monkeypatch.setattr(siem.outbound, "send_stream", lambda host, port, frames, **k: len(frames))
+    assert api("PUT", "/1/integrations/syslog", json={"enabled": True, "config": {"host": "10.1.2.3",
+                                                                                "transport": "udp"}}).status_code == 200
+    r = api("POST", "/1/integrations/syslog/test").json()
+    assert (r["ok"], r["confirmed"], r["status"]) == (True, False, "unconfirmed") and "unconfirmed" in r["message"]
+    assert len(sent) == 1
+    listed = {i["kind"]: i for i in api("GET", "/1/integrations").json()["integrations"]}
+    assert listed["syslog"]["last_test"]["status"] == "unconfirmed"
+    assert api("PUT", "/1/integrations/syslog", json={"enabled": True, "config": {"host": "10.1.2.3",
+                                                                                "transport": "tcp"}}).status_code == 200
+    r = api("POST", "/1/integrations/syslog/test").json()
+    assert (r["ok"], r["confirmed"], r["status"]) == (True, True, "ok")
+
+
 # ----------------------------------------------------------------------------- dispatcher
 def test_drift_events_are_delivered_once_in_order_with_stable_ids(api, world, monkeypatch):
     engine, _ = world

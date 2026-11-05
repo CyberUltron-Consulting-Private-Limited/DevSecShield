@@ -23,7 +23,8 @@ export interface Integration {
   secrets_required?: string[]
   row_version: number | null
   queue: Partial<Record<"pending" | "delivered" | "dead", number>>
-  last_test: { status: "never" | "ok" | "failed"; at: string | null; message: string | null } | null
+  /** unconfirmed: sent, but the destination cannot acknowledge it (syslog over UDP) */
+  last_test: { status: "never" | "ok" | "failed" | "unconfirmed"; at: string | null; message: string | null } | null
   failures?: number
   next_attempt_at?: string | null
   last_delivery_at?: string | null
@@ -84,7 +85,8 @@ export async function deleteIntegration(teamId: number, kind: IntegrationKind): 
   await api.delete(`/${teamId}/integrations/${kind}`)
 }
 
-export async function testIntegration(teamId: number, kind: IntegrationKind): Promise<{ ok: boolean; message: string; at: string }> {
+export async function testIntegration(teamId: number, kind: IntegrationKind):
+  Promise<{ ok: boolean; confirmed?: boolean; status?: "ok" | "failed" | "unconfirmed"; message: string; at: string }> {
   return (await api.post(`/${teamId}/integrations/${kind}/test`)).data
 }
 
