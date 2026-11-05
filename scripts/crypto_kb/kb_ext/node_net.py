@@ -33,9 +33,12 @@ kb_text.entry(
 kb_text.entry(
     "IKE_WEAK_INTEG", title="VPN gateway accepts MD5 or SHA-1 in IKE", category="protocol", default_impact="Medium",
     description="The IKE gateway accepts HMAC-MD5 or HMAC-SHA-1 as the IKE integrity algorithm or PRF (or MD5/SHA-1 "
-                "as the IKEv1 hash). RFC 8247 makes MD5 MUST NOT and SHA-1 integrity a legacy choice.",
-    attack="MD5 and SHA-1 no longer meet current security margins; keeping them lets a downgraded negotiation key "
-           "and authenticate the IKE SA with legacy primitives that auditors and NIST SP 800-131A reject.",
+                "as the IKEv1 hash). RFC 8247 makes HMAC-MD5 MUST NOT (reported Medium) and keeps HMAC-SHA-1 as "
+                "MUST-, still required for interoperability but expected to be downgraded, so HMAC-SHA-1 alone is "
+                "reported Low: HMAC does not depend on SHA-1's collision resistance.",
+    attack="MD5 no longer meets current security margins; keeping it lets a downgraded negotiation key and "
+           "authenticate the IKE SA with a primitive RFC 8247 forbids. HMAC-SHA-1 is not broken, but it is on its "
+           "way out and auditors following NIST SP 800-131A ask for SHA-2.",
     cwe=["CWE-327", "CWE-328"], owasp=["crypto", "misconfig"], cves=[],
     standards=["RFC 8247 (IKEv2 algorithm requirements)", "NIST SP 800-131A Rev. 2"], compliance=["algorithms"],
     remediation={"summary": "Use HMAC-SHA-256/384/512 (or an AEAD cipher) and a SHA-2 PRF in every IKE proposal.",
@@ -102,9 +105,11 @@ kb_text.entry(
     "IPSEC_WEAK_TRANSFORM", title="Weak IPsec (ESP) transform configured", category="protocol",
     default_impact="Medium",
     description="An appliance's IPsec (ESP) proposal or crypto profile lists DES, 3DES, NULL encryption, MD5 or "
-                "SHA-1 integrity, or a weak PFS group for the child SAs that carry the traffic.",
-    attack="The child SA protects the actual data: a weak cipher, MAC or PFS group there exposes the tunnelled "
-           "traffic even when the IKE SA itself is strong.",
+                "SHA-1 integrity, or a weak PFS group for the child SAs that carry the traffic. RFC 8221 makes "
+                "HMAC-MD5 MUST NOT and keeps HMAC-SHA-1-96 as MUST- (allowed, expected to be phased out), so a "
+                "proposal whose only weakness is HMAC-SHA-1 is reported Low.",
+    attack="The child SA protects the actual data: a weak cipher, MD5 MAC or small PFS group there exposes the "
+           "tunnelled traffic even when the IKE SA itself is strong; HMAC-SHA-1 is not broken but is being retired.",
     cwe=["CWE-327", "CWE-326"], owasp=["crypto", "misconfig"], cves=[],
     cve_rules=[{"match": "3des|blowfish", "cves": ["CVE-2016-2183"]}],
     standards=["RFC 8221 (ESP algorithm requirements)", "NIST SP 800-77 Rev. 1"], compliance=["algorithms"],
@@ -189,9 +194,13 @@ kb_text.entry(
 kb_text.entry(
     "MESH_DR_TLS_DISABLED", title="Istio DestinationRule disables TLS", category="kubernetes", default_impact="High",
     description="An Istio DestinationRule sets trafficPolicy.tls.mode DISABLE (for the host, a port or a subset), so "
-                "sidecars send plaintext to that destination instead of using mesh mTLS.",
-    attack="Traffic to the destination crosses the network unencrypted and unauthenticated; anyone on the path (a "
-           "compromised node, a mirror port) reads and changes it.",
+                "sidecars send plaintext to that destination instead of using mesh mTLS (High). For a host outside "
+                "the cluster (a DNS name that is not a Kubernetes service, such as a managed database endpoint) the "
+                "sidecar does not originate TLS by default either and the application usually does its own TLS, "
+                "which passes through unchanged, so that case is Low: verify the application connects with TLS.",
+    attack="Traffic to an in-mesh destination crosses the network unencrypted and unauthenticated; anyone on the path "
+           "(a compromised node, a mirror port) reads and changes it. Toward an external host this happens only if "
+           "the application itself connects without TLS.",
     cwe=["CWE-319"], owasp=["crypto", "misconfig"], cves=[], standards=["Istio security best practices"],
     compliance=["in_transit"],
     remediation={"summary": "Remove the DISABLE mode (or set ISTIO_MUTUAL for in-mesh hosts, SIMPLE/MUTUAL for "

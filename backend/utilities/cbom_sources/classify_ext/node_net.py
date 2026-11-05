@@ -53,11 +53,24 @@ def _ike_lists(facts: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
     return dedupe(enc), dedupe(integ), dedupe(dh)
 
 
+def _md5_class(names: list[str]) -> bool:
+    """MD5-based or DES-MAC integrity (RFC 8247 / RFC 8221: MUST NOT), including an unattributed 'one of' that may be
+    one of them; HMAC-SHA-1 alone is not (both RFCs keep it as MUST-)."""
+    return any("MD5" in n.upper() or "DES-MAC" in n.upper() for n in names)
+
+
+SHA1_NOTE = ("RFC 8247 (IKEv2) and RFC 8221 (ESP) still list HMAC-SHA-1 as MUST- (allowed, expected to be phased "
+             "out): plan the move to SHA-2")
+
+
 def _weak_findings(out: Any, enc: list[str], integ: list[str], dh: list[str], what: str) -> None:
     if enc:
         out.add("IKE_WEAK_ENCR", "High", f"{what} accepts weak IKE encryption ({', '.join(enc[:5])})")
-    if integ:
-        out.add("IKE_WEAK_INTEG", "Medium", f"{what} accepts MD5/SHA-1 in IKE ({', '.join(integ[:5])})")
+    if integ and _md5_class(integ):
+        out.add("IKE_WEAK_INTEG", "Medium", f"{what} accepts MD5/SHA-1 in IKE ({', '.join(integ[:5])}); MD5 is MUST "
+                                            "NOT in RFC 8247")
+    elif integ:
+        out.add("IKE_WEAK_INTEG", "Low", f"{what} accepts HMAC-SHA-1 in IKE ({', '.join(integ[:5])}); {SHA1_NOTE}")
     if dh:
         high = any(g.split(" ")[0] in WEAK_GROUPS_HIGH or g.startswith("one of") for g in dh)
         out.add("IKE_WEAK_DH", "High" if high else "Medium",
@@ -117,6 +130,17 @@ def ot_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now:
     return True if any(e.get("security_policy") not in ("None", None) for e in eps) else None
 
 
+_CLUSTER_HOST = re.compile(r"(^[^.]*$)|(^|\.)svc(\.|$)|\.local$", re.I)
+
+
+def external_host(host: Any) -> bool:
+    """A DestinationRule host outside the cluster: a DNS name with at least three labels that is not a Kubernetes
+    service name (no 'svc' label, not *.local).  Short names, 'name.namespace' and *.svc.<cluster domain> are in-mesh;
+    a two-label name such as example.com is ambiguous with 'name.namespace' and stays in-mesh."""
+    text = str(host or "").strip().rstrip(".")
+    return bool(text) and text.count(".") >= 2 and not _CLUSTER_HOST.search(text)
+
+
 def mesh_destination_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
     off = []
     if str(facts.get("tls_mode") or "").upper() == "DISABLE":
@@ -124,8 +148,16 @@ def mesh_destination_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_s
     for scope_key, label in (("port_tls_modes", "port"), ("subset_tls_modes", "subset")):
         modes = facts.get(scope_key) if isinstance(facts.get(scope_key), dict) else {}
         off += [f"{label} {k}" for k, m in modes.items() if str(m).upper() == "DISABLE"]
-    if off:
-        out.add("MESH_DR_TLS_DISABLED", "High", f"Istio DestinationRule for {facts.get('host') or 'a host'} disables TLS "
+    host = facts.get("host") or "a host"
+    if off and external_host(facts.get("host")):
+        # Toward a service outside the mesh the sidecar does not originate TLS by default either; the application
+        # often does its own (a database driver with sslmode=require, an HTTPS client), which passes through.
+        out.add("MESH_DR_TLS_DISABLED", "Low", f"Istio DestinationRule for the external host {host} disables sidecar "
+                                               f"TLS origination ({', '.join(off[:6])}): verify that the application "
+                                               "itself connects with TLS (and that the host is not a mesh workload "
+                                               "registered with a MESH_INTERNAL ServiceEntry)")
+    elif off:
+        out.add("MESH_DR_TLS_DISABLED", "High", f"Istio DestinationRule for {host} disables TLS "
                                                 f"({', '.join(off[:6])}): sidecars send plaintext")
     return None
 
@@ -154,15 +186,21 @@ def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: An
         if facts.get("aggressive") is True:
             out.add("IKE_AGGRESSIVE", "High", f"{what}: IKEv1 Aggressive Mode is allowed"
                     + (f" ({facts.get('aggressive_reason')})" if facts.get("aggressive_reason") else ""))
+        if facts.get("pq") is True:
+            return False  # an ML-KEM additional key exchange is configured (RFC 9370)
         if facts.get("pq") is False:
             out.add("IKE_NO_PQ", "Low", f"{what} has no post-quantum (ML-KEM) key exchange")
-        return True
+        return True  # IKE without a configured ML-KEM exchange keys the SA with classical Diffie-Hellman only
     if kind == "ipsec_policy":
-        weak = [n for n in facts.get("encryption") or [] if WEAK_ENCR.match(str(n))]
-        weak += [n for n in facts.get("integrity") or [] if WEAK_INTEG.match(str(n))]
-        weak += [f"PFS {g}" for g in facts.get("pfs_groups") or [] if g in WEAK_GROUPS]
-        if weak:
+        enc = [n for n in facts.get("encryption") or [] if WEAK_ENCR.match(str(n))]
+        integ = [n for n in facts.get("integrity") or [] if WEAK_INTEG.match(str(n))]
+        pfs = [f"PFS {g}" for g in facts.get("pfs_groups") or [] if g in WEAK_GROUPS]
+        weak = enc + integ + pfs
+        if enc or pfs or _md5_class(integ):
             out.add("IPSEC_WEAK_TRANSFORM", "Medium", f"{what} allows weak ESP transforms ({', '.join(weak[:5])})")
+        elif integ:
+            out.add("IPSEC_WEAK_TRANSFORM", "Low", f"{what} allows HMAC-SHA-1 ESP integrity ({', '.join(integ[:5])}); "
+                                                   f"{SHA1_NOTE}")
         return None
     if kind == "ssh":
         versions = [int(v) for v in facts.get("versions") or [] if str(v).isdigit()]
