@@ -44,6 +44,7 @@ import {
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { estimateChangedOf } from "@/utils/estimateChanged";
 
 export type Mode = RepoMode | "unknown";
 
@@ -217,6 +218,15 @@ export function CBOMOptionsSidebar({
       }
     },
     onError: (err) => {
+      // The input or the pricing changed since the estimate: nothing was charged. Show the new price here; the
+      // next "Start scan" charges exactly that.
+      const changed = estimateChangedOf(err);
+      if (changed) {
+        setEstimatedCredits(changed.credits_required);
+        setMinimumCredits(changed.minimum_credits);
+        toast.warning(changed.detail);
+        return;
+      }
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
