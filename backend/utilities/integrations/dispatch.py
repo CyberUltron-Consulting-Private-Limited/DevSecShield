@@ -151,8 +151,13 @@ def _record(session: Session, integration: TeamIntegration, batch: list[Integrat
                 failures=integration.failures, wait_s=int(wait), expired=int(expired) or None)
             return True
         session.add(delivery)
-    integration.failures, integration.next_attempt_at, integration.last_error = 0, None, None
-    integration.last_delivery_at = now
+    integration.failures, integration.next_attempt_at = 0, None  # the destination answered: no back-off
+    applied = outcomes[:len(batch)]
+    if any(outcome.status == "ok" for outcome in applied):
+        integration.last_error, integration.last_delivery_at = None, now
+    else:  # every event of the batch was refused for good (dead-lettered): nothing was delivered
+        refused = next(outcome for outcome in applied if outcome.status == "reject")
+        integration.last_error = f"the destination refused every event of the last batch: {refused.reason}"[:255]
     session.add(integration)
     return len(outcomes) < len(batch)  # a connector that stopped early without saying why: try again next tick
 

@@ -282,6 +282,9 @@ def _test(engine, team_id: int, user_id: int, kind: str) -> dict:
     with Session(engine) as session:
         session.exec(update(TeamIntegration).where(TeamIntegration.id == integration_id).values(
             last_test_status=status, last_test_at=now, last_test_message=outcome.reason[:255]))
+        # a test sends data (or, for ServiceNow, reads a record) at an external destination: audited like a change
+        audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="integration.test",
+              object_type="integration", object_id=integration_id, changed_fields=["last_test_status"])
         session.commit()
     log("integration tested", team=team_id, kind=kind, by=user_id, ok=ok, status=status)
     return {"ok": ok, "confirmed": ok and outcome.confirmed, "status": status, "message": outcome.reason,

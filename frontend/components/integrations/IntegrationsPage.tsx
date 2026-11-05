@@ -258,7 +258,8 @@ function IntegrationCard({ teamId, integration, isAdmin, snippet }: {
       <div className="space-y-4" data-testid={prefix}>
         {integration.last_error && (
           <p className="text-sm text-amber-600 dark:text-amber-400" role="status">
-            Delivery is backing off: {integration.last_error}
+            {/* no next attempt: the destination answered but refused every event of the last batch (dead-lettered) */}
+            {integration.next_attempt_at ? "Delivery is backing off" : "Last delivery problem"}: {integration.last_error}
             {integration.next_attempt_at ? ` (next attempt ${ago(integration.next_attempt_at)})` : ""}
           </p>
         )}
