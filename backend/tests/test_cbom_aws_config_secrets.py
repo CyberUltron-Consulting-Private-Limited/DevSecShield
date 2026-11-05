@@ -193,6 +193,82 @@ def test_value_shape_rules():
     assert shape("CERT", "MII" + "A" * 400) is None  # base64 that is not a private key
 
 
+def _public_material():
+    """An RSA public key (PEM, SPKI) and a self-signed certificate, as people paste them into environment variables."""
+    import datetime as dt
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pub = key.public_key().public_bytes(serialization.Encoding.PEM,
+                                        serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "idp.example.test")])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key()).serial_number(7)
+            .not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=365))
+            .sign(key, hashes.SHA256()))
+    return pub, cert.public_bytes(serialization.Encoding.PEM).decode()
+
+
+PUBLIC_PEM, CERT_PEM = _public_material()
+# Review round 5, M3: values the classifier reported as SECRET_IN_CONFIG (High) although none is a secret
+NOT_SECRETS = {
+    "JWT_PUBLIC_KEY": PUBLIC_PEM.replace("\n", "\\n"),           # a public key (JSON-escaped newlines)
+    "SAML_IDP_CERT": CERT_PEM,                                   # a certificate
+    "STRIPE_PUBLISHABLE_KEY": "pk_live_51HqLyjWDarjtT1zdp7dcAAAAAAAAAAAA",
+    "STRIPE_KEY": "pk_test_51HqLyjWDarjtT1zdp7dcAAAAAAAAAAAA",  # publishable by its value
+    "DB_SECRET": "prod/rds/app-user",                            # a Secrets Manager secret name
+    "KMS_KEY": f"arn:aws:kms:{REGION}:{ACCOUNT}:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+    "APP_KMS_KEY": "1234abcd-12ab-34cd-56ef-1234567890ab",       # a KMS key id: KMS key material never leaves KMS
+    "TOKEN_AUDIENCE": "api.example.com",
+    "S3_KEY_PREFIX": "uploads/2024/",
+    "API_KEY_HEADER": "X-Api-Key",
+}
+
+
+def test_public_material_references_and_settings_are_not_secrets():
+    shape = aws_collect._value_shape
+    for var, value in NOT_SECRETS.items():
+        got = shape(var, value)
+        assert got is None or got["material"] in ("public-key", "certificate"), (var, got)
+    assert shape("JWT_PUBLIC_KEY", NOT_SECRETS["JWT_PUBLIC_KEY"]) == {
+        "material": "public-key", "encoding": "pem", "algorithm": "RSA", "key_bits": 2048}
+    ssh = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl ops@example"
+    assert shape("DEPLOY_KEY", ssh)["material"] == "public-key" and shape("DEPLOY_KEY", ssh)["algorithm"] == "ED25519"
+    cert = shape("SAML_IDP_CERT", CERT_PEM)
+    assert cert["material"] == "certificate" and cert["subject"] == "CN=idp.example.test" and cert["key_bits"] == 2048
+    # still secrets: real values under the same kinds of names, a private key in a 'public' variable, a mixed-case
+    # AWS secret access key with '/', and a secret key next to its publishable one
+    assert shape("DB_PASSWORD", PASSWORD)["material"] == "secret"
+    assert shape("STRIPE_SECRET_KEY", "sk_live_51HqLyjWDarjtT1zdp7dcAAAAAAAAAAAA")["material"] == "secret"
+    assert shape("JWT_PUBLIC_KEY", RSA_PEM)["material"] == "private-key"
+    assert shape("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")["material"] == "secret"
+    assert shape("TOKEN_SECRET", "UPPER/Case/Mixed-Secret-9")["material"] == "secret"
+
+
+def test_lambda_public_material_becomes_inventory_and_never_a_secret_finding():
+    fn = f"arn:aws:lambda:{REGION}:{ACCOUNT}:function:reviewer-env"
+    data = {**_data(), ("lambda", "list_functions"): [{"Functions": [
+        {"FunctionArn": fn, "FunctionName": "reviewer-env", "Environment": {"Variables": {
+            **NOT_SECRETS, "DB_PASSWORD": PASSWORD}}}]}]}
+    found = []
+    aws_collect._region_services(_Acct(data), REGION, f"aws:{ACCOUNT}", found.append)
+    by_var = {a["location"].rsplit("/", 1)[-1]: a for a in found if a["location"].startswith(f"{fn}#environment/")}
+    assert set(by_var) == {"JWT_PUBLIC_KEY", "SAML_IDP_CERT", "DB_PASSWORD"}
+    pub, cert, pw = by_var["JWT_PUBLIC_KEY"], by_var["SAML_IDP_CERT"], by_var["DB_PASSWORD"]
+    assert (pub["type"], pub["algorithm"], pub["key_size"]) == ("public_key", "RSA", 2048)
+    assert cert["type"] == "certificate" and cert["facts"]["not_after"]
+    for row in (pub, cert):
+        assert "plaintext_in_cloud_config" not in row["facts"]
+        verdict = classify(row["type"], row["algorithm"], row["key_size"], None, row["facts"])
+        assert "SECRET_IN_CONFIG" not in verdict["finding_codes"] and verdict["quantum_vulnerable"] is True, row["type"]
+    assert "SECRET_IN_CONFIG" in classify("cloud_secret", None, None, None, pw["facts"])["finding_codes"]
+    dump = repr(found)
+    assert PASSWORD not in dump and "BEGIN PUBLIC KEY" not in dump and "BEGIN CERTIFICATE" not in dump
+
+
 def test_denied_services_become_coverage_gaps():
     found = []
     rows = aws_collect._region_services(_Acct({}), REGION, f"aws:{ACCOUNT}", found.append)
