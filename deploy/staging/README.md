@@ -50,7 +50,7 @@ recorded in `deploy-history`; each tag's deploy files (compose file, nginx confi
 the head of its migrations are kept in `releases/<tag>/` for a rollback. `deploy` refuses a tag whose migrations do
 not contain the database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
 
-Without registry access on the host, add `STAGING_INCLUDE_INFRA=1` to ship the postgres, mongo, rabbitmq and nginx
+Without registry access on the host, add `STAGING_INCLUDE_INFRA=1` to ship the postgres, mongo, rabbitmq and nginx (and, with the minio profile, MinIO)
 images in the same archive. Behind a TLS-intercepting proxy, build with `UV_BASE_IMAGE` (backend, scan worker, DAST
 worker), `NODE_BASE_IMAGE` (frontend) and `GO_BASE_IMAGE` (the scan worker's cbomkit-theia stage) set to base images
 that trust the proxy CA: the system bundle (`/etc/ssl/certs/ca-certificates.crt`, which apt, apk, curl, git and

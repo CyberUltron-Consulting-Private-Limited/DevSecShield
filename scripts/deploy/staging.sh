@@ -21,8 +21,8 @@
 # Env: DSS_TAG (default: short git commit), DSS_IMAGE_PREFIX (default dss-staging), NEXT_PUBLIC_BACKEND_URL (default
 #      https://<API_HOST>), STAGING_COMPONENTS (images, default backend,frontend,scan-worker,dast-worker),
 #      STAGING_SERVICES (compose services to start, default all), STAGING_INCLUDE_INFRA=1 (also ship the postgres,
-#      mongo, rabbitmq and nginx images, for a host without registry access), STAGING_CHECK_INSECURE=1 (accept a
-#      self-signed certificate in the checks), SSH_OPTS (extra ssh/scp options).
+#      mongo, rabbitmq, nginx and, with profile minio, MinIO images, for a host without registry access),
+#      STAGING_CHECK_INSECURE=1 (accept a self-signed certificate in the checks), SSH_OPTS (extra ssh/scp options).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -41,6 +41,7 @@ ALEMBIC_INI=/prod_database_migrations/alembic.ini
 INFRA_SERVICES=" postgres mongo rabbitmq minio "
 ONESHOT_SERVICES=" migrate minio-init "
 INFRA_IMAGES=(postgres:15-alpine mongo:8.0.6 rabbitmq:4.1-management-alpine nginx:1.27-alpine)
+DEFAULT_MINIO_IMAGE=minio/minio:RELEASE.2025-04-22T22-12-26Z  # docker-compose.yml's MINIO_IMAGE default
 # `next dev` markers. A production `next build` (Turbopack or webpack) has none of them; note that Next.js 16
 # production builds do reference a /_next/static/chunks/turbopack-<hash>.js runtime chunk, so "turbopack" alone is
 # not a dev marker. "development" is the fixed build id of `next dev`.
@@ -90,7 +91,13 @@ cmd_save() {
   local tag=${DSS_TAG:-$(default_tag)} c out
   local -a images=()
   for c in $(components); do images+=("$(image_of "${c}" "${tag}")"); done
-  [[ "${STAGING_INCLUDE_INFRA:-0}" == 1 ]] && images+=("${INFRA_IMAGES[@]}")
+  if [[ "${STAGING_INCLUDE_INFRA:-0}" == 1 ]]; then
+    images+=("${INFRA_IMAGES[@]}")
+    # The optional local S3 (profile "minio") is infrastructure too: an air-gapped site that runs it needs its image.
+    if [[ ",${COMPOSE_PROFILES:-$(env_get COMPOSE_PROFILES)}," == *,minio,* ]]; then
+      images+=("$(env_get MINIO_IMAGE "${DEFAULT_MINIO_IMAGE}")")
+    fi
+  fi
   for c in "${images[@]}"; do docker image inspect "${c}" >/dev/null 2>&1 || die "image ${c} not found (run build)"; done
   mkdir -p "${IMAGES_DIR}"
   out="$(archive_of "${tag}")"
