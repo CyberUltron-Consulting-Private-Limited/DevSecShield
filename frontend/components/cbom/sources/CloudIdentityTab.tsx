@@ -1000,13 +1000,15 @@ function AwsForm({
               id="aws-lambda-cmk"
               checked={lambdaCmk}
               onChange={setLambdaCmk}
-              title="Decrypt Lambda environments under customer-managed keys"
+              title="Decrypt Lambda environment variables"
               body={
                 <>
-                  Lets Lambda decrypt function environment variables encrypted with your own KMS keys, so ZeroShield can check them for
-                  keys and passwords (only their shape is kept). <span className="font-mono text-xs">kms:Decrypt</span> stays denied for
-                  every request that does not come through Lambda. Each key&apos;s key policy must also allow this role. Environments under
-                  the default <span className="font-mono text-xs">aws/lambda</span> key are inspected either way.
+                  Lambda decrypts function environment variables with the caller&apos;s KMS permissions, even under the default{" "}
+                  <span className="font-mono text-xs">aws/lambda</span> key, and this role denies{" "}
+                  <span className="font-mono text-xs">kms:Decrypt</span>. Turning this on lets Lambda, and only Lambda, decrypt them so
+                  ZeroShield can check them for keys and passwords (only their shape is kept); every other{" "}
+                  <span className="font-mono text-xs">kms:Decrypt</span> stays denied. A customer-managed key&apos;s key policy must also
+                  allow this role. Off: each function&apos;s environment is listed as not inspected.
                 </>
               }
             />

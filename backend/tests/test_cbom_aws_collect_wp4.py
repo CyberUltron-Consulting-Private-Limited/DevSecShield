@@ -106,12 +106,25 @@ def test_customer_key_environment_with_the_switch_off_is_a_coverage_row_that_say
     assert services["lambda"] == "ok"
     gap = next(a for a in found if a["type"] == "coverage")
     assert gap["facts"]["status"] == "denied" and gap["facts"]["kms_key_id"] == CMK
-    assert "Decrypt Lambda environments under customer-managed keys" in gap["facts"]["detail"]
+    assert "turn on 'Decrypt Lambda environment variables'" in gap["facts"]["detail"]
     secrets = [a for a in found if a["type"] == "cloud_secret"]
     # $LATEST and the published version 3 are separate rows (each version keeps its own environment)
     assert sorted(a["location"].rsplit(":", 1)[-1] for a in secrets) == ["3#environment/DB_PASSWORD", "billing#environment/DB_PASSWORD"]
     assert all(a["facts"]["customer_managed_key"] is False for a in secrets)
     assert "Billing-Plain-Pass-11" not in repr(found)
+
+
+def test_default_key_environment_with_the_switch_off_also_names_the_switch():
+    """AWS lab, round 5: a function under the default aws/lambda key came back AccessDeniedException with the switch
+    off (the role's kms:Decrypt deny applies to the request Lambda makes) and was read with it on."""
+    plan = {"lambda": [("list_functions", {"Functions": [_fn("envsecret", env=CMK_ERROR)]}, {"FunctionVersion": "ALL"})]}
+    _s, found = _run(plan)
+    gap = next(a for a in found if a["type"] == "coverage")
+    assert gap["facts"]["kms_key_id"] is None
+    assert "turn on 'Decrypt Lambda environment variables'" in gap["facts"]["detail"]
+    _s, found = _run(plan, {"decrypt_lambda_cmk": True})  # on and still denied: no switch to point at
+    gap = next(a for a in found if a["type"] == "coverage")
+    assert "turn on" not in gap["facts"]["detail"] and "caller's KMS permissions" in gap["facts"]["detail"]
 
 
 def test_customer_key_environment_with_the_switch_on_is_read_and_a_denial_names_the_key_policy():

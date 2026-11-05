@@ -23,8 +23,10 @@ DENY_ACTIONS = [
 # The actions the "data-plane deny present" check insists on.
 REQUIRED_DENY = ["kms:Decrypt", "kms:Sign", "secretsmanager:GetSecretValue", "ssm:GetParameter", "s3:GetObject"]
 
-# Opt-in 1 (off by default): Lambda environments encrypted with a customer-managed KMS key.  Lambda decrypts them
-# with the CALLER's permissions when configuration is read ("kms:Decrypt - To view and manage environment variables
+# Opt-in 1 (off by default): Lambda environment variables (the parameter keeps its original name,
+# DecryptCustomerKeyLambdaEnvironments, so existing stacks update in place).  Lambda decrypts them with the CALLER's
+# permissions when configuration is read; the deny below applies to that request even under the default aws/lambda
+# key (AWS lab, round 5: such a function was AccessDenied with the opt-in off and read with it on) ("kms:Decrypt - To view and manage environment variables
 # that are encrypted with a customer managed key", https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars-encryption.html),
 # so kms:Decrypt is carved out of the deny for requests that come through Lambda only.  kms:ViaService is present only
 # on requests an AWS service makes on the caller's behalf (forward access sessions) and its value for Lambda is

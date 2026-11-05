@@ -428,10 +428,13 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         return f"{len(volumes)} volumes, {len(plain)} unencrypted" + (" (truncated)" if truncated else "")
 
     def lambdas() -> str | None:
-        # ListFunctions returns each function's environment, and Lambda decrypts it with the CALLER's KMS permissions:
-        # under the default aws/lambda key no KMS permission is needed; under a customer-managed key the caller needs
-        # kms:Decrypt on that key, otherwise Environment.Error comes back instead of the variables
-        # (https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars-encryption.html).  Values are inspected
+        # ListFunctions returns each function's environment, and Lambda decrypts it with the CALLER's KMS permissions
+        # (https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars-encryption.html).  The default aws/lambda
+        # key's policy needs no IAM grant, but the read-only role's explicit kms:Decrypt deny still applies to the
+        # request Lambda makes for it: measured in the AWS lab (round 5), a function under aws/lambda came back as
+        # Environment.Error AccessDeniedException with the switch off and was read with it on.  So the switch is what
+        # opens every environment, customer-managed key or not (a customer-managed key's policy must also allow the
+        # role).  Otherwise Environment.Error comes back instead of the variables.  Values are inspected
         # here and only their shape is kept.  FunctionVersion=ALL adds every published version (each has its own,
         # immutable environment).
         client = acct.client("lambda", region)
@@ -445,9 +448,10 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                 unreadable += 1
                 err = env["Error"] if isinstance(env["Error"], dict) else {}
                 code = str(err.get("ErrorCode") or "not readable")[:80]
-                if fn.get("KMSKeyArn") and not cmk_on:  # the key's ARN is in kms_key_id
-                    detail = (f"{code}: encrypted with a customer-managed key; turn on 'Decrypt Lambda environments "
-                              "under customer-managed keys' for this account to inspect it")
+                if not cmk_on:  # a customer-managed key's ARN is in kms_key_id
+                    detail = (f"{code}: Lambda decrypts environments with the caller's KMS permissions and the read-only "
+                              "role denies kms:Decrypt; turn on 'Decrypt Lambda environment variables' for this account "
+                              "to inspect it")
                 elif fn.get("KMSKeyArn"):
                     detail = (f"{code}: the key policy of the customer-managed key does not let the ZeroShield role "
                               "decrypt through Lambda; add the role to the key's users")
