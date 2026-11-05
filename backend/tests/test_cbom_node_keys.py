@@ -22,7 +22,8 @@ from test_cbom_sources_api import api, enroll_node, world  # noqa: E402,F401  (t
 
 WP6_CODES = ["KEY_WEAK_SYMMETRIC", "KEY_PLAINTEXT_EXPORT", "KEY_EXTRACTABLE", "KEY_COMPROMISED", "KEY_NO_ROTATION",
              "DB_TDE_OFF", "DB_LEGACY_PW_HASH", "DB_10G_VERIFIER", "DB_LOGIN_NO_POLICY", "DB_LEGACY_NNE",
-             "DB_EOL_VERSION", "CA_WEAK_SIGNING", "CA_ALLOWS_WEAK_KEY", "CA_ALLOWS_ANY_NAME", "CA_LONG_VALIDITY"]
+             "DB_EOL_VERSION", "CA_WEAK_SIGNING", "CA_ALLOWS_WEAK_KEY", "CA_ALLOWS_ANY_NAME", "CA_TEMPLATE_WRITABLE",
+             "CA_LONG_VALIDITY"]
 
 
 def _codes(asset_type, facts, algorithm=None, key_size=None):
@@ -99,15 +100,108 @@ def test_ca_rules():
                   "RSA", 2048) == {"CA_ALLOWS_ANY_NAME", "QUANTUM_VULNERABLE"}
     assert classify("ca_authority", None, None, None, {"hash_algorithm": "MD5"})["impact"] == "Critical"
     role = {"provider": "vault", "name": "pki/any", "key_type": "RSA", "key_bits": 2048, "allow_any_name": True,
-            "max_ttl_s": 2 * 365 * 86400}
+            "max_ttl_s": 3 * 365 * 86400}
     assert _codes("ca_template", role, "RSA", 2048) == {"CA_ALLOWS_ANY_NAME", "CA_LONG_VALIDITY", "QUANTUM_VULNERABLE"}
     esc1 = {"provider": "adcs", "name": "VulnUser", "key_type": "RSA", "key_bits": 1024, "enrollee_supplies_subject": True,
-            "client_auth": True, "server_auth": False, "max_ttl_s": 10 * 365 * 86400}
+            "client_auth": True, "server_auth": False, "max_ttl_s": 10 * 365 * 86400, "acl_status": "read",
+            "enroll_principals": ["DA", "DU", "S-1-5-21-1-2-3-519"], "write_principals": ["DA", "S-1-5-21-1-2-3-519"]}
     out = classify("ca_template", "RSA", 1024, None, esc1)
     assert set(out["finding_codes"]) == {"CA_ALLOWS_WEAK_KEY", "CA_ALLOWS_ANY_NAME", "QUANTUM_VULNERABLE"}
-    assert out["impacts"]["CA_ALLOWS_ANY_NAME"] == "High"  # client authentication: AD CS ESC1
+    assert out["impacts"]["CA_ALLOWS_ANY_NAME"] == "High"  # client authentication + Domain Users enroll: AD CS ESC1
     assert _codes("ca_template", {"name": "EC", "key_type": "EC", "key_bits": 192}) >= {"CA_ALLOWS_WEAK_KEY"}
     assert _codes("ca_template", {"name": "any", "key_type": "ANY"}) == set()
+
+
+# Facts the scan node emits (zs_scan_node.collectors.ca.parse_adcs_templates) for the default templates of the AWS lab's
+# Windows Server 2022 enterprise CA: settings are the built-in defaults, enroll / write principals come from the
+# templates' real security descriptors (review round 5, /tmp/.../lab-adcs/template-sddl.txt; domain SID replaced).
+EA = "S-1-5-21-1-2-3-519"
+LAB_ACL = {"enroll_principals": ["DA", EA], "write_principals": ["DA", EA], "acl_status": "read"}
+LAB_TEMPLATES = {
+    "SubCA": {"provider": "adcs", "name": "SubCA", "key_type": "RSA", "key_bits": 2048, "ekus": [],
+              "enrollee_supplies_subject": True, "client_auth": True, "server_auth": True, "is_ca": True,
+              "max_ttl_s": 5 * 365 * 86400, **LAB_ACL},
+    "WebServer": {"provider": "adcs", "name": "WebServer", "key_type": "RSA", "key_bits": 2048,
+                  "ekus": ["1.3.6.1.5.5.7.3.1"], "enrollee_supplies_subject": True, "client_auth": False,
+                  "server_auth": True, "is_ca": False, "max_ttl_s": 2 * 365 * 86400, **LAB_ACL},
+    "User": {"provider": "adcs", "name": "User", "key_type": "RSA", "key_bits": 2048, "enrollee_supplies_subject": False,
+             "client_auth": True, "server_auth": False, "is_ca": False, "max_ttl_s": 365 * 86400,
+             **LAB_ACL, "enroll_principals": ["DA", "DU", EA]},
+    "Machine": {"provider": "adcs", "name": "Machine", "key_type": "RSA", "key_bits": 2048,
+                "enrollee_supplies_subject": False, "client_auth": True, "server_auth": True, "is_ca": False,
+                "max_ttl_s": 365 * 86400, **LAB_ACL, "enroll_principals": ["DA", "DC", EA]},
+}
+
+
+def test_default_adcs_templates_raise_nothing():
+    """Review round 5, H1 + L2: the built-in SubCA template (Name-Flag 1, no EKU, 5 years) was reported as AD CS ESC1
+    (High) and with CA_LONG_VALIDITY, and WebServer (2 years) with CA_LONG_VALIDITY.  Only Domain / Enterprise Admins
+    may enroll in SubCA (it issues CA certificates), and 730 days is within the internal 825-day limit."""
+    for name, facts in LAB_TEMPLATES.items():
+        assert _codes("ca_template", facts, "RSA", 2048) == {"QUANTUM_VULNERABLE"}, name
+
+
+def test_esc1_needs_a_requester_who_is_not_an_administrator():
+    sub = LAB_TEMPLATES["SubCA"]
+    # Authenticated Users (or Domain Users, as a domain-relative SID) may enroll: ESC1, High
+    for who, label in (("AU", "Authenticated Users"), ("S-1-5-21-1-2-3-513", "Domain Users")):
+        out = classify("ca_template", "RSA", 2048, None, {**sub, "enroll_principals": ["DA", EA, who]})
+        assert out["impacts"]["CA_ALLOWS_ANY_NAME"] == "High" and label in out["texts"]["CA_ALLOWS_ANY_NAME"], who
+    # a named group: Medium, with the SID to look up
+    out = classify("ca_template", "RSA", 2048, None, {**sub, "enroll_principals": ["DA", "S-1-5-21-1-2-3-1105"]})
+    assert out["impacts"]["CA_ALLOWS_ANY_NAME"] == "Medium" and "S-1-5-21-1-2-3-1105" in out["finding"]
+    # enrollment rights not read (older scan node, uncached template, unreadable security): at most Medium, review
+    for acl in ({}, {"acl_status": "not_read"}, {"acl_status": "too_long"}, {"acl_status": "unreadable"}):
+        facts = {k: v for k, v in sub.items() if k not in ("acl_status", "enroll_principals", "write_principals")}
+        out = classify("ca_template", "RSA", 2048, None, {**facts, **acl})
+        assert out["impacts"]["CA_ALLOWS_ANY_NAME"] == "Medium" and "was not read" in out["finding"], acl
+    # manager approval (the node clears enrollee_supplies_subject) or no sign-in EKU: nothing
+    assert "CA_ALLOWS_ANY_NAME" not in _codes("ca_template", {**sub, "enroll_principals": ["AU"],
+                                                              "enrollee_supplies_subject": False})
+    assert "CA_ALLOWS_ANY_NAME" not in _codes("ca_template", {**LAB_TEMPLATES["WebServer"], "enroll_principals": ["AU"]})
+
+
+def test_low_privileged_write_rights_on_a_template_are_esc4():
+    out = classify("ca_template", "RSA", 2048, None, {**LAB_TEMPLATES["User"], "write_principals": ["DA", "WD", EA]})
+    assert out["finding_codes"] == ["CA_TEMPLATE_WRITABLE", "QUANTUM_VULNERABLE"] and out["impact"] == "High"
+    assert "Everyone may change User" in out["finding"]
+    # a named admin account holding write (the template owner's usual grant) is not reported; neither is an unread ACL
+    assert _codes("ca_template", {**LAB_TEMPLATES["User"], "write_principals": ["S-1-5-21-1-2-3-1104"]}) == \
+        {"QUANTUM_VULNERABLE"}
+    assert _codes("ca_template", {**LAB_TEMPLATES["User"], "write_principals": ["WD"], "acl_status": "not_read"}) == \
+        {"QUANTUM_VULNERABLE"}
+
+
+def test_long_validity_uses_the_internal_limit_and_skips_ca_templates():
+    web = LAB_TEMPLATES["WebServer"]
+    out = classify("ca_template", "RSA", 2048, None, {**web, "max_ttl_s": 3 * 365 * 86400})
+    assert out["impacts"]["CA_LONG_VALIDITY"] == "Low" and "1095 days" in out["finding"] and "825" in out["finding"]
+    assert "CA_LONG_VALIDITY" not in _codes("ca_template", {**web, "max_ttl_s": 825 * 86400})
+    assert "CA_LONG_VALIDITY" not in _codes("ca_template", {**LAB_TEMPLATES["SubCA"], "max_ttl_s": 20 * 365 * 86400})
+    vault = {"provider": "vault", "name": "pki/web", "key_type": "RSA", "key_bits": 2048, "max_ttl_s": 2 * 365 * 86400}
+    assert "CA_LONG_VALIDITY" not in _codes("ca_template", vault)
+
+
+def test_esc6_severity_follows_the_sid_security_extension():
+    """Review round 5, L4: EDITF_ATTRIBUTESUBJECTALTNAME2 was High regardless of KB5014754.  When the CA writes the
+    requester's SID into its certificates, domain controllers refuse them for sign-in as someone else."""
+    ca = {"provider": "adcs", "hash_algorithm": "SHA256", "san_from_request_attributes": True}
+    added = classify("ca_authority", "RSA", 4096, None, {**ca, "sid_extension_disabled": False})
+    assert added["impacts"]["CA_ALLOWS_ANY_NAME"] == "Medium" and "KB5014754" in added["finding"]
+    esc16 = classify("ca_authority", "RSA", 4096, None, {**ca, "sid_extension_disabled": True})
+    assert esc16["impacts"]["CA_ALLOWS_ANY_NAME"] == "High" and "ESC16" in esc16["finding"]
+    unknown = classify("ca_authority", "RSA", 4096, None, ca)  # an older scan node did not read DisableExtensionList
+    assert unknown["impacts"]["CA_ALLOWS_ANY_NAME"] == "High" and "did not read" in unknown["finding"]
+    assert "CA_ALLOWS_ANY_NAME" not in _codes("ca_authority", {**ca, "san_from_request_attributes": False})
+
+
+def test_tde_off_does_not_claim_the_data_is_unencrypted_at_rest():
+    """Review round 5, L4: TDE off is what the database shows; the volume or RDS storage may still encrypt the files."""
+    out = classify("db_encryption", None, None, None, {"engine": "mssql", "scope": "database", "database": "sales",
+                                                        "encrypted": False})
+    text = out["texts"]["DB_TDE_OFF"]
+    assert out["impact"] == "Low" and "no database-level encryption" in text and "volume or storage" in text
+    assert "is not encrypted at rest" not in text
 
 
 # ----------------------------------------------------------------------------- knowledge base and demos

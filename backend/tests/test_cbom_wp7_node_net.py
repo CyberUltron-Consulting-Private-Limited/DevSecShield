@@ -129,6 +129,53 @@ def test_destination_rule_and_linkerd_rules():
     assert _c("k8s_mesh_server", {"unauthenticated": False, "unauthenticated_by": []})["finding_codes"] == []
 
 
+def test_destination_rule_toward_an_external_host_is_a_low_verify_note():
+    """Review round 5, M4: tls.mode DISABLE toward an RDS endpoint (the application's driver does TLS itself) was
+    'sidecars send plaintext', High.  External DNS names are Low with a verify wording; in-mesh services stay High."""
+    rds = _c("k8s_mesh_destination", {"host": "orders.c9akciq32.ap-south-1.rds.amazonaws.com", "tls_mode": "DISABLE",
+                                      "port_tls_modes": {"5432": "DISABLE"}})
+    assert rds["finding_codes"] == ["MESH_DR_TLS_DISABLED"] and rds["impact"] == "Low"
+    assert "verify that the application itself connects with TLS" in rds["finding"] and "plaintext" not in rds["finding"]
+    assert _c("k8s_mesh_destination", {"host": "*.stripe.com", "tls_mode": "DISABLE"})["impact"] == "Low"
+    for host in ("reviews", "reviews.prod", "reviews.prod.svc", "reviews.prod.svc.cluster.local",
+                 "*.prod.svc.cluster.local", "pay.prod.svc.corp.internal", "db.example.local", "example.com", None):
+        out = _c("k8s_mesh_destination", {"host": host, "tls_mode": "DISABLE"})
+        assert out["impact"] == "High" and "sidecars send plaintext" in out["finding"], host
+
+
+def test_hmac_sha1_alone_is_low_per_rfc_8247_and_8221():
+    """Review round 5, L3: RFC 8247 / 8221 keep HMAC-SHA-1 as MUST-; only MD5-class integrity (MUST NOT) is Medium."""
+    sha1 = _c("appliance_config", {"kind": "ike_policy", "vendor_label": "Cisco IOS", "section": "ikev2 proposal P1",
+                                   "version": 2, "encryption": ["AES-CBC-256"], "integrity": ["SHA1"],
+                                   "prf": ["SHA1"], "groups": ["ECP-256"]})
+    assert sha1["finding_codes"] == ["IKE_WEAK_INTEG", "QUANTUM_VULNERABLE"] and sha1["impact"] == "Low"
+    assert "MUST-" in sha1["finding"]
+    md5 = _c("appliance_config", {"kind": "ike_policy", "version": 2, "integrity": ["MD5", "SHA1"], "groups": ["ECP-256"]})
+    assert md5["impacts"]["IKE_WEAK_INTEG"] == "Medium"
+    esp_sha1 = _c("appliance_config", {"kind": "ipsec_policy", "encryption": ["AES-CBC-256"], "integrity": ["SHA1"],
+                                       "pfs_groups": ["ECP-256"]})
+    assert esp_sha1["finding_codes"] == ["IPSEC_WEAK_TRANSFORM"] and esp_sha1["impact"] == "Low"
+    for weak in ({"integrity": ["MD5"]}, {"encryption": ["3DES"], "integrity": ["SHA1"]},
+                 {"integrity": ["SHA1"], "pfs_groups": ["MODP-1024"]}):
+        assert _c("appliance_config", {"kind": "ipsec_policy", **weak})["impact"] == "Medium", weak
+    # the IKE probe: SHA-1 integrity / PRF only -> Low; an unattributed 'one of MD5/SHA1' may be MD5 -> Medium
+    probe = {"service": "ike", "ikev2": {"supported": True, "weak": {
+        "integrity": {"accepted": ["HMAC-SHA1-96"]}, "prf": {"accepted": ["HMAC-SHA1"]}}, "pq": {"supported": True}}}
+    assert _c("ike_endpoint", probe)["impacts"]["IKE_WEAK_INTEG"] == "Low"
+    probe["ikev2"]["weak"]["prf"] = {"accepted": [], "any_of": ["HMAC-MD5", "HMAC-SHA1"]}
+    assert _c("ike_endpoint", probe)["impacts"]["IKE_WEAK_INTEG"] == "Medium"
+
+
+def test_appliance_ike_policy_with_ml_kem_is_not_quantum_vulnerable():
+    """Review round 5, L4: an ike_policy row was QUANTUM_VULNERABLE whatever its pq fact said."""
+    base = {"kind": "ike_policy", "version": 2, "encryption": ["AES-GCM-16-256"], "groups": ["ECP-384"]}
+    pq = _c("appliance_config", {**base, "pq": True})
+    assert pq["finding_codes"] == [] and pq["quantum_vulnerable"] is False
+    no_pq = _c("appliance_config", {**base, "pq": False})
+    assert no_pq["finding_codes"] == ["IKE_NO_PQ"] and no_pq["quantum_vulnerable"] is True
+    assert _c("appliance_config", base)["quantum_vulnerable"] is True  # classical groups only
+
+
 def test_implicit_mesh_default_text():
     out = _c("k8s_mesh_policy", {"mtls_mode": "UNSET", "scope": "mesh", "implicit": True})
     assert out["finding_codes"] == ["MESH_MTLS_PERMISSIVE"] and out["finding"].startswith("No mesh-wide PeerAuthentication")

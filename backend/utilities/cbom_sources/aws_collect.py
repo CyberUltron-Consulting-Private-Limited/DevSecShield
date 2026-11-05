@@ -151,6 +151,84 @@ def _key_shape(data: bytes, label: str | None) -> tuple[str | None, int | None]:
     return None, None
 
 
+# Public material is inventory (public_key / certificate rows), never a secret.  A variable named for something public
+# (JWT_PUBLIC_KEY, STRIPE_PUBLISHABLE_KEY) or for a KMS key (whose material cannot leave KMS, so the value is an id,
+# ARN or alias) holds no secret unless it holds a private key, which is checked first.
+_PEM_PUBLIC = re.compile(r"-----BEGIN (PUBLIC KEY|RSA PUBLIC KEY|CERTIFICATE)-----.*?-----END \1-----", re.S)
+_SSH_PUBLIC = re.compile(r"^(ssh-rsa|ssh-dss|ssh-ed25519|ssh-ed448|ecdsa-sha2-nistp\d+|sk-[a-z0-9@.-]+) AAAA[A-Za-z0-9+/=]+")
+_ENV_PUBLIC_NAME = re.compile(r"(^|_)(PUBLIC|PUBLISHABLE|PUBKEY|KMS)(_|$)", re.I)
+_PUBLIC_VALUE = ("pk_live_", "pk_test_")  # Stripe publishable keys, meant to be embedded in web pages
+# Names that hold a setting about a secret rather than the secret (JWT audience, header name, object-key prefix ...)
+_ENV_SETTING = re.compile(r"_(AUDIENCE|AUD|ISSUER|ISS|HEADER|PREFIX|SUFFIX|TTL|EXPIRY|EXPIRES|EXPIRATION|LIFETIME|"
+                          r"TIMEOUT|ENDPOINT|HOST|PORT|VERSION|ALGORITHM|SCOPE|SCOPES|FIELD|PARAM)$", re.I)
+# A lower-case path (a Secrets Manager or SSM name such as prod/rds/app-user, an S3 key prefix) is a reference.
+# Random secrets mix case, so an AWS secret access key with '/' in it still counts as a secret.
+_LOWER_PATH = re.compile(r"[a-z0-9_.@+=-]+(/[a-z0-9_.@+=-]+)+/?")
+
+
+def _public_alg(key: Any) -> tuple[str | None, int | None]:
+    from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
+
+    for kind, alg in ((rsa.RSAPublicKey, "RSA"), (ec.EllipticCurvePublicKey, "ECDSA"), (dsa.DSAPublicKey, "DSA")):
+        if isinstance(key, kind):
+            return alg, (key.curve.key_size if alg == "ECDSA" else key.key_size)
+    if isinstance(key, ed25519.Ed25519PublicKey):
+        return "ED25519", 256
+    if isinstance(key, ed448.Ed448PublicKey):
+        return "ED448", 456
+    return None, None
+
+
+def _public_shape(text: str, compact: str) -> dict[str, Any] | None:
+    """A public key or certificate in a configuration value: its algorithm, size and (certificate) metadata."""
+    import base64
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+
+    from backend.utilities.cbom_sources.idp_collect import cert_facts
+
+    def cert(der: bytes, encoding: str) -> dict[str, Any] | None:
+        try:
+            alg, bits, facts = cert_facts(der, "aws")
+        except Exception:
+            return None
+        return {"material": "certificate", "encoding": encoding, "algorithm": alg, "key_bits": bits,
+                **{k: v for k, v in facts.items() if k != "source"}}
+
+    pem = _PEM_PUBLIC.search(text)
+    if pem:
+        if pem.group(1) == "CERTIFICATE":
+            try:
+                der = x509.load_pem_x509_certificate(pem.group(0).encode()).public_bytes(serialization.Encoding.DER)
+            except Exception:
+                return {"material": "certificate", "encoding": "pem"}
+            return cert(der, "pem") or {"material": "certificate", "encoding": "pem"}
+        try:
+            alg, bits = _public_alg(serialization.load_pem_public_key(pem.group(0).encode()))
+        except Exception:
+            alg, bits = None, None
+        return {"material": "public-key", "encoding": "pem", "algorithm": alg, "key_bits": bits}
+    ssh = _SSH_PUBLIC.match(text)
+    if ssh:
+        try:
+            alg, bits = _public_alg(serialization.load_ssh_public_key(ssh.group(0).encode()))
+        except Exception:
+            alg, bits = None, None
+        return {"material": "public-key", "encoding": "openssh", "algorithm": alg, "key_bits": bits}
+    if _DER_B64.fullmatch(compact):
+        try:
+            der = base64.b64decode(compact + "=" * (-len(compact) % 4))
+        except Exception:
+            return None
+        try:
+            alg, bits = _public_alg(serialization.load_der_public_key(der))
+            return {"material": "public-key", "encoding": "base64-der", "algorithm": alg, "key_bits": bits}
+        except Exception:
+            return cert(der, "base64-der")
+    return None
+
+
 def _value_shape(name: str, value: Any) -> dict[str, Any] | None:
     """What a configuration value holds -- never the value.  None when it is neither key material nor a secret."""
     import base64
@@ -173,16 +251,27 @@ def _value_shape(name: str, value: Any) -> dict[str, Any] | None:
         alg, bits = _key_shape(der, None) if der else (None, None)
         if alg:
             return {"material": "private-key", "encoding": "base64-der", "algorithm": alg, "key_bits": bits}
-    if not _ENV_SECRET_NAME.search(name) or _ENV_NOT_SECRET.search(name):
+    public = _public_shape(text, compact)
+    if public:
+        return public
+    if not _ENV_SECRET_NAME.search(name) or _ENV_NOT_SECRET.search(name) or _ENV_PUBLIC_NAME.search(name) \
+            or _ENV_SETTING.search(name):
         return None
-    if text.startswith(_REFERENCE) or text[0] in "$%@" or text.lower() in ("true", "false", "none", "null", "changeme", "placeholder") \
-            or len(text) < 8 or text.isdigit():
+    if text.startswith(_REFERENCE + _PUBLIC_VALUE) or text[0] in "$%@" \
+            or text.lower() in ("true", "false", "none", "null", "changeme", "placeholder") \
+            or len(text) < 8 or text.isdigit() or _LOWER_PATH.fullmatch(text):
         return None
     return {"material": "secret", "encoding": "text", "length": len(text)}
 
 
 def _embedded_asset(label: str, location: str, name: str, shape: dict[str, Any], facts: dict[str, Any]) -> dict[str, Any]:
-    """A private key becomes a private_key asset; any other secret a cloud_secret.  Both carry the store, never the value."""
+    """A private key becomes a private_key asset; any other secret a cloud_secret.  Both carry the store, never the value.
+    Public material (a public key or certificate) becomes a public_key / certificate row: inventory, not a secret."""
+    if shape["material"] in ("public-key", "certificate"):
+        kind = "certificate" if shape["material"] == "certificate" else "public_key"
+        return {"type": kind, "target": label, "location": location, "name": name, "algorithm": shape.get("algorithm"),
+                "key_size": shape.get("key_bits"),
+                "facts": {**facts, **{k: v for k, v in shape.items() if v is not None}, "identity": location}}
     facts = {**facts, **{k: v for k, v in shape.items() if v is not None}, "plaintext_in_cloud_config": True,
              "identity": location}
     if shape["material"] == "private-key":
@@ -219,7 +308,7 @@ def _userdata_shapes(raw: str) -> list[dict[str, Any]]:
         if not m:
             continue
         shape = _value_shape(m.group(1), m.group(2).strip().strip("'\""))
-        if shape:
+        if shape and shape["material"] in ("private-key", "secret"):  # the user-data row reports secrets only
             out.append({**shape, "variable": m.group(1), "line": number})
     return out[:50]
 

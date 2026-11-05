@@ -156,7 +156,8 @@ with a client certificate): Discover Versions, Query, Locate and Get Attributes 
 **Certificate authorities.** HashiCorp Vault (PKI issuers, roles, CRL/URL configuration; transit key settings,
 never `export` or `backup`; read-only policy template), EJBCA REST (CAs, CA certificates, built-in certificate
 profiles where the endpoint exists; client-certificate authentication) and AD CS over WinRM HTTPS (signing hash,
-CA certificate, EditFlags, published templates from the CA server's own template cache).
+CA certificate, EditFlags and DisableExtensionList, published templates and their permissions (DACL as SDDL) from
+the CA server's own template cache).
 
 **Network gate.** Every connection a collector makes to a target goes through `netutil`: `resolve_checked()`
 resolves once and applies the never-scan list, `checked_ip()` re-checks right before a driver connects,

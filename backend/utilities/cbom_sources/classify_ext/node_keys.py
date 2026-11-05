@@ -20,7 +20,47 @@ _WEAK_SYMMETRIC = re.compile(r"(^|[^A-Z0-9])(DES|DES2|DES3|3DES|3DES112|3DES168|
 _SYMMETRIC = re.compile(r"^(AES|CHACHA|CAMELLIA|ARIA|SEED|SM4|GENERIC[-_]SECRET|HMAC|TWOFISH|GOST)", re.I)
 _CLASS_WORD = {"private": "Private key", "secret": "Secret key", "public": "Public key", "secret_data": "Secret",
                "certificate": "Certificate key", "split": "Key share"}
-TLS_PUBLIC_MAX_DAYS = 398  # CA/Browser Forum Baseline Requirements, 6.3.2 (subscriber certificates from 2020-09-01)
+# Internal CAs (AD CS templates, Vault PKI roles, EJBCA profiles) are not bound by the CA/Browser Forum's 398 days,
+# which applies to publicly trusted certificates only.  Apple platforms (iOS 13 / macOS 10.15 and later) refuse TLS
+# server certificates valid for more than 825 days even when they chain to an enterprise root (Apple HT210176), so
+# that is the limit an internal server-certificate template is judged against.  CA templates are not judged.
+INTERNAL_TLS_MAX_DAYS = 825
+
+# Template enrollment and write rights (scan node: zs_scan_node/collectors/ca.py template_acl) are SDDL aliases or
+# SIDs.  Low-privileged: principals every user or computer of the domain is in.  Privileged: principals that already
+# control the domain or the CA, for whom a template adds nothing.  Everyone else is a named group or account.
+_LOW_PRIV = {"WD": "Everyone", "AU": "Authenticated Users", "AN": "Anonymous", "IU": "Interactive users",
+             "NU": "Network logon users", "BU": "Users", "BG": "Guests", "DU": "Domain Users", "DG": "Domain Guests",
+             "DC": "Domain Computers"}
+_LOW_RID = {"513": "Domain Users", "514": "Domain Guests", "515": "Domain Computers"}
+_PRIVILEGED = {"BA", "SY", "ED", "DA", "DD", "EA", "SA", "CA", "RO", "LA", "CO", "PS"}
+_PRIVILEGED_RID = {"498", "500", "512", "516", "517", "518", "519", "521"}
+_DOMAIN_SID = re.compile(r"^S-1-5-21-\d+-\d+-\d+-(\d+)$")
+
+
+def _principal_kind(principal: str) -> tuple[str, str]:
+    """('low' | 'privileged' | 'other', display name) of an SDDL alias or SID from a template's DACL."""
+    p = str(principal)
+    m = _DOMAIN_SID.match(p)
+    if p in _LOW_PRIV:
+        return "low", _LOW_PRIV[p]
+    if m and m.group(1) in _LOW_RID:
+        return "low", _LOW_RID[m.group(1)]
+    if p in _PRIVILEGED or (m and m.group(1) in _PRIVILEGED_RID):
+        return "privileged", p
+    return "other", p
+
+
+def _split_principals(principals: Any) -> tuple[list[str], list[str]]:
+    """(low-privileged display names, other principals) of a template right; privileged principals are dropped."""
+    low, other = [], []
+    for p in principals if isinstance(principals, list) else []:
+        kind, label = _principal_kind(p)
+        if kind == "low" and label not in low:
+            low.append(label)
+        elif kind == "other":
+            other.append(label)
+    return low, other
 
 
 def _alg_text(algorithm: Any, facts: dict[str, Any]) -> str:
@@ -85,8 +125,13 @@ def key_store(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) ->
 def db_encryption(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) -> bool | None:
     what = {"database": "Database", "tablespace": "Tablespace", "column": "Column"}.get(str(facts.get("scope")), "Data")
     if facts.get("encrypted") is False:
-        out.add("DB_TDE_OFF", "Low", f"{what} {facts.get('database') or facts.get('tablespace') or ''} is not encrypted at "
-                                     "rest (Transparent Data Encryption is off)".replace("  ", " "))
+        # Only database-level encryption is visible from inside the database: the volume or the managed service
+        # (BitLocker, LUKS, RDS storage encryption) may still encrypt the files, which this row cannot see.
+        out.add("DB_TDE_OFF", "Low", f"{what} {facts.get('database') or facts.get('tablespace') or ''} has no "
+                                     "database-level encryption (Transparent Data Encryption is off): its data files "
+                                     "rely on volume or storage encryption, which is not visible from the database, "
+                                     "and copied files or backups are readable unless encrypted "
+                                     "separately".replace("  ", " "))
         return None
     weak = weak_symmetric(_alg_text(algorithm, facts))
     if weak:
@@ -157,8 +202,24 @@ def ca_authority(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now)
         out.add("CA_WEAK_SIGNING", "Critical" if weak == "MD5" else "High",
                 f"The CA signs certificates and CRLs with {weak} ({facts.get('hash_algorithm') or facts.get('signature_algorithm')})")
     if facts.get("san_from_request_attributes") is True:
-        out.add("CA_ALLOWS_ANY_NAME", "High", "The CA takes subject alternative names from request attributes "
-                                              "(EDITF_ATTRIBUTESUBJECTALTNAME2) for every template (AD CS ESC6 pattern)")
+        esc6 = ("The CA takes subject alternative names from request attributes (EDITF_ATTRIBUTESUBJECTALTNAME2) for "
+                "every template (AD CS ESC6 pattern)")
+        disabled = facts.get("sid_extension_disabled")
+        if disabled is False:
+            # KB5014754: the CA writes the requester's SID into the certificate and domain controllers (May 2022 and
+            # later updates) refuse a certificate whose SID is not the account it names, so ESC6 alone no longer
+            # signs in to Active Directory as someone else.
+            out.add("CA_ALLOWS_ANY_NAME", "Medium", f"{esc6}. The CA adds the requester's SID, so domain controllers "
+                                                    "with the KB5014754 updates refuse such certificates for Active "
+                                                    "Directory sign-in; services that map certificates by name (VPN, "
+                                                    "802.1X, web sign-in) still accept them")
+        else:
+            out.add("CA_ALLOWS_ANY_NAME", "High", esc6 + (
+                ". The CA also leaves the SID security extension out of its certificates (DisableExtensionList, "
+                "ESC16), so domain controllers cannot tell whose certificate it is and anyone who may enroll can "
+                "sign in as another user" if disabled else
+                "; whether domain controllers refuse such certificates (KB5014754 strong mapping) depends on the CA "
+                "adding the SID security extension, which this scan node version did not read"))
     C._key_rules(out, algorithm or facts.get("key_type"), key_size, "CA key")
     return C.quantum_vulnerable(algorithm or facts.get("key_type"))
 
@@ -179,17 +240,38 @@ def ca_template(out, facts: dict[str, Any], algorithm: Any, key_size: Any, now) 
     weak = _weak_hash(facts.get("signature_hash") or facts.get("signature_algorithm"))
     if weak:
         out.add("CA_WEAK_SIGNING", "Critical" if weak == "MD5" else "High", f"{name} signs issued certificates with {weak}")
+    acl_read = facts.get("acl_status") == "read"
     if facts.get("allow_any_name") is True:
         out.add("CA_ALLOWS_ANY_NAME", "Medium", f"{name} issues certificates for any name the requester asks for "
                                                 "(allow_any_name)")
     elif facts.get("enrollee_supplies_subject") is True and facts.get("client_auth") is True:
-        out.add("CA_ALLOWS_ANY_NAME", "High", f"{name} lets the requester choose the subject of a client-authentication "
-                                              "certificate (ENROLLEE_SUPPLIES_SUBJECT), so it can be used to sign in as "
-                                              "another user (AD CS ESC1 pattern)")
+        # ESC1 needs a requester who is not already an administrator: the template's enrollment rights decide it.
+        chosen = (f"{name} lets the requester choose the subject of a certificate that can sign in "
+                  "(ENROLLEE_SUPPLIES_SUBJECT with client authentication or any purpose)")
+        low, other = _split_principals(facts.get("enroll_principals"))
+        if not acl_read:
+            out.add("CA_ALLOWS_ANY_NAME", "Medium", f"{chosen}; who may enroll was not read (scan node version or "
+                                                    "template security not readable): review its enrollment rights, "
+                                                    "it is the AD CS ESC1 path if non-administrators may enroll")
+        elif low:
+            out.add("CA_ALLOWS_ANY_NAME", "High", f"{chosen}, and {', '.join(low)} may enroll: any of them can sign in "
+                                                  "as another user, a domain administrator included (AD CS ESC1)")
+        elif other:
+            out.add("CA_ALLOWS_ANY_NAME", "Medium", f"{chosen}; enrollment is limited to {len(other)} group(s) or "
+                                                    f"account(s) that are not built-in administrators ({_names(other)}): "
+                                                    "each member can sign in as another user (AD CS ESC1 pattern)")
+        # enrollment limited to Domain / Enterprise Admins and similar (the SubCA default): no escalation path
+    if acl_read:
+        low, _other = _split_principals(facts.get("write_principals"))
+        if low:
+            out.add("CA_TEMPLATE_WRITABLE", "High", f"{', '.join(low)} may change {name} (full control, write, "
+                                                    "owner or permission rights on the template): they can make it "
+                                                    "issue sign-in certificates for any user (AD CS ESC4)")
     days = _days(facts.get("max_ttl_s"))
-    if days and days > TLS_PUBLIC_MAX_DAYS and facts.get("server_auth", True):
-        out.add("CA_LONG_VALIDITY", "Low", f"{name} issues certificates valid for up to {int(days)} days (more than "
-                                           f"{TLS_PUBLIC_MAX_DAYS})")
+    if days and days > INTERNAL_TLS_MAX_DAYS and facts.get("server_auth", True) and not facts.get("is_ca"):
+        out.add("CA_LONG_VALIDITY", "Low", f"{name} issues server certificates valid for up to {int(days)} days, more "
+                                           f"than the {INTERNAL_TLS_MAX_DAYS} days Apple platforms accept from any "
+                                           "CA, enterprise roots included")
     if not key_type or key_type in ("ANY",):
         return None
     return C.quantum_vulnerable(key_type)
