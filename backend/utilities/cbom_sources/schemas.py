@@ -308,6 +308,8 @@ class EnrollBody(_Body):
     # Kubernetes node name a DaemonSet pod enrolls under (WP8b)
     mode: Literal["agent", "agentless"] | None = None
     node_name: str | None = Field(default=None, max_length=253)
+    # a pod enrolling again with an agent pool token after a 401: the node id it had (a reset node is taken back)
+    node_id: int | None = Field(default=None, ge=1, le=2_147_483_647)
 
     @field_validator("signing_public_key")
     @classmethod
@@ -351,6 +353,11 @@ class HeartbeatBody(_Body):
     capabilities: dict[str, Any] = Field(default_factory=dict)
     clock: str | None = Field(default=None, max_length=40)
     last_error: str | None = Field(default=None, max_length=2000)
+
+
+class ClaimBody(_Body):
+    # the mode the node runs in now (older nodes send no body): a node reporting agent mode is never given a secret
+    mode: Literal["agent", "agentless"] | None = None
 
 
 class ResultBody(_Body):

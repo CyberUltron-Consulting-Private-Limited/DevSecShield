@@ -222,8 +222,8 @@ class Api:
     def heartbeat(self, body: dict) -> dict:
         return self.call("POST", "/cbom/node/heartbeat", body, retries=1)[1] or {}
 
-    def claim(self) -> dict | None:
-        status, data = self.call("POST", "/cbom/node/jobs/claim", None, retries=1)
+    def claim(self, body: dict | None = None) -> dict | None:
+        status, data = self.call("POST", "/cbom/node/jobs/claim", body, retries=1)
         return None if status == 204 else data
 
     def assets(self, job_id: int, attempt: int, lease_id: str, batch_id: str, assets: list[dict]) -> dict:

@@ -148,12 +148,12 @@ def test_enrollment_401_from_another_deployment_does_not_burn_the_registration_t
     api.force_401 = "other"  # ZS_API_URL now points at another ZeroShield (staging instead of production)
     threading.Timer(1.0, ag.shutdown.set).start()
     ag.ensure_enrolled()
-    assert ag.state.enrolled_with is None  # still usable once ZS_API_URL is fixed
+    assert ag.state.enrolled_with is None and ag.state.refused_with is None  # still usable once ZS_API_URL is fixed
     ag.shutdown.clear()
     api.force_401 = "own"  # its own deployment refuses it: spent or expired, so it is not retried
     threading.Timer(1.0, ag.shutdown.set).start()
     ag.ensure_enrolled()
-    assert ag.state.enrolled_with is not None
+    assert ag.state.refused_with is not None
 
 
 def test_401_while_posting_assets(server, tmp_path, monkeypatch):  # noqa: F811

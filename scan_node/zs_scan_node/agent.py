@@ -2,7 +2,8 @@
 
 Environment:
   ZS_API_URL              ZeroShield API base URL (required)
-  ZS_REGISTRATION_TOKEN   single-use token from "Add scan node" (needed only until the node has enrolled)
+  ZS_REGISTRATION_TOKEN   single-use token from "Add scan node" (needed only until the node has enrolled), or an
+                          agent pool token (zsp_, agent mode): the pod enrolls again with it after a reset or delete
   ZS_STATE_DIR            persistent state (default /var/lib/zs-node; mount a volume here)
   ZS_MAX_JOBS             jobs run in parallel (default 2)
   ZS_VAULT_PATH_PREFIX    allow vault credentials under this path prefix only (vault use is off without it)
@@ -44,6 +45,7 @@ from zs_scan_node.tlsprobe import have_openssl
 
 POLL_SECONDS = 5
 CLAIM_GRACE = 0  # the heartbeat reports running jobs immediately after claim
+POOL_PREFIX = "zsp_"  # agent pool tokens: one token for every pod of a DaemonSet, usable again after a reset
 ALIVE_FILE = "alive"  # touched by every heartbeat-loop pass; the Docker HEALTHCHECK checks its age
 # A job whose collector has not returned this long after its deadline (a target that stopped answering) is ended
 # so it cannot hold a job slot forever.  Generous: a target started just before the deadline may run its full
@@ -120,9 +122,18 @@ class Agent:
                 self.shutdown.wait(60)
                 continue
             digest = hashlib.sha256(reg.encode()).hexdigest()
-            if self.state.enrolled_with == digest:
-                log("the registration token in ZS_REGISTRATION_TOKEN was already used; create a new one in "
-                    "ZeroShield (Scan nodes > Reset) and restart with it", level="error")
+            pool = reg.startswith(POOL_PREFIX)
+            # A single-use token is spent once this node enrolled with it.  An agent pool token (zsp_) enrolls every
+            # pod and enrolls it again after its node was reset or deleted (a 401 cleared the node token), until
+            # ZeroShield refuses it (revoked, expired, or every enrollment used).
+            if self.state.refused_with == digest or (not pool and self.state.enrolled_with == digest):
+                if pool:
+                    log("ZeroShield refused the agent pool token in ZS_REGISTRATION_TOKEN (revoked, expired or every "
+                        "enrollment used); create a new agent pool token (CBOM Sources > Scan nodes > Host agents on "
+                        "Kubernetes) and upgrade the Helm release with it (--set agent.poolToken=...)", level="error")
+                else:
+                    log("the registration token in ZS_REGISTRATION_TOKEN was already used; create a new one in "
+                        "ZeroShield (Scan nodes > Reset) and restart with it", level="error")
                 self.shutdown.wait(300)
                 continue
             # A new signing key for this enrollment, on disk before its public half is sent: if the answer is lost,
@@ -136,13 +147,15 @@ class Agent:
             if self.agent_mode:
                 body["mode"] = "agent"
                 body["node_name"] = (os.environ.get("ZS_NODE_NAME") or socket.gethostname())[:253]
+                if pool and self.state.node_id:  # enrolling again: ZeroShield gives this pod its reset node back
+                    body["node_id"] = self.state.node_id
             try:
                 data = self.api.enroll(body)
             except Unauthorized as exc:
                 if self.state.deployment_id and exc.deployment == self.state.deployment_id:
-                    # our own ZeroShield refused it: the token is spent or expired, do not try it again
+                    # our own ZeroShield refused it: the token is spent, expired or revoked, do not try it again
                     log("registration token is invalid or expired; create a new one in ZeroShield", level="error")
-                    self.state.enrolled_with = digest
+                    self.state.refused_with = digest
                     self.state.save()
                 else:
                     # a fresh node cannot tell which ZeroShield answered: keep the token usable and retry slowly
@@ -262,8 +275,12 @@ class Agent:
             log("cannot mark the node alive", error=exc.__class__.__name__, level="warn")
 
     def on_unauthorized(self) -> None:
-        log("ZeroShield no longer accepts this node's token (node reset or deleted); stopping jobs and waiting for "
-            "a new ZS_REGISTRATION_TOKEN", level="error")
+        if os.environ.get("ZS_REGISTRATION_TOKEN", "").strip().startswith(POOL_PREFIX):
+            log("ZeroShield no longer accepts this node's token (node reset or deleted); stopping jobs and enrolling "
+                "again with the agent pool token", level="error")
+        else:
+            log("ZeroShield no longer accepts this node's token (node reset or deleted); stopping jobs and waiting "
+                "for a new ZS_REGISTRATION_TOKEN", level="error")
         with self.lock:
             for r in self.running.values():
                 r.ctx.cancel_reason = "node token revoked"
@@ -284,7 +301,9 @@ class Agent:
                 continue
             sent = time.monotonic()
             try:
-                payload = self.api.claim()
+                # the mode goes with every claim: a node restarted in agent mode is never handed a secret, even
+                # before its first heartbeat reaches ZeroShield
+                payload = self.api.claim({"mode": "agent" if self.agent_mode else "agentless"})
             except Unauthorized:
                 self.on_unauthorized()
                 continue

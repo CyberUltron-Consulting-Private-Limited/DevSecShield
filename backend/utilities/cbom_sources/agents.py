@@ -11,7 +11,14 @@ An agent node collects only the host it runs on, from read-only mounts.  The ser
 
 Pool tokens (``zsp_``): many pods enroll with one token, each as its own node named after its Kubernetes node.  The
 token expires, caps its enrollments (counted with one conditional UPDATE, so concurrent pods cannot overshoot) and
-can be revoked; only its SHA-256 is stored.
+can be revoked; only its SHA-256 is stored.  A pod whose node was reset in ZeroShield gets a 401, enrolls again with
+the same pool token and takes its own node back (``node_to_rebind``: same pool, credential revoked, the node id the
+pod kept), which uses no enrollment, while the token is neither expired nor revoked.  A deleted node's pod enrolls
+as a new node within the pool's cap.
+
+A node's mode follows what it reports (``reconcile_mode``): a node restarted with ``ZS_MODE=agent`` is an agent node
+from its next heartbeat or claim on; the other way round needs a new enrollment.  The per-team caps on agent nodes
+and pool tokens are checked under the team's settings-row lock (``lock_team``).
 """
 from __future__ import annotations
 
@@ -20,10 +27,11 @@ import re
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import update
 from sqlmodel import Session, select
 
-from backend.new_models import CbomCollectionSource, CbomNodePool, CbomScanNode
-from backend.utilities.cbom_sources.common import log
+from backend.new_models import CbomCollectionSettings, CbomCollectionSource, CbomNodePool, CbomScanNode
+from backend.utilities.cbom_sources.common import audit, log
 
 AGENT = "agent"
 AGENTLESS = "agentless"
@@ -108,6 +116,49 @@ def ensure_host_source(session: Session, node: CbomScanNode, owner_user_id: int,
     session.flush()
     log("host agent source created", team=node.team_id, node=node.id, source=source.id)
     return source
+
+
+def lock_team(session: Session, team_id: int) -> None:
+    """Serialise a check-then-insert against a per-team cap (agent nodes, agent pool tokens): a no-op UPDATE of the
+    team's settings row (which must exist: ``get_or_create_settings`` first), which PostgreSQL row-locks and SQLite
+    write-locks until the transaction ends, so two requests cannot both pass the same count."""
+    session.exec(update(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)
+                 .values(row_version=CbomCollectionSettings.row_version))
+
+
+def node_to_rebind(session: Session, pool: CbomNodePool, node_id: int | None, node_name: str | None) -> CbomScanNode | None:
+    """The agent node of ``pool`` that a pod enrolling again with the pool token takes back: one whose credential was
+    revoked (reset), found by the node id the pod kept in its state, or (state lost) by its Kubernetes node name when
+    exactly one such node has that name.  A node that still holds a credential is never taken."""
+    query = select(CbomScanNode).where(CbomScanNode.team_id == pool.team_id, CbomScanNode.pool_id == pool.id,
+                                       CbomScanNode.mode == AGENT,
+                                       CbomScanNode.node_token_hash.is_(None))  # type: ignore[union-attr]
+    if node_id is not None:
+        return session.exec(query.where(CbomScanNode.id == node_id)).first()
+    name = node_name_from(node_name, "").lower()
+    matches = [n for n in session.exec(query).all() if name and n.name.lower() == name]
+    return matches[0] if len(matches) == 1 else None
+
+
+def reconcile_mode(session: Session, node: CbomScanNode, reported: Any, now: _dt.datetime) -> str | None:
+    """Apply the mode a node reports (heartbeat ``capabilities.mode``, claim body).  A node now running in agent mode
+    is an agent node from this request on (never given a credential again) with its own host source.  A node enrolled
+    in agent mode that reports agentless stays an agent node: taking credentials needs a new enrollment.  Returns the
+    note for the node's error field in that case."""
+    if reported == AGENT and not is_agent(node):
+        node.mode = AGENT
+        node.row_version += 1
+        node.last_updated = now
+        session.add(node)
+        ensure_host_source(session, node, node.owner_user_id, now)
+        audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action="node.mode",
+              object_type="node", object_id=node.id, changed_fields=["mode"])
+        log("node now runs in agent mode", team=node.team_id, node=node.id)
+        return None
+    if reported == AGENTLESS and is_agent(node):
+        return ("This node enrolled in agent mode and now runs without ZS_MODE=agent; it is still an agent node (its "
+                "own host only, no credentials). Reset it and register it again to use it as an agentless node")
+    return None
 
 
 def public_pool(pool: CbomNodePool, now: _dt.datetime, nodes: list[CbomScanNode] | None = None) -> dict[str, Any]:
