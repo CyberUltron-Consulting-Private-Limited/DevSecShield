@@ -53,6 +53,53 @@ def test_parse_csv_aliases_bom_delimiters_and_limits():
     assert CMDB.norm_classification("Highly Confidential") == "restricted"
 
 
+def test_a_csv_the_csv_module_cannot_read_is_a_400_not_a_500(api, world):
+    """rev5 #8: csv.Error (a cell over the module's 131072-character field limit, an unterminated quote running to
+    the end) escaped parse_csv as a 500. It is the file's problem: ImportError_ -> 400."""
+    big = "host,owner\nweb1.corp," + "a" * 200_000 + "\n"
+    open_quote = 'host,owner\nweb1,"' + "x" * 140_000
+    for text in (big, open_quote):
+        with pytest.raises(CMDB.ImportError_, match="could not be read near line 2: field larger than field limit"):
+            CMDB.parse_csv(text)
+        r = api("POST", "/1/cbom/sources/cmdb/preview", json={"csv": text})
+        assert r.status_code == 400 and r.json()["detail"].startswith("csv: the CSV could not be read"), r.text
+        assert "aaaa" not in r.text and "xxxx" not in r.text  # never echoes the input
+
+
+def test_os_column_windows_rule_does_not_match_darwin():
+    """rev5 #9: ``"win" in value`` sent macOS (Darwin) hosts to the Windows list."""
+    windows = ("Windows Server 2022", "windows", "Win2019", "MicrosoftWindows", "cmdb_ci_win_server", "WIN 10")
+    other = ("Darwin", "darwin 23.1", "macOS 14", "Linux", "Ubuntu 22.04", "Red Hat", None, "")
+    assert [CMDB._os_kind(v) for v in windows] == ["windows_servers"] * len(windows)
+    assert [CMDB._os_kind(v) for v in other] == ["linux_servers"] * len(other)
+
+
+def test_cmdb_import_never_puts_a_server_source_on_an_agent_node(api, world):
+    """rev6 #9: the source form refuses a linux_servers source on an agent-mode node (agents.check_node_for_kind);
+    the CMDB import created one. apply_plan now applies the same rule (400, nothing created)."""
+    from test_cbom_wp8b_agents import _enroll_agent, _pool
+
+    from backend.new_models import CbomScanNode
+
+    engine, _ = world
+    _pool_row, token = _pool(api)
+    _client, data = _enroll_agent(api, token, "k8s-worker-a")
+    agent_id = data["node_id"]
+    form = api("POST", "/1/cbom/sources/items", json=linux_body("direct", node_id=agent_id, targets=["10.0.0.1"]))
+    assert form.status_code == 400
+    csv_text = "Hostname,Owner,Application,Environment,OS\nnew-01.bank.local,Cards Team,Cards,Staging,Linux\n"
+    plan = api("POST", "/1/cbom/sources/cmdb/preview", json={"csv": csv_text}).json()["plan"]
+    r = api("POST", "/1/cbom/sources/cmdb/apply", json={"csv": csv_text, "node_id": agent_id, "digest": plan["digest"]})
+    assert r.status_code == 400 and r.json()["detail"] == form.json()["detail"], r.text
+    with Session(engine) as s:
+        assert s.exec(select(CbomCollectionSource).where(CbomCollectionSource.node_id == agent_id,
+                                                         CbomCollectionSource.kind != "host_agent")).all() == []
+        assert s.get(CbomScanNode, agent_id).mode == "agent"
+    node_id, _token, _ = enroll_node(api)  # an agentless node takes the same import
+    ok = api("POST", "/1/cbom/sources/cmdb/apply", json={"csv": csv_text, "node_id": node_id, "digest": plan["digest"]})
+    assert ok.status_code == 200 and ok.json()["result"]["created"] == 1, ok.text
+
+
 def test_preview_then_apply_updates_metadata_creates_groups_and_keeps_jobs(api, world):
     engine, _ = world
     node_id, _token, _ = enroll_node(api)

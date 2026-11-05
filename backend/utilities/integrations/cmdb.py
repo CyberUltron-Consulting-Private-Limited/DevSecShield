@@ -27,6 +27,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionSource, CbomScanNode
+from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.common import NAME_RE, audit, log, utcnow
 from backend.utilities.cbom_sources.kinds import KINDS, _metadata_text
@@ -128,6 +129,14 @@ def parse_csv(text: str) -> list[dict[str, Any]]:
         dialect = csv.excel
     reader = csv.reader(io.StringIO(text), dialect)
     try:
+        return _read_rows(reader)
+    except csv.Error as exc:
+        # a cell over the csv module's field limit (128 KB), a quote never closed ...: the file, not the server
+        raise ImportError_(f"the CSV could not be read near line {reader.line_num}: {str(exc)[:120]}") from None
+
+
+def _read_rows(reader: Any) -> list[dict[str, Any]]:
+    try:
         header = next(reader)
     except StopIteration:
         raise ImportError_("the CSV is empty") from None
@@ -151,8 +160,11 @@ def parse_csv(text: str) -> list[dict[str, Any]]:
     return rows
 
 
+_WINDOWS = re.compile(r"\bwin|windows|cmdb_ci_win")  # Windows, Win2019, cmdb_ci_win_server; never Darwin
+
+
 def _os_kind(os_value: str | None) -> str:
-    return "windows_servers" if os_value and "win" in os_value.lower() else "linux_servers"
+    return "windows_servers" if os_value and _WINDOWS.search(os_value.lower()) else "linux_servers"
 
 
 @dataclass
@@ -318,6 +330,11 @@ def apply_plan(session: Session, team_id: int, user_id: int, plan: Plan, *, node
         node = session.get(CbomScanNode, node_id) if node_id else None
         if node is None or node.team_id != team_id:
             raise ValueError("node_id: choose the scan node that reaches the new hosts")
+        # the source form's rule (agents.check_node_for_kind): an agent node collects only its own host
+        for kind in sorted({item["kind"] for item in plan.creates}):
+            problem = AG.kind_problem(node, kind)
+            if problem:
+                raise ValueError(f"node_id: {problem}")
         total = len(session.exec(select(CbomCollectionSource.id).where(CbomCollectionSource.team_id == team_id)).all())
         if total + len(plan.creates) > MAX_SOURCES:
             raise ValueError(f"this import would create {len(plan.creates)} sources; a team can have at most "
