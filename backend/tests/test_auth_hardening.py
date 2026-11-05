@@ -9,6 +9,7 @@ Run (no .env is read):
 import concurrent.futures
 import datetime as dt
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -24,11 +25,13 @@ import bcrypt  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from jose import jwt as jose_jwt  # noqa: E402
 from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
+from sqlmodel import delete as sa_delete  # noqa: E402
 
 from backend.main import app  # noqa: E402
 from backend.new_models import AuthCounter, Team, TeamMembership, User, VerificationCode  # noqa: E402
 from backend.routers import admin as admin_router  # noqa: E402
 from backend.routers import auth as auth_router  # noqa: E402
+from backend.utilities import ratelimit  # noqa: E402
 from backend.utilities.auth import auth_utils  # noqa: E402
 from backend.utilities.team import membership  # noqa: E402
 
@@ -192,11 +195,68 @@ def test_the_hash_upgrade_is_compare_and_swap(client, world, monkeypatch):
     assert auth_utils.verify_password("reset-in-between-1", stored(engine, user_id).password)
 
 
-def test_login_accepts_every_old_length_but_not_more_than_128(client, world):
+def test_login_accepts_every_old_length_up_to_the_byte_cap(client, world):
     engine, sent = world
     add_user(engine, "five@example.test", legacy_bcrypt("abcde"))
     assert login(client, "five@example.test", "abcde", send_code(client, sent, "five@example.test")).status_code == 200
-    assert login(client, "five@example.test", "x" * 129, "123456").status_code == 422
+    r = login(client, "five@example.test", "x" * (auth_utils.MAX_PASSWORD_BYTES + 1), "123456")
+    assert r.status_code == 422 and "at most 512 bytes" in r.text
+    assert login(client, "five@example.test", "", "123456").status_code == 422
+
+
+def test_a_legacy_password_longer_than_128_characters_still_signs_in(client, world):
+    """Admin-created accounts once had no length rule: such a password signs in (and is upgraded to Argon2id)
+    as long as it fits the 512-byte cap that bounds the hashing cost; new passwords stay capped at 128."""
+    engine, sent = world
+    password = "A" * 130
+    user_id = add_user(engine, "longadmin@example.test", legacy_bcrypt(password))
+    r = login(client, "longadmin@example.test", password, send_code(client, sent, "longadmin@example.test"))
+    assert r.status_code == 200, r.text
+    assert stored(engine, user_id).password.startswith("$argon2id$")
+    assert login(client, "longadmin@example.test", password,
+                 send_code(client, sent, "longadmin@example.test")).status_code == 200, "and again after the upgrade"
+    longest = "B" * auth_utils.MAX_PASSWORD_BYTES
+    other = add_user(engine, "longest@example.test", legacy_bcrypt(longest))
+    assert login(client, "longest@example.test", longest, send_code(client, sent, "longest@example.test")).status_code == 200
+    assert stored(engine, other).password.startswith("$argon2id$")
+    r = client.post("/reset_password", json={"email": "longadmin@example.test", "password": password,
+                                             "verification_code": send_code(client, sent, "longadmin@example.test")})
+    assert r.status_code == 422 and "8 to 128 characters" in r.text, "a NEW password is still capped at 128"
+
+
+def test_a_decomposed_password_that_signed_up_also_signs_in(client, world):
+    """Sign-up counts after NFC; sign-in must too (70 x 'e' + combining acute is 140 code points as sent)."""
+    import unicodedata
+
+    engine, sent = world
+    password = unicodedata.normalize("NFD", "é" * 70)
+    assert len(password) == 140
+    r = client.post("/signup", json={"email": "nfd@example.test", "password": password, "first_name": "N",
+                                     "last_name": "F", "verification_code": send_code(client, sent, "nfd@example.test")})
+    assert r.status_code == 200, r.text
+    r = login(client, "nfd@example.test", password, send_code(client, sent, "nfd@example.test"))
+    assert r.status_code == 200, r.text
+    # the 128-character sign-up maximum, decomposed: 256 code points as sent, still one valid password
+    longest = unicodedata.normalize("NFD", "é" * 128)
+    r = client.post("/reset_password", json={"email": "nfd@example.test", "password": longest,
+                                             "verification_code": send_code(client, sent, "nfd@example.test")})
+    assert r.status_code == 200, r.text
+    assert login(client, "nfd@example.test", longest, send_code(client, sent, "nfd@example.test")).status_code == 200
+
+
+@pytest.mark.parametrize("password, refused", [
+    ("", True),
+    ("a", False),
+    ("x" * 512, False),
+    ("x" * 513, True),
+    ("\U0001F600" * 128, False),   # 512 bytes
+    ("\U0001F600" * 129, True),
+    ("é" * 256, False),      # 768 bytes as sent, 512 after NFC
+    ("é" * 257, True),
+    ("x" * 100_000, True),         # refused before it is normalised or hashed
+])
+def test_the_sign_in_password_rule_is_bytes_after_nfc(password, refused):
+    assert (auth_utils.login_password_problem(password) is not None) is refused
 
 
 def test_hash_and_verify_raise_no_deprecation_warning():
@@ -280,21 +340,208 @@ def test_concurrent_use_of_one_code_succeeds_exactly_once(world):
     assert results.count(True) == 1
 
 
-def test_codes_per_email_are_capped_per_hour_with_retry_after(client, world, monkeypatch):
+def _statements_of(engine):
+    from sqlalchemy import event
+
+    seen: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        seen.append(" ".join(statement.split()))
+
+    event.listen(engine, "before_cursor_execute", record)
+    return seen
+
+
+def _wrong(code: str, i: int = 1) -> str:
+    return f"{(int(code) + i) % 1_000_000:06d}"
+
+
+def test_every_guess_is_charged_to_the_live_code_before_it_is_compared(world, monkeypatch):
+    """A guess must lock and charge the live code BEFORE it is compared: a ``DELETE ... WHERE code = :guess``
+    that matches nothing takes no lock, so concurrent wrong guesses were all compared before any was counted
+    (21-30 per code on Postgres instead of five)."""
+    engine, _sent = world
+    code = auth_utils.issue_verification_code(engine, "order@example.test")
+    seen = _statements_of(engine)
+    assert not auth_utils.consume_verification_code(engine, "order@example.test", _wrong(code), allow_dev_code=False)
+    assert auth_utils.consume_verification_code(engine, "order@example.test", code, allow_dev_code=False)
+    touching = [s for s in seen if "verificationcode" in s.lower()]
+    assert touching, seen
+    assert not any(re.search(r"verificationcode\.code\s*=", s, re.I) for s in touching), \
+        "the guess is never compared in SQL (that comparison takes no row lock)"
+    first = touching[0]
+    assert first.upper().startswith("UPDATE VERIFICATIONCODE SET ATTEMPTS"), first
+    assert re.search(r"verificationcode\.attempts\s*<", first) and "RETURNING" in first.upper(), first
+
+    # at most MAX_CODE_ATTEMPTS comparisons per live code, however many guesses arrive at once
+    code = auth_utils.issue_verification_code(engine, "burst@example.test")
+    compared: list[str] = []
+    real = auth_utils._code_matches
+
+    def counting(stored_code, guess):
+        compared.append(stored_code)
+        return real(stored_code, guess)
+
+    monkeypatch.setattr(auth_utils, "_code_matches", counting)
+    guesses = [_wrong(code, i) for i in range(1, 31)] + [code]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(lambda g: auth_utils.consume_verification_code(
+            engine, "burst@example.test", g, allow_dev_code=False), guesses))
+    assert len(compared) <= auth_utils.MAX_CODE_ATTEMPTS
+    assert results.count(True) <= 1
+    if not results[-1]:
+        with Session(engine) as s:
+            assert s.exec(select(VerificationCode).where(VerificationCode.email == "burst@example.test")).first() is None
+
+
+PG_URL = os.environ.get("AUTH_TEST_PG_URL")
+
+
+@pytest.mark.skipif(not PG_URL, reason="set AUTH_TEST_PG_URL (an empty PostgreSQL database) to run")
+def test_a_burst_of_wrong_codes_is_compared_at_most_five_times_on_postgres(monkeypatch):
+    """The reviewer's race on PostgreSQL: 30 wrong codes and the right one at the same moment.  Counts every
+    comparison made against the live code (in Python, or as a SQL ``code = :guess`` that ran before the right
+    code was accepted); the design bound is MAX_CODE_ATTEMPTS per code."""
+    import threading
+    import time
+
+    from sqlalchemy import event
+
+    engine = create_engine(PG_URL, pool_size=40, max_overflow=0)
+    SQLModel.metadata.create_all(engine, tables=[VerificationCode.__table__, AuthCounter.__table__])
+    sql_compared: list[tuple[float, str, int]] = []
+    py_compared: list[str] = []
+    lock = threading.Lock()
+
+    @event.listens_for(engine, "after_cursor_execute")
+    def _after(conn, cursor, statement, parameters, context, executemany):
+        if re.search(r"verificationcode\.code\s*=", statement) and isinstance(parameters, dict):
+            guess = next((v for k, v in parameters.items() if k.startswith("code")), None)
+            with lock:
+                sql_compared.append((time.perf_counter(), guess, cursor.rowcount))
+
+    real = getattr(auth_utils, "_code_matches", None)
+
+    def counting(stored_code, guess):
+        with lock:
+            py_compared.append(guess)
+        return real(stored_code, guess)
+
+    monkeypatch.setattr(auth_utils, "_code_matches", counting, raising=False)
+    emails = []
+    try:
+        for trial in range(4):
+            email = f"pg-burst-{trial}-{time.time_ns()}@example.test"
+            emails.append(email)
+            code = auth_utils.issue_verification_code(engine, email)
+            guesses = [_wrong(code, i) for i in range(1, 31)] + [code]
+            barrier = threading.Barrier(len(guesses))
+            results: dict[str, bool] = {}
+            sql_compared.clear()
+            py_compared.clear()
+
+            def guess(g):
+                barrier.wait()
+                if g == code:
+                    time.sleep(0.002)
+                results[g] = auth_utils.consume_verification_code(engine, email, g, allow_dev_code=False)
+
+            threads = [threading.Thread(target=guess, args=(g,)) for g in guesses]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(60)
+            compared = len(py_compared)
+            if results[code] and sql_compared:
+                accepted_at = next(ts for ts, g, _rc in sql_compared if g == code)
+                compared += 1 + sum(1 for ts, g, _rc in sql_compared if g != code and ts < accepted_at)
+            assert compared <= auth_utils.MAX_CODE_ATTEMPTS, (trial, compared, results[code])
+            assert sum(results.values()) <= 1
+    finally:
+        with Session(engine) as s:
+            for email in emails:
+                s.exec(sa_delete(VerificationCode).where(VerificationCode.email == email))
+                s.exec(sa_delete(AuthCounter).where(AuthCounter.key.like(f"%{email}")))
+            s.commit()
+        engine.dispose()
+
+
+def test_codes_per_email_are_capped_per_hour_and_the_cap_resends_the_live_code(client, world, monkeypatch):
+    """Past the per-email cap no NEW code is made (the guess budget stays bounded); the live code is mailed
+    again instead, so requests from somebody else cannot lock the owner out of sign-in."""
     engine, sent = world
     monkeypatch.setattr(auth_router.send_code_ip_limiter, "times", 100)  # isolate the per-email cap
     for _ in range(auth_utils.CODE_SENDS_PER_EMAIL):
         send_code(client, sent, "flood@example.test")
+    live = sent["flood@example.test"][-1]
     r = client.post("/send_code", json={"email": "FLOOD@example.test"})
+    assert r.status_code == 200, r.text
+    assert sent["flood@example.test"][-1] == live, "the live code again, not a new one"
+    with Session(engine) as s:
+        rows = s.exec(select(VerificationCode).where(VerificationCode.email == "flood@example.test")).all()
+        assert [row.code for row in rows] == [live]
+    # at most one re-send per CODE_RESEND_INTERVAL: mail to the address stays bounded
+    r = client.post("/send_code", json={"email": "flood@example.test"})
     assert r.status_code == 429
-    assert 3500 < int(r.headers["retry-after"]) <= 3601
-    assert len(sent["flood@example.test"]) == auth_utils.CODE_SENDS_PER_EMAIL, "no mail for a refused request"
+    assert 0 < int(r.headers["retry-after"]) <= auth_utils.CODE_RESEND_INTERVAL.total_seconds() + 1
+    assert len(sent["flood@example.test"]) == auth_utils.CODE_SENDS_PER_EMAIL + 1, "no mail for a refused request"
     with Session(engine) as s:  # the window is shared through the database, not this process
         counter = s.get(AuthCounter, "send_code:flood@example.test")
         counter.window_start = counter.window_start - dt.timedelta(hours=1, seconds=1)
         s.add(counter)
         s.commit()
-    assert client.post("/send_code", json={"email": "flood@example.test"}).status_code == 200
+    assert client.post("/send_code", json={"email": "flood@example.test"}).status_code == 200  # a new window
+    assert len(sent["flood@example.test"]) == auth_utils.CODE_SENDS_PER_EMAIL + 2
+
+
+def test_anyone_requesting_codes_cannot_lock_the_owner_out(client, world):
+    """Reviewer repro: five unauthenticated /send_code calls (from rotating addresses) used to refuse the owner's
+    own request for an hour.  The owner now gets the live code and signs in."""
+    engine, sent = world
+    add_user(engine, "ceo@example.test", auth_utils.get_hashed_password(PASSWORD))
+    for _ in range(auth_utils.CODE_SENDS_PER_EMAIL):
+        ratelimit.reset_all()  # stands in for rotating client addresses
+        assert client.post("/send_code", json={"email": "ceo@example.test"}).status_code == 200
+    ratelimit.reset_all()
+    r = client.post("/send_code", json={"email": "CEO@example.test"})  # the owner, from another address
+    assert r.status_code == 200, r.text
+    assert login(client, "ceo@example.test", PASSWORD, sent["ceo@example.test"][-1]).status_code == 200
+
+
+def test_past_the_cap_a_burned_code_is_not_replaced(client, world, monkeypatch):
+    """Once the hour's codes are used up and the live one is spent (five wrong guesses), no new code exists until
+    the window ends: the per-email guess budget (codes x MAX_CODE_ATTEMPTS) is never exceeded."""
+    engine, sent = world
+    monkeypatch.setattr(auth_router.send_code_ip_limiter, "times", 100)
+    add_user(engine, "spent@example.test", auth_utils.get_hashed_password(PASSWORD))
+    for _ in range(auth_utils.CODE_SENDS_PER_EMAIL):
+        send_code(client, sent, "spent@example.test")
+    live = sent["spent@example.test"][-1]
+    for i in range(auth_utils.MAX_CODE_ATTEMPTS):
+        assert not auth_utils.consume_verification_code(engine, "spent@example.test", _wrong(live, i + 1),
+                                                        allow_dev_code=False)
+    r = client.post("/send_code", json={"email": "spent@example.test"})
+    assert r.status_code == 429 and 3500 < int(r.headers["retry-after"]) <= 3601
+    with Session(engine) as s:
+        assert s.exec(select(VerificationCode).where(VerificationCode.email == "spent@example.test")).first() is None
+
+
+def test_a_resent_code_keeps_its_attempt_count_and_gets_a_fresh_expiry(world):
+    engine, _sent = world
+    for _ in range(auth_utils.CODE_SENDS_PER_EMAIL):
+        code = auth_utils.issue_verification_code(engine, "keep@example.test")
+    assert not auth_utils.consume_verification_code(engine, "keep@example.test", _wrong(code), allow_dev_code=False)
+    with Session(engine) as s:
+        row = s.exec(select(VerificationCode).where(VerificationCode.email == "keep@example.test")).one()
+        row.expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=30)
+        s.add(row)
+        s.commit()
+    assert auth_utils.issue_verification_code(engine, "keep@example.test") == code
+    with Session(engine) as s:
+        row = s.exec(select(VerificationCode).where(VerificationCode.email == "keep@example.test")).one()
+        assert row.attempts == 1, "re-sending never hands out more guesses"
+        expires = row.expires_at.replace(tzinfo=dt.timezone.utc) if row.expires_at.tzinfo is None else row.expires_at
+        assert expires > dt.datetime.now(dt.timezone.utc) + auth_utils.CODE_TTL - dt.timedelta(minutes=1)
 
 
 def test_the_retired_fixed_code_no_longer_signs_anyone_in(client, world):
@@ -373,6 +620,25 @@ def test_reset_revokes_every_earlier_token(client, world):
     assert jose_jwt.get_unverified_claims(refreshed.json()["access_token"])["ver"] == 1
 
 
+def test_logout_revokes_the_tokens_for_good(client, world):
+    """Reviewer repro: logout only cleared session_active, and the next sign-in set it again, so a stolen
+    access or refresh token from before the logout worked again.  Logout now bumps token_version."""
+    engine, sent = world
+    user_id = add_user(engine, "victim@example.test", auth_utils.get_hashed_password(PASSWORD))
+    stolen = login(client, "victim@example.test", PASSWORD, send_code(client, sent, "victim@example.test")).json()
+    old = {"Authorization": f"Bearer {stolen['access_token']}"}
+    assert client.get("/logout", headers=old).status_code == 200
+    assert stored(engine, user_id).token_version == 1
+    assert client.get("/get_user", headers=old).status_code == 401
+    assert client.post("/refresh", json={"refresh_token": stolen["refresh_token"]}).status_code == 403
+    assert client.get("/logout", headers=old).status_code == 401, "a revoked token cannot log out again"
+    fresh = login(client, "victim@example.test", PASSWORD, send_code(client, sent, "victim@example.test")).json()
+    assert client.get("/get_user", headers=old).status_code == 401, "signing in again does not revive old tokens"
+    assert client.post("/refresh", json={"refresh_token": stolen["refresh_token"]}).status_code == 403
+    assert client.get("/get_user", headers={"Authorization": f"Bearer {fresh['access_token']}"}).status_code == 200
+    assert client.post("/refresh", json={"refresh_token": fresh["refresh_token"]}).status_code == 200
+
+
 def test_token_types_are_not_interchangeable(client, world):
     engine, _sent = world
     add_user(engine, "typ@example.test", auth_utils.get_hashed_password(PASSWORD))
@@ -431,6 +697,27 @@ def test_the_app_does_not_boot_with_weak_secrets(monkeypatch, world):
     with pytest.raises(RuntimeError, match="Refusing to start"):
         with TestClient(app):  # runs the lifespan
             pass
+
+
+def test_no_credential_debug_trace_is_left_in_the_backend():
+    """A developer trace (DSS_AGENT_DEBUG_LOG) logged an access-key suffix, the secret's length and the dotenv path,
+    and compared the key against the endings of a real key pair.  It is gone, with the trace file that was
+    committed from it."""
+    markers = re.compile(r"DSS_AGENT_DEBUG_LOG|#region agent log|_agent_debug_log|key_matches_(?:in)?valid_pair")
+    offenders = []
+    for path in (_REPO_ROOT / "backend").rglob("*.py"):
+        if ".venv" in path.parts or "tests" in path.parts:
+            continue
+        if markers.search(path.read_text(encoding="utf-8", errors="replace")):
+            offenders.append(str(path.relative_to(_REPO_ROOT)))
+    assert offenders == []
+    import subprocess
+
+    tracked = subprocess.run(["git", "-C", str(_REPO_ROOT), "ls-files", "--", ".cursor"], capture_output=True, text=True)
+    if tracked.returncode == 0:  # a source checkout (not an image without .git)
+        assert not [p for p in tracked.stdout.splitlines() if re.fullmatch(r"\.cursor/debug-[^/]*\.log", p)]
+    ignored = subprocess.run(["git", "-C", str(_REPO_ROOT), "check-ignore", "-q", ".cursor/debug-abc123.log"])
+    assert ignored.returncode in (0, 128), "Cursor debug traces are git-ignored"
 
 
 # ------------------------------------------------------------------------------------------- emails / admin

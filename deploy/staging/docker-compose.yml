@@ -266,6 +266,8 @@ services:
     environment:
       FRONTEND_HOST: ${FRONTEND_HOST:-devsec-staging.zeroshield.ai}
       API_HOST: ${API_HOST:-devsec-staging-api.zeroshield.ai}
+      # Behind a TLS-terminating load balancer: its addresses (README "Behind a load balancer"); empty = off.
+      DSS_REAL_IP_FROM: ${DSS_REAL_IP_FROM:-}
     ports:
       - "${HTTP_BIND:-0.0.0.0}:${HTTP_PORT:-80}:80"
       - "${HTTP_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:443"

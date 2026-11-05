@@ -23,10 +23,10 @@ class NoEchoValidationRoute(APIRoute):
 
         return route
 
-# Kept in step with backend/utilities/auth/auth_utils.py (MIN_NEW_PASSWORD_CHARS, MAX_PASSWORD_CHARS) and
-# frontend/utils/password_rules.ts.  Lengths count Unicode code points.
+# Password rules live in backend/utilities/auth/auth_utils.py (new_password_problem, login_password_problem) and
+# are mirrored in frontend/utils/password_rules.ts.  Every length is measured after NFC normalisation, never with
+# a raw ``max_length`` (a decomposed "é" is two code points as sent, one after NFC).
 MAX_EMAIL_CHARS = 254
-MAX_LOGIN_PASSWORD_CHARS = 128
 
 
 def clean_email(value: str) -> str:
@@ -46,6 +46,15 @@ def clean_new_password(value: str) -> str:
     from backend.utilities.auth.auth_utils import new_password_problem
 
     problem = new_password_problem(value)
+    if problem:
+        raise ValueError(problem)
+    return value
+
+
+def clean_login_password(value: str) -> str:
+    from backend.utilities.auth.auth_utils import login_password_problem
+
+    problem = login_password_problem(value)
     if problem:
         raise ValueError(problem)
     return value
@@ -79,11 +88,13 @@ class RefreshToken(BaseModel):
 class UserLogin(BaseModel):
     verification_code: str = Field(..., max_length=64, description="verification code")
     email: str = Field(..., description="user email")
-    # 1..128 so every existing password (older rules allowed 5..24, admin-made ones had no limit) still signs in
-    password: str = Field(..., min_length=1, max_length=MAX_LOGIN_PASSWORD_CHARS, description="user password")
+    # 1 to 512 bytes after NFC, so every existing password (older rules allowed 5..24, admin-made ones had no
+    # length rule) still signs in; new passwords are capped at 128 characters
+    password: str = Field(..., description="user password")
 
     check_email = field_validator("email")(clean_email)
     check_code = field_validator("verification_code")(clean_code)
+    check_password = field_validator("password")(clean_login_password)
 
 
 class UserSignup(BaseModel):

@@ -27,10 +27,12 @@ export function newPasswordProblem(password: string): string | null {
   return null;
 }
 
-/** Sign-in accepts every existing password: 1 to 128 characters. */
+/** Sign-in accepts every existing password (older rules allowed 5..24 characters, admin-made accounts had no
+ * length rule): 1 to 512 UTF-8 bytes after NFC, as backend login_password_problem. */
 export function loginPasswordProblem(password: string): string | null {
-  const length = passwordLength(password);
-  if (length < 1) return "Enter your password.";
-  if (length > MAX_PASSWORD_CHARS) return `Passwords are at most ${MAX_PASSWORD_CHARS} characters long.`;
+  if (password.length < 1) return "Enter your password.";
+  if (new TextEncoder().encode(password.normalize("NFC")).length > MAX_PASSWORD_BYTES) {
+    return `Passwords are at most ${MAX_PASSWORD_BYTES} bytes long.`;
+  }
   return null;
 }

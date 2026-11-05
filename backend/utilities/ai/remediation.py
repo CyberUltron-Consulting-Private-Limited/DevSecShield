@@ -222,25 +222,6 @@ def generate_remediation(finding_data: dict, scan_type: str) -> dict:
         }
 
     except Exception as e:
-        # #region agent log
-        try:
-            import json as _json, os as _os, time as _time
-            _debug_log = _os.environ.get("DSS_AGENT_DEBUG_LOG")  # a developer's local trace file; off unless set
-            if not _debug_log:
-                raise OSError("agent debug log is off")
-            with open(_debug_log, "a", encoding="utf-8") as _f:
-                _f.write(_json.dumps({
-                    "sessionId": "dd4a33",
-                    "runId": "pre-fix",
-                    "hypothesisId": "A",
-                    "location": "remediation.py:generate_remediation",
-                    "message": "Remediation generation exception",
-                    "data": {"scan_type": scan_type, "error_type": type(e).__name__, "error": str(e)},
-                    "timestamp": int(_time.time() * 1000),
-                }) + "\n")
-        except Exception:
-            pass
-        # #endregion
         console.print(f"[bold red]Remediation generation failed: {e}[/]")
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),

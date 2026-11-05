@@ -5,36 +5,11 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from rich.console import Console
 from fastapi import HTTPException, status
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 import base64
 import json
-import time
 
 console = Console()
-
-# A developer's local trace file; nothing is written unless DSS_AGENT_DEBUG_LOG is set.
-_DEBUG_LOG_PATH = os.environ.get("DSS_AGENT_DEBUG_LOG")
-
-
-def _agent_debug_log(location: str, message: str, data: dict, hypothesis_id: str, run_id: str = "pre-fix") -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "dd4a33",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        if not _DEBUG_LOG_PATH:
-            return
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
 
 def get_llm(
@@ -52,24 +27,6 @@ def get_llm(
         aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
         aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
         aws_region = os.getenv("AWS_DEFAULT_REGION") or "ap-south-1"
-        aws_session_token = os.getenv("AWS_SESSION_TOKEN")
-
-        # #region agent log
-        _agent_debug_log(
-            "llm.py:get_llm",
-            "AWS credential resolution before Bedrock client",
-            {
-                "dotenv_path": find_dotenv() or "NOT_FOUND",
-                "key_suffix": aws_access_key[-4:] if aws_access_key and len(aws_access_key) >= 4 else None,
-                "secret_len": len(aws_secret_key) if aws_secret_key else 0,
-                "has_session_token": bool(aws_session_token),
-                "region": aws_region,
-                "key_matches_valid_pair": aws_access_key.endswith("4I25") if aws_access_key else False,
-                "key_matches_invalid_pair": aws_access_key.endswith("RYEY") if aws_access_key else False,
-            },
-            hypothesis_id="B",
-        )
-        # #endregion
 
         if not aws_access_key or not aws_secret_key:
             raise ValueError("AWS credentials not found")
@@ -99,14 +56,6 @@ def get_llm(
         
         return llm
     except Exception as e:
-        # #region agent log
-        _agent_debug_log(
-            "llm.py:get_llm",
-            "Bedrock LLM initialization failed",
-            {"error_type": type(e).__name__, "error": str(e)},
-            hypothesis_id="A",
-        )
-        # #endregion
         raise ValueError(f"Error in getting LLM: {e}")
 
 def generate_structured_response(input_prompt:str,
@@ -156,24 +105,8 @@ def generate_structured_response(input_prompt:str,
                 SystemMessage(content=system_prompt or "You are a helpful assistant."),
                 HumanMessage(content=user_prompt),
             ])
-            # #region agent log
-            _agent_debug_log(
-                "llm.py:generate_structured_response",
-                "Bedrock invoke succeeded",
-                {"model": model, "native_structured": True},
-                hypothesis_id="A",
-            )
-            # #endregion
             return result
         except Exception as e:
-            # #region agent log
-            _agent_debug_log(
-                "llm.py:generate_structured_response",
-                "Bedrock invoke failed",
-                {"model": model, "error_type": type(e).__name__, "error": str(e)},
-                hypothesis_id="A",
-            )
-            # #endregion
             raise
 
     schema = output_model.model_json_schema() if output_model else {}

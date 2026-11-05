@@ -19,8 +19,11 @@ TCP peer with the ``X-Forwarded-For`` client when, and only when, the peer is li
 never parses ``X-Forwarded-For`` itself, so a client cannot choose its own key.
 
 Memory: when a window ends every stored count is stale, so the whole table is dropped (the sweep).  Within
-one window at most ``max_keys`` keys are tracked; a new key beyond that is let through uncounted and logged
-once per window (verified keys and real client addresses only reach that under a large distributed flood).
+one window at most ``max_keys`` keys are tracked.  A full table never lets a request through uncounted: the
+least recently charged key is evicted to make room (a refused request counts as a charge, so a key that keeps
+trying stays tracked), and while the table is full a new IPv6 /64 is charged to its /48, so rotating through
+the 65,536 /64s of one routed /48 lands in one bucket.  Logged once per window (``rate_limit_table_full``);
+verified keys and real client addresses only reach that under a large distributed flood.
 
 A refused request gets 429 with ``Retry-After`` (seconds to the end of the window) and one ``rate_limited``
 log line per key per window: limiter name, route, key kind and a short hash of the key, never a token.
@@ -34,6 +37,7 @@ import logging
 import math
 import threading
 import time
+from collections import OrderedDict
 from typing import Awaitable, Callable
 
 from fastapi import HTTPException, Request
@@ -64,6 +68,17 @@ def normalise_ip(host: str | None) -> str:
             return str(mapped)
         return str(ipaddress.ip_network(f"{ip}/64", strict=False))
     return str(ip)
+
+
+def _ipv6_48(value: str) -> str | None:
+    """The /48 of an IPv6 /64 key from ``normalise_ip``; None for anything else."""
+    if not value.endswith("/64"):
+        return None
+    try:
+        network = ipaddress.ip_network(value)
+    except ValueError:
+        return None
+    return str(network.supernet(new_prefix=48)) if network.version == 6 else None
 
 
 def client_ip(request: Request) -> str:
@@ -127,7 +142,8 @@ class RateLimiter:
         self.key_func = key_func
         self.max_keys = max_keys
         self.clock: Callable[[], float] = time.time
-        self.requests: dict[str, int] = {}  # key -> count in the current window
+        # key -> count in the current window, least recently charged first
+        self.requests: OrderedDict[str, int] = OrderedDict()
         self._window = -1
         self._full_logged_window = -1
         self._lock = threading.Lock()
@@ -139,9 +155,9 @@ class RateLimiter:
             self._window = -1
             self._full_logged_window = -1
 
-    def _count(self, key: str) -> tuple[int, int]:
-        """Charge one request to ``key``.  Returns (count in this window, seconds to the window's end);
-        a count of 0 means the key was not tracked (table full)."""
+    def _count(self, kind: str, value: str) -> tuple[int, int, str]:
+        """Charge one request.  Returns (count in this window, seconds to the window's end, the value charged:
+        ``value``, or its IPv6 /48 while the table is full)."""
         now = self.clock()
         window = int(now // self.seconds)
         retry_after = max(1, math.ceil((window + 1) * self.seconds - now))
@@ -149,22 +165,26 @@ class RateLimiter:
             if window != self._window:
                 self.requests.clear()  # every count of an older window is stale
                 self._window = window
-            count = self.requests.get(key)
-            if count is None:
-                if len(self.requests) >= self.max_keys:
-                    if self._full_logged_window != window:
-                        self._full_logged_window = window
-                        log.warning("rate_limit_table_full limiter=%s max_keys=%d", self.name, self.max_keys)
-                    return 0, retry_after
-                count = 0
-            count += 1
+            key = f"{kind}:{value}"
+            if key not in self.requests and len(self.requests) >= self.max_keys:
+                if self._full_logged_window != window:
+                    self._full_logged_window = window
+                    log.warning("rate_limit_table_full limiter=%s max_keys=%d evicting=least_recent",
+                                self.name, self.max_keys)
+                coarse = _ipv6_48(value) if kind == "ip" else None
+                if coarse is not None:
+                    value, key = coarse, f"{kind}:{coarse}"
+                if key not in self.requests:
+                    self.requests.popitem(last=False)  # the least recently charged key
+            count = self.requests.get(key, 0) + 1
             self.requests[key] = count
-        return count, retry_after
+            self.requests.move_to_end(key)
+        return count, retry_after, value
 
     async def charge(self, request: Request, key: Key) -> None:
         """Charge ``request`` to ``key``; raise 429 with Retry-After when the window's budget is spent."""
         kind, value = key
-        count, retry_after = self._count(f"{kind}:{value}")
+        count, retry_after, value = self._count(kind, value)
         if count > self.times:
             if count == self.times + 1:  # one line per key per window, not one per refused request
                 log.warning(

@@ -12,6 +12,8 @@ import datetime as dt
 import logging
 import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -171,20 +173,167 @@ def test_429_with_retry_after_until_the_window_ends(monkeypatch):
     run(limiter(request()))
 
 
-def test_the_sweep_drops_every_stale_count_and_the_table_is_capped(monkeypatch, caplog):
+def _charge_all(limiter, keys):
+    req = request()
+
+    async def go():
+        refused = 0
+        for key in keys:
+            try:
+                await limiter.charge(req, key)
+            except HTTPException:
+                refused += 1
+        return refused
+    return run(go())
+
+
+def test_the_sweep_drops_every_stale_count_and_a_full_table_evicts_the_least_recent_key(monkeypatch, caplog):
     limiter = ratelimit.RateLimiter("test.cap", times=1, seconds=10, key_func=ratelimit.ip_key, max_keys=3)
     clock = Clock(7_000_000.0)
     monkeypatch.setattr(limiter, "clock", clock)
     with caplog.at_level(logging.WARNING, logger="backend.ratelimit"):
         for i in range(6):
-            run(limiter(request(client=f"192.0.2.{i}")))  # keys 4..6 are let through untracked
-        assert len(limiter.requests) == 3
-        run(limiter(request(client="192.0.2.5")))  # untracked, so never refused in this window
+            run(limiter(request(client=f"192.0.2.{i}")))  # keys 4..6 evict keys 1..3
+        assert list(limiter.requests) == ["ip:192.0.2.3", "ip:192.0.2.4", "ip:192.0.2.5"]
+        with pytest.raises(HTTPException):  # counted, so refused like any other key (never let through)
+            run(limiter(request(client="192.0.2.5")))
     assert [r.getMessage() for r in caplog.records].count(
-        "rate_limit_table_full limiter=test.cap max_keys=3") == 1, "logged once per window"
+        "rate_limit_table_full limiter=test.cap max_keys=3 evicting=least_recent") == 1, "logged once per window"
     clock.now += 10
     run(limiter(request(client="192.0.2.9")))
     assert list(limiter.requests) == ["ip:192.0.2.9"], "a new window starts from an empty table"
+
+
+def test_a_full_table_never_lets_a_new_key_through_uncounted():
+    """Reviewer repro: once 50,000 keys were tracked every new key passed uncounted; one routed IPv6 /48 holds
+    65,536 /64 keys.  Now the least recently used key is evicted and the new one is counted."""
+    limiter = ratelimit.RateLimiter("test.flood", times=10, seconds=60, key_func=ratelimit.ip_key)
+    limiter.clock = Clock(1_000_000.0)
+    assert limiter.max_keys == ratelimit.DEFAULT_MAX_KEYS == 50_000
+    _charge_all(limiter, [("ip", ratelimit.normalise_ip(f"2001:db8:1:{i:x}::1")) for i in range(limiter.max_keys)])
+    assert _charge_all(limiter, [("ip", "198.51.100.77")] * 1000) == 990
+    assert len(limiter.requests) == limiter.max_keys
+
+
+def test_under_pressure_new_ipv6_keys_are_charged_to_their_48():
+    """With the table full, rotating through the /64s of one /48 lands in ONE bucket; /64s already tracked keep
+    their own count, and IPv4 or other key kinds are unaffected."""
+    limiter = ratelimit.RateLimiter("test.48", times=5, seconds=60, key_func=ratelimit.ip_key, max_keys=100)
+    limiter.clock = Clock(2_000_000.0)
+    _charge_all(limiter, [("ip", f"192.0.2.{i}") for i in range(99)])
+    assert _charge_all(limiter, [("ip", ratelimit.normalise_ip("2001:db8:7:1::1"))]) == 0  # fills the table
+    rotating = [("ip", ratelimit.normalise_ip(f"2001:db8:7:{i:x}::1")) for i in range(2, 202)]
+    assert _charge_all(limiter, rotating) == 200 - 5
+    assert "ip:2001:db8:7::/48" in limiter.requests
+    assert _charge_all(limiter, [("ip", ratelimit.normalise_ip("2001:db8:7:1::1"))] * 4) == 0  # still its own /64
+    assert _charge_all(limiter, [("email", f"u{i}@example.test") for i in range(3)]) == 0
+
+
+def test_an_active_key_is_not_evicted_by_a_trickle_of_new_ones():
+    limiter = ratelimit.RateLimiter("test.lru", times=2, seconds=60, key_func=ratelimit.ip_key, max_keys=3)
+    limiter.clock = Clock(3_000_000.0)
+    attacker = ("ip", "203.0.113.66")
+    assert _charge_all(limiter, [attacker] * 3) == 1
+    for i in range(10):  # every refused request refreshes the key, so it stays the most recent
+        _charge_all(limiter, [("ip", f"192.0.2.{2 * i}"), ("ip", f"192.0.2.{2 * i + 1}")])
+        assert _charge_all(limiter, [attacker]) == 1
+
+
+# -------------------------------------------------------------------------------- nginx in front of the API
+
+NGINX_DIR = _REPO_ROOT / "deploy" / "staging" / "nginx"
+_REAL_IP_DIRECTIVE = re.compile(r"^[ \t]*(?:set_real_ip_from|real_ip_header|real_ip_recursive)\b", re.M)
+
+
+def _render_site(tmp_path, mode: str, env: dict[str, str]) -> subprocess.CompletedProcess:
+    """Run 40-dss-site.sh as the nginx image does, with its fixed paths moved under tmp_path and a stand-in for
+    GNU envsubst (only the listed variables are replaced; an unset one becomes empty)."""
+    etc = tmp_path / "etc"
+    (etc / "dss-nginx").mkdir(parents=True, exist_ok=True)
+    (etc / "nginx" / "conf.d").mkdir(parents=True, exist_ok=True)
+    certs = etc / "nginx" / "certs"
+    certs.mkdir(exist_ok=True)
+    if mode == "https":
+        for name in ("fullchain.pem", "privkey.pem"):
+            (certs / name).write_text("placeholder\n")
+    for name in ("http.conf.template", "https.conf.template"):
+        (etc / "dss-nginx" / name).write_text((NGINX_DIR / name).read_text())
+    script = (NGINX_DIR / "40-dss-site.sh").read_text().replace("/etc/", f"{etc}/")
+    (tmp_path / "site.sh").write_text(script)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "envsubst").write_text(
+        f"#!{sys.executable}\n"
+        "import os, re, sys\n"
+        "names = set(re.findall(r'\\$\\{?(\\w+)\\}?', sys.argv[1]))\n"
+        "text = sys.stdin.read()\n"
+        "pattern = re.compile(r'\\$\\{(\\w+)\\}|\\$(\\w+)')\n"
+        "sys.stdout.write(pattern.sub(lambda m: os.environ.get(m.group(1) or m.group(2), '') "
+        "if (m.group(1) or m.group(2)) in names else m.group(0), text))\n")
+    (bin_dir / "envsubst").chmod(0o755)
+    full_env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "FRONTEND_HOST": "app.example.test",
+                "API_HOST": "api.example.test", **env}
+    return subprocess.run(["sh", str(tmp_path / "site.sh")], env=full_env, capture_output=True, text=True)
+
+
+def _site_conf(tmp_path) -> str:
+    return (tmp_path / "etc" / "nginx" / "conf.d" / "default.conf").read_text()
+
+
+def _nginx_accepts(tmp_path, conf: str) -> None:
+    """``nginx -t`` on the rendered site inside a minimal http block (skipped where nginx is not installed)."""
+    nginx = shutil.which("nginx")
+    if nginx is None:
+        return
+    version = subprocess.run([nginx, "-v"], capture_output=True, text=True).stderr
+    match = re.search(r"nginx/(\d+)\.(\d+)", version)
+    if match and (int(match[1]), int(match[2])) < (1, 25):
+        conf = conf.replace("http2 on;", "")  # the image runs 1.27; older local builds lack the directive
+    certs = tmp_path / "etc" / "nginx" / "certs"
+    if "ssl_certificate " in conf:
+        made = subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj",
+                               "/CN=test", "-keyout", str(certs / "privkey.pem"), "-out", str(certs / "fullchain.pem")],
+                              capture_output=True)
+        if made.returncode != 0:
+            return
+        conf = conf.replace("/etc/nginx/certs/", f"{certs}/")
+    site = tmp_path / "site.conf"
+    site.write_text(conf)
+    main = tmp_path / "nginx.conf"
+    main.write_text(f"pid {tmp_path}/nginx.pid;\nerror_log {tmp_path}/error.log;\nevents {{}}\n"
+                    f"http {{\n  access_log off;\n  include {site};\n}}\n")
+    checked = subprocess.run([nginx, "-t", "-q", "-p", str(tmp_path), "-e", str(tmp_path / "error.log"), "-c", str(main)],
+                             capture_output=True, text=True)
+    assert checked.returncode == 0, checked.stderr
+
+
+@pytest.mark.parametrize("mode", ["http", "https"])
+def test_nginx_takes_the_client_address_from_a_trusted_load_balancer_only_when_configured(tmp_path, mode):
+    """Behind a TLS-terminating load balancer every client reached nginx from the balancer's address, so every
+    client shared one rate-limit key.  DSS_REAL_IP_FROM (the balancer's addresses) switches on nginx's real-IP
+    module; empty, the site renders exactly as before."""
+    off = _render_site(tmp_path, mode, {"DSS_REAL_IP_FROM": ""})
+    assert off.returncode == 0, off.stderr
+    conf = _site_conf(tmp_path)
+    assert not _REAL_IP_DIRECTIVE.search(conf) and "${" not in conf
+    _nginx_accepts(tmp_path, conf)
+
+    on = _render_site(tmp_path, mode, {"DSS_REAL_IP_FROM": " 10.0.0.0/16, 192.0.2.10 2001:db8::/32 "})
+    assert on.returncode == 0, on.stderr
+    conf = _site_conf(tmp_path)
+    assert re.findall(r"^set_real_ip_from (\S+);$", conf, re.M) == ["10.0.0.0/16", "192.0.2.10", "2001:db8::/32"]
+    assert re.search(r"^real_ip_header X-Forwarded-For;$", conf, re.M)
+    assert re.search(r"^real_ip_recursive on;$", conf, re.M)
+    assert _REAL_IP_DIRECTIVE.search(conf).start() < conf.index("server {"), "http level: every server uses it"
+    assert "client address from X-Forwarded-For set by 10.0.0.0/16" in on.stdout
+    _nginx_accepts(tmp_path, conf)
+
+
+@pytest.mark.parametrize("value", ["0.0.0.0/0", "::/0", "10.0.0.0/8; return 200", "lb.example.test", "*"])
+def test_nginx_refuses_a_real_ip_source_that_is_not_a_specific_address_or_network(tmp_path, value):
+    refused = _render_site(tmp_path, "http", {"DSS_REAL_IP_FROM": value})
+    assert refused.returncode != 0
+    assert "DSS_REAL_IP_FROM" in refused.stderr
 
 
 def test_a_refusal_is_logged_once_per_key_per_window_without_the_token(monkeypatch, caplog):

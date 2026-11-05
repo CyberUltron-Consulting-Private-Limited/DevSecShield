@@ -183,6 +183,9 @@ async def get_user_from_header_or_raise_exception(engine: Engine,Authorization: 
 MIN_NEW_PASSWORD_CHARS = 8
 MAX_PASSWORD_CHARS = 128
 MAX_PASSWORD_BYTES = 512
+# Refused before normalising: NFC composes at most four code points into one, so no password whose NFC form fits
+# MAX_PASSWORD_BYTES is longer than this as sent.
+MAX_PASSWORD_INPUT_CHARS = 8 * MAX_PASSWORD_BYTES
 _BCRYPT_PREFIXES = ("$2a$", "$2b$", "$2y$")
 _ARGON2_PREFIX = "$argon2"
 _HASHER = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1, hash_len=32, salt_len=16,
@@ -195,9 +198,24 @@ def normalise_password(password: str) -> str:
     return unicodedata.normalize("NFC", password)
 
 
+def login_password_problem(password: str) -> Optional[str]:
+    """Why a password offered at SIGN-IN is refused before it is hashed, or None: 1 to MAX_PASSWORD_BYTES UTF-8
+    bytes after NFC normalisation.  Wider than the new-password rule so every stored password still signs in
+    (older rules allowed 5..24 characters, admin-made accounts had no length rule); the byte cap bounds the
+    hashing cost."""
+    if not password:
+        return "Enter your password"
+    if len(password) > MAX_PASSWORD_INPUT_CHARS \
+            or len(normalise_password(password).encode("utf-8")) > MAX_PASSWORD_BYTES:
+        return f"Password must be at most {MAX_PASSWORD_BYTES} bytes long"
+    return None
+
+
 def new_password_problem(password: str) -> Optional[str]:
     """Why a NEW password (sign-up, reset, admin-created) is refused, or None.  Counted in Unicode code
     points after NFC normalisation."""
+    if len(password or "") > MAX_PASSWORD_INPUT_CHARS:
+        return f"Password must be {MIN_NEW_PASSWORD_CHARS} to {MAX_PASSWORD_CHARS} characters long"
     value = normalise_password(password or "")
     if not MIN_NEW_PASSWORD_CHARS <= len(value) <= MAX_PASSWORD_CHARS:
         return f"Password must be {MIN_NEW_PASSWORD_CHARS} to {MAX_PASSWORD_CHARS} characters long"
@@ -404,15 +422,20 @@ def _send_graph_mail(recipient_email: str, subject: str, html_body: str) -> None
 
 
 # ------------------------------------------------------------------------------------------------ sign-in codes
-# One live code per email (sending replaces it).  Consuming is one DELETE ... RETURNING, so a code works once
-# even under concurrent requests.  Wrong codes are counted per email in Postgres; at MAX_CODE_ATTEMPTS the
-# live code is deleted and a new one must be requested.  Codes sent per email are capped per hour in Postgres
-# (all workers and replicas share the count).
+# One live code per email (sending replaces it).  Every guess first charges an attempt to the live code with one
+# UPDATE ... WHERE attempts < MAX_CODE_ATTEMPTS RETURNING code, which locks the row; only a guess that got an
+# attempt is compared (in constant time), and the right one deletes the code in the same transaction.  So a code
+# is compared at most MAX_CODE_ATTEMPTS times and works once, however many guesses arrive at the same moment.
+# New codes per email are capped per hour in Postgres (all workers and replicas share the count): at most
+# CODE_SENDS_PER_EMAIL x MAX_CODE_ATTEMPTS guesses per email per hour.  Past the cap the LIVE code is mailed again
+# (at most once per CODE_RESEND_INTERVAL) instead of refusing, so somebody else requesting codes for an address
+# cannot lock its owner out; only when that code is also spent is the request refused until the window ends.
 
 CODE_TTL = timedelta(minutes=10)
 MAX_CODE_ATTEMPTS = 5
 CODE_SENDS_PER_EMAIL = 5
 CODE_SEND_WINDOW = timedelta(hours=1)
+CODE_RESEND_INTERVAL = timedelta(seconds=60)
 # The fixed code that was once accepted for two named accounts; rows holding it are deleted at start-up.
 RETIRED_FIXED_CODES = ("123456",)
 
@@ -483,23 +506,49 @@ def charge_auth_counter(session: Session, key: str, window: timedelta, now: date
     return int(row[0]), row[1]
 
 
+def _seconds_left(started: datetime, window: timedelta, now: datetime) -> int:
+    return max(1, int((_naive(started) + window - _naive(now)).total_seconds()) + 1)
+
+
+def _resend_live_code(session: Session, email: str, now: datetime, send_window_left: int) -> str:
+    """Past the per-email cap: the live code again (attempts kept, expiry renewed), never a new one.  Raises
+    CodeSendLimited when there is no live code (the hour's guess budget is spent) or it was re-sent less than
+    CODE_RESEND_INTERVAL ago (bounds the mail to the address)."""
+    live = session.exec(
+        select(VerificationCode)
+        .where(VerificationCode.email == email, VerificationCode.expires_at >= now,
+               VerificationCode.attempts < MAX_CODE_ATTEMPTS)
+        .with_for_update()
+    ).first()
+    if live is None:
+        session.commit()
+        raise CodeSendLimited(send_window_left)
+    hits, started = charge_auth_counter(session, f"resend_code:{email}", CODE_RESEND_INTERVAL, _naive(now))
+    if hits > 1:
+        session.commit()
+        raise CodeSendLimited(_seconds_left(started, CODE_RESEND_INTERVAL, now))
+    live.expires_at = now + CODE_TTL
+    session.add(live)
+    session.commit()
+    return live.code
+
+
 def issue_verification_code(engine: Engine, email: str) -> Optional[str]:
-    """Make a fresh code the only live code of ``email`` and return it (the caller emails it).
+    """The code to mail to ``email`` (the caller sends it): a fresh code that replaces any earlier one, or, past
+    CODE_SENDS_PER_EMAIL new codes within CODE_SEND_WINDOW, the live code again (see _resend_live_code).
 
     Returns None for the local development account while DSS_DEV_MODE=1 (its fixed code is not stored and no
-    mail is sent).  Raises CodeSendLimited after CODE_SENDS_PER_EMAIL codes within CODE_SEND_WINDOW."""
+    mail is sent).  Raises CodeSendLimited when nothing may be sent now."""
     email = normalise_email(email)
     now = _utcnow()
     with Session(engine) as session:
         # counters use naive UTC so the database session's time zone can never shift a window
         hits, started = charge_auth_counter(session, f"send_code:{email}", CODE_SEND_WINDOW, _naive(now))
         if hits > CODE_SENDS_PER_EMAIL:
-            session.commit()
-            retry_after = int((_naive(started) + CODE_SEND_WINDOW - _naive(now)).total_seconds()) + 1
             if hits == CODE_SENDS_PER_EMAIL + 1:
-                log.warning("verification code refused: %d codes already sent to this email within %s",
-                            CODE_SENDS_PER_EMAIL, CODE_SEND_WINDOW)
-            raise CodeSendLimited(max(1, retry_after))
+                log.warning("verification code cap: %d codes already made for this email within %s; "
+                            "re-sending the live code from now on", CODE_SENDS_PER_EMAIL, CODE_SEND_WINDOW)
+            return _resend_live_code(session, email, now, _seconds_left(started, CODE_SEND_WINDOW, now))
         if dev_verification_code_for(email) is not None:
             session.commit()
             log.warning("DSS_DEV_MODE: no code sent to the local dev account; its fixed code applies")
@@ -515,9 +564,15 @@ def issue_verification_code(engine: Engine, email: str) -> Optional[str]:
     return code
 
 
+def _code_matches(stored: str, guess: str) -> bool:
+    return hmac.compare_digest(stored.encode("utf-8"), guess.encode("utf-8"))
+
+
 def consume_verification_code(engine: Engine, email: str, code: str, *, allow_dev_code: bool) -> bool:
-    """True exactly once for the email's live, unexpired code.  A wrong code counts an attempt; the
-    MAX_CODE_ATTEMPTS-th wrong code deletes the live code.  ``allow_dev_code`` is False for password reset."""
+    """True exactly once for the email's live, unexpired code.  Every guess is charged an attempt BEFORE it is
+    compared (the charging UPDATE locks the row), so at most MAX_CODE_ATTEMPTS guesses are ever compared with one
+    code; a wrong guess that used the last attempt deletes the code.  ``allow_dev_code`` is False for password
+    reset."""
     email = normalise_email(email)
     code = normalise_code(code)
     if not email:
@@ -529,26 +584,26 @@ def consume_verification_code(engine: Engine, email: str, code: str, *, allow_de
             return True
     now = _utcnow()
     with Session(engine) as session:
-        consumed = None
-        if code:
-            consumed = session.exec(
-                delete(VerificationCode)
-                .where(VerificationCode.email == email,
-                       VerificationCode.code == code,
-                       VerificationCode.expires_at >= now,
-                       VerificationCode.attempts < MAX_CODE_ATTEMPTS)
-                .returning(VerificationCode.id)
-            ).first()
-        if consumed is not None:
+        charged = session.exec(
+            update(VerificationCode)
+            .where(VerificationCode.email == email,
+                   VerificationCode.attempts < MAX_CODE_ATTEMPTS,
+                   VerificationCode.expires_at >= now)
+            .values(attempts=VerificationCode.attempts + 1)
+            .returning(VerificationCode.id, VerificationCode.code, VerificationCode.attempts)
+        ).first()
+        if charged is None:  # no live code: none sent, expired, used, or out of attempts
+            session.commit()
+            return False
+        row_id, live_code, attempts = charged
+        if code and _code_matches(live_code, code):
+            session.exec(delete(VerificationCode).where(VerificationCode.id == row_id))
             session.commit()
             return True
-        session.exec(update(VerificationCode).where(VerificationCode.email == email)
-                     .values(attempts=VerificationCode.attempts + 1))
-        dropped = session.exec(delete(VerificationCode).where(VerificationCode.email == email,
-                                                              VerificationCode.attempts >= MAX_CODE_ATTEMPTS))
-        session.commit()
-        if dropped.rowcount:
+        if attempts >= MAX_CODE_ATTEMPTS:
+            session.exec(delete(VerificationCode).where(VerificationCode.id == row_id))
             log.warning("verification code invalidated after %d wrong attempts", MAX_CODE_ATTEMPTS)
+        session.commit()
     return False
 
 
