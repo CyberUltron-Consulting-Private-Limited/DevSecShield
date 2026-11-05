@@ -62,9 +62,9 @@
       "scan": "c6e98dae4ed91c460487949e9b132863a1c1018cec6598f8f730b7ed2b5fafa9"
     },
     "synthetic-crypto-padding": {
-      "cyclonedx": "910b08013740bc62779715bd0a838e5ba44bd8006e0a566dd97ddd3515b1dc64",
-      "normalize": "50403bd832c0302b2509055228a1a2cf3f175ea0684dd19bb56e0d9039680ff7",
-      "scan": "2310601b90cc14309d09436e2e9f9f5a701811313a8b72baa9a097aeff3abc3b"
+      "cyclonedx": "17656f5eb78c4d541c2890aa1d5ed74b4bde99372a68a0ab625003eeafe48084",
+      "normalize": "563845e39f2ada7395018cab37d36bb490a851c338eb48057442e3351e849082",
+      "scan": "03e30f6f65ca69d5b1cbee56ed0b72816fa44323186eee4edb3717922527a39a"
     },
     "synthetic-crypto-policy": {
       "cyclonedx": "f5fc153963c6584c673b46930ea4938ca4010fb989d3b71eb86e3cbe6f2fcd65",

@@ -16,15 +16,20 @@ _SHA256 = re.compile(
     r"0x6a09e667.{0,80}0xbb67ae85",
     re.IGNORECASE | re.DOTALL,
 )
-_MD5 = re.compile(
+# 0x67452301 / 0xefcdab89 / 0x98badcfe / 0x10325476 open the state of MD4, MD5, SHA-1 and RIPEMD-160 alike: MD5 is
+# named only next to a constant of its own, the first sine-table word T[1] = 0xd76aa478 or the round-1 shift
+# schedule 7, 12, 17, 22 (MD4 shifts 3, 7, 11, 19).
+_MD_IV = re.compile(
     r"0x67452301.{0,80}0xefcdab89",
     re.IGNORECASE | re.DOTALL,
 )
+_MD5_OWN = re.compile(r"0xd76aa478|\b7\s*,\s*12\s*,\s*17\s*,\s*22\b", re.IGNORECASE)
 
+# (kind, display name, primitive, patterns that must ALL be found)
 _KINDS = (
-    ("aes", "AES (custom implementation)", "block-cipher", _AES),
-    ("sha256", "SHA-256 (custom implementation)", "hash", _SHA256),
-    ("md5", "MD5 (custom implementation)", "hash", _MD5),
+    ("aes", "AES (custom implementation)", "block-cipher", (_AES,)),
+    ("sha256", "SHA-256 (custom implementation)", "hash", (_SHA256,)),
+    ("md5", "MD5 (custom implementation)", "hash", (_MD_IV, _MD5_OWN)),
 )
 
 
@@ -61,8 +66,8 @@ def detect_custom_crypto(text: str) -> tuple[str, str, str] | None:
     if not any(tok in low for tok in _CONSTANT_TOKENS):
         return None  # no constant to recognize: skip the comment blanking (a character loop)
     code = _blank_comments(text)
-    for kind, name, primitive, pattern in _KINDS:
-        if pattern.search(code):
+    for kind, name, primitive, patterns in _KINDS:
+        if all(p.search(code) for p in patterns):
             return kind, name, primitive
     return None
 
@@ -80,7 +85,10 @@ _XOR_KEY_INDEX = re.compile(
 )
 _XOR_OP = re.compile(r"(?<![\^*])\^=?(?!\^)")
 # Python ``zip(data, cycle(key))`` / ``itertools.cycle(key)`` with a ``^`` in the same expression.
-_XOR_CYCLE = re.compile(r"\bcycle\(\s*[A-Za-z_]\w*\s*\)")
+_XOR_CYCLE = re.compile(r"\bcycle\(\s*(?P<k>[A-Za-z_]\w*)\s*\)")
+# A repeating XOR operand named a mask is masking, not encryption: RFC 6455 WebSocket client frames
+# (``payload[i] ^ mask[i % 4]``, the "masking key"), bit masks. It hides nothing from anyone holding the frame.
+_MASK_OPERAND = re.compile(r"mask", re.I)
 _LOOP = re.compile(r"\b(?:for|while|forEach|map)\b")
 _LOOP_WINDOW = 4
 
@@ -96,14 +104,15 @@ _TUPLE_FEISTEL = re.compile(
 
 def _mixes(rhs: str, left: str, right: str) -> bool:
     """``rhs`` is ``left ^ f(right, ...)`` (either operand order): the other half XORed with a function of this
-    half and something more (a round key, a call)."""
+    half and something more (a round key, a round function call). Shifts of the two halves alone
+    (``s1 ^ s0 ^ (s1 >> 17) ^ (s0 >> 26)``, a xorshift PRNG step) have no key and no round function."""
     if "^" not in rhs or not re.search(rf"(?<![\w.]){re.escape(left)}(?!\w)", rhs):
         return False
     rest = re.sub(rf"(?<![\w.]){re.escape(left)}(?!\w)", "", rhs, count=1)
     if not re.search(rf"(?<![\w.]){re.escape(right)}(?!\w)", rest):
         return False
-    others = set(re.findall(r"[A-Za-z_]\w*", rest)) - {right}
-    return bool(others) or "(" in rest
+    others = set(re.findall(r"[A-Za-z_]\w*", rest)) - {right, left}
+    return bool(others) or bool(re.search(r"[A-Za-z_]\w*\s*\(", rest))
 
 
 def _xor_key_lines(lines: list[str]) -> list[int]:
@@ -111,7 +120,8 @@ def _xor_key_lines(lines: list[str]) -> list[int]:
     for idx, line in enumerate(lines):
         if not _XOR_OP.search(line):
             continue
-        if not (_XOR_KEY_INDEX.search(line) or _XOR_CYCLE.search(line)):
+        keys = [m.group("k") for pat in (_XOR_KEY_INDEX, _XOR_CYCLE) for m in pat.finditer(line)]
+        if not any(not _MASK_OPERAND.search(k) for k in keys):
             continue
         window = lines[max(0, idx - _LOOP_WINDOW): idx + 1]
         if any(_LOOP.search(w) for w in window):

@@ -169,7 +169,7 @@ def _detect_assets(
         external = project.scope_for(rel, lang, text) if project is not None else None
         code_lines: list[str] | None = None
         at_line: dict[tuple[int, str], str] = {}  # (line, key) -> display name, to find a composite
-        inner: list[tuple[_Asset, int, str]] = []
+        inner: list[tuple[_Asset, int, str, str | None]] = []
         for det in detect_crypto(text, lang, external):
             refined = _refine_key(det.key, det.key_size)
             info = algo_info(refined) or {}
@@ -192,19 +192,20 @@ def _detect_assets(
             asset.inferred = det.inferred if asset.inferred is None else (asset.inferred and det.inferred)
             at_line.setdefault((det.line_no, det.key), name)
             if det.inner_of:
-                inner.append((asset, det.line_no, det.inner_of))
+                inner.append((asset, det.line_no, det.inner_of, det.inner_role))
             else:
                 asset.own_lines += 1
             if info.get("primitive") == "hash" and refined in _PURPOSE_HASHES:
                 if code_lines is None:
                     code_lines = [_strip_line_comment(ln, lang) for ln in strip_noncode(text).split("\n")]
                 asset.purposes.append(hash_purpose(code_lines, det.line_no, lang))
-        for asset, line_no, composite_key in inner:
+        for asset, line_no, composite_key, role in inner:
             composite = at_line.get((line_no, composite_key))
             parent = seen.get((composite, rel)) if composite else None
             if parent is None:
                 continue
-            parent.inner_digest = parent.inner_digest or asset.name
+            if role != "oaep":  # the hash of an OAEP encryption is not a digest the key signs (weakness rule 3b)
+                parent.inner_digest = parent.inner_digest or asset.name
             if asset.own_lines == 0 and asset.derived_from is None:
                 asset.derived_from = composite
     _add_inner_hashes(seen)
@@ -436,7 +437,8 @@ def _context_props(asset: _Asset) -> dict[str, str]:
         props["crypto:purpose"] = sorted({p for p in asset.purposes if p})[0]
     if asset.inferred:
         props["crypto:confidence"] = "medium"
-        props["crypto:resolution"] = "inferred: a field default or the module's one configured transformation"
+        props["crypto:resolution"] = ("inferred (needs review): a field default or the module's one configured "
+                                      "transformation; a guess raises no finding")
     return props
 
 

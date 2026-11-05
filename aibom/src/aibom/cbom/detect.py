@@ -152,6 +152,9 @@ class Detection:
     # The composite this hash is only a parameter of on this line (``SHA1withRSA`` -> rsa,
     # ``PBKDF2HMAC(algorithm=hashes.SHA256())`` -> pbkdf2): not a hashing of its own (see :func:`_mark_inner`).
     inner_of: str | None = None
+    # What the hash is to that composite when it is not the digest the composite signs or MACs: ``"oaep"`` for the
+    # hash of RSA-OAEP encryption (and its MGF1), which rests on no collision resistance.
+    inner_role: str | None = None
     # The algorithm is inferred, not read: ``Cipher.getInstance(<String parameter>)`` bound to the only cipher
     # transformation configured for the module (``defined_at`` names that configuration line).
     inferred: bool = False
@@ -502,6 +505,8 @@ JS_LITERALS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("rsa", re.compile(
         r"\bRSA-OAEP\b|\bRSA-PSS\b|\bRSASSA-PKCS1"
         r"|generateKeyPair(?:Sync)?\s*\(\s*['\"]rsa", _F)),
+    # Node ``publicEncrypt({ padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha1' }, …)``.
+    ("rsa", re.compile(r"\bRSA_PKCS1_OAEP_PADDING\b")),
     # node-forge ``forge.pki.rsa.generateKeyPair({ bits: 1024 })`` — size via the ``bits`` digit on the line.
     ("rsa", re.compile(r"\bpki\.rsa\.generateKeyPair\b")),
     # Node ``createSign('RSA-SHA256')`` / ``createVerify('RSA-SHA1')``: the signature names RSA explicitly
@@ -652,8 +657,9 @@ def _lang_mode(line: str, lang: str) -> str | None:
     return "CFB" if mode.startswith("CFB") else mode
 
 
-# WebCrypto RSA algorithm names carry the padding scheme (``{name: "RSA-OAEP"}``).
-_WEBCRYPTO_PADDING = (("RSA-OAEP", "oaep"), ("RSA-PSS", "pss"), ("RSASSA-PKCS1", "pkcs1v15"))
+# WebCrypto RSA algorithm names carry the padding scheme (``{name: "RSA-OAEP"}``), as does Node's padding constant.
+_WEBCRYPTO_PADDING = (("RSA-OAEP", "oaep"), ("RSA_PKCS1_OAEP_PADDING", "oaep"), ("RSA-PSS", "pss"),
+                      ("RSASSA-PKCS1", "pkcs1v15"))
 
 
 def _lang_padding(line: str, lang: str, key: str) -> str | None:
@@ -951,13 +957,18 @@ def _merge(into: Detection, other: Detection) -> None:
     into.key_spec_only = into.key_spec_only and other.key_spec_only
     into.defined_at = into.defined_at or other.defined_at
     into.inner_of = into.inner_of if into.inner_of == other.inner_of else None
+    into.inner_role = into.inner_role if into.inner_role == other.inner_role else None
     into.inferred = into.inferred and other.inferred
 
 
 # Composites a hash can be a parameter of: a MAC / KDF / mask function, or a signature named with its digest.
 _COMPOSITE_KEYS = ("hmac", "pbkdf2", "hkdf", "mgf1", "concat-kdf")
 _SIGNATURE_KEYS = ("rsa", "ecdsa", "dsa")
-_SIGNATURE_SPEC = re.compile(r"with(?:RSA|ECDSA|DSA|PLAIN-ECDSA|RSAandMGF1)\b|\bOAEP|\bPSS\b", re.I)
+_SIGNATURE_SPEC = re.compile(r"with(?:RSA|ECDSA|DSA|PLAIN-ECDSA|RSAandMGF1)\b|\bPSS\b", re.I)
+# RSA-OAEP encryption names its hash too (pyca ``padding.OAEP(algorithm=hashes.SHA1())``, WebCrypto
+# ``{name: "RSA-OAEP", hash: "SHA-1"}``, Node ``RSA_PKCS1_OAEP_PADDING`` + ``oaepHash``): a parameter of the
+# encryption, not a signature digest.
+_OAEP_SPEC = re.compile(r"OAEP", re.I)
 # A direct hashing call (``hashlib.sha256(data)``, ``MessageDigest.getInstance("SHA-1")``, ``createHash('md5')``)
 # is a hash usage of its own even next to a composite.
 _DIRECT_HASH_CALL = re.compile(
@@ -966,24 +977,40 @@ _DIRECT_HASH_CALL = re.compile(
 
 
 def _mark_inner(per_line: dict[str, Detection], line: str) -> None:
-    """A hash on a line that builds a composite (HMAC, PBKDF2, HKDF, MGF1, a ``<digest>with<pk>`` signature, an
-    OAEP/PSS padding) and that is not hashed directly there is that composite's parameter."""
+    """A hash on a line that builds a composite (HMAC, PBKDF2, HKDF, MGF1, a ``<digest>with<pk>`` signature, a PSS
+    padding, an RSA-OAEP encryption) and that is not hashed directly there is that composite's parameter. The hash
+    of an OAEP encryption is marked as such (``inner_role="oaep"``): it is not a digest the RSA key signs."""
     composite = next((k for k in _COMPOSITE_KEYS if k in per_line), None)
+    role = None
     if composite is None and _SIGNATURE_SPEC.search(line):
         composite = next((k for k in _SIGNATURE_KEYS if k in per_line), None)
+    if composite is None and "rsa" in per_line and _OAEP_SPEC.search(line):
+        composite, role = "rsa", "oaep"
     if composite is None or _DIRECT_HASH_CALL.search(line):
         return
     for key, det in per_line.items():
         if key != composite and (algo_info(key) or {}).get("primitive") == "hash":
             det.inner_of = composite
+            det.inner_role = role
+
+
+def _symmetric(key: str) -> bool:
+    return (algo_info(key) or {}).get("primitive") in _SYMMETRIC_PRIMITIVES
 
 
 def _drop_subsumed_key_specs(dets: list[Detection]) -> list[Detection]:
     """``new SecretKeySpec(key, "AES")`` next to ``Cipher.getInstance("AES/CBC/PKCS5Padding")`` is the key of that
     cipher: one AES usage, not a second bare ``AES`` row beside ``AES-CBC``. A key spec stays a row when nothing
-    else in the file uses its algorithm."""
+    else in the file uses its algorithm.
+
+    A cipher key spec whose algorithm is only inferred (a field default a setter overrides) in a file whose cipher
+    the code names (``Cipher.getInstance("AES/GCM/NoPadding")``) is that cipher's key too: a JCA cipher rejects a
+    key of another algorithm, so the default is not what runs."""
     used = {d.key for d in dets if not d.key_spec_only}
-    return [d for d in dets if not (d.key_spec_only and d.key in used)]
+    named_cipher = any(_symmetric(d.key) and d.receiver_bound and not d.key_spec_only and not d.inferred
+                       for d in dets)
+    return [d for d in dets if not (d.key_spec_only and (d.key in used or (
+        d.inferred and named_cipher and _symmetric(d.key))))]
 
 
 # A canonical key that encodes its size (``aes-256``), and the bare family key it refines.
@@ -1526,6 +1553,151 @@ def _keyword_list_lines(lines: list[str], lang: str) -> set[int]:
 
 
 # --------------------------------------------------------------------------- #
+# Deny-lists. A collection literal of algorithm names (``WEAK = frozenset({"MD5", "SHA1"})``, Java
+# ``Set.of("DES", "RC4")``, JS ``['md5', 'sha1']``) that the file only ever tests membership in, to reject what is
+# in it (``if name in WEAK: raise``, ``if (FORBIDDEN.contains(a)) throw``), is a policy: none of its names reaches
+# a crypto API. Its lines are not scanned. The list stays a usage when any reference is something else (iterated,
+# passed to a call), when the membership test accepts what is in it (an allow-list: ``if name not in ALLOWED:
+# raise`` lets MD5 through), and when nothing in the file references it (no evidence either way).
+# --------------------------------------------------------------------------- #
+_COLLECTION_DECL = re.compile(
+    r"^\s*(?:[A-Za-z_][\w.]*(?:<[^=;<>]*(?:<[^=;<>]*>[^=;<>]*)*>)?(?:\[\s*\])?\s+)*"
+    r"(?P<name>[A-Za-z_$][\w$]*)\s*(?::[^=]*)?(?<![=!<>])=(?!=)\s*(?P<rhs>(?:new\s+)?[\w.]*(?:<[^=;<>]*>)?"
+    r"(?:\[\s*\])?\s*[\[({].*)$"
+)
+_POLICY_LINE_MAX = 2000  # a longer line is generated or minified: no declaration is read from it
+# What a literal collection may hold besides its string elements: constructor / factory words, type arguments,
+# booleans (``{"md5": True}``), punctuation.
+_COLLECTION_WORDS = re.compile(
+    r"\b(?:frozenset|set|tuple|list|Set|List|of|copyOf|Arrays|asList|ImmutableSet|ImmutableList|Collections|"
+    r"unmodifiableSet|unmodifiableList|Stream|new|HashSet|TreeSet|LinkedHashSet|ArrayList|String|string|str|"
+    r"Object|freeze|setOf|listOf|arrayOf|mutableSetOf|hashSetOf|Array|from|true|false|True|False)\b")
+_COLLECTION_REST = re.compile(r"^[\s,()\[\]{}<>:;.]*$")
+_POLICY_SPAN = 64
+_MEMBER_BEFORE = re.compile(r"\bin\s+(?:[\w$]+\.)?$")
+_MEMBER_AFTER = re.compile(r"^\s*\.\s*(?:contains|includes|has|containsKey|__contains__)\s*\(")
+_NEGATED_BEFORE = re.compile(r"(?:\bnot\s+in|!)\s*(?:[\w$]+\.)?$")
+_REJECTS = re.compile(
+    r"\b(?:raise|throw)\b|\breturn\s+(?:false|False|null|None|nil|undefined)\b|\b(?:abort|die|panic|reject)\s*\(")
+_CONDITIONAL = re.compile(r"\b(?:if|elif|unless|when)\b")
+_DENY_WORDS = frozenset({
+    "weak", "insecure", "forbidden", "forbid", "disallowed", "disallow", "deny", "denied", "denylist",
+    "blocklist", "blacklist", "blocked", "banned", "rejected", "reject", "unsafe", "broken", "deprecated",
+    "prohibited", "unsupported", "illegal", "bad", "refused",
+})
+_NAME_WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
+
+
+_STR_OR_BRACKET = re.compile(_STR_LIT.pattern + r"|[()\[\]{}]")
+_POLICY_CHARS = 8000  # a literal longer than this is data, not a policy list
+_POLICY_DEPTH = 4
+_IDENT = re.compile(r"[\w$]+")
+
+
+def _collection_extent(lines: list[str], start: int, rhs_col: int) -> tuple[int, str] | None:
+    """(last line index, text) of the bracketed literal that starts at ``lines[start][rhs_col:]``; brackets inside
+    string elements do not count."""
+    depth, size = 0, 0
+    parts: list[str] = []
+    for j in range(start, min(len(lines), start + _POLICY_SPAN)):
+        seg = lines[j][rhs_col:] if j == start else lines[j]
+        size += len(seg)
+        if size > _POLICY_CHARS:
+            return None
+        for tok in _STR_OR_BRACKET.finditer(seg):
+            ch = tok.group(0)
+            if ch in "([{":
+                depth += 1
+                if depth > _POLICY_DEPTH:
+                    return None  # ``new HashSet<>(Arrays.asList(...))`` is two deep: deeper is not a flat list
+            elif ch in ")]}":
+                depth -= 1
+                if depth == 0:
+                    parts.append(seg[: tok.end()])
+                    return j, "\n".join(parts)
+        parts.append(seg)
+    return None
+
+
+def _guarded(lines: list[str], idx: int, after: str) -> str | None:
+    """What a membership test on ``lines[idx]`` guards: ``"reject"`` (raise / throw / return false right after
+    it), ``"continue"`` (a condition whose branch does something else: a warning, then the work goes on), or None
+    (not a condition: a ``return name in WEAK`` predicate, an assignment)."""
+    if _REJECTS.search(after):
+        return "reject"
+    if not _CONDITIONAL.search(lines[idx]):
+        return None
+    for j in range(idx + 1, min(len(lines), idx + 4)):
+        nxt = lines[j].strip()
+        if nxt in ("", "{"):
+            continue
+        return "reject" if _REJECTS.match(nxt.lstrip("{ ")) else "continue"
+    return "continue"
+
+
+class _PolicyCandidate:
+    __slots__ = ("decl", "col", "end", "members", "deny", "accept")
+
+    def __init__(self, decl: int, col: int, end: int) -> None:
+        self.decl, self.col, self.end = decl, col, end
+        self.members = 0  # membership references; -1 once any other reference is seen
+        self.deny = self.accept = False
+
+
+def _policy_list_lines(lines: list[str], lang: str) -> set[int]:
+    """1-based lines of the deny-list literals in ``lines`` (see the comment above)."""
+    patterns = (*LITERAL_PATTERNS, *LITERAL_BY_LANG.get(lang, ()))
+    cands: dict[str, _PolicyCandidate] = {}
+    twice: set[str] = set()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = _COLLECTION_DECL.match(line) if "=" in line and len(line) <= _POLICY_LINE_MAX else None
+        extent = _collection_extent(lines, i, m.start("rhs")) if m else None
+        if m is None or extent is None:
+            i += 1
+            continue
+        end, body = extent
+        strings = _STR_LIT.findall(body)
+        if strings and _COLLECTION_REST.match(_COLLECTION_WORDS.sub(" ", _STR_LIT.sub(" ", body))) and \
+                any(p.search(s) for s in strings for _, p in patterns):
+            name = m.group("name")
+            if name in cands:
+                twice.add(name)  # two lists of one name: which one a reference reads is not provable
+            cands[name] = _PolicyCandidate(i, m.start("name"), end)
+        i = end + 1
+    for name in twice:
+        del cands[name]
+    if not cands:
+        return set()
+    # one pass over every identifier of the file: each reference of a candidate is a membership test or not
+    for j, other in enumerate(lines):
+        if len(cands) < 8 and not any(n in other for n in cands):
+            continue  # cheap skip for the usual one or two lists
+        for tok in _IDENT.finditer(other):  # maximal identifier runs: ``WEAK`` never matches inside ``WEAKER``
+            cand = cands.get(tok.group(0))
+            if cand is None or cand.members < 0 or (j == cand.decl and tok.start() == cand.col):
+                continue
+            before, after = other[: tok.start()], other[tok.end():]
+            if not (_MEMBER_BEFORE.search(before) or _MEMBER_AFTER.match(after)):
+                cand.members = -1  # iterated, passed, returned ...: its names may reach a crypto call
+                continue
+            cand.members += 1
+            guard, negated = _guarded(lines, j, after), bool(_NEGATED_BEFORE.search(before))
+            if guard == "reject":  # ``not in ALLOWED: raise`` accepts what is in the list
+                cand.accept, cand.deny = cand.accept or negated, cand.deny or not negated
+            elif guard == "continue" and not negated:
+                cand.accept = True  # ``if alg in WEAK: log.warning(...)`` and the work goes on with it
+    out: set[int] = set()
+    for name, cand in cands.items():
+        if cand.members <= 0 or cand.accept:
+            continue
+        if cand.deny or any(w.lower() in _DENY_WORDS for w in _NAME_WORDS.findall(name)):
+            out.update(range(cand.decl + 1, cand.end + 2))
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Constant folding (evasion-resistant spellings). An algorithm name glued from
 # string pieces (``'md' + '5'``, PHP ``'des' . '-' . 'ecb'``), decoded from a
 # base64 literal (``b64decode('bWQ1')``), reversed (``'bce-821-sea'.split('')
@@ -1839,6 +2011,42 @@ def _bind_js_keygen_options(lines: list[str], dets: list[Detection]) -> None:
 
 # A name passed as a call argument (``hashlib.new(ALG, pw)``, ``f(x, algorithm=consts.ALG)``).
 _PY_ARG_NAME = r"([(,=]\s*){}(\s*[,)])"
+# A call whose arguments name an algorithm: a callee of a Python crypto module (``hashlib.new``, ``hmac.new``,
+# ``hashes.Hash``, ``AES.new``, ``jwt.encode``) or a crypto constructor, and any call's argument named for one.
+_PY_CRYPTO_CALLEE = re.compile(
+    r"^(?:hashes|algorithms|modes|padding|jwt|Crypto|Cryptodome|pkcs1_15|pss|DSS|"
+    + "|".join(sorted(_PY_CRYPTO_MODULES)) + r")(?:\.|$)"
+    r"|(?:^|\.)(?:Cipher|Hash|HMAC|PBKDF2HMAC|Scrypt|HKDF|HKDFExpand|ConcatKDFHash|X963KDF|pbkdf2_hmac)$"
+)
+_PY_CRYPTO_KWARG = re.compile(
+    r"^(?:algorithms?|alg|digestmod|digest|digest_?alg|hash_?name|hash_?alg|hashfunc|hash|cipher|mode)$", re.I)
+_GETATTR_CRYPTO = re.compile(r"^\s*(?:hashlib|hashes|algorithms|modes)\s*,")
+
+
+def _crypto_argument(line: str, at: int) -> bool:
+    """Is the argument whose leading ``(`` / ``,`` / ``=`` is at ``line[at]`` read by a crypto call? A constant
+    passed anywhere else (``raise UnsupportedDigest(REJECTED_DIGEST)``, ``log(ALG)``) names no usage."""
+    if line[at] == "=":
+        kw = re.search(r"([A-Za-z_]\w*)\s*$", line[:at])
+        if kw and _PY_CRYPTO_KWARG.match(kw.group(1)):
+            return True
+    depth, j = 0, at if line[at] == "(" else at - 1
+    while j >= 0:  # the unclosed ``(`` this argument sits in
+        ch = line[j]
+        if ch == ")":
+            depth += 1
+        elif ch == "(":
+            if depth == 0:
+                break
+            depth -= 1
+        j -= 1
+    if j < 0:
+        return False
+    callee = re.search(r"([A-Za-z_][\w.]*)\s*$", line[:j])
+    if callee is None:
+        return False
+    name = callee.group(1)
+    return bool(_PY_CRYPTO_CALLEE.search(name)) or (name == "getattr" and bool(_GETATTR_CRYPTO.match(line[j + 1:])))
 
 
 def _value_keys(value: str, lang: str) -> set[str]:
@@ -1854,8 +2062,8 @@ def _value_keys(value: str, lang: str) -> set[str]:
 def _substitute_python_constants(
     work_lines: list[str], external: Mapping[str, Any]
 ) -> dict[int, list[Any]]:
-    """Replace a constant imported from another project module, where it is passed as a call argument, by its
-    quoted value (``hashlib.new(ALG)`` -> ``hashlib.new('md5')``) so every lane reads the algorithm at the use
+    """Replace a constant imported from another project module, where a crypto call takes it as an argument, by
+    its quoted value (``hashlib.new(ALG)`` -> ``hashlib.new('md5')``) so every lane reads the algorithm at the use
     site. Returns line number -> the definitions substituted there."""
     used: dict[int, list[Any]] = {}
     patterns = [(re.compile(_PY_ARG_NAME.format(re.escape(name))), d) for name, d in external.items()]
@@ -1863,7 +2071,12 @@ def _substitute_python_constants(
         if not line or "(" not in line or _IMPORT_RE.search(line.strip()):
             continue
         for pat, d in patterns:
-            new = pat.sub(lambda m, v=d.value: f"{m.group(1)}{_quote(v)}{m.group(2)}", line)
+            def sub(m: re.Match[str], v: str = d.value, src: str = line) -> str:
+                if not _crypto_argument(src, m.start(1)):
+                    return m.group(0)
+                return f"{m.group(1)}{_quote(v)}{m.group(2)}"
+
+            new = pat.sub(sub, line)
             if new != line:
                 line = new
                 used.setdefault(idx + 1, []).append(d)
@@ -1887,20 +2100,20 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
     # every reported line number after such a character (the occurrence pass uses the same rule).
     raw_lines = stripped.split("\n")
     work_lines = [_fold_strings(_strip_line_comment(ln, lang), lang) for ln in raw_lines]
-    substituted: dict[int, list[Any]] = {}
-    if external and lang == _PY:
-        substituted = _substitute_python_constants(work_lines, external)
     if lang == _JAVA:
         work_lines = [_fold_java_arrays(ln) for ln in work_lines]
     aliases = _import_aliases(work_lines, lang) if lang in (_GO, _PY) else {}
     if aliases:
         work_lines = [ln if _IMPORT_RE.search(ln.strip()) or _GO_ALIAS.match(ln) else _apply_aliases(ln, aliases)
                       for ln in work_lines]
+    substituted: dict[int, list[Any]] = {}
+    if external and lang == _PY:  # after the aliases, so ``hl.new(ALG)`` (``import hashlib as hl``) is a crypto call
+        substituted = _substitute_python_constants(work_lines, external)
     symbols = build_symbols(work_lines)
     rules = RULES_BY_LANG.get(lang, ())
     java_ctx = _JavaContext(work_lines, external) if lang == _JAVA else None
     jwt_file = bool(_JWT_FILE.search(stripped)) and lang in (_PY, _JS, _JAVA)
-    keyword_lines = _keyword_list_lines(work_lines, lang)
+    keyword_lines = _keyword_list_lines(work_lines, lang) | _policy_list_lines(work_lines, lang)
 
     out: list[Detection] = []
     for line_no, work in enumerate(work_lines, start=1):
@@ -1908,7 +2121,7 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
         if not line or _IMPORT_RE.search(line) or _BARE_IMPORT_PATH.match(work) or _PACKAGE_DECL.match(work):
             continue  # imports are LIBRARY signals, handled by the scanner
         if line_no in keyword_lines:
-            continue  # an element of a non-crypto keyword table
+            continue  # an element of a non-crypto keyword table, or of a deny-list
         per_line: dict[str, Detection] = {}
 
         # --- receiver+method rule lane ---

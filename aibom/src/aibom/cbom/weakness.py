@@ -150,6 +150,14 @@ def _base_key(name: str) -> str | None:
     return _DISPLAY_TO_KEY.get(upper)
 
 
+def _inferred(props: dict[str, str]) -> bool:
+    """The algorithm is a guess, not read from the code at this call (``crypto:resolution`` ``inferred …``: a field
+    default a setter may override, the module's one configured transformation for a ``String`` parameter). It is
+    inventoried for review with ``crypto:confidence=medium`` and raises no finding: a guess is no evidence of a
+    weakness, and a wrong guess would put a High finding on code that does not use the algorithm."""
+    return str(props.get("crypto:resolution") or "").startswith("inferred")
+
+
 def _key_size(props: dict[str, str]) -> int | None:
     raw = props.get("crypto:keySize")
     if raw is None:
@@ -194,6 +202,8 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
     if props.get("crypto:derived") == "true":
         # A derived row (the inner hash of a composite, the hash a hardcoded key is derived through) has no
         # finding of its own: the component it was derived from carries it.
+        return None
+    if _inferred(props):
         return None
     if props.get("crypto:nonSecurityUse") == "true" and props.get("crypto:primitive") == "hash":
         # A hash used only to name or check content (a cache key, an ETag, a checksum; ``usedforsecurity=False``)
@@ -248,7 +258,9 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
             )
 
     # 3b) A signature built on a collision-broken digest (``SHA1withRSA``): the digest is listed as a derived row
-    #     without a finding of its own, so the signature carries it.
+    #     without a finding of its own, so the signature carries it. ``crypto:innerDigest`` is only set from a
+    #     signature spelling: the hash of an RSA-OAEP encryption (``padding.OAEP(algorithm=hashes.SHA1())``) is a
+    #     derived row too, but OAEP rests on no collision resistance, so it is not a digest here.
     digest = props.get("crypto:innerDigest") or ""
     inner = _base_key(digest)
     if props.get("crypto:primitive") in ("pke", "signature") and inner in _BROKEN_SIG_DIGESTS:
@@ -305,7 +317,7 @@ def weak_padding_finding(component: AIComponent) -> tuple[str, str, str] | None:
     props = component.properties or {}
     if props.get("crypto:assetType") != "algorithm":
         return None
-    if props.get("crypto:primitive") != "pke":
+    if props.get("crypto:primitive") != "pke" or _inferred(props):
         return None
     padding = (props.get("crypto:padding") or "").lower()
     if padding not in _WEAK_ENCRYPTION_PADDINGS:
