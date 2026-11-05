@@ -6,9 +6,13 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
+import sys
 import threading
 import time
 import tracemalloc
+from pathlib import Path
 
 import pytest
 
@@ -181,6 +185,24 @@ def test_reads_still_follow_links_inside_the_root_and_report_denied_and_loops(tm
     assert fs.listdir("/etc/ssl/certs") == ["a.crt"]
     assert fs.read("/etc/ssl", 100).status == "not_file" and fs.read("/", 100).status == "not_file"
     assert fs.read("/usr/share/ca/a.crt/x", 100).status == "missing"  # a file used as a directory
+
+
+@pytest.mark.skipif(os.geteuid() != 0 or not shutil.which("setpriv"), reason="needs root and setpriv")
+def test_a_search_only_directory_on_the_way_is_passed_like_a_path_lookup(tmp_path):
+    """Descriptor-based resolution must not need READ permission on the directories it passes (O_PATH): a 0711 home
+    directory still lets the agent read the world-readable files below it, as the kernel's own path lookup does."""
+    root = tmp_path / "host"
+    (root / "home/u/.ssh").mkdir(parents=True)
+    (root / "home/u/.ssh/authorized_keys").write_text("ssh-ed25519 AAAA x\n")
+    os.chmod(root / "home/u", 0o711)
+    for p in (root / "home", root / "home/u", root / "home/u/.ssh", root / "home/u/.ssh/authorized_keys"):
+        os.chown(p, 12345, 12345)  # another user's: root without capabilities gets the "other" permission bits
+    script = ("import sys; sys.path.insert(0, sys.argv[1]); from zs_scan_node.hostfs import HostFS; fs = HostFS(sys.argv[2]); "
+              "print(fs.read('/home/u/.ssh/authorized_keys', 100).status, fs.listdir('/home/u'), "
+              "fs.listdir('/home/u/.ssh'))")
+    out = subprocess.run(["setpriv", "--inh-caps=-all", "--bounding-set=-all", sys.executable, "-c", script,
+                          str(Path(hostfs.__file__).parents[1]), str(root)], capture_output=True, text=True, check=True)
+    assert out.stdout.split(None, 1) == ["ok", "None ['authorized_keys']\n"], out
 
 
 # ----------------------------------------------------------------------------- finding 7: the ptrace text

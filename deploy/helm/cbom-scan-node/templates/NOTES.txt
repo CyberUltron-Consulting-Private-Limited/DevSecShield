@@ -8,6 +8,6 @@ Host agents: {{ include "cbom-scan-node.fullname" . }}-agent (DaemonSet). Each p
 named after its Kubernetes node, and reads only that node's files (read-only /host mount); it never receives credentials.
 Node state on each host: {{ include "cbom-scan-node.agentStatePath" . }}. A node reset in ZeroShield is enrolled again
 by its pod with the pool token while that token is active; after it expires, install a new one with
-helm upgrade --set agent.poolToken=... (the pods restart and read it).
+helm upgrade --set agent.poolToken=... (the pods restart and read it; a pod without a node enrolls as a new node).
   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=host-agent -o wide
 {{- end }}

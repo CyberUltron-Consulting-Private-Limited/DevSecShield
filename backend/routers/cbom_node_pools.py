@@ -6,8 +6,9 @@ The token (``zsp_...``) is shown once, at creation; only its SHA-256 is stored. 
 and can be revoked.  Nodes that enrolled keep their own credentials after the token expires or is revoked.  While
 the token is active, a pod whose node is reset on the Scan nodes tab enrolls again by itself and takes that node
 back, and a pod whose node is deleted enrolls as a new node (within the cap); after the token expires or is revoked
-those pods stay offline until a new pool token is installed (``helm upgrade --set agent.poolToken=...``; the pods
-restart with it).  To stop a node for good, remove its pod (the DaemonSet's node selector) and delete the node.
+those pods stay offline, and enroll as new nodes once a new pool token is installed (``helm upgrade --set
+agent.poolToken=...``; the pods restart with it).  To stop a node for good, remove its pod (the DaemonSet's node
+selector) and delete the node.
 Agent nodes collect only their own host and never receive a credential (see ``utilities/cbom_sources/agents.py``).
 """
 from __future__ import annotations

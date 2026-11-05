@@ -45,8 +45,9 @@ helm upgrade --install zs-host-agents oci://registry.zeroshield.ai/charts/cbom-s
   kernel requires to read another user's `/proc/<pid>/maps` (it also allows attaching to any process on the node).
 * **Pool nodes after a reset or delete**: a pod whose node is reset in ZeroShield gets a 401, enrolls again with
   the pool token and takes its node back (no enrollment used); a pod whose node is deleted enrolls as a new node
-  (within the pool's cap). Once the pool token has expired or been revoked, such a pod waits until a new pool token
-  is installed (`helm upgrade --set agent.poolToken=zsp_...`). To stop a node for good, keep its pod off that
+  (within the pool's cap). Once the pool token has expired or been revoked, such a pod waits, and enrolls as a new
+  node once a new pool token is installed (`helm upgrade --set agent.poolToken=zsp_...`; delete the old, offline
+  node in ZeroShield). To stop a node for good, keep its pod off that
   Kubernetes node (`agent.nodeSelector`) and delete the node in ZeroShield.
 
 Both are ready while the node's heartbeat loop turns (the image health check: `$ZS_STATE_DIR/alive` younger than

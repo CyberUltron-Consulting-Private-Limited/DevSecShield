@@ -35,7 +35,9 @@ KERNEL_DIRS = frozenset({"proc", "sys", "dev"})
 _CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _O_FLAGS = os.O_RDONLY | _NOFOLLOW | getattr(os, "O_NONBLOCK", 0) | _CLOEXEC
-_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _NOFOLLOW | _CLOEXEC
+_DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _NOFOLLOW | _CLOEXEC  # a directory to list
+# a directory passed through: O_PATH needs only search permission on it, like a path lookup (a 0711 home directory)
+_PASS_FLAGS = (getattr(os, "O_PATH", 0) or os.O_RDONLY) | getattr(os, "O_DIRECTORY", 0) | _NOFOLLOW | _CLOEXEC
 
 
 @dataclass
@@ -120,7 +122,8 @@ class HostFS:
         OSError: FileNotFoundError for a missing path, one under /proc, /sys or /dev, or a link chain longer than
         MAX_LINKS; PermissionError when a directory on the way or the file is not readable."""
         todo = _parts(path)
-        stack = [os.open(self.root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _CLOEXEC)]
+        final = _DIR_FLAGS if directory else _O_FLAGS
+        stack = [os.open(self.root, _PASS_FLAGS & ~_NOFOLLOW)]  # the mount point itself may be reached by a link
         links = 0
         try:
             while todo:
@@ -133,8 +136,7 @@ class HostFS:
                     raise FileNotFoundError(errno.ENOENT, "kernel file systems are not read", part)
                 last = not todo
                 try:
-                    fd = os.open(part, (_DIR_FLAGS if directory else _O_FLAGS) if last else _DIR_FLAGS,
-                                 dir_fd=stack[-1])
+                    fd = os.open(part, final if last else _PASS_FLAGS, dir_fd=stack[-1])
                 except OSError as exc:
                     if exc.errno not in (errno.ELOOP, errno.ENOTDIR):
                         raise
@@ -158,7 +160,8 @@ class HostFS:
                 if last:
                     return fd
                 stack.append(fd)
-            return os.dup(stack[-1])  # the path ended at a directory (the root, '..', or a link to a directory)
+            # the path ended at a directory passed through (the root, '..', a link to a directory): open it for real
+            return os.open(".", final, dir_fd=stack[-1])
         finally:
             for fd in stack:
                 os.close(fd)

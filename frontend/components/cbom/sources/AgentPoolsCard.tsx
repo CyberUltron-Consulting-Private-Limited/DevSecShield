@@ -189,7 +189,7 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
         open={!!revoking}
         onOpenChange={(v) => !v && setRevoking(null)}
         title="Revoke this agent pool token?"
-        description={revoking ? `No node can enroll with ${revoking.name} any more, not even again. The ${revoking.enrollments} node(s) that enrolled keep working; a node of this pool that you reset or delete from now on stays offline until you install a new pool token (helm upgrade --set agent.poolToken=...). To stop a node for good, keep its pod off that Kubernetes node (agent.nodeSelector) and delete the node.` : ""}
+        description={revoking ? `No node can enroll with ${revoking.name} any more, not even again. The ${revoking.enrollments} node(s) that enrolled keep working; a node of this pool that you reset or delete from now on goes offline, and its pod enrolls again (as a new node) only once you install a new pool token (helm upgrade --set agent.poolToken=...). To stop a node for good, keep its pod off that Kubernetes node (agent.nodeSelector) and delete the node.` : ""}
         confirmLabel="Revoke"
         destructive
         pending={revoke.isPending}
