@@ -16,6 +16,10 @@ PROD_DIR    ?= /opt/devsecshield
 DSS_TAG     ?=
 API_URL     ?=
 VERSION     ?=
+# A rollback across a release that added migrations downgrades the database first (it drops what they added): the
+# remote staging.sh asks on the terminal, or ALLOW_DOWNGRADE=1 consents up front.
+ALLOW_DOWNGRADE ?=
+ROLLBACK_ARGS := $(if $(filter 1,$(ALLOW_DOWNGRADE)),--allow-downgrade)
 COMPOSE     := docker compose -f deploy/staging/docker-compose.yml --env-file deploy/staging/.env
 BACKEND_PY  ?= backend/.venv/bin/python
 ENGINE_PY   ?= aibom/.venv/bin/python
@@ -128,9 +132,9 @@ check-staging: ## Health and hydration checks on the staging host: make check-st
 	ssh $(SSH_OPTS) "$(HOST)" "cd '$(DIR)' && scripts/deploy/staging.sh check"
 
 .PHONY: rollback-staging
-rollback-staging: ## Roll staging back to the previously deployed images: make rollback-staging HOST=user@host
+rollback-staging: ## Roll staging back to the previous release (asks before a database downgrade; ALLOW_DOWNGRADE=1): make rollback-staging HOST=user@host
 	@test -n "$(HOST)" || { echo "set HOST=user@staging-host"; exit 1; }
-	ssh $(SSH_OPTS) "$(HOST)" "cd '$(DIR)' && scripts/deploy/staging.sh rollback"
+	ssh -t $(SSH_OPTS) "$(HOST)" "cd '$(DIR)' && scripts/deploy/staging.sh rollback $(ROLLBACK_ARGS)"
 
 .PHONY: deploy-prod
 deploy-prod: ## PRODUCTION deploy (asks you to type the host): make deploy-prod HOST=user@prod-host API_URL=https://devsecshieldapi.zeroshield.ai
@@ -142,10 +146,10 @@ deploy-prod: ## PRODUCTION deploy (asks you to type the host): make deploy-prod 
 	DSS_IMAGE_PREFIX=dss-prod NEXT_PUBLIC_BACKEND_URL="$(API_URL)" scripts/deploy/staging.sh release "$(HOST)" "$(PROD_DIR)"
 
 .PHONY: rollback-prod
-rollback-prod: ## Roll PRODUCTION back to the previous images (asks you to type the host)
+rollback-prod: ## Roll PRODUCTION back to the previous release (asks you to type the host, and before a database downgrade)
 	@test -n "$(HOST)" || { echo "set HOST=user@prod-host"; exit 1; }
 	@read -r -p "Type the host ($(HOST)) to roll PRODUCTION back: " answer; [ "$$answer" = "$(HOST)" ] || { echo "aborted"; exit 1; }
-	ssh $(SSH_OPTS) "$(HOST)" "cd '$(PROD_DIR)' && DSS_IMAGE_PREFIX=dss-prod scripts/deploy/staging.sh rollback"
+	ssh -t $(SSH_OPTS) "$(HOST)" "cd '$(PROD_DIR)' && DSS_IMAGE_PREFIX=dss-prod scripts/deploy/staging.sh rollback $(ROLLBACK_ARGS)"
 
 ##@ Help
 

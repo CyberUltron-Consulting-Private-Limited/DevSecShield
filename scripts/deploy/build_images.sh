@@ -79,22 +79,35 @@ build() { # <component> <dockerfile> <context> [extra args...]
 
 # No secret file may be inside an image. Base images legitimately carry CA bundles (*.pem) in system and venv paths,
 # so *.pem is checked in the application directories; .env files and the SSH key are checked everywhere.
+# find runs as root: the image's own USER (nextjs in the frontend) cannot read every directory, and a directory find
+# cannot read is one it did not check. A find that fails is "could not check", never "nothing found"; either way the
+# image is removed so it cannot be saved and shipped.
+image_find() { # <image> <find arguments...>
+  local image=$1
+  shift
+  docker run --rm --network none --user 0 --entrypoint find "${image}" "$@"
+}
+
+reject_image() { # <image> <reason>
+  docker rmi "$1" >/dev/null 2>&1 || true
+  die "$2; the image was removed"
+}
+
 assert_no_secrets() { # <component> <app dir>...
-  local name=$1 image out
+  local name=$1 image out more d
   shift
   image="$(image_name "${name}")"
-  out="$(docker run --rm --network none --entrypoint find "${image}" / -xdev \
-    \( -path /proc -o -path /sys \) -prune -o \
-    \( -name '.env' -o -name '.env.*' -o -name 'cu-devsecshield-key*' \) ! -name '.env.example' -print 2>/dev/null || true)"
-  local d
+  out="$(image_find "${image}" / -xdev \( -path /proc -o -path /sys \) -prune -o \
+    \( -name '.env' -o -name '.env.*' -o -name 'cu-devsecshield-key*' \) ! -name '.env.example' -print)" ||
+    reject_image "${image}" "could not check ${image} for secret files (find failed in the image, output above)"
   for d in "$@"; do
-    out+="$(docker run --rm --network none --entrypoint find "${image}" "${d}" \
-      \( -name .venv -o -name node_modules \) -prune -o -name '*.pem' -print 2>/dev/null || true)"
+    more="$(image_find "${image}" "${d}" \( -name .venv -o -name node_modules \) -prune -o -name '*.pem' -print)" ||
+      reject_image "${image}" "could not check ${d} in ${image} for *.pem files (find failed in the image, output above)"
+    out+="${out:+${more:+$'\n'}}${more}"
   done
   if [[ -n "${out}" ]]; then
     printf '%s\n' "${out}" >&2
-    docker rmi "${image}" >/dev/null 2>&1 || true
-    die "${image} contains secret-bearing files (listed above); the image was removed"
+    reject_image "${image}" "${image} contains secret-bearing files (listed above)"
   fi
   log "${image}: no .env, *.pem or SSH key inside"
 }

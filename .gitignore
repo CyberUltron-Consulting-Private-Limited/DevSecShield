@@ -48,6 +48,7 @@ deploy/staging/*.env
 deploy/staging/certs/
 deploy/staging/images/
 deploy/staging/deploy-history
+deploy/staging/releases/
 # Scan-node release archives (scripts/release/scan_node_image.sh)
 dist/scan-node/
 
