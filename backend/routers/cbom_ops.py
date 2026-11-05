@@ -36,6 +36,7 @@ from backend.utilities.cbom_sources.http import (
     ObjectId,
     TeamId,
     authorize,
+    bump_version,
     check_version,
     read_limiter,
     require_owner_or_admin,
@@ -253,8 +254,13 @@ class ScheduleUpdate(_ScheduleFields):
     expected_version: int | None = None
 
 
+def _timing(s: CbomCollectionSchedule) -> tuple:
+    return s.enabled, s.frequency, s.time_of_day, s.weekday, s.monthday
+
+
 def _apply_schedule(session: Session, team_id: int, user_id: int, s: CbomCollectionSchedule, fields: dict[str, Any],
                     now) -> None:
+    timing = _timing(s)
     for key in ("name", "enabled", "frequency", "time_of_day", "weekday", "monthday", "min_criticality"):
         if key in fields:
             setattr(s, key, fields[key])
@@ -279,8 +285,11 @@ def _apply_schedule(session: Session, team_id: int, user_id: int, s: CbomCollect
     if (s.include or {}).get("network") and s.soc_ack_at is None:
         raise HTTPException(status_code=400, detail="soc_ack: scheduled network scans need your SOC's agreement to the "
                                                     "ranges and scan windows")
-    tz = get_or_create_settings(session, team_id).window_timezone
-    s.next_run_at = SCHED.next_slot(s, tz, now)[1] if s.enabled else None
+    # Only a change of WHEN it runs (or pausing / resuming) moves the next run: a rename or a change of scope keeps
+    # it, so a slot that is due right now still fires instead of being dropped without a run or a "skipped" record.
+    if s.id is None or _timing(s) != timing:
+        tz = get_or_create_settings(session, team_id).window_timezone
+        s.next_run_at = SCHED.next_slot(s, tz, now)[1] if s.enabled else None
 
 
 def _list_schedules(engine, team_id: int) -> dict:
@@ -345,7 +354,7 @@ def _update_schedule(engine, team_id: int, user_id: int, schedule_id: int, body:
         if "include" in fields and body.include is not None:
             fields["include"] = body.include.model_dump()
         _apply_schedule(session, team_id, user_id, s, fields, now)
-        s.row_version += 1
+        bump_version(session, s)
         s.updated_by_user_id, s.last_updated = user_id, now
         session.add(s)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="schedule.update",

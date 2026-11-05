@@ -13,7 +13,7 @@ import secrets
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import delete, func, update
+from sqlalchemy import case, delete, func, update
 from sqlmodel import Session, select
 
 from backend.new_models import (
@@ -61,14 +61,21 @@ def _run_of(session: Session, job: CbomCollectionJob) -> CbomCollectionRun | Non
 
 
 # ----------------------------------------------------------------------------- credits
+# The team balance is a float column shared with other features (a chat message costs 0.006), so it is not a whole
+# number of centi-credits and sums of them carry binary error: 1.0 - 0.01 - 0.06 is 0.92999...  A charge of exactly the
+# balance the team sees must still pass; this slack is far below a centi-credit and far above the float error.
+_BALANCE_SLACK = 1e-6
+
+
 def charge_team(session: Session, team_id: int, centi: int) -> bool:
     """Atomic conditional deduction in the caller's transaction."""
     if centi <= 0:
         return True
     amount = centi / 100
+    left = Team.credit_balance - amount
     result = session.exec(
-        update(Team).where(Team.id == team_id, Team.credit_balance >= amount)
-        .values(credit_balance=Team.credit_balance - amount)
+        update(Team).where(Team.id == team_id, Team.credit_balance >= amount - _BALANCE_SLACK)
+        .values(credit_balance=case((left < 0, 0.0), else_=left))  # never a -0.0000001 balance
     )
     return result.rowcount == 1
 
@@ -79,9 +86,20 @@ def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun 
         return 0
     amount = job.weight_c
     if run is not None:
-        amount = min(amount, max(run.credits_charged_c - run.credits_refunded_c, 0))
-        run.credits_refunded_c += amount
-        session.add(run)
+        # One SQL increment, not an ORM read-modify-write: two jobs of a run refunded at the same time (a node's
+        # result and the reaper, two cancels) both count.  A run is charged exactly the sum of its jobs' weights, so
+        # the guard (never refund more than the run was charged) never stops a refund that is due.
+        refunded = CbomCollectionRun.credits_refunded_c
+        if not session.exec(
+            update(CbomCollectionRun)
+            .where(CbomCollectionRun.id == run.id, CbomCollectionRun.credits_charged_c - refunded >= amount)
+            .values(credits_refunded_c=refunded + amount)
+            .execution_options(synchronize_session=False)
+        ).rowcount:
+            log("refund SKIPPED: the run has no credits left to refund", team=job.team_id, run=run.id, job=job.id,
+                amount_c=amount)
+            amount = 0
+        session.expire(run, ["credits_refunded_c"])  # the next read sees every refund, not this session's copy
     job.refunded = True
     session.add(job)
     if amount > 0:
@@ -222,14 +240,37 @@ def safe_reap(session: Session, now: _dt.datetime, **kwargs: Any) -> None:
 
 
 # ----------------------------------------------------------------------------- versions
-def connection_version(source: CbomCollectionSource) -> str:
+def _validated_config(source: CbomCollectionSource) -> Any:
+    """The source's config read by its kind's model, or None (unknown kind, or a stored config that no longer
+    validates)."""
+    spec = KINDS.get(source.kind)
+    if spec is None:
+        return None
+    try:
+        return spec.model.model_validate(source.config or {})
+    except Exception:
+        return None
+
+
+_UNSET: Any = object()
+
+
+def connection_version(source: CbomCollectionSource, validated: Any = _UNSET) -> str:
     """What a job depends on, as a hash: where the source points and how it connects (every config field except the
     metadata ones: targets, ports, where-fields, credential type, vault reference, tier, window, exclusions ...), the
     scan node, and the stored credential (a digest of its ciphertext, never the secret).
 
     ``row_version`` is the EDIT version (a stale form gets a 409, any change bumps it); jobs check this instead, so a
-    rename or a metadata edit (business criticality, exposure, owner ...) never cancels a queued or running job."""
-    config = {k: v for k, v in sorted((source.config or {}).items()) if k not in METADATA_FIELDS}
+    rename or a metadata edit (business criticality, exposure, owner ...) never cancels a queued or running job.
+
+    The config is hashed as the kind's model reads it (defaults filled in, values normalised), not as stored: a source
+    saved before a field existed (AWS decrypt_lambda_cmk / read_glue, Azure credential_type, the AD CS host and port)
+    and the same source saved again with that field at its default connect the same way, so they hash the same.  A
+    stored config that no longer validates is hashed as stored (such a source's jobs are refused anyway).
+    ``validated``: the caller's ``_validated_config(source)``, so a claim reads each config once."""
+    model = _validated_config(source) if validated is _UNSET else validated
+    raw = model.model_dump(mode="json") if model is not None else (source.config or {})
+    config = {k: v for k, v in sorted(raw.items()) if k not in METADATA_FIELDS}
     secret = hashlib.sha256((source.secret_encrypted or "").encode("utf-8")).hexdigest()
     blob = json.dumps({"kind": source.kind, "node_id": source.node_id, "config": config, "secret": secret},
                       sort_keys=True, separators=(",", ":"), default=str)
@@ -429,9 +470,10 @@ def _invalid_reason(job: CbomCollectionJob, source: CbomCollectionSource | None,
         return "Source moved to another scan node"
     if node is None and source.node_id is not None and job.node_id is not None:
         return "Source moved to another scan node"
+    cfg = _validated_config(source)
     conn_v = (job.params or {}).get("conn_v")
     if conn_v is not None:
-        if connection_version(source) != conn_v:
+        if connection_version(source, cfg) != conn_v:
             return "Source changed after this job was created"
     elif job.source_version is not None and source.row_version != job.source_version:
         return "Source changed after this job was created"  # a job queued before connection versions existed
@@ -439,28 +481,48 @@ def _invalid_reason(job: CbomCollectionJob, source: CbomCollectionSource | None,
         return "Source was disabled"
     spec = KINDS.get(source.kind)
     if spec is not None:
-        try:
-            cfg = spec.model.model_validate(source.config or {})
-        except Exception:
+        if cfg is None:
             return "Source configuration is no longer valid"
         if not spec.collectable(cfg):
             return "Collection for this source is not available"
     return None
 
 
+CLAIM_PAGE = 50
+# A node has at most about two pending jobs per source (a collection and a connection test; 500 sources per team), so
+# this bound is never reached in practice; it only caps the work of one claim request.
+CLAIM_SCAN_MAX = 2000
+
+
+def _pending_for_node(session: Session, node: CbomScanNode):
+    """The node's pending jobs, oldest first, a page at a time (rows another claim holds are skipped on PostgreSQL)."""
+    last_id, seen = 0, 0
+    postgres = session.get_bind().dialect.name == "postgresql"
+    while seen < CLAIM_SCAN_MAX:
+        query = (
+            select(CbomCollectionJob)
+            .where(CbomCollectionJob.node_id == node.id, CbomCollectionJob.team_id == node.team_id,
+                   CbomCollectionJob.status == "pending", CbomCollectionJob.id > last_id)
+            .order_by(CbomCollectionJob.id)
+            .limit(CLAIM_PAGE)
+        )
+        if postgres:
+            query = query.with_for_update(skip_locked=True)
+        page = session.exec(query).all()
+        if not page:
+            return
+        for job in page:
+            last_id, seen = job.id, seen + 1
+            yield job
+
+
 def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSettings, now: _dt.datetime) -> dict | None:
-    """Claim the oldest runnable job for this node and return its payload (with decrypted secrets)."""
+    """Claim the oldest runnable job for this node and return its payload (with decrypted secrets).
+
+    Jobs that cannot run now (outside their scan window, network scanning stopped) stay queued and are passed over,
+    however many there are: they never hide a newer job that can run (a connection test ignores the window)."""
     reap(session, now, node_id=node.id)
-    query = (
-        select(CbomCollectionJob)
-        .where(CbomCollectionJob.node_id == node.id, CbomCollectionJob.team_id == node.team_id,
-               CbomCollectionJob.status == "pending")
-        .order_by(CbomCollectionJob.id)
-        .limit(25)
-    )
-    if session.get_bind().dialect.name == "postgresql":
-        query = query.with_for_update(skip_locked=True)
-    for job in session.exec(query).all():
+    for job in _pending_for_node(session, node):
         source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
         reason = _invalid_reason(job, source, node)
         live_ranges = _live_discovery_ranges(session, job) if job.kind == "discovery" else None
@@ -630,11 +692,15 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
         status, summary = "error", "No scan node ran the test within 24 hours"
     else:
         status, summary = "failed", (job.error or str(result.get("summary") or "Connection test failed"))[:512]
-    source.last_test_status = status
-    source.last_test_summary = summary
-    source.last_test_at = now
-    source.last_test_result = {"samples": samples} if samples else ({"summary": summary})
-    session.add(source)
+    # Compare-and-set on the test the source still points at: an edit that changed the connection at the same time
+    # cleared last_test_job_id (and reset the test), and this older result must not be written over that reset.
+    session.exec(
+        update(CbomCollectionSource)
+        .where(CbomCollectionSource.id == source.id, CbomCollectionSource.last_test_job_id == job.id)
+        .values(last_test_status=status, last_test_summary=summary, last_test_at=now,
+                last_test_result={"samples": samples} if samples else {"summary": summary})
+        .execution_options(synchronize_session="fetch")
+    )
 
 
 def _stop_reason(session: Session, job: CbomCollectionJob, source: CbomCollectionSource | None,

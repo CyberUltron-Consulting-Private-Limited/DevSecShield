@@ -11,6 +11,9 @@
   deterministic per (schedule, slot), so the existing unique constraint (team, client_request_id) refuses a second run.
 * Catch-up: after downtime only the LATEST missed slot runs (once), never one run per missed slot; the number of slots
   skipped is reported.
+* A change of the team's time zone moves every schedule's next run to its slot in the new zone in the same transaction
+  (``reschedule_team``); a local slot that already ran is never run again in the new zone. Editing a schedule's name,
+  scope or filters keeps its next run (a due slot still fires); only a change of its timing moves it.
 * The run is queued by ``runs.queue_run`` (the browser's path): sources already queued are skipped, credits are charged
   like a manual run, network ranges need the SOC acknowledgement stored on the schedule, and the run belongs to the
   schedule's owner. When it cannot start (not enough credits, nothing to scan, owner left the team) the slot is
@@ -90,6 +93,42 @@ def next_slot(s: Any, tz_name: str, after_utc: _dt.datetime) -> tuple[str, _dt.d
     raise ValueError("no slot in the next two months")  # unreachable for daily / weekly / monthly (day <= 28)
 
 
+def next_unrun_slot(s: Any, tz_name: str, now: _dt.datetime) -> _dt.datetime | None:
+    """``next_run_at`` once the schedule's slots are read in ``tz_name`` after the last one ran in another zone (None
+    when paused).  A run is named by its local slot (its run id), so a local slot that already ran never runs again:
+    moving from Asia/Kolkata to UTC after today's 09:00 IST run skips today's 09:00 UTC (no second charge that day).
+    * a slot that was due and has not fired yet stays due, as the latest slot in ``tz_name`` that has not run;
+    * otherwise the first slot after ``now`` whose local name is later than the last one that ran."""
+    if not s.enabled:
+        return None
+    ran = s.last_slot or ""
+    if s.next_run_at is not None and s.next_run_at <= now:
+        latest = latest_slot(s, tz_name, now)
+        if latest is not None and latest[0] > ran:
+            return latest[1]
+    key, at = next_slot(s, tz_name, now)
+    while key <= ran:
+        key, at = next_slot(s, tz_name, at)
+    return at
+
+
+def reschedule_team(session: Session, team_id: int, tz_name: str, now: _dt.datetime) -> int:
+    """The team's time zone changed: move every enabled schedule's next run to its slot in the new zone, in the
+    caller's transaction.  The rows are locked (PostgreSQL): a scheduler firing one at this moment either commits first
+    (and this reads what it fired) or skips the row until this commits.  Returns the number of schedules moved."""
+    query = select(CbomCollectionSchedule).where(CbomCollectionSchedule.team_id == team_id,
+                                                 CbomCollectionSchedule.enabled == True)  # noqa: E712
+    moved = 0
+    for s in session.exec(query.order_by(CbomCollectionSchedule.id).with_for_update()).all():
+        upcoming = next_unrun_slot(s, tz_name, now)
+        if upcoming != s.next_run_at:
+            s.next_run_at, s.last_updated = upcoming, now
+            s.row_version += 1  # like a firing: an open schedule form shows the new next run before it saves
+            session.add(s)
+            moved += 1
+    return moved
+
+
 def latest_slot(s: Any, tz_name: str, at_or_before_utc: _dt.datetime) -> tuple[str, _dt.datetime] | None:
     tz = _tz(tz_name)
     for key, at in _slots_around(s, tz, at_or_before_utc, range(1, -64, -1)):
@@ -150,6 +189,16 @@ def fire_one(engine, schedule_id: int, now: _dt.datetime) -> dict[str, Any] | No
             local = due_next.replace(tzinfo=_UTC).astimezone(_tz(tz_name)).replace(tzinfo=None)
             latest = (slot_key(local), due_next)
         key, slot_at = latest
+        if s.last_slot and key <= s.last_slot:
+            # That local slot already ran (next_run_at was set in another zone): never run it twice.  Without this the
+            # unique run id refuses it as a replay and the slot stays due for ever.
+            upcoming = next_unrun_slot(s, tz_name, now)
+            session.exec(update(CbomCollectionSchedule).where(
+                CbomCollectionSchedule.id == s.id, CbomCollectionSchedule.next_run_at == due_next)
+                .values(next_run_at=upcoming, last_updated=now, row_version=CbomCollectionSchedule.row_version + 1))
+            session.commit()
+            log("schedule slot already ran", team=s.team_id, schedule=s.id, slot=key, next=iso_z(upcoming))
+            return None
         missed = missed_between(s, tz_name, due_next, slot_at)
         upcoming_key, upcoming = next_slot(s, tz_name, now)
         won = session.exec(update(CbomCollectionSchedule).where(
@@ -221,4 +270,4 @@ def public_schedule(s: CbomCollectionSchedule) -> dict[str, Any]:
 
 
 __all__ = ["FREQUENCIES", "MAX_SCHEDULES", "fire_due", "fire_one", "latest_slot", "missed_between", "next_slot",
-           "public_schedule", "wall_to_utc"]
+           "next_unrun_slot", "public_schedule", "reschedule_team", "wall_to_utc"]

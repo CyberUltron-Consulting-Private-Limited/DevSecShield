@@ -52,6 +52,7 @@ from backend.utilities.cbom_sources.http import (
     TeamId,
     authorize,
     bad_request,
+    bump_version,
     check_version,
     is_team_admin,
     read_limiter,
@@ -64,6 +65,7 @@ from backend.utilities.cbom_sources import cdx_xml as CDX_XML
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import runs as RUNS
+from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS, credential_target_problem, validate_secret_value
 from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
@@ -635,7 +637,6 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
             source.enabled = body.enabled
         test = None
         if changed:
-            source.row_version += 1  # the edit version (optimistic locking); jobs check the connection version
             source.updated_by_user_id = user_id
             source.last_updated = now
             # a rename or a metadata edit (criticality, exposure, ...) changes neither what a sweep may touch nor how it
@@ -654,6 +655,9 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
             except IntegrityError:
                 session.rollback()
                 raise HTTPException(status_code=409, detail=f"A {spec.label.lower()} named {body.name} already exists") from None
+            # the edit version (optimistic locking; jobs check the connection version), after the flush above so a
+            # duplicate name is still that 409, not an error inside this compare-and-set
+            bump_version(session, source)
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.update",
                   object_type="source", object_id=source.id, changed_fields=changed)
         if body.test_after_save and source.kind not in _LIVE_TESTS:
@@ -742,6 +746,26 @@ def _test_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
         return {"status": "queued", "job": public_job(job, node, settings, now, source)}
 
 
+def _save_live_test(engine, team_id: int, user_id: int, source_id: int, version: str, action: str, now,
+                    status: str, summary: str, result: dict) -> bool:
+    """Store a live test's result only while the source still connects the way it did when the test started (its
+    connection version): a rename or a metadata save during the test keeps the result, a connection change (which
+    reset the test) drops it.  The row is locked while it is checked and written (PostgreSQL), so that edit cannot
+    commit in between and have its reset written over."""
+    with Session(engine) as session:
+        source = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.id == source_id)
+                              .with_for_update()).first()
+        if source is None or J.connection_version(source) != version:
+            return False
+        source.last_test_status, source.last_test_summary, source.last_test_at = status, summary[:512], now
+        source.last_test_result = result
+        session.add(source)
+        audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action=action, object_type="source",
+              object_id=source_id)
+        session.commit()
+        return True
+
+
 def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
     with Session(engine) as session:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
@@ -754,19 +778,11 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
     result = validate_aws_role(team_id, cfg.get("role_arn", ""), external_id, cfg.get("regions") or [], cfg.get("scope", "account"),
                                lambda_cmk=bool(cfg.get("decrypt_lambda_cmk")), read_glue=bool(cfg.get("read_glue")))
     now = utcnow()
-    with Session(engine) as session:
-        source = session.get(CbomCollectionSource, source_id)
-        if source is not None and J.connection_version(source) == version:
-            source.last_test_status = result["status"]
-            passed = sum(1 for c in result["checks"] if c["status"] == "pass")
-            source.last_test_summary = f"{passed} of {len(result['checks'])} checks passed"
-            source.last_test_at = now
-            source.last_test_result = {k: v for k, v in result.items() if k in ("checks", "member_accounts", "status")}
-            session.add(source)
-            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.validate",
-                  object_type="source", object_id=source_id)
-            session.commit()
-        log("aws validated", team=team_id, source=source_id, status=result["status"], by=user_id)
+    passed = sum(1 for c in result["checks"] if c["status"] == "pass")
+    _save_live_test(engine, team_id, user_id, source_id, version, "source.validate", now, result["status"],
+                    f"{passed} of {len(result['checks'])} checks passed",
+                    {k: v for k, v in result.items() if k in ("checks", "member_accounts", "status")})
+    log("aws validated", team=team_id, source=source_id, status=result["status"], by=user_id)
     return {"status": result["status"], "checks": result["checks"], "member_accounts": result.get("member_accounts"),
             "validated_at": iso_z(now)}
 
@@ -786,15 +802,8 @@ def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
     summary = (f"Read {ok} of {out['counts']['total']} metadata documents; {keys} signing key(s) found"
                if ok else "Could not read the metadata: " + "; ".join(t["error"] or "" for t in out["targets"])[:400])
     now = utcnow()
-    with Session(engine) as session:
-        source = session.get(CbomCollectionSource, source_id)
-        if source is not None and J.connection_version(source) == version:
-            source.last_test_status, source.last_test_summary, source.last_test_at = status, summary[:512], now
-            source.last_test_result = {"targets": out["targets"], "signing_keys": keys}
-            session.add(source)
-            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.test",
-                  object_type="source", object_id=source_id)
-            session.commit()
+    _save_live_test(engine, team_id, user_id, source_id, version, "source.test", now, status, summary,
+                    {"targets": out["targets"], "signing_keys": keys})
     log("idp tested", team=team_id, source=source_id, status=status, keys=keys, by=user_id)
     return {"status": status, "message": summary, "targets": out["targets"], "tested_at": iso_z(now)}
 
@@ -809,7 +818,7 @@ def _test_cloud_http(engine, team_id: int, user_id: int, source_id: int) -> dict
         require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
         if source.kind not in ("azure_subscription", "gcp_project"):
             raise HTTPException(status_code=400, detail="Not an Azure or Google Cloud source")
-        kind, cfg, version = source.kind, dict(source.config or {}), source.row_version
+        kind, cfg, version = source.kind, dict(source.config or {}), J.connection_version(source)
         secrets_ = decrypt_secrets(source.secret_encrypted)
     known = list(secrets_.values())
     try:
@@ -822,18 +831,10 @@ def _test_cloud_http(engine, team_id: int, user_id: int, source_id: int) -> dict
     out["message"] = str(scrub(out.get("message") or "", known))[:512]
     out["checks"] = [{**c, "detail": str(scrub(c.get("detail") or "", known))[:300]} for c in out.get("checks") or []]
     now = utcnow()
-    with Session(engine) as session:
-        source = session.get(CbomCollectionSource, source_id)
-        if source is not None and source.row_version == version:
-            passed = sum(1 for c in out["checks"] if c["status"] == "pass")
-            source.last_test_status = out["status"]
-            source.last_test_summary = (f"{passed} of {len(out['checks'])} checks passed" if out["checks"] else out["message"])[:512]
-            source.last_test_at = now
-            source.last_test_result = {"checks": out["checks"], "status": out["status"]}
-            session.add(source)
-            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.validate",
-                  object_type="source", object_id=source_id)
-            session.commit()
+    passed = sum(1 for c in out["checks"] if c["status"] == "pass")
+    _save_live_test(engine, team_id, user_id, source_id, version, "source.validate", now, out["status"],
+                    f"{passed} of {len(out['checks'])} checks passed" if out["checks"] else out["message"],
+                    {"checks": out["checks"], "status": out["status"]})
     log("cloud source tested", team=team_id, source=source_id, kind=kind, status=out["status"], by=user_id)
     return {"status": out["status"], "message": out["message"], "checks": out["checks"], "validated_at": iso_z(now)}
 
@@ -967,18 +968,21 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                     seen_ports.add(key)
                     ports.append(item.model_dump())
             changes["ports"] = ports
+        zone_changed = "window_timezone" in changes and changes["window_timezone"] != row.window_timezone
         for key, value in changes.items():
             setattr(row, key, value)
         if changes:
-            row.row_version += 1
+            bump_version(session, row)
             row.updated_by_user_id = user_id
             row.last_updated = now
             session.add(row)
+            # schedule slots are wall-clock times in this zone: their next runs move with it, in this transaction
+            moved = SCHED.reschedule_team(session, team_id, row.window_timezone, now) if zone_changed else 0
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="settings.update",
                   object_type="settings", object_id=row.id, changed_fields=changes.keys())
             session.commit()
             session.refresh(row)
-            log("settings updated", team=team_id, by=user_id, fields=len(changes))
+            log("settings updated", team=team_id, by=user_id, fields=len(changes), schedules_moved=moved or None)
             if "require_signed_nodes" in changes:
                 log("signed scan nodes " + ("required" if changes["require_signed_nodes"] else "not required"),
                     team=team_id, by=user_id)
