@@ -31,10 +31,15 @@ assert.match(newPasswordProblem("tab\there-long-enough") ?? "", /control charact
 assert.match(newPasswordProblem("nul\u0000-long-enough") ?? "", /control characters/);
 assert.match(newPasswordProblem("del\u007f-long-enough") ?? "", /control characters/);
 
-// sign-in accepts every existing password (old rules allowed 5..24)
+// sign-in accepts every existing password (old rules allowed 5..24, admin-made accounts had no length rule):
+// 1 to 512 UTF-8 bytes after NFC, as the backend
 assert.equal(loginPasswordProblem("abcde"), null);
 assert.equal(loginPasswordProblem("a"), null);
 assert.match(loginPasswordProblem("") ?? "", /Enter your password/);
-assert.match(loginPasswordProblem("x".repeat(129)) ?? "", /at most 128/);
+assert.equal(loginPasswordProblem("A".repeat(130)), null);
+assert.equal(loginPasswordProblem("x".repeat(512)), null);
+assert.match(loginPasswordProblem("x".repeat(513)) ?? "", /at most 512 bytes/);
+assert.equal(loginPasswordProblem("é".repeat(256)), null); // 768 bytes as typed, 512 after NFC
+assert.match(loginPasswordProblem("é".repeat(257)) ?? "", /at most 512 bytes/);
 
 console.log("password_rules: all assertions passed");

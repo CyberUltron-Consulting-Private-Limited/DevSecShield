@@ -1,8 +1,9 @@
 """Sign-up, sign-in, token refresh, verification codes, password reset, logout.
 
 Every sign-in, sign-up and reset needs the one-time code mailed to the address.  Codes are single-use, one
-live code per email, invalidated after five wrong tries and capped per email per hour (``auth_utils``).  The
-fixed local code works only on a DSS_DEV_MODE=1 server and never resets a password.
+live code per email, compared at most five times, and new codes are capped per email per hour; past the cap the
+live code is mailed again (``auth_utils``).  The fixed local code works only on a DSS_DEV_MODE=1 server and never
+resets a password.  Reset and logout revoke every token issued before them.
 
 Rate limits: by client address in the decorator, plus by email inside the handler (the email is in the body).
 """
@@ -235,8 +236,9 @@ async def send_verification_code(data: CodeSend):
     Request Fields:
     - email: str
 
-    Stores the code (replacing any earlier one for the email) and returns; the email goes out in the background.
-    429 with Retry-After when too many codes were requested for this email within the hour.
+    Stores a new code (replacing any earlier one for the email) and mails it before answering.  Past the hourly
+    cap of new codes for this email the live code is mailed again instead; 429 with Retry-After when it was
+    re-sent less than a minute ago or no live code is left (its attempts are spent) until the hour ends.
     """
     try:
         engine = get_db()
@@ -314,12 +316,16 @@ async def logout(Authorization: Annotated[str | None, Header()] = None):
     """
     Request Fields:
     - Authorization: str
+
+    Every access and refresh token issued so far stops working for good (token_version is bumped): signing in
+    again issues new tokens and never revives the old ones.
     """
     try:
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization, ignore_session_active=True)
         with Session(engine) as session:
-            session.exec(update(User).where(User.id == user.id).values(session_active=False))
+            session.exec(update(User).where(User.id == user.id)
+                         .values(session_active=False, token_version=User.token_version + 1))
             session.commit()
         log.info("user logged out user_id=%s", user.id)
         return {
