@@ -259,7 +259,9 @@ def _fact(
     key_management: str = "unspecified",
     weak: bool = False,
     verify: bool = False,
+    identity: str | None = None,
 ) -> EncryptionFact:
+    """``identity`` replaces ``address`` in the fact id when the address carries a line number."""
     shown = {name: item.verdict for name, item in layers.items()}
     verdict = resource_verdict(shown, transport_only=False) or "UNKNOWN"
     reason = None
@@ -273,7 +275,7 @@ def _fact(
             "layer_not_observable",
         )
     return EncryptionFact(
-        id=fact_id(kind, "self_hosted", native_type, address, path),
+        id=fact_id(kind, "self_hosted", native_type, identity or address, path),
         kind=kind,
         provider="self_hosted",
         native_type=native_type,
@@ -1100,10 +1102,12 @@ def cryptsetup(
 ) -> tuple[EncryptionFact, ...]:
     """Disk facts for cryptsetup luksFormat, luksOpen, open, and the plain variants."""
     facts: list[EncryptionFact] = []
+    seen: dict[str, int] = {}
     for line, words in _commands(text):
         verb = words[1].casefold() if len(words) > 1 else ""
         if verb not in _VERBS:
             continue
+        seen[verb] = seen.get(verb, 0) + 1
         opts = _options(words[2:])
         notes = [BasisEntry("command", verb)]
         cipher = opts.get("cipher")
@@ -1128,6 +1132,8 @@ def cryptsetup(
                 layers={"volume": LayerResult("ENCRYPTED_DECLARED")},
                 basis=notes,
                 weak=False,
+                # the n-th command with this verb in the file: moving a line is not a new asset
+                identity=f"{path}#cryptsetup-{verb}-{seen[verb]}",
             )
         )
     return tuple(facts)
