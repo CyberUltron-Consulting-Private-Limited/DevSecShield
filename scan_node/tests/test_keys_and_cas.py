@@ -434,6 +434,97 @@ def test_adcs_recorded_powershell_output():
     assert "CertUtil" not in templates  # certutil's status line is not a template (AWS lab, round 5)
 
 
+# Real security descriptors (DACL, SDDL Access section via RawSecurityDescriptor) of the 11 templates the AWS lab's
+# Windows Server 2022 enterprise CA publishes, read from its CertificateTemplateCache (review round 5); the domain SID is
+# replaced with S-1-5-21-1-2-3.
+LAB_SDDL = dict(line.rstrip("\n").split("|", 1) for line in
+                (Path(__file__).parent / "fixtures/adcs/template-sddl.txt").read_text().splitlines() if line.strip())
+EA = "S-1-5-21-1-2-3-519"
+
+
+def test_template_acl_from_the_lab_matches_the_windows_defaults():
+    """Review round 5, H1: SubCA was reported as AD CS ESC1 because the template ACL was never read.  The defaults: only
+    Domain / Enterprise Admins enroll in SubCA, WebServer and Administrator; Domain Users in User and EFS; Domain
+    Computers in Machine; domain controllers in the DC templates.  Only DA / EA may change any of them (the RPWPCR
+    entries for Domain Users are scoped to the Enroll right and change nothing)."""
+    from zs_scan_node.collectors import ca
+
+    assert len(LAB_SDDL) == 11
+    acl = {name: ca.template_acl(sddl) for name, sddl in LAB_SDDL.items()}
+    assert all(a["acl_status"] == "read" and a["write_principals"] == ["DA", EA] for a in acl.values())
+    admins = ["DA", EA]
+    assert acl["SubCA"]["enroll_principals"] == acl["WebServer"]["enroll_principals"] == admins
+    assert acl["Administrator"]["enroll_principals"] == acl["EFSRecovery"]["enroll_principals"] == admins
+    assert acl["User"]["enroll_principals"] == acl["EFS"]["enroll_principals"] == ["DA", "DU", EA]
+    assert acl["Machine"]["enroll_principals"] == ["DA", "DC", EA]
+    for dc in ("DomainController", "DomainControllerAuthentication", "KerberosAuthentication", "DirectoryEmailReplication"):
+        assert acl[dc]["enroll_principals"] == ["DA", "DD", "ED", "S-1-5-21-1-2-3-498", EA], dc
+
+
+def test_template_acl_rights_denies_and_unreadable_values():
+    from zs_scan_node.collectors import ca
+
+    enroll = "0e10c968-78fb-11d2-90d4-00c04f79dc55"
+    auto = "a05b8cc2-17bc-4802-a710-e7c15ab866a2"
+    sddl = (f"D:PAI(OA;;CR;{enroll};;AU)(OA;;CR;{auto};;S-1-5-21-1-2-3-1105)(A;;CR;;;S-1-5-21-1-2-3-1106)"
+            "(A;;GA;;;S-1-5-21-1-2-3-1107)(A;;WD;;;WD)(A;;WP;;;S-1-5-21-1-2-3-515)"
+            "(OA;;WP;bf967a86-0de6-11d0-a285-00aa003049e2;;S-1-5-11)"   # write to one property: not counted as write
+            "(A;CIIO;GA;;;BU)"                                          # inherit-only: not on the template itself
+            "(A;;0x100;;;S-1-1-0)")                                     # hex control-access mask, Everyone (S-1-1-0)
+    acl = ca.template_acl(sddl)
+    assert acl["enroll_principals"] == ["AU", "S-1-5-21-1-2-3-1105", "S-1-5-21-1-2-3-1106", "S-1-5-21-1-2-3-1107", "WD"]
+    assert acl["write_principals"] == ["S-1-5-21-1-2-3-1107", "S-1-5-21-1-2-3-515", "WD"]
+    denied = ca.template_acl(f"D:PAI(OD;;CR;{enroll};;DU)(OA;;CR;{enroll};;DU)(OA;;CR;{enroll};;DA)")
+    assert denied["enroll_principals"] == ["DA"]
+    assert ca.template_acl(f"D:PAI(D;;CR;;;AU)(OA;;CR;{enroll};;DU)")["enroll_principals"] == []
+    assert ca.template_acl(None) == {"acl_status": "not_read"} and ca.template_acl("") == {"acl_status": "not_read"}
+    assert ca.template_acl("#too-long") == {"acl_status": "too_long"}
+    assert ca.template_acl("#unreadable") == {"acl_status": "unreadable"}
+    assert ca.template_acl("not sddl") == {"acl_status": "unreadable"}
+
+
+def test_adcs_templates_carry_acl_and_ca_flag_and_the_ca_its_sid_extension():
+    from zs_scan_node.collectors import ca
+
+    raw = json.loads(ADCS_TEMPLATES)
+    raw.append({"Name": "SubCA", "Cached": True, "MinKeySize": 2048, "NameFlag": 1, "EnrollmentFlag": 0,
+                "RASignature": 0, "EKU": [None], "AppPolicy": [None], "RAAppPolicies": [None],
+                "Validity": -5 * 315360000000000, "Schema": 1, "Flags": 0x102D0, "Acl": LAB_SDDL["SubCA"]})
+    raw[0].update(Flags=0x10260, Acl=LAB_SDDL["WebServer"])
+    templates = {t["name"]: t for t in ca.parse_adcs_templates(json.dumps(raw))}
+    sub = templates["SubCA"]
+    assert sub["is_ca"] is True and sub["client_auth"] is True and sub["enrollee_supplies_subject"] is True
+    assert sub["acl_status"] == "read" and sub["enroll_principals"] == ["DA", EA]
+    assert templates["WebServer"]["is_ca"] is False and templates["WebServer"]["acl_status"] == "read"
+    # output of the round-5 script (no Flags / Acl): no ACL, and a template without EKU is taken for a CA template
+    assert templates["VulnUser"]["acl_status"] == "not_read" and templates["VulnUser"]["is_ca"] is False
+    assert templates["NotCached"]["is_ca"] is True and templates["NotCached"]["acl_status"] == "not_read"
+    base = json.loads(ADCS_CA)
+    assert ca.parse_adcs_ca(json.dumps(base))["facts"]["sid_extension_disabled"] is None  # older script
+    for value, expected in (([None], False), (["1.3.6.1.4.1.311.25.2"], True), ("1.3.6.1.4.1.311.25.2", True),
+                            (["1.3.6.1.4.1.311.21.7"], False)):
+        facts = ca.parse_adcs_ca(json.dumps({**base, "DisableExtensionList": value}))["facts"]
+        assert facts["sid_extension_disabled"] is expected, value
+    no_policy = ca.parse_adcs_ca(json.dumps({**base, "EditFlags": None, "DisableExtensionList": [None]}))["facts"]
+    assert no_policy["sid_extension_disabled"] is None  # the policy module key was not readable
+
+
+def test_adcs_scripts_read_the_template_dacl_and_change_nothing():
+    """The template DACL comes from the CA server's own template cache (binary Security value, no AD second hop),
+    bounded to 8000 characters per template; both AD CS scripts only read."""
+    import re
+
+    from zs_scan_node.collectors import ca
+
+    script = ca.ADCS_SCRIPTS["adcs_templates"]
+    assert "RawSecurityDescriptor" in script and "GetSddlForm('Access')" in script and "$v.Security" in script
+    assert "$s.Length -le 8000" in script and "Flags=$v.Flags" in script
+    assert "DisableExtensionList=@($e.DisableExtensionList)" in ca.ADCS_SCRIPTS["adcs_ca"]
+    for name, text in ca.ADCS_SCRIPTS.items():
+        assert not re.search(r"\b(Set|New|Remove|Rename|Clear|Move|Copy)-Item|-setreg|-delreg|Remove-|Set-Acl|Invoke-",
+                             text.replace("New-Object", "")), name
+
+
 def test_adcs_template_script_skips_the_certutil_status_line():
     """Real `certutil -catemplates` output on Windows Server 2022 (AWS lab DC): templates, then the tool's status."""
     import re

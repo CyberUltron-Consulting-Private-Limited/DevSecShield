@@ -344,9 +344,11 @@ ADCS_SCRIPTS = {
         "SilentlyContinue; if ($x) { $raw=[Convert]::ToBase64String($x.RawData) } }; "
         "[pscustomobject]@{ Name=$n; HashAlgorithm=$c.CNGHashAlgorithm; Provider=$c.Provider; "
         "ValidityPeriod=$p.ValidityPeriod; ValidityPeriodUnits=$p.ValidityPeriodUnits; CRLPeriod=$p.CRLPeriod; "
-        "CRLPeriodUnits=$p.CRLPeriodUnits; EditFlags=$e.EditFlags; CACert=$raw } } | ConvertTo-Json -Compress"
+        "CRLPeriodUnits=$p.CRLPeriodUnits; EditFlags=$e.EditFlags; DisableExtensionList=@($e.DisableExtensionList); "
+        "CACert=$raw } } | ConvertTo-Json -Compress"
     ),
-    # Templates the CA publishes, with their settings from the CA server's own template cache (no AD second hop)
+    # Templates the CA publishes, with their settings from the CA server's own template cache (no AD second hop).
+    # Acl is the template's DACL as SDDL (the cache's binary Security value, read-only), bounded per template.
     "adcs_templates": (
         "& { $c='HKLM:\\SOFTWARE\\Microsoft\\Cryptography\\CertificateTemplateCache'; "
         "certutil -catemplates 2>$null | ForEach-Object { if ($_ -match '^([^:\\s]+):' -and $Matches[1] -ne 'CertUtil') { "
@@ -357,12 +359,30 @@ ADCS_SCRIPTS = {
         "EKU=@($v.ExtKeyUsageSyntax); AppPolicy=@($v.'msPKI-Certificate-Application-Policy'); "
         "RAAppPolicies=@($v.'msPKI-RA-Application-Policies'); "
         "Validity=$(if ($v.ValidityPeriod) { [BitConverter]::ToInt64($v.ValidityPeriod, 0) } else { $null }); "
-        "Schema=$v.'msPKI-Template-Schema-Version' } } } } | ConvertTo-Json -Depth 3 -Compress"
+        "Schema=$v.'msPKI-Template-Schema-Version'; Flags=$v.Flags; "
+        "Acl=$(if ($v.Security) { try { $s=(New-Object System.Security.AccessControl.RawSecurityDescriptor "
+        "-ArgumentList ([byte[]]$v.Security),0).GetSddlForm('Access'); "
+        "if ($s.Length -le 8000) { $s } else { '#too-long' } } catch { '#unreadable' } } else { $null }) "
+        "} } } } | ConvertTo-Json -Depth 3 -Compress"
     ),
 }
 EDITF_ATTRIBUTESUBJECTALTNAME2 = 0x00040000
+SZOID_NTDS_CA_SECURITY_EXT = "1.3.6.1.4.1.311.25.2"  # the requester's SID, which strong certificate mapping checks
 CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT = 0x1
 CT_FLAG_PEND_ALL_REQUESTS = 0x2
+CT_FLAG_IS_CA, CT_FLAG_IS_CROSS_CA = 0x80, 0x800  # template "flags" ([MS-CRTD] 2.27): the template issues CA certificates
+# Template DACL ([MS-CRTD] 4.1.2.1): the Enroll and AutoEnroll extended rights, and the access-mask bits that let a
+# principal enroll (control access) or change the template (generic all/write, write DACL, write owner, write property).
+ENROLL_GUIDS = {"0e10c968-78fb-11d2-90d4-00c04f79dc55", "a05b8cc2-17bc-4802-a710-e7c15ab866a2"}
+_ACE = re.compile(r"\(([A-Z]{1,2});([A-Z]*);(0x[0-9A-Fa-f]+|[A-Z]+);([0-9A-Fa-f-]*);([0-9A-Fa-f-]*);([A-Z]{2}|S-1-[0-9-]+)"
+                  r"(?:;[^)]*)?\)")
+_MASK = {"GA": 0x10000000, "GW": 0x40000000, "GR": 0x80000000, "GX": 0x20000000, "SD": 0x10000, "RC": 0x20000,
+         "WD": 0x40000, "WO": 0x80000, "CC": 0x1, "DC": 0x2, "LC": 0x4, "SW": 0x8, "RP": 0x10, "WP": 0x20, "DT": 0x40,
+         "LO": 0x80, "CR": 0x100}
+_GENERIC_ALL, _FULL_CONTROL, _CONTROL_ACCESS, _WRITE_PROPERTY = 0x10000000, 0xF01FF, 0x100, 0x20
+_WRITE_ANY = 0x40000000 | 0x40000 | 0x80000  # generic write, write DACL, write owner
+_ALIASES = {"S-1-1-0": "WD", "S-1-5-11": "AU", "S-1-5-7": "AN", "S-1-5-4": "IU", "S-1-5-2": "NU", "S-1-5-9": "ED",
+            "S-1-5-18": "SY", "S-1-5-32-544": "BA", "S-1-5-32-545": "BU", "S-1-5-32-546": "BG"}
 CLIENT_AUTH_EKUS = {"1.3.6.1.5.5.7.3.2", "1.3.6.1.4.1.311.20.2.2", "1.3.6.1.5.2.3.4", "2.5.29.37.0"}
 SERVER_AUTH_EKUS = {"1.3.6.1.5.5.7.3.1", "2.5.29.37.0"}
 _VALIDITY = {"Years": 365 * 86400, "Months": 30 * 86400, "Weeks": 7 * 86400, "Days": 86400, "Hours": 3600}
@@ -387,6 +407,12 @@ def _int(value: Any) -> int | None:
         return None
 
 
+def _strings(value: Any) -> set[str]:
+    """A PowerShell value that is a list of strings, a single string or null, as a set of non-empty strings."""
+    items = value if isinstance(value, list) else [value]
+    return {str(x).strip() for x in items if isinstance(x, str) and x.strip()}
+
+
 def parse_adcs_ca(text: str) -> dict[str, Any] | None:
     items = _json_list(text)
     if not items:
@@ -399,7 +425,11 @@ def parse_adcs_ca(text: str) -> dict[str, Any] | None:
              "issued_validity_s": units * _VALIDITY[period] if units and period in _VALIDITY else None,
              "crl_period": f"{raw.get('CRLPeriodUnits')} {raw.get('CRLPeriod')}" if raw.get("CRLPeriod") else None,
              "edit_flags": edit,
-             "san_from_request_attributes": bool(edit & EDITF_ATTRIBUTESUBJECTALTNAME2) if edit is not None else None}
+             "san_from_request_attributes": bool(edit & EDITF_ATTRIBUTESUBJECTALTNAME2) if edit is not None else None,
+             # ESC16: the CA leaves the SID security extension out of every certificate (unknown on an older node,
+             # whose script did not read DisableExtensionList, or when the policy module key was not readable)
+             "sid_extension_disabled": SZOID_NTDS_CA_SECURITY_EXT in _strings(raw.get("DisableExtensionList"))
+             if "DisableExtensionList" in raw and edit is not None else None}
     cert_der = None
     if raw.get("CACert"):
         try:
@@ -417,6 +447,53 @@ def _asym_algorithm(policies: list[Any]) -> str | None:
     return None
 
 
+def template_acl(sddl: Any) -> dict[str, Any]:
+    """Who may enroll in, and who may change, a certificate template, from its DACL in SDDL form.
+
+    Returns acl_status ("read", or why not: "not_read" for an older script or an uncached template, "too_long",
+    "unreadable") and, when read, the principals (SDDL alias such as AU / DU, or a SID) holding each right after
+    deny ACEs.  Enroll: the Enroll or AutoEnroll extended right, all extended rights, or full control.  Write: generic
+    all / generic write, write DACL, write owner, or write to all properties (a write-property ACE scoped to one
+    extended right, as the defaults grant next to Enroll, changes nothing).  Inherit-only ACEs do not apply to the
+    template itself.  Which principals are low-privileged is decided by the server's rules."""
+    if not isinstance(sddl, str) or not sddl.strip():
+        return {"acl_status": "not_read"}
+    if sddl.startswith("#"):
+        return {"acl_status": "too_long" if sddl == "#too-long" else "unreadable"}
+    grants: dict[str, dict[str, set[str]]] = {"enroll": {"allow": set(), "deny": set()},
+                                              "write": {"allow": set(), "deny": set()}}
+    found = False
+    for kind, flags, rights, obj, _inherited_obj, sid in _ACE.findall(sddl):
+        found = True
+        if "IO" in [flags[i:i + 2] for i in range(0, len(flags), 2)]:
+            continue
+        if rights.lower().startswith("0x"):
+            mask = int(rights, 16)
+        else:
+            mask = 0
+            for i in range(0, len(rights), 2):
+                mask |= _MASK.get(rights[i:i + 2], 0)
+        everything = bool(mask & _GENERIC_ALL) or (mask & _FULL_CONTROL) == _FULL_CONTROL
+        obj = obj.lower()
+        side = "allow" if kind in ("A", "OA", "XA", "ZA") else "deny" if kind in ("D", "OD", "XD") else None
+        if side is None:
+            continue
+        principal = _ALIASES.get(sid, sid)
+        if everything or (mask & _CONTROL_ACCESS and (not obj or obj in ENROLL_GUIDS)):
+            grants["enroll"][side].add(principal)
+        if everything or mask & _WRITE_ANY or (mask & _WRITE_PROPERTY and not obj):
+            grants["write"][side].add(principal)
+    if not found:
+        return {"acl_status": "unreadable"}
+    out: dict[str, Any] = {"acl_status": "read"}
+    for right, sides in grants.items():
+        # a deny for Everyone or Authenticated Users covers every principal that could request a certificate
+        everyone_denied = bool(sides["deny"] & {"WD", "AU"})
+        allowed = set() if everyone_denied else sides["allow"] - sides["deny"]
+        out[f"{right}_principals"] = sorted(allowed)[:100]
+    return out
+
+
 def parse_adcs_templates(text: str) -> list[dict[str, Any]]:
     out = []
     for raw in _json_list(text):
@@ -430,17 +507,23 @@ def parse_adcs_templates(text: str) -> list[dict[str, Any]]:
         validity = _int(raw.get("Validity"))
         algorithm = _asym_algorithm(raw.get("RAAppPolicies") or []) or "RSA"
         key_type = "EC" if algorithm.startswith(("ECDH", "ECDSA")) else algorithm
+        flags = _int(raw.get("Flags"))
         out.append({
             "provider": "adcs", "name": name, "cached": bool(raw.get("Cached")), "key_type": key_type,
             "key_algorithm": algorithm, "key_bits": _int(raw.get("MinKeySize")), "ekus": sorted(ekus)[:20],
             "enrollee_supplies_subject": bool(name_flag & CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT) and not
             (enroll_flag & CT_FLAG_PEND_ALL_REQUESTS) and ra == 0,
             "manager_approval": bool(enroll_flag & CT_FLAG_PEND_ALL_REQUESTS), "authorized_signatures": ra,
+            # no EKU means any purpose (Certified Pre-Owned, ESC2): a certificate from it also signs a user in
             "client_auth": not ekus or bool(ekus & CLIENT_AUTH_EKUS),
             "server_auth": not ekus or bool(ekus & SERVER_AUTH_EKUS),
+            # issues CA certificates (SubCA, CA, CrossCA): the template's flags say so; without them (older script)
+            # a template without any EKU is taken for one
+            "is_ca": bool(flags & (CT_FLAG_IS_CA | CT_FLAG_IS_CROSS_CA)) if flags is not None else not ekus,
             # pKIExpirationPeriod is a negative FILETIME interval (100 ns units)
             "max_ttl_s": int(-validity / 10_000_000) if validity and validity < 0 else None,
             "schema_version": _int(raw.get("Schema")),
+            **template_acl(raw.get("Acl")),
         })
     return out
 

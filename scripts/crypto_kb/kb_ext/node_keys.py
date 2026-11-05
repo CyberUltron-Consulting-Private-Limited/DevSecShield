@@ -20,6 +20,10 @@ V_ORACLE_TDE = [{"label": "Tablespace encryption (SELECT_CATALOG_ROLE)",
                             "dba_tablespaces; SELECT * FROM v$encrypted_tablespaces;\""}]
 V_ADCS = [{"label": "Hash algorithm the CA signs with (on the CA server)", "command": "certutil -getreg ca\\csp\\CNGHashAlgorithm"},
           {"label": "Certificate templates published on the CA", "command": "certutil -catemplates"}]
+V_ADCS_TEMPLATE = [{"label": "A template's settings and permissions (its Allow Enroll and Allow Full Control / Write lines)",
+                    "command": "certutil -v -template <template>"},
+                   {"label": "Extensions the CA leaves out (1.3.6.1.4.1.311.25.2 listed = no SID extension, ESC16)",
+                    "command": "certutil -getreg policy\\DisableExtensionList"}]
 V_VAULT_PKI = [{"label": "PKI role settings (read-only token)", "command": "vault read <pki-mount>/roles/{name}"}]
 V_EJBCA = [{"label": "Certificate authorities (client certificate authentication)",
             "command": "curl --cert client.pem --key client.key https://{host}:{port}/ejbca/ejbca-rest-api/v1/ca"}]
@@ -94,9 +98,13 @@ kb_text.entry(
                             "after rewrapping old data).", "steps": []},
     verify=V_TRANSIT, references=["https://developer.hashicorp.com/vault/api-docs/secret/transit"])
 kb_text.entry(
-    "DB_TDE_OFF", title="Database not encrypted at rest", category="database", default_impact="Low",
-    description="A SQL Server database or an Oracle tablespace is not protected by Transparent Data Encryption.",
-    attack="Data files, backups, snapshots and replicas expose the data to anyone who copies them.",
+    "DB_TDE_OFF", title="No database-level encryption (TDE off)", category="database", default_impact="Low",
+    description="A SQL Server database or an Oracle tablespace is not protected by Transparent Data Encryption. Only "
+                "database-level encryption is visible from inside the database: the volume or managed service "
+                "(BitLocker, LUKS, RDS storage encryption) may still encrypt the data files, so check that before "
+                "treating the data as unencrypted at rest.",
+    attack="Without TDE, data files copied off the server, backups, snapshots and replicas expose the data to anyone "
+           "who copies them, unless the storage under them or the backups themselves are encrypted.",
     cwe=["CWE-311"], owasp=["crypto"], cves=[], standards=[], compliance=["at_rest"],
     remediation={"summary": "Turn on Transparent Data Encryption with AES-256.",
                  "steps": [{"platform": "SQL Server", "how": "CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256 "
@@ -190,24 +198,72 @@ kb_text.entry(
 kb_text.entry(
     "CA_ALLOWS_ANY_NAME", title="CA issues certificates for names the requester chooses", category="certificate",
     default_impact="Medium",
-    description="A Vault PKI role has allow_any_name, or an AD CS template with client authentication lets the enrollee "
-                "supply the subject (ENROLLEE_SUPPLIES_SUBJECT).",
+    description="A Vault PKI role has allow_any_name; or an AD CS template lets the enrollee supply the subject "
+                "(ENROLLEE_SUPPLIES_SUBJECT) of a certificate that can sign in (client authentication, any purpose or "
+                "no EKU) and principals other than administrators may enroll (High when every domain user or "
+                "computer may; Medium when named groups may, or when enrollment rights were not read); or the CA "
+                "takes subject alternative names from request attributes for every template "
+                "(EDITF_ATTRIBUTESUBJECTALTNAME2, ESC6). Since KB5014754 the CA writes the requester's SID into its "
+                "certificates and domain controllers refuse a certificate whose SID is not the account it names, so "
+                "ESC6 is High only when the CA leaves that extension out (DisableExtensionList, ESC16) or that was "
+                "not read. Templates only administrators may enroll in (SubCA by default) are not reported.",
     attack="Anyone allowed to request from it can obtain a certificate for another server or user and impersonate it; "
-           "in AD CS this is the ESC1 privilege-escalation path to domain administrator.",
-    cwe=["CWE-284", "CWE-295"], owasp=["access", "auth"], cves=[], standards=[], compliance=["certificates", "auth"],
+           "in AD CS this is the ESC1 privilege-escalation path to domain administrator (ESC6 when the CA adds the "
+           "SID extension: services that map certificates by name, such as VPN or 802.1X, still accept them).",
+    cwe=["CWE-284", "CWE-295"], owasp=["access", "auth"], cves=[], standards=["Microsoft KB5014754 (certificate-based "
+                                                                               "authentication changes on DCs)"],
+    compliance=["certificates", "auth"],
     remediation={"summary": "Restrict names (allowed_domains, allow_subdomains in Vault; build the subject from Active "
-                            "Directory and require manager approval in AD CS) and limit who may enroll.", "steps": []},
-    verify=V_ADCS + V_VAULT_PKI, references=["https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"])
+                            "Directory and require manager approval in AD CS), limit who may enroll, and turn "
+                            "EDITF_ATTRIBUTESUBJECTALTNAME2 off on the CA.",
+                 "steps": [{"platform": "AD CS template", "how": "Certificate Templates console > template > Subject "
+                                                                 "Name: Build from this Active Directory information; "
+                                                                 "Security: remove Enroll from Domain Users / "
+                                                                 "Authenticated Users / Domain Computers"},
+                           {"platform": "AD CS CA (ESC6)", "how": "certutil -setreg policy\\EditFlags "
+                                                                  "-EDITF_ATTRIBUTESUBJECTALTNAME2; net stop certsvc "
+                                                                  "&& net start certsvc"}]},
+    verify=V_ADCS + V_ADCS_TEMPLATE + V_VAULT_PKI,
+    references=["https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf",
+                "https://support.microsoft.com/help/5014754"])
 kb_text.entry(
-    "CA_LONG_VALIDITY", title="CA issues long-lived certificates", category="certificate", default_impact="Low",
-    description="A template or role issues server certificates valid for more than 398 days.",
-    attack="A leaked key stays usable for longer, and certificates outlive the algorithms and owners they were made for.",
-    cwe=["CWE-324"], owasp=["crypto"], cves=[], standards=["CA/Browser Forum Baseline Requirements 6.3.2 (398 days)"],
+    "CA_TEMPLATE_WRITABLE", title="Low-privileged users can change a certificate template", category="certificate",
+    default_impact="High",
+    description="Everyone, Authenticated Users, Domain Users, Domain Computers or another principal every account is "
+                "in holds full control, write, write-owner or write-permission rights on an AD CS certificate "
+                "template (read from the template's security on the CA server).",
+    attack="Any domain account can rewrite the template (let the enrollee supply the subject, add client "
+           "authentication, grant itself Enroll), request a certificate for a domain administrator and sign in as "
+           "them: the AD CS ESC4 path to domain compromise.",
+    cwe=["CWE-732", "CWE-284"], owasp=["access", "misconfig"], cves=[], standards=[], compliance=["certificates", "auth"],
+    remediation={"summary": "Remove every write, owner and full-control permission that low-privileged groups hold "
+                            "on the template; keep them for Domain Admins / Enterprise Admins (or a dedicated PKI "
+                            "admin group) only.",
+                 "steps": [{"platform": "AD CS", "how": "Certificate Templates console (certtmpl.msc) > template > "
+                                                        "Properties > Security: clear Full Control and Write for "
+                                                        "Everyone, Authenticated Users, Domain Users and Domain "
+                                                        "Computers; check the template owner"}]},
+    verify=V_ADCS_TEMPLATE,
+    references=["https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"])
+kb_text.entry(
+    "CA_LONG_VALIDITY", title="CA issues long-lived server certificates", category="certificate", default_impact="Low",
+    description="An internal CA template or role issues TLS server certificates valid for more than 825 days. The CA/"
+                "Browser Forum's 398 days applies to publicly trusted certificates only; for internal CAs the limit "
+                "used is 825 days, because Apple platforms (iOS 13 / macOS 10.15 and later) refuse TLS server "
+                "certificates valid for longer even when they chain to an enterprise root. Templates that issue CA "
+                "certificates (SubCA, CA, CrossCA) are not judged.",
+    attack="A leaked key stays usable for longer, certificates outlive the algorithms and owners they were made for, "
+           "and Apple clients reject the certificates outright.",
+    cwe=["CWE-324"], owasp=["crypto"], cves=[],
+    standards=["Apple HT210176 (825 days for TLS server certificates)",
+               "CA/Browser Forum Baseline Requirements 6.3.2 (398 days, publicly trusted)"],
     compliance=["certificates"],
-    remediation={"summary": "Lower the role's max_ttl or the template's validity to 397 days or less and automate "
-                            "renewal.", "steps": []},
-    verify=V_VAULT_PKI, references=["https://cabforum.org/working-groups/server/baseline-requirements/"])
+    remediation={"summary": "Lower the role's max_ttl or the template's validity to 825 days or less (397 days if the "
+                            "certificates must also meet public-CA rules) and automate renewal.", "steps": []},
+    verify=V_VAULT_PKI + V_ADCS_TEMPLATE[:1], references=["https://support.apple.com/HT210176",
+                                                          "https://cabforum.org/working-groups/server/baseline-requirements/"])
 
 NODE_CODES = ["KEY_WEAK_SYMMETRIC", "KEY_PLAINTEXT_EXPORT", "KEY_EXTRACTABLE", "KEY_COMPROMISED", "KEY_NO_ROTATION",
               "DB_TDE_OFF", "DB_LEGACY_PW_HASH", "DB_10G_VERIFIER", "DB_LOGIN_NO_POLICY", "DB_LEGACY_NNE",
-              "DB_EOL_VERSION", "CA_WEAK_SIGNING", "CA_ALLOWS_WEAK_KEY", "CA_ALLOWS_ANY_NAME", "CA_LONG_VALIDITY"]
+              "DB_EOL_VERSION", "CA_WEAK_SIGNING", "CA_ALLOWS_WEAK_KEY", "CA_ALLOWS_ANY_NAME", "CA_TEMPLATE_WRITABLE",
+              "CA_LONG_VALIDITY"]
