@@ -1007,7 +1007,7 @@ function AwsForm({
                   <span className="font-mono text-xs">aws/lambda</span> key, and this role denies{" "}
                   <span className="font-mono text-xs">kms:Decrypt</span>. Turning this on lets Lambda, and only Lambda, decrypt them so
                   ZeroShield can check them for keys and passwords (only their shape is kept); every other{" "}
-                  <span className="font-mono text-xs">kms:Decrypt</span> stays denied. A customer-managed key&apos;s key policy must also
+                  <span className="font-mono text-xs">kms:Decrypt</span>{" "}stays denied. A customer-managed key&apos;s key policy must also
                   allow this role. Off: each function&apos;s environment is listed as not inspected.
                 </>
               }
