@@ -1,7 +1,12 @@
+# Base images. scripts/deploy/build_images.sh passes UV_BASE_IMAGE / GO_BASE_IMAGE when they are set: behind a
+# TLS-intercepting proxy, bases that trust the proxy's CA (deploy/staging/README.md).
+ARG UV_BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+ARG GO_BASE_IMAGE=golang:1.26-bookworm
+
 # ============================================================
 # Stage 1: Builder — install build tools, compile dependencies
 # ============================================================
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+FROM ${UV_BASE_IMAGE} AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -39,7 +44,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ============================================================
 # Stage 1b: Build cbomkit-theia from source (Go binary for CBOM scanning)
 # ============================================================
-FROM golang:1.26-bookworm AS cbomkit-builder
+FROM ${GO_BASE_IMAGE} AS cbomkit-builder
 
 RUN git clone --depth 1 https://github.com/cbomkit/cbomkit-theia.git /tmp/cbomkit-theia \
     && cd /tmp/cbomkit-theia \
@@ -50,7 +55,7 @@ RUN git clone --depth 1 https://github.com/cbomkit/cbomkit-theia.git /tmp/cbomki
 # ============================================================
 # Stage 2: Runtime — minimal image with only what's needed
 # ============================================================
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ${UV_BASE_IMAGE}
 
 # UV_NO_SYNC / UV_OFFLINE: `uv run` at start must never resolve or download anything. The venv is complete from
 # the build; an air-gapped site has no index to reach (found in the AWS lab: a worker restart with no internet

@@ -14,7 +14,9 @@
 #         DSS_IMAGE_PREFIX             repository prefix (default: dss-staging)
 #         NEXT_PUBLIC_BACKEND_URL      API URL baked into the browser bundle (required for the frontend)
 #         NEXT_PUBLIC_CBOM_NODE_IMAGE  scan-node image the UI tells operators to run (optional)
-#         UV_BASE_IMAGE / NODE_BASE_IMAGE  base images that trust a TLS-intercepting proxy's CA (optional)
+#         UV_BASE_IMAGE / NODE_BASE_IMAGE / GO_BASE_IMAGE  base images that trust a TLS-intercepting proxy's CA
+#                                      (optional; UV: backend and both workers, NODE: frontend, GO: the scan
+#                                      worker's cbomkit-theia stage)
 #         DSS_BUILD_ARGS               extra arguments for every `docker buildx build` (optional, word-split)
 set -euo pipefail
 
@@ -44,7 +46,7 @@ while (($#)); do
       shift 2
       ;;
     -h | --help)
-      sed -n '2,22p' "${BASH_SOURCE[0]}"
+      sed -n '2,20p' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *) die "unknown argument: $1 (see --help)" ;;
@@ -117,6 +119,8 @@ for c in "${ONLY[@]}"; do image_name "${c}" >/dev/null; done
 
 base_args=()
 [[ -n "${UV_BASE_IMAGE:-}" ]] && base_args+=(--build-arg "UV_BASE_IMAGE=${UV_BASE_IMAGE}")
+go_args=()
+[[ -n "${GO_BASE_IMAGE:-}" ]] && go_args+=(--build-arg "GO_BASE_IMAGE=${GO_BASE_IMAGE}")
 
 log "tag=${DSS_TAG} prefix=${DSS_IMAGE_PREFIX} components=${ONLY[*]}"
 [[ -f prod_database_migrations/alembic.ini ]] || die "prod_database_migrations/alembic.ini is missing"
@@ -140,7 +144,7 @@ if wanted frontend; then
 fi
 
 if wanted scan-worker; then
-  build scan-worker RabbitMQ/worker/Dockerfile . "${base_args[@]}"
+  build scan-worker RabbitMQ/worker/Dockerfile . "${base_args[@]}" "${go_args[@]}"
   assert_no_secrets scan-worker /build
 fi
 
