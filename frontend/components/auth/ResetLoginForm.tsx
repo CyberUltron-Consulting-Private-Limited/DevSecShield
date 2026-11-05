@@ -16,7 +16,8 @@ import { FaApple } from "react-icons/fa"
 import { FaXTwitter } from "react-icons/fa6" // Keeping this. If this still fails, confirm react-icons version/install.
 import { toast } from "sonner"
 import router from "next/navigation"
-import api from "@/utils/interceptors"
+import api, { retryAfterSeconds } from "@/utils/interceptors"
+import { resendLabel, useResendCountdown, waitAfterFailedSend } from "@/utils/resend_countdown"
 import { useRouter } from "next/navigation"
 import { handleApiError, showErrorToast } from "@/utils/error-handler"
 import { newPasswordProblem, NEW_PASSWORD_HINT } from "@/utils/password_rules"
@@ -36,23 +37,10 @@ const emptyResetUserData: UserData = {email: "", password: "", verification_code
 export default function ResetLoginForm() {
   const [ userData, setUserData ] = useState<UserData>(emptyResetUserData)
   
-  //timer to send verification code
-  const [timer, setTimer] = useState(delay*1000)
-  const [ timerId , setTimerId ] = useState<NodeJS.Timeout | null>(null)
-  const [timerStarted, setTimerStarted] = useState(false)
+  // wait before "Send Verification Code" can be pressed again
+  const countdown = useResendCountdown(delay)
   const [sendingCode, setSendingCode] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    if(timer===0){
-      clearInterval(timerId!)
-      setTimerStarted(false)
-      setTimer(delay*1000)
-    }
-    return () => {
-      if (timerId) clearInterval(timerId)
-    }
-  }, [timer, timerId])
 
   const handleSendVerificationCode = async () => {
     const toastId = toast.loading("Sending verification code...")
@@ -62,10 +50,7 @@ export default function ResetLoginForm() {
             return
         }
         setSendingCode(true)
-        setTimerStarted(true)
-        setTimerId(setInterval(() => {
-          setTimer(prev=>prev - 1000)
-        }, 1000))
+        countdown.start()
         const response = await api.post("/send_code",{email: userData?.email.trim()})
         if(response.status === 200){
             toast.success("Verification code sent successfully")
@@ -75,7 +60,9 @@ export default function ResetLoginForm() {
         }
     }
     catch(error:any){
-        showErrorToast(error, "Error while sending verification code")
+        // nothing was sent: no wait before the next try (only the server's Retry-After for a 429)
+        const apiError = showErrorToast(error, "Error while sending verification code")
+        countdown.start(waitAfterFailedSend(apiError.status, retryAfterSeconds(error)))
     }
     finally{
         setSendingCode(false)
@@ -222,9 +209,9 @@ export default function ResetLoginForm() {
                 <div className="flex items-center w-full ">
                   <button 
                     type="button"
-                    disabled={timerStarted || sendingCode}
+                    disabled={countdown.running || sendingCode}
                     className="w-fit cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-sm items-center ml-auto flex flex-row gap-2 hover:text-blue-300 hover:underline" onClick={handleSendVerificationCode}>
-                    {sendingCode ? "Sending code..." : timerStarted ? `Resend in ${timer/1000}s` : "Send Verification Code"} <ArrowUpRight size={18}/>
+                    {resendLabel(sendingCode, countdown.left)} <ArrowUpRight size={18}/>
                   </button>
                 </div>
               </div>
