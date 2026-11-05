@@ -18,6 +18,7 @@ import {
   installCommand,
   nodeInstallNames,
   normalizeGrid,
+  readTextFile,
   setCell,
   shQuote,
   splitLines,
@@ -125,4 +126,20 @@ assert.equal(blankSecretError(false, false, "Enter the password"), "Enter the pa
 assert.equal(blankSecretError(true, false, "Enter the password"), null); // stored and nothing that guards it changed
 assert.match(blankSecretError(true, true, "Enter the password") ?? "", /^Enter it again: .*host key check/);
 
-console.log("logic.test.ts: all checks passed");
+// Local lab round 5 (u1): MySQL 8's auto-generated /var/lib/mysql/ca.pem ends with "\n\0"; uploading it as the MySQL
+// source's CA said "ca.pem is a binary file" and the source could not be saved with a password.
+const fileChecks = (async () => {
+  const pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+  assert.equal(await readTextFile(new File([pem + "\0"], "ca.pem")), pem);
+  assert.equal(await readTextFile(new File([pem + "\0\0"], "ca.pem")), pem);
+  await assert.rejects(readTextFile(new File(["-----BEGIN\0CERTIFICATE-----\n"], "x.pem")), /is a binary file/);
+  await assert.rejects(readTextFile(new File([new Uint8Array([0xff, 0xfe, 0x41])], "x.pem")), /not UTF-8/);
+})();
+
+fileChecks.then(
+  () => console.log("logic.test.ts: all checks passed"),
+  (err) => {
+    console.error(err);
+    process.exit(1);
+  },
+);

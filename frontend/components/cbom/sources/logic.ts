@@ -229,7 +229,12 @@ export const MAX_TEXT_FILE = 256 * 1024
 /** Read a small text file (PEM, kubeconfig, known_hosts, CSV); refuses binaries and oversize files. */
 export async function readTextFile(file: File, maxBytes = MAX_TEXT_FILE): Promise<string> {
   if (file.size > maxBytes) throw new Error(`${file.name} is larger than ${Math.round(maxBytes / 1024)} KB`)
-  const buffer = new Uint8Array(await file.arrayBuffer())
+  const whole = new Uint8Array(await file.arrayBuffer())
+  // Trailing NUL bytes are a C string terminator, not binary content: MySQL's own auto-generated ca.pem (the CA a
+  // MySQL source asks for) ends with "\n\0" (local lab, round 5).  A NUL anywhere else still means a binary file.
+  let end = whole.length
+  while (end > 0 && whole[end - 1] === 0) end--
+  const buffer = whole.subarray(0, end)
   if (buffer.includes(0)) throw new Error(`${file.name} is a binary file; choose a text (PEM or YAML) file`)
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(buffer)
