@@ -17,6 +17,7 @@ from pathlib import Path
 from aibom.model.component import FrameworkComponent
 from aibom.scan.parsers.license_resolver import resolve_license
 from aibom.scan.parsers.licenses import license_choice
+from aibom.scan.safe_files import read_text
 
 # strip a PEP 508 dependency spec down to the distribution name:
 #   "mcp[cli]>=1.0,<2 ; python_version>='3.10'"  ->  "mcp"
@@ -76,10 +77,11 @@ def _parse_line(line: str) -> FrameworkComponent | None:
 
 def parse_requirements(path: Path) -> list[FrameworkComponent]:
     """Return the library components declared in ``requirements.txt`` (sorted)."""
-    if not path.is_file():
+    text = read_text(path)  # None: absent, a link or not a regular file
+    if text is None:
         return []
     comps: dict[str, FrameworkComponent] = {}
-    for line in path.read_text().splitlines():
+    for line in text.splitlines():
         comp = _parse_line(line)
         if comp is not None:
             comps[comp.bom_ref] = comp  # de-dup by bom_ref, last wins
@@ -108,10 +110,11 @@ def parse_pyproject(
     but ``True`` for SUB-package pyprojects, so a monorepo's members (e.g. the MCP
     reference servers ``mcp-server-fetch`` / ``-git`` / ``-time``) are inventoried.
     """
-    if not path.is_file():
+    text = read_text(path)  # None: absent, a link or not a regular file
+    if text is None:
         return []
     try:
-        data = tomllib.loads(path.read_text())
+        data = tomllib.loads(text)
     except (tomllib.TOMLDecodeError, OSError, ValueError):
         return []
     comps: dict[str, FrameworkComponent] = {}

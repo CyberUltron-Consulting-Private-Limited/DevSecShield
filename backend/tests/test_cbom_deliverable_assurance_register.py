@@ -545,7 +545,9 @@ def no_network(monkeypatch):
 # ---------------------------------------------------------------------------------------------
 def test_oracles_match_the_plan_literals(raw_scans):
     libs = oracle_libraries(raw_scans)
-    assert len(libs) == 23  # Appendix B: "Crypto libraries: 23 unique"
+    # Appendix B said 23; the WP13 regeneration adds Node.js crypto (stdlib) (require() import,
+    # ab0a446) and the two WP3a advisory components cryptography@42.0.5 / golang.org/x/crypto@v0.24.0
+    assert len(libs) == 26
     multi = {name for name, entry in libs.items() if len(entry["labels"]) > 1}
     assert multi == {"hashlib (stdlib)", "pyca/cryptography", "pyopenssl", "ssl (stdlib)"}
     ledger = oracle_ledger(raw_scans)
@@ -626,11 +628,11 @@ def test_no_hygiene_violations_or_leaked_canaries(base_text):
 # ---------------------------------------------------------------------------------------------
 # A. Third-party cryptographic components
 # ---------------------------------------------------------------------------------------------
-def test_components_table_lists_23_unique_libraries_four_with_several_sources(
+def test_components_table_lists_26_unique_libraries_four_with_several_sources(
     base_story, raw_scans
 ):
     rows = records(find_table(base_story, LIB_HEADERS))
-    assert len(rows) == 23  # Appendix B
+    assert len(rows) == 26  # Appendix B as regenerated in WP13 (see test_oracles_match_the_plan_literals)
     oracle = oracle_libraries(raw_scans)
     assert [r["Library"].casefold() for r in rows] == sorted(oracle)  # one row each, A to Z
     multi = [r["Library"] for r in rows if int(r["#Sources"]) > 1]
@@ -677,16 +679,21 @@ def test_version_column_says_not_captured_and_every_manual_cell_is_blank(base_st
     for row in body_rows(table):
         for column in range(5, len(LIB_HEADERS)):
             assert cell_text(row[column]) == "", (LIB_HEADERS[column], cell_text(row[0]))
-    # nothing invented: no version-looking value anywhere in the component rows
-    flat = "\n".join(cell_text(c) for row in body_rows(table) for c in row)
+    # nothing invented: no version-looking value in the component rows except inside the name the
+    # engine gave an advisory component (``<package>@<version>``, crypto_advisory_scan.py)
+    flat = "\n".join(cell_text(c) for row in body_rows(table) for c in row[1:])
     assert not re.search(r"\b\d+\.\d+\.\d+\b", flat)
+    versioned = sorted(
+        cell_text(row[0]) for row in body_rows(table) if re.search(r"\d+\.\d+\.\d+", cell_text(row[0]))
+    )
+    assert versioned == ["cryptography@42.0.5", "golang.org/x/crypto@v0.24.0"]
     # the version column is a blank MANUAL column like the four vendor-assurance ones
     assert all("(assessor)" in header for header in MANUAL_LIB_COLUMNS)
 
 
 def test_library_note_and_summary_line_are_printed(base_text):
     assert norm(authored.ASSURANCE_LIBRARY_NOTE) in base_text
-    summary = "23 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source."
+    summary = "26 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source."
     assert summary in base_text
 
 
@@ -694,9 +701,9 @@ def test_library_seen_only_in_a_superseded_scan_goes_to_a_previously_seen_append
     scans = copy.deepcopy(raw_scans)
     add_library(scans, 1, "ObsoleteCryptoKit")  # scan 1 = payments v1, replaced by scan 2
     view = make_view(scans)
-    assert len(view.libs) == 24  # the aggregator keeps it, flagged current=False
+    assert len(view.libs) == 27  # the aggregator keeps it, flagged current=False
     story = build_story(view)
-    assert len(body_rows(find_table(story, LIB_HEADERS))) == 23  # headline unchanged
+    assert len(body_rows(find_table(story, LIB_HEADERS))) == 26  # headline unchanged
     old = records(find_table(story, PREVIOUS_HEADERS))
     assert len(old) == 1
     assert old[0]["Library"] == "ObsoleteCryptoKit"
@@ -704,7 +711,7 @@ def test_library_seen_only_in_a_superseded_scan_goes_to_a_previously_seen_append
     assert old[0]["Sources"] == "github.com/e2e-demo/payments-service (main)"
     assert (old[0]["First seen"], old[0]["Last seen"]) == ("2026-09-28", "2026-09-28")
     assert HEAD_A1 in norm(pdf_full_text(register.build_pdf(view)))
-    assert "23 cryptographic libraries found in 4 of 7 sources" in " ".join(story_texts(story))
+    assert "26 cryptographic libraries found in 4 of 7 sources" in " ".join(story_texts(story))
 
 
 def test_many_sources_are_capped_per_cell_with_a_plus_more_line():
@@ -977,7 +984,8 @@ def test_full_fidelity_team_with_nothing_to_attest_says_so(raw_scans):
     manifests = [s for s in copy.deepcopy(raw_scans) if s["id"] == 7]
     story = build_story(make_view(manifests))
     assert body_rows(find_table(story, LEDGER_HEADERS)) == []
-    assert len(body_rows(find_table(story, LIB_HEADERS))) == 18  # R-08: 0 assets, 18 libraries
+    # R-08: 19 libraries (+ the WP3a golang.org/x/crypto@v0.24.0 advisory component), 1 asset row
+    assert len(body_rows(find_table(story, LIB_HEADERS))) == 19
     notes = story_texts(story)
     assert any("No control in the pooled scans needs an attestation" in t for t in notes)
 

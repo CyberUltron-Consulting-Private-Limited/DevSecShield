@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, ExternalLink, Loader2, MoreVertical, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { Download, ExternalLink, Loader2, MoreVertical, Pencil, Plus, ShieldCheck, Tags, Trash2, X } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -35,6 +35,7 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys } from "./keys";
+import { SourceMetadataDialog } from "./SourceMetadata";
 import { formatDateTime, pluralize, readTextFile, splitLines } from "./logic";
 import {
   ChoiceCards,
@@ -298,6 +299,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   const [form, setForm] = useState<{ provider: Provider; source: CbomSource | null; nonce: number }>({ provider: "aws", source: null, nonce: 0 });
   const [validation, setValidation] = useState<ValidationView | null>(null);
   const [deleting, setDeleting] = useState<CbomSource | null>(null);
+  const [metadataFor, setMetadataFor] = useState<CbomSource | null>(null);
   const [caDialog, setCaDialog] = useState<{ row: CaRow; source: CbomSource | null; nonce: number } | null>(null);
   const [idpDialog, setIdpDialog] = useState<{ row: IdpRow; source: CbomSource | null; nonce: number } | null>(null);
 
@@ -563,6 +565,11 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                                 <Pencil className="h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
+                              <DropdownMenuItem className="cursor-pointer" onSelect={() => setMetadataFor(s)}
+                                                data-testid={`cloud-account-metadata-${s.id}`}>
+                                <Tags className="h-4 w-4" />
+                                Ownership and data
+                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem variant="destructive" className="cursor-pointer" onSelect={() => setDeleting(s)}>
                                 <Trash2 className="h-4 w-4" />
@@ -602,6 +609,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                     testing={testMutation.isPending ? testMutation.variables?.id ?? null : null}
                     onConnect={() => setCaDialog({ row, source: null, nonce: Date.now() })}
                     onEdit={(s) => setCaDialog({ row, source: s, nonce: Date.now() })}
+                    onMetadata={setMetadataFor}
                     onTest={(s) => testMutation.mutate(s)}
                     onDelete={(s) => setDeleting(s)}
                     renderDetail={(s) =>
@@ -640,6 +648,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                   testing={testMutation.isPending ? testMutation.variables?.id ?? null : null}
                   onConnect={() => setIdpDialog({ row, source: null, nonce: Date.now() })}
                   onEdit={(s) => setIdpDialog({ row, source: s, nonce: Date.now() })}
+                  onMetadata={setMetadataFor}
                   onTest={(s) => testMutation.mutate(s)}
                   onDelete={(s) => setDeleting(s)}
                   renderDetail={(s) => <IdpTestLine source={s} />}
@@ -691,6 +700,15 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           source={idpDialog.source}
           takenNames={identityNames}
           onClose={() => setIdpDialog(null)}
+        />
+      )}
+
+      {metadataFor && (
+        <SourceMetadataDialog
+          key={`${metadataFor.id}-${metadataFor.row_version}`}
+          teamId={teamId}
+          source={metadataFor}
+          onClose={() => setMetadataFor(null)}
         />
       )}
 
@@ -1666,6 +1684,7 @@ function ConnectorRow({
   testing,
   onConnect,
   onEdit,
+  onMetadata,
   onTest,
   onDelete,
   renderDetail,
@@ -1678,6 +1697,7 @@ function ConnectorRow({
   testing: number | null;
   onConnect: () => void;
   onEdit: (s: CbomSource) => void;
+  onMetadata: (s: CbomSource) => void;
   onTest: (s: CbomSource) => void;
   onDelete: (s: CbomSource) => void;
   renderDetail: (s: CbomSource) => ReactNode;
@@ -1706,6 +1726,10 @@ function ConnectorRow({
                       <DropdownMenuItem className="cursor-pointer" onSelect={() => onEdit(s)}>
                         <Pencil className="h-4 w-4" />
                         Edit {s.name}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="cursor-pointer" onSelect={() => onMetadata(s)}>
+                        <Tags className="h-4 w-4" />
+                        Ownership and data for {s.name}
                       </DropdownMenuItem>
                       {canTest && (
                         <DropdownMenuItem className="cursor-pointer" disabled={testing === s.id} onSelect={() => onTest(s)}>

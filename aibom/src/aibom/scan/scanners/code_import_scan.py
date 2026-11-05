@@ -11,6 +11,7 @@ from pathlib import Path
 from aibom.scan.parsers.code_imports import find_ai_imports
 from aibom.scan.parsers.requirements import _component_for
 from aibom.scan.registry import ScanContext, Scanner, register
+from aibom.scan.safe_files import read_text, walk_files
 
 _SKIP_DIRS = frozenset({
     ".git", ".venv", "venv", "node_modules", "__pycache__", "dist", "build",
@@ -20,18 +21,9 @@ _MAX_FILES = 4000  # backstop for very large monorepos
 
 
 def _source_files(root: Path):
-    n = 0
-    for p in sorted(root.rglob("*")):
-        if p.suffix.lower() not in (".py", ".ipynb"):
-            continue
-        if any(part in _SKIP_DIRS for part in p.relative_to(root).parts):
-            continue
-        if not p.is_file():
-            continue
-        yield p
-        n += 1
-        if n >= _MAX_FILES:
-            break
+    keep = (".py", ".ipynb")
+    files = walk_files(root, _SKIP_DIRS, lambda p: p.suffix.lower() in keep)
+    yield from files[:_MAX_FILES]
 
 
 @register
@@ -46,9 +38,8 @@ class CodeImportScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         names: set[str] = set()
         for path in _source_files(ctx.root):
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+            text = read_text(path)
+            if text is None:
                 continue
             names |= find_ai_imports(text, notebook=path.suffix.lower() == ".ipynb")
         for name in sorted(names):

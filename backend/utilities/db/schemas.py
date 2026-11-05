@@ -212,6 +212,7 @@ class StartCBOMScanData(BaseStartRepositoryScanData):
     cbom_file_used : bool = False  # if true, a pre-existing CBOM JSON file was uploaded
     scan_binaries : bool = False   # if true, enable cbomkit-theia binary/config scanning
     include_vendored : bool = False  # code scans: also read vendor/, dist/, build/, node_modules/ (opt-in)
+    scan_history : bool = False  # repository scans: clone with history (capped) and read keys found only there
 
     @model_validator(mode="after")
     def validate_data(self):

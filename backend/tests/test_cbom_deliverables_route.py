@@ -378,7 +378,9 @@ def test_each_slug_returns_its_own_pdf_with_the_contract_headers(api, world, slu
     assert response.headers["x-cbom-sources"] == "7"
     assert response.headers["x-cbom-fidelity"] == "mixed"
     assert response.headers["x-cbom-fingerprint"] == fingerprint
-    assert response.headers["x-cbom-posture"] == "not_assessed"
+    # the regenerated scans carry cbom_posture (engine posture lanes, zero facts on these trees);
+    # only the legacy Tier-B scan has none -> some sources assessed, one not
+    assert response.headers["x-cbom-posture"] == "mixed"
     assert int(response.headers["content-length"]) == len(body)
 
     text = squash(full_text(body))  # cells wrap differently in portrait and landscape

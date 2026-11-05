@@ -24,6 +24,7 @@ from aibom.model.component import (
 )
 from aibom.scan.parsers.frontmatter import split_frontmatter
 from aibom.scan.parsers.licenses import license_choice
+from aibom.scan.safe_files import read_text
 
 
 @dataclass
@@ -153,9 +154,10 @@ def _application(raw: Any) -> MetadataComponent | None:
 
 def parse_model_card(path: Path) -> ParsedModelCard | None:
     """Parse a model card. Returns None if absent or missing a model name."""
-    if not path.is_file():
+    text = read_text(path)  # None: absent, a link or not a regular file
+    if text is None:
         return None
-    fm, _body = split_frontmatter(path.read_text())
+    fm, _body = split_frontmatter(text)
     name = _opt_str(fm.get("name"))
     if not name:
         return None

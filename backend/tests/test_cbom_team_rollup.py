@@ -552,8 +552,10 @@ def test_tier_a_scan_is_full_fidelity_and_fully_extracted(raw):
     assert (facts.scan_id, facts.source_key, facts.source_kind) == (2, PAYMENTS, "repo")
     assert facts.repo_url == "https://github.com/e2e-demo/payments-service"
     assert facts.branch == "main" and facts.created_at == NOW - timedelta(days=7)
-    assert (facts.asset_count, facts.cert_count, facts.lib_count) == (14, 2, 4)
-    assert (len(facts.assets), len(facts.certs), len(facts.libs)) == (14, 2, 4)
+    # 15 rows / 5 libraries: the WP3a advisory data matches cryptography 42.0.5, one library row
+    # ("cryptography@42.0.5", asset_type None by design) that must NOT make the scan reduced
+    assert (facts.asset_count, facts.cert_count, facts.lib_count) == (15, 2, 5)
+    assert (len(facts.assets), len(facts.certs), len(facts.libs)) == (15, 2, 5)
     assert len(facts.frameworks) == 13 and "disclaimer" not in facts.frameworks
     assert len(facts.requirements) == 109 and facts.warnings == []
     assert not facts.is_current  # currentness is decided by the fold, not by extraction
@@ -658,9 +660,12 @@ def test_success_scans_without_results_list_or_cbom_json_are_no_data(raw, blob):
 
 
 def test_valid_but_empty_scans_are_included_not_excluded(raw):
-    clean = facts_of(scan_by_id(raw, 7))  # manifest-only: results == [] but 18 libraries
+    # manifest-only scan 7 now has one advisory row (golang.org/x/crypto v0.24.0, WP3a data), so
+    # the empty case is that blob with its results emptied: results == [] but 19 libraries
+    blob = scan_by_id(raw, 7)["scan_data"]
+    clean = facts_of(scan_by_id(raw, 7), {**blob, "results": []})
     assert clean.included and clean.fidelity == FIDELITY_FULL and clean.tier == TIER_A
-    assert (clean.asset_count, clean.lib_count) == (0, 18)
+    assert (clean.asset_count, clean.lib_count) == (0, 19)
     assert facts_of(scan_by_id(raw, 2), {"results": []}).included
     assert facts_of(scan_by_id(raw, 2), {"cbom_json": {}}).included
 
@@ -973,9 +978,12 @@ def test_scan_facts_are_slim_ordered_newest_first_and_flag_the_current_ones(view
     counts = {
         s.scan_id: (s.asset_count, s.cert_count, s.lib_count) for s in view.scans if s.included
     }
+    # 1/2: + the cryptography@42.0.5 advisory row and library (WP3a data); 4: - the AES-CBC
+    # duplicate (WP2 one call = one asset), + Node.js crypto (stdlib) (ab0a446 require() import);
+    # 7: + the golang.org/x/crypto@v0.24.0 advisory row and library (WP3a data)
     assert counts == {
-        1: (13, 1, 4), 2: (14, 2, 4), 3: (12, 12, 0), 4: (17, 0, 2),
-        5: (11, 0, 0), 6: (2, 2, 0), 7: (0, 0, 18), 8: (12, 1, 4),
+        1: (14, 1, 5), 2: (15, 2, 5), 3: (12, 12, 0), 4: (16, 0, 3),
+        5: (11, 0, 0), 6: (2, 2, 0), 7: (1, 0, 19), 8: (12, 1, 4),
     }  # fmt: skip
     assert sum(c[1] for c in counts.values()) == 18  # raw certificate occurrences (Appendix B)
     legacy = next(s for s in view.scans if s.scan_id == 8)
@@ -991,20 +999,20 @@ EXPECTED_SOURCES = {
     # key: (label, kind, scan_ids, tier, fidelity, last_attempt, asset_counts, impact_counts, libs)
     PAYMENTS: ("github.com/e2e-demo/payments-service (main)", "repo", (2, 1), TIER_A, "full",
                (9, "failure"), {"algorithm": 9, "certificate": 2, "protocol": 1,
-                                "related-crypto-material": 2},
-               {"High": 6, "Medium": 1, "Info": 7}, 4),
+                                "related-crypto-material": 2, "other": 1},
+               {"High": 7, "Medium": 1, "Info": 7}, 5),  # + cryptography@42.0.5 (WP3a)
     IDENTITY: ("github.com/e2e-demo/identity-gateway (main)", "repo", (3,), TIER_A, "full",
                (3, "success"), {"certificate": 12},
                {"Critical": 1, "High": 4, "Medium": 1, "Info": 6}, 0),
     MISUSE: ("github.com/e2e-demo/crypto-misuse-lab (main)", "repo", (4,), TIER_A, "full",
-             (4, "success"), {"algorithm": 8, "related-crypto-material": 9},
-             {"High": 6, "Info": 11}, 2),
+             (4, "success"), {"algorithm": 7, "related-crypto-material": 9},
+             {"High": 6, "Info": 10}, 3),  # - AES-CBC duplicate (WP2), + Node.js crypto lib
     PQC: ("github.com/e2e-demo/pqc-pilot (release)", "repo", (5,), TIER_A, "full",
           (5, "success"), {"algorithm": 11}, {"Medium": 1, "Info": 10}, 0),
     ZIPLAB: ("Zip upload: cert-lifecycle-lab", "zip", (6,), TIER_A, "full",
              (6, "success"), {"certificate": 2}, {"High": 1, "Medium": 1}, 0),
     MANIFESTS: ("github.com/e2e-demo/vendor-sdk-manifests (main)", "repo", (7,), TIER_A, "full",
-                (7, "success"), {}, {}, 18),
+                (7, "success"), {"other": 1}, {"High": 1}, 19),  # + x/crypto advisory (WP3a)
     LEGACY: ("github.com/e2e-demo/legacy-billing (main)", "repo", (8,), TIER_B, "reduced",
              (8, "success"), {"algorithm": 9, "certificate": 1, "protocol": 1,
                               "related-crypto-material": 1},
@@ -1161,6 +1169,7 @@ APPENDIX_CODES = {
     "REUSED_NONCE": 1,
     "SELF_SIGNED_LEAF": 3,
     "STATIC_IV": 1,
+    "VULNERABLE_CRYPTO_LIBRARY": 2,  # WP3a advisory data: cryptography 42.0.5, x/crypto v0.24.0
     "WEAK_ALGORITHM": 8,
     "WEAK_CERTIFICATE_KEY": 3,
     "WEAK_CERTIFICATE_SIGNATURE": 3,
@@ -1171,14 +1180,16 @@ APPENDIX_CODES = {
 
 
 def test_current_asset_occurrences_and_impact_buckets_match_appendix_b(view):
-    assert len(view.assets) == view.asset_occurrences == 68
+    # 68 - 1 (WP2 AES-CBC duplicate) + 2 (WP3a advisory library rows, typed "other", High)
+    assert len(view.assets) == view.asset_occurrences == 69
     assert all(a.current for a in view.assets)  # nothing was resolved in this seed
     assert view.assets_by_type == {
-        "algorithm": 37, "certificate": 17, "protocol": 2, "related-crypto-material": 12,
+        "algorithm": 36, "certificate": 17, "protocol": 2, "related-crypto-material": 12,
+        "other": 2,
     }  # fmt: skip
-    assert view.assets_by_impact == {"Critical": 1, "High": 23, "Medium": 5, "Info": 39}  # clean rows: no impact
-    assert view.issue_by_impact == {"Critical": 1, "High": 23, "Medium": 5}  # grade input (D-03)
-    assert sum(view.issue_by_impact.values()) == 29
+    assert view.assets_by_impact == {"Critical": 1, "High": 25, "Medium": 5, "Info": 38}  # clean rows: no impact
+    assert view.issue_by_impact == {"Critical": 1, "High": 25, "Medium": 5}  # grade input (D-03)
+    assert sum(view.issue_by_impact.values()) == 31
     assert view.finding_counts == APPENDIX_CODES
     assert [a.title for a in view.assets if a.impact == "Critical"] == ["rsa1024_sha1.pem"]
 
@@ -1206,7 +1217,9 @@ def test_assets_are_never_merged_across_sources_but_are_across_a_sources_scans(v
 
 
 def test_libraries_dedupe_by_casefolded_name_across_sources(view):
-    assert len(view.libs) == 23 and all(lib.current for lib in view.libs)
+    # 23 + Node.js crypto (stdlib) (ab0a446) + cryptography@42.0.5 + golang.org/x/crypto@v0.24.0
+    # (WP3a: an advisory row is its own library component named <package>@<version>)
+    assert len(view.libs) == 26 and all(lib.current for lib in view.libs)
     shared = sorted(lib.key for lib in view.libs if len(lib.source_keys) > 1)
     assert shared == ["hashlib (stdlib)", "pyca/cryptography", "pyopenssl", "ssl (stdlib)"]
     crypto = only(lib for lib in view.libs if lib.key == "pyca/cryptography")
@@ -1217,13 +1230,14 @@ def test_libraries_dedupe_by_casefolded_name_across_sources(view):
     )
     assert only(lib for lib in view.libs if lib.key == "pyopenssl").name == "pyOpenSSL"
     manifests = [lib for lib in view.libs if MANIFESTS in lib.source_keys]
-    assert len(manifests) == 18 and all(lib.source_keys == (MANIFESTS,) for lib in manifests)
+    assert len(manifests) == 19 and all(lib.source_keys == (MANIFESTS,) for lib in manifests)
     assert [lib.key for lib in view.libs] == sorted(lib.key for lib in view.libs)
 
 
 def test_pqc_headline_counts_and_readiness_match_appendix_b(view):
-    assert (view.pqc_vulnerable, view.pqc_safe, view.pqc_hybrid, view.pqc_ungraded) == (5, 32, 2, 0)
-    assert view.readiness_pct == 86.5
+    # safe 32 -> 31: the WP2 AES-CBC duplicate is gone; library rows are not algorithms
+    assert (view.pqc_vulnerable, view.pqc_safe, view.pqc_hybrid, view.pqc_ungraded) == (5, 31, 2, 0)
+    assert view.readiness_pct == 86.1
     vulnerable = {
         (a.source_key, a.title)
         for a in view.assets
@@ -1447,12 +1461,44 @@ def test_a_newest_success_without_data_falls_back_to_the_older_scan():
     assert only(view.assets).current is True
 
 
-def test_the_manifest_only_source_is_in_scope_with_zero_assets_and_its_libraries(view):
+def test_the_manifest_only_source_is_in_scope_with_its_advisory_row_and_its_libraries(view):
     src = only(s for s in view.sources if s.key == MANIFESTS)
-    assert (src.asset_counts, src.impact_counts, src.library_count) == ({}, {}, 18)
+    # the only row is the golang.org/x/crypto v0.24.0 advisory (WP3a data): a library row with no
+    # crypto assetType by design, typed "other", and the scan stays full fidelity (tier A)
+    assert (src.asset_counts, src.impact_counts, src.library_count) == ({"other": 1}, {"High": 1}, 19)
     assert (src.current_tier, src.current_fidelity) == (TIER_A, FIDELITY_FULL)
-    assert not [a for a in view.assets if a.source_key == MANIFESTS]
+    rows = [a for a in view.assets if a.source_key == MANIFESTS]
+    assert [(a.title, a.asset_type, a.finding_codes) for a in rows] == [
+        ("golang.org/x/crypto@v0.24.0", "other", ("VULNERABLE_CRYPTO_LIBRARY",))
+    ]
     assert view.included == 8  # the empty scan is counted, not excluded
+
+
+def test_library_and_configuration_rows_keep_a_current_scan_full_and_are_not_algorithms():
+    """The engine writes a vulnerable-library row and a declared-configuration row without a crypto
+    ``asset_type`` (no CycloneDX assetType exists for them).  Before the fix any such row made a
+    current scan Tier C "reduced" and was counted as a quantum-safe ALGORITHM in readiness."""
+    rows = [
+        _row("RSA-2048", impact="Medium", codes=("QUANTUM_VULNERABLE",), quantum_vulnerable=True,
+             quantum_safe=False),
+        _row("AES-GCM", impact=None),
+        _row("cryptography@42.0.5", asset_type=None, impact="High",
+             codes=("VULNERABLE_CRYPTO_LIBRARY",), algorithm_type="library",
+             location="requirements.txt"),
+        _row("aws_s3_bucket.logs", asset_type=None, impact="High", codes=("UNENCRYPTED_AT_REST",),
+             algorithm_type="configuration", location="main.tf"),
+    ]  # fmt: skip
+    view, _ = run_fold([synth(1, data=_blob(rows))])
+    scan = only(s for s in view.scans if s.included)
+    assert (scan.tier, scan.fidelity, scan.fidelity_reasons) == (TIER_A, FIDELITY_FULL, ())
+    assert view.assets_by_type == {"algorithm": 2, "other": 2}
+    assert (view.pqc_vulnerable, view.pqc_safe, view.readiness_pct) == (1, 1, 50.0)
+    # a truly untyped (pre-reconcile) row still marks the scan reduced, whatever else it carries
+    legacy = {k: v for k, v in _row("RC4", impact="High", codes=("WEAK_ALGORITHM",)).items()
+              if k != "asset_type"}  # fmt: skip
+    view, _ = run_fold([synth(1, data=_blob([*rows, legacy]))])
+    scan = only(s for s in view.scans if s.included)
+    assert (scan.tier, scan.fidelity_reasons) == (TIER_C, ("no_asset_type",))
 
 
 def test_a_tier_c_scan_is_folded_at_reduced_fidelity():

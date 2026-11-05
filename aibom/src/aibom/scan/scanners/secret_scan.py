@@ -21,6 +21,7 @@ from pathlib import Path
 
 from aibom.model.component import SecretComponent
 from aibom.scan.registry import ScanContext, Scanner, register
+from aibom.scan.safe_files import read_text, walk_files
 
 _SRC_EXT = frozenset(
     {
@@ -118,19 +119,9 @@ def _shannon_entropy(s: str) -> float:
 
 
 def _source_files(root: Path):
-    for p in sorted(root.rglob("*")):
-        if any(part in _IGNORE_DIRS for part in p.parts):
-            continue
-        if not p.is_file() or p.suffix.lower() not in _SRC_EXT:
-            continue
-        if _is_test_file(p.relative_to(root)):
-            continue
-        try:
-            if p.stat().st_size > _MAX_BYTES:
-                continue
-        except OSError:
-            continue
-        yield p
+    for p in walk_files(root, _IGNORE_DIRS, lambda p: p.suffix.lower() in _SRC_EXT):
+        if not _is_test_file(p.relative_to(root)):
+            yield p
 
 
 def _mask(value: str) -> str:
@@ -168,9 +159,9 @@ class SecretScanner(Scanner):
         # Dedup by secret VALUE so a key matched by multiple rules is one finding.
         seen: dict[str, dict] = {}
         for path in _source_files(ctx.root):
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+            # None: a link, not a regular file, or over the limit
+            text = read_text(path, _MAX_BYTES)
+            if text is None:
                 continue
             rel = path.relative_to(ctx.root).as_posix()
             for kind, value in _detect(text):

@@ -18,6 +18,7 @@ from pathlib import Path
 
 from aibom.scan.parsers.requirements import parse_pyproject, parse_requirements
 from aibom.scan.registry import ScanContext, Scanner, register
+from aibom.scan.safe_files import is_regular_file, walk_files
 
 # don't descend into vendored / build / virtualenv trees when collecting manifests
 _SKIP_DIRS = frozenset({
@@ -28,14 +29,8 @@ _MAX_MANIFESTS = 200  # backstop against pathological monorepos
 
 
 def _pyprojects(root: Path) -> list[Path]:
-    out: list[Path] = []
-    for p in sorted(root.rglob("pyproject.toml")):
-        if any(part in _SKIP_DIRS for part in p.relative_to(root).parts):
-            continue
-        out.append(p)
-        if len(out) >= _MAX_MANIFESTS:
-            break
-    return out
+    found = walk_files(root, _SKIP_DIRS, lambda p: p.name == "pyproject.toml")
+    return found[:_MAX_MANIFESTS]
 
 
 @register
@@ -44,9 +39,7 @@ class RequirementsScanner(Scanner):
     order = 10  # produce frameworks before the model-repo scanner links to them
 
     def matches(self, root: Path) -> bool:
-        return (root / "requirements.txt").is_file() or any(
-            True for _ in root.rglob("pyproject.toml")
-        )
+        return is_regular_file(root / "requirements.txt") or bool(_pyprojects(root))
 
     def scan(self, ctx: ScanContext) -> None:
         frameworks = list(parse_requirements(ctx.root / "requirements.txt"))

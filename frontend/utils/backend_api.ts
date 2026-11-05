@@ -69,6 +69,8 @@ export interface StartCBOMScanData {
   scan_binaries: boolean;
   /** code scans: also read vendor/, dist/, build/ and node_modules/ (default false) */
   include_vendored?: boolean;
+  /** repository scans: clone with history (capped) and read key files found only in it (default false) */
+  scan_history?: boolean;
 }
 
 /** AI BOM scan input: exactly one of repo_context, zip_file_used, or ai_bom_file_used (matches backend StartAiBomScanData) */
@@ -4030,7 +4032,7 @@ export interface CicdIntegrationDashboard {
     api_key: string
     integration_active?: boolean
     integration_settings?: Record<string, { jira_project_id?: string | null; auto_create_tickets?: boolean | null } | null> | null
-    scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null } | null> | null
+    scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null; scan_binaries?: boolean; include_vendored?: boolean } | null> | null
     logs: CicdLog[]
     /** Vulns-over-time chart data (date -> severity counts); from get_cicd_vuln_chart_data */
     dashboard_data?: VulnsOverTimeChartData | null
@@ -4069,6 +4071,10 @@ export interface CicdScanSettingsData {
     sast?: {
         app_lang: SastAppLang
         exclude_path_arrays?: string[][] | null
+    } | null
+    cbom?: {
+        scan_binaries: boolean
+        include_vendored: boolean
     } | null
 }
 

@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/accordion";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { SastScanSettingsForm } from "@/components/sast-scan-settings-form";
+import { CbomCiScanSettingsForm } from "@/components/cbom-ci-scan-settings-form";
 import { sanitizePathArrays } from "@/components/path-arrays-input";
 import {
   ChartContainer,
@@ -648,9 +649,16 @@ export default function CicdIntegrationDashboardPage() {
                     }}
                     isSaving={updateCicdMutation.isPending}
                   />
+                ) : dashboardData.scan_type?.toLowerCase() === "cbom" ? (
+                  <CbomCiScanSettingsForm
+                    key={JSON.stringify(query.data?.scan_settings?.cbom ?? null)}
+                    saved={query.data?.scan_settings?.cbom}
+                    onSave={(cbom) => updateCicdMutation.mutate({ scan_settings: { cbom } })}
+                    isSaving={updateCicdMutation.isPending}
+                  />
                 ) : (
                   <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    Scan settings are only available for SAST integrations. This integration uses scan type: {dashboardData.scan_type}.
+                    Scan settings are only available for SAST and CBOM integrations. This integration uses scan type: {dashboardData.scan_type}.
                   </p>
                 )}
               </CardContent>

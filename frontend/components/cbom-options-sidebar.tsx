@@ -89,6 +89,8 @@ export function CBOMOptionsSidebar({
   const [uploaded_cbom_file, setUploadedCbomFile] = useState<File | null>(null);
   // Off by default: vendor/, dist/, build/ and node_modules/ are third-party or build output.
   const [include_vendored, setIncludeVendored] = useState(false);
+  // Off by default (repository scans): a depth-1 clone; on, a capped clone whose history is read for keys.
+  const [scan_history, setScanHistory] = useState(false);
 
   // CBOM Sources (servers, clusters, network) included in this scan: off by default, opt-in per group.
   const [sourceInclude, setSourceInclude] = useState<CbomInclude>({});
@@ -144,6 +146,8 @@ export function CBOMOptionsSidebar({
         scan_binaries,
         // a code-scan option only: an uploaded CBOM file has no directories to read
         include_vendored: cbom_file_used ? false : include_vendored,
+        // a repository-scan option only: an uploaded archive's own .git history is read when it is complete
+        scan_history: zip_file_used || cbom_file_used ? false : scan_history,
       },
     };
     return JSON.stringify(payload);
@@ -255,7 +259,7 @@ export function CBOMOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
-  }, [mode, repo_url, PAT, branch, uploaded_file, uploaded_cbom_file, scan_binaries, include_vendored]);
+  }, [mode, repo_url, PAT, branch, uploaded_file, uploaded_cbom_file, scan_binaries, include_vendored, scan_history]);
 
   const creditsInvalid = estimatedCredits === -1;
   const displayCredits =
@@ -436,6 +440,22 @@ export function CBOMOptionsSidebar({
                   Scan vendored and build directories
                   <span className="block text-xs text-zinc-500 mt-0.5">
                     Also reads vendor/, dist/, build/ and node_modules/ (third-party code and build output). Off by default.
+                  </span>
+                </span>
+              </label>
+            )}
+            {!zip_file_used && !cbom_file_used && (
+              <label className="flex items-start gap-2 mt-3 text-sm text-zinc-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-blue-600"
+                  checked={scan_history}
+                  onChange={(e) => setScanHistory(e.target.checked)}
+                />
+                <span>
+                  Scan git history for keys
+                  <span className="block text-xs text-zinc-500 mt-0.5">
+                    Clones up to 1,000 commits of the branch and reports key and certificate files that were committed and later removed. Off by default.
                   </span>
                 </span>
               </label>

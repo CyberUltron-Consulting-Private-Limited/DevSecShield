@@ -7,12 +7,15 @@ import {
   countHours,
   csvFirstColumn,
   defaultWindow,
+  EXPOSURE_CHOICES,
+  exposureFrom,
   formatDay,
   installCommand,
   normalizeGrid,
   setCell,
   shQuote,
   splitLines,
+  withMetadata,
   zoneFileHostnames,
 } from "./logic";
 
@@ -45,5 +48,16 @@ assert.deepEqual(zoneFileHostnames(zone).sort(), ["api.bank.example", "bank.exam
 assert.equal(ago("2026-10-31T10:00:00Z", "2026-10-31T10:00:30Z"), "30 s ago");
 assert.equal(ago(null, null), "Never");
 assert.equal(formatDay("bad"), "—");
+
+// source metadata: exposure override (Cloud & Identity tab metadata dialog, Review & Run)
+assert.equal(exposureFrom({ exposure: "internet" }), "internet");
+assert.equal(exposureFrom({ exposure: "public" }), "auto");
+assert.equal(exposureFrom(null), "auto");
+assert.deepEqual(EXPOSURE_CHOICES.map((c) => c.value), ["auto", "internet", "internal", "unknown"]);
+const cloudConfig = { role_arn: "arn:aws:iam::111122223333:role/R", regions: ["eu-west-1"], owner: "old", exposure: "internal" };
+assert.deepEqual(withMetadata(cloudConfig, { owner: "payments", application: null }, "auto"), {
+  role_arn: "arn:aws:iam::111122223333:role/R", regions: ["eu-west-1"], owner: "payments", application: null, exposure: null,
+});
+assert.equal(withMetadata(null, {}, "internet").exposure, "internet");
 
 console.log("logic.test.ts: all checks passed");

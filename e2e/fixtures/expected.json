@@ -26,10 +26,10 @@
     "bands": { "EXPIRED": 1, "LE_30": 1, "LE_90": 0, "VALID": 12 },
     "dup_app": { "scans": [1, 2, 3, 8], "sources": 3, "locations": 3, "first_scan": 8, "last_scan": 2 },
     "dup_leaf": { "scans": [2, 3], "sources": 2, "locations": 2, "first_scan": 3, "last_scan": 2 },
-    "occurrences": 68,
-    "impact": { "Critical": 1, "High": 23, "Medium": 5, "Low": 39 },
-    "issue": { "Critical": 1, "High": 23, "Medium": 5 },
-    "risk": { "score": 100, "grade": "F", "weighted_points": 135 },
+    "occurrences": 69,
+    "impact": { "Critical": 1, "High": 25, "Medium": 5, "Low": 5 },
+    "issue": { "Critical": 1, "High": 25, "Medium": 5 },
+    "risk": { "score": 100, "grade": "F", "weighted_points": 145 },
     "codes": {
       "EXPIRED_CERTIFICATE": 1,
       "HARDCODED_KEY": 1,
@@ -37,6 +37,7 @@
       "REUSED_NONCE": 1,
       "SELF_SIGNED_LEAF": 3,
       "STATIC_IV": 1,
+      "VULNERABLE_CRYPTO_LIBRARY": 2,
       "WEAK_ALGORITHM": 8,
       "WEAK_CERTIFICATE_KEY": 3,
       "WEAK_CERTIFICATE_SIGNATURE": 3,
@@ -46,27 +47,28 @@
     },
     "top_critical": ["rsa1024_sha1.pem"],
     "qv": 5,
-    "safe": 32,
+    "safe": 31,
     "not_gradeable": 0,
-    "readiness": 86.5,
+    "readiness": 86.1,
     "qsl": {
       "1": { "occurrences": 1, "hybrid": 0 },
       "2": { "occurrences": 3, "hybrid": 0 },
       "3": { "occurrences": 2, "hybrid": 1 },
       "4": { "occurrences": 1, "hybrid": 0 },
       "5": { "occurrences": 6, "hybrid": 1 },
-      "none": { "occurrences": 19, "hybrid": 0 }
+      "none": { "occurrences": 18, "hybrid": 0 }
     },
     "by_type_impact": {
-      "alg": { "Critical": 0, "High": 10, "Medium": 3, "Low": 24, "total": 37 },
-      "cert": { "Critical": 1, "High": 5, "Medium": 2, "Low": 9, "total": 17 },
+      "alg": { "Critical": 0, "High": 10, "Medium": 3, "Low": 3, "total": 36 },
+      "cert": { "Critical": 1, "High": 5, "Medium": 2, "Low": 1, "total": 17 },
       "proto": { "Critical": 0, "High": 2, "Medium": 0, "Low": 0, "total": 2 },
-      "mat": { "Critical": 0, "High": 6, "Medium": 0, "Low": 6, "total": 12 }
+      "mat": { "Critical": 0, "High": 6, "Medium": 0, "Low": 1, "total": 12 },
+      "other": { "Critical": 0, "High": 2, "Medium": 0, "Low": 0, "total": 2 }
     },
     "material_with_misuse": 6,
-    "libs": 23,
+    "libs": 26,
     "libs_multi": ["hashlib (stdlib)", "pyca/cryptography", "pyopenssl", "ssl (stdlib)"],
-    "libs_source_level": 28,
+    "libs_source_level": 31,
     "pooled": 6,
     "legacy": 1,
     "requirements_distinct": 109,
@@ -101,13 +103,13 @@
   "per_source": {
     "github.com/e2e-demo/crypto-misuse-lab (main)": {
       "kind": "repo", "current_scan": 4, "scans": [4], "fidelity": "full",
-      "alg": 8, "cert": 0, "proto": 0, "mat": 9, "libs": 2, "total": 17,
-      "impact": { "Critical": 0, "High": 6, "Medium": 0, "Low": 11 }
+      "alg": 7, "cert": 0, "proto": 0, "mat": 9, "other": 0, "libs": 3, "total": 16,
+      "impact": { "Critical": 0, "High": 6, "Medium": 0, "Low": 0 }
     },
     "github.com/e2e-demo/identity-gateway (main)": {
       "kind": "repo", "current_scan": 3, "scans": [3], "fidelity": "full",
-      "alg": 0, "cert": 12, "proto": 0, "mat": 0, "libs": 0, "total": 12,
-      "impact": { "Critical": 1, "High": 4, "Medium": 1, "Low": 6 }
+      "alg": 0, "cert": 12, "proto": 0, "mat": 0, "other": 0, "libs": 0, "total": 12,
+      "impact": { "Critical": 1, "High": 4, "Medium": 1, "Low": 0 }
     },
     "github.com/e2e-demo/legacy-billing (main)": {
       "kind": "repo", "current_scan": 8, "scans": [8], "fidelity": "legacy",
@@ -116,18 +118,18 @@
     },
     "github.com/e2e-demo/payments-service (main)": {
       "kind": "repo", "current_scan": 2, "scans": [1, 2], "fidelity": "full",
-      "alg": 9, "cert": 2, "proto": 1, "mat": 2, "libs": 4, "total": 14,
-      "impact": { "Critical": 0, "High": 6, "Medium": 1, "Low": 7 }
+      "alg": 9, "cert": 2, "proto": 1, "mat": 2, "other": 1, "libs": 5, "total": 15,
+      "impact": { "Critical": 0, "High": 7, "Medium": 1, "Low": 0 }
     },
     "github.com/e2e-demo/pqc-pilot (release)": {
       "kind": "repo", "current_scan": 5, "scans": [5], "fidelity": "full",
-      "alg": 11, "cert": 0, "proto": 0, "mat": 0, "libs": 0, "total": 11,
-      "impact": { "Critical": 0, "High": 0, "Medium": 1, "Low": 10 }
+      "alg": 11, "cert": 0, "proto": 0, "mat": 0, "other": 0, "libs": 0, "total": 11,
+      "impact": { "Critical": 0, "High": 0, "Medium": 1, "Low": 0 }
     },
     "github.com/e2e-demo/vendor-sdk-manifests (main)": {
       "kind": "repo", "current_scan": 7, "scans": [7], "fidelity": "full",
-      "alg": 0, "cert": 0, "proto": 0, "mat": 0, "libs": 18, "total": 0,
-      "impact": { "Critical": 0, "High": 0, "Medium": 0, "Low": 0 }
+      "alg": 0, "cert": 0, "proto": 0, "mat": 0, "other": 1, "libs": 19, "total": 1,
+      "impact": { "Critical": 0, "High": 1, "Medium": 0, "Low": 0 }
     },
     "Zip upload: cert-lifecycle-lab": {
       "kind": "zip", "current_scan": 6, "scans": [6], "fidelity": "full",
@@ -487,9 +489,9 @@
     ],
     "manual_items": ["HSM and KMS key custody", "Live TLS endpoints", "Data-at-rest encryption", "SaaS and third-party services", "OT, IoT and embedded devices", "Key generation and rotation ceremonies"],
     "evidence_rows": [
-      { "label": "Repository-relative location of each asset occurrence", "present": 68, "out_of": 68, "share": "100.0%" },
+      { "label": "Repository-relative location of each asset occurrence", "present": 69, "out_of": 69, "share": "100.0%" },
       { "label": "Certificates identified from parsed X.509 fields", "present": 14, "out_of": 14, "share": "100.0%" },
-      { "label": "Algorithm occurrences graded for quantum exposure", "present": 37, "out_of": 37, "share": "100.0%" },
+      { "label": "Algorithm occurrences graded for quantum exposure", "present": 36, "out_of": 36, "share": "100.0%" },
       { "label": "Sources whose latest scan carries compliance results", "present": 6, "out_of": 7, "share": "85.7%" }
     ],
     "validation_sentence": "No machine-learning or large-language-model component is used.",
@@ -512,13 +514,15 @@
   "assurance": {
     "sections": ["A. Third-party cryptographic components", "B. Control attestation ledger", "C. Attestation summary", "D. Vendor attestation register", "E. Sign-off"],
     "library_columns": ["Library", "#Sources", "Sources", "First seen", "Last seen", "Version (not captured) (assessor)", "Vendor (assessor)", "FIPS 140-3 / CMVP cert # (assessor)", "SOC 2 / ISO 27001 ref (assessor)", "PQC statement (assessor)", "Attestation status (assessor)"],
-    "libraries_line": "23 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source.",
+    "libraries_line": "26 cryptographic libraries found in 4 of 7 sources; 4 used by more than one source.",
     "libraries": [
       { "name": "Bouncy Castle", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
       { "name": "CIRCL (PQC)", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
       { "name": "Conscrypt", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "cryptography@42.0.5", "sources": ["github.com/e2e-demo/payments-service (main)"] },
       { "name": "golang-jwt", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
       { "name": "golang.org/x/crypto", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "golang.org/x/crypto@v0.24.0", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
       { "name": "Google Tink", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
       { "name": "hashlib (stdlib)", "sources": ["github.com/e2e-demo/legacy-billing (main)", "github.com/e2e-demo/payments-service (main)"] },
       { "name": "jBCrypt", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
@@ -528,6 +532,7 @@
       { "name": "libsodium", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
       { "name": "noble-hashes", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
       { "name": "node-forge", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
+      { "name": "Node.js crypto (stdlib)", "sources": ["github.com/e2e-demo/crypto-misuse-lab (main)"] },
       { "name": "NSec", "sources": ["github.com/e2e-demo/vendor-sdk-manifests (main)"] },
       { "name": "pyca/cryptography", "sources": ["github.com/e2e-demo/crypto-misuse-lab (main)", "github.com/e2e-demo/legacy-billing (main)", "github.com/e2e-demo/payments-service (main)"] },
       { "name": "pyOpenSSL", "sources": ["github.com/e2e-demo/legacy-billing (main)", "github.com/e2e-demo/payments-service (main)"] },
@@ -591,7 +596,7 @@
     "grade_label": "Critical risk",
     "grade_note": "It is a platform posture grade, not a regulatory rating.",
     "top_risk_first": { "asset": "rsa1024_sha1.pem", "impact": "Critical", "findings": ["Certificate with an undersized key", "Certificate signed with a weak hash"] },
-    "top_risk_count_line": "Top 10 of 29 issue assets, ordered by impact, then scanner risk score, then name.",
+    "top_risk_count_line": "Top 10 of 31 issue assets, ordered by impact, then scanner risk score, then name.",
     "certificate_posture_rows": [
       { "label": "Unique certificates in the estate", "count": 14 },
       { "label": "Expired", "count": 1 },
@@ -613,6 +618,7 @@
       { "finding": "Quantum-vulnerable public-key algorithm", "assets": 5, "impact": "High" },
       { "finding": "Non-cryptographic random number generator", "assets": 3, "impact": "High" },
       { "finding": "Self-signed leaf certificate", "assets": 3, "impact": "High" },
+      { "finding": "Crypto library version with a published advisory", "assets": 2, "impact": "High" },
       { "finding": "Weak cipher mode (ECB)", "assets": 2, "impact": "High" },
       { "finding": "Weak protocol version", "assets": 2, "impact": "High" },
       { "finding": "Expired certificate", "assets": 1, "impact": "High" },
@@ -628,7 +634,7 @@
       { "action": "Re-scan the 1 source whose latest scan is in legacy format.", "metric": "1 source in legacy format" }
     ],
     "grade_formula": "Weighted points = 10 x Critical + 5 x High + 2 x Medium + 1 x Low. Score = min(100, 4 x weighted points).",
-    "grade_result": "Weighted points: 135. Score = min(100, 4 x 135) = 100. Grade F (Critical risk).",
+    "grade_result": "Weighted points: 145. Score = min(100, 4 x 145) = 100. Grade F (Critical risk).",
     "sign_off_rows": ["Prepared by", "CISO review", "Board IT Strategy Committee approval"]
   },
 

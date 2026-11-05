@@ -189,7 +189,8 @@ def framework_label(key: object) -> str:
 GENERIC_FINDING_ACTION = (
     "Review this finding and remediate it in line with your cryptographic policy."
 )
-# Product text: codes are raised by aibom/src/aibom/cbom/weakness.py and pqc_scan.py.
+# Product text: codes are raised by aibom/src/aibom/cbom/weakness.py and pqc_scan.py, plus the
+# three library codes.
 FINDING_LABELS = {
     "WEAK_ALGORITHM": "Weak or deprecated algorithm",
     "WEAK_CIPHER_MODE": "Weak cipher mode (ECB)",
@@ -207,6 +208,10 @@ FINDING_LABELS = {
     "EXPIRED_CERTIFICATE": "Expired certificate",
     "CERT_NEAR_EXPIRY": "Certificate nearing expiry",
     "QUANTUM_VULNERABLE": "Quantum-vulnerable public-key algorithm",
+    # Product text: library findings from crypto_advisory_scan.py and artifact_scan.py.
+    "VULNERABLE_CRYPTO_LIBRARY": "Crypto library version with a published advisory",
+    "LIBRARY_CVE_RANGE": "Crypto library version inside a published CVE range",
+    "EOL_CRYPTO_LIBRARY": "End-of-life crypto library branch",
 }
 FINDING_ACTIONS = {
     # Source: SP 800-131A Rev 2, transitioning algorithms and key lengths: https://csrc.nist.gov/pubs/sp/800/131/a/r2/final
@@ -286,6 +291,21 @@ FINDING_ACTIONS = {
     "QUANTUM_VULNERABLE": (
         "Inventory where it is used and plan migration to the NIST post-quantum standards "
         "(ML-KEM, ML-DSA, SLH-DSA), prioritising systems that protect long-lived data."
+    ),
+    # Product text: the finding names the advisories and the first release that fixes all of them.
+    "VULNERABLE_CRYPTO_LIBRARY": (
+        "Upgrade the library to the fixed release named in the finding (or later) and rebuild; "
+        "where an advisory has no fixed release, replace the library."
+    ),
+    # Product text: distributions back-port fixes without changing the upstream version number.
+    "LIBRARY_CVE_RANGE": (
+        "Check the distribution's security tracker for a back-ported fix; if there is none, "
+        "update the package to a fixed release."
+    ),
+    # Product text: an end-of-life branch receives no further security fixes.
+    "EOL_CRYPTO_LIBRARY": (
+        "Move to a supported release branch of the library; the end-of-life branch receives "
+        "no security fixes."
     ),
 }
 # Product text: codes that describe a certificate (#7 labels them; #16 groups them).
@@ -485,9 +505,10 @@ class ScannerSpec:
     evidence: str
 
 
-# Product text: aibom/src/aibom/cbom/scanners/__init__.py registers exactly these nine, in this
-# order.  Three further modules exist in that package but are not imported, so they are not
-# active and are deliberately not described.  Wording follows each scanner's own docstring.
+# Product text: aibom/src/aibom/cbom/scanners/__init__.py registers exactly these twenty, in this
+# order (pinned by backend/tests/fixtures/cbom_scanner_registry.json and a contract test).  A module
+# in that package that is not imported is not active and is deliberately not described.  Wording
+# follows each scanner's own docstring.
 CBOM_SCANNERS = (
     ScannerSpec(
         "crypto_ast",
@@ -519,6 +540,17 @@ CBOM_SCANNERS = (
         "Private cipher or hash implementations recognized by well-known algorithm constants "
         "in source. Comments are ignored.",
         "Algorithm asset marked as a custom implementation; source path.",
+    ),
+    ScannerSpec(
+        "crypto_artifacts",
+        18,
+        "Container images, compiled binaries and firmware in the scanned tree, read only when the "
+        "scan option \"scan binaries\" is on: the base operating system of each image, OS and "
+        "language packages, library versions and imported crypto functions in binaries, and "
+        "private keys shipped inside an artifact.",
+        "Base OS release and its end-of-life status; library name, version and package URL with "
+        "advisory, CVE-range or end-of-life findings; algorithm rows for imported functions and "
+        "constant signatures; key material; artifact path.",
     ),
     ScannerSpec(
         "crypto_certificate",

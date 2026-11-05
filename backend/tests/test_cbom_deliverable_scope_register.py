@@ -139,7 +139,9 @@ BY_SOURCE_HEADER = [
 ]
 BY_TYPE_HEADER = ["Asset type", "Critical", "High", "Medium", "Low", "Total"]
 # The fixture's clean inventory rows (no finding code) have no impact: they are an "Info" column, never "Low".
-BY_SOURCE_HEADER_INFO = [*BY_SOURCE_HEADER, "Info"]
+# The WP3a advisory library rows have no crypto assetType ("other"): the renderer adds its
+# "Other types" column after Key material.
+BY_SOURCE_HEADER_INFO = [*BY_SOURCE_HEADER[:6], "Other types", *BY_SOURCE_HEADER[6:], "Info"]
 BY_TYPE_HEADER_INFO = ["Asset type", "Critical", "High", "Medium", "Low", "Info", "Total"]
 
 
@@ -187,21 +189,23 @@ class Expect:
     types: tuple[int, int, int, int]  # algorithms, certificates, protocols, key material
     libs: int
     impacts: tuple[int, int, int, int]  # Critical, High, Medium, Low
+    other: int = 0  # rows without a crypto assetType (library advisory rows)
 
     @property
     def total(self) -> int:
-        return sum(self.types)
+        return sum(self.types) + self.other
 
     @property
     def compact(self) -> str:
-        return "/".join(str(n) for n in (*self.types, self.libs))
+        text = "/".join(str(n) for n in (*self.types, self.libs))
+        return f"{text}\n+{self.other} other" if self.other else text
 
 
 SOURCES = (
     Expect("github.com/e2e-demo/crypto-misuse-lab (main)", "Repository",
            "https://github.com/e2e-demo/crypto-misuse-lab", "main", 1,
            "2026-10-09", "2026-10-09", "10 days ago", 4, "FULL",
-           (8, 0, 0, 9), 2, (0, 6, 0, 11)),
+           (7, 0, 0, 9), 3, (0, 6, 0, 10)),  # WP2: -1 AES-CBC duplicate; + Node.js crypto lib
     Expect("github.com/e2e-demo/identity-gateway (main)", "Repository",
            "https://github.com/e2e-demo/identity-gateway", "main", 1,
            "2026-10-05", "2026-10-05", "14 days ago", 3, "FULL",
@@ -213,7 +217,7 @@ SOURCES = (
     Expect("github.com/e2e-demo/payments-service (main)", "Repository",
            "https://github.com/e2e-demo/payments-service", "main", 2,
            "2026-09-28", "2026-10-12", "7 days ago", 2, "FULL",
-           (9, 2, 1, 2), 4, (0, 6, 1, 7)),
+           (9, 2, 1, 2), 5, (0, 7, 1, 7), other=1),  # + cryptography@42.0.5 (WP3a)
     Expect("github.com/e2e-demo/pqc-pilot (release)", "Repository",
            "https://github.com/e2e-demo/pqc-pilot", "release", 1,
            "2026-10-14", "2026-10-14", "5 days ago", 5, "FULL",
@@ -221,7 +225,7 @@ SOURCES = (
     Expect("github.com/e2e-demo/vendor-sdk-manifests (main)", "Repository",
            "https://github.com/e2e-demo/vendor-sdk-manifests", "main", 1,
            "2026-10-17", "2026-10-17", "2 days ago", 7, "FULL",
-           (0, 0, 0, 0), 18, (0, 0, 0, 0)),
+           (0, 0, 0, 0), 19, (0, 1, 0, 0), other=1),  # + x/crypto@v0.24.0 (WP3a)
     Expect("Zip upload: cert-lifecycle-lab", "Zip upload", None, None, 1,
            "2026-10-16", "2026-10-16", "3 days ago", 6, "FULL",
            (0, 2, 0, 0), 0, (0, 1, 1, 0)),
@@ -229,16 +233,20 @@ SOURCES = (
 PAYMENTS = SOURCES[3]
 
 # Plan Appendix B headline numbers + the raw-fixture cross-tab (rows: type; cols: C/H/M/L).
-HEADLINE_OCCURRENCES = 68
-HEADLINE_BY_TYPE = (37, 17, 2, 12)  # algorithms, certificates, protocols, key material
-HEADLINE_BY_IMPACT = (1, 23, 5, 39)  # Critical, High, Medium, clean inventory (Info)
+# WP13 regeneration (round-5 engine): 68 - 1 (WP2 AES-CBC duplicate) + 2 (WP3a advisory rows).
+HEADLINE_OCCURRENCES = 69
+HEADLINE_BY_TYPE = (36, 17, 2, 12)  # algorithms, certificates, protocols, key material
+HEADLINE_OTHER = 2  # the two advisory library rows (no crypto assetType)
+HEADLINE_BY_IMPACT = (1, 25, 5, 38)  # Critical, High, Medium, clean inventory (Info)
 UNIQUE_CERTIFICATES = 14
-UNIQUE_LIBRARIES = 23
+UNIQUE_LIBRARIES = 26  # + Node.js crypto (stdlib), cryptography@42.0.5, golang.org/x/crypto@v0.24.0
+SOURCE_LEVEL_LIBRARIES = 31  # 3 + 0 + 4 + 5 + 0 + 19 + 0
 CROSS_TAB = (
-    ("Algorithms", (0, 10, 3, 24)),
+    ("Algorithms", (0, 10, 3, 23)),
     ("Certificates", (1, 5, 2, 9)),
     ("Protocols", (0, 2, 0, 0)),
     ("Key material", (0, 6, 0, 6)),
+    ("Other types", (0, 2, 0, 0)),
 )
 
 FAILED_LATEST_SENTENCE = (
@@ -766,6 +774,7 @@ def test_headline_counts_are_the_plan_numbers_and_reconcile_with_the_aggregator(
     types = ("algorithm", "certificate", "protocol", "related-crypto-material")
     impacts = ("Critical", "High", "Medium", "Info")
     assert tuple(view.assets_by_type.get(t, 0) for t in types) == HEADLINE_BY_TYPE
+    assert view.assets_by_type.get("other", 0) == HEADLINE_OTHER
     assert view.assets_by_impact.get("Low", 0) == 0  # clean inventory is never a Low finding
     assert tuple(view.assets_by_impact.get(i, 0) for i in impacts) == HEADLINE_BY_IMPACT
     assert sum(1 for c in view.certs if c.current) == UNIQUE_CERTIFICATES
@@ -785,8 +794,8 @@ def test_population_kpi_strip_shows_the_headline_numbers(story):
         return lines[lines.index(label) + 1]
 
     assert value_after("Sources") == "7"
-    assert value_after("Asset occurrences") == "68"
-    assert value_after("Algorithms") == "37"
+    assert value_after("Asset occurrences") == "69"
+    assert value_after("Algorithms") == "36"
     assert value_after("Certificates") == "17"
     assert value_after("Protocols") == "2"
     assert value_after("Key material") == "12"
@@ -806,10 +815,10 @@ def test_assets_by_type_and_impact_matrix_equals_the_raw_fixture_cross_tab(story
 def test_population_by_source_row_matches_the_raw_fixture(story, expected):
     rows = {row[1]: row for row in rows_of(find_table(story, BY_SOURCE_HEADER_INFO))}
     row = rows[expected.label]
-    assert row[2:6] == [str(n) for n in expected.types]
-    assert row[6] == str(expected.total)
-    assert row[7] == str(expected.libs)
-    assert row[8:13] == [str(n) for n in _with_info(expected.impacts)]
+    assert row[2:7] == [str(n) for n in (*expected.types, expected.other)]  # + Other types
+    assert row[7] == str(expected.total)
+    assert row[8] == str(expected.libs)
+    assert row[9:14] == [str(n) for n in _with_info(expected.impacts)]
 
 
 def test_population_by_source_total_row_reconciles_with_the_rows_and_the_headline(story, view):
@@ -819,20 +828,21 @@ def test_population_by_source_total_row_reconciles_with_the_rows_and_the_headlin
     body, total = rows[:-1], rows[-1]
     assert [row[1] for row in body] == [s.label for s in SOURCES]
     assert total[1] == "All sources"
-    for index in (2, 3, 4, 5, 6, 8, 9, 10, 11, 12):  # everything except the libraries column
+    # column 7 is Total (types + Other types), column 8 Libraries
+    for index in (2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13):  # everything except the libraries column
         assert total[index] == str(sum(int(row[index]) for row in body)), index
-    assert total[2:6] == [str(n) for n in HEADLINE_BY_TYPE]
-    assert total[6] == str(HEADLINE_OCCURRENCES)
-    assert total[8:13] == [str(n) for n in _with_info(HEADLINE_BY_IMPACT)]
-    # libraries are de-duplicated across sources: 23 unique, not the sum of the rows
-    assert total[7] == f"{UNIQUE_LIBRARIES} unique"
-    assert sum(int(row[7]) for row in body) == 28 > UNIQUE_LIBRARIES
+    assert total[2:7] == [str(n) for n in (*HEADLINE_BY_TYPE, HEADLINE_OTHER)]
+    assert total[7] == str(HEADLINE_OCCURRENCES)
+    assert total[9:14] == [str(n) for n in _with_info(HEADLINE_BY_IMPACT)]
+    # libraries are de-duplicated across sources: 26 unique, not the sum of the rows
+    assert total[8] == f"{UNIQUE_LIBRARIES} unique"
+    assert sum(int(row[8]) for row in body) == SOURCE_LEVEL_LIBRARIES > UNIQUE_LIBRARIES
     # the printed figures are the aggregator's own (renderer neither recomputes nor drops)
     for source in view.sources:
         row = next(r for r in body if r[1] == source.label)
-        assert row[2:6] == [str(source.asset_counts.get(t, 0)) for t in (
-            "algorithm", "certificate", "protocol", "related-crypto-material")]
-        assert row[8:13] == [str(source.impact_counts.get(i, 0)) for i in (
+        assert row[2:7] == [str(source.asset_counts.get(t, 0)) for t in (
+            "algorithm", "certificate", "protocol", "related-crypto-material", "other")]
+        assert row[9:14] == [str(source.impact_counts.get(i, 0)) for i in (
             "Critical", "High", "Medium", "Low", "Info")]
 
 
@@ -840,7 +850,10 @@ def test_population_basis_and_library_statements(text):
     flat = norm(text)
     assert "latest successful scan of each source" in flat
     assert "counted twice because each source's use is a separate exposure" in flat
-    assert f"Crypto libraries: {UNIQUE_LIBRARIES} unique across sources (28 source-level" in flat
+    assert (
+        f"Crypto libraries: {UNIQUE_LIBRARIES} unique across sources "
+        f"({SOURCE_LEVEL_LIBRARIES} source-level" in flat
+    )
 
 
 # =============================================================================================

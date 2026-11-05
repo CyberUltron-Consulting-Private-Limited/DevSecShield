@@ -14,7 +14,6 @@ Bounded for big repos: only an extension allowlist is read, files over
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -24,6 +23,7 @@ from aibom.scan.parsers import model_kb
 from aibom.scan.parsers.licenses import license_choice
 from aibom.scan.parsers.model_refs import find_model_refs_ctx
 from aibom.scan.registry import ScanContext, Scanner, register
+from aibom.scan.safe_files import read_text, walk_files
 
 
 def _apply_card(card: ModelCard, fields: dict) -> None:
@@ -115,12 +115,7 @@ def _slug(name: str) -> str:
 
 
 def _walk(root: Path) -> Iterator[Path]:
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
-        for fn in filenames:
-            p = Path(dirpath) / fn
-            if p.suffix.lower() in _EXTS:
-                yield p
+    yield from walk_files(root, _SKIP_DIRS, lambda p: p.suffix.lower() in _EXTS)
 
 
 @register
@@ -133,11 +128,9 @@ class ModelRefScanner(Scanner):
         # normalized name -> [display name, vendor, reference_type]. usage wins.
         seen: dict[str, list[str]] = {}
         for path in _walk(ctx.root):
-            try:
-                if path.stat().st_size > _MAX_BYTES:
-                    continue
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+            # None: a link, not a regular file, or over the limit
+            text = read_text(path, _MAX_BYTES)
+            if text is None:
                 continue
             refs = dict(find_model_refs_ctx(text))  # name -> (vendor, reference_type)
             for name, (vendor, rtype) in refs.items():

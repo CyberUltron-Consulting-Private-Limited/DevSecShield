@@ -337,7 +337,8 @@ def test_harness_fixture_is_the_appendix_b_seed():
     assert (view.scans_total, view.eligible, view.included) == (12, 9, 8)
     assert len(view.sources) == 7
     assert view.compliance_sources_pooled == 6
-    assert view.asset_occurrences == 68
+    # 68 - 1 (WP2 dropped a duplicate AES-CBC row) + 2 (WP3a advisory library rows)
+    assert view.asset_occurrences == 69
 
 
 def test_harness_pooled_literals_cover_the_thirteen_registry_frameworks():
@@ -430,7 +431,7 @@ def test_live_kpi_cards(text):
     for card in (
         "Sources 7 assessed in this edition",
         "Scans included 8 of 9 successful scans",
-        "Crypto assets 68 current occurrences",
+        "Crypto assets 69 current occurrences",
         "Unique certificates 14 de-duplicated across sources",
         "Frameworks 13 pooled over 6 sources",
         "Requirements 109 tracked across frameworks",
@@ -441,8 +442,9 @@ def test_live_kpi_cards(text):
 def test_assets_by_type_table_reconciles_with_appendix_b(text):
     one = section(text, 1)
     assert (
-        "Current asset occurrences by type Asset type Occurrences Algorithm 37 Certificate 17 "
-        "Protocol 2 Related crypto material 12 Total 68" in one
+        # the two WP3a advisory library rows have no crypto assetType: they print as "Other"
+        "Current asset occurrences by type Asset type Occurrences Algorithm 36 Certificate 17 "
+        "Protocol 2 Related crypto material 12 Other 2 Total 69" in one
     )
     # 17 certificate occurrences but 14 unique certificates: the note explains the difference
     assert norm(methodology.ASSET_TABLE_NOTE) in one
@@ -453,7 +455,7 @@ def test_assets_by_type_table_reconciles_with_appendix_b(text):
 def test_scanner_table_equals_the_registry_fixture_names_and_orders(text):
     two = section(text, 2)
     registry = _registry()["scanners"]
-    assert len(registry) == 19
+    assert len(registry) == 20  # + crypto_artifacts (WP8, order 18)
     crypto = [s["name"] for s in registry if s["name"].startswith("crypto_")]
     assert re.findall(r"\bcrypto_[a-z]+\b", two) == crypto
     assert "Scanner Order Discovers Evidence recorded" in two
@@ -502,9 +504,9 @@ def test_evidence_section_prints_the_trace_paragraph_and_live_presence_counts(te
     assert "Evidence is drawn from 7 sources: 6 repositories and 1 zip upload." in four
     assert (
         "Evidence recorded Present for Out of Share "
-        "Repository-relative location of each asset occurrence 68 68 100.0% "
+        "Repository-relative location of each asset occurrence 69 69 100.0% "
         "Certificates identified from parsed X.509 fields 14 14 100.0% "
-        "Algorithm occurrences graded for quantum exposure 37 37 100.0% "
+        "Algorithm occurrences graded for quantum exposure 36 36 100.0% "  # WP2: -1 AES-CBC duplicate
         "Sources whose latest scan carries compliance results 6 7 85.7%" in four
     )
 

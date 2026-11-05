@@ -10,7 +10,9 @@ Diffs, drift events, finding resolution and remediation assignments all compare 
   because one host can serve two different certificates for the same subject (two ports, or a chain entry); it is
   stable across renewal (an endpoint and chain position, a file path, an ARN or a Kubernetes secret).
 * Code-scan row: (asset type, file, title, bom-ref without a trailing line marker). Misuse refs end in ``-l<line>``
-  (``crypto_misuse_scan``), so an unrelated edit above them would otherwise look like remove + add.
+  (``crypto_misuse_scan``) and IaC key-material rows name their location ``<file>:<line>`` (Terraform / Kubernetes
+  key specs, SQL Server keys), so an unrelated edit above them would otherwise look like remove + add; both line
+  markers are dropped. Engine fact ids no longer hash a line (Dockerfile base images, cryptsetup commands).
 * Code-scan source: the team roll-up's ``source_key_for`` (``repo:<host><path>@<branch>``, ``zip:<title>``,
   ``file:<title>``), the same key every CBOM deliverable uses.
 
@@ -26,6 +28,7 @@ from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollec
 
 CERT_CDX = "certificate"
 _LINE_SUFFIX = re.compile(r"-l\d+$")
+_LOCATION_LINE = re.compile(r":\d+$")
 
 
 def _norm(value: Any) -> str:
@@ -73,7 +76,8 @@ def node_label(row: CbomCollectedAsset) -> str:
 
 def code_identity_parts(asset_type: str, location: str | None, title: str | None, bom_ref: str | None) -> str:
     ref = _LINE_SUFFIX.sub("", str(bom_ref or "").strip())
-    return "|".join(_norm(v) for v in (asset_type, location, title or "(unnamed)", ref))
+    where = _LOCATION_LINE.sub("", str(location or "").strip())
+    return "|".join(_norm(v) for v in (asset_type, where, title or "(unnamed)", ref))
 
 
 def code_identity(row: Mapping[str, Any]) -> str:

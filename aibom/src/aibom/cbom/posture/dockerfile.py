@@ -143,6 +143,7 @@ def extract_dockerfile_images(text: str, path: str, today: date | None = None) -
     """One fact per ``FROM`` whose distribution release is past its end of life on ``today`` (the scan date)."""
     day = (today or _today()).isoformat()
     facts: list[EncryptionFact] = []
+    seen: dict[str, int] = {}
     for number, line in enumerate(text.splitlines(), start=1):
         matched = _FROM.match(line)
         if not matched:
@@ -161,9 +162,12 @@ def extract_dockerfile_images(text: str, path: str, today: date | None = None) -
         basis.append(BasisEntry("eol_source", release.source))
         basis.append(BasisEntry("signal", "EOL_BASE_IMAGE"))
         address = reference[:200] if stage is None else f"{reference[:200]} AS {stage[:64]}"
+        # identity: the image and which of the file's FROMs of that image it is, never the line number, so an edit
+        # above it is not a removed + added asset in a diff (the line stays in ``line`` for the location)
+        seen[address] = seen.get(address, 0) + 1
         facts.append(
             EncryptionFact(
-                id=make_fact_id("container_image", "dockerfile", "base_image", f"{address}:{number}", path),
+                id=make_fact_id("container_image", "dockerfile", "base_image", f"{address}#{seen[address]}", path),
                 kind="container_image",
                 provider="dockerfile",
                 native_type="base_image",

@@ -1,4 +1,5 @@
 {
   "base_commit": "f7385517523212e50b20ec6f1947831a5ef19872",
-  "cbom_team_rollup_scans.json": "e8d9e104f89d89cbf0b3f86b5d278dab3104d9ad367f677b2f83178bc2bbe9e5"
+  "cbom_team_rollup_scans.json": "47a86bee0c24e6bcfa676bad189ddf3bf52c65e37781f6761bac1ddb335f57ae",
+  "regenerated": "WP13: make_cbom_team_rollup_fixture.py at the round-5 engine (the base_commit pin is superseded)"
 }

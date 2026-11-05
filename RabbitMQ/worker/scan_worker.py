@@ -622,6 +622,7 @@ try:
         file_dict_context: dict | None = None,
         scan_binaries: bool = False,
         include_vendored: bool = False,
+        scan_history: bool = False,
     ):
 
         try:
@@ -645,7 +646,8 @@ try:
             # network lookups on any CBOM path. run_agent() always removes the temp input.
             if repo_context:
                 agent = CBOMAgent(context=repo_context, state_update_writer=state_update_writer,
-                                  include_vendored=include_vendored, scan_binaries=scan_binaries)
+                                  include_vendored=include_vendored, scan_binaries=scan_binaries,
+                                  scan_history=scan_history)
             elif zip_context:
                 agent = CBOMAgent(zip_context=zip_context, state_update_writer=state_update_writer,
                                   include_vendored=include_vendored, scan_binaries=scan_binaries)
@@ -775,6 +777,7 @@ try:
         file_dict_context: dict | None = None,
         scan_binaries: bool = False,
         include_vendored: bool = False,
+        scan_history: bool = False,
     ):
 
         try:
@@ -796,6 +799,7 @@ try:
                     context=repo_context,
                     scan_binaries=scan_binaries,
                     include_vendored=include_vendored,
+                    scan_history=scan_history,
                 )
             elif zip_context:
                 agent = CBOMAgent(
