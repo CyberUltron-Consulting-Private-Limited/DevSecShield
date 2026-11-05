@@ -407,6 +407,21 @@ def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str
                 f"Load key material from a secret manager / KMS, never source.",
             )
         )
+    elif props.get("crypto:historyOnly") == "true" and kind in ("secret-key", "private-key", "key"):
+        # "Scan git history for keys" (aibom.cbom.githistory): a key file committed and later deleted is still in
+        # every clone. It was reported as clean inventory (no finding, "Info"), so the option the customer turned on
+        # to find exactly these keys showed nothing on the results page (lab UI run u2, round 5).
+        commit = (props.get("crypto:gitCommit") or "")[:12]
+        where = f" (commit {commit})" if commit else ""
+        findings.append(
+            (
+                HARDCODED_KEY,
+                _SEV,
+                f"Key in git history {name}: this {kind} file was committed{where} and later deleted, but every "
+                f"clone of the repository still holds it (CWE-540, CWE-321). Treat the key as exposed: rotate it, "
+                f"then remove it from the history (git filter-repo) and from every fork and mirror.",
+            )
+        )
     return findings
 
 
