@@ -440,3 +440,34 @@ def test_corrupt_compressed_member_is_coverage_not_a_failed_scan(tmp_path: Path,
     result = scan_crypto(tmp_path)
     assert [c for c in result.components if (c.properties or {}).get("discovery:source") == "a.zip!good.key"]
     assert result.properties["crypto:coverage:archiveUnsupported"] == "1"
+
+
+def _zip_with_claimed_directory(size: int) -> bytes:
+    import io as _io
+    import struct as _struct
+    import zipfile as _zipfile
+
+    buf = _io.BytesIO()
+    with _zipfile.ZipFile(buf, "w") as z:
+        z.writestr("a.txt", "x")
+    data = bytearray(buf.getvalue())
+    i = data.rfind(b"PK\x05\x06")
+    _struct.pack_into("<I", data, i + 12, size)  # central directory size in the end record
+    return bytes(data)
+
+
+def test_binary_lane_zips_check_the_end_record_before_parsing():
+    """The binary lane (unpack.Walk._zip, artifacts.Collector._jar) opened in-memory blobs of up to 128 MB with
+    zipfile.ZipFile directly, the same central-directory memory problem the code-scan lane had."""
+    from aibom.cbom import archives as A
+    from aibom.cbom.artifacts import ArtifactReport, Collector
+    from aibom.cbom.unpack import Walk
+
+    blob = _zip_with_claimed_directory(A.MAX_DIRECTORY_BYTES + 1)
+    budget = A.ArchiveBudget()
+    seen: list[str] = []
+    Walk(budget, lambda path, member: seen.append(path))._zip("big.zip", blob, 0)
+    assert budget.skipped_directory == 1 and seen == []
+    budget = A.ArchiveBudget()
+    assert Collector(ArtifactReport(), budget, detail=True)._jar(blob, 0, "big-1.0.jar") == []
+    assert budget.skipped_directory == 1

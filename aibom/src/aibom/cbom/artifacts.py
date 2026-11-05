@@ -244,11 +244,13 @@ class Collector:
         """(maven, group:artifact, version, maven) of a Java archive and the archives nested in it. Coordinates come
         from ``META-INF/maven/<group>/<artifact>/pom.properties``; an archive built without Maven (Bouncy Castle's
         jars) is named from its manifest's ``Implementation-Vendor-Id`` and its file name ``<artifact>-<version>``."""
-        from aibom.cbom.archives import _read_member
+        from aibom.cbom.archives import _read_member, open_zip
 
         out: list[tuple[str, str, str, str]] = []
         try:
-            zf = zipfile.ZipFile(io.BytesIO(data))
+            zf = open_zip(io.BytesIO(data), self.budget)  # end record first (see archives.open_zip)
+            if zf is None:
+                return out
             infos = zf.infolist()
         except (zipfile.BadZipFile, OSError, RuntimeError, ValueError):
             self.budget.refuse("corruptArchive")

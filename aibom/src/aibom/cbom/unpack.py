@@ -731,10 +731,13 @@ class Walk:
         self._file(path, member)
 
     def _zip(self, label: str, data: bytes, depth: int) -> None:
-        from aibom.cbom.archives import _member_name, _read_member
+        from aibom.cbom.archives import _member_name, _read_member, open_zip
 
         try:
-            zf = zipfile.ZipFile(io.BytesIO(data))
+            # the end record first: a central directory too large to parse is refused before zipfile reads it
+            zf = open_zip(io.BytesIO(data), self.budget)
+            if zf is None:
+                return
             infos = zf.infolist()
         except (zipfile.BadZipFile, OSError, RuntimeError, ValueError):
             raise Refused("corruptArchive") from None
