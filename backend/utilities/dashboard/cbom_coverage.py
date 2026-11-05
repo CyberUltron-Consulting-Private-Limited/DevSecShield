@@ -54,6 +54,10 @@ _LABELS: dict[str, tuple[str, str]] = {
     "gitHistoryCommits": ("{n} commit(s) of git history were read", "info"),
     "gitHistoryCommitsNotRead": ("{n} commit(s) of git history were not read", "skipped"),
     "gitHistoryBudgetExceeded": ("Git history was cut short by the scan budget", "skipped"),
+    "gitHistoryObjectsUnreadable": ("{n} git object(s) in the history were corrupt or malformed and were skipped",
+                                    "skipped"),
+    "archiveDirectoryTooLarge": ("{n} archive(s) with a file list too large to read safely were not opened",
+                                 "skipped"),
     "submodulesNotScanned": ("{n} git submodule(s) were not scanned", "skipped"),
     "lfsObjectsNotScanned": ("{n} Git LFS object(s) were not scanned", "skipped"),
 }

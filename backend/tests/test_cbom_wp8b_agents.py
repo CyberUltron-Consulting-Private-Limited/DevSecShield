@@ -348,3 +348,20 @@ def test_migration_matches_the_models():
         assert f"'{column}'" in text, column
     assert "'mode'" in text and "'pool_id'" in text and "server_default='agentless'" in text
     assert set(AG.__dict__).issuperset({"MAX_AGENT_NODES", "POOL_PREFIX"})
+
+
+def test_every_coverage_key_the_engine_writes_has_a_label():
+    """Review fix E added gitHistoryObjectsUnreadable and archiveDirectoryTooLarge; a key without a label reaches the
+    results page as raw "key: value" text."""
+    import re
+    from pathlib import Path
+
+    from backend.utilities.dashboard import cbom_coverage
+
+    src = Path(__file__).resolve().parents[2] / "aibom/src/aibom/cbom"
+    keys = set()
+    for path in src.glob("*.py"):
+        keys |= set(re.findall(r"crypto:coverage:([A-Za-z]+)[\"']", path.read_text()))  # literal keys, not docs
+    keys -= {"unpackRefused"}  # unpackRefused:<reason> is labelled by its prefix
+    labels = set(re.findall(r'^\s+"([A-Za-z]+)": \(', Path(cbom_coverage.__file__).read_text(), re.M))
+    assert keys and not sorted(keys - labels)
