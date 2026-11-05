@@ -13,10 +13,14 @@ them the same way:
 * certificates, private keys (public half and file mode only), authorized_keys and keystores under the Tier 2
   search roots, the system trust stores as one summary row each;
 * with ``ZS_HOST_PROC`` (the DaemonSet's ``hostPID`` option): crypto libraries mapped by running processes, for the
-  processes this node's user may read.
+  processes whose memory map (``/proc/<pid>/maps``) the node may read: the kernel allows that for processes of the
+  node's own user, and for every process only with ``CAP_SYS_PTRACE`` (chart values ``agent.runAsRoot`` and
+  ``agent.sysPtrace``; a host AppArmor or SELinux policy may still refuse it).
 
 Files the node's user cannot read are counted as coverage rows: run the agent as root (chart value
-``agent.runAsRoot``) to read root-only files, as Tier 2 does with sudo.
+``agent.runAsRoot``) to read root-only files, as Tier 2 does with sudo.  The key and certificate search walks the
+Tier 2 roots without listing any directory into memory, within the walk caps of :mod:`zs_scan_node.hostfs`, and stops
+at the job's deadline; what it skipped is reported as coverage.
 """
 from __future__ import annotations
 
@@ -34,7 +38,7 @@ from zs_scan_node import linux_parsers as P
 from zs_scan_node import pkgdb
 from zs_scan_node.certparse import cert_facts, key_facts, load_certs
 from zs_scan_node.collectors import ConfigError
-from zs_scan_node.hostfs import HostFS, WalkStats
+from zs_scan_node.hostfs import MAX_DEPTH, MAX_DIR_ENTRIES, MAX_WALK_ENTRIES, HostFS, WalkStats
 from zs_scan_node.jobctx import JobContext
 from zs_scan_node.scrub import printable
 
@@ -257,9 +261,11 @@ def _process_libraries(ctx: JobContext, loc: str, emit) -> None:
         g["pids"] = g["pids"][:20]
         emit("process_library", loc, lib, name=g["process"] or lib.rsplit("/", 1)[-1], facts=g)
     if denied:
+        # /proc/<pid>/maps of another user's process needs CAP_SYS_PTRACE, not only uid 0 (ptrace access mode READ)
         ctx.coverage(loc, "process crypto libraries", "denied",
-                     f"{denied} of {seen} processes could not be read by the node's user; run the agent as root to read "
-                     "them", once=True)
+                     f"{denied} of {seen} processes could not be read: the library map of another user's process needs "
+                     "CAP_SYS_PTRACE (Helm: agent.runAsRoot=true and agent.sysPtrace=true; a host AppArmor or SELinux "
+                     "policy may still refuse it)", once=True)
 
 
 # ----------------------------------------------------------------------------- entry points
@@ -330,7 +336,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     trust: dict[str, list[str]] = {}
     paths: list[str] = []
     for top in C.KEY_FILE_ROOTS:
-        for path in fs.walk(top, KEY_FILE_RE, MAX_FILES, 1024 * 1024, stats):
+        for path in fs.walk(top, KEY_FILE_RE, MAX_FILES, 1024 * 1024, stats, stop=ctx.should_stop):
             paths.append(path)
     for path in paths:
         if _is_trust_store(path) and P.classify_file(path) in ("pem", "cert"):
@@ -344,13 +350,26 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
             emit("certificate", loc, directory, name=f"Trust store directory ({len(files)} files)",
                  facts={"path": directory, "files": len(files), "files_read": len(files), **_trust_summary(certs)})
             paths = [p for p in paths if p not in set(files)]
+    # one coverage row per check and status: what the search and the reads left out, together
+    truncated: list[str] = []
+    if stats.stopped:
+        truncated.append(f"the search stopped early ({stats.stopped}) after {stats.entries} directory entries")
+    if stats.entries_capped:
+        truncated.append(f"the search stopped after {MAX_WALK_ENTRIES:,} directory entries")
+    if stats.big_dirs:
+        truncated.append(f"{stats.big_dirs} directories with more than {MAX_DIR_ENTRIES:,} entries were searched in "
+                         f"part (e.g. {', '.join(stats.big_examples[:3])})")
+    if stats.too_deep:
+        truncated.append(f"{stats.too_deep} directories more than {MAX_DEPTH} levels deep were not searched")
+    if stats.truncated:
+        truncated.append(f"only the first {MAX_FILES} files were read")
     for path in paths:
         if ctx.should_stop():
-            ctx.coverage(loc, "key and certificate files", "truncated", "stopped before every file was read")
+            truncated.append("stopped before every file was read")
             break
         emitted += _inspect(ctx, fs, loc, path)
-    if stats.truncated:
-        ctx.coverage(loc, "key and certificate files", "truncated", f"only the first {MAX_FILES} files were read")
+    if truncated:
+        ctx.coverage(loc, "key and certificate files", "truncated", "; ".join(truncated))
     if stats.denied_dirs:
         ctx.coverage(loc, "key and certificate files", "denied",
                      f"{stats.denied_dirs} directories were not readable by the node's user (e.g. "
