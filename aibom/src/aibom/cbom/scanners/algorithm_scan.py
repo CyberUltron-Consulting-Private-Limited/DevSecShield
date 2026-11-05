@@ -54,6 +54,7 @@ _IMPORT_RE = re.compile(
     # also CommonJS "const crypto = require('crypto')" anywhere on the line (the usual Node.js form)
     r"^\s*(?:import|from|require|use|using|#include|require_once)\b|\brequire\(\s*['\"`]", re.I
 )
+_GO_IMPORT_BLOCK = re.compile(r"import\s*\(")
 
 
 def _iter_source_files(walk: FileWalk) -> list[Path]:
@@ -372,10 +373,14 @@ def _detect_manifest_libraries(root: Path, walk: FileWalk | None = None) -> list
     return sorted(found.items())
 
 
-def _detect_libraries(root: Path, walk: FileWalk | None = None) -> list[tuple[str, str]]:
-    """Detect crypto libraries: declared deps + imported modules. -> (label, src)."""
+def _detect_libraries(root: Path, walk: FileWalk | None = None) -> list[tuple[str, str, int | None]]:
+    """Detect crypto libraries: declared deps + imported modules. -> (label, src, line or None).
+
+    The line is the requirement or import line that named the library (None for a non-Python manifest, whose
+    package name the occurrence pass finds in the file)."""
     walk = walk or FileWalk(root)
     found: dict[str, str] = {}
+    lines: dict[str, int] = {}
 
     # 1) declared dependencies (requirements.txt / pyproject)
     requirements = walk.files(lambda p: fnmatchcase(p.name, "requirements*.txt"))
@@ -385,11 +390,11 @@ def _detect_libraries(root: Path, walk: FileWalk | None = None) -> list[tuple[st
         if text is None:
             continue
         rel = walk.rel(req)
-        for raw in text.splitlines():
+        for line_no, raw in enumerate(text.splitlines(), start=1):
             name = re.split(r"[<>=!~;\[\s#]", raw.strip(), maxsplit=1)[0].lower()
             label = CRYPTO_LIBRARY_PACKAGES.get(name)
             if label and label not in found:
-                found[label] = rel
+                found[label], lines[label] = rel, line_no
 
     # 1b) declared dependencies in non-Python manifests (C12: Maven/Go/npm/
     # Cargo/NuGet). A manifest is the authoritative declaration site, so it is
@@ -402,14 +407,22 @@ def _detect_libraries(root: Path, walk: FileWalk | None = None) -> list[tuple[st
         rel = walk.rel(path)
         lang = source_language(path)
         # Node's ``crypto`` and C's ``openssl`` roots collide with the Python keys,
-        # so JS/C/Rust/.NET files use a language-scoped map; Python/Go/Java (whose
+        # so JS/C/Rust/.NET/Go files use a language-scoped map; Python/Java (whose
         # roots are distinctive) fall back to the global one (C3).
         modules = CRYPTO_IMPORT_MODULES_BY_LANG.get(lang, CRYPTO_IMPORT_MODULES)
         text = walk.read_text(path)
         if text is None:
             continue
-        for line in text.splitlines():
-            if not _IMPORT_RE.search(line):
+        go_block = False  # inside Go's ``import ( ... )`` block, whose lines are bare quoted paths
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if lang == "go":
+                stripped = line.strip()
+                if go_block and stripped.startswith(")"):
+                    go_block = False
+                    continue
+                if not go_block and _GO_IMPORT_BLOCK.match(stripped):
+                    go_block = ")" not in stripped
+            if not (go_block or _IMPORT_RE.search(line)):
                 continue
             low = line.lower()
             for module, label in modules.items():
@@ -417,9 +430,9 @@ def _detect_libraries(root: Path, walk: FileWalk | None = None) -> list[tuple[st
                 # (e.g. the Python "crypto" key for ``from Crypto import AES``) can
                 # NOT match across a package path — ``javax.crypto`` / ``crypto/aes``
                 # only match their own explicit multi-segment keys (C2).
-                if re.search(rf"(?<![a-z0-9_./]){re.escape(module)}(?![a-z0-9_])", low):
-                    found.setdefault(label, rel)
-    return sorted(found.items())
+                if label not in found and re.search(rf"(?<![a-z0-9_./]){re.escape(module)}(?![a-z0-9_])", low):
+                    found[label], lines[label] = rel, line_no
+    return [(label, rel, lines.get(label)) for label, rel in sorted(found.items())]
 
 
 def _slug(text: str) -> str:
@@ -450,17 +463,14 @@ class CryptoAlgorithmScanner(Scanner):
 
     def scan(self, ctx: ScanContext) -> None:
         walk = file_walk(ctx)
-        for label, src in _detect_libraries(ctx.root, walk):
+        for label, src, line in _detect_libraries(ctx.root, walk):
             ref = f"crypto-lib-{_slug(label)}"
             if ctx.has_ref(ref):
                 continue
-            ctx.add_component(
-                FrameworkComponent(
-                    bom_ref=ref,
-                    name=label,
-                    properties={"crypto:role": "library", "discovery:source": src},
-                )
-            )
+            props = {"crypto:role": "library", "discovery:source": src}
+            if line:  # the requirement / import line that named it: where the occurrence pass finds no usage line
+                props["crypto:importLine"] = str(line)
+            ctx.add_component(FrameworkComponent(bom_ref=ref, name=label, properties=props))
 
         for asset in _detect_assets(ctx.root, walk, project_index(ctx)):
             # The AST scanner (order 8) owns Python algorithm detection with

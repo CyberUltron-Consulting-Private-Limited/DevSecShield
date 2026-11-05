@@ -214,6 +214,9 @@ def annotate(root: Path, components: list, project=None) -> dict[str, int]:
         props = dict(comp.properties or {})
         if props.get("crypto:role") not in (None, "library") and comp.kind == "framework":
             continue
+        # the line that imported a library (algorithm_scan): its occurrence when no line names the library itself
+        # ("Go crypto (stdlib)" is spelled "crypto/des"), so it is never left without a location
+        import_line = str(props.pop("crypto:importLine", "") or "")
         rel = props.get("discovery:source") or props.get("crypto:source") or ""
         known: list[int] = []
         m = re.match(r"^(?P<path>.+?):(?P<line>\d+)$", rel)
@@ -250,6 +253,8 @@ def annotate(root: Path, components: list, project=None) -> dict[str, int]:
                 props["crypto:definedAt"] = idx.defined_at[key]
             if not lines:
                 lines = idx.token_lines(_tokens_for(comp.name, props))
+            if not lines and import_line.isdigit() and int(import_line) > 0:
+                lines = [int(import_line)]
         idx_libs = cache.get(rel).libraries if cache.get(rel) is not None and comp.kind == "crypto_asset" else set()
         if idx_libs:
             props["crypto:libraries"] = ",".join(sorted(idx_libs))
