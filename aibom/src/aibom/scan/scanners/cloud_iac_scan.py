@@ -11,6 +11,7 @@ from pathlib import Path
 
 from aibom.model.component import CloudServiceComponent
 from aibom.scan.registry import ScanContext, Scanner, register
+from aibom.scan.safe_files import read_text, walk_files
 
 # IaC resource/type substring -> (display name, vendor)
 _SERVICES = {
@@ -30,11 +31,9 @@ _SUFFIXES = {".tf", ".tf.json", ".yaml", ".yml", ".json", ".hcl"}
 
 
 def _iac_files(root: Path) -> list[Path]:
-    return sorted(
-        p
-        for p in root.rglob("*")
-        if p.is_file()
-        and (p.suffix.lower() in _SUFFIXES or p.name.endswith(".tf.json"))
+    return walk_files(
+        root,
+        keep=lambda p: p.suffix.lower() in _SUFFIXES or p.name.endswith(".tf.json"),
     )
 
 
@@ -50,10 +49,10 @@ class CloudIacScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         seen: set[str] = set()
         for path in _iac_files(ctx.root):
-            try:
-                text = path.read_text(errors="ignore").lower()
-            except OSError:
+            text = read_text(path)
+            if text is None:
                 continue
+            text = text.lower()
             for needle, (label, vendor) in _SERVICES.items():
                 if needle in text:
                     ref = "cloud_service-" + label.lower().replace(" ", "-")

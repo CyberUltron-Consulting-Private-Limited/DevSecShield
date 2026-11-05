@@ -13,6 +13,7 @@ from typing import Any
 from aibom.model.component import DatasetComponent
 from aibom.scan.parsers.frontmatter import split_frontmatter
 from aibom.scan.parsers.licenses import license_choice
+from aibom.scan.safe_files import read_text
 
 
 def _opt_str(value: Any) -> str | None:
@@ -39,9 +40,10 @@ def _presence(value: Any) -> str | None:
 
 def parse_dataset_card(path: Path) -> DatasetComponent | None:
     """Parse a dataset card. Returns None if absent or missing a dataset name."""
-    if not path.is_file():
+    text = read_text(path)  # None: absent, a link or not a regular file
+    if text is None:
         return None
-    fm, _body = split_frontmatter(path.read_text())
+    fm, _body = split_frontmatter(text)
     name = _opt_str(fm.get("name"))
     if not name:
         return None

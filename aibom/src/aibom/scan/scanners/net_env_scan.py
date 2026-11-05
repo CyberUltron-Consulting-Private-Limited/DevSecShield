@@ -12,6 +12,7 @@ from pathlib import Path
 
 from aibom.model.component import CloudServiceComponent, EndpointComponent
 from aibom.scan.registry import ScanContext, Scanner, register
+from aibom.scan.safe_files import read_text, walk_files
 
 # hostname substring -> (kind, display name, vendor)
 _HOSTS = {
@@ -36,13 +37,9 @@ _ENV_NAMES = {".env", ".env.local", ".env.example", ".env.production"}
 
 
 def _scan_files(root: Path) -> list[Path]:
-    out: list[Path] = []
-    for p in root.rglob("*"):
-        if not p.is_file():
-            continue
-        if p.name in _ENV_NAMES or p.suffix.lower() in _SUFFIXES:
-            out.append(p)
-    return sorted(out)
+    return walk_files(
+        root, keep=lambda p: p.name in _ENV_NAMES or p.suffix.lower() in _SUFFIXES
+    )
 
 
 @register
@@ -57,10 +54,10 @@ class NetEnvScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         seen: set[str] = set()
         for path in _scan_files(ctx.root):
-            try:
-                text = path.read_text(errors="ignore").lower()
-            except OSError:
+            text = read_text(path)
+            if text is None:
                 continue
+            text = text.lower()
             for host, (kind, label, vendor) in _HOSTS.items():
                 if host in text:
                     ref = f"{kind}-{host.replace(':', '-').replace('.', '-')}"

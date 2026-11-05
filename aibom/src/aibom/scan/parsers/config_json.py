@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from aibom.scan.safe_files import read_text
+
 # model_type -> CycloneDX modelCard.modelParameters.architectureFamily phrasing.
 _FAMILY_BY_TYPE = {
     "resnet": "convolutional neural network",
@@ -58,10 +60,11 @@ def parse_config(path: Path) -> dict[str, Any]:
     Keys returned (all optional): ``approach_type``, ``task``,
     ``architecture_family``, ``model_architecture``, ``inputs``, ``outputs``.
     """
-    if not path.is_file():
+    text = read_text(path)  # None: absent, a link or not a regular file
+    if text is None:
         return {}
     try:
-        cfg = json.loads(path.read_text())
+        cfg = json.loads(text)
     except json.JSONDecodeError:
         return {}
     if not isinstance(cfg, dict):

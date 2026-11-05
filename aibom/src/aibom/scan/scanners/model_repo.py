@@ -42,6 +42,7 @@ from aibom.scan.parsers.dataset_card import parse_dataset_card
 from aibom.scan.parsers.model_card import ParsedModelCard, parse_model_card
 from aibom.scan.parsers.model_file import find_model_files, sha256_hash
 from aibom.scan.registry import ScanContext, Scanner, register
+from aibom.scan.safe_files import is_regular_file
 
 _MODEL_CARD_NAMES = {"model_card.md", "modelcard.md"}
 
@@ -53,7 +54,7 @@ def _markdown_files(root: Path) -> list[Path]:
     a ``MODEL_CARD.MD`` would be silently skipped; iterate + compare suffixes.
     """
     return sorted(
-        p for p in root.iterdir() if p.is_file() and p.suffix.lower() == ".md"
+        p for p in root.iterdir() if p.suffix.lower() == ".md" and is_regular_file(p)
     )
 
 
@@ -199,7 +200,8 @@ class ModelRepoScanner(Scanner):
     order = 20  # runs after framework producers so depends_on edges can resolve
 
     def matches(self, root: Path) -> bool:
-        return _find_model_card(root) is not None or (root / "config.json").is_file()
+        card = _find_model_card(root)
+        return card is not None or is_regular_file(root / "config.json")
 
     def scan(self, ctx: ScanContext) -> None:
         root = ctx.root

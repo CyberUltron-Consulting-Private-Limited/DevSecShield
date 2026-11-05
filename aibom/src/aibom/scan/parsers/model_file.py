@@ -11,6 +11,7 @@ import hashlib
 from pathlib import Path
 
 from aibom.model.component import Hash
+from aibom.scan.safe_files import open_regular, walk_files
 
 # Weight/serialized-model suffixes (lowercased).
 MODEL_FILE_SUFFIXES = frozenset(
@@ -21,21 +22,16 @@ _CHUNK = 1 << 20  # 1 MiB streaming read
 
 
 def find_model_files(root: Path) -> list[Path]:
-    """Return weight files under ``root`` (sorted by path for determinism)."""
+    """Weight files under ``root``, sorted by path; links are never followed."""
     if not root.is_dir():
         return []
-    found = [
-        p
-        for p in root.rglob("*")
-        if p.is_file() and p.suffix.lower() in MODEL_FILE_SUFFIXES
-    ]
-    return sorted(found)
+    return walk_files(root, keep=lambda p: p.suffix.lower() in MODEL_FILE_SUFFIXES)
 
 
 def sha256_hash(path: Path) -> Hash:
     """Return a CycloneDX-shaped SHA-256 :class:`Hash` for ``path``."""
     digest = hashlib.sha256()
-    with path.open("rb") as fh:
+    with open_regular(path) as fh:  # O_NOFOLLOW: never hashes a link's target
         for chunk in iter(lambda: fh.read(_CHUNK), b""):
             digest.update(chunk)
     return Hash(alg="SHA-256", content=digest.hexdigest())

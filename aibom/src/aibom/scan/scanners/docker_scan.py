@@ -12,6 +12,7 @@ from pathlib import Path
 
 from aibom.model.component import ContainerComponent, VectorStoreComponent
 from aibom.scan.registry import ScanContext, Scanner, register
+from aibom.scan.safe_files import is_regular_file, read_text
 
 # image substring -> (component-builder kind, display name)
 _RUNTIMES = {
@@ -40,7 +41,9 @@ def _compose_files(root: Path) -> list[Path]:
         "compose.yml",
         "compose.yaml",
     }
-    return sorted(p for p in root.iterdir() if p.is_file() and p.name.lower() in names)
+    return sorted(
+        p for p in root.iterdir() if p.name.lower() in names and is_regular_file(p)
+    )
 
 
 @register
@@ -55,7 +58,7 @@ class DockerScanner(Scanner):
     def scan(self, ctx: ScanContext) -> None:
         seen: set[str] = set()
         for path in _compose_files(ctx.root):
-            for image in _IMAGE_RE.findall(path.read_text()):
+            for image in _IMAGE_RE.findall(read_text(path) or ""):
                 low = image.lower()
                 for needle, (kind, label) in _RUNTIMES.items():
                     if needle in low:
