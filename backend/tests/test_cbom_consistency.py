@@ -118,8 +118,14 @@ def test_list_item_and_multi_scan_dashboard_agree(run, expected, mongo):
     assert multi["remediation_actions_required"]["total_findings"] == expected["findings"]
     single = __import__("backend.utilities.dashboard.scan", fromlist=["x"]).generate_scan_dashboard(
         scan_type="cbom", scan_object=_scan(run))
-    for key in ("average_risk_score", "quantum_readiness_score", "total_weak_algorithms", "total_quantum_vulnerable"):
+    for key in ("average_risk_score", "quantum_readiness_score", "total_weak_algorithms", "total_quantum_vulnerable",
+                "total_crypto_assets", "total_crypto_vulnerabilities", "total_informational", "total_certificates",
+                "total_keys", "quantum_readiness_judged"):
         assert item.get(key, multi["card_data"][key]) == multi["card_data"][key] == single["card_data"][key], key
+    # rev4 M2: "Crypto assets" is the inventory rows on every surface (findings + informational), not the CycloneDX
+    # component count (17 here: it also lists the 4 crypto libraries the files import)
+    assert len(run["cbom_json"]["components"]) == 17
+    assert single["card_data"]["total_crypto_assets"] == len(run["results"]) == expected["findings"] + expected["inventory"]
 
 
 def test_mongo_read_path_lists_findings_only(run, expected, mongo):

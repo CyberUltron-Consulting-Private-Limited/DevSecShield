@@ -143,6 +143,15 @@ class CodeRowSummary:
         return self.rows - self.findings
 
     @property
+    def crypto_assets(self) -> int:
+        """The "Crypto assets" card of every CBOM view: the rows of the inventory table (findings + informational).
+
+        Not ``len(cbom_json.components)``: the CycloneDX file also lists the crypto libraries every asset's file
+        imports (clean ones too) and, for an uploaded CBOM, components that are not crypto at all, so that count
+        disagreed with the severity totals beside it and with the scan list."""
+        return self.rows
+
+    @property
     def readiness_pct(self) -> float | None:
         judged = self.quantum["quantum_safe"] + self.quantum["quantum_vulnerable"]
         return quantum_readiness_pct(self.quantum["quantum_vulnerable"], judged)

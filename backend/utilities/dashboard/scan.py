@@ -1204,14 +1204,8 @@ def generate_scan_dashboard(
             # app-wide 0-10 risk scale (critical=9, high=7, medium=5, low=2).
             from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
 
-            # 'results' rows are the findings table; the full crypto inventory is the CycloneDX components in
-            # scan.scan_data['cbom_json']['components']. Use that count for the asset card, falling back to the
-            # number of rows only when cbom_json is unavailable.
-            cbom_components = []
-            if scan and isinstance(scan.scan_data, dict):
-                cbom_components = (scan.scan_data.get("cbom_json") or {}).get("components") or []
             summary = summarize_code_rows(results)
-            total_crypto_assets = len(cbom_components) if cbom_components else summary.rows
+            total_crypto_assets = summary.crypto_assets  # the scan list and the PDF count the same rows
             owasp_top_10_metrics = defaultdict(int, summary.owasp)
             compliance_controls_metrics = defaultdict(int, summary.compliance)
 

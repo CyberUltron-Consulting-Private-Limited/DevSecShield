@@ -1749,7 +1749,7 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
 
     return {
         "card_data": {
-            "total_crypto_assets": summary.rows,
+            "total_crypto_assets": summary.crypto_assets,
             "total_crypto_vulnerabilities": summary.findings,
             "total_informational": summary.informational,
             "total_weak_algorithms": summary.weak,
