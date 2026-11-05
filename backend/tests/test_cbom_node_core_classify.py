@@ -45,6 +45,39 @@ def test_scram_only_roles_and_unread_types_are_clean():
     assert _c("database_user_auth", {"role_hash_types": None})["finding_codes"] == []  # gap row says why
 
 
+def test_md5_hba_rules_are_not_weak_when_every_role_hash_is_scram():
+    """Review round 5, L1: PostgreSQL authenticates an md5 HBA rule with SCRAM when the role's password is stored as
+    SCRAM, so md5 rules on a server with password_encryption = scram-sha-256 and only SCRAM role hashes are clean."""
+    scram = {"app": "scram-sha-256", "svc": "scram-sha-256", "nologin_pw": "none"}
+    clean = _c("database_user_auth", {"engine": "postgres", "password_encryption": "scram-sha-256",
+                                      "hba_methods": {"md5": 3, "scram-sha-256": 1}, "role_hash_types": scram})
+    assert clean["finding_codes"] == []
+    # still weak: an MD5 role (the md5 rule really negotiates MD5 for it), password_encryption md5 (the next password
+    # change stores MD5), or role hashes that were not read (nothing proves the rule harmless)
+    md5_role = _c("database_user_auth", {"password_encryption": "scram-sha-256", "hba_methods": {"md5": 3},
+                                         "role_hash_types": {**scram, "old": "md5"}})
+    assert "3 HBA rule(s) use md5 authentication" in md5_role["texts"]["DB_WEAK_HASH"]
+    md5_default = _c("database_user_auth", {"password_encryption": "md5", "hba_methods": {"md5": 3},
+                                            "role_hash_types": scram})
+    assert {"DB_WEAK_HASH", "DB_MD5_DEFAULT"} <= set(md5_default["finding_codes"])
+    for unread in (None, {}):
+        out = _c("database_user_auth", {"password_encryption": "scram-sha-256", "hba_methods": {"md5": 3},
+                                        "role_hash_types": unread})
+        assert out["finding_codes"] == ["DB_WEAK_HASH"], unread
+
+
+def test_eddsa_without_a_curve_is_not_dsa():
+    """Review round 5, L4: a JWK of kty OKP without crv is labelled EdDSA (idp_collect); 'EDDSA' contains 'DSA' and was
+    classified as the deprecated DSA family (High)."""
+    from backend.utilities.cbom_sources.classify import family, quantum_vulnerable
+
+    assert family("EdDSA") == "EDDSA" and quantum_vulnerable("EdDSA") is True
+    assert family("DSA") == "DSA" and family("SHA256withDSA") == "DSA" and family("ECDSA") == "ECDSA"
+    assert family("Ed25519") == "ED25519" and family("ML-DSA-65") == "PQ"
+    out = classify("signing_key", "EdDSA", None, None, {"kty": "OKP", "alg": "EdDSA"})
+    assert out["finding_codes"] == ["QUANTUM_VULNERABLE"] and out["impact"] is None
+
+
 def test_coverage_row_keeps_the_whole_fix():
     fix = ("password hash types of login roles are readable only by a superuser; fix: as a superuser in database "
            '"postgres", run the public.zs_role_password_types() section of zs-cbom-grant-postgres.sql (Privilege tab): '

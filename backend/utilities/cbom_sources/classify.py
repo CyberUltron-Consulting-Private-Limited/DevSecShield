@@ -46,7 +46,7 @@ def register(asset_type: str, rule: Any, cdx_type: str = "other") -> None:
 
 
 # Public-key families broken by a large quantum computer (Shor).
-_QV_FAMILIES = ("RSA", "DSA", "DH", "ECDSA", "ECDH", "EC", "ED25519", "ED448", "X25519", "X448", "ECC", "SM2")
+_QV_FAMILIES = ("RSA", "DSA", "DH", "ECDSA", "ECDH", "EC", "ED25519", "ED448", "EDDSA", "X25519", "X448", "ECC", "SM2")
 _PQ_MARKERS = ("MLKEM", "ML-KEM", "KYBER", "MLDSA", "ML-DSA", "SLHDSA", "SLH-DSA", "SPHINCS", "FALCON", "SNTRUP", "FRODO", "HQC")
 _WEAK_CIPHER_RE = re.compile(r"(^|[-_])(RC4|DES|3DES|DES-CBC3|NULL|EXPORT|EXP|ANON|ADH|AECDH|IDEA|SEED|RC2|MD5)([-_]|$)", re.I)
 
@@ -62,9 +62,10 @@ def family(algorithm: Any) -> str | None:
         return None
     if any(marker in text.replace("-", "") or marker in text for marker in _PQ_MARKERS):
         return "PQ"
-    for name in ("ED25519", "ED448", "X25519", "X448", "ECDSA", "ECDH", "DSA", "RSA", "SM2"):
+    # EdDSA without a named curve (a JWK of kty OKP with no crv) is an Edwards-curve signature, not DSA
+    for name in ("ED25519", "ED448", "X25519", "X448", "EDDSA", "ECDSA", "ECDH", "DSA", "RSA", "SM2"):
         if name in text:
-            return "DSA" if name == "DSA" and "ECDSA" not in text else name
+            return name
     if text.startswith(("EC", "ID-EC", "PRIME256", "SECP", "P-256", "P-384", "P-521", "NIST")):
         return "EC"
     if text in ("DH", "DHE", "FFDHE") or text.startswith(("DH-", "FFDHE", "DIFFIE")):
@@ -542,7 +543,12 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("DB_PLAINTEXT_PW", "High", f"{len(plain)} login role(s) store a password that is neither an MD5 nor "
                                                f"a SCRAM hash (plain text): {_names(plain)}")
         weak = []
-        if hba.get("md5"):
+        # An md5 HBA rule authenticates a role whose password is stored as SCRAM with SCRAM (PostgreSQL docs, 21.5
+        # Password Authentication): with password_encryption = scram-sha-256 and every login role's hash read as SCRAM
+        # (or no password), the md5 rules negotiate nothing weaker.
+        all_scram = bool(roles) and not plain and not md5_roles and \
+            _upper(facts.get("password_encryption")) == "SCRAM-SHA-256"
+        if hba.get("md5") and not all_scram:
             weak.append(f"{hba['md5']} HBA rule(s) use md5 authentication")
         if md5_roles:
             weak.append(f"{len(md5_roles)} login role(s) have MD5 password hashes: {_names(md5_roles)}")
