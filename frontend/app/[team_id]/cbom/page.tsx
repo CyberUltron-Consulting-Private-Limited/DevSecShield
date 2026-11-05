@@ -1078,7 +1078,7 @@ export default function CBOMPage() {
             <DialogDescription>Enter a new name for this conversation.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Conversation name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Conversation name" maxLength={256} onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1133,7 +1133,7 @@ export default function CBOMPage() {
             <DialogDescription>Enter a title for your new CBOM scan conversation.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
+            <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" maxLength={256} onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setCreateDialogOpen(false); setNewScanTitle(""); }}>Cancel</Button>

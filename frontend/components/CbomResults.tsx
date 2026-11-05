@@ -58,6 +58,7 @@ import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 import { readinessText } from "@/utils/cbomReadiness";
+import { isBrokenToday, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
@@ -752,8 +753,15 @@ function CbomDashboardCharts({
 
 /** Quantum column: "Broken today" for a classically broken algorithm (MD5, SHA-1, DES …) instead of a misleading
  * "Safe"; "—" when quantum readiness does not apply (libraries, configuration, certificates). */
+/** The uploaded-file card shows whenever the import left something out, not only when the engine wrote a note: a
+ * re-uploaded CBOM silently lost its library findings because the card stayed hidden (lab UI run u2, round 5). */
+function importReportHasNews(r: CbomImportReport): boolean {
+  return r.notes.length > 0 || (r.skipped_not_crypto ?? 0) > 0 || (r.skipped_invalid ?? 0) > 0 ||
+    (r.duplicates ?? 0) > 0 || r.truncated;
+}
+
 function QuantumBadge({ quantumSafe, strength, yesNo = false }: { quantumSafe?: boolean | null; strength?: string | null; yesNo?: boolean }) {
-  if (quantumSafe === true && String(strength ?? "").toLowerCase() === "weak") {
+  if (isBrokenToday({ quantum_safe: quantumSafe, crypto_strength: strength })) {
     return (
       <Badge variant="outline" className="border-amber-500/60 text-amber-700 dark:text-amber-400"
         title="Already broken without a quantum computer: replace it now; post-quantum readiness does not help">
@@ -851,10 +859,7 @@ export default function CbomResults({
       });
       const matchStrength = strengthFilter === "all" || f.crypto_strength === strengthFilter;
       const matchType = typeFilter === "all" || f.algorithm_type === typeFilter;
-      const matchQuantum =
-        quantumFilter === "all" ||
-        (quantumFilter === "safe" && f.quantum_safe === true) ||
-        (quantumFilter === "vulnerable" && f.quantum_safe === false);
+      const matchQuantum = matchesQuantumFilter(f, quantumFilter);
       const matchImpact = filterImpact === "all" || (f.impact || "").toLowerCase() === filterImpact.toLowerCase();
       const matchRisk = matchesRiskScoreFilter(f.risk_score, filterRiskScore);
       return matchSearch && matchRefs && matchStrength && matchType && matchQuantum && matchImpact && matchRisk;
@@ -1152,8 +1157,8 @@ export default function CbomResults({
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header: the export buttons wrap under the title on a narrow screen (they ran off a phone's right edge) */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-4">
           {(scan_id != null || team_id) && (
             <Button
@@ -1201,7 +1206,7 @@ export default function CbomResults({
           </div>
         </div>
         {team_id && scan_id != null && (
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-2 flex-wrap lg:justify-end">
             <Button
               variant="outline"
               className="cursor-pointer"
@@ -1277,7 +1282,7 @@ export default function CbomResults({
         )}
       </div>
 
-      {importReport && importReport.notes.length > 0 && (
+      {importReport && importReportHasNews(importReport) && (
         <Card className="mb-6 border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20" role="alert" data-testid="cbom-import-notes">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2 text-amber-800 dark:text-amber-300">
@@ -1295,6 +1300,13 @@ export default function CbomResults({
           <CardContent>
             <ul className="list-disc pl-5 space-y-1 text-sm text-amber-900 dark:text-amber-200 break-words">
               {importReport.notes.map((note, i) => <li key={i}>{note}</li>)}
+              {(importReport.skipped_not_crypto ?? 0) > 0 && (
+                <li data-testid="cbom-import-not-crypto">
+                  {importReport.skipped_not_crypto} component(s) of the file are not cryptographic assets (for example
+                  libraries or applications) and were not judged here: a library&apos;s known vulnerabilities come from a
+                  code scan or the dependency scan.
+                </li>
+              )}
             </ul>
           </CardContent>
         </Card>
@@ -1392,7 +1404,7 @@ export default function CbomResults({
                   </CardContent>
                 </Card>
               )}
-              {meta.zip_file_used != null && (
+              {meta.zip_file_used != null && !meta.cbom_file_used && (
                 <Card className="border-zinc-200 dark:border-zinc-800">
                   <CardContent className="pt-4 pb-4 flex items-center gap-3">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
@@ -1546,6 +1558,7 @@ export default function CbomResults({
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
                       <SelectItem value="safe">Quantum-Safe</SelectItem>
+                      <SelectItem value="broken">Broken today</SelectItem>
                       <SelectItem value="vulnerable">Vulnerable</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1747,7 +1760,10 @@ export default function CbomResults({
           </DialogHeader>
           {selectedFinding && (
             <div className="h-[70vh] min-h-0 shrink px-6 pb-6">
-              <ScrollArea className="h-full w-full rounded-md">
+              {/* Radix wraps the content in a display:table box that grows to its widest line: the exploit demo's
+                  unwrapped proof-of-concept script pushed every section past the dialog's right edge (text cut off,
+                  unreadable on a phone). As a block the content keeps the dialog's width; long code scrolls itself. */}
+              <ScrollArea className="h-full w-full rounded-md [&_[data-slot=scroll-area-viewport]>div]:!block" data-testid="cbom-finding-scroll">
                 <div className="space-y-4 pt-2 pr-4">
                   {/* Metadata grid */}
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
