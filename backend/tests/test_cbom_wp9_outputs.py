@@ -143,6 +143,42 @@ def test_xml_strips_control_characters_and_keeps_bom_refs_unique():
     assert comps[0].find("c:properties/c:property", ns).text == "tab\tokbad"
 
 
+def test_xml_renames_into_free_bom_refs_and_fills_empty_ones():
+    """rev5 #11: bom-refs a, a, a#2 renamed the second a to a#2 (a duplicate key), and a bom-ref that is empty or only
+    control characters became '' (refType minLength 1): the XML failed its own XSD. Validated against the bundled
+    XSD."""
+    from lxml import etree
+
+    from backend.utilities.cbom_sources.cdx_xml import EMPTY_REF, NS, to_xml, validate_xml
+
+    def algo(ref, name):
+        return {"type": "cryptographic-asset", "bom-ref": ref, "name": name,
+                "cryptoProperties": {"assetType": "algorithm"}}
+
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,
+           "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+           "components": [algo("a", "one"), algo("a", "two"), algo("a#2", "three"), algo("", "four"),
+                          algo("\x00\x1b", "five"), algo("a#3", "six"),
+                          {"type": "cryptographic-asset", "bom-ref": "cert", "name": "c",
+                           "cryptoProperties": {"assetType": "certificate",
+                                                "certificateProperties": {"signatureAlgorithmRef": "\x01",
+                                                                          "subjectPublicKeyRef": "a"}}}],
+           "dependencies": [{"ref": "a", "dependsOn": ["a#2", "", "\x02"]}, {"ref": "", "dependsOn": ["a"]}]}
+    xml = to_xml(bom, strict=True)
+    assert validate_xml(xml) == []
+    doc = etree.fromstring(xml)
+    ns = {"c": NS}
+    refs = [c.get("bom-ref") for c in doc.findall("c:components/c:component", ns)]
+    assert refs == ["a", "a#4", "a#2", EMPTY_REF, f"{EMPTY_REF}#2", "a#3", "cert"]
+    assert len(set(refs)) == len(refs)
+    cert = doc.findall("c:components/c:component", ns)[-1]
+    assert cert.find(".//c:signatureAlgorithmRef", ns) is None  # an empty optional reference is left out
+    assert cert.findtext(".//c:subjectPublicKeyRef", namespaces=ns) == "a"
+    deps = [(d.get("ref"), [x.get("ref") for x in d.findall("c:dependency", ns)])
+            for d in doc.findall("c:dependencies/c:dependency", ns)]
+    assert deps == [("a", ["a#2", EMPTY_REF, EMPTY_REF]), (EMPTY_REF, ["a"])]
+
+
 def test_xml_strict_mode_names_keys_without_a_mapping():
     from backend.utilities.cbom_sources.cdx_xml import to_xml
 
