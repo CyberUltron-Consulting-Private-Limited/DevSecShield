@@ -164,6 +164,8 @@ DB_GRANTS = {
         "GRANT pg_monitor, pg_read_all_settings TO zs_cbom;\n"
         "-- Run the rest in the database you enter in ZeroShield (blank means postgres);\n"
         "-- catalog grants and functions are per database.\n"
+        "-- Amazon RDS / Aurora: skip the next two lines; the master user cannot grant pg_hba_file_rules (permission\n"
+        "-- denied). The same policy is in the DB parameter group, which the AWS account source reads.\n"
         "GRANT SELECT ON pg_hba_file_rules TO zs_cbom;\n"
         "GRANT EXECUTE ON FUNCTION pg_hba_file_rules() TO zs_cbom;\n"
         "\n"
