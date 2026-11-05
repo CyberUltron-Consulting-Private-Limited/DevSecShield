@@ -7,6 +7,10 @@ proxy_read_timeout 600s;           # CI/CD scans hold the request while the work
 proxy_send_timeout 600s;
 # Docker's DNS, re-resolved at run time: a recreated container gets a new address and nginx follows it.
 resolver 127.0.0.11 valid=10s ipv6=off;
+# Behind a load balancer that terminates TLS and re-encrypts to nginx (DSS_REAL_IP_FROM = its addresses):
+# set_real_ip_from per address, then real_ip_header X-Forwarded-For and real_ip_recursive on, so $remote_addr is
+# the client, not the balancer. Empty: nothing here, the TCP peer is the client.
+${DSS_REAL_IP}
 
 ssl_certificate /etc/nginx/certs/fullchain.pem;
 ssl_certificate_key /etc/nginx/certs/privkey.pem;

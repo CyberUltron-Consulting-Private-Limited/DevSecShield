@@ -7,7 +7,7 @@ workflow runs it from CI.
 
 | Service | Image | Notes |
 |---|---|---|
-| nginx | `nginx:1.27-alpine` | only service with published ports; `FRONTEND_HOST` -> frontend, `API_HOST` -> backend; TLS when `certs/fullchain.pem` + `certs/privkey.pem` exist, plain HTTP otherwise |
+| nginx | `nginx:1.27-alpine` | only service with published ports; `FRONTEND_HOST` -> frontend, `API_HOST` -> backend; TLS when `certs/fullchain.pem` + `certs/privkey.pem` exist, plain HTTP otherwise; `DSS_REAL_IP_FROM` behind a load balancer (below) |
 | frontend | `<prefix>/devsecshield-frontend:<tag>` | the API URL is baked in at build time |
 | migrate | backend image | one-shot `alembic upgrade head` under a Postgres advisory lock; everything that uses the database waits for it |
 | backend | backend image | gunicorn, `BACKEND_WORKERS` workers; port not published; trusts `X-Forwarded-For` only from nginx (`FORWARDED_ALLOW_IPS` = `DSS_PROXY_IP`) |
@@ -76,10 +76,25 @@ Switches `DSS_TAG` back to the previous deployed tag, `up -d`, checks. Two warni
   before that change cannot verify Argon2 hashes: those users cannot sign in after a rollback to it until they
   reset their password.
 
+## Behind a load balancer
+
+The backend logs and rate-limits the address nginx hands it. When nginx faces the clients directly that is the
+client. Behind a load balancer that terminates TLS (AWS ALB, Azure Application Gateway, a corporate reverse proxy)
+every request reaches nginx from the balancer, so without more configuration **every client shares one address and
+one rate-limit budget** (sign-in, codes, API). Set `DSS_REAL_IP_FROM` in `.env` to the addresses or networks the
+balancer's requests come from (space or comma separated, e.g. its subnets `10.0.1.0/24,10.0.2.0/24`), then
+`docker compose up -d nginx`. `40-dss-site.sh` turns that into `set_real_ip_from` lines plus
+`real_ip_header X-Forwarded-For; real_ip_recursive on;` at the top of the site: nginx takes the right-most
+`X-Forwarded-For` entry that is not one of those addresses, so a client cannot choose its own address by sending the
+header itself, and a request that reaches nginx without passing the balancer keeps its TCP address. The startup log
+line names the trusted sources. Empty (the default) adds nothing. A `/0` network, a host name or anything that is
+not an address is refused and nginx does not start. The balancer must append the client to `X-Forwarded-For` (ALB
+and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is unchanged.
+
 ## Environment (names only)
 
 `.env` (shared, also read by compose): `DSS_IMAGE_PREFIX`, `DSS_TAG`, `FRONTEND_HOST`, `API_HOST`, `HTTP_PORT`,
-`HTTPS_PORT`, `HTTP_BIND`, `TLS_CERT_DIR`, `DSS_EDGE_SUBNET`, `DSS_PROXY_IP`, `BACKEND_WORKERS`, `DAST_MEM_LIMIT`,
+`HTTPS_PORT`, `HTTP_BIND`, `TLS_CERT_DIR`, `DSS_EDGE_SUBNET`, `DSS_PROXY_IP`, `DSS_REAL_IP_FROM`, `BACKEND_WORKERS`, `DAST_MEM_LIMIT`,
 `IS_DOCKER_CONTAINER`, `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_USER_PASS`, `PG_DB`, `MONGO_HOST`, `MONGO_PORT`,
 `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`,
 `RABBIT_ADMIN_USERNAME`, `RABBIT_ADMIN_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,

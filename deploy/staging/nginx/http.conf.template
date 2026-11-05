@@ -1,5 +1,6 @@
 # Plain-HTTP site (no certificates mounted). Rendered by 40-dss-site.sh into /etc/nginx/conf.d/default.conf.
-# Use it only behind a TLS-terminating load balancer or for a first boot; mount certificates for direct TLS.
+# Use it only behind a TLS-terminating load balancer (set DSS_REAL_IP_FROM to its addresses, see the README) or for
+# a first boot; mount certificates for direct TLS.
 
 server_tokens off;
 client_max_body_size 64m;          # uploads are capped at 50 MB by the API; it answers 413 itself
@@ -7,6 +8,10 @@ proxy_read_timeout 600s;           # CI/CD scans hold the request while the work
 proxy_send_timeout 600s;
 # Docker's DNS, re-resolved at run time: a recreated container gets a new address and nginx follows it.
 resolver 127.0.0.11 valid=10s ipv6=off;
+# Behind a TLS-terminating load balancer (DSS_REAL_IP_FROM = its addresses): set_real_ip_from per address, then
+# real_ip_header X-Forwarded-For and real_ip_recursive on, so $remote_addr is the client, not the balancer.
+# Empty: nothing here, the TCP peer is the client.
+${DSS_REAL_IP}
 
 # Unknown host names: closed without a response. /nginx-health is the container health check.
 server {
