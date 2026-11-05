@@ -44,6 +44,7 @@ import {
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { scanFailureMessage } from "@/utils/scanFailure";
 
 export type Mode = RepoMode | "unknown";
 
@@ -211,6 +212,8 @@ export function CBOMOptionsSidebar({
       setEstimationProcessDone(false);
       setOptionsSidebarState("scanning");
       queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data", team_id, scan_id] });
+      // the credits are charged at start: the team balance in the app sidebar must show it now, not after a reload
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
       // The code scan is running; queue the included sources as a linked run (its failure only toasts).
       if (snapshot && snapshot.estimate.items.some((i) => i.status === "queued")) {
         startSourcesRunMutation.mutate(snapshot);
@@ -268,6 +271,7 @@ export function CBOMOptionsSidebar({
       : estimatedCredits;
   const canRunScan = estimationProcessDone && !creditsInvalid && (!anySourceIncluded || !!currentSourcesEstimate);
 
+  const failureMessage = scanFailureMessage(query.data);
   useEffect(() => {
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
@@ -278,9 +282,7 @@ export function CBOMOptionsSidebar({
       setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
-      const msg =
-        (query.data?.scan_metadata as { error_message?: string } | undefined)?.error_message ??
-        "The scan failed.";
+      const msg = failureMessage;
       setErrorMessage(msg);
       setOptionsSidebarState("error");
     }
@@ -288,7 +290,15 @@ export function CBOMOptionsSidebar({
       setOptionsSidebarState("ready");
       setErrorMessage(null);
     }
-  }, [query.data?.scan_status, query.data?.scan_metadata]);
+  }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
+
+  // A finished scan settles its credits (a failed one is refunded): refresh the team balance in the app sidebar,
+  // which otherwise kept showing the balance from before the scan until a reload.
+  useEffect(() => {
+    if (query.data?.scan_status === "success" || query.data?.scan_status === "failure") {
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+    }
+  }, [query.data?.scan_status, queryClient]);
 
   const exportMutation = useMutation({
     mutationFn: () => getCBOMExportResults(team_id, scan_id),

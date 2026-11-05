@@ -41,6 +41,7 @@ import {
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { scanFailureMessage } from "@/utils/scanFailure";
 
 export type Mode = RepoMode | "unknown";
 
@@ -224,6 +225,7 @@ export function IACOptionsSidebar({
   const creditsInvalid = estimatedCredits === -1;
   const canRunScan = estimationProcessDone && !creditsInvalid;
 
+  const failureMessage = scanFailureMessage(query.data);
   useEffect(() => {
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
@@ -234,7 +236,7 @@ export function IACOptionsSidebar({
       setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
-      const msg = (query.data?.scan_metadata as { error_message?: string } | undefined)?.error_message ?? "The scan failed.";
+      const msg = failureMessage;
       setErrorMessage(msg);
       setOptionsSidebarState("error");
     }
@@ -242,7 +244,7 @@ export function IACOptionsSidebar({
       setOptionsSidebarState("ready");
       setErrorMessage(null);
     }
-  }, [query.data?.scan_status, query.data?.scan_metadata]);
+  }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
 
   const exportMutation = useMutation({
     mutationFn: () => getIACExportResults(team_id, scan_id),
