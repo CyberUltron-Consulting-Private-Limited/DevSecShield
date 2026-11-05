@@ -51,7 +51,7 @@ async def get_team(
             
             #---------------------> check if user is team admin
             for membership in team.team_memberships:
-                if membership.user.email == user.email and membership.role == "admin":
+                if membership.user_id == user.id and membership.role == "admin":
                     is_team_admin = True
                     break
         

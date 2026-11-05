@@ -7,7 +7,7 @@ import secrets
 import string
 from starlette.concurrency import run_in_threadpool
 from backend.utilities.auth.email import send_email_with_credentials
-from backend.utilities.auth.auth_utils import get_hashed_password, normalise_email
+from backend.utilities.auth.auth_utils import get_hashed_password, normalise_email, user_by_email
 from fastapi import HTTPException , status
 
 console = Console()
@@ -30,7 +30,7 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
         # STEP [ 1 ] : =============================== create users if they dont exist ================================================= 
         for email in email_ids:
             # ---------------------------> creating a new user and send them an email with credentials 
-            user = session.exec(select(User).where(func.lower(User.email) == email)).first()
+            user = user_by_email(session, email)
             if not user:
                 # ---------------------------> creating a new default team for this new user 
                 default_team_for_new_user = Team(
@@ -66,11 +66,9 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
         
         # STEP [ 2 ] : =============================== get all the users and add them to the team  ================================================= 
         
-        # ----------------------------> get all users by their email ids 
-        or_statements = []
-        for email in email_ids:
-            or_statements.append(func.lower(User.email) == email)
-        users = session.exec(select(User).where(or_(*or_statements))).all()
+        # ----------------------------> the account each address signs in to (user_by_email: case-insensitive,
+        # lowest user id), never a second account that only differs in case and cannot sign in
+        users = list({u.id: u for u in (user_by_email(session, email) for email in email_ids) if u is not None}.values())
 
         # ----------------------------> add them to the team 
         for user in users:
@@ -85,6 +83,8 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
 
 async def remove_emails_from_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
     with Session(engine) as session:
+        # every account with the address, however it is spelled: removing an address from a team removes its access,
+        # including a duplicate account's (docs/security/email-case-duplicates.md)
         or_statements = []
         for email in email_ids:
             or_statements.append(func.lower(User.email) == normalise_email(email))
