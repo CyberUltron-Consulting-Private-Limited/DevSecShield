@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScanInputHint } from "@/components/scan-input-hint";
 import { Separator } from "@/components/ui/separator";
 import {
   Accordion,
@@ -731,6 +732,7 @@ export function DASTOptionsSidebar({
                 <>Estimate credits required</>
               )}
             </Button>
+            <ScanInputHint validation={validateScanInputs()} />
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
