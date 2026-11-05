@@ -2,8 +2,17 @@
 
 Rules (WP10 / plan C2):
 
-* Only COMPLETE collections are compared: a collect job that succeeded with outcome ``ok``. A partial, failed,
-  cancelled or truncated job is "not compared" with its reason, never a list of removals.
+* Only collections in which EVERY TARGET WAS READ are compared: a collect job that succeeded with outcome ``ok``, or
+  ``partial`` only because some targets were read with coverage gaps (``counts.partial``; no failed or skipped
+  target). A job with a failed, skipped or unread target, a cancelled or failed job, and one truncated at the asset
+  limit are "not compared" with their reason, never a list of removals.
+* Coverage gaps (``coverage`` rows of the later job, ``job_gaps``) are never read as removals: an asset under a gap's
+  ``scope`` (location prefixes within its target; no scope = the whole target, target "" = the whole job) that is
+  missing from the later run is listed as ``not_read``, not removed, and its findings are not resolved; under an
+  ``incomplete`` gap (the asset is listed, some of its facts were not read) its vanished findings are not resolved
+  either. Everything outside the gaps still drifts normally. This also covers the gaps a customer chose (an option
+  left off: ``by_choice``), which keep the job ``ok``. ``not_supported`` / ``not_installed`` rows say what a target
+  does not have, not what was missed, and hide nothing.
 * Identity is stable (``identity``): source uid + asset key; certificates by (target, location, subject, issuer), so a
   renewal is "changed (renewed)"; code-scan rows by a line-independent key within ``repository@branch``.
 * Version-aware: a run records the knowledge-base and classifier versions that judged it. When the two sides differ,
@@ -15,6 +24,12 @@ Rules (WP10 / plan C2):
   scan. The drift events are the one record of it: the run's "Changes", the integrations, and for code scans the
   Mongo finding status and the Jira close-on-fixed (``finding_state.mark_finding_fixed``, shared with the manual
   "fixed" toggle) all read the same comparison.
+* A code-scan resolution is recorded (event, Mongo "fixed", Jira close) only when the comparison proves it: the
+  baseline is the previous scan of the same repository and branch made with the same scope options
+  (``include_vendored``, ``scan_history``, ``scan_binaries``), neither scan was cut short (an uploaded CBOM truncated
+  at its component limit is never compared), and the same engine version judged both. A different engine version,
+  or an uploaded zip / CBOM file (matched to earlier uploads only by its title), still gets the comparison and its
+  "opened" events, labelled, but nothing is marked fixed or resolved.
 """
 from __future__ import annotations
 
@@ -145,7 +160,9 @@ def code_views(rows: Iterable[Any], source_ref: str) -> dict[str, View]:
         if finding and not codes:
             codes = frozenset({"WEAK_OR_QUANTUM_VULNERABLE"})
         qv = code_row_quantum_vulnerable(row)
-        ident = ID.code_identity(row)
+        # the stored row, not display_row's copy: the roll-up and the Mongo "fixed" marking read the stored row too
+        # (display_row retypes legacy library / configuration rows, which would give them another identity)
+        ident = ID.code_identity(raw)
         cert = str(row.get("asset_type") or row.get("algorithm_type") or "") == "certificate"
         _merge(out, View(
             identity=ident, key=ID.stable_key("code", source_ref, ident), label=ID.code_label(row),
@@ -161,16 +178,59 @@ def code_views(rows: Iterable[Any], source_ref: str) -> dict[str, View]:
     return out
 
 
+@dataclass(frozen=True)
+class Gap:
+    """What one coverage row of a job says was not read (see the module docstring)."""
+    target: str  # "" = every target of the job
+    prefixes: tuple[str, ...]  # () = the whole target
+    incomplete: bool  # assets under it may be listed with facts missing
+
+    def covers(self, view: View, *, listed: bool) -> bool:
+        if listed and not self.incomplete:
+            return False
+        target, location = str(view.extra.get("target") or ""), str(view.extra.get("location") or "")
+        if self.target and self.target != target:
+            return False
+        return not self.prefixes or any(location.startswith(p) for p in self.prefixes)
+
+
+NOT_GAPS = ("not_supported", "not_installed")  # what a target does not have, not what was missed
+
+
+def job_gaps(rows: Iterable[CbomCollectedAsset]) -> list[Gap]:
+    """The coverage gaps of one job attempt's rows."""
+    out: list[Gap] = []
+    for row in rows:
+        if row.asset_type != "coverage":
+            continue
+        facts = row.facts or {}
+        if str(facts.get("status") or "") in NOT_GAPS:
+            continue
+        scope = facts.get("scope")
+        prefixes = tuple(p for p in scope if isinstance(p, str) and p) if isinstance(scope, list) else ()
+        # no scope: nothing says which assets the gap left out, so it covers its whole target, listed ones included
+        out.append(Gap(target=str(row.target or ""), prefixes=prefixes,
+                       incomplete=bool(facts.get("incomplete")) or not prefixes))
+    return out
+
+
 def readiness(views: Mapping[str, View]) -> float | None:
     judged = [v for v in views.values() if v.judged]
     return quantum_readiness_pct(sum(1 for v in judged if v.quantum_vulnerable is True), len(judged))
 
 
 # ----------------------------------------------------------------------------- compare
-def compare(before: Mapping[str, View], after: Mapping[str, View]) -> dict[str, list[dict[str, Any]]]:
-    """added / removed / changed assets and opened / resolved findings (identity + code)."""
+def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterable[Gap] = ()
+            ) -> dict[str, list[dict[str, Any]]]:
+    """added / removed / changed assets and opened / resolved findings (identity + code). ``gaps``: the later side's
+    coverage gaps; what they cover is ``not_read`` (with the findings that could not be confirmed), never removed or
+    resolved."""
+    gaps = list(gaps)
     added = [after[i] for i in sorted(after) if i not in before]
-    removed = [before[i] for i in sorted(before) if i not in after]
+    gone = [before[i] for i in sorted(before) if i not in after]
+    removed = [v for v in gone if not any(g.covers(v, listed=False) for g in gaps)]
+    not_read: list[dict[str, Any]] = [{**v.public(), "asset_removed": True, "codes": sorted(v.codes)}
+                                      for v in gone if any(g.covers(v, listed=False) for g in gaps)]
     changed: list[dict[str, Any]] = []
     opened: list[dict[str, Any]] = []
     resolved: list[dict[str, Any]] = []
@@ -186,7 +246,11 @@ def compare(before: Mapping[str, View], after: Mapping[str, View]) -> dict[str, 
             changed.append({**a.public(), "changes": fields, "renewed": renewed})
         for code in sorted(a.codes - b.codes):
             opened.append({**a.public(), "code": code})
-        for code in sorted(b.codes - a.codes):
+        vanished = sorted(b.codes - a.codes)
+        if vanished and any(g.covers(b, listed=True) for g in gaps):
+            not_read.append({**b.public(), "asset_removed": False, "codes": vanished})
+            continue
+        for code in vanished:
             resolved.append({**b.public(), "code": code, "asset_removed": False})
     for view in added:
         for code in sorted(view.codes):
@@ -195,7 +259,7 @@ def compare(before: Mapping[str, View], after: Mapping[str, View]) -> dict[str, 
         for code in sorted(view.codes):
             resolved.append({**view.public(), "code": code, "asset_removed": True})
     return {"added": [v.public() for v in added], "removed": [v.public() for v in removed], "changed": changed,
-            "opened": opened, "resolved": resolved}
+            "opened": opened, "resolved": resolved, "not_read": not_read}
 
 
 def _finding_pairs(diff: Mapping[str, list[dict[str, Any]]]) -> set[tuple[str, str, str]]:
@@ -229,11 +293,21 @@ def job_comparable(job: CbomCollectionJob) -> tuple[bool, str | None]:
         return False, "not a collection job"
     if job.status != "success":
         return False, f"collection {job.status}"
-    if (job.result or {}).get("truncated"):
+    result = job.result if isinstance(job.result, dict) else {}
+    if result.get("truncated"):
         return False, "collection truncated at the asset limit"
-    if job.outcome != "ok":
-        return False, f"collection {job.outcome or 'incomplete'} (some targets were not read)"
-    return True, None
+    if job.outcome == "ok":
+        return True, None
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+
+    def count(name: str) -> int:
+        value = counts.get(name)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    if (job.outcome == "partial" and count("partial") > 0 and count("failed") == 0 and count("skipped") == 0
+            and not result.get("asset_mismatch")):
+        return True, None  # every target was read; what was not is in its coverage gaps, which never read as removals
+    return False, f"collection {job.outcome or 'incomplete'} (some targets were not read)"
 
 
 def _versions(run: CbomCollectionRun | None) -> dict[str, Any]:
@@ -298,7 +372,7 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
             names.setdefault(ref, ID.job_source_name(job, src))
             sides[side][ref] = job
     per_source: list[dict[str, Any]] = []
-    totals: dict[str, list[Any]] = {k: [] for k in ("added", "removed", "changed", "opened", "resolved")}
+    totals: dict[str, list[Any]] = {k: [] for k in ("added", "removed", "changed", "opened", "resolved", "not_read")}
     rule_changes: list[dict[str, Any]] = []
     before_all: dict[str, View] = {}
     after_all: dict[str, View] = {}
@@ -318,9 +392,10 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
         b_rows, a_rows = _job_assets(session, b_job), _job_assets(session, a_job)
         before = node_views(b_rows, ref, reclassify=reclassify)
         after = node_views(a_rows, ref, reclassify=reclassify)
-        diff = compare(before, after)
+        gaps = job_gaps(a_rows)
+        diff = compare(before, after, gaps)
         if reclassify:
-            stored = compare(node_views(b_rows, ref, reclassify=False), node_views(a_rows, ref, reclassify=False))
+            stored = compare(node_views(b_rows, ref, reclassify=False), node_views(a_rows, ref, reclassify=False), gaps)
             rule_changes += [{**r, "source_name": names.get(ref)} for r in rule_only_changes(stored, diff)]
         for k in totals:
             totals[k] += [{**d, "source_name": names.get(ref)} for d in diff[k]]
@@ -480,7 +555,7 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         rows += _expiring(run.team_id, now, after, scope="node", source_ref=ref, source_name=name, run_id=run.id)
         if base is None:
             continue
-        diff = compare(node_views(_job_assets(session, base), ref, reclassify=reclassify), after)
+        diff = compare(node_views(_job_assets(session, base), ref, reclassify=reclassify), after, job_gaps(a_rows))
         rows += diff_events(run.team_id, now, diff, scope="node", source_ref=ref, source_name=name,
                             anchor=f"run:{run.id}", cause="re-judged with the current rules" if reclassify else None,
                             run_id=run.id, baseline_run_id=base.run_id)
@@ -556,19 +631,55 @@ def code_source(scan: Scan) -> tuple[str, str]:
     return ID.code_source_ref(scan.scan_metadata, scan.title, scan.id or 0)
 
 
+SCOPE_OPTIONS = ("include_vendored", "scan_history", "scan_binaries")  # what a code scan read (db/metadata.py)
+
+
+def scan_scope(meta: Mapping[str, Any] | None) -> dict[str, bool]:
+    """The scope options a code scan ran with; a scan stored before an option existed ran with its default (off)."""
+    meta = meta if isinstance(meta, Mapping) else {}
+    return {k: bool(meta.get(k)) for k in SCOPE_OPTIONS}
+
+
+def scan_truncated(scan: Scan) -> bool:
+    """An uploaded CBOM cut at its component limit (``cbom_input.truncated``): what is missing was never read."""
+    data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
+    report = data.get("cbom_input")
+    return isinstance(report, dict) and report.get("truncated") is True
+
+
 def previous_code_scan(session: Session, scan: Scan) -> Scan | None:
-    """The newest earlier successful CBOM scan of the same repository and branch (or the same zip / file title).
-    Scans with no stable source (``scan:<id>``) have no previous scan."""
+    """The newest earlier successful CBOM scan of the same repository and branch (or the same zip / file title), made
+    with the same scope options and not truncated: a scan that read less is no baseline (what it skipped would read
+    as fixed). Scans with no stable source (``scan:<id>``) have no previous scan."""
     key, _label = code_source(scan)
     if key.startswith("scan:"):
         return None
+    scope = scan_scope(scan.scan_metadata)
     heads = session.exec(select(Scan.id, Scan.scan_metadata, Scan.title).where(
         Scan.team_id == scan.team_id, Scan.scan_type == "cbom", Scan.scan_status == "success",
         Scan.id != scan.id, Scan.created_at <= scan.created_at)
         .order_by(Scan.created_at.desc(), Scan.id.desc()).limit(200)).all()  # type: ignore[union-attr]
     for scan_id, meta, title in heads:
-        if ID.code_source_ref(meta, title, scan_id)[0] == key:
-            return session.get(Scan, scan_id)
+        if ID.code_source_ref(meta, title, scan_id)[0] != key or scan_scope(meta) != scope:
+            continue
+        other = session.get(Scan, scan_id)
+        if other is not None and not scan_truncated(other):
+            return other
+    return None
+
+
+def resolution_unproven(scan: Scan, base: Scan) -> str | None:
+    """Why a finding missing from ``scan`` is not proven fixed (None: it is). Missing because a different engine
+    version judged it, or because an upload of the same title may be other code, is not "fixed"."""
+    key, _label = code_source(scan)
+    if not key.startswith("repo:"):
+        return "an uploaded zip or CBOM file is matched to earlier uploads by its title only"
+    if _tool_version(base) != _tool_version(scan):
+        return "the scans were made by different engine versions"
+    if scan_scope(base.scan_metadata) != scan_scope(scan.scan_metadata):
+        return "the scans were made with different scope options"
+    if scan_truncated(base) or scan_truncated(scan):
+        return "a scan was truncated"
     return None
 
 
@@ -582,9 +693,15 @@ def code_scan_diff(scan: Scan, base: Scan) -> dict[str, Any]:
         for k in ("opened", "resolved"):
             for item in diff[k]:
                 item["rule_change"] = "possible: the scans were made by different engine versions"
+    unproven = resolution_unproven(scan, base)
+    sb, sa = scan_scope(base.scan_metadata), scan_scope(scan.scan_metadata)
     out: dict[str, Any] = {"scan_id": scan.id, "against_scan_id": base.id, "source": label, "source_ref": key,
                            "versions": {"before": tb, "after": ta, "rules_changed": rules_changed,
-                                        "reclassified": False}}
+                                        "reclassified": False},
+                           "scope": {"before": sb, "after": sa, "differs": sb != sa},
+                           "truncated_scans": [s.id for s in (base, scan) if scan_truncated(s)],
+                           # resolved / removed are what the comparison shows; only a proven one is marked fixed
+                           "resolutions": {"proven": unproven is None, "reason": unproven}}
     truncated = False
     for k, items in diff.items():
         out[k], cut = _cap(items)
@@ -598,7 +715,11 @@ def code_scan_diff(scan: Scan, base: Scan) -> dict[str, Any]:
 
 
 def record_code_scan_drift(session: Session, scan: Scan, now: _dt.datetime) -> tuple[dict[str, Any] | None, int]:
-    """Events for a successful code scan against the previous scan of the same source. The caller commits."""
+    """Events for a successful code scan against the previous scan of the same source. The caller commits. A
+    truncated scan is not compared; when a resolution is not proven (``resolution_unproven``) only the events that
+    open something are recorded -- integrations close tickets on "resolved" / "removed" / "renewed"."""
+    if scan_truncated(scan):
+        return None, 0
     base = previous_code_scan(session, scan)
     if base is None:
         return None, 0
@@ -606,6 +727,8 @@ def record_code_scan_drift(session: Session, scan: Scan, now: _dt.datetime) -> t
     key, label = code_source(scan)
     before, after = diff["_views"]
     full = compare(before, after)
+    if not diff["resolutions"]["proven"]:
+        full = {**full, "removed": [], "resolved": [], "changed": [c for c in full["changed"] if not c.get("renewed")]}
     rows = diff_events(scan.team_id, now, full, scope="code", source_ref=key, source_name=label,
                        anchor=f"scan:{scan.id}", cause=("engine version changed" if diff["versions"]["rules_changed"]
                                                         else None),
@@ -615,7 +738,10 @@ def record_code_scan_drift(session: Session, scan: Scan, now: _dt.datetime) -> t
 
 
 def fixed_identities(diff: Mapping[str, Any]) -> set[str]:
-    """Identities whose every finding was resolved: the asset is gone, or still listed but no longer a finding."""
+    """Identities whose every finding was resolved: the asset is gone, or still listed but no longer a finding.
+    Empty when the comparison does not prove the resolutions (see ``resolution_unproven``)."""
+    if not (diff.get("resolutions") or {}).get("proven", True):
+        return set()
     before, after = diff["_views"]
     return {ident for ident, view in before.items()
             if view.finding and (ident not in after or not after[ident].finding)}

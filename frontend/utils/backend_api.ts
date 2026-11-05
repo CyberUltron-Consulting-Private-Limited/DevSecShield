@@ -4296,7 +4296,8 @@ export interface CbomJobTargets {
     outcome: "ok" | "partial" | "failed" | null
     attempt: number
     asset_count: number
-    counts: { total?: number; ok?: number; failed?: number; skipped?: number } | null
+    // partial: targets read with coverage gaps (cloud collectors); their parts that were not read are "Not collected" rows
+    counts: { total?: number; ok?: number; partial?: number; failed?: number; skipped?: number } | null
     summary: string | null
     truncated: boolean
     asset_mismatch: { reported: number; stored: number } | null

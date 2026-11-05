@@ -6,6 +6,13 @@ Runs in the cloud worker.  Safety rules, all checked before anything is read:
 * the assumed identity must be in the account named by the role ARN.
 Every service is read in its own try block: AccessDenied, a disabled opt-in region or throttling
 becomes a ``coverage`` asset and a target row, never a silent "nothing found".
+
+Coverage gaps inside a service that was read (a list cut at its cap, one function's environment or one bucket's
+policy not readable) are ``coverage`` rows too, and they make the service and its target ``partial``.  Each row names
+its ``scope``: the location prefixes of the assets it may have left out, which drift never reports as removed or
+resolved (``drift.job_gaps``).  ``incomplete`` rows say the asset itself is listed with facts missing.  ``by_choice``
+rows are options the customer left off (Lambda decryption, Glue connections): known, stable gaps that keep the target
+``ok`` but still hide what they cover from drift.
 """
 from __future__ import annotations
 
@@ -80,6 +87,31 @@ class _Account:
         if self.session is None or time.monotonic() > self.expires:
             self.assume(region if region != "global" else GLOBAL_REGION)
         return self.session.client(service, region_name=GLOBAL_REGION if region == "global" else region, config=self.cfg)
+
+
+def _gap(label: str, location: str, check: str, status: str, detail: str | None, scope: list[str] | None = None, *,
+         incomplete: bool = False, by_choice: bool = False, **facts: Any) -> dict[str, Any]:
+    """A coverage row (see the module docstring for ``scope`` / ``incomplete`` / ``by_choice``)."""
+    out: dict[str, Any] = {"check": check, "status": status, "detail": detail, **facts}
+    if scope:
+        out["scope"] = list(scope)
+    if incomplete:
+        out["incomplete"] = True
+    if by_choice:
+        out["by_choice"] = True
+    return {"type": "coverage", "target": label, "location": location, "facts": out}
+
+
+class _GapTally:
+    """Passes every asset on and counts the coverage gaps that make a target partial (not the ``by_choice`` ones)."""
+
+    def __init__(self, emit: Emit):
+        self.emit, self.gaps = emit, 0
+
+    def __call__(self, asset: dict[str, Any]) -> None:
+        if asset.get("type") == "coverage" and not (asset.get("facts") or {}).get("by_choice"):
+            self.gaps += 1
+        self.emit(asset)
 
 
 def _paginate(client, method: str, key: str, cap: int = PER_SERVICE_CAP, **kwargs) -> tuple[list[Any], bool]:
@@ -399,16 +431,27 @@ def _glue_connection_facts(conn: dict[str, Any]) -> dict[str, Any]:
 
 def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                      opts: dict[str, Any] | None = None) -> list[tuple[str, str, str | None]]:
-    """Read every regional service.  Returns (service, status, detail) rows."""
+    """Read every regional service.  Returns (service, status, detail) rows; status ``partial`` when the service was
+    read but emitted coverage gaps (a cap, an item it could not read)."""
     opts = opts or {}
     rows: list[tuple[str, str, str | None]] = []
     arn_prefix = f"arn:aws:{{svc}}:{region}:{acct.account}"
     cache: dict[str, Any] = {}
+    tally = _GapTally(emit)
+    emit = tally  # every row below goes through the tally, so a service's own gaps decide its status
+
+    def capped(service: str, what: str, cap: int, scope: list[str], where: str = "cap") -> None:
+        """A list cut at its cap is a coverage gap over the part that was not read, never a silent "that's all"."""
+        emit(_gap(label, f"{arn_prefix.format(svc=service)}:{service}#{where}", f"{service} in {region}", "truncated",
+                  f"More than {cap} {what}; the first {cap} were read", scope))
 
     def run(service: str, fn: Callable[[], str | None]) -> None:
+        seen = tally.gaps
         try:
             note = fn()
-            rows.append((service, "ok", note))
+            gaps = tally.gaps - seen
+            rows.append((service, "partial", f"{gaps} not read" + (f" ({note})" if note else "")) if gaps
+                        else (service, "ok", note))
         except AwsCollectError:
             raise
         except Exception as exc:  # one service failing never stops the others
@@ -453,14 +496,19 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
             if meta.get("KeyManager") == "CUSTOMER" and spec == "SYMMETRIC_DEFAULT" and meta.get("KeyState") == "Enabled":
                 try:
                     rotation = bool(client.get_key_rotation_status(KeyId=key["KeyId"]).get("KeyRotationEnabled"))
-                except Exception as exc:  # e.g. imported key material
-                    rotation = None if _code(exc) not in _DENIED else None
+                except Exception as exc:  # imported key material has no rotation (None); a denial is a gap
+                    rotation = None
+                    if _code(exc) in _DENIED:  # the key is listed, its rotation is unknown, not "fixed"
+                        emit(_gap(label, f"{meta['Arn']}#rotation", f"kms key {meta['KeyId']} rotation status",
+                                  "denied", _code(exc), [meta["Arn"]], incomplete=True))
             emit({"type": "kms_key", "target": label, "location": meta["Arn"], "name": meta.get("Description") or meta["KeyId"],
                   "algorithm": spec, "key_size": 256 if spec == "SYMMETRIC_DEFAULT" else _bits(spec),
                   "facts": {"key_spec": spec, "key_usage": meta.get("KeyUsage"), "key_manager": meta.get("KeyManager"),
                             "key_state": meta.get("KeyState"), "origin": meta.get("Origin"),
                             "multi_region": meta.get("MultiRegion"), "rotation_enabled": rotation,
                             "signing_algorithms": meta.get("SigningAlgorithms"), "identity": meta["Arn"]}})
+        if truncated:
+            capped("kms", "keys", PER_SERVICE_CAP, [f"arn:aws:kms:{region}:{acct.account}:key/"])
         return "truncated" if truncated else None
 
     def acm() -> str | None:
@@ -470,11 +518,16 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         for summary in summaries:
             detail = client.describe_certificate(CertificateArn=summary["CertificateArn"])["Certificate"]
             emit(_cert_asset(summary["CertificateArn"], label, detail))
+        if truncated:
+            capped("acm", "certificates", PER_SERVICE_CAP, [f"arn:aws:acm:{region}:{acct.account}:certificate/"])
         return "truncated" if truncated else None
 
     def pca() -> str | None:
         client = acct.client("acm-pca", region)
         cas, truncated = _paginate(client, "list_certificate_authorities", "CertificateAuthorities")
+        if truncated:
+            capped("acm-pca", "certificate authorities", PER_SERVICE_CAP,
+                   [f"arn:aws:acm-pca:{region}:{acct.account}:certificate-authority/"])
         for ca in cas:
             cfg = ca.get("CertificateAuthorityConfiguration") or {}
             key_alg = cfg.get("KeyAlgorithm") or ""
@@ -489,6 +542,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     def secrets() -> str | None:
         client = acct.client("secretsmanager", region)
         items, truncated = _paginate(client, "list_secrets", "SecretList")
+        if truncated:
+            capped("secretsmanager", "secrets", PER_SERVICE_CAP, [f"arn:aws:secretsmanager:{region}:{acct.account}:secret:"])
         for item in items:  # metadata only; GetSecretValue is denied by the role and never called
             emit({"type": "cloud_secret", "target": label, "location": item["ARN"], "name": item.get("Name"),
                   "facts": {"rotation_enabled": bool(item.get("RotationEnabled")), "kms_key_id": item.get("KmsKeyId") or "aws/secretsmanager",
@@ -501,6 +556,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         emit({"type": "storage_encryption", "target": label, "location": f"arn:aws:ec2:{region}:{acct.account}:ebs-encryption-by-default",
               "name": f"EBS encryption by default ({region})", "facts": {"resource": "EBS default", "default_encryption": default}})
         volumes, truncated = _paginate(client, "describe_volumes", "Volumes")
+        if truncated:
+            capped("ec2", "volumes", PER_SERVICE_CAP, [f"arn:aws:ec2:{region}:{acct.account}:volume/"], "volumes-cap")
         plain = [v for v in volumes if not v.get("Encrypted")]
         exposure = instance_exposure() if any(v.get("Attachments") for v in volumes) else {}
         # every volume is inventory (encrypted ones with their KMS key); unencrypted ones first so the cap never hides them
@@ -546,9 +603,11 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                               "decrypt through Lambda; add the role to the key's users")
                 else:
                     detail = f"{code} (Lambda decrypts environments with the caller's KMS permissions)"
-                emit({"type": "coverage", "target": label, "location": f"{fn['FunctionArn']}#environment",
-                      "facts": {"check": f"lambda {where} environment variables", "status": "denied",
-                                "detail": detail[:200], "kms_key_id": fn.get("KMSKeyArn"), "identity": fn["FunctionArn"]}})
+                # switch off: the customer's choice (the target stays ok); on: a real gap (the target is partial).
+                # Either way the secrets this environment held before are not reported gone.
+                emit(_gap(label, f"{fn['FunctionArn']}#environment", f"lambda {where} environment variables", "denied",
+                          detail[:200], [f"{fn['FunctionArn']}#environment/"], by_choice=not cmk_on,
+                          kms_key_id=fn.get("KMSKeyArn"), identity=fn["FunctionArn"]))
                 continue
             for var, value in sorted((env.get("Variables") or {}).items()):
                 shape = _value_shape(var, value)
@@ -560,9 +619,9 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                                       "variable": var, "kms_key_id": fn.get("KMSKeyArn") or "aws/lambda",
                                       "customer_managed_key": bool(fn.get("KMSKeyArn"))}))
         if truncated:  # the cap is a coverage gap, never a silent "nothing found"
-            emit({"type": "coverage", "target": label, "location": f"arn:aws:lambda:{region}:{acct.account}:functions#cap",
-                  "facts": {"check": f"lambda in {region}", "status": "truncated",
-                            "detail": f"More than {CONFIG_SCAN_CAP} function versions; the first {CONFIG_SCAN_CAP} were inspected"}})
+            emit(_gap(label, f"arn:aws:lambda:{region}:{acct.account}:functions#cap", f"lambda in {region}", "truncated",
+                      f"More than {CONFIG_SCAN_CAP} function versions; the first {CONFIG_SCAN_CAP} were inspected",
+                      [f"arn:aws:lambda:{region}:{acct.account}:function:"]))
         return (f"{len(functions)} function versions, {hits} secrets in environment"
                 + (f", {unreadable} environments not readable" if unreadable else "") + (" (truncated)" if truncated else ""))
 
@@ -570,6 +629,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         # Active task definitions: plain `environment` entries are checked; `secrets` (valueFrom references) are fine.
         client = acct.client("ecs", region)
         arns, truncated = _paginate(client, "list_task_definitions", "taskDefinitionArns", cap=CONFIG_SCAN_CAP, status="ACTIVE")
+        if truncated:
+            capped("ecs", "active task definitions", CONFIG_SCAN_CAP, [f"arn:aws:ecs:{region}:{acct.account}:task-definition/"])
         hits = 0
         for arn in arns:
             td = client.describe_task_definition(taskDefinition=arn).get("taskDefinition") or {}
@@ -590,11 +651,13 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     def userdata() -> str | None:
         # DescribeInstanceAttribute(userData): bootstrap scripts often carry keys; only shapes and line numbers are kept.
         client = acct.client("ec2", region)
-        found, _t = reservations()
+        found, reservations_cut = reservations()
         exposure = instance_exposure()
         live = [i for r in found for i in r.get("Instances") or []
                 if (i.get("State") or {}).get("Name") not in ("terminated", "shutting-down")]
-        instances, truncated = live[:CONFIG_SCAN_CAP], len(live) > CONFIG_SCAN_CAP
+        instances, truncated = live[:CONFIG_SCAN_CAP], len(live) > CONFIG_SCAN_CAP or reservations_cut
+        if truncated:
+            capped("ec2-userdata", "running instances", CONFIG_SCAN_CAP, [f"arn:aws:ec2:{region}:{acct.account}:instance/"])
         hits = 0
         for inst in instances:
             raw = ((client.describe_instance_attribute(InstanceId=inst["InstanceId"], Attribute="userData")
@@ -661,15 +724,20 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     def rds() -> str | None:
         client = acct.client("rds", region)
         dbs, truncated = _paginate(client, "describe_db_instances", "DBInstances")
+        db_prefix = f"arn:aws:rds:{region}:{acct.account}:db:"  # instances, their #parameters and #ca rows
+        if truncated:
+            capped("rds", "DB instances", PER_SERVICE_CAP, [db_prefix])
         clusters: dict[str, dict[str, Any]] = {}
         if any(db.get("DBClusterIdentifier") for db in dbs):
             try:
-                found, _t = _paginate(client, "describe_db_clusters", "DBClusters")
+                found, clusters_cut = _paginate(client, "describe_db_clusters", "DBClusters")
+                if clusters_cut:
+                    capped("rds", "DB clusters", PER_SERVICE_CAP, [db_prefix], "clusters-cap")
             except Exception as exc:  # instances are still reported; their cluster-level parameters are not
                 found = []
-                emit({"type": "coverage", "target": label, "location": f"arn:aws:rds:{region}:{acct.account}:clusters",
-                      "facts": {"check": f"rds clusters in {region}", "status": "denied" if _code(exc) in _DENIED else "error",
-                                "detail": f"{_code(exc)}: cluster parameter groups (Aurora) not read"}})
+                emit(_gap(label, f"arn:aws:rds:{region}:{acct.account}:clusters", f"rds clusters in {region}",
+                          "denied" if _code(exc) in _DENIED else "error",
+                          f"{_code(exc)}: cluster parameter groups (Aurora) not read", [db_prefix], incomplete=True))
             clusters = {c["DBClusterIdentifier"]: c for c in found}
         params_failed: list[str] = []
         for db in dbs:
@@ -691,9 +759,9 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                         values.update(rds_params(client, cluster.get("DBClusterParameterGroup"), True))
                 except Exception as exc:
                     params_failed.append(f"{db['DBInstanceIdentifier']}: {_code(exc)}")
-                    emit({"type": "coverage", "target": label, "location": f"{db['DBInstanceArn']}#parameters",
-                          "facts": {"check": f"rds {db['DBInstanceIdentifier']} parameter group", "status":
-                                    "denied" if _code(exc) in _DENIED else "error", "detail": _code(exc)}})
+                    emit(_gap(label, f"{db['DBInstanceArn']}#parameters", f"rds {db['DBInstanceIdentifier']} parameter group",
+                              "denied" if _code(exc) in _DENIED else "error", _code(exc),
+                              [f"{db['DBInstanceArn']}#parameters"]))
                     values = None
                 if values is not None:
                     emit({"type": "database_config", "target": label, "location": f"{db['DBInstanceArn']}#parameters",
@@ -722,10 +790,16 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     def elbv2() -> str | None:
         client = acct.client("elbv2", region)
         lbs, truncated = _paginate(client, "describe_load_balancers", "LoadBalancers")
+        listener_prefix = f"arn:aws:elasticloadbalancing:{region}:{acct.account}:listener/"
+        if truncated:
+            capped("elasticloadbalancing", "load balancers", PER_SERVICE_CAP, [listener_prefix])
         policies: dict[str, dict[str, Any]] = {}
         for lb in lbs:
             exposure = scheme_exposure(lb.get("Scheme"), f"{lb.get('Type') or 'load balancer'} {lb['LoadBalancerName']}")
-            listeners, _t = _paginate(client, "describe_listeners", "Listeners", LoadBalancerArn=lb["LoadBalancerArn"])
+            listeners, listeners_cut = _paginate(client, "describe_listeners", "Listeners", LoadBalancerArn=lb["LoadBalancerArn"])
+            if listeners_cut:
+                capped("elasticloadbalancing", f"listeners on {lb['LoadBalancerName']}", PER_SERVICE_CAP,
+                       [listener_prefix], f"listeners-cap/{lb['LoadBalancerName']}")
             for listener in listeners:
                 proto = listener.get("Protocol")
                 if proto not in ("HTTPS", "TLS"):
@@ -754,6 +828,9 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         # (Protocol-TLSv1 / Protocol-SSLv3 ... and cipher names set to "true").
         client = acct.client("elb", region)
         lbs, truncated = _paginate(client, "describe_load_balancers", "LoadBalancerDescriptions")
+        if truncated:
+            capped("elb-classic", "classic load balancers", PER_SERVICE_CAP,
+                   [f"arn:aws:elasticloadbalancing:{region}:{acct.account}:loadbalancer/"])
         for lb in lbs:
             name = lb["LoadBalancerName"]
             exposure = scheme_exposure(lb.get("Scheme"), f"classic load balancer {name}")
@@ -790,6 +867,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     def apigw() -> str | None:
         client = acct.client("apigateway", region)
         items, truncated = _paginate(client, "get_domain_names", "items")
+        if truncated:
+            capped("apigateway", "custom domain names", PER_SERVICE_CAP, [f"arn:aws:apigateway:{region}::/domainnames/"])
         for item in items:
             policy = item.get("securityPolicy") or "TLS_1_0"
             types = [str(t) for t in (item.get("endpointConfiguration") or {}).get("types") or []]
@@ -804,6 +883,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
     def eks() -> str | None:
         client = acct.client("eks", region)
         names, truncated = _paginate(client, "list_clusters", "clusters")
+        if truncated:
+            capped("eks", "clusters", PER_SERVICE_CAP, [f"arn:aws:eks:{region}:{acct.account}:cluster/"])
         for name in names:
             cluster = client.describe_cluster(name=name)["cluster"]
             encrypted = bool(cluster.get("encryptionConfig"))
@@ -829,13 +910,21 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         password = settings.get("ConnectionPasswordEncryption") or {}
         catalog_mode = str(at_rest.get("CatalogEncryptionMode") or "DISABLED")
         password_encryption = bool(password.get("ReturnConnectionPasswordEncrypted"))
-        configs, _t = _paginate(client, "get_security_configurations", "SecurityConfigurations")
+        configs, configs_cut = _paginate(client, "get_security_configurations", "SecurityConfigurations")
         jobs, jobs_truncated = _paginate(client, "get_jobs", "Jobs", cap=CONFIG_SCAN_CAP)
         databases = client.get_databases(MaxResults=1).get("DatabaseList") or []  # only "is the catalog in use?"
         connections: list[dict[str, Any]] | None = None
+        connections_cut = False
         if opts.get("read_glue"):
-            connections, _t = _paginate(client, "get_connections", "ConnectionList", HidePassword=True)
+            connections, connections_cut = _paginate(client, "get_connections", "ConnectionList", HidePassword=True)
         catalog_arn = f"arn:aws:glue:{region}:{acct.account}:catalog"
+        glue_prefix = f"arn:aws:glue:{region}:{acct.account}:"
+        if configs_cut:
+            capped("glue", "security configurations", PER_SERVICE_CAP, [f"{glue_prefix}securityConfiguration/"])
+        if jobs_truncated:  # job counts on the catalog and on each security configuration are incomplete
+            capped("glue", "jobs", CONFIG_SCAN_CAP, [catalog_arn, f"{glue_prefix}securityConfiguration/"], "jobs-cap")
+        if connections_cut:
+            capped("glue", "connections", PER_SERVICE_CAP, [f"{glue_prefix}connection/"], "connections-cap")
         by_config: dict[str, int] = {}
         for job in jobs:  # only the name and the security configuration of a job are used
             by_config[str(job.get("SecurityConfiguration") or "")] = by_config.get(str(job.get("SecurityConfiguration") or ""), 0) + 1
@@ -889,6 +978,11 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                             "catalog_password_encryption": password_encryption, "identity": conn.get("Name")}})
         if not opts.get("read_glue"):
             note = "connections not read (option off)"
+            # The customer's choice, so the target stays ok; but connections read while the option was on must not be
+            # reported gone, nor the catalog row when connections were what put it in use.
+            emit(_gap(label, f"{glue_prefix}connection#option-off", f"glue connections in {region}", "not_read",
+                      "Glue connections were not read: the 'Read Glue connections' option is off for this source",
+                      [f"{glue_prefix}connection/"] + ([] if in_use else [catalog_arn]), by_choice=True))
         else:
             note = f"{len(connections or [])} connections"
         return f"catalog {catalog_mode}, {len(configs)} security configurations, {note}" + (" (jobs truncated)" if jobs_truncated else "")
@@ -897,6 +991,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         # Public half only (IncludePublicKey): the key type and RSA modulus size; private keys never leave AWS.
         client = acct.client("ec2", region)
         pairs = client.describe_key_pairs(IncludePublicKey=True).get("KeyPairs") or []
+        if len(pairs) > PER_SERVICE_CAP:
+            capped("ec2-keypairs", "key pairs", PER_SERVICE_CAP, [f"arn:aws:ec2:{region}:{acct.account}:key-pair/"])
         for pair in pairs[:PER_SERVICE_CAP]:
             key_type = str(pair.get("KeyType") or "").lower()
             bits = _ssh_public_bits(pair.get("PublicKey") or "") if key_type == "rsa" else (256 if key_type == "ed25519" else None)
@@ -911,6 +1007,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
         # DescribeParameters is metadata (name, type, KMS key); GetParameter is denied to the role and never called.
         client = acct.client("ssm", region)
         params, truncated = _paginate(client, "describe_parameters", "Parameters")
+        if truncated:
+            capped("ssm", "parameters", PER_SERVICE_CAP, [f"arn:aws:ssm:{region}:{acct.account}:parameter/"])
         for param in params:
             name = param.get("Name") or ""
             emit({"type": "cloud_secret", "target": label,
@@ -931,10 +1029,20 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
 
 def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, str, str | None]]:
     rows: list[tuple[str, str, str | None]] = []
+    tally = _GapTally(emit)
+    emit = tally
+
+    def capped(service: str, what: str, cap: int, scope: list[str], where: str = "cap") -> None:
+        emit(_gap(label, f"arn:aws:{service}::{acct.account}:global#{where}", f"{service} (global)", "truncated",
+                  f"More than {cap} {what}; the first {cap} were read", scope))
 
     def run(service: str, fn: Callable[[], str | None]) -> None:
+        seen = tally.gaps
         try:
-            rows.append((service, "ok", fn()))
+            note = fn()
+            gaps = tally.gaps - seen
+            rows.append((service, "partial", f"{gaps} not read" + (f" ({note})" if note else "")) if gaps
+                        else (service, "ok", note))
         except AwsCollectError:
             raise
         except Exception as exc:
@@ -946,16 +1054,24 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
 
     def iam() -> str | None:
         client = acct.client("iam", "global")
-        certs, _t = _paginate(client, "list_server_certificates", "ServerCertificateMetadataList")
+        certs, certs_cut = _paginate(client, "list_server_certificates", "ServerCertificateMetadataList")
+        if certs_cut:
+            capped("iam", "server certificates", PER_SERVICE_CAP, [f"arn:aws:iam::{acct.account}:server-certificate/"])
         for meta in certs:
             emit({"type": "iam_certificate", "target": label, "location": meta["Arn"], "name": meta.get("ServerCertificateName"),
                   "facts": {"not_after": _iso(meta.get("Expiration")), "not_before": _iso(meta.get("UploadDate")),
                             "source": "aws", "identity": meta["Arn"]}})
-        for provider in client.list_saml_providers().get("SAMLProviderList", [])[:50]:
+        saml = client.list_saml_providers().get("SAMLProviderList", [])
+        if len(saml) > 50:
+            capped("iam", "SAML providers", 50, [f"arn:aws:iam::{acct.account}:saml-provider/"], "saml-cap")
+        for provider in saml[:50]:
             doc = client.get_saml_provider(SAMLProviderArn=provider["Arn"]).get("SAMLMetadataDocument") or ""
             for asset in saml_assets_from_xml(doc.encode(), provider["Arn"], label):
                 emit(asset)
-        for provider in client.list_open_id_connect_providers().get("OpenIDConnectProviderList", [])[:50]:
+        oidc = client.list_open_id_connect_providers().get("OpenIDConnectProviderList", [])
+        if len(oidc) > 50:
+            capped("iam", "OIDC providers", 50, [f"arn:aws:iam::{acct.account}:oidc-provider/"], "oidc-cap")
+        for provider in oidc[:50]:
             detail = client.get_open_id_connect_provider(OpenIDConnectProviderArn=provider["Arn"])
             emit({"type": "identity_provider", "target": label, "location": provider["Arn"], "name": detail.get("Url"),
                   "protocol": "OIDC", "facts": {"kind": "oidc", "thumbprints": (detail.get("ThumbprintList") or [])[:5]}})
@@ -963,10 +1079,15 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
 
     def s3() -> str | None:
         client = acct.client("s3", "global")
-        buckets = client.list_buckets().get("Buckets", [])[:PER_SERVICE_CAP]
+        listed = client.list_buckets().get("Buckets", [])
+        if len(listed) > PER_SERVICE_CAP:
+            capped("s3", "buckets", PER_SERVICE_CAP, ["arn:aws:s3:::"])
+        buckets = listed[:PER_SERVICE_CAP]
         for bucket in buckets:
             name = bucket["Name"]
+            arn = f"arn:aws:s3:::{name}"
             facts: dict[str, Any] = {"resource": f"S3 bucket {name}"}
+            unread: list[str] = []
             try:
                 rules = client.get_bucket_encryption(Bucket=name)["ServerSideEncryptionConfiguration"]["Rules"]
                 sse = rules[0]["ApplyServerSideEncryptionByDefault"] if rules else {}
@@ -975,6 +1096,8 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
                 code = _code(exc)
                 facts.update(encrypted=False if code == "ServerSideEncryptionConfigurationNotFoundError" else None,
                              encryption_error=None if code == "ServerSideEncryptionConfigurationNotFoundError" else code)
+                if code != "ServerSideEncryptionConfigurationNotFoundError":
+                    unread.append(f"encryption: {code}")
             try:
                 policy = json.loads(client.get_bucket_policy(Bucket=name)["Policy"])
                 facts["tls_only_policy"] = any(
@@ -982,12 +1105,23 @@ def _global_services(acct: _Account, label: str, emit: Emit) -> list[tuple[str, 
                     for st in policy.get("Statement", []))
             except Exception as exc:
                 facts["tls_only_policy"] = False if _code(exc) == "NoSuchBucketPolicy" else None
-            emit({"type": "storage_encryption", "target": label, "location": f"arn:aws:s3:::{name}", "name": name, "facts": facts})
+                if _code(exc) != "NoSuchBucketPolicy":
+                    unread.append(f"bucket policy: {_code(exc)}")
+            emit({"type": "storage_encryption", "target": label, "location": arn, "name": name, "facts": facts})
+            if unread:  # listed with unknown settings: an unknown is not a fix
+                emit(_gap(label, f"{arn}#settings", f"s3 bucket {name} settings",
+                          "denied" if any(c.split(": ", 1)[1] in _DENIED for c in unread) else "error",
+                          "; ".join(unread)[:200], [arn], incomplete=True))
         return f"{len(buckets)} buckets"
 
     def cloudfront() -> str | None:
         client = acct.client("cloudfront", "global")
-        items = (client.list_distributions().get("DistributionList") or {}).get("Items") or []
+        items: list[dict[str, Any]] = []
+        for page in client.get_paginator("list_distributions").paginate():
+            items.extend((page.get("DistributionList") or {}).get("Items") or [])
+            if len(items) > PER_SERVICE_CAP:
+                capped("cloudfront", "distributions", PER_SERVICE_CAP, [f"arn:aws:cloudfront::{acct.account}:distribution/"])
+                break
         for dist in items[:PER_SERVICE_CAP]:
             viewer = dist.get("ViewerCertificate") or {}
             minimum = str(viewer.get("MinimumProtocolVersion") or "TLSv1")
@@ -1031,20 +1165,30 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
         raise
     except Exception as exc:
         raise AwsCollectError(f"AssumeRole failed: {_code(exc)}") from exc
+    targets: list[dict[str, Any]] = []
     if cfg.get("scope") == "organization":
+        # The member list decides which accounts are read at all: when it fails (or is cut) the accounts that were not
+        # listed are unknown, so this is a failed target of its own (the job is partial and never compared), not a note.
+        org_label = f"aws:{accounts[0].account}"
+        org_where = f"arn:aws:organizations::{accounts[0].account}:accounts"
         try:
             org = accounts[0].client("organizations", "global")
-            members, _t = _paginate(org, "list_accounts", "Accounts", cap=200)
+            members, members_cut = _paginate(org, "list_accounts", "Accounts", cap=200)
             role_name = role_arn.split(":role/", 1)[1]
             partition = role_arn.split(":")[1]
             for member in members:
                 if member.get("Status") != "ACTIVE" or member["Id"] == accounts[0].account:
                     continue
                 accounts.append(_Account(base, boto_cfg, f"arn:{partition}:iam::{member['Id']}:role/{role_name}", external_id, team_id))
+            if members_cut:
+                emit(_gap(org_label, org_where, "organization member accounts", "truncated",
+                          "More than 200 member accounts; the first 200 were read"))
+                targets.append({"target": f"{org_label}/organization", "status": "error", "assets": 0,
+                                "error": "More than 200 member accounts; the first 200 were read"})
         except Exception as exc:
-            emit({"type": "coverage", "target": accounts[0].account or "", "location": f"arn:aws:organizations::{accounts[0].account}:accounts",
-                  "facts": {"check": "organization member accounts", "status": "error", "detail": _code(exc)}})
-    targets: list[dict[str, Any]] = []
+            emit(_gap(org_label, org_where, "organization member accounts", "error", _code(exc)))
+            targets.append({"target": f"{org_label}/organization", "status": "error", "assets": 0,
+                            "error": f"organization member accounts not listed: {_code(exc)}"[:256]})
     for acct in accounts:
         label = f"aws:{acct.account}"
         for region in ["global", *regions]:
@@ -1053,25 +1197,34 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
                 targets.append({"target": f"{label}/{region}", "status": "skipped_cancelled", "error": reason[:256], "assets": 0})
                 continue
             t0 = time.monotonic()
+            tally = _GapTally(emit)
             try:
-                rows = _global_services(acct, label, emit) if region == "global" else _region_services(acct, region, label, emit, cfg)
+                rows = _global_services(acct, label, tally) if region == "global" else _region_services(acct, region, label, tally, cfg)
             except AwsCollectError as exc:
                 targets.append({"target": f"{label}/{region}", "status": "error", "error": str(exc)[:256], "assets": 0})
                 continue
             except Exception as exc:  # AssumeRole in a member account failed
                 targets.append({"target": f"{label}/{region}", "status": "auth_failed", "error": _code(exc)[:256], "assets": 0})
                 continue
-            bad = [f"{svc}: {status} {detail or ''}".strip() for svc, status, detail in rows if status != "ok"]
+            bad = [f"{svc}: {status} {detail or ''}".strip() for svc, status, detail in rows if status not in ("ok", "partial")]
+            gappy = [f"{svc}: {detail or 'partial'}" for svc, status, detail in rows if status == "partial"]
             enabled = [r for r in rows if r[1] != "not_enabled"]
-            status = "ok" if not bad else ("not_supported" if not enabled else "error")
-            targets.append({"target": f"{label}/{region}", "status": status, "error": "; ".join(bad)[:256] or None,
-                            "duration_ms": int((time.monotonic() - t0) * 1000),
+            # partial: every service answered, some of what they hold was not read (each gap is a scoped coverage row)
+            status = ("error" if enabled else "not_supported") if bad else ("partial" if gappy else "ok")
+            targets.append({"target": f"{label}/{region}", "status": status, "error": "; ".join(bad + gappy)[:256] or None,
+                            "duration_ms": int((time.monotonic() - t0) * 1000), "gaps": tally.gaps,
                             "services": {svc: status_ for svc, status_, _d in rows}})
+    return _summary(targets, team_id, started, accounts=len(accounts))
+
+
+def _summary(targets: list[dict[str, Any]], team_id: int, started: float, **extra: Any) -> dict[str, Any]:
     ok = sum(1 for t in targets if t["status"] == "ok")
+    partial = sum(1 for t in targets if t["status"] == "partial")
     skipped = sum(1 for t in targets if t["status"].startswith("skipped"))
-    log("aws collected", team=team_id, accounts=len(accounts), targets=len(targets), ok=ok,
+    log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial, **extra,
         duration_s=int(time.monotonic() - started))
-    return {"targets": targets, "accounts": len(accounts),
-            "counts": {"total": len(targets), "ok": ok, "failed": len(targets) - ok - skipped, "skipped": skipped},
+    return {"targets": targets, **extra,
+            "counts": {"total": len(targets), "ok": ok, "partial": partial, "failed": len(targets) - ok - partial - skipped,
+                       "skipped": skipped},
             "duration_s": int(time.monotonic() - started)}
 

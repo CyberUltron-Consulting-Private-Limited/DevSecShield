@@ -661,22 +661,25 @@ def _owned_job(session: Session, node: CbomScanNode | None, job_id: int, team_id
 
 
 def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored: int) -> tuple[str, dict[str, Any]]:
-    """ok / partial / failed from the node's own target counts and what the server actually stored."""
+    """ok / partial / failed from the node's own target counts and what the server actually stored.  A ``partial``
+    target (cloud collectors: read, with coverage gaps) makes the job partial, never ok."""
     if status != "success":
         return "failed", {}
     counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
-    ok = int(counts.get("ok") or 0) if str(counts.get("ok", "")).isdigit() else 0
-    failed = int(counts.get("failed") or 0) if str(counts.get("failed", "")).isdigit() else 0
-    skipped = int(counts.get("skipped") or 0) if str(counts.get("skipped", "")).isdigit() else 0
+
+    def count(name: str) -> int:
+        return int(counts.get(name) or 0) if str(counts.get(name, "")).isdigit() else 0
+
+    ok, partial, failed, skipped = count("ok"), count("partial"), count("failed"), count("skipped")
     extra: dict[str, Any] = {}
     reported = result.get("asset_count")
     if job.kind == "collect" and isinstance(reported, int) and reported != stored:
         extra["asset_mismatch"] = {"reported": reported, "stored": stored}
     if not counts:
         return ("partial" if extra or result.get("truncated") else "ok"), extra
-    if ok == 0 and (failed or skipped):
+    if ok == 0 and partial == 0 and (failed or skipped):
         return "failed", extra
-    if failed or skipped or extra or result.get("truncated"):
+    if partial or failed or skipped or extra or result.get("truncated"):
         return "partial", extra
     return "ok", extra
 

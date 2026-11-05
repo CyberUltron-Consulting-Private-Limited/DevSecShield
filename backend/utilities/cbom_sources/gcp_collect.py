@@ -189,6 +189,8 @@ def _projects(http: CloudHttp, access: str, cfg: dict[str, Any]) -> list[str]:
 
 
 def _project(http: CloudHttp, access: str, project: str, label: str, emit: Emit) -> dict[str, str]:
+    """{service: status}: ok, ``truncated`` / ``partial`` (read, with coverage gaps whose ``scope`` names the location
+    prefixes left out -- drift never reports those assets gone), or the failure status."""
     services: dict[str, str] = {}
 
     def run(service: str, fn: Callable[[], str]) -> None:
@@ -200,10 +202,10 @@ def _project(http: CloudHttp, access: str, project: str, label: str, emit: Emit)
             emit({"type": "coverage", "target": label, "location": f"projects/{project}#{service}",
                   "facts": {"check": f"{service} in project {project}", "status": status, "detail": str(exc)[:200]}})
 
-    def truncated(service: str, what: str) -> str:
+    def truncated(service: str, what: str, scope: str) -> str:
         emit({"type": "coverage", "target": label, "location": f"projects/{project}#{service}-cap",
               "facts": {"check": f"{service} in project {project}", "status": "truncated",
-                        "detail": f"More than {ITEM_CAP} {what}; the first {ITEM_CAP} were read"}})
+                        "detail": f"More than {ITEM_CAP} {what}; the first {ITEM_CAP} were read", "scope": [scope]}})
         return "truncated"
 
     def kms() -> str:
@@ -218,13 +220,13 @@ def _project(http: CloudHttp, access: str, project: str, label: str, emit: Emit)
                 for key in keys:
                     emit(_key_asset(key, label))
                     count += 1
-                    if count >= ITEM_CAP:
-                        return truncated("cloudkms", "keys")
+                    if count >= ITEM_CAP:  # key rings and CA pools share this prefix: both are covered (safe side)
+                        return truncated("cloudkms", "keys", f"projects/{project}/locations/")
         return "ok"
 
     def cas() -> str:
         locations, _t = http.google_pages(f"{CAS}/projects/{project}/locations", access, "locations", cap=LOCATION_CAP)
-        count = 0
+        count = unparsed = 0
         for loc in locations:
             if not loc.get("name"):
                 continue
@@ -236,19 +238,21 @@ def _project(http: CloudHttp, access: str, project: str, label: str, emit: Emit)
                     try:
                         emit(_ca_asset(ca, label))
                     except ValueError:
+                        unparsed += 1
                         emit({"type": "coverage", "target": label, "location": f"{ca.get('name')}#parse",
                               "facts": {"check": f"CA {str(ca.get('name')).rsplit('/', 1)[-1]}", "status": "error",
-                                        "detail": "the CA certificate could not be parsed"}})
+                                        "detail": "the CA certificate could not be parsed",
+                                        "scope": [str(ca.get("name") or "")]}})
                     count += 1
                     if count >= ITEM_CAP:
-                        return truncated("privateca", "certificate authorities")
-        return "ok"
+                        return truncated("privateca", "certificate authorities", f"projects/{project}/locations/")
+        return "partial" if unparsed else "ok"
 
     def secret_manager() -> str:
         secrets, cut = http.google_pages(f"{SM}/projects/{project}/secrets", access, "secrets", cap=ITEM_CAP)
         for secret in secrets:  # metadata only; secretmanager.versions.access is never called
             emit(_secret_asset(secret, label))
-        return truncated("secretmanager", "secrets") if cut else "ok"
+        return truncated("secretmanager", "secrets", f"projects/{project}/secrets/") if cut else "ok"
 
     for service, fn in (("cloudkms", kms), ("privateca", cas), ("secretmanager", secret_manager)):
         run(service, fn)
@@ -283,16 +287,20 @@ def collect_gcp(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], emit
                     targets.append({"target": label, "status": "auth_failed", "error": str(exc)[:256], "assets": 0})
                     continue
             services = _project(http, access, project, label, emit)
-            bad = [f"{svc}: {status}" for svc, status in services.items() if status not in ("ok", "truncated")]
+            bad = [f"{svc}: {status}" for svc, status in services.items() if status not in ("ok", "truncated", "partial")]
+            gappy = [f"{svc}: {status}" for svc, status in services.items() if status in ("truncated", "partial")]
             enabled = [s for s in services.values() if s != "not_enabled"]
-            targets.append({"target": label, "status": "ok" if not bad else ("not_supported" if not enabled else "error"),
-                            "error": "; ".join(bad)[:256] or None, "services": services,
-                            "duration_ms": int((time.monotonic() - t0) * 1000)})
+            # a cut list is read, not complete: the target is partial (never "ok"), and its gap rows carry their scope
+            status = ("error" if enabled else "not_supported") if bad else ("partial" if gappy else "ok")
+            targets.append({"target": label, "status": status, "error": "; ".join(bad + gappy)[:256] or None,
+                            "services": services, "duration_ms": int((time.monotonic() - t0) * 1000)})
     ok = sum(1 for t in targets if t["status"] == "ok")
+    partial = sum(1 for t in targets if t["status"] == "partial")
     skipped = sum(1 for t in targets if t["status"].startswith("skipped"))
-    log("gcp collected", team=team_id, projects=len(targets), ok=ok, duration_s=int(time.monotonic() - started))
-    return {"targets": targets, "counts": {"total": len(targets), "ok": ok, "failed": len(targets) - ok - skipped,
-                                           "skipped": skipped},
+    log("gcp collected", team=team_id, projects=len(targets), ok=ok, partial=partial,
+        duration_s=int(time.monotonic() - started))
+    return {"targets": targets, "counts": {"total": len(targets), "ok": ok, "partial": partial,
+                                           "failed": len(targets) - ok - partial - skipped, "skipped": skipped},
             "duration_s": int(time.monotonic() - started)}
 
 
