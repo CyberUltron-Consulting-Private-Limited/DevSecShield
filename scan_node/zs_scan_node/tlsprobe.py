@@ -7,6 +7,7 @@ garbage stream or a 40-certificate chain cannot hang or crash the node.
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import re
@@ -306,22 +307,36 @@ def read_flight(sock: socket.socket, deadline: float, want_kex: bool = False) ->
 
 
 # ----------------------------------------------------------------------------- connecting and preambles
+# Linux and macOS numbers of ENETUNREACH / EHOSTUNREACH, plus "this node has no IPv6" (EAFNOSUPPORT when the stack
+# is absent, EADDRNOTAVAIL when it has no usable address): every one means the node has no route to the target.
+_NO_ROUTE_ERRNOS = frozenset({101, 113, 51, 65, errno.ENETUNREACH, errno.EHOSTUNREACH})
+_NO_IPV6_ERRNOS = frozenset({errno.EAFNOSUPPORT, errno.EADDRNOTAVAIL})
+
+
+def connect_error(exc: OSError, ip: str) -> ProbeError:
+    """The target status for a failed TCP connect (also used by the network collector's gated connect)."""
+    if isinstance(exc, socket.timeout):
+        return ProbeError("timeout", "connect timed out")
+    if isinstance(exc, ConnectionRefusedError):
+        return ProbeError("refused", "connection refused")
+    code = getattr(exc, "errno", None)
+    if ":" in ip and code in _NO_IPV6_ERRNOS:
+        return ProbeError("no_route", "IPv6 is not available on this scan node")
+    return ProbeError("no_route" if code in _NO_ROUTE_ERRNOS else "unreachable", exc.__class__.__name__)
+
+
 def connect(ip: str, port: int, timeout: float = 3.0) -> socket.socket:
     family = socket.AF_INET6 if ":" in ip else socket.AF_INET
-    sock = socket.socket(family, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
+    sock = None
     try:
+        # creating the socket is inside the try: a node without IPv6 fails here (EAFNOSUPPORT), not in connect()
+        sock = socket.socket(family, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
         sock.connect((ip, port))
-    except socket.timeout:
-        sock.close()
-        raise ProbeError("timeout", "connect timed out") from None
-    except ConnectionRefusedError:
-        sock.close()
-        raise ProbeError("refused", "connection refused") from None
-    except OSError as exc:
-        sock.close()
-        code = "no_route" if getattr(exc, "errno", None) in (101, 113, 51, 65) else "unreachable"
-        raise ProbeError(code, exc.__class__.__name__) from None
+    except OSError as exc:  # socket.timeout and ConnectionRefusedError are OSErrors too
+        if sock is not None:
+            sock.close()
+        raise connect_error(exc, ip) from None
     return sock
 
 

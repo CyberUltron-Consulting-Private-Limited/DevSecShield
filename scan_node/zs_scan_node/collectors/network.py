@@ -100,13 +100,8 @@ def _tcp(ip: str, port: int, never, timeout: float) -> socket.socket:
     """A TCP connection through the network gate, with tlsprobe's error codes."""
     try:
         return netutil.connect(ip, port, never, timeout)
-    except socket.timeout:
-        raise T.ProbeError("timeout", "connect timed out") from None
-    except ConnectionRefusedError:
-        raise T.ProbeError("refused", "connection refused") from None
-    except OSError as exc:
-        code = "no_route" if getattr(exc, "errno", None) in (101, 113, 51, 65) else "unreachable"
-        raise T.ProbeError(code, exc.__class__.__name__) from None
+    except OSError as exc:  # timeout, refused, no route, no IPv6 on this node: one mapping (tlsprobe)
+        raise T.connect_error(exc, ip) from None
 
 
 class Endpoint:

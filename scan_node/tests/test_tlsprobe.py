@@ -173,3 +173,63 @@ def test_ldap_result_code_at_the_very_end_is_a_probe_error_not_a_crash():
     finally:
         a.close()
         b.close()
+
+
+# --- a scan node without IPv6 (WP13) --------------------------------------------------------------------------
+def _no_ipv6(monkeypatch, err=None):
+    """Make this process behave like a host whose kernel has no IPv6: creating an AF_INET6 socket fails."""
+    import errno
+
+    real = socket.socket
+
+    def fake(family=socket.AF_INET, *args, **kwargs):
+        if family == socket.AF_INET6:
+            raise OSError(err or errno.EAFNOSUPPORT, "Address family not supported by protocol")
+        return real(family, *args, **kwargs)
+
+    monkeypatch.setattr(T.socket, "socket", fake)
+
+
+def test_connect_on_a_node_without_ipv6_is_a_no_route_status_not_a_raw_oserror(monkeypatch):
+    import errno
+
+    for err in (errno.EAFNOSUPPORT, errno.EADDRNOTAVAIL):
+        _no_ipv6(monkeypatch, err)
+        with pytest.raises(T.ProbeError) as raised:
+            T.connect("2001:db8::10", 443, 1.0)
+        assert (raised.value.code, raised.value.detail) == ("no_route", "IPv6 is not available on this scan node")
+    # every probe that connects through it reports the same status (the collectors turn it into a coverage row)
+    for call in (lambda: T.probe("2001:db8::10", 443, "tls", T.build_client_hello(T.TLS12, T.LEGACY_SUITES), 2.0),
+                 lambda: T.ssh_kexinit("2001:db8::10", 22, 2.0)):
+        with pytest.raises(T.ProbeError) as raised:
+            call()
+        assert raised.value.code == "no_route"
+
+
+def test_connect_error_mapping_is_shared_with_the_network_collector(monkeypatch):
+    import errno
+
+    from zs_scan_node import netutil
+    from zs_scan_node.collectors import network
+
+    assert T.connect_error(socket.timeout(), "10.0.0.1").code == "timeout"
+    assert T.connect_error(ConnectionRefusedError(), "10.0.0.1").code == "refused"
+    assert T.connect_error(OSError(errno.EHOSTUNREACH, "x"), "10.0.0.1").code == "no_route"
+    assert T.connect_error(OSError(errno.EADDRNOTAVAIL, "x"), "10.0.0.1").code == "unreachable"  # IPv4: not "no IPv6"
+    assert T.connect_error(OSError(errno.EAFNOSUPPORT, "x"), "fd00::1").code == "no_route"
+
+    def no_ipv6(ip, port, never, timeout):
+        raise OSError(errno.EAFNOSUPPORT, "Address family not supported by protocol")
+
+    monkeypatch.setattr(netutil, "connect", no_ipv6)
+    with pytest.raises(T.ProbeError) as raised:
+        network._tcp("2001:db8::10", 443, netutil.NeverScan(), 1.0)
+    assert raised.value.code == "no_route"
+    # the IPv4 path is unchanged: a real refused connection on loopback
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    port = srv.getsockname()[1]
+    srv.close()
+    with pytest.raises(T.ProbeError) as raised:
+        T.connect("127.0.0.1", port, 1.0)
+    assert raised.value.code == "refused"
