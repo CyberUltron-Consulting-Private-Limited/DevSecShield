@@ -21,10 +21,19 @@ logger = logging.getLogger(__name__)
 # line, which GitPython only accepts with its unsafe-options check switched off.
 CLONE_GIT_ENV = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.symlinks", "GIT_CONFIG_VALUE_0": "false"}
 
+# Scan option "scan git history for keys" (CBOM repository scans): a deeper clone, capped to what the engine reads
+# (aibom.cbom.githistory: MAX_COMMITS commits, blobs of at most MAX_BLOB_BYTES). Larger blobs are not downloaded
+# (partial clone; a server without filter support sends them and the depth cap still holds).
+HISTORY_CLONE_DEPTH = 1_000
+HISTORY_BLOB_FILTER = "blob:limit=2m"
+
 
 def clone_repo(
     url: str,
-    branch: str = "main") -> Path:
+    branch: str = "main",
+    history_depth: int | None = None) -> Path:
+    """Clone ``branch`` into a new temp directory: depth 1, or ``history_depth`` commits (capped at
+    HISTORY_CLONE_DEPTH, large blobs filtered out) when the scan reads git history."""
 
     try:
         # tmp = Path(tempfile.mkdtemp(prefix="repo_"))
@@ -33,7 +42,11 @@ def clone_repo(
         # The URL carries the access token: never log or report it.
         Console().print(f":package: Cloning [blue]{git_hosts.redact(url)}[/] → {tmp} Branch:{branch}")
 
-        Repo.clone_from(url, tmp, depth=1, branch=branch, env=CLONE_GIT_ENV)
+        if history_depth:
+            depth = max(1, min(int(history_depth), HISTORY_CLONE_DEPTH))
+            Repo.clone_from(url, tmp, depth=depth, branch=branch, env=CLONE_GIT_ENV, filter=HISTORY_BLOB_FILTER)
+        else:
+            Repo.clone_from(url, tmp, depth=1, branch=branch, env=CLONE_GIT_ENV)
     except GitCommandError as e:
         shutil.rmtree(tmp, ignore_errors=True)
         raise RuntimeError(git_hosts.redact(f"Clone failed: {e}")) from None
@@ -146,13 +159,15 @@ def validate_dict_with_context(dict_context: dict) -> GithubContext | GitlabCont
         raise ValueError(f"Invalid context JSON: {e}")
 
 
-def clone_repo_from_context(context: GithubContext | GitlabContext | BitbucketContext) -> Path:
+def clone_repo_from_context(
+    context: GithubContext | GitlabContext | BitbucketContext, history_depth: int | None = None
+) -> Path:
     if context and isinstance(context, GithubContext):
-        return clone_repo(context.repo_url, context.branch)
+        return clone_repo(context.repo_url, context.branch, history_depth)
     elif context and isinstance(context, GitlabContext):
-        return clone_repo(context.repo_url, context.branch)
+        return clone_repo(context.repo_url, context.branch, history_depth)
     elif context and isinstance(context, BitbucketContext):
-        return clone_repo(context.repo_url, context.branch)
+        return clone_repo(context.repo_url, context.branch, history_depth)
     else:
         raise ValueError(f"Unsupported context: {context}")
 

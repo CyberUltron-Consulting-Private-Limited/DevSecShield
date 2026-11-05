@@ -207,6 +207,9 @@ async def format_input_for_scan(
                 # Sent only when on: a default scan's kwargs stay what an older worker accepts.
                 if start_scan_payload.cbom.include_vendored and not start_scan_payload.cbom.cbom_file_used:
                     scan_kwargs["include_vendored"] = True
+                # repository scans only: an uploaded archive's own .git is read by the engine when it is complete
+                if start_scan_payload.cbom.scan_history and "repo_dict_context" in scan_kwargs:
+                    scan_kwargs["scan_history"] = True
                 console.print(f"CBOM kwargs: {scan_kwargs} assembled successfully", style="dim bright_cyan")
                 return scan_kwargs
 

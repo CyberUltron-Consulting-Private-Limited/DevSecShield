@@ -19,6 +19,7 @@ class SastScanSettingsData(BaseModel):
 
 class CbomScanSettingsData(BaseModel):
     scan_binaries: bool = False
+    include_vendored: bool = False  # also read vendor/, dist/, build/, node_modules/ (opt-in, as code scans)
 
 class AiBomScanSettingsData(BaseModel):
     scan_binaries: bool = False

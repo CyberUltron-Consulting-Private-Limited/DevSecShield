@@ -107,6 +107,9 @@ async def format_cicd_input(
             case "cbom":
                 cbom_scan_settings: dict | None = scan_settings.get("cbom") if scan_settings else None
                 cicd_kwargs["scan_binaries"] = cbom_scan_settings.get("scan_binaries", False) if cbom_scan_settings else False
+                # Sent only when on (as the code-scan path): a default CI scan's kwargs stay what an older worker accepts.
+                if cbom_scan_settings and cbom_scan_settings.get("include_vendored") is True:
+                    cicd_kwargs["include_vendored"] = True
 
                 console.print(f"Cicd kwargs assembled successfully: {cicd_kwargs}",style="dim bold yellow")
                 return cicd_kwargs

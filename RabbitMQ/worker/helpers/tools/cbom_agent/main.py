@@ -38,12 +38,18 @@ class CBOMAgent(BaseAgent):
         scan_binaries: bool = False,
         state_update_writer: StateUpdateWriter | None = None,
         include_vendored: bool = False,
+        scan_history: bool = False,
     ):
         try:
             directory = None
             file = None
+            # scan option (repository scans): clone with history (capped) and read key / certificate files that
+            # exist only in it; off: the depth-1 clone, whose shallow history the engine does not read
+            self.scan_history = bool(scan_history) and context is not None
             if context:
-                directory = clone_repo_from_context(context)
+                directory = clone_repo_from_context(
+                    context, history_depth=HISTORY_CLONE_DEPTH if self.scan_history else None
+                )
             elif zip_context:
                 directory = get_directory_from_zip_context(zip_context)
             elif cbom_file_context:
@@ -93,6 +99,9 @@ class CBOMAgent(BaseAgent):
             return scan_crypto_to_devsecshield(
                 str(self.directory), level=4, progress=self._progress, include_vendored=self.include_vendored,
                 scan_binaries=self.scan_binaries,
+                # True reads the (shallow, capped) clone's history; None keeps the engine default (a complete .git
+                # in an uploaded archive is read, a shallow clone is not)
+                scan_history=True if self.scan_history else None,
             )
         if self.cbom_json_file:
             return analyze_cbom_file_to_devsecshield(self.cbom_json_file, progress=self._progress)

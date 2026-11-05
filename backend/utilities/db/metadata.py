@@ -74,6 +74,7 @@ def get_scan_metadata_for_type(scan_type: scan_types , start_scan_payload: Start
                 "cbom_file_used": start_scan_payload.cbom.cbom_file_used,
                 "scan_binaries": start_scan_payload.cbom.scan_binaries,
                 "include_vendored": start_scan_payload.cbom.include_vendored,
+                "scan_history": bool(start_scan_payload.cbom.scan_history and start_scan_payload.cbom.repo_context),
             }
         case "ai_bom":
             return {
