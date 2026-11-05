@@ -498,7 +498,13 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         open={!!resetting}
         onOpenChange={(v) => !v && setResetting(null)}
         title="Reset this scan node?"
-        description={resetting ? `${resetting.name} loses its credential immediately and stops receiving jobs until you register it again with a new token. Use this if the node was reinstalled or its credential may have leaked.` : ""}
+        description={resetting
+          ? resetting.pool_id != null
+            // a pool node's pod enrolls again by itself with its pool token (same pool, same node), unless the pool
+            // token was revoked or has expired (review fix F)
+            ? `${resetting.name} loses its credential immediately. Its pod enrolls again by itself with the agent pool token, as long as that token is not revoked or expired; rotate the pool token instead if it may have leaked.`
+            : `${resetting.name} loses its credential immediately and stops receiving jobs until you register it again with a new token. Use this if the node was reinstalled or its credential may have leaked.`
+          : ""}
         confirmLabel="Reset node"
         destructive
         pending={tokenMutation.isPending}
