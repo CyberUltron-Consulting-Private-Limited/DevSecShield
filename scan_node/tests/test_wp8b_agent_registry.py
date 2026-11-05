@@ -285,11 +285,12 @@ def test_whiteouts_hide_lower_layers_only():
 
 def test_read_layer_finds_inventory_files_and_whiteouts():
     blob = _layer({"var/lib/dpkg/.wh.status": None, "etc/.wh..wh..opq": None, "./var/lib/dpkg/status": b"x",
-                   "usr/bin/tool": b"ignored", "../../etc/os-release": b"evil"})
+                   "usr/bin/tool": b"ignored", "../../etc/os-release": b"evil",
+                   "usr/share/doc/.wh.bash": None, "srv/.wh..wh..opq": None})  # cannot hide a wanted path: dropped
     diff = CI.read_layer(io.BytesIO(gzip.decompress(blob)))
     assert diff.files == {"var/lib/dpkg/status": b"x"}
     assert diff.whiteouts == ["var/lib/dpkg/status"] and diff.opaque == ["etc"]
-    assert diff.notes == ["pathTraversal"]
+    assert diff.notes == {"pathTraversal": 1}
 
 
 def test_a_gzip_bomb_layer_is_refused():
@@ -299,7 +300,7 @@ def test_a_gzip_bomb_layer_is_refused():
         def iter_raw(self, n):
             yield bomb
 
-    stream = CI._Inflate(Resp(), 1024 * 1024)
+    stream = CI._Inflate(Resp(), len(bomb), 1024 * 1024)
     with pytest.raises(CI.ImageError, match="compression bomb"):
         stream.read(-1)
 
@@ -386,11 +387,13 @@ class Lab:
     def port_of(self, host: str) -> int:
         return self.other.server_port if host == "127.0.0.2" else self.registry.server_port
 
-    def push(self, tag: str, layers: list[bytes], index: bool = False, tamper: bool = False) -> None:
+    def push(self, tag: str, layers: list[bytes], index: bool = False, tamper: str | None = None) -> None:
         descs = []
         for blob in layers:
             digest = "sha256:" + hashlib.sha256(blob).hexdigest()
-            self.blobs[digest] = blob + (b"x" if tamper else b"")
+            # "append": one byte more than the descriptor says; "flip": same size, another gzip MTIME (still inflates)
+            self.blobs[digest] = (blob + b"x" if tamper == "append" else
+                                  blob[:4] + bytes([blob[4] ^ 1]) + blob[5:] if tamper == "flip" else blob)
             descs.append({"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": digest,
                           "size": len(blob)})
         manifest = json.dumps({"schemaVersion": 2, "mediaType": "application/vnd.oci.image.manifest.v1+json",
@@ -468,10 +471,14 @@ def test_pull_applies_layers_and_whiteouts_and_emits_purls(lab_factory):
 
 def test_a_layer_that_does_not_match_its_digest_is_not_used(lab_factory):
     lab = lab_factory()
-    lab.push("bad", _image_layers(), tamper=True)
+    lab.push("bad", _image_layers(), tamper="flip")
     status, _error, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:bad")
     assert status == "failure" and not [r for r in ctx.collected if r["type"] == "crypto_library"]
     assert "digest" in (ctx.outcomes[0].error or "")
+    lab.push("long", _image_layers(), tamper="append")  # refused as soon as the extra byte arrives
+    status, _error, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:long")
+    assert status == "failure" and not [r for r in ctx.collected if r["type"] == "crypto_library"]
+    assert "larger than its descriptor" in (ctx.outcomes[0].error or "")
 
 
 def test_credentials_go_to_a_same_origin_token_service(lab_factory, monkeypatch):
