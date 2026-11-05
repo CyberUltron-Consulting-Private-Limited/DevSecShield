@@ -428,3 +428,36 @@ def test_scan_bom_download_json_and_xml(http):
     assert x.headers["x-zs-signature-scope"] == "json" and validate_xml(x.content) == []
     assert client.get("/1/sbom_sca/scan/3/bom?format=xml", headers=hdr).status_code == 400
     assert client.get("/1/cbom/scan/1/bom", headers=hdr).status_code == 400  # not finished
+
+
+def test_scan_bom_json_download_is_the_signed_server_document(http):
+    """rev4 H2: the scan page's "CycloneDX JSON" button downloads this response (frontend
+    utils/api/cbom_outputs.test.ts proves it saves it unchanged). It is the document the BOM signature covers: every
+    crypto asset with its own bom-ref (two MD5 calls stay two assets), library purls, no client-side stamps."""
+    import copy
+
+    from backend.routers import certin as certin_router
+    from backend.utilities.compliance.certin_attest import bom_dict_from_scan_data
+
+    client, engine, _calls = http
+    data = copy.deepcopy(FIXTURE)
+    md5 = next(c for c in data["cbom_json"]["components"] if c["name"] == "MD5")
+    data["cbom_json"]["components"].append({**copy.deepcopy(md5), "bom-ref": "crypto-algo-md5-other-py",
+                                            "evidence": {"occurrences": [{"location": "other.py", "line": 9}]}})
+    with Session(engine) as s:
+        s.add(Scan(id=5, team_id=1, owner_user_id=1, scan_type="cbom", scan_status="success",
+                   created_at=dt.datetime.now(dt.timezone.utc), scan_data=data))
+        s.commit()
+    hdr = {"Authorization": "Bearer t"}
+    signature = client.post("/1/cbom/scan/5/sign", headers=hdr).json()["bom_signature"]
+    downloaded = json.loads(client.get("/1/cbom/scan/5/bom?format=json", headers=hdr).content)
+    assert downloaded == bom_dict_from_scan_data("cbom", data)
+    assert [c["bom-ref"] for c in downloaded["components"]] == [c["bom-ref"] for c in data["cbom_json"]["components"]]
+    assert sum(1 for c in downloaded["components"] if c["name"] == "MD5") == 2
+    assert next(c for c in downloaded["components"] if c["name"] == "pyca/cryptography")["purl"] == "pkg:pypi/cryptography"
+    assert not any(p.get("name") == "dss:compliance" for c in downloaded["components"] for p in c.get("properties") or [])
+    sign = certin_router._load_certin_module("sign")
+    assert sign.verify_signature(downloaded, signature, secret=certin_router._hmac_secret())
+    tampered = copy.deepcopy(downloaded)
+    tampered["components"].pop()  # what the old client-side merge did to the second MD5
+    assert not sign.verify_signature(tampered, signature, secret=certin_router._hmac_secret())

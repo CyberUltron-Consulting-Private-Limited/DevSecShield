@@ -57,7 +57,6 @@ import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, pos
 import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
-import { overlayBomCompliance } from "@/utils/overlayBomCompliance";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
@@ -1013,23 +1012,12 @@ export default function CbomResults({
     onError: (err) => showErrorToast(err, "Error exporting PDF"),
   });
 
+  // The server's CycloneDX document as stored: the file bom_signature signs and the XML is written from. A copy
+  // rebuilt in the browser merged crypto assets and dropped library purls, so it never verified against the signature.
   const handleDownloadCBOMJson = () => {
-    const meta = scanMetadata as Record<string, unknown> | null;
-    const cbomJson = meta?.cbom_json ?? (data as Record<string, unknown> | null)?.cbom_json;
-    if (!cbomJson) { toast.error("No CBOM JSON available"); return; }
-    try {
-      const bom = overlayBomCompliance(cbomJson, meta?.cbom_compliance);
-      const blob = new Blob([JSON.stringify(bom, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `cbom-cyclonedx-${scan_id}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("CycloneDX CBOM JSON downloaded");
-    } catch (err) {
-      showErrorToast(err, "Failed to download CycloneDX CBOM JSON");
-    }
+    void downloadCbomScanBom(team_id as string, scan_id as string, "json")
+      .then(() => toast.success("CycloneDX CBOM JSON downloaded"))
+      .catch(() => undefined);
   };
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -1216,7 +1204,9 @@ export default function CbomResults({
             <Button
               variant="outline"
               className="cursor-pointer"
+              title="The scan's CycloneDX 1.6 document as stored on the server: the file the BOM signature covers"
               onClick={handleDownloadCBOMJson}
+              data-testid="cbom-download-json"
             >
               <Download className="h-4 w-4 mr-2" />
               CycloneDX JSON

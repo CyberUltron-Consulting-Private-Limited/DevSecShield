@@ -4,6 +4,9 @@
  * (and other non-dss/syft) properties so CBOM/AIBOM assets stay intact.
  * Canonicalizes PURLs, folds Syft paths into evidence.occurrences, and
  * merges identical name@version rows so the download matches the table.
+ * Crypto assets (type "cryptographic-asset") are never merged and keep their
+ * bom-ref. A CBOM code scan's JSON download does not use this overlay: it is the
+ * server's signed document (utils/api/cbom_outputs.ts downloadCbomScanBom).
  */
 type Prop = { name: string; value: string };
 type Comp = Record<string, unknown>;
@@ -131,16 +134,25 @@ function mergeComponent(dst: Comp, src: Comp): Comp {
   };
 }
 
+/** A CycloneDX crypto asset is one finding at one place: two MD5 calls in two files are two assets, each with its
+ * own bom-ref that dependencies and the scan's findings point at. They are never merged, re-referenced or given
+ * folded evidence here (their occurrences keep line numbers); only the properties are filtered and stamped. */
+function isCryptoAsset(c: Comp): boolean {
+  return c.type === "cryptographic-asset";
+}
+
 function prepareComponent(comp: unknown, overall: "pass" | "fail" | "unknown"): unknown {
   if (!comp || typeof comp !== "object") return comp;
   const c: Comp = { ...(comp as Comp) };
-  const purl = canonicalPurl(c.purl);
-  if (purl) {
-    c.purl = purl;
-    c["bom-ref"] = purl;
+  if (!isCryptoAsset(c)) {
+    const purl = canonicalPurl(c.purl);
+    if (purl) {
+      c.purl = purl;
+      c["bom-ref"] = purl;
+    }
+    const locs = occurrenceLocations(c);
+    if (locs.length) c.evidence = { occurrences: locs.map((location) => ({ location })) };
   }
-  const locs = occurrenceLocations(c);
-  if (locs.length) c.evidence = { occurrences: locs.map((location) => ({ location })) };
   const local = componentVerdictFromProps(c.properties);
   c.properties = filterProps(c.properties, { name: "dss:compliance", value: local ?? overall });
   return c;
@@ -163,14 +175,15 @@ export function overlayBomCompliance(
     const merged = new Map<string, Comp>();
     const order: string[] = [];
     const passthrough: unknown[] = [];
-    for (const raw of out.components) {
+    for (const [index, raw] of out.components.entries()) {
       const prepared = prepareComponent(raw, overall);
       if (!prepared || typeof prepared !== "object") {
         passthrough.push(prepared);
         continue;
       }
       const c = prepared as Comp;
-      const key = identityKey(c);
+      // crypto assets keep their own slot in document order (never merged by name@version)
+      const key = isCryptoAsset(c) ? `\u0000crypto-asset#${index}` : identityKey(c);
       if (!key) {
         passthrough.push(c);
         continue;
