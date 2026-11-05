@@ -375,16 +375,19 @@ def detect_material_misuse(
 
     Key material whose VALUE proves it (a decoded literal of 16+ bytes, a 128/192/256-bit hex string, a key
     function returning a literal or the digest of one, a key-named configuration entry the code reads, a key
-    printed in a notebook output) is reported without the file gate. ``config_lookup(key, file_name)`` resolves a
-    configuration entry (:meth:`aibom.cbom.project.ProjectIndex.config_value`).
+    printed in a notebook output) is reported without the file gate, when its name says crypto key (``AES_KEY``,
+    ``SECRET_KEY``, ``K``; any key name not public / wrapped / a lookup key once the file has a crypto context).
+    ``config_lookup(key, file_name)`` resolves a configuration entry
+    (:meth:`aibom.cbom.project.ProjectIndex.config_value`).
     """
-    facts = _binding_facts(text, lang) if _CRYPTO_CTX_RE.search(text) else []
+    crypto_ctx = bool(_CRYPTO_CTX_RE.search(text))
+    facts = _binding_facts(text, lang) if crypto_ctx else []
     if lang == "powershell":  # a byte-literal key handed to a SecureString cmdlet
         from aibom.cbom.powershell import securestring_key_facts
 
         facts.extend(securestring_key_facts(text))
     covered = {f.line for f in facts}
-    for fact in _context_free_facts(text, lang, config_lookup):
+    for fact in _context_free_facts(text, lang, config_lookup, crypto_ctx):
         if fact.line not in covered:
             covered.add(fact.line)
             facts.append(fact)
@@ -392,15 +395,16 @@ def detect_material_misuse(
 
 
 def _context_free_facts(
-    text: str, lang: str, config_lookup: Callable[[str, str | None], Any] | None = None
+    text: str, lang: str, config_lookup: Callable[[str, str | None], Any] | None = None, crypto_ctx: bool = False
 ) -> list[MaterialMisuse]:
     from aibom.cbom.detect import _strip_line_comment, strip_noncode
 
     lines = [_strip_line_comment(ln, lang) for ln in strip_noncode(text).splitlines()]
     facts = _function_rng_facts(lines, lang)
     seen = {f.line for f in facts}
-    for fact in (*_literal_key_facts(lines, lang), *_config_key_facts(lines, config_lookup),
-                 *_notebook_output_facts(text)):
+    named = _key_name_check(crypto_ctx)
+    for fact in (*_literal_key_facts(lines, lang, named), *_config_key_facts(lines, config_lookup, crypto_ctx),
+                 *_notebook_output_facts(text, named)):
         if fact.line not in seen:
             seen.add(fact.line)
             facts.append(fact)
@@ -429,6 +433,8 @@ def _binding_facts(text: str, lang: str) -> list[MaterialMisuse]:
             var = m.group(1)
             rhs = _strip_trailing_comment(m.group(2).strip(), lang)
             kind = _material_kind(var)
+            if kind == "secret-key" and _NOT_SECRET_KEY.search(var):
+                kind = None  # a lookup / public / wrapped key (see _NOT_SECRET_KEY)
             if kind is not None:
                 rng = _rng_token(rhs)
                 if rng is not None:
@@ -482,16 +488,43 @@ _DECODE_CALL_RE = re.compile(
     r"|base64\.(?:Std|URL|RawStd|RawURL)Encoding\.DecodeString)\(\s*b?[\"']([A-Za-z0-9+/=_-]{16,})[\"']"
 )
 _STR_PIECE_RE = re.compile(r"""^\s*b?(["'])([^"'\\]*)\1\s*""")
-# Names that end in ``key`` without being secret key material.
+# Names that end in ``key`` without being secret key material: lookup / cache keys, keys published by design (a
+# public, publishable, reCAPTCHA site or search-only key) and keys stored only as ciphertext (wrapped / encrypted
+# under a KMS key, useless without it). Applied in every lane that reads a key name.
 _NOT_SECRET_KEY = re.compile(
-    r"cache|sort|primary|foreign|partition|idempoten|lookup|index|field|column|row|hash|etag|public|pub_|"
+    r"cache|sort|primary|foreign|partition|idempoten|lookup|search|index|field|column|row|hash|etag|public|pub_|"
+    r"publishable|site|captcha|wrapped|encrypted|"
     r"dedup|unique|registry|object|bucket|redis|map_|dict|lock|group|routing|license|api_?key", re.I)
+# Words that make a key name a CRYPTOGRAPHIC key on its own. A file with no cipher, MAC or crypto import gives no
+# other evidence, and ``*_KEY`` there is as often a third-party service identifier (``PUSHER_KEY``, a Sentry DSN
+# key) as a cipher key: the name has to say which.
+_CRYPTO_KEY_WORDS = frozenset({
+    "aes", "des", "rc4", "blowfish", "chacha", "chacha20", "fernet", "enc", "encrypt", "encryption", "crypt",
+    "crypto", "cipher", "aead", "hmac", "mac", "sign", "signing", "jwt", "secret", "private", "priv", "master",
+    "session", "sym", "symmetric", "kek", "dek",
+})
 
 
 def _strict_key_name(var: str) -> bool:
     if var in ("k", "K"):
         return True
     return _material_kind(var) == "secret-key" and not _NOT_SECRET_KEY.search(var)
+
+
+def _crypto_key_name(var: str) -> bool:
+    """A key name that is a cryptographic key without help from the file: ``KEY`` / ``K`` / ``secret`` alone, or
+    a name with a crypto word (``AES_KEY``, ``SECRET_KEY``, ``signingKey``, ``aes.key``)."""
+    if not _strict_key_name(var):
+        return False
+    if var in ("k", "K") or var.lower() in _KEY_NAMES:
+        return True
+    return any(w.lower() in _CRYPTO_KEY_WORDS for w in _WORD_SPLIT.findall(var))
+
+
+def _key_name_check(crypto_ctx: bool) -> Callable[[str], bool]:
+    """Next to a cipher / crypto import any key name that is not a lookup or public key; elsewhere only a name that
+    says crypto key (:func:`_crypto_key_name`)."""
+    return _strict_key_name if crypto_ctx else _crypto_key_name
 
 
 def _decoded_len(value: str) -> int:
@@ -528,9 +561,11 @@ def _joined_literal(pieces: list[str]) -> str | None:
 _KEYISH_LINE = re.compile(r"(?i:key|secret)|\b[kK]\s*[:=]")
 
 
-def _literal_key_facts(lines: list[str], lang: str) -> list[MaterialMisuse]:
-    """A key-named binding (``KEY``, ``aes_key``, ``K``) whose value is a decoded literal of 16+ bytes, or a
-    128/192/256-bit hex string (also split over adjacent literals or lines inside parentheses)."""
+def _literal_key_facts(
+    lines: list[str], lang: str, named: Callable[[str], bool] = _strict_key_name
+) -> list[MaterialMisuse]:
+    """A key-named binding (``KEY``, ``aes_key``, ``K``; ``named`` decides) whose value is a decoded literal of 16+
+    bytes, or a 128/192/256-bit hex string (also split over adjacent literals or lines inside parentheses)."""
     facts: list[MaterialMisuse] = []
     idx = 0
     while idx < len(lines):
@@ -539,7 +574,7 @@ def _literal_key_facts(lines: list[str], lang: str) -> list[MaterialMisuse]:
         if not _KEYISH_LINE.search(raw):
             continue  # every name this lane accepts contains "key" / "secret" or is ``k`` / ``K``
         m = _ASSIGN_RE.search(raw)
-        if not m or not _strict_key_name(m.group(1)):
+        if not m or not named(m.group(1)):
             continue
         rhs = m.group(2).strip()
         line_no = idx
@@ -569,20 +604,26 @@ _CONFIG_KEY_LIT_RE = re.compile(r"""["'](?:\$\{)?([A-Za-z][\w-]*(?:\.[\w-]+)+)\}
 
 
 def _config_key_facts(
-    lines: list[str], config_lookup: Callable[[str, str | None], Any] | None
+    lines: list[str], config_lookup: Callable[[str, str | None], Any] | None, crypto_ctx: bool = True
 ) -> list[MaterialMisuse]:
     """Code that reads a key-named configuration entry whose value is key material (``line.startswith('aes.key=')``
-    on ``keys.properties``): the key is hardcoded in the repository, one file away."""
+    on ``keys.properties``): the key is hardcoded in the repository, one file away. The whole dotted name decides
+    what the key is (``algolia.search.key`` is a lookup key; without a crypto context ``sentry.key`` is a service
+    identifier, ``aes.key`` a cipher key)."""
     if config_lookup is None:
         return []
-    named = {m.group(1).rsplit("/", 1)[-1] for ln in lines for m in _CONFIG_FILE_LIT_RE.finditer(ln)}
-    file_name = next(iter(named)) if len(named) == 1 else None
+    files = {m.group(1).rsplit("/", 1)[-1] for ln in lines for m in _CONFIG_FILE_LIT_RE.finditer(ln)}
+    file_name = next(iter(files)) if len(files) == 1 else None
     facts: list[MaterialMisuse] = []
     for no, line in enumerate(lines, start=1):
         for m in _CONFIG_KEY_LIT_RE.finditer(line):
             key = m.group(1)
             last = key.rsplit(".", 1)[-1]
-            if not (_strict_key_name(last) or _strict_key_name(key.replace(".", "_").replace("-", "_"))):
+            flat = key.replace(".", "_").replace("-", "_")
+            if _NOT_SECRET_KEY.search(flat) or not (_strict_key_name(last) or _strict_key_name(flat)):
+                continue
+            if not (crypto_ctx or flat.lower() in _KEY_NAMES or
+                    any(w.lower() in _CRYPTO_KEY_WORDS for w in _WORD_SPLIT.findall(flat))):
                 continue
             d = config_lookup(key, file_name)
             if d is None or not (_hex_key_like(d.value) or _decoded_len(d.value) in (16, 24, 32)):
@@ -593,13 +634,16 @@ def _config_key_facts(
 
 
 # A key printed by a notebook cell (``AES key = 0011...``) in its saved output (see :mod:`aibom.cbom.notebook`).
+# The label before ``key`` is the key's name and takes the same name rules as a variable (an ``Idempotency key`` or
+# a ``cache key`` is not key material).
 _OUTPUT_KEY_RE = re.compile(
-    r"\b(?:[A-Za-z0-9_-]+[ _-])?key\s*[=:]\s*['\"]?(?P<v>[0-9a-fA-F]{32,64}|[A-Za-z0-9+/_-]{22,86}={0,2})(?![\w+/=])",
+    r"\b(?P<label>(?:[A-Za-z0-9_-]+[ _-])?key)\s*[=:]\s*['\"]?"
+    r"(?P<v>[0-9a-fA-F]{32,64}|[A-Za-z0-9+/_-]{22,86}={0,2})(?![\w+/=])",
     re.IGNORECASE,
 )
 
 
-def _notebook_output_facts(text: str) -> list[MaterialMisuse]:
+def _notebook_output_facts(text: str, named: Callable[[str], bool] = _strict_key_name) -> list[MaterialMisuse]:
     from aibom.cbom.notebook import OUTPUT_PREFIX
 
     if OUTPUT_PREFIX not in text:
@@ -609,7 +653,8 @@ def _notebook_output_facts(text: str) -> list[MaterialMisuse]:
         if not line.startswith(OUTPUT_PREFIX):
             continue
         m = _OUTPUT_KEY_RE.search(line)
-        if m and (_hex_key_like(m.group("v")) or _decoded_len(m.group("v")) in (16, 24, 32)):
+        if m and named(re.sub(r"[ -]", "_", m.group("label"))) and \
+                (_hex_key_like(m.group("v")) or _decoded_len(m.group("v")) in (16, 24, 32)):
             facts.append(MaterialMisuse(kind="secret-key", var="notebook output", line=no, hardcoded=True))
     return facts
 

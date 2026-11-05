@@ -62,6 +62,8 @@ _JAVA_VALUE_FIELD = re.compile(
 _JAVA_DYNAMIC_CIPHER = re.compile(r"\bCipher\s*\.\s*getInstance\s*\(\s*[a-z_]\w*\s*[,)]")
 _CIPHER_CONFIG_KEY = re.compile(r"cipher|transformation", re.I)
 _TRANSFORMATION = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9]+/[A-Za-z0-9]+$")
+# A configuration key named in source: ``@Value("${legacy.import.cipher}")``, ``getProperty("legacy.import.cipher")``.
+_CONFIG_KEY_REF = re.compile(r'"(?:\$\{)?([A-Za-z][\w\-]*(?:\.[\w\-]+)+)(?::[^}"]*)?\}?"')
 
 # --------------------------------------------------------------------------- #
 # Python
@@ -180,6 +182,7 @@ class ProjectIndex:
         self._scopes: dict[str, dict[str, Definition]] = {}
         self._callers: dict[str, dict[str, list[tuple[str, int]]]] | None = None
         self._config: dict[str, list[Definition]] | None = None
+        self._config_refs: set[str] | None = None
 
     # --- Java ------------------------------------------------------------- #
     def _java_table(self) -> dict[str, Definition]:
@@ -215,7 +218,9 @@ class ProjectIndex:
     def _java_config(self, rel: str, text: str) -> dict[str, Definition]:
         """Configuration values a Java file reads: Spring ``@Value("${app.cipher}") String f`` fields, and (key
         ``@config:Cipher``) the one cipher transformation configured in this module's ``src/main/resources``, for a
-        ``Cipher.getInstance(<parameter>)`` nothing else resolves."""
+        ``Cipher.getInstance(<parameter>)`` nothing else resolves. A transformation whose key some class names
+        (``@Value("${legacy.import.cipher}")``) belongs to that class: it is no evidence for another class's
+        parameter, whose value comes from its own callers."""
         out: dict[str, Definition] = {}
         for key, field_name in _JAVA_VALUE_FIELD.findall(text):
             d = self.config_value(key, near=rel)
@@ -223,11 +228,24 @@ class ProjectIndex:
                 out[field_name] = d
         if "src/main/java/" in rel and _JAVA_DYNAMIC_CIPHER.search(text):
             module = rel.split("src/main/java/", 1)[0] + "src/main/resources/"
-            found = [d for key, defs in self._config_table().items() if _CIPHER_CONFIG_KEY.search(key)
+            named = self._referenced_config_keys()
+            found = [d for key, defs in self._config_table().items()
+                     if _CIPHER_CONFIG_KEY.search(key) and key not in named
                      for d in defs if d.path.startswith(module) and _TRANSFORMATION.match(d.value)]
             if len({d.value for d in found}) == 1:
                 out["@config:Cipher"] = found[0]
         return out
+
+    def _referenced_config_keys(self) -> set[str]:
+        """Configuration keys a Java / Kotlin source of the project names in a string literal."""
+        if self._config_refs is None:
+            refs: set[str] = set()
+            for path in self.walk.files(lambda p: p.suffix.lower() in _JAVA_SUFFIXES):
+                text = self.walk.read_text(path)
+                if text and '"' in text:
+                    refs.update(_CONFIG_KEY_REF.findall(text))
+            self._config_refs = refs
+        return self._config_refs
 
     def _java_scope(self, text: str, rel: str = "") -> dict[str, Definition]:
         local = set(_JAVA_CLASS.findall(text))
