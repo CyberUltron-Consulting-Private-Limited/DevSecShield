@@ -96,15 +96,19 @@ services:
     profiles: ["minio"]
     restart: unless-stopped
     logging: *logging
-    command: ["server", "/data"]
-    environment:
-      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-}
-      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-}
+    # The root credentials are the AWS_* the application uses, read from the same .env file inside the container.
+    # Not ${AWS_ACCESS_KEY_ID} interpolation: Compose prefers the caller's shell environment over --env-file, so an
+    # operator with AWS credentials exported (usual on a build machine) started MinIO with those while the backend
+    # signed with the .env pair, and every S3 call failed with InvalidAccessKeyId.
+    env_file: [.env]
+    entrypoint: ["/bin/sh", "-c", "MINIO_ROOT_USER=\"$$AWS_ACCESS_KEY_ID\" MINIO_ROOT_PASSWORD=\"$$AWS_SECRET_ACCESS_KEY\" exec minio server /data"]
     volumes:
       - miniodata:/data
     networks: [internal]
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      # `mc ready local` where the image ships mc; otherwise MinIO's own liveness URL over bash's /dev/tcp (an image
+      # built from the MinIO source has bash but neither mc, curl nor wget).
+      test: ["CMD-SHELL", "mc ready local >/dev/null 2>&1 || bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf \"GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && head -n 1 <&3 | grep -q \" 200 \"'"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -151,6 +155,11 @@ services:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
+      # Profile "minio": the API needs the bucket. A one-shot nothing depends on makes `up --wait` (make up,
+      # staging.sh deploy) fail with "container minio-init exited (0)"; required: false = ignored without the profile.
+      minio-init:
+        condition: service_completed_successfully
+        required: false
     command: ["uv", "run", "gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker",
               "--workers", "${BACKEND_WORKERS:-4}", "--bind", "0.0.0.0:8080", "--timeout", "300",
               "--graceful-timeout", "30", "--keep-alive", "5"]

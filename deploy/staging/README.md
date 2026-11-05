@@ -31,7 +31,10 @@ workflow runs it from CI.
    Set `ENCRYPTION_KEY` before the first start (see `docs/security/secret-rotation.md`).
    **`DSS_DEV_MODE` and `LOCAL_DEV_VERIFICATION_*` must never be set here**; `staging.sh` refuses to deploy if
    they are.
-3. Optional local S3: `AWS_ENDPOINT_URL_S3=http://minio:9000` in `.env` and `COMPOSE_PROFILES=minio`.
+3. Optional local S3: `AWS_ENDPOINT_URL_S3=http://minio:9000` in `.env` and `COMPOSE_PROFILES=minio`. The default
+   `MINIO_IMAGE` is no longer on Docker Hub (MinIO removed the repository): set `MINIO_IMAGE` to an image you have
+   loaded (mirrored, or built from the MinIO source). MinIO's root credentials are `AWS_ACCESS_KEY_ID` /
+   `AWS_SECRET_ACCESS_KEY` from `.env`, read inside the container (a shell's exported AWS variables do not apply).
 
 ## Deploy (build machine)
 
@@ -48,8 +51,10 @@ the head of its migrations are kept in `releases/<tag>/` for a rollback. `deploy
 not contain the database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
 
 Without registry access on the host, add `STAGING_INCLUDE_INFRA=1` to ship the postgres, mongo, rabbitmq and nginx
-images in the same archive. Behind a TLS-intercepting proxy, build with `UV_BASE_IMAGE` / `NODE_BASE_IMAGE` set to
-base images that trust the proxy CA. Plain-HTTP staging (no certificates): build with
+images in the same archive. Behind a TLS-intercepting proxy, build with `UV_BASE_IMAGE` (backend, scan worker, DAST
+worker), `NODE_BASE_IMAGE` (frontend) and `GO_BASE_IMAGE` (the scan worker's cbomkit-theia stage) set to base images
+that trust the proxy CA: the system bundle (`/etc/ssl/certs/ca-certificates.crt`, which apt, apk, curl, git and
+Python read) must contain it, and `SSL_CERT_FILE` / `UV_NATIVE_TLS=1` / `NODE_EXTRA_CA_CERTS` set so uv and npm do. Plain-HTTP staging (no certificates): build with
 `NEXT_PUBLIC_BACKEND_URL=http://<API_HOST>` and set `CORS_ORIGINS=http://<FRONTEND_HOST>`.
 
 ## Checks
