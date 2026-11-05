@@ -3250,7 +3250,7 @@
   },
   "node": {
    "CA_ALLOWS_ANY_NAME": {
-    "attack": "Anyone allowed to request from it can obtain a certificate for another server or user and impersonate it; in AD CS this is the ESC1 privilege-escalation path to domain administrator.",
+    "attack": "Anyone allowed to request from it can obtain a certificate for another server or user and impersonate it; in AD CS this is the ESC1 privilege-escalation path to domain administrator (ESC6 when the CA adds the SID extension: services that map certificates by name, such as VPN or 802.1X, still accept them).",
     "category": "certificate",
     "compliance": [
      "certificates",
@@ -3263,7 +3263,7 @@
      "CWE-295"
     ],
     "default_impact": "Medium",
-    "description": "A Vault PKI role has allow_any_name, or an AD CS template with client authentication lets the enrollee supply the subject (ENROLLEE_SUPPLIES_SUBJECT).",
+    "description": "A Vault PKI role has allow_any_name; or an AD CS template lets the enrollee supply the subject (ENROLLEE_SUPPLIES_SUBJECT) of a certificate that can sign in (client authentication, any purpose or no EKU) and principals other than administrators may enroll (High when every domain user or computer may; Medium when named groups may, or when enrollment rights were not read); or the CA takes subject alternative names from request attributes for every template (EDITF_ATTRIBUTESUBJECTALTNAME2, ESC6). Since KB5014754 the CA writes the requester's SID into its certificates and domain controllers refuse a certificate whose SID is not the account it names, so ESC6 is High only when the CA leaves that extension out (DisableExtensionList, ESC16) or that was not read. Templates only administrators may enroll in (SubCA by default) are not reported.",
     "owasp": [
      "access",
      "auth"
@@ -3294,13 +3294,25 @@
     ],
     "pqc": null,
     "references": [
-     "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+     "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf",
+     "https://support.microsoft.com/help/5014754"
     ],
     "remediation": {
-     "steps": [],
-     "summary": "Restrict names (allowed_domains, allow_subdomains in Vault; build the subject from Active Directory and require manager approval in AD CS) and limit who may enroll."
+     "steps": [
+      {
+       "how": "Certificate Templates console > template > Subject Name: Build from this Active Directory information; Security: remove Enroll from Domain Users / Authenticated Users / Domain Computers",
+       "platform": "AD CS template"
+      },
+      {
+       "how": "certutil -setreg policy\\EditFlags -EDITF_ATTRIBUTESUBJECTALTNAME2; net stop certsvc && net start certsvc",
+       "platform": "AD CS CA (ESC6)"
+      }
+     ],
+     "summary": "Restrict names (allowed_domains, allow_subdomains in Vault; build the subject from Active Directory and require manager approval in AD CS), limit who may enroll, and turn EDITF_ATTRIBUTESUBJECTALTNAME2 off on the CA."
     },
-    "standards": [],
+    "standards": [
+     "Microsoft KB5014754 (certificate-based authentication changes on DCs)"
+    ],
     "summary_rules": [],
     "title": "CA issues certificates for names the requester chooses",
     "verify": [
@@ -3311,6 +3323,14 @@
      {
       "command": "certutil -catemplates",
       "label": "Certificate templates published on the CA"
+     },
+     {
+      "command": "certutil -v -template <template>",
+      "label": "A template's settings and permissions (its Allow Enroll and Allow Full Control / Write lines)"
+     },
+     {
+      "command": "certutil -getreg policy\\DisableExtensionList",
+      "label": "Extensions the CA leaves out (1.3.6.1.4.1.311.25.2 listed = no SID extension, ESC16)"
      },
      {
       "command": "vault read <pki-mount>/roles/{name}",
@@ -3378,7 +3398,7 @@
     ]
    },
    "CA_LONG_VALIDITY": {
-    "attack": "A leaked key stays usable for longer, and certificates outlive the algorithms and owners they were made for.",
+    "attack": "A leaked key stays usable for longer, certificates outlive the algorithms and owners they were made for, and Apple clients reject the certificates outright.",
     "category": "certificate",
     "compliance": [
      "certificates"
@@ -3389,7 +3409,7 @@
      "CWE-324"
     ],
     "default_impact": "Low",
-    "description": "A template or role issues server certificates valid for more than 398 days.",
+    "description": "An internal CA template or role issues TLS server certificates valid for more than 825 days. The CA/Browser Forum's 398 days applies to publicly trusted certificates only; for internal CAs the limit used is 825 days, because Apple platforms (iOS 13 / macOS 10.15 and later) refuse TLS server certificates valid for longer even when they chain to an enterprise root. Templates that issue CA certificates (SubCA, CA, CrossCA) are not judged.",
     "owasp": [
      "crypto"
     ],
@@ -3409,21 +3429,97 @@
     ],
     "pqc": null,
     "references": [
+     "https://support.apple.com/HT210176",
      "https://cabforum.org/working-groups/server/baseline-requirements/"
     ],
     "remediation": {
      "steps": [],
-     "summary": "Lower the role's max_ttl or the template's validity to 397 days or less and automate renewal."
+     "summary": "Lower the role's max_ttl or the template's validity to 825 days or less (397 days if the certificates must also meet public-CA rules) and automate renewal."
     },
     "standards": [
-     "CA/Browser Forum Baseline Requirements 6.3.2 (398 days)"
+     "Apple HT210176 (825 days for TLS server certificates)",
+     "CA/Browser Forum Baseline Requirements 6.3.2 (398 days, publicly trusted)"
     ],
     "summary_rules": [],
-    "title": "CA issues long-lived certificates",
+    "title": "CA issues long-lived server certificates",
     "verify": [
      {
       "command": "vault read <pki-mount>/roles/{name}",
       "label": "PKI role settings (read-only token)"
+     },
+     {
+      "command": "certutil -v -template <template>",
+      "label": "A template's settings and permissions (its Allow Enroll and Allow Full Control / Write lines)"
+     }
+    ]
+   },
+   "CA_TEMPLATE_WRITABLE": {
+    "attack": "Any domain account can rewrite the template (let the enrollee supply the subject, add client authentication, grant itself Enroll), request a certificate for a domain administrator and sign in as them: the AD CS ESC4 path to domain compromise.",
+    "category": "certificate",
+    "compliance": [
+     "certificates",
+     "auth"
+    ],
+    "cve_rules": [],
+    "cves": [],
+    "cwe": [
+     "CWE-732",
+     "CWE-284"
+    ],
+    "default_impact": "High",
+    "description": "Everyone, Authenticated Users, Domain Users, Domain Computers or another principal every account is in holds full control, write, write-owner or write-permission rights on an AD CS certificate template (read from the template's security on the CA server).",
+    "owasp": [
+     "access",
+     "misconfig"
+    ],
+    "owasp_2021": [
+     {
+      "basis": "CWE-284 is in OWASP's mapped CWE list",
+      "id": "A01:2021",
+      "label": "A01:2021 - Broken Access Control"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A05:2021",
+      "label": "A05:2021 - Security Misconfiguration"
+     }
+    ],
+    "owasp_2025": [
+     {
+      "basis": "CWE-732, CWE-284 is in OWASP's mapped CWE list",
+      "id": "A01:2025",
+      "label": "A01:2025 - Broken Access Control"
+     },
+     {
+      "basis": "category of the finding",
+      "id": "A02:2025",
+      "label": "A02:2025 - Security Misconfiguration"
+     }
+    ],
+    "pqc": null,
+    "references": [
+     "https://specterops.io/wp-content/uploads/sites/3/2022/06/Certified_Pre-Owned.pdf"
+    ],
+    "remediation": {
+     "steps": [
+      {
+       "how": "Certificate Templates console (certtmpl.msc) > template > Properties > Security: clear Full Control and Write for Everyone, Authenticated Users, Domain Users and Domain Computers; check the template owner",
+       "platform": "AD CS"
+      }
+     ],
+     "summary": "Remove every write, owner and full-control permission that low-privileged groups hold on the template; keep them for Domain Admins / Enterprise Admins (or a dedicated PKI admin group) only."
+    },
+    "standards": [],
+    "summary_rules": [],
+    "title": "Low-privileged users can change a certificate template",
+    "verify": [
+     {
+      "command": "certutil -v -template <template>",
+      "label": "A template's settings and permissions (its Allow Enroll and Allow Full Control / Write lines)"
+     },
+     {
+      "command": "certutil -getreg policy\\DisableExtensionList",
+      "label": "Extensions the CA leaves out (1.3.6.1.4.1.311.25.2 listed = no SID extension, ESC16)"
      }
     ]
    },
@@ -4833,7 +4929,7 @@
     ]
    },
    "DB_TDE_OFF": {
-    "attack": "Data files, backups, snapshots and replicas expose the data to anyone who copies them.",
+    "attack": "Without TDE, data files copied off the server, backups, snapshots and replicas expose the data to anyone who copies them, unless the storage under them or the backups themselves are encrypted.",
     "category": "database",
     "compliance": [
      "at_rest"
@@ -4844,7 +4940,7 @@
      "CWE-311"
     ],
     "default_impact": "Low",
-    "description": "A SQL Server database or an Oracle tablespace is not protected by Transparent Data Encryption.",
+    "description": "A SQL Server database or an Oracle tablespace is not protected by Transparent Data Encryption. Only database-level encryption is visible from inside the database: the volume or managed service (BitLocker, LUKS, RDS storage encryption) may still encrypt the data files, so check that before treating the data as unencrypted at rest.",
     "owasp": [
      "crypto"
     ],
@@ -4891,7 +4987,7 @@
     },
     "standards": [],
     "summary_rules": [],
-    "title": "Database not encrypted at rest",
+    "title": "No database-level encryption (TDE off)",
     "verify": [
      {
       "command": "sqlcmd -S {host},{port} -N -Q \"SELECT name, algorithm_desc, key_length FROM sys.symmetric_keys; SELECT DB_NAME(database_id), encryption_state, key_algorithm, key_length FROM sys.dm_database_encryption_keys\"",
@@ -6482,7 +6578,7 @@
     ]
    },
    "IKE_WEAK_INTEG": {
-    "attack": "MD5 and SHA-1 no longer meet current security margins; keeping them lets a downgraded negotiation key and authenticate the IKE SA with legacy primitives that auditors and NIST SP 800-131A reject.",
+    "attack": "MD5 no longer meets current security margins; keeping it lets a downgraded negotiation key and authenticate the IKE SA with a primitive RFC 8247 forbids. HMAC-SHA-1 is not broken, but it is on its way out and auditors following NIST SP 800-131A ask for SHA-2.",
     "category": "protocol",
     "compliance": [
      "algorithms"
@@ -6494,7 +6590,7 @@
      "CWE-328"
     ],
     "default_impact": "Medium",
-    "description": "The IKE gateway accepts HMAC-MD5 or HMAC-SHA-1 as the IKE integrity algorithm or PRF (or MD5/SHA-1 as the IKEv1 hash). RFC 8247 makes MD5 MUST NOT and SHA-1 integrity a legacy choice.",
+    "description": "The IKE gateway accepts HMAC-MD5 or HMAC-SHA-1 as the IKE integrity algorithm or PRF (or MD5/SHA-1 as the IKEv1 hash). RFC 8247 makes HMAC-MD5 MUST NOT (reported Medium) and keeps HMAC-SHA-1 as MUST-, still required for interoperability but expected to be downgraded, so HMAC-SHA-1 alone is reported Low: HMAC does not depend on SHA-1's collision resistance.",
     "owasp": [
      "crypto",
      "misconfig"
@@ -6570,7 +6666,7 @@
     ]
    },
    "IPSEC_WEAK_TRANSFORM": {
-    "attack": "The child SA protects the actual data: a weak cipher, MAC or PFS group there exposes the tunnelled traffic even when the IKE SA itself is strong.",
+    "attack": "The child SA protects the actual data: a weak cipher, MD5 MAC or small PFS group there exposes the tunnelled traffic even when the IKE SA itself is strong; HMAC-SHA-1 is not broken but is being retired.",
     "category": "protocol",
     "compliance": [
      "algorithms"
@@ -6589,7 +6685,7 @@
      "CWE-326"
     ],
     "default_impact": "Medium",
-    "description": "An appliance's IPsec (ESP) proposal or crypto profile lists DES, 3DES, NULL encryption, MD5 or SHA-1 integrity, or a weak PFS group for the child SAs that carry the traffic.",
+    "description": "An appliance's IPsec (ESP) proposal or crypto profile lists DES, 3DES, NULL encryption, MD5 or SHA-1 integrity, or a weak PFS group for the child SAs that carry the traffic. RFC 8221 makes HMAC-MD5 MUST NOT and keeps HMAC-SHA-1-96 as MUST- (allowed, expected to be phased out), so a proposal whose only weakness is HMAC-SHA-1 is reported Low.",
     "owasp": [
      "crypto",
      "misconfig"
@@ -7896,7 +7992,7 @@
     ]
    },
    "MESH_DR_TLS_DISABLED": {
-    "attack": "Traffic to the destination crosses the network unencrypted and unauthenticated; anyone on the path (a compromised node, a mirror port) reads and changes it.",
+    "attack": "Traffic to an in-mesh destination crosses the network unencrypted and unauthenticated; anyone on the path (a compromised node, a mirror port) reads and changes it. Toward an external host this happens only if the application itself connects without TLS.",
     "category": "kubernetes",
     "compliance": [
      "in_transit"
@@ -7907,7 +8003,7 @@
      "CWE-319"
     ],
     "default_impact": "High",
-    "description": "An Istio DestinationRule sets trafficPolicy.tls.mode DISABLE (for the host, a port or a subset), so sidecars send plaintext to that destination instead of using mesh mTLS.",
+    "description": "An Istio DestinationRule sets trafficPolicy.tls.mode DISABLE (for the host, a port or a subset), so sidecars send plaintext to that destination instead of using mesh mTLS (High). For a host outside the cluster (a DNS name that is not a Kubernetes service, such as a managed database endpoint) the sidecar does not originate TLS by default either and the application usually does its own TLS, which passes through unchanged, so that case is Low: verify the application connects with TLS.",
     "owasp": [
      "crypto",
      "misconfig"
@@ -11701,7 +11797,7 @@
    }
   }
  },
- "kb_version": "2026.11.02.7",
+ "kb_version": "2026.11.05.1",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",
