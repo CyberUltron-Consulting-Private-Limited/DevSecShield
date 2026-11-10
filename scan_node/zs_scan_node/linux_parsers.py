@@ -532,6 +532,7 @@ def web_tls(text: str) -> dict[str, dict[str, Any]]:
         value = printable(raw.strip("'\"").strip(), 400)
         if m.group(3) in ("ssl_protocols", "SSLProtocol"):
             f["protocols_raw"] = value
+            f["protocols_line"] = int(m.group(2))  # the line a finding tells the customer to change
             if m.group(3) == "ssl_protocols":
                 f["protocols"] = [p for p in value.replace(";", " ").split() if p]
             else:  # Apache: all, +X, -X
