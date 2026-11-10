@@ -4456,6 +4456,10 @@ export interface CbomPlanItem {
     status: "queued" | "skipped" | "waiting" | "gap"
     reason: string | null
     waiting_for_node?: boolean
+    /** a scan-node job waits for its scan window (team or server's own) */
+    window_applies?: boolean
+    /** when a run queued now may start; null: now (or no window) */
+    window_starts_at?: string | null
     area_key?: string
 }
 

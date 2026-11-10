@@ -328,3 +328,36 @@ export function withMetadata(
 ): Record<string, unknown> {
   return { ...(config ?? {}), ...fields, exposure: exposure === "auto" ? null : exposure }
 }
+
+/** A plan item's scan-window facts (estimate / overview ``plan.items``). */
+export interface WindowedItem {
+  status: string
+  window_applies?: boolean
+  window_starts_at?: string | null
+}
+
+/** Scan-node jobs (servers, Kubernetes, databases, network) wait for their scan window; cloud jobs do not. The queued
+ * items that will wait, and the earliest moment one of them may start (null when every one starts now). */
+export function windowWait(items: WindowedItem[]): { applies: number; waiting: number; firstStart: string | null } {
+  const queued = items.filter((i) => i.status === "queued" && i.window_applies)
+  const starts = queued.map((i) => i.window_starts_at).filter((s): s is string => !!s).sort()
+  return { applies: queued.length, waiting: starts.length, firstStart: starts[0] ?? null }
+}
+
+/** The line under a Review & Run row whose sources wait for a scan window (null when none of them has one). */
+export function windowLine(items: WindowedItem[]): string | null {
+  const w = windowWait(items)
+  if (!w.applies) return null
+  if (!w.waiting) return "In the scan window now"
+  return `Outside the scan window: starts ${formatDateTime(w.firstStart)}`
+}
+
+/** Said before Start charges a run: which sources wait for their window and when the first one starts. */
+export function windowStartNotice(items: WindowedItem[]): string | null {
+  const w = windowWait(items)
+  if (!w.waiting) return null
+  const who = w.waiting === 1 ? "1 source is" : `${w.waiting} sources are`
+  return `${who} outside the scan window. The run is charged now; ${w.waiting === 1 ? "it starts" : "they start"} ` +
+    `when the window opens (${formatDateTime(w.firstStart)}${w.waiting > 1 ? " at the earliest" : ""}) and stay ` +
+    "queued until then."
+}
