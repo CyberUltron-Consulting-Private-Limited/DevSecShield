@@ -65,6 +65,62 @@ def _normalize_results(scan_results: Union[list, dict]) -> List[dict]:
     return []
 
 
+_NOT_CRYPTO_NOTE = (
+    "{n} component(s) of the file are not cryptographic assets (for example libraries or applications) and were not "
+    "judged here: a library's known vulnerabilities come from a code scan or the dependency scan."
+)  # the results page's sentence (frontend components/cbom/importNotes.ts notCryptoNote)
+
+
+def scan_notes(raw: Any) -> Optional[tuple[str, str, List[str]]]:
+    """The notes the results page shows above the table, as ``(title, summary, lines)``; None when it shows none.
+
+    * an uploaded CBOM file: the import report (``cbom_input``): what was imported, skipped or truncated, the engine's
+      notes, then the sentence about non-cryptographic components (shown when the import left something out, as
+      the page's ``importReportHasNews``);
+    * a code scan: the coverage notes from the CycloneDX ``crypto:coverage:*`` properties (archives, images,
+      binaries and firmware it skipped or only counted), as ``cbom_coverage.coverage_report``.
+    """
+    if not isinstance(raw, dict):
+        return None
+    from backend.utilities.dashboard.scan_metadata import _cbom_input
+
+    report = _cbom_input(raw.get("cbom_input"))
+    if report is not None:
+        notes = list(report.get("notes") or [])
+        not_crypto = int(report.get("skipped_not_crypto") or 0)
+        news = (notes or not_crypto or report.get("skipped_invalid") or report.get("duplicates")
+                or report.get("truncated") or not report.get("imported"))
+        if not news:
+            return None
+        parts = [f"{report.get('imported') or 0} of {report.get('crypto_assets') or 0} cryptographic assets imported"]
+        if report.get("spec_version"):
+            parts.append(f"CycloneDX {report['spec_version']}")
+        if not_crypto:
+            parts.append(f"{not_crypto} non-crypto components skipped")
+        if report.get("skipped_invalid"):
+            parts.append(f"{report['skipped_invalid']} unreadable")
+        if report.get("duplicates"):
+            parts.append(f"{report['duplicates']} duplicates")
+        if report.get("truncated"):
+            parts.append("truncated")
+        if not_crypto:
+            notes.append(_NOT_CRYPTO_NOTE.format(n=not_crypto))
+        return "About the uploaded CBOM file", " · ".join(parts), notes
+    from backend.utilities.dashboard.cbom_coverage import coverage_report
+
+    coverage = coverage_report(raw.get("cbom_json"))
+    if not coverage or not coverage.get("notes"):
+        return None
+    skipped = int(coverage.get("skipped") or 0)
+    summary = (
+        f"{skipped} kind(s) of input were skipped or only partly read; the CycloneDX file lists the same counts "
+        "(crypto:coverage:*)."
+        if skipped
+        else "Nothing was skipped; these notes say what was read and are also in the CycloneDX file (crypto:coverage:*)."
+    )
+    return "What this scan covered", summary, [str(n.get("text") or "") for n in coverage["notes"]]
+
+
 def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = None) -> str:
     """
     Generate a CBOM scan results PDF.
@@ -167,6 +223,14 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
             ("Quantum-vulnerable", str(quantum_vulnerable)),
         ],
     )
+    notes = scan_notes(raw if raw else scan_results)
+    if notes:  # the import / coverage notes the results page shows above the table
+        title, summary_line, lines = notes
+        story.append(Spacer(1, 0.15 * inch))
+        story.append(Paragraph(escape_html(title), styles["heading"]))
+        story.append(Paragraph(escape_html(summary_line), styles["muted"]))
+        for line in lines:
+            story.append(Paragraph("- " + escape_html(line), styles["body"]))
     story.append(PageBreak())
 
     impact_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
