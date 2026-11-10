@@ -57,6 +57,7 @@ Posture facts and the crypto assets this lane adds use the `crypto:` namespace. 
 | crypto:protocolVersion |
 | crypto:publicKeyAlgorithm |
 | crypto:quantumVulnerable |
+| crypto:remediation |
 | crypto:role |
 | crypto:rotation |
 | crypto:selfSigned |

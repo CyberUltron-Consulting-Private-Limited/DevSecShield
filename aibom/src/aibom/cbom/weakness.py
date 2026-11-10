@@ -188,10 +188,11 @@ def weak_finding(component: AIComponent) -> tuple[str, str, str] | None:
                 props.get("crypto:protocolType", ""),
                 _WEAK_PROTOCOL_RATIONALE_DEFAULT,
             )
+            fix = props.get("crypto:remediation")
             return (
                 WEAK_PROTOCOL,
                 _SEV,
-                f"Weak transport protocol {name}{ver}: {rationale}",
+                f"Weak transport protocol {name}{ver}: {rationale}" + (f" {fix}" if fix else ""),
             )
         return None
 

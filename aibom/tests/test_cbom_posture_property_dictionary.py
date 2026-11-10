@@ -13,6 +13,8 @@ POSTURE = REPO / "aibom" / "src" / "aibom" / "cbom" / "posture"
 SCANNERS = REPO / "aibom" / "src" / "aibom" / "cbom" / "scanners"
 
 EXTRA_KEYS = (
+    # the exact configuration change for an nginx legacy TLS protocol row (ciphers.protocol_asset)
+    "crypto:remediation",
     # round 5 (WP10): cbom-mapping.yaml / CODEOWNERS on crypto asset rows (read from crypto:source)
     "crypto:businessDataClassification",
     "crypto:businessDataLifetime",

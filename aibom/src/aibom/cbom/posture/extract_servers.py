@@ -307,7 +307,35 @@ def _nginx(
         )
     if _declares_stream(text) and not saw_stream:
         facts.append(_empty_stream(text, path))
+    if not counts["http"]:
+        defaults = _nginx_http_defaults(inherited, path)
+        if defaults is not None:
+            facts.append(defaults)
     return tuple(facts)
+
+
+def _nginx_http_defaults(inherited: list[Directive], path: str) -> EncryptionFact | None:
+    """An http block that sets ``ssl_protocols`` with no server block in this file (Ubuntu's stock nginx.conf: the
+    sites come from include files).  The setting is every server's default, so its protocol floor is reported
+    (the line is the directive's own)."""
+    floor, protocols = _protocol_floor(inherited, "ssl_protocols")
+    if not protocols:
+        return None
+    basis = [BasisEntry("context", "http"), BasisEntry("protocols", protocols), BasisEntry("protocol_min", floor)]
+    cipher = _cipher_basis(inherited)
+    if cipher is not None:
+        basis.append(cipher)
+    return _make(
+        kind="tls_endpoint",
+        native="nginx",
+        address="nginx.http",
+        path=path,
+        line=_named_line(inherited, "ssl_protocols"),
+        form="server_config",
+        verdict="UNKNOWN",
+        reason="layer_not_observable",
+        basis=tuple(basis),
+    )
 
 
 def _nginx_unit(parent: str | None) -> tuple[str, str] | None:
