@@ -150,6 +150,19 @@ scans end as "failed"; CBOM and AI-BOM code scans need neither. SCA + SBOM downl
 (about 1 GB) into the scan-worker container on its first scan: keep that much free disk, and on an air-gapped site
 that download is not possible.
 
+Grype's vulnerability database (SCA + SBOM) lives on the `grype-db` volume that scan-worker and cicd-worker
+share (`GRYPE_DB_CACHE_DIR=/var/cache/grype`): it is downloaded once, on the first scan, and survives recreated
+containers. On an air-gapped site, download a database archive on a connected machine (`grype db list` shows the
+URL of the current one), ship it with the images (`make airgap-bundle GRYPE_DB_ARCHIVE=/path/to/db.tar.zst` puts
+it next to the images as `images/grype-db.tar.zst`, with a `.sha256`), and import it once on the site:
+```sh
+cd deploy/staging && sha256sum -c images/grype-db.tar.zst.sha256
+docker compose run --rm --no-deps -v "$PWD/images/grype-db.tar.zst:/tmp/grype-db.tar.zst:ro" scan-worker \
+  grype db import /tmp/grype-db.tar.zst
+```
+and set `GRYPE_DB_AUTO_UPDATE=false` and `GRYPE_DB_VALIDATE_AGE=false` in `.env` (the workers read it), so no
+scan tries to reach the Internet or refuses an older database. Import a newer archive the same way to update.
+
 Air-gapped sites: `GIT_ALLOWED_HOSTS` (self-hosted Git; same value for backend and workers),
 `CBOM_IDP_ALLOWED_PRIVATE` + `CBOM_EXTRA_CA_FILE` (identity provider on a private network with a private CA),
 `DSS_SBOM_REGISTRY=0` (no public registry lookups).

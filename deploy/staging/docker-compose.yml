@@ -205,6 +205,9 @@ services:
     env_file: [.env]
     environment:
       IS_DOCKER_CONTAINER: "True"
+      GRYPE_DB_CACHE_DIR: /var/cache/grype
+    volumes:
+      - grype-db:/var/cache/grype
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -221,6 +224,9 @@ services:
     env_file: [.env]
     environment:
       IS_DOCKER_CONTAINER: "True"
+      GRYPE_DB_CACHE_DIR: /var/cache/grype
+    volumes:
+      - grype-db:/var/cache/grype
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -304,6 +310,9 @@ volumes:
   rabbitmq:
   miniodata:
   backend-data:
+  # Grype's vulnerability database (~1 GB), shared by scan-worker and cicd-worker: downloaded once instead of into
+  # each container, and kept when they are recreated. Air-gapped: README "Air gap" (grype db import).
+  grype-db:
 
 networks:
   internal:
