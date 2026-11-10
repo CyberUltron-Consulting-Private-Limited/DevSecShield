@@ -315,15 +315,16 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
     setKmNonce((n) => n + 1);
   };
   const startEdit = (source: CbomSource) => {
+    // after the re-render that remounts the form (see ServersTab startEdit)
     if (source.kind === "kubernetes") {
       setEditingCluster(source);
-      scrollToId("k8s-form");
+      window.setTimeout(() => scrollToId("k8s-form"), 0);
     } else if (source.kind === "key_manager") {
       setEditingKm(source);
-      scrollToId("km-form");
+      window.setTimeout(() => scrollToId("km-form"), 0);
     } else {
       setEditingDb(source);
-      scrollToId("db-form");
+      window.setTimeout(() => scrollToId("db-form"), 0);
     }
   };
   // "Test" keeps the form on the saved source (so it can be fixed and tested again); "Save" returns to a blank form.
