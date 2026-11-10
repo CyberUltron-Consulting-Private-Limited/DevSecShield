@@ -4,7 +4,10 @@ A scan node runs inside the customer's network and only ever calls out to these 
 It authenticates with ``X-ZS-Node-Token`` (issued once at enrollment; only its SHA-256 is stored).
 Enrollment itself carries the single-use registration token in the body instead.
 
-* An unknown, missing or revoked token is a 401 with no detail about why.
+* An unknown, missing or revoked token is a 401 with no detail about why, and a code a node can act on in
+  ``X-ZS-Refused``: ``node_token_revoked`` when a well-formed node token arrived and no node has it (reset or
+  deleted), ``node_token_missing`` when none arrived (a proxy dropped it: the node keeps its token),
+  ``registration_token_refused`` for a refused enrollment.
 * A job can only be claimed by the node its source points at, in the same team, at the same source
   version; the claim response is the only place stored secrets are ever decrypted.
 * Bodies are size-capped before they are parsed, and a signed request's signature is checked on the raw bytes
@@ -52,7 +55,15 @@ BUSY_HEARTBEAT_SECONDS = 5
 SMALL_BODY = 16 * 1024
 RESULT_BODY = 256 * 1024
 ASSETS_BODY = 1024 * 1024
-_UNAUTHORIZED = HTTPException(status_code=401, detail="Invalid node token")
+_UNAUTHORIZED = HTTPException(status_code=401, detail="Invalid node token",
+                              headers={NA.REFUSED_HEADER: "node_token_revoked"})
+_TOKEN_MISSING = HTTPException(status_code=401, detail="Invalid node token",
+                               headers={NA.REFUSED_HEADER: "node_token_missing"})
+
+
+def _registration_refused() -> HTTPException:
+    return HTTPException(status_code=401, detail="Registration token is invalid or expired",
+                         headers={NA.REFUSED_HEADER: "registration_token_refused"})
 
 
 def _parse(model, data: Any):
@@ -88,7 +99,7 @@ def _ips(values: list[str]) -> list[str]:
 
 def _node_for(token: str | None, session: Session) -> CbomScanNode:
     if not token or not token.startswith("zsn_") or len(token) > 128:
-        raise _UNAUTHORIZED
+        raise _TOKEN_MISSING  # no node token arrived intact: never a revocation
     node = session.exec(select(CbomScanNode).where(CbomScanNode.node_token_hash == sha256_hex(token))).first()
     if node is None:
         raise _UNAUTHORIZED
@@ -167,7 +178,7 @@ def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> 
     now = utcnow()
     engine = get_db()
     token = new_token("zsn_")
-    refused = HTTPException(status_code=401, detail="Registration token is invalid or expired")
+    refused = _registration_refused()
     with Session(engine) as session:
         pool = session.exec(select(CbomNodePool).where(
             CbomNodePool.token_hash == sha256_hex(body.registration_token))).first()
@@ -241,7 +252,7 @@ def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
             CbomScanNode.registration_token_hash == sha256_hex(body.registration_token))).first()
         if (node is None or node.enrolled_at is not None or node.registration_expires_at is None
                 or node.registration_expires_at <= now):
-            raise HTTPException(status_code=401, detail="Registration token is invalid or expired")
+            raise _registration_refused()
         # Checked before the token is used, so a refused enrollment leaves the registration token valid.
         fingerprint = NA.check_mtls(None, req)
         if body.signing_public_key:  # proof that the node holds the key it registers; the nonce is recorded
@@ -265,7 +276,7 @@ def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
                     mode=mode)
         ).rowcount
         if changed != 1:
-            raise HTTPException(status_code=401, detail="Registration token is invalid or expired")
+            raise _registration_refused()
         if mode == AG.AGENT:  # a single host agent (docker run / AMI with ZS_MODE=agent): its own host source
             session.refresh(node)
             AG.ensure_host_source(session, node, node.owner_user_id, now)

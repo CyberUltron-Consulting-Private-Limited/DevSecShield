@@ -221,9 +221,14 @@ def test_self_signed_sha1_is_explained_not_raised():
 
     assert "SIG_SHA1" not in leaf["finding_codes"] and codes(leaf) == ["CERT_SELF_SIGNED"]
     assert "not checked by clients" in leaf["texts"]["CERT_SELF_SIGNED"] and "SHA-256" in leaf["texts"]["CERT_SELF_SIGNED"]
+    # the finding says plainly why there is no SIG_SHA1 (owner decision: keep, and say so in the text)
+    assert "deliberately not reported as a weak SHA-1 signature (SIG_SHA1)" in leaf["texts"]["CERT_SELF_SIGNED"]
+    weak_key = classify("certificate", "RSA", 1024, None, {**base, "key_size": 1024}, now)  # lab HST-U-002 / HST-A-003
+    assert "SIG_SHA1" not in weak_key["finding_codes"] and "RSA_LT_2048" in weak_key["finding_codes"]
+    assert "(SIG_SHA1)" in weak_key["texts"]["CERT_SELF_SIGNED"]
     ca = classify("certificate", "RSA", 2048, None, {**base, "is_ca": True}, now)
     assert codes(ca) == ["CERT_SELF_SHA1"] and ca["impacts"]["CERT_SELF_SHA1"] is None
-    assert "CA certificate" in ca["texts"]["CERT_SELF_SHA1"]
+    assert "CA certificate" in ca["texts"]["CERT_SELF_SHA1"] and "(SIG_SHA1)" in ca["texts"]["CERT_SELF_SHA1"]
     idp = classify("certificate", "RSA", 2048, None, {**base, "source": "idp"}, now)
     assert codes(idp) == ["CERT_SELF_SHA1"] and "identity-provider" in idp["texts"]["CERT_SELF_SHA1"]
     issued = classify("certificate", "RSA", 2048, None, {**base, "self_signed": False, "issuer": "CN=ca"}, now)

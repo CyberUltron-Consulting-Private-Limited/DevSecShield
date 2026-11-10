@@ -54,10 +54,13 @@ token for its own node token. The public key is shown in ZeroShield: add it to t
   before signing existed show as "Legacy" until they are reset and registered again; a team can refuse them.
 * **Deployment id.** Every ZeroShield node answer carries `X-ZS-Deployment`; the node stores the id at enrollment
   (older state adopts it from the first successful answer). A 401 clears the node token only when it carries that
-  id. A 401 without it or with another id (a wrong `ZS_API_URL`, a proxy) keeps the token: the node backs off,
-  logs "wrong server or proxy" and reports it in its next successful heartbeat; an enrollment refused that way
-  does not use up the registration token. With `ZS_ALLOW_INSECURE_HTTP` a man in the middle can forge this
-  header like everything else.
+  id AND ZeroShield says explicitly that the token is revoked (`X-ZS-Refused: node_token_revoked`: the node was
+  reset or deleted). Any other 401 (another id, no id, or `node_token_missing` because a proxy dropped the token
+  header) and a 403 without that id keep the token: the node backs off, logs "server at <ZS_API_URL> did not accept
+  this node (...); not the ZeroShield this node enrolled with?" and reports it in its next successful heartbeat; an
+  enrollment refused that way does not use up the registration token. A copy of the same deployment's database
+  (same id) that does not know the node can still revoke it. With `ZS_ALLOW_INSECURE_HTTP` a man in the middle can
+  forge these headers like everything else.
 * **mTLS.** With `ZS_CLIENT_CERT`/`ZS_CLIENT_KEY` the node presents a client certificate; the proxy checks it and
   ZeroShield can require it and pin each node to the certificate it enrolled with (`deploy/staging/README.md`).
 

@@ -504,6 +504,13 @@ CRYPTO_IMPORT_MODULES_BY_LANG: dict[str, dict[str, str]] = {
         "bouncycastle": "Bouncy Castle",
         "org.bouncycastle": "Bouncy Castle",
     },
+    # Go imports are quoted module paths: never the Python roots (``crypto`` -> PyCryptodome matched the first
+    # segment of "crypto/des").  Every standard-library crypto package is "crypto/..." ("crypto/md5", "crypto/hmac",
+    # ...); the lookbehind keeps "golang.org/x/crypto/..." out of it.
+    "go": {
+        **{module: label for module, label in CRYPTO_IMPORT_MODULES.items() if "/" in module},
+        "crypto": "Go crypto (stdlib)",
+    },
 }
 
 # --------------------------------------------------------------------------- #

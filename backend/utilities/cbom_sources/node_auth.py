@@ -4,7 +4,9 @@ Deployment id
     One row in ``cbomdeployment`` (created by migration ``wp5a0node001``; created here on first use when a database was
     built without it), so every worker and replica stamps the same ``X-ZS-Deployment`` on every ``/cbom/node/*``
     response, 401s included (``NodeDeploymentHeader``).  A node clears its token only on a 401 that carries the id of
-    the deployment it enrolled with; a 401 from anything else (a wrong ``ZS_API_URL``, a proxy) leaves the token alone.
+    the deployment it enrolled with AND says so explicitly (``X-ZS-Refused: node_token_revoked``, set by
+    ``routers/cbom_node.py`` only when a well-formed node token arrived and no node has it); a 401 from anything else
+    (a wrong ``ZS_API_URL``, a proxy, a token header a proxy dropped) leaves the token alone.
     Over plain HTTP (``ZS_ALLOW_INSECURE_HTTP``, labs only) a man in the middle can forge this header like anything else.
 
 Signed requests

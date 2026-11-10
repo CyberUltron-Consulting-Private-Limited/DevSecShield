@@ -117,7 +117,7 @@ class _Out:
         if not self.texts:
             return None
         ordered = [text for _rank, text in sorted(self.texts, key=lambda item: item[0])]
-        return "; ".join(ordered)[:512]
+        return "; ".join(dict.fromkeys(ordered))[:512]  # one sentence for codes that share it (TLS 1.0 and 1.1)
 
 
 def _key_rules(out: _Out, algorithm: Any, size: Any, what: str) -> None:
@@ -153,7 +153,8 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
     # A self-signature is never verified by a client (the certificate is trusted, or pinned, as itself), so SHA-1 there
     # is not a forgery risk and is not SIG_SHA1; the text says so and asks for SHA-256 at the next re-issue.
     sha1_note = (f"its {facts.get('sig_alg')} self-signature is not checked by clients (they trust the certificate "
-                 "itself); re-issue it with SHA-256 so policies and scanners stop flagging it")
+                 "itself), so it is deliberately not reported as a weak SHA-1 signature (SIG_SHA1); re-issue it with "
+                 "SHA-256 so policies and scanners stop flagging it")
     if facts.get("self_signed") and not facts.get("is_ca") and facts.get("source") != "idp":
         # identity-provider signing certificates are self-signed by design (trust comes from metadata)
         out.add("CERT_SELF_SIGNED", "Low", "Self-signed certificate" + (f"; {sha1_note}" if sha1 else ""))
@@ -339,6 +340,25 @@ _BAD_ENC = re.compile(r"^(des|des3|des-ede3|des-ede3-cbc|des-ede|des-ede-cbc|des
                       r"cast|cast5|cast5-cbc|cast-cbc)$|-ecb$", re.I)
 
 
+def _web_tls_fix(kind: str, facts: dict[str, Any], legacy: list[str]) -> str:
+    """What a web server's legacy TLS setting is and exactly what to change: the file and line (scan node 1.x
+    ``protocols_line``), the directive as written, the replacement and how to apply it.  Stock Ubuntu nginx.conf
+    sets ``ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;`` in its http block."""
+    path = str(facts.get("path") or "").strip()
+    line = facts.get("protocols_line")
+    where = (f"{path} line {line}" if isinstance(line, int) and line > 0 else path) or "its configuration"
+    raw = str(facts.get("protocols_raw") or "").strip()
+    if kind == "nginx":
+        now = f" (ssl_protocols {raw};)" if raw else ""
+        return (f"nginx enables {' and '.join(legacy)} in {where}{now}: change it to \"ssl_protocols TLSv1.2 "
+                "TLSv1.3;\" (and in any server block that sets its own ssl_protocols), then run \"nginx -t\" and "
+                "reload nginx (systemctl reload nginx)")
+    now = f" (SSLProtocol {raw})" if raw else ""
+    return (f"Apache enables {' and '.join(legacy)} in {where}{now}: change it to \"SSLProtocol -all +TLSv1.2 "
+            "+TLSv1.3\" (\"SSLProtocol -all +TLSv1.2\" before Apache 2.4.37), then run \"apachectl configtest\" and "
+            "reload Apache")
+
+
 def _config_rules(out: _Out, facts: dict[str, Any]) -> None:
     """Service crypto overrides, web server TLS directives and openssl enc command lines read from a host."""
     kind = facts.get("kind")
@@ -359,10 +379,11 @@ def _config_rules(out: _Out, facts: dict[str, Any]) -> None:
             out.add("TLS_POLICY_OVERRIDE", "High", f"{used or 'A Java service'} empties jdk.tls.disabledAlgorithms: "
                                                    "SSLv3, TLS 1.0/1.1, RC4, 3DES and anonymous suites are accepted again")
     elif kind in ("nginx", "apache"):
-        for proto in facts.get("protocols") or []:
-            codes = _LEGACY_TLS.get(_upper(proto).lstrip("+"))
-            if codes:
-                out.add(codes[1], "High", f"{kind} configuration enables {proto}")
+        legacy = [(_LEGACY_TLS[_upper(p).lstrip("+")][1], str(p)) for p in facts.get("protocols") or []
+                  if _upper(p).lstrip("+") in _LEGACY_TLS]
+        text = _web_tls_fix(kind, facts, [proto for _code, proto in legacy]) if legacy else ""
+        for code, _proto in legacy:
+            out.add(code, "High", text)
         ciphers = str(facts.get("ciphers") or "")
         if ciphers and _WEAK_CIPHER_STRING.search(ciphers):
             out.add("WEAK_CIPHER", "High", f"{kind} cipher list allows weak suites ({ciphers[:60]})")

@@ -97,6 +97,60 @@ def test_posture_facts_say_where_they_were_read() -> None:
     assert validate_cyclonedx(run["cbom_json"]) == []
 
 
+def test_imported_libraries_say_which_line_imports_them(tmp_path: Path) -> None:
+    """A library seen only through an import (no manifest) kept no line, so it had no ``evidence``: other CBOM tools
+    could not place Go crypto, JCA/JCE, Node.js crypto or OpenSSL.  The import line is the occurrence.  Go's usual
+    ``import ( ... )`` block is read (it was not), and a Go path is never the Python ``crypto`` root (PyCryptodome)."""
+    (tmp_path / "svc.go").write_text('package svc\n\nimport (\n\t"crypto/md5"\n\t"fmt"\n)\n\n'
+                                     'func F() { fmt.Println(md5.Sum(nil)) }\n')
+    (tmp_path / "Crypto.kt").write_text('package x\nimport javax.crypto.Cipher\nval c = Cipher.getInstance("DES")\n')
+    (tmp_path / "hash.js").write_text("const crypto = require('crypto');\nconst h = crypto.createHash('sha1');\n")
+    (tmp_path / "aes.c").write_text("/* legacy */\n#include <openssl/evp.h>\nvoid f(void) { EVP_aes_128_ecb(); }\n")
+    bom = normalize_crypto(scan_crypto(tmp_path), duration_of_scan=0.0)["cbom_json"]
+    libs = {c["name"]: c.get("evidence", {}).get("occurrences") for c in bom["components"] if c["type"] == "library"}
+    assert libs["Go crypto (stdlib)"] == [{"location": "svc.go", "line": 4}]
+    assert libs["JCA/JCE (javax.crypto)"] == [{"location": "Crypto.kt", "line": 2}]
+    assert libs["Node.js crypto (stdlib)"] == [{"location": "hash.js", "line": 1}]
+    assert libs["OpenSSL"] == [{"location": "aes.c", "line": 2}]
+    assert "PyCryptodome" not in libs and "pyOpenSSL" not in libs
+    assert validate_cyclonedx(bom) == []
+
+
+def test_occurrence_location_is_the_path_alone() -> None:
+    """Sources recorded as ``path:line`` (Kubernetes, key specs, SQL keys) put the path in ``location`` and the line in
+    ``line``: ``encryption-config.yaml:1`` is not a file another tool can open."""
+    _result, run = _run("synthetic-config-k8s")
+    bom = run["cbom_json"]
+    located = [c for c in bom["components"] if c.get("evidence")]
+    assert located
+    for comp in located:
+        for occ in comp["evidence"]["occurrences"]:
+            assert occ["location"].endswith((".yaml", ".yml")), occ
+            assert isinstance(occ.get("line"), int) and occ["line"] >= 1, occ
+    key = next(c for c in bom["components"] if c["name"].startswith("secret-key"))
+    assert key["evidence"]["occurrences"] == [{"location": "encryption-config.yaml", "line": 1}]
+    assert validate_cyclonedx(bom) == []
+
+
+def test_every_component_with_a_known_source_has_an_occurrence(tmp_path: Path) -> None:
+    """Wherever the source is known the component says so in ``evidence.occurrences``; a source without a known line
+    (an entry inside an archive or package database) is given as a location alone, which CycloneDX 1.6 allows."""
+    from aibom.model.component import FrameworkComponent, MetadataComponent
+    from aibom.model.result import ScanResult
+
+    result = ScanResult(subject=MetadataComponent(name="x"), components=[
+        FrameworkComponent(bom_ref="lib-a", name="libcrypto", properties={
+            "crypto:role": "library", "discovery:source": "images/app.tar!usr/lib/libcrypto.so.3"}),
+        FrameworkComponent(bom_ref="lib-b", name="OpenSSL", properties={
+            "crypto:role": "library", "discovery:source": "/etc/host/path"}),  # a host path is never exported
+    ])
+    bom = emit_cyclonedx(result)
+    by_ref = {c["bom-ref"]: c for c in bom["components"]}
+    assert by_ref["lib-a"]["evidence"] == {"occurrences": [{"location": "images/app.tar!usr/lib/libcrypto.so.3"}]}
+    assert "evidence" not in by_ref["lib-b"]
+    assert validate_cyclonedx(bom) == []
+
+
 def test_fact_line_is_the_deciding_attribute(tmp_path: Path) -> None:
     (tmp_path / "rds.tf").write_text(
         'resource "aws_db_instance" "db" {\n'

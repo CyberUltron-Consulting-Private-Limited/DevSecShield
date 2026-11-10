@@ -830,18 +830,28 @@ def _repo_relative(src: str) -> bool:
         ".." not in src.replace("\\", "/").split("/")
 
 
+_SOURCE_WITH_LINE = re.compile(r"^(?P<path>.+?):(?P<line>\d+)$")
+
+
 def _occurrences(props: dict[str, str]) -> list[dict[str, Any]]:
     """CycloneDX 1.6 ``evidence.occurrences`` (file + line) from the occurrence pass, so other CBOM tools and
     reviewers read the locations in the standard place.  Only repository-relative source paths (never a host path
-    or URL) and only when a line is known."""
+    or URL).  A source recorded as ``path:line`` (Kubernetes, key specs) gives the path as the location and the
+    line as the line; a source whose line is not known (an archive member, a package database) is a location
+    alone."""
     src = props.get("discovery:source") or ""
+    own = _SOURCE_WITH_LINE.match(src)
+    if own:
+        src = own.group("path")
     if not _repo_relative(src):
         return []
     lines = [int(x) for x in (props.get("crypto:occurrences") or props.get("crypto:line") or "").split(",")
              if x.strip().isdigit() and int(x) > 0]
+    if not lines and own and int(own.group("line")) > 0:
+        lines = [int(own.group("line"))]
     out: list[dict[str, Any]] = [{"location": src, "line": n} for n in lines[:_MAX_EVIDENCE_OCCURRENCES]]
     if not out:
-        return out
+        return [{"location": src}]
     # Where else the same usage shows: the constant of another file that spells the algorithm
     # (``crypto:definedAt``) and the other modules that call the helper using it (``crypto:calledFrom``).
     for prop, context in (("crypto:definedAt", "value defined here"),
@@ -858,8 +868,10 @@ def _fact_occurrences(props: dict[str, str]) -> list[dict[str, Any]]:
     """The file and line a configuration-posture fact was read from (``crypto:factPath`` / ``crypto:factLine``)."""
     src = props.get("crypto:factPath") or ""
     line = str(props.get("crypto:factLine") or "")
-    if not _repo_relative(src) or not line.isdigit() or int(line) < 1:
+    if not _repo_relative(src):
         return []
+    if not line.isdigit() or int(line) < 1:
+        return [{"location": src}]
     return [{"location": src, "line": int(line)}]
 
 

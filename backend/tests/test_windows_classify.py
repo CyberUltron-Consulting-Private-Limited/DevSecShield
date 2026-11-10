@@ -121,3 +121,34 @@ def test_rdp_seen_from_the_network_without_tls_is_rdp_no_tls():
     assert "RDP_NO_TLS" in codes and "NO_TLS" not in codes
     plain = classify("tls_endpoint", None, None, None, {"service": "ldap", "plaintext_only": True})["finding_codes"]
     assert "NO_TLS" in plain and "RDP_NO_TLS" not in plain
+
+
+def test_web_server_legacy_tls_says_exactly_what_to_change():
+    """Ubuntu's stock /etc/nginx/nginx.conf enables TLS 1.0 and 1.1 in its http block.  The finding names the file,
+    the line, the directive as written, the replacement and how to apply it (not just "enables TLSv1")."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scan_node"))
+    from zs_scan_node import linux_parsers as P  # the real node parser feeds the real classifier
+
+    grep = ("/etc/nginx/nginx.conf:33:\tssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3; # Dropping SSLv3, ref: POODLE\n"
+            "/etc/apache2/mods-available/ssl.conf:63:\tSSLProtocol all -SSLv3\n")
+    found = P.web_tls(grep)
+    nginx = classify("crypto_config", None, None, None, {"kind": "nginx", "path": "/etc/nginx/nginx.conf",
+                                                          **found["/etc/nginx/nginx.conf"]})
+    assert set(nginx["finding_codes"]) == {"PROTO_TLS10", "PROTO_TLS11"}
+    for code in ("PROTO_TLS10", "PROTO_TLS11"):
+        text = nginx["texts"][code]
+        assert "/etc/nginx/nginx.conf line 33" in text
+        assert "ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;" in text  # what is there now
+        assert 'change it to "ssl_protocols TLSv1.2 TLSv1.3;"' in text  # what to write instead
+        assert "nginx -t" in text and "reload nginx" in text
+    assert "enables TLSv1 and TLSv1.1" in nginx["texts"]["PROTO_TLS10"]
+    assert nginx["finding"] == nginx["texts"]["PROTO_TLS10"]  # the shared sentence once, whole (under 512)
+    apache = classify("crypto_config", None, None, None, {"kind": "apache", "path": "/etc/apache2/mods-available/ssl.conf",
+                                                           **found["/etc/apache2/mods-available/ssl.conf"]})
+    text = apache["texts"]["PROTO_TLS10"]
+    assert "/etc/apache2/mods-available/ssl.conf line 63" in text and "SSLProtocol all -SSLv3" in text
+    assert 'change it to "SSLProtocol -all +TLSv1.2 +TLSv1.3"' in text and "apachectl configtest" in text
+    # without a line (older scan nodes) the file and the replacement are still named
+    old = classify("crypto_config", None, None, None, {"kind": "nginx", "path": "/etc/nginx/nginx.conf",
+                                                        "protocols": ["TLSv1", "TLSv1.2"]})
+    assert 'in /etc/nginx/nginx.conf: change it to "ssl_protocols TLSv1.2 TLSv1.3;"' in old["texts"]["PROTO_TLS10"]

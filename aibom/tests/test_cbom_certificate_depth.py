@@ -180,6 +180,25 @@ def test_certificate_findings_stack_all_weaknesses() -> None:
     assert {c for c, _s, _m in sig} == {WEAK_CERTIFICATE_SIGNATURE}
 
 
+def test_self_signed_weak_signature_text_does_not_claim_forgery() -> None:
+    """A self-signed certificate's own signature is never verified (trust anchor), so the text must not say it can be
+    forged (the scan-node path does not raise SIG_SHA1 for it at all: owner decision).  A CA-issued one still can."""
+    from aibom.cbom.weakness import WEAK_CERT_SIGNATURE, cert_weakness_findings
+
+    sha1 = {"crypto:signatureAlgorithm": "sha1WithRSAEncryption", "crypto:publicKeyAlgorithm": "rsaEncryption",
+            "crypto:keySize": "2048"}
+    own = _cert_comp(**{**sha1, "crypto:selfSigned": "true"})
+    issued = _cert_comp(**{**sha1, "crypto:selfSigned": "false"})
+    for findings, code in ((certificate_findings, WEAK_CERTIFICATE_SIGNATURE),
+                           (lambda c: cert_weakness_findings(c, date(2026, 6, 29)), WEAK_CERT_SIGNATURE)):
+        text = next(m for c, _s, m in findings(own) if c == code)
+        assert "can be forged" not in text and "collision-broken hash" not in text
+        assert "is self-signed with sha1WithRSAEncryption" in text
+        assert "never verify a self-signed certificate's own signature" in text and "SHA-256" in text
+        other = next(m for c, _s, m in findings(issued) if c == code)
+        assert "self-signed" not in other and ("can be forged" in other or "collision-broken" in other)
+
+
 def test_certificate_findings_empty_for_strong_ca() -> None:
     strong = _cert_comp(
         **{

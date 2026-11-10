@@ -74,3 +74,6 @@ def test_web_tls_directives():
     assert w["/etc/httpd/conf.d/ssl.conf"]["protocols"] == ["TLSv1.1", "TLSv1.2", "TLSv1.3"]
     # Ubuntu's stock nginx.conf, with its trailing comment
     assert w["/etc/nginx/nginx.conf"]["protocols"] == ["TLSv1", "TLSv1.1", "TLSv1.2", "TLSv1.3"]
+    # the line of the protocol directive itself, so the finding can say which line to change
+    assert w["/etc/nginx/nginx.conf"]["protocols_line"] == 32
+    assert ng["protocols_line"] == 6 and w["/etc/httpd/conf.d/ssl.conf"]["protocols_line"] == 40
