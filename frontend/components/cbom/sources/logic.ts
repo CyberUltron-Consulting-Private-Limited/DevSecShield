@@ -238,11 +238,17 @@ export function ago(iso: string | null | undefined, serverNowIso: string | null 
   return `${Math.round(s / 86400)} d ago`
 }
 
-export function formatDateTime(iso: string | null | undefined): string {
+/** ``timeZone``: show the moment in that IANA zone (e.g. the team's scan-window zone) instead of the browser's. */
+export function formatDateTime(iso: string | null | undefined, timeZone?: string): string {
   if (!iso) return "—"
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return "—"
-  return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }
+  try {
+    return d.toLocaleString(undefined, timeZone ? { ...opts, timeZone } : opts)
+  } catch {
+    return d.toLocaleString(undefined, opts) // an unknown zone name: the browser's zone rather than nothing
+  }
 }
 
 /** A YYYY-MM-DD date shown without time-zone shifting. */

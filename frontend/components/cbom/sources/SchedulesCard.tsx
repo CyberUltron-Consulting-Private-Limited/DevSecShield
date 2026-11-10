@@ -170,7 +170,9 @@ export default function SchedulesCard({ teamId }: { teamId: number }) {
                     <p className="text-xs text-zinc-500">
                       {when(s)} ({q.data.timezone}) · {Object.entries(s.include).filter(([, v]) => v).map(([k]) => k).join(", ")}
                       {s.min_criticality ? ` · criticality ≥ ${s.min_criticality}` : ""}
-                      {s.next_run_at ? ` · next ${formatDateTime(s.next_run_at)}` : ""}
+                      {/* in the team's zone, like the slot time before it: a browser in another zone showed
+                          "Daily at 19:11 (Asia/Kolkata) · next Nov 10, 01:41 PM" */}
+                      {s.next_run_at ? ` · next ${formatDateTime(s.next_run_at, q.data.timezone)}` : ""}
                     </p>
                     {s.last_message && <p className="text-xs text-zinc-500 break-words">Last: {s.last_message}</p>}
                   </div>
