@@ -88,3 +88,29 @@ def test_a_refused_progress_post_loses_nothing():
     ctx.address_done()
     ctx.flush()
     assert ctx.lost == 0 and ctx.truncated is False
+
+
+def test_an_older_server_that_refuses_progress_still_gets_every_asset():
+    """Integrator review of G4: a server from before progress reporting validates the asset body strictly (422 on the
+    unknown field). A new node must not lose the batch: it resends the assets without the count, and stops sending
+    counts for the rest of the job."""
+    ctx = _ctx()
+    seen: list[tuple[int, dict | None]] = []
+
+    def poster(batch, batch_id, progress=None):
+        seen.append((len(batch), progress))
+        if progress is not None:
+            raise ApiError(422, "progress: extra inputs are not permitted")
+        return {"accepted": len(batch)}
+
+    ctx.poster = poster
+    ctx.set_progress_total(4)
+    ctx.emit("tls_endpoint", "192.0.2.1:443", "192.0.2.1:443", name="a", facts={})
+    ctx.address_done()
+    ctx.flush()
+    ctx.emit("tls_endpoint", "192.0.2.2:443", "192.0.2.2:443", name="b", facts={})
+    ctx.address_done()
+    ctx.flush()
+    assert ctx.lost == 0 and ctx.truncated is False and ctx.accepted == 2
+    assert seen[0][1] is not None and seen[1] == (1, None)  # refused with the count, resent without it
+    assert all(progress is None for _n, progress in seen[2:]) and seen[2][0] == 1

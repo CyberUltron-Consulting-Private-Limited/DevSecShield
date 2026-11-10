@@ -154,6 +154,8 @@ class JobContext:
     progress_total: int | None = None
     progress_done: int = 0
     _progress_sent: dict | None = None
+    # an older ZeroShield refuses the unknown "progress" field (422): stop sending it and resend the batch without it
+    _progress_refused: bool = False
 
     # ------------------------------------------------------------------ progress
     def set_progress_total(self, total: int) -> None:
@@ -172,7 +174,7 @@ class JobContext:
             self.flush()
 
     def _progress_now(self) -> dict | None:
-        if self.progress_total is None:
+        if self.progress_total is None or self._progress_refused:
             return None
         return {"done": min(self.progress_done, self.progress_total), "total": self.progress_total}
 
@@ -261,6 +263,14 @@ class JobContext:
             # only network ranges report progress; other jobs post exactly what they always posted
             counters = self.poster(batch, batch_id) if progress is None else self.poster(batch, batch_id, progress)
         except ApiError as exc:
+            if exc.status == 422 and progress is not None:
+                # a server that predates progress reporting validates the body strictly: keep the assets, drop the count
+                with self._lock:
+                    self._progress_refused = True
+                self.log("server does not take progress counts; sending assets without them", batch=batch_id, level="warn")
+                if batch:
+                    self._post(batch, batch_id, None)
+                return
             if exc.status == 413 and len(batch) > 1:
                 half = len(batch) // 2
                 self._post(batch[:half], f"{batch_id}a", progress)
