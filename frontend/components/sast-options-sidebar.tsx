@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 
 
 
@@ -153,6 +154,17 @@ export function SASTOptionsSidebar({
     };
     return JSON.stringify(payload);
   };
+
+  // a scan opened by "Run again" on a failed scan: its settings, except an uploaded file and an access token
+  const rerun = useRerunPrefill("sast", scan_id, (p) => {
+    if (p.repo_url) setRepoUrl(p.repo_url);
+    if (p.mode) setMode(p.mode);
+    if (p.branch) setBranch(p.branch);
+    const lang = p.options.app_lang;
+    if (typeof lang === "string" && languages.includes(lang)) setAppLang(lang as AppLang);
+    const exclude = p.options.exclude_path_arrays;
+    if (Array.isArray(exclude)) setExcludePathArrays(exclude.filter(Array.isArray).map((a) => a.map(String)));
+  });
 
   const estimateCreditsMutation = useMutation({
     mutationFn: () => estimateCreditsForScan(team_id, "sast", scan_id, buildStartScanPayloadString(), uploaded_file ?? undefined),
@@ -333,6 +345,7 @@ export function SASTOptionsSidebar({
       {optionsSidebarState === "ready" && (
         <>
           <div className="p-6 space-y-4">
+            <RerunNotice prefill={rerun} />
             <RepositoryCard
               uploadedFile={uploaded_file}
               setUploadedFile={setUploadedFile}
@@ -508,17 +521,21 @@ export function SASTOptionsSidebar({
           <p className="text-red-400 text-center">
             {error_message ?? "An error occurred during the scan. Please try again."}
           </p>
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={() => {
-              // refresh the entire page to reset the state
-              window.location.reload();
-            }}
-            className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
-          >
-            <span>Try Again</span>
-          </Button>
+          {query.data?.scan_status === "failure" ? (
+            <RunAgainButton type="sast" teamId={team_id} scan={query.data} />
+          ) : (
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => {
+                // refresh the entire page to reset the state
+                window.location.reload();
+              }}
+              className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
+            >
+              <span>Try Again</span>
+            </Button>
+          )}
         </div>
       )}
 

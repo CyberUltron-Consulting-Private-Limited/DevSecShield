@@ -36,6 +36,7 @@ import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 
 export type Mode = RepoMode | "unknown";
 
@@ -116,6 +117,13 @@ export function AiBomOptionsSidebar({
     if (ai_bom_file_used && uploaded_ai_bom_file) return uploaded_ai_bom_file;
     return undefined;
   };
+
+  // a scan opened by "Run again" on a failed scan: its settings, except an uploaded file and an access token
+  const rerun = useRerunPrefill("ai_bom", scan_id, (p) => {
+    if (p.repo_url) setRepoUrl(p.repo_url);
+    if (p.mode) setMode(p.mode);
+    if (p.branch) setBranch(p.branch);
+  });
 
   const estimateCreditsMutation = useMutation({
     mutationFn: () =>
@@ -280,6 +288,7 @@ export function AiBomOptionsSidebar({
       {optionsSidebarState === "ready" && (
         <>
           <div className="p-6 pb-8">
+            {rerun && <div className="mb-4"><RerunNotice prefill={rerun} /></div>}
             <Accordion type="single" collapsible className="w-full">
               <AccordionItem value="repository" className="border-zinc-700 border rounded-lg px-3 data-[state=open]:border-blue-500/50">
                 <AccordionTrigger className="text-zinc-300 hover:text-white cursor-pointer py-4 hover:no-underline [&[data-state=open]>svg]:rotate-180">
@@ -438,14 +447,18 @@ export function AiBomOptionsSidebar({
           <p className="text-red-400 text-center">
             {error_message ?? "An error occurred during the scan. Please try again."}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
-          >
-            <span>Try Again</span>
-          </Button>
+          {query.data?.scan_status === "failure" ? (
+            <RunAgainButton type="ai_bom" teamId={team_id} scan={query.data} />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.location.reload()}
+              className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
+            >
+              <span>Try Again</span>
+            </Button>
+          )}
         </div>
       )}
 
