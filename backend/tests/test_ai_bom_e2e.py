@@ -85,7 +85,7 @@ def _req(method, path, token=None, body=None):
             return e.code, json.loads(e.read() or b"{}")
         except Exception:
             return e.code, {}
-    except urllib.error.URLError:
+    except OSError:  # URLError, or a server on that port that is not the API (it resets the connection)
         pytest.skip("backend not reachable on " + BASE)
 
 
@@ -106,7 +106,7 @@ def _post_multipart(path, token, field, value):
             return r.status, json.loads(r.read() or b"{}")
     except urllib.error.HTTPError as e:
         return e.code, {}
-    except urllib.error.URLError:
+    except OSError:  # URLError, or a server on that port that is not the API (it resets the connection)
         pytest.skip("backend not reachable on " + BASE)
 
 

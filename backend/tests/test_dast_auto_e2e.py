@@ -74,7 +74,7 @@ def _req(method, path, token=None, body=None, extra_headers=None, timeout=30):
             return e.code, json.loads(e.read() or b"{}")
         except Exception:
             return e.code, {}
-    except urllib.error.URLError:
+    except OSError:  # URLError, or a server on that port that is not the API (it resets the connection)
         pytest.skip("backend not reachable on " + BASE)
 
 
