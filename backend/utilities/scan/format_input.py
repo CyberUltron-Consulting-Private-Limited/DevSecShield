@@ -6,6 +6,7 @@ from backend.utilities.db.s3_utils import upload_file
 from io import BytesIO
 from rich.console import Console
 from backend.utilities.scan.sanitize_path_patterns import sanitize_path_patterns
+from backend.utilities.dast.ssrf import DastSsrfError, assert_manual_dast_allowed
 console = Console()
 
 async def format_input_for_scan(
@@ -150,6 +151,14 @@ async def format_input_for_scan(
             case "dast":
                 if not start_scan_payload.dast:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="DAST context is required")
+                # Manual estimate and start: the profile-scan URL rule (utilities/dast/ssrf.py), before any worker
+                # crawls a customer-named URL.
+                dast = start_scan_payload.dast
+                try:
+                    assert_manual_dast_allowed(dast.target_url, dast.auth.login_url if dast.auth else None,
+                                               dast.additional_urls_to_scan)
+                except DastSsrfError as exc:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
                 scan_kwargs["dast_dict_context"] = start_scan_payload.dast.model_dump()
                 console.print(
                     f"DAST kwargs assembled target={start_scan_payload.dast.target_url} "

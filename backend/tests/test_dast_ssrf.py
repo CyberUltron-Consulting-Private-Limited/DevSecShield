@@ -39,7 +39,13 @@ def test_loopback_ip_rejected_unless_allowlisted() -> None:
         assert_urls_allowed(["http://127.0.0.1:8080/"], allowed_hosts=["example.com"])
 
 
-def test_rfc1918_allowed_when_host_is_on_allowlist() -> None:
+def test_rfc1918_needs_the_operator_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Product decision (round 5): a customer's allowed_hosts narrows the scope but cannot open a private address;
+    # only the operator's DAST_ALLOWED_PRIVATE can.
+    monkeypatch.delenv("DAST_ALLOWED_PRIVATE", raising=False)
+    with pytest.raises(DastSsrfError, match="private"):
+        assert_urls_allowed(["http://10.1.2.3/app"], allowed_hosts=["10.1.2.3"])
+    monkeypatch.setenv("DAST_ALLOWED_PRIVATE", "10.1.0.0/16")
     assert_urls_allowed(["http://10.1.2.3/app"], allowed_hosts=["10.1.2.3"])
 
 
