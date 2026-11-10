@@ -30,6 +30,7 @@ import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
 import RunResults from "./RunResults";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
+import { startRefusal } from "./startRefusal";
 import { SourceMetadataCard } from "./SourceMetadata";
 import { credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
 import {
@@ -545,6 +546,12 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
 }
 
 // ---------------------------------------------------------------------------- start card
+const NOTICE_CLASS = {
+  green: "text-sm text-green-600 dark:text-green-400",
+  amber: "text-sm text-amber-600 dark:text-amber-400",
+  red: "text-sm text-red-600 dark:text-red-400",
+} as const;
+
 interface Snapshot {
   estimate: CbomEstimate;
   include: IncludeState;
@@ -558,7 +565,7 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [socAck, setSocAck] = useState(false);
   const [socError, setSocError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ tone: "green" | "amber"; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ tone: "green" | "amber" | "red"; text: string } | null>(null);
 
   // The estimate is a snapshot of one set of groups; a late response for other groups never shows.
   const current = snapshot && sameInclude(snapshot.include, include) ? snapshot : null;
@@ -590,10 +597,10 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
       queryClient.invalidateQueries({ queryKey: ["teams"] });
     },
     onError: (err) => {
-      if (httpStatus(err) === 409) {
-        setSnapshot(null);
-        setNotice({ tone: "amber", text: "The estimate changed. Estimate the credits again before you start." });
-      }
+      // the server's reason (credits, rate limit, validation, estimate changed, already queued) stays on the card
+      const refusal = startRefusal(err);
+      if (refusal.clearEstimate) setSnapshot(null);
+      setNotice({ tone: refusal.tone, text: refusal.text });
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
   });
@@ -716,8 +723,9 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
 
         {notice && (
           <p
-            className={notice.tone === "green" ? "text-sm text-green-600 dark:text-green-400" : "text-sm text-amber-600 dark:text-amber-400"}
-            role="status"
+            className={NOTICE_CLASS[notice.tone]}
+            role={notice.tone === "green" ? "status" : "alert"}
+            data-testid="review-start-notice"
           >
             {notice.text}
           </p>
