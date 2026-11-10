@@ -41,6 +41,9 @@ MAX_FACTS_BYTES = 16 * 1024
 MAX_TARGET_ROWS = 1000
 BATCH = 500
 MAX_BATCH_BYTES = 768 * 1024  # the server refuses asset bodies over 1 MB
+# A long job (a network range) posts what it has at least this often, so the job's asset count in ZeroShield grows
+# while it runs (the customer's progress) instead of staying at 0 until the end.
+FLUSH_INTERVAL_S = 15.0
 
 
 class LeaseLost(Exception):
@@ -135,6 +138,7 @@ class JobContext:
     sent: int = 0
     lost: int = 0  # assets the server never accepted (refused batch, API down past retries)
     _buffer_bytes: int = 0
+    _last_flush: float = field(default_factory=time.monotonic)
     accepted: int = 0
     rejected: int = 0
     duplicate: int = 0
@@ -183,21 +187,31 @@ class JobContext:
         with self._lock:
             self._buffer.append(asset)
             self._buffer_bytes += size
-            full = len(self._buffer) >= BATCH or self._buffer_bytes >= MAX_BATCH_BYTES
+            full = (len(self._buffer) >= BATCH or self._buffer_bytes >= MAX_BATCH_BYTES
+                    or time.monotonic() - self._last_flush >= FLUSH_INTERVAL_S)
         if full:
             self.flush()
 
-    def coverage(self, target: str, check: str, status: str, detail: str = "", once: bool = False) -> None:
+    def coverage(self, target: str, check: str, status: str, detail: str = "", once: bool = False,
+                 scope: list[str] | None = None, incomplete: bool | None = None) -> None:
+        """A check that could not read everything.  ``scope``: location prefixes within the target that the gap
+        covers (none = the whole target); ``incomplete``: assets under it are still listed, with facts missing.
+        Drift reads these: what a gap covers is "not read", never removed or resolved."""
         key = (check, status) if once else (target, check, status)
         if key in self.coverage_seen:
             return
         self.coverage_seen.add(key)
-        self.emit("coverage", target, f"{target}#{check}" if target else check, name=check,
-                  facts={"check": check, "status": status, "detail": printable(detail, 1000)})
+        facts: dict[str, Any] = {"check": check, "status": status, "detail": printable(detail, 1000)}
+        if scope is not None:
+            facts["scope"] = [str(p) for p in scope[:200]]
+        if incomplete is not None:
+            facts["incomplete"] = bool(incomplete)
+        self.emit("coverage", target, f"{target}#{check}" if target else check, name=check, facts=facts)
 
     def flush(self) -> None:
         with self._lock:
             batch, self._buffer, self._buffer_bytes = self._buffer, [], 0
+            self._last_flush = time.monotonic()
             if not batch:
                 return
             self._seq += 1
