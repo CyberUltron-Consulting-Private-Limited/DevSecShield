@@ -93,6 +93,8 @@ def run_heatmap(session: Session, team_id: int, run_id: int, *, by: str = "sourc
         CbomCollectionSource.team_id == team_id)).all()}
     rows = session.exec(select(CbomCollectedAsset).where(
         CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).all()
+    from backend.utilities.cbom_sources.classify import shown
+
     cells: dict[tuple[str, str], dict[str, Any]] = {}
     columns: dict[str, int] = {}
     certs: list[dict[str, Any]] = []
@@ -100,11 +102,12 @@ def run_heatmap(session: Session, team_id: int, run_id: int, *, by: str = "sourc
     for row in rows:
         if row.asset_type == "coverage":
             continue
+        shown_impact = shown(row, today)["impact"]  # date-based findings (expiry, end of life) judged today
         job = jobs.get(row.job_id)
         src = sources.get((job.source_id if job else None) or 0)
         column = (ID.job_source_name(job, src) if job else "Unknown source") if by == "source" else row.asset_type
         family = algorithm_family(row.algorithm, row.asset_type, row.facts)
-        impact = row.impact if row.impact in _RANK else "none"
+        impact = shown_impact if shown_impact in _RANK else "none"
         cell = cells.setdefault((family, column), {"count": 0, "worst": "none", "by_impact": {k: 0 for k in IMPACTS}})
         cell["count"] += 1
         cell["by_impact"][impact] += 1
@@ -120,7 +123,7 @@ def run_heatmap(session: Session, team_id: int, run_id: int, *, by: str = "sourc
             certs.append({"asset_id": row.id, "not_after": when.replace(microsecond=0).isoformat() + "Z",
                           "days_left": (when - today).days, "subject": facts.get("subject"),
                           "issuer": facts.get("issuer"), "target": row.target, "location": row.location,
-                          "name": row.name, "impact": row.impact,
+                          "name": row.name, "impact": shown_impact,
                           "source_name": ID.job_source_name(job, src) if job else None})
     families = [f for f in FAMILIES if any(k[0] == f for k in cells)]
     cols = sorted(columns, key=lambda c: (-columns[c], c))

@@ -26,7 +26,7 @@ import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
-import { DEPLOY_SUPPORT, ago, installCommand, nodeInstallNames, readTextFile, type DeployMethod } from "./logic";
+import { DEPLOY_SUPPORT, ago, installCommand, nodeInstallNames, offlineImageSteps, readTextFile, type DeployMethod } from "./logic";
 import {
   Checkbox2,
   ChoiceCards,
@@ -227,6 +227,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         name: createdNode?.name ?? wizard.name,
       })
     : "";
+  const offlineSteps = created ? offlineImageSteps(createdNode?.deployment ?? wizard.deployment, NODE_IMAGE) : null;
 
   return (
     <div className="space-y-6">
@@ -392,6 +393,19 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
               {created && (
                 <div className="mt-4 space-y-2">
                   <CodeSnippet code={command} language={wizard.deployment === "ami" ? "yaml" : "bash"} />
+                  {offlineSteps && (
+                    <details className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="node-image-offline">
+                      <summary className="cursor-pointer">
+                        Cannot pull <span className="font-mono">{NODE_IMAGE}</span>? Load the image from a file instead
+                      </summary>
+                      <p className="mt-2">
+                        Use this on a host without access to the image registry (air-gapped sites, or before the image is
+                        published there). The file and its SHA-256 checksum come from{" "}
+                        <span className="font-mono">make node-image</span>; check the checksum before you load it.
+                      </p>
+                      <div className="mt-2"><CodeSnippet code={offlineSteps} language="bash" /></div>
+                    </details>
+                  )}
                   {!DEPLOY_SUPPORT[createdNode?.deployment ?? wizard.deployment].proven && (
                     <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="deploy-build-yourself">
                       Build it yourself: ZeroShield does not publish this image yet. The Packer template and the steps are in

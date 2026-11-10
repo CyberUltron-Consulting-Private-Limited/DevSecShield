@@ -100,27 +100,31 @@ def node_items(session: Session, team_id: int, run: CbomCollectionRun, *,
     query = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id)
     if asset_ids is not None:
         query = query.where(CbomCollectedAsset.id.in_(list(asset_ids)))  # type: ignore[union-attr]
+    from backend.utilities.cbom_sources.classify import shown
+
     items = []
+    now = _dt.datetime.utcnow()
     for row in session.exec(query.order_by(CbomCollectedAsset.id)).all():
         if row.asset_type == "coverage":
             continue
+        view = shown(row, now)  # date-based findings (certificate expiry, library end of life) judged today
         job = jobs.get(row.job_id)
         src = sources.get((job.source_id if job else None) or 0)
         ref = ID.job_source_ref(job, src) if job else f"source-{row.source_id}"
         meta = job_metadata(job.params if job else None, src, nodes.get((job.node_id if job else None) or 0))
         exposure, _basis = asset_exposure(row.facts, row.target, row.location, override=meta["exposure"],
                                           node_segment=meta["segment"])
-        codes = [c for c in row.finding_codes or [] if isinstance(c, str)]
+        codes = view["finding_codes"]
         in_transit = hndl(row.asset_type, row.quantum_vulnerable)
         snap = (job.params or {}).get("metadata") if job else None
         owner = (snap.get("owner") if isinstance(snap, dict) else None) or ((src.config or {}).get("owner") if src else None)
         items.append({
             "asset_id": row.id, "asset_key": ID.stable_key("node", ref, ID.node_identity(row)), "scope": "node",
             "source_ref": ref, "source_name": ID.job_source_name(job, src) if job else None,
-            "label": ID.node_label(row), "type": row.asset_type, "impact": row.impact, "finding_codes": codes,
+            "label": ID.node_label(row), "type": row.asset_type, "impact": view["impact"], "finding_codes": codes,
             "quantum_vulnerable": row.quantum_vulnerable, "exposure": exposure, "hndl": in_transit,
             "owner_hint": owner,
-            "suggested_wave": suggested_wave(row.impact, codes, row.quantum_vulnerable,
+            "suggested_wave": suggested_wave(view["impact"], codes, row.quantum_vulnerable,
                                              internet=exposure == "internet", hndl=in_transit),
         })
     return _with_assignment(items, _assignments(session, team_id, (i["asset_key"] for i in items)))

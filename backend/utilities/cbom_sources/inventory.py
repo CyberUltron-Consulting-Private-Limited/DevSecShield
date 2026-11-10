@@ -9,12 +9,12 @@ import datetime as _dt
 import uuid
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
 from backend.utilities.cbom_sources import crypto_kb
-from backend.utilities.cbom_sources.classify import classify
+from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
 from backend.utilities.cbom_sources.common import iso_z
 
 EXPORT_CAP = 50_000
@@ -23,40 +23,68 @@ EXPORT_CAP = 50_000
 _SERIAL_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/cbom/sources/run")
 
 
-def export_serial(run_id: int, kb_version: str) -> str:
-    return f"urn:uuid:{uuid.uuid5(_SERIAL_NS, f'{run_id}:{kb_version}')}"
+def export_serial(run_id: int, kb_version: str, judged_on: str | None = None) -> str:
+    """``judged_on``: the day a date-based rule (certificate expiry, library end of life) changed a finding since the
+    run; the export then differs from the run's own record, so it gets its own serial."""
+    key = f"{run_id}:{kb_version}" + (f":{judged_on}" if judged_on else "")
+    return f"urn:uuid:{uuid.uuid5(_SERIAL_NS, key)}"
 _IMPACT_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 
 
+def _now() -> _dt.datetime:
+    return _dt.datetime.utcnow()  # naive UTC, as the stored collection times
+
+
+def changed_today(session: Session, scope, now: _dt.datetime) -> dict[int, dict[str, Any]]:
+    """Today's view (``classify.shown``) of every asset in ``scope`` whose date-based rule judges it differently
+    than its run did, by asset id. Only certificate and library rows can change, so only they are read."""
+    rows = session.exec(scope.where(CbomCollectedAsset.asset_type.in_(sorted(DATED_TYPES)))).all()  # type: ignore[union-attr]
+    views = {row.id: shown(row, now) for row in rows}
+    return {aid: view for aid, view in views.items() if view["as_of_run"]}
+
+
 def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: bool | None, text: str | None,
-              source_id: int | None):
+              source_id: int | None, changed: dict[int, dict[str, Any]] | None = None):
+    changed = changed or {}
     if asset_type:
         query = query.where(CbomCollectedAsset.asset_type == asset_type)
-    if impact == "none":
-        query = query.where(CbomCollectedAsset.impact.is_(None))  # type: ignore[union-attr]
-    elif impact:
-        query = query.where(CbomCollectedAsset.impact == impact)
+    if impact:
+        stored = (CbomCollectedAsset.impact.is_(None) if impact == "none"  # type: ignore[union-attr]
+                  else CbomCollectedAsset.impact == impact)
+        if changed:  # a row a date-based rule changed is filtered by today's impact, not the run's
+            today = [aid for aid, view in changed.items() if (view["impact"] or "none") == impact]
+            stored = and_(stored, CbomCollectedAsset.id.notin_(list(changed)))  # type: ignore[union-attr]
+            if today:
+                stored = or_(stored, CbomCollectedAsset.id.in_(today))  # type: ignore[union-attr]
+        query = query.where(stored)
     if quantum is not None:
         query = query.where(CbomCollectedAsset.quantum_vulnerable == quantum)
     if source_id:
         query = query.where(CbomCollectedAsset.source_id == source_id)
     if text:
         like = f"%{text.lower()}%"
-        query = query.where(or_(func.lower(CbomCollectedAsset.location).like(like),
-                                func.lower(func.coalesce(CbomCollectedAsset.name, "")).like(like),
-                                func.lower(func.coalesce(CbomCollectedAsset.finding, "")).like(like),
-                                func.lower(func.coalesce(CbomCollectedAsset.algorithm, "")).like(like)))
+        match = or_(func.lower(CbomCollectedAsset.location).like(like),
+                    func.lower(func.coalesce(CbomCollectedAsset.name, "")).like(like),
+                    func.lower(func.coalesce(CbomCollectedAsset.finding, "")).like(like),
+                    func.lower(func.coalesce(CbomCollectedAsset.algorithm, "")).like(like))
+        today = [aid for aid, view in changed.items() if text.lower() in str(view["finding"] or "").lower()]
+        query = query.where(or_(match, CbomCollectedAsset.id.in_(today)) if today else match)  # type: ignore[union-attr]
     return query
 
 
-def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_names: dict[int, str] | None = None) -> dict[str, Any]:
+def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_names: dict[int, str] | None = None,
+                 view: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One asset as the list shows it: findings judged today (``classify.shown``); ``as_of_run`` holds the run's own
+    verdict when a date-based rule changed it since."""
+    view = view or shown(row)
     return {
         "id": row.id, "type": row.asset_type, "cdx_type": row.cdx_type, "job_id": row.job_id,
         "source_id": row.source_id,
         "source_name": source_names.get(row.source_id or 0) or (job_names or {}).get(row.job_id),
         "target": row.target, "location": row.location, "name": row.name, "algorithm": row.algorithm,
         "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": row.quantum_vulnerable,
-        "impact": row.impact, "finding": row.finding, "finding_codes": row.finding_codes or [],
+        "impact": view["impact"], "finding": view["finding"], "finding_codes": view["finding_codes"],
+        "as_of_run": view["as_of_run"],
         "facts": row.facts or {},
     }
 
@@ -71,16 +99,21 @@ def _source_names(session: Session, team_id: int, jobs: list[CbomCollectionJob])
 
 def list_assets(session: Session, *, team_id: int, run_id: int | None = None, job_id: int | None = None,
                 asset_type: str | None = None, impact: str | None = None, quantum: bool | None = None,
-                text: str | None = None, source_id: int | None = None, page: int = 1, page_size: int = 50) -> dict[str, Any]:
+                text: str | None = None, source_id: int | None = None, page: int = 1, page_size: int = 50,
+                now: _dt.datetime | None = None) -> dict[str, Any]:
+    now = now or _now()
     base = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == team_id)
     if run_id is not None:
         base = base.where(CbomCollectedAsset.run_id == run_id)
     if job_id is not None:
         base = base.where(CbomCollectedAsset.job_id == job_id)
-    filtered = _filtered(base, asset_type=asset_type, impact=impact, quantum=quantum, text=text, source_id=source_id)
+    changed = changed_today(session, base, now)
+    filtered = _filtered(base, asset_type=asset_type, impact=impact, quantum=quantum, text=text, source_id=source_id,
+                         changed=changed)
     total = int(session.exec(select(func.count()).select_from(filtered.subquery())).one())
     rows = session.exec(filtered.order_by(CbomCollectedAsset.id).offset((page - 1) * page_size).limit(page_size)).all()
-    rows = sorted(rows, key=lambda r: (_IMPACT_ORDER.get(r.impact or "", 9), r.id or 0))
+    views = {row.id: changed.get(row.id) or shown(row, now) for row in rows}
+    rows = sorted(rows, key=lambda r: (_IMPACT_ORDER.get(views[r.id]["impact"] or "", 9), r.id or 0))
 
     # facets are over the whole run/job, not the filtered page, so the filter chips always add up
     scope = select(CbomCollectedAsset.asset_type, CbomCollectedAsset.impact, CbomCollectedAsset.quantum_vulnerable,
@@ -100,6 +133,11 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
         by_impact[a_impact or "none"] = by_impact.get(a_impact or "none", 0) + count
         if a_qv:
             quantum_count += count
+    for view in changed.values():  # the impact chips count today's verdicts, as the list shows them
+        before, after = view["as_of_run"]["impact"] or "none", view["impact"] or "none"
+        by_impact[before] = by_impact.get(before, 0) - 1
+        by_impact[after] = by_impact.get(after, 0) + 1
+    by_impact = {k: v for k, v in by_impact.items() if v > 0}
     jobs = session.exec(select(CbomCollectionJob).where(
         CbomCollectionJob.team_id == team_id,
         (CbomCollectionJob.run_id == run_id) if run_id is not None else (CbomCollectionJob.id == job_id))).all()
@@ -107,7 +145,7 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     return {
         "total": total, "all_total": all_total, "page": page, "page_size": page_size,
-        "items": [public_asset(r, names, job_names) for r in rows],
+        "items": [public_asset(r, names, job_names, views[r.id]) for r in rows],
         "facets": {"type": by_type, "impact": by_impact, "quantum_vulnerable": quantum_count},
         "targets": [_job_targets(job, names) for job in jobs],
     }
@@ -159,7 +197,7 @@ def _code_impacts(row: CbomCollectedAsset) -> dict[str, str | None]:
         return {}
 
 
-def vulnerabilities(rows: list[CbomCollectedAsset]) -> list[dict[str, Any]]:
+def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """CycloneDX vulnerabilities with VEX analysis.
 
     One entry per finding code (the weak setting was observed on the listed assets, so the analysis state is
@@ -168,22 +206,24 @@ def vulnerabilities(rows: list[CbomCollectedAsset]) -> list[dict[str, Any]]:
     by_code: dict[str, list[CbomCollectedAsset]] = {}
     code_impacts: dict[str, list[str]] = {}
     by_cve: dict[str, dict[str, Any]] = {}
+    views = views or {}
     for row in rows:
-        own = _code_impacts(row)
-        for code in row.finding_codes or []:
+        view = views.get(row.id) or shown(row)
+        own = view["impacts"] or _code_impacts(row)
+        for code in view["finding_codes"]:
             if isinstance(code, str) and crypto_kb.entry("node", code):
                 by_code.setdefault(code, []).append(row)
                 impact = own.get(code) or (crypto_kb.entry("node", code) or {}).get("default_impact")
                 if impact:
                     code_impacts.setdefault(code, []).append(impact)
-                for cve in crypto_kb.cves_for("node", code, row.finding or ""):
+                for cve in crypto_kb.cves_for("node", code, view["finding"] or ""):
                     if code == "LIB_KNOWN_CVE":
                         continue
                     hit = by_cve.setdefault(cve["id"], {"cve": cve, "rows": [], "why": set()})
                     hit["rows"].append(row)
                     hit["why"].add(f"{code} ({cve.get('matched_on')})")
         facts = row.facts or {}
-        if "LIB_KNOWN_CVE" in (row.finding_codes or []) and facts.get("version"):
+        if "LIB_KNOWN_CVE" in view["finding_codes"] and facts.get("version"):
             status = crypto_kb.library_status(str(facts.get("name") or facts.get("package") or ""), str(facts["version"]))
             for cid in (status or {}).get("cves") or []:
                 hit = by_cve.setdefault(cid, {"cve": crypto_kb.cve(cid) or {"id": cid}, "rows": [], "why": set()})
@@ -226,21 +266,28 @@ def vulnerabilities(rows: list[CbomCollectedAsset]) -> list[dict[str, Any]]:
     return out
 
 
-def _component(row: CbomCollectedAsset, source_name: str | None) -> dict[str, Any]:
+def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None) -> dict[str, Any]:
     facts = row.facts or {}
+    view = view or shown(row)
     ref = f"zs-asset-{row.id}"
     props = [
         {"name": "zs:location", "value": row.location},
         {"name": "zs:asset_type", "value": row.asset_type},
         {"name": "zs:target", "value": row.target or ""},
         {"name": "zs:source", "value": source_name or ""},
-        {"name": "zs:impact", "value": row.impact or "Info"},
+        {"name": "zs:impact", "value": view["impact"] or "Info"},
         {"name": "zs:quantum_vulnerable", "value": "unknown" if row.quantum_vulnerable is None else str(row.quantum_vulnerable).lower()},
     ]
-    if row.finding:
-        props.append({"name": "zs:finding", "value": row.finding})
-    for code in row.finding_codes or []:
+    if view["finding"]:
+        props.append({"name": "zs:finding", "value": view["finding"]})
+    for code in view["finding_codes"]:
         props.append({"name": "zs:finding_code", "value": str(code)})
+    run = view["as_of_run"]
+    if run:  # a date-based rule changed this finding since the run: the run's own verdict, kept beside it
+        props.append({"name": "zs:judged_on", "value": run["judged_on"]})
+        props.append({"name": "zs:run_impact", "value": run["impact"] or "Info"})
+        if run["finding"]:
+            props.append({"name": "zs:run_finding", "value": run["finding"]})
     name = row.name or row.algorithm or row.location
     if row.cdx_type == "library":
         from backend.utilities.cbom_sources.sbom_link import ecosystem_of, library_purl
@@ -299,6 +346,9 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                         .order_by(CbomCollectedAsset.id).limit(EXPORT_CAP + 1)).all()
     truncated = len(rows) > EXPORT_CAP
     rows = rows[:EXPORT_CAP]
+    today = now if now.tzinfo is None else now.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+    views = {row.id: shown(row, today) for row in rows}
+    judged_on = next((v["as_of_run"]["judged_on"] for v in views.values() if v["as_of_run"]), None)
     jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all()
     names = _source_names(session, run.team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
@@ -315,7 +365,7 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                                                    ("zs:classifier_version", run.classifier_version),
                                                    ("zs:engine_version", run.engine_version)) if value]
     return {
-        "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": export_serial(run.id or 0, kb_version),
+        "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": export_serial(run.id or 0, kb_version, judged_on),
         "version": 1,
         "metadata": {
             "timestamp": iso_z(now),
@@ -325,9 +375,11 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                 {"name": "zs:asset_count", "value": str(len(rows))}, {"name": "zs:truncated", "value": str(truncated).lower()},
                 {"name": "zs:kb_version", "value": kb_version},
                 *[{"name": name, "value": str(value)} for name, value in versions],
+                *([{"name": "zs:judged_on", "value": judged_on}] if judged_on else []),
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
             ],
         },
-        "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id)) for row in rows],
-        "vulnerabilities": vulnerabilities(list(rows)),
+        "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id])
+                       for row in rows],
+        "vulnerabilities": vulnerabilities(list(rows), views),
     }

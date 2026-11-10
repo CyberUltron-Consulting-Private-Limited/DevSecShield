@@ -153,6 +153,40 @@ export function installCommand(
   ].join("\n")
 }
 
+/** The published node image's name (scripts/release/scan_node_image.sh builds and saves it under this name). */
+export const PUBLISHED_NODE_IMAGE = "registry.zeroshield.ai/cbom/scan-node"
+
+/** For a site that cannot pull the node image: the image file from `make node-image` (or the release workflow),
+ * checked with its .sha256 and loaded with `docker load` (scan_node/README.md, "Without registry access"). Helm also
+ * needs the image in a registry the cluster can pull from, and the chart from the repository. Null for the AMI and
+ * the OVA, which carry the image inside. */
+export function offlineImageSteps(method: DeployMethod, image: string): string | null {
+  if (method !== "docker" && method !== "helm") return null
+  const cut = image.lastIndexOf(":")
+  const version = cut > image.lastIndexOf("/") ? image.slice(cut + 1) : "latest"
+  const archive = `scan-node-${version}.tar.gz`
+  const lines = [
+    `# 1. Get the image file: in the DevSecShield repository run  make node-image VERSION=${version}`,
+    `#    (it writes dist/scan-node/${archive} and ${archive}.sha256), or ask ZeroShield for both files.`,
+    "# 2. Copy both files to the host, check the file, then load it:",
+    `sha256sum -c ${archive}.sha256`,
+    `docker load -i ${archive}`,
+  ]
+  const loaded = `${PUBLISHED_NODE_IMAGE}:${version}`
+  if (loaded !== image) lines.push(`docker tag ${loaded} ${image}`)
+  if (method === "docker") {
+    lines.push("# 3. Run the command above: Docker uses the loaded image and does not pull it.")
+  } else {
+    lines.push(
+      "# 3. Push it to a registry your cluster can pull from, and use that name in image.repository:",
+      `docker tag ${image} <your-registry>/cbom/scan-node:${version}`,
+      `docker push <your-registry>/cbom/scan-node:${version}`,
+      "#    The chart is in the repository too: use ./deploy/helm/cbom-scan-node instead of the oci:// address.",
+    )
+  }
+  return lines.join("\n")
+}
+
 /** How far each way of running a node has been proven. Docker and the Helm chart (Deployment and the agent
  * DaemonSet) ran end to end on k3s; the AMI and OVA are Packer templates in deploy/node-images/ to build yourself. */
 export const DEPLOY_SUPPORT: Record<DeployMethod, { proven: boolean; note: string }> = {

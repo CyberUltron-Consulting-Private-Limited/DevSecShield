@@ -1196,6 +1196,7 @@ ALLOWED_SOURCE_URLS = {
     "https://cwe.mitre.org/data/definitions/312.html",
     "https://cwe.mitre.org/data/definitions/319.html",
     "https://cwe.mitre.org/data/definitions/326.html",
+    "https://cwe.mitre.org/data/definitions/1240.html",
     "https://cwe.mitre.org/data/definitions/780.html",
     "https://www.rfc-editor.org/rfc/rfc7507",
     "https://cyclonedx.org/capabilities/cbom/",

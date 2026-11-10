@@ -2,6 +2,7 @@ import asyncio
 import hmac
 import logging
 import os
+import re
 import secrets
 import smtplib
 import threading
@@ -363,6 +364,26 @@ def send_smtp_email(cfg: dict, recipient_email: str, subject: str, msg: MIMEText
         server.send_message(msg, from_addr=cfg["sender"], to_addrs=[recipient_email])
 
 
+_MAIL_SECRET_SETTINGS = ("SMTP_PASSWORD", "CLIENT_SECRET")
+
+
+def mail_failure_cause(exc: BaseException, recipient: str = "") -> str:
+    """Why a mail was not sent, for the server log only (the client gets a generic message): the NAME of a missing
+    setting, else the error class and its message cut to 200 characters, with the configured mail secrets and the
+    recipient's address blanked."""
+    if isinstance(exc, KeyError):
+        return f"missing setting {exc.args[0]}" if exc.args else "missing setting"
+    text = str(exc)
+    for name in _MAIL_SECRET_SETTINGS:
+        secret = os.environ.get(name) or ""
+        if len(secret) >= 4:
+            text = text.replace(secret, "***")
+    if recipient:
+        text = re.sub(re.escape(recipient), "<recipient>", text, flags=re.I)
+    text = " ".join(text.split())[:200]
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
 async def send_outlook_email( recipient_email: str , subject: str , body: Optional[str] = None , html_body:Optional[str] = None , custom_domain:str = "zeroshield.ai" ):
     if not html_body and not body:
         raise HTTPException(status_code=400, detail="Body or html_body is required")
@@ -384,14 +405,15 @@ async def send_outlook_email( recipient_email: str , subject: str , body: Option
         except MailAddressError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            log.error("email could not be sent through SMTP relay %s:%s: %s", smtp['host'], smtp['port'], type(e).__name__)
+            log.error("email could not be sent through SMTP relay %s:%s: %s", smtp['host'], smtp['port'],
+                      mail_failure_cause(e, recipient_email))
             raise HTTPException(status_code=500, detail="Could not send the email through the configured mail relay")
 
     try:
         await asyncio.to_thread(_send_graph_mail, recipient_email, subject, html_body)
     except Exception as e:
         # The cause (missing TENANT_ID, a Graph error body ...) goes to the log only, never to the client.
-        log.error("email could not be sent through Microsoft Graph: %s", type(e).__name__)
+        log.error("email could not be sent through Microsoft Graph: %s", mail_failure_cause(e, recipient_email))
         raise HTTPException(status_code=500, detail="Could not send the email") from None
 
 

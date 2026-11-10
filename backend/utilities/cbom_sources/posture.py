@@ -138,11 +138,11 @@ def _job_context(session: Session, team_id: int, run_id: int, sources: dict[int,
 
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
                 top: int = 10) -> dict[str, Any]:
-    rows = session.exec(select(CbomCollectedAsset.id, CbomCollectedAsset.asset_type, CbomCollectedAsset.quantum_vulnerable,
-                               CbomCollectedAsset.impact, CbomCollectedAsset.finding_codes, CbomCollectedAsset.facts,
-                               CbomCollectedAsset.source_id, CbomCollectedAsset.location, CbomCollectedAsset.name,
-                               CbomCollectedAsset.finding, CbomCollectedAsset.job_id, CbomCollectedAsset.target)
+    from backend.utilities.cbom_sources.classify import shown
+
+    rows = session.exec(select(CbomCollectedAsset)
                         .where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id)).all()
+    now = _dt.datetime.utcnow()
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id)).all()}
     job_ctx = _job_context(session, team_id, run_id, sources)
@@ -156,8 +156,12 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     clause_meta: dict[tuple[str, str], dict[str, Any]] = {}
     kb = crypto_kb.load()
     compliance = kb.get("compliance") or {}
-    for (aid, a_type, qv, impact, a_codes, facts, source_id, location, name, finding, job_id, target) in rows:
-        a_codes = [c for c in a_codes or [] if isinstance(c, str) and not c.startswith("COVERAGE_")]
+    for row in rows:
+        aid, a_type, qv, facts, source_id = row.id, row.asset_type, row.quantum_vulnerable, row.facts, row.source_id
+        location, name, job_id, target = row.location, row.name, row.job_id, row.target
+        view = shown(row, now)  # date-based findings (certificate expiry, library end of life) judged today
+        impact, a_codes, finding = view["impact"], view["finding_codes"], view["finding"]
+        a_codes = [c for c in a_codes if not c.startswith("COVERAGE_")]
         if a_type == "coverage":
             continue
         classes[pqc_class(a_type, qv, a_codes, facts or {})] += 1
@@ -236,8 +240,12 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
     """Everything known about one collected asset: the knowledge-base explanation of each finding code (with commands
     filled in for this host), library CVEs and end-of-life (as of the run, and today when that differs), PQC class,
     HNDL and internet exposure."""
+    from backend.utilities.cbom_sources.classify import classify, shown
+
     facts = row.facts or {}
-    codes = [c for c in row.finding_codes or [] if isinstance(c, str)]
+    now = _dt.datetime.combine(today, _dt.time()) if today else _dt.datetime.utcnow()
+    view = shown(row, now)  # the finding as every other view shows it: date-based rules judged today
+    codes = view["finding_codes"]
     ctx: dict[str, Any] = {"name": facts.get("name") or facts.get("package") or row.name, "location": row.location,
                            "resource": facts.get("arn") or facts.get("resource") or facts.get("key_id")}
     host, port = _host_port(row.target or "")
@@ -248,10 +256,10 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         ctx["path"] = row.location
     elif facts.get("path"):
         ctx["path"] = facts["path"]
-    # the classifier is deterministic, so re-running it on the stored facts (as of collection time) gives the
-    # sentence it wrote for each code
-    from backend.utilities.cbom_sources.classify import classify
-    verdict = classify(row.asset_type, row.algorithm, row.key_size, row.protocol, facts, row.created_at)
+    # the classifier is deterministic, so re-running it on the stored facts (as of collection time, or today when a
+    # date-based rule changed the finding since) gives the sentence it wrote for each code
+    verdict = classify(row.asset_type, row.algorithm, row.key_size, row.protocol, facts,
+                       now if view["as_of_run"] else row.created_at)
     texts = verdict["texts"]
     ordered = [c for c in codes if c != "QUANTUM_VULNERABLE"] + [c for c in codes if c == "QUANTUM_VULNERABLE"]
     library = None
@@ -271,7 +279,8 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
                                               node_segment=meta["segment"])
     return {
         "id": row.id, "type": row.asset_type, "name": row.name, "location": row.location, "target": row.target,
-        "impact": row.impact, "finding": row.finding, "finding_codes": codes, "algorithm": row.algorithm,
+        "impact": view["impact"], "finding": view["finding"], "finding_codes": codes, "as_of_run": view["as_of_run"],
+        "algorithm": row.algorithm,
         "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": row.quantum_vulnerable,
         "pqc_class": pqc_class(row.asset_type, row.quantum_vulnerable, codes, facts),
         "hndl": hndl(row.asset_type, row.quantum_vulnerable),
@@ -282,7 +291,7 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "exposure_factor": EXPOSURE_FACTOR[exposure],
         "facts": facts,
         "details": [{**d, "impact": verdict["impacts"].get(d["code"]) or d["impact"]}
-                    for d in crypto_kb.render("node", ordered, context=ctx, evidence=row.finding or "", texts=texts,
+                    for d in crypto_kb.render("node", ordered, context=ctx, evidence=view["finding"] or "", texts=texts,
                                               title=str(row.algorithm or row.name or ""))],
         "library": library,
         "kb_version": crypto_kb.version(),

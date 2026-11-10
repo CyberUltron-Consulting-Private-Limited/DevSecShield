@@ -19,6 +19,8 @@ FINDING_CODES = (
     "KMS_KEY_POLICY_PUBLIC",
     "KMS_KEY_DELETION_UNPROTECTED",
     "AT_REST_ENCRYPTION_WEAK",
+    "PROVIDER_MANAGED_KEY",
+    "EOL_BASE_IMAGE",
 )
 
 FINDING_LABELS = {
@@ -32,6 +34,8 @@ FINDING_LABELS = {
     "KMS_KEY_POLICY_PUBLIC": "Key policy is public",
     "KMS_KEY_DELETION_UNPROTECTED": "Key deletion is unprotected",
     "AT_REST_ENCRYPTION_WEAK": "Weak encryption at rest",
+    "PROVIDER_MANAGED_KEY": "Provider-managed key only",
+    "EOL_BASE_IMAGE": "Base image past end of life",
 }
 
 FINDING_IMPACT = {
@@ -45,6 +49,8 @@ FINDING_IMPACT = {
     "KMS_KEY_POLICY_PUBLIC": "High",
     "KMS_KEY_DELETION_UNPROTECTED": "Low",
     "AT_REST_ENCRYPTION_WEAK": "Medium",
+    "PROVIDER_MANAGED_KEY": "Low",
+    "EOL_BASE_IMAGE": "Medium",
 }
 
 FINDING_ANCHORS = {
@@ -58,6 +64,8 @@ FINDING_ANCHORS = {
     "KMS_KEY_POLICY_PUBLIC": "CWE-284",
     "KMS_KEY_DELETION_UNPROTECTED": "NIST SP 800-57 Part 1",
     "AT_REST_ENCRYPTION_WEAK": "CWE-326",
+    "PROVIDER_MANAGED_KEY": "NIST SP 800-57 Part 1",
+    "EOL_BASE_IMAGE": "CWE-1104",
 }
 
 # Source: CWE-311, missing encryption of sensitive data: https://cwe.mitre.org/data/definitions/311.html
@@ -74,6 +82,8 @@ FINDING_ANCHORS = {
 # Source: CWE-319, cleartext transmission: https://cwe.mitre.org/data/definitions/319.html
 # Source: CWE-326, inadequate encryption strength: https://cwe.mitre.org/data/definitions/326.html
 # Source: RFC 7507, TLS fallback SCSV: https://www.rfc-editor.org/rfc/rfc7507
+# Source: NIST SP 800-57 Part 1 Rev 5, key custody and key management responsibilities: https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final
+# Source: CWE-1104, use of unmaintained third-party components: https://cwe.mitre.org/data/definitions/1104.html
 FINDING_ACTIONS = {
     "UNENCRYPTED_AT_REST": "Enable encryption at rest with an approved algorithm and a managed key.",
     "UNENCRYPTED_IN_TRANSIT": "Require TLS 1.2 or later on this path and reject a plaintext listener.",
@@ -85,6 +95,8 @@ FINDING_ACTIONS = {
     "KMS_KEY_POLICY_PUBLIC": "Remove public principals from the key policy and name the roles that may use it.",
     "KMS_KEY_DELETION_UNPROTECTED": "Require a waiting period or an explicit protection before a key can be destroyed.",
     "AT_REST_ENCRYPTION_WEAK": "Replace the at-rest cipher with AES-256-GCM or another approved algorithm.",
+    "PROVIDER_MANAGED_KEY": "Encrypt regulated data with a customer-managed key and record who controls it.",
+    "EOL_BASE_IMAGE": "Rebuild the image on a supported release of the distribution and redeploy it.",
 }
 
 VERDICT_LABELS = {

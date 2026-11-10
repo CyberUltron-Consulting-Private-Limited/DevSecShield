@@ -21,6 +21,9 @@ The container, its volume (and the Helm release) are named after the node (`dc-m
 run on one host: the volume holds the node's credential and SSH key, and a node started on another node's volume
 would run as that node.
 
+A host that cannot pull from `registry.zeroshield.ai` (an air-gapped site, or before the image is published there)
+loads the image from a file first: see [Without registry access](#without-registry-access).
+
 On first start the node creates an ed25519 SSH key in the volume and exchanges the single-use registration
 token for its own node token. The public key is shown in ZeroShield: add it to the `zs-cbom` user's
 `authorized_keys` on the Linux servers you want collected (the default "node key" credential).
@@ -110,8 +113,10 @@ are reported, not read.
 
 ### Without registry access
 
-Each release is also published as a file (`scripts/release/scan_node_image.sh build <version>`, or the
-**Scan node image** workflow): copy `scan-node-<version>.tar.gz` and its `.sha256` to the host, then
+Each release is also published as a file. Build it from the repository with `make node-image VERSION=<version>`
+(the same as `scripts/release/scan_node_image.sh build <version>`, or the **Scan node image** workflow): it writes
+`dist/scan-node/scan-node-<version>.tar.gz` and its `.sha256`. Copy both files to the host, check the file, and load
+it; then run the install command unchanged (Docker uses the loaded image and does not pull):
 
 ```sh
 sha256sum -c scan-node-<version>.tar.gz.sha256

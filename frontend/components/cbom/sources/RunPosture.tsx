@@ -31,6 +31,8 @@ import {
   type CbomPostureWithExposure,
 } from "@/utils/api/cbom_outputs";
 
+import { handleApiError } from "@/utils/error-handler";
+
 import { cbomSourcesKeys } from "./keys";
 import { EXPOSURE_CHOICES, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
@@ -85,8 +87,12 @@ function MoscaEditor({ teamId, onDone }: { teamId: number; onDone: () => void })
       queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
       onDone();
     },
-    // a 409 means someone else saved first: reload so the next try sends the current version
-    onError: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    // say why the values were not saved (a 409 means someone else saved first: reload so the next try sends the
+    // current version)
+    onError: (err) => {
+      setError(handleApiError(err).message);
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+    },
   });
   if (!settings.data) return <LoadingBlock />;
   const current = settings.data.risk_model ?? { data_shelf_life_years: null, migration_years: null, threat_years: null };

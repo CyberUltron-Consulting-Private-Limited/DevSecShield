@@ -417,19 +417,62 @@ def test_estimate_stores_the_digest_and_applies_the_minimum(http):
     assert (scan.credit_charged, balance) == (1.0, 99.0)
 
 
-def test_start_with_another_file_re_estimates_inside_the_claim(http):
+def test_start_with_another_file_re_estimates_and_shows_the_new_price_before_charging(http):
     client, engine, calls = http
-    assert _post(client, 1, "estimate_credits", ZIP_PAYLOAD, b"x" * 50).status_code == 200
+    assert _post(client, 1, "estimate_credits", ZIP_PAYLOAD, b"x" * 50).status_code == 200  # shown: 1 credit
     r = _post(client, 1, "start", ZIP_PAYLOAD, b"y" * 750)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 409, r.text
+    body = r.json()
+    assert (body["code"], body["credits_required"], body["previous_credits"]) == ("estimate_changed", 7.5, 1.0)
+    assert "from 1 to 7.5 credits" in body["detail"] and "Nothing was charged" in body["detail"]
     scan, balance = _row(engine, 1)
-    assert calls["estimate"] == [50, 750]
-    assert (scan.credit_consumed, scan.credit_charged, balance) == (7.5, 7.5, 92.5)
+    assert calls["estimate"] == [50, 750] and calls["dispatch"] == 0
+    assert (scan.scan_status, scan.credit_consumed, scan.credit_charged, balance) == ("NOT_STARTED", 7.5, None, 100.0)
     assert scan.credit_estimate["file_size"] == 750
+    again = _post(client, 1, "start", ZIP_PAYLOAD, b"y" * 750)  # the customer saw 7.5 and starts again
+    assert again.status_code == 200, again.text
+    scan, balance = _row(engine, 1)
+    assert calls["estimate"] == [50, 750] and calls["dispatch"] == 1  # no third estimate: the stored one is current
+    assert (scan.credit_charged, balance) == (7.5, 92.5)
 
 
-def test_an_estimate_from_before_the_digest_is_redone_and_clamped(http):
+def test_an_estimate_from_before_the_digest_is_redone_and_shown_before_the_charge(http):
     client, engine, calls = http
+    r = _post(client, 4, "start", ZIP_PAYLOAD, b"z" * 10)  # stored 0.004 with no digest; today's price is 1 (D3)
+    assert r.status_code == 409, r.text
+    assert (r.json()["credits_required"], r.json()["previous_credits"]) == (1.0, 0.004)
+    scan, balance = _row(engine, 4)
+    assert calls["estimate"] == [10] and (scan.scan_status, scan.credit_charged, balance) == ("NOT_STARTED", None, 100.0)
+    assert _post(client, 4, "start", ZIP_PAYLOAD, b"z" * 10).status_code == 200
+    scan, balance = _row(engine, 4)
+    assert calls["estimate"] == [10] and (scan.credit_charged, balance) == (1.0, 99.0)
+
+
+def test_an_old_ai_inclusive_estimate_is_never_charged(http):
+    """A scan estimated before this release (older formula, higher AI-inclusive price) and started later."""
+    client, engine, calls = http
+    assert _post(client, 1, "estimate_credits", ZIP_PAYLOAD, b"x" * 300).status_code == 200  # 3 credits today
+    with Session(engine) as s:
+        scan = s.get(Scan, 1)
+        scan.credit_consumed = 12.5  # what the old formula (code + language-model passes) showed
+        scan.credit_estimate = {**scan.credit_estimate, "formula": "cbom-2026.10-ai", "credits": 12.5}
+        s.add(scan)
+        s.commit()
+    r = _post(client, 1, "start", ZIP_PAYLOAD, b"x" * 300)
+    assert r.status_code == 409 and r.json()["credits_required"] == 3.0 and r.json()["previous_credits"] == 12.5
+    assert _row(engine, 1)[1] == 100.0
+    assert _post(client, 1, "start", ZIP_PAYLOAD, b"x" * 300).status_code == 200
+    scan, balance = _row(engine, 1)
+    assert (scan.credit_charged, balance) == (3.0, 97.0)
+
+
+def test_a_re_estimate_at_the_price_shown_is_charged_at_once(http):
+    client, engine, calls = http
+    with Session(engine) as s:
+        scan = s.get(Scan, 4)
+        scan.credit_consumed = 1.0  # shown 1 credit, before the digest existed; today's price is also 1
+        s.add(scan)
+        s.commit()
     r = _post(client, 4, "start", ZIP_PAYLOAD, b"z" * 10)
     assert r.status_code == 200, r.text
     scan, balance = _row(engine, 4)

@@ -7,7 +7,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import APIRouter, Form, UploadFile
 from fastapi import BackgroundTasks, Depends, HTTPException, Header, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from backend.utilities.ratelimit import RateLimiter
 from pydantic import ValidationError
 from sqlalchemy import update
@@ -464,6 +464,14 @@ def _store_estimate(engine, scan_id: int, team_id: int, credits: float, measured
     return changed == 1
 
 
+def _price_changed_text(shown: float | None, fresh: float) -> str:
+    """What /start says when the input or the pricing changed since the estimate the customer saw."""
+    unit = "credit" if fresh == 1 else "credits"
+    before = f"from {round(float(shown), 2):g} " if shown is not None else ""
+    return (f"The price of this scan changed {before}to {fresh:g} {unit}: the files, options or pricing changed since it "
+            "was estimated. Nothing was charged. Review the new price and start the scan again.")
+
+
 def _set_charged(engine, scan_id: int, credits: float | None) -> None:
     with Session(engine) as session:
         session.exec(update(Scan).where(Scan.id == scan_id).values(credit_charged=credits))
@@ -610,6 +618,17 @@ async def start_scan(
                 if not _store_estimate(engine, scan_id, team_id, fresh, {**measured, "minimum": minimum},
                                        status_now="pending"):
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has already started or is not ready")
+                shown = credits_to_deduct  # the price the last estimate showed the customer
+                if shown is None or round(float(shown), 2) != fresh:
+                    # the customer sees the new price before any credit moves: nothing is charged, the claim is
+                    # released, and the next start (same input, current pricing) charges the price shown here
+                    _release_scan_claim(engine=engine, scan_id=scan_id, team_id=team_id)
+                    console.print(f"Scan {scan_id}: estimate changed from {shown} to {fresh} credits; not charged", style="bold yellow")
+                    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={
+                        "detail": _price_changed_text(shown, fresh),
+                        "code": "estimate_changed", "credits_required": fresh, "previous_credits": shown,
+                        "minimum_credits": minimum,
+                    })
                 if not check_if_team_has_enough_credits(team_id, fresh):
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                         detail=f"The estimate for this input is {fresh} credits and the team does not have enough credits")

@@ -7,8 +7,14 @@ Sign-in, sign-in codes, password reset and team invitations look an e-mail addre
 exist for `Ana@example.com` and `ana@example.com`, every lookup returns the one with the **lowest user id**. The
 other account still owns its teams, scans, CI/CD and guardrail integrations, but nobody can sign in to it.
 
+Team membership follows the same rule: inviting `ANA@example.com` adds only the account that signs in (the lowest
+id), never the duplicate; removing the address from a team removes every account that spells it, so a duplicate
+loses access too (it may still hold a token issued before sign-in became case-insensitive). The team page decides
+"admin" by account id, not by comparing stored addresses.
+
 New duplicates cannot be created: sign-up, admin user creation and team invitations all check the address with the
-same case-insensitive lookup first. Duplicates can only come from data stored before that check existed.
+same case-insensitive lookup first and store new addresses in lower case. Duplicates can only come from data stored
+before that check existed.
 
 ## Check
 
@@ -24,6 +30,16 @@ The script is read-only and never prints an e-mail address. Exit status: `0` non
 `2` the database could not be read. Run it once after each deploy of this release (it is cheap: one grouped query
 on the user table), or from the same cron or CI job that runs other post-deploy checks; treat exit `1` as a task for
 an operator, not as a failed deploy.
+
+Without the repository, the same read-only query in `psql` (it selects ids only, never an address):
+
+```sql
+SELECT count(*) AS accounts, array_agg(id ORDER BY id) AS user_ids  -- the first id is the one that signs in
+FROM "user"
+GROUP BY lower(email)
+HAVING count(*) > 1
+ORDER BY min(id);
+```
 
 ## What to do with a group
 

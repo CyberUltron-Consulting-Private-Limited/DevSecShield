@@ -463,6 +463,8 @@ _POSTURE_CODE_SEVERITY = {
     "KMS_KEY_POLICY_PUBLIC": "High",
     "KMS_KEY_DELETION_UNPROTECTED": "Low",
     "AT_REST_ENCRYPTION_WEAK": "Medium",
+    "PROVIDER_MANAGED_KEY": "Low",  # the engine's "note": the data is encrypted, the key is the provider's
+    "EOL_BASE_IMAGE": "Medium",
 }
 _TLS_RANK = {
     "sslv3": 0,
