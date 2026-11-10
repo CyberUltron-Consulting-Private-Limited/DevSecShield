@@ -1827,7 +1827,7 @@ export default function CbomResults({
                         <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">OWASP Top 10</div>
                         <div className="flex flex-wrap gap-1">
                           {entries.map(([key, value]) => (
-                            <Badge key={key} variant="secondary" className="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200">
+                            <Badge key={key} variant="secondary" className="text-xs whitespace-normal max-w-full text-left bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200">
                               {OWASP_KEY_TO_LABEL[key] ?? value}
                             </Badge>
                           ))}
@@ -1845,7 +1845,7 @@ export default function CbomResults({
                         <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Compliance controls</div>
                         <div className="flex flex-wrap gap-1">
                           {entries.map(([key, value]) => (
-                            <Badge key={key} variant="outline" className="text-xs">
+                            <Badge key={key} variant="outline" className="text-xs whitespace-normal max-w-full text-left">
                               {COMPLIANCE_KEY_TO_LABEL[key] ?? value}
                             </Badge>
                           ))}

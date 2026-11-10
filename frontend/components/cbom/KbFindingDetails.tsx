@@ -63,17 +63,17 @@ export function KbFindingCard({ d, showRemediation = true }: { d: KbFindingDetai
       <Section title="Mapping">
         <div className="flex flex-wrap gap-1.5">
           {d.cwe.map((c) => (
-            <a key={c.id} href={c.url} target="_blank" rel="noreferrer noopener">
-              <Badge variant="secondary" className="text-[11px]" title={c.name ?? undefined}>{c.id}{c.name ? `: ${c.name}` : ""}</Badge>
+            <a key={c.id} href={c.url} target="_blank" rel="noreferrer noopener" className="max-w-full">
+              <Badge variant="secondary" className="text-[11px] whitespace-normal max-w-full text-left" title={c.name ?? undefined}>{c.id}{c.name ? `: ${c.name}` : ""}</Badge>
             </a>
           ))}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {d.owasp_2021.map((o) => (
-            <Badge key={o.id} variant="outline" className="text-[11px]" title={o.basis}>{o.label}</Badge>
+            <Badge key={o.id} variant="outline" className="text-[11px] whitespace-normal max-w-full text-left" title={o.basis}>{o.label}</Badge>
           ))}
           {d.owasp_2025.map((o) => (
-            <Badge key={o.id} variant="outline" className="text-[11px]" title={o.basis}>{o.label}</Badge>
+            <Badge key={o.id} variant="outline" className="text-[11px] whitespace-normal max-w-full text-left" title={o.basis}>{o.label}</Badge>
           ))}
         </div>
       </Section>
