@@ -64,8 +64,8 @@ export default function DASTPage() {
     isInProgress && scanInfo?.current != null ? { current: scanInfo.current } : undefined;
 
   return (
-    <div className="flex h-screen">
-      <div className="flex-1 bg-white dark:bg-zinc-900 overflow-auto">
+    <div className="flex flex-col md:flex-row h-screen overflow-y-auto md:overflow-hidden">
+      <div className="flex-1 min-h-[75vh] md:min-h-0 min-w-0 bg-white dark:bg-zinc-900 overflow-auto">
         <div className="mx-auto">
           <ChatWindow query={query} progress={progress} />
         </div>

@@ -289,7 +289,7 @@ export function LLMOptionsSidebar({
   }, [query.data?.scan_status, query.data?.scan_metadata]);
 
   return (
-    <ScrollArea className="w-96 h-screen bg-neutral-900/70 border-l border-zinc-800">
+    <ScrollArea className="w-full md:w-96 shrink-0 md:h-screen bg-neutral-900/70 border-t md:border-t-0 md:border-l border-zinc-800">
       <div className="p-6">
         <div className="flex items-center gap-2 flex-row mb-2">
           <h2 className="text-xl font-bold text-white">LLM Configuration</h2>
