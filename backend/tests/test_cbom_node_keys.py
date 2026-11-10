@@ -317,6 +317,16 @@ def test_grants_cover_exactly_what_the_node_reads():
     assert templates.TEMPLATE_NAMES["vault-policy"][1] == "zs-cbom-vault-policy.hcl"
 
 
+def test_postgres_grant_tells_rds_to_skip_the_hba_grants():
+    """Lab UI round 5 (u1): run as the RDS master user, the two pg_hba_file_rules grants fail with "permission denied"
+    (measured on RDS for PostgreSQL); the template's RDS note covered only the SECURITY DEFINER function."""
+    pg = templates.DB_GRANTS["postgres"]
+    note = pg.index("Amazon RDS / Aurora: skip the next two lines")
+    hba = pg.index("GRANT SELECT ON pg_hba_file_rules TO zs_cbom;")
+    assert note < hba and pg.index("GRANT EXECUTE ON FUNCTION pg_hba_file_rules() TO zs_cbom;") == pg.index("\n", hba) + 1
+    assert all(line.startswith("--") for line in pg[note:hba].splitlines()[1:])  # the note itself is comments only
+
+
 # ----------------------------------------------------------------------------- API: saved source -> node job
 def test_key_manager_and_vault_sources_reach_the_node(api, world):
     node_id, token, _ = enroll_node(api)

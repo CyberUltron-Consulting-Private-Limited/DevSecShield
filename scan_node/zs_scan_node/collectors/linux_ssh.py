@@ -329,7 +329,12 @@ SUDO_NOT_ALLOWED = ("is not allowed to execute", "may not run sudo", "is not in 
 
 
 def run_tier2(sess: Session, check: str, binary: bool = False, timeout: float = 120) -> tuple[str, Any, str]:
-    """('ok'|'password'|'not_allowed'|'no_sudo'|'timeout'|'error', stdout, detail)"""
+    """('ok'|'password'|'not_allowed'|'missing'|'no_sudo'|'timeout'|'error', stdout, detail)
+
+    'missing': sudo allowed the exact line but the program is not on the server ("command not found").  sudo -n
+    answers a line it does not allow with "a password is required" before it looks for the file (sudo 1.9 on
+    Debian 12, local lab round 5), so this is a missing package (iproute2 for ss, dmsetup), not a missing sudoers file.
+    """
     last = ("not_allowed", b"" if binary else "", "")
     for argv in C.TIER2[check]:
         status, out, err, timed_out = sess.run(C.sudo_line(argv), timeout=timeout, binary=binary)
@@ -346,7 +351,7 @@ def run_tier2(sess: Session, check: str, binary: bool = False, timeout: float = 
             last = ("not_allowed", out, err.strip()[:200])
             continue
         if "command not found" in low and not out:
-            last = ("not_allowed", out, err.strip()[:200])
+            last = ("missing", out, err.strip()[:200])
             continue
         return "ok", out, err.strip()[:200]
     return last
@@ -419,7 +424,8 @@ def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -
                 tier2["key_and_certificate_files"] = run_tier2(sess, "key_and_certificate_files", binary=True, timeout=300)
             for check, (state, _out, detail) in tier2.items():
                 if state != "ok":
-                    ctx.coverage(loc, check, "denied" if state in ("password", "not_allowed", "no_sudo") else "error",
+                    ctx.coverage(loc, check, "not_installed" if state == "missing"
+                                 else "denied" if state in ("password", "not_allowed", "no_sudo") else "error",
                                  detail or state)
         # sshd
         state, out, _ = tier2.get("sshd_effective_config", ("skip", "", ""))
@@ -499,7 +505,7 @@ def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -
                     ctx.coverage(loc, "key and certificate files", "truncated", "time limit reached while reading files")
                     break
                 emitted += _inspect_file(ctx, sess, loc, path)
-        states = [v[0] for v in tier2.values()]
+        states = [v[0] for v in tier2.values() if v[0] != "missing"]
         if tier >= 2 and states and all(s != "ok" for s in states):
             status = "sudo_denied" if all(s == "password" for s in states) else "sudoers_missing"
             raise TargetFail(status, f"Tier 2 commands were refused by sudo; {emitted} Tier 1 results were kept")
@@ -762,9 +768,14 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
             ctx.samples.append(sample)
             continue
         sample.update(reachable=True, login=True)
+        missing = ""
         try:
             if tier >= 2:
                 state, _out, detail = run_tier2(sess, "listening_sockets")
+                if state == "missing":
+                    # ss is not installed (iproute2): ask sudo with sshd -T, which every server we log in to has
+                    missing = "; ss is not installed (package iproute2), so listening sockets are not read"
+                    state, _out, detail = run_tier2(sess, "sshd_effective_config")
                 if state == "ok":
                     sample["privilege"] = True
                 else:
@@ -774,7 +785,7 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                                       "the zs-cbom sudoers file is missing or does not match; this server runs at Tier 1")
             first = " (host key pinned on first use)" if sess.host_key.get("first_use") else ""
             if sample["status"] == "ready":
-                sample["note"] = f"{sess.host_key['key_type']} {sess.host_key['fingerprint']}{first}"
+                sample["note"] = f"{sess.host_key['key_type']} {sess.host_key['fingerprint']}{first}{missing}"
         finally:
             sess.close()
         ctx.samples.append(sample)

@@ -80,27 +80,52 @@ export function shQuote(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`
 }
 
+/** The sudoers file download.  Its first lines say `sudo install -m 0440 zs-cbom /etc/sudoers.d/zs-cbom`, so it must
+ * save as exactly "zs-cbom": Chromium appends ".txt" to an extensionless text/plain download (zs-cbom.txt), so the
+ * file goes out as a generic binary type, which keeps the name as given. */
+export const SUDOERS_DOWNLOAD = { filename: "zs-cbom", type: "application/octet-stream" } as const
+
+/** The message for a secret field left blank, or null when blank is fine.  A stored secret is kept only while the
+ * targets and the way their identity is checked stay the same (the server clears it otherwise and refuses the save,
+ * backend kinds.py where_fields), so then it must be entered again. */
+export function blankSecretError(stored: boolean, whereChanged: boolean, missing: string): string | null {
+  if (stored && !whereChanged) return null
+  return stored ? "Enter it again: the targets, port, login, host key check, vault path or scan node changed" : missing
+}
+
 export type DeployMethod = "docker" | "helm" | "ami" | "ova"
+
+/** Names of the Docker container, its state volume and the Helm release for one scan node, taken from the node's
+ * name.  They must differ per node: the state volume holds the node's credential, so a second node started with the
+ * first node's volume would silently run as the first node (and never register), and a second `docker run` or
+ * `helm upgrade --install` under the same name fails or replaces the first node.  Lowercase letters, digits and
+ * dashes only (valid for Docker names and Helm release names, at most 53 characters). */
+export function nodeInstallNames(nodeName: string): { container: string; volume: string; release: string } {
+  const slug = nodeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 40).replace(/-+$/, "")
+  if (!slug) return { container: "zs-scan-node", volume: "zs-node", release: "zs-scan-node" }
+  return { container: `zs-scan-node-${slug}`, volume: `zs-node-${slug}`, release: `zs-scan-node-${slug}` }
+}
 
 export function installCommand(
   method: DeployMethod,
   opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  const names = nodeInstallNames(opts.name)
   if (method === "docker") {
     return [
-      "docker run -d --name zs-scan-node --restart unless-stopped \\",
+      `docker run -d --name ${names.container} --restart unless-stopped \\`,
       `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
       `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
       ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
-      "  -v zs-node:/var/lib/zs-node \\",
+      `  -v ${names.volume}:/var/lib/zs-node \\`,
       `  ${opts.image}`,
     ].join("\n")
   }
   if (method === "helm") {
     const [repo, tag] = opts.image.includes(":") ? [opts.image.slice(0, opts.image.lastIndexOf(":")), opts.image.slice(opts.image.lastIndexOf(":") + 1)] : [opts.image, "latest"]
     return [
-      "helm upgrade --install zs-scan-node oci://registry.zeroshield.ai/charts/cbom-scan-node \\",
+      `helm upgrade --install ${names.release} oci://registry.zeroshield.ai/charts/cbom-scan-node \\`,
       "  --namespace zs-cbom --create-namespace \\",
       `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
       `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
@@ -204,7 +229,12 @@ export const MAX_TEXT_FILE = 256 * 1024
 /** Read a small text file (PEM, kubeconfig, known_hosts, CSV); refuses binaries and oversize files. */
 export async function readTextFile(file: File, maxBytes = MAX_TEXT_FILE): Promise<string> {
   if (file.size > maxBytes) throw new Error(`${file.name} is larger than ${Math.round(maxBytes / 1024)} KB`)
-  const buffer = new Uint8Array(await file.arrayBuffer())
+  const whole = new Uint8Array(await file.arrayBuffer())
+  // Trailing NUL bytes are a C string terminator, not binary content: MySQL's own auto-generated ca.pem (the CA a
+  // MySQL source asks for) ends with "\n\0" (local lab, round 5).  A NUL anywhere else still means a binary file.
+  let end = whole.length
+  while (end > 0 && whole[end - 1] === 0) end--
+  const buffer = whole.subarray(0, end)
   if (buffer.includes(0)) throw new Error(`${file.name} is a binary file; choose a text (PEM or YAML) file`)
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(buffer)
@@ -215,6 +245,24 @@ export async function readTextFile(file: File, maxBytes = MAX_TEXT_FILE): Promis
 
 export function pluralize(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`
+}
+
+/** Review & Run coverage text for the groups whose units mix kinds: a container images source counts its images (not
+ * clusters) in the Kubernetes group, and HSMs / key managers count in the Databases group (backend planning.py). */
+export function mixedGroupScope(group: "kubernetes" | "databases", byKind: Record<string, number> | undefined, units: number): string {
+  const n = (kind: string) => byKind?.[kind] ?? 0
+  const parts: string[] = []
+  if (group === "kubernetes") {
+    const clusters = n("kubernetes")
+    if (clusters) parts.push(pluralize(clusters, "cluster"))
+    if (n("container_images")) parts.push(pluralize(Math.max(0, units - clusters), "container image"))
+    return parts.join(" · ") || pluralize(units, "cluster")
+  }
+  const keyManagers = n("key_manager")
+  const databases = Math.max(0, units - keyManagers)
+  if (databases || !keyManagers) parts.push(pluralize(databases, "database"))
+  if (keyManagers) parts.push(pluralize(keyManagers, "HSM or key manager", "HSMs or key managers"))
+  return parts.join(" · ")
 }
 
 export function credits(value: number | null | undefined): string {

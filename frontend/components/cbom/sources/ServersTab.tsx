@@ -53,6 +53,7 @@ import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import {
   ago,
+  blankSecretError,
   ansibleSnippet,
   countHours,
   csvFirstColumn,
@@ -61,6 +62,7 @@ import {
   normalizeGrid,
   pluralize,
   readTextFile,
+  SUDOERS_DOWNLOAD,
   splitLines,
   type WindowGrid,
 } from "./logic";
@@ -721,7 +723,7 @@ function ServerForm({
 
   const sudoers = useMutation({
     mutationFn: () => getCbomTemplate(teamId, "sudoers"),
-    onSuccess: (text) => downloadText(text, "zs-cbom", "text/plain"),
+    onSuccess: (text) => downloadText(text, SUDOERS_DOWNLOAD.filename, SUDOERS_DOWNLOAD.type),
     onError: () => toast.error("Could not download the sudoers file. Please try again."),
   });
   const windowsSetup = useMutation({
@@ -777,10 +779,17 @@ function ServerForm({
     if (!isLinux && Number(form.port) === 5985) e.port = "WinRM over HTTP (5985) cannot prove the server; use HTTPS (5986)";
     if (form.credentialType === "vault" && !isAdmin) e.credentialType = "Only a team admin can add or change a vault reference";
     if (form.credentialType === "vault" && !form.vaultPath.trim()) e.vaultPath = "Enter the secret path in your vault";
-    if (form.credentialType === "password" && !form.password && !stored("password")) e.password = "Enter the password for this login";
+    // A stored secret survives only while the targets and their identity check stay the same: ask for it here
+    // instead of letting the server refuse the save with a short toast.
+    // (Set a key only for a real error: submit() counts the keys of the error object.)
+    const blank = (key: "password" | "sshCertificate" | "privateKey", what: string, missing: string) => {
+      const message = blankSecretError(stored(what), editingWhereChanged, missing);
+      if (message) e[key] = message;
+    };
+    if (form.credentialType === "password" && !form.password) blank("password", "password", "Enter the password for this login");
     if (form.credentialType === "ssh_cert") {
-      if (!form.sshCertificate.trim() && !stored("ssh_certificate")) e.sshCertificate = "Paste the signed SSH certificate";
-      if (!form.privateKey.trim() && !stored("private_key")) e.privateKey = "Paste the private key the certificate was issued for";
+      if (!form.sshCertificate.trim()) blank("sshCertificate", "ssh_certificate", "Paste the signed SSH certificate");
+      if (!form.privateKey.trim()) blank("privateKey", "private_key", "Paste the private key the certificate was issued for");
     }
     if (intIn(form.parallel, 1, 64) == null) e.parallel = "Enter 1 to 64";
     if (intIn(form.timeoutS, 10, 3600) == null) e.timeoutS = "Enter 10 to 3600 seconds";
@@ -1094,7 +1103,9 @@ function ServerForm({
                 label="CA certificate (optional)"
                 htmlFor="servers-ca"
                 error={errors.caPem ?? errors.caFile}
-                hint="WinRM runs over HTTPS and the server's certificate is checked before the login is sent. Add the CA that issued it when it is an internal CA."
+                hint={form.kind === "active_directory"
+                  ? "LDAPS is checked against the domain controller's certificate before the login is sent. Add the CA that issued it when it is an internal CA."
+                  : "WinRM runs over HTTPS and the server's certificate is checked before the login is sent. Add the CA that issued it when it is an internal CA."}
               >
                 <Textarea
                   id="servers-ca"

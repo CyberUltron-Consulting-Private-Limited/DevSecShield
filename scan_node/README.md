@@ -10,12 +10,16 @@ login) or only performs TLS/SSH handshakes. It calls **out** to ZeroShield over 
 Create a node in ZeroShield (**CBOM Sources → Scan nodes → Add scan node**) and run the command it shows:
 
 ```sh
-docker run -d --name zs-scan-node --restart unless-stopped \
+docker run -d --name zs-scan-node-dc-mumbai-01 --restart unless-stopped \
   -e ZS_API_URL='https://api.zeroshield.ai' \
   -e ZS_REGISTRATION_TOKEN='zsr_…' \
-  -v zs-node:/var/lib/zs-node \
+  -v zs-node-dc-mumbai-01:/var/lib/zs-node \
   registry.zeroshield.ai/cbom/scan-node:1.0
 ```
+
+The container, its volume (and the Helm release) are named after the node (`dc-mumbai-01` here), so two nodes can
+run on one host: the volume holds the node's credential and SSH key, and a node started on another node's volume
+would run as that node.
 
 On first start the node creates an ed25519 SSH key in the volume and exchanges the single-use registration
 token for its own node token. The public key is shown in ZeroShield: add it to the `zs-cbom` user's

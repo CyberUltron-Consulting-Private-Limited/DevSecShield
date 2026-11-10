@@ -26,7 +26,7 @@ import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
-import { DEPLOY_SUPPORT, ago, installCommand, readTextFile, type DeployMethod } from "./logic";
+import { DEPLOY_SUPPORT, ago, installCommand, nodeInstallNames, readTextFile, type DeployMethod } from "./logic";
 import {
   Checkbox2,
   ChoiceCards,
@@ -90,6 +90,13 @@ const EMPTY_WIZARD: WizardState = {
   tlsInspect: false,
 };
 
+const WIZARD_ID = "scan-node-wizard";
+
+/** After the wizard opens (next render), scroll it into view: it sits below the node list and the other cards. */
+function scrollToWizard() {
+  window.setTimeout(() => document.getElementById(WIZARD_ID)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+}
+
 function apiHost(): string {
   try {
     return new URL(apiBaseURL).hostname;
@@ -121,7 +128,8 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizard, setWizard] = useState<WizardState>(EMPTY_WIZARD);
   const [wizardError, setWizardError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ nodeId: number; token: string } | null>(null);
+  // again: a new token for a node that exists (New registration token, Reset), whose old container may still run
+  const [created, setCreated] = useState<{ nodeId: number; token: string; again?: boolean } | null>(null);
   const [editing, setEditing] = useState<CbomScanNode | null>(null);
   const [deleting, setDeleting] = useState<CbomScanNode | null>(null);
   const [resetting, setResetting] = useState<CbomScanNode | null>(null);
@@ -162,10 +170,19 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   const tokenMutation = useMutation({
     mutationFn: ({ node, reset }: { node: CbomScanNode; reset: boolean }) => newCbomNodeRegistration(teamId, node.id, reset),
     onSuccess: (data) => {
-      setCreated({ nodeId: data.node.id, token: data.registration_token });
-      setWizard((w) => ({ ...w, deployment: data.node.deployment, proxyUrl: data.node.proxy_url ?? "" }));
+      setCreated({ nodeId: data.node.id, token: data.registration_token, again: true });
+      // The (read-only) wizard shows the node this token is for, not the last values typed into it.
+      setWizard({
+        ...EMPTY_WIZARD,
+        name: data.node.name,
+        segment: data.node.segment,
+        timezone: data.node.timezone,
+        deployment: data.node.deployment,
+        proxyUrl: data.node.proxy_url ?? "",
+      });
       setWizardOpen(true);
       setResetting(null);
+      scrollToWizard();
     },
     onSettled: invalidate,
   });
@@ -181,6 +198,8 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
     setWizardError(null);
     setCreated(null);
     setWizardOpen(true);
+    // The wizard renders below the node list, pool tokens and signing cards: bring it into view.
+    scrollToWizard();
   };
 
   const submitWizard = () => {
@@ -331,7 +350,9 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       {wizardOpen && (
         <SectionCard
-          title="Add a scan node"
+          id={WIZARD_ID}
+          className="scroll-mt-4"
+          title={created?.again ? `Register ${wizard.name || "this scan node"} again` : "Add a scan node"}
           description="Run it on any VM or cluster inside the segment you want to scan."
           actions={
             <Button variant="outline" className="cursor-pointer" onClick={() => { setWizardOpen(false); setCreated(null); }}>
@@ -376,6 +397,14 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                       Build it yourself: ZeroShield does not publish this image yet. The Packer template and the steps are in
                       {" "}<span className="font-mono">deploy/node-images/</span> (README); the node reads the values above from
                       {" "}<span className="font-mono">/etc/zs-node/env</span>. Docker and Helm are the proven ways to run a node.
+                    </p>
+                  )}
+                  {created.again && (createdNode?.deployment ?? wizard.deployment) === "docker" && (
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="node-replace-container">
+                      Already ran this node on that host? Remove its old container first:{" "}
+                      <span className="font-mono">docker rm -f {nodeInstallNames(createdNode?.name ?? wizard.name).container}</span>.
+                      Keep the volume <span className="font-mono">{nodeInstallNames(createdNode?.name ?? wizard.name).volume}</span>: it
+                      holds the node&apos;s SSH key, so the key on your servers keeps working.
                     </p>
                   )}
                   <p className="text-xs text-zinc-500">
