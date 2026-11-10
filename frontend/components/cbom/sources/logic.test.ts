@@ -16,6 +16,7 @@ import {
   helmAgentCommand,
   installCommand,
   normalizeGrid,
+  offlineImageSteps,
   setCell,
   shQuote,
   splitLines,
@@ -88,5 +89,27 @@ assert.deepEqual(withMetadata(cloudConfig, { owner: "payments", application: nul
   role_arn: "arn:aws:iam::111122223333:role/R", regions: ["eu-west-1"], owner: "payments", application: null, exposure: null,
 });
 assert.equal(withMetadata(null, {}, "internet").exposure, "internet");
+
+// a site that cannot pull the node image: the file from `make node-image`, its sha256 check, then docker load
+{
+  const docker = offlineImageSteps("docker", "registry.zeroshield.ai/cbom/scan-node:1.0")!;
+  assert.ok(docker.includes("make node-image VERSION=1.0"));
+  const check = docker.indexOf("sha256sum -c scan-node-1.0.tar.gz.sha256");
+  const load = docker.indexOf("docker load -i scan-node-1.0.tar.gz");
+  assert.ok(check >= 0 && load > check, "the checksum is checked before the image is loaded");
+  assert.ok(!docker.includes("docker tag"), "the archive already carries the published name");
+  const helm = offlineImageSteps("helm", "registry.zeroshield.ai/cbom/scan-node:1.0")!;
+  assert.ok(helm.includes("docker push <your-registry>/cbom/scan-node:1.0") && helm.includes("./deploy/helm/cbom-scan-node"));
+  // a site that set NEXT_PUBLIC_CBOM_NODE_IMAGE: the loaded image is re-tagged to the name the command runs
+  assert.ok(offlineImageSteps("docker", "mirror.bank.local/zs/scan-node:1.1")!
+    .includes("docker tag registry.zeroshield.ai/cbom/scan-node:1.1 mirror.bank.local/zs/scan-node:1.1"));
+  assert.equal(offlineImageSteps("ami", "registry.zeroshield.ai/cbom/scan-node:1.0"), null);
+  assert.equal(offlineImageSteps("ova", "registry.zeroshield.ai/cbom/scan-node:1.0"), null);
+  // the same steps the scan node README documents, and the make target exists (run from frontend/)
+  const readme = readFileSync(join("..", "scan_node", "README.md"), "utf8");
+  assert.ok(readme.includes("make node-image") && readme.includes("sha256sum -c scan-node-<version>.tar.gz.sha256")
+    && readme.includes("docker load -i scan-node-<version>.tar.gz"));
+  assert.ok(/^node-image:/m.test(readFileSync(join("..", "Makefile"), "utf8")));
+}
 
 console.log("logic.test.ts: all checks passed");
