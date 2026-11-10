@@ -631,7 +631,7 @@ export default function IACPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteIACConversation(team_id, scan_id),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["iac-conversations", variables.team_id.toString()] });
-      toast.success("IAC conversation deleted successfully");
+      toast.success("IAC scan deleted successfully");
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -640,7 +640,7 @@ export default function IACPage() {
     mutationFn: renameIACConversation,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["iac-conversations", variables.team_id.toString()] });
-      toast.success("IAC conversation renamed successfully");
+      toast.success("IAC scan renamed successfully");
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -744,7 +744,7 @@ export default function IACPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">IAC Scans</h1>
-              <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your IAC scan conversations.</p>
+              <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your IAC scans.</p>
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
@@ -1092,10 +1092,10 @@ export default function IACPage() {
                                       <Eye className="h-4 w-4 mr-2" />View metadata
                                     </DropdownMenuItem>
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
-                                      <Pencil className="h-4 w-4 mr-2" />Rename
+                                      <Pencil className="h-4 w-4 mr-2" />Rename scan
                                     </DropdownMenuItem>
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
-                                      <Trash2 className="h-4 w-4 mr-2" />Delete
+                                      <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -1118,11 +1118,11 @@ export default function IACPage() {
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename Conversation</DialogTitle>
-            <DialogDescription>Enter a new name for this conversation.</DialogDescription>
+            <DialogTitle>Rename scan</DialogTitle>
+            <DialogDescription>Enter a new name for this scan.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Conversation name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1135,7 +1135,7 @@ export default function IACPage() {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Conversation</DialogTitle>
+            <DialogTitle>Delete scan</DialogTitle>
             <DialogDescription>Are you sure you want to delete &quot;{selectedConversation?.title}&quot;? This action cannot be undone.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1174,7 +1174,7 @@ export default function IACPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Scan</DialogTitle>
-            <DialogDescription>Enter a title for your new IAC scan conversation.</DialogDescription>
+            <DialogDescription>Enter a title for your new IAC scan.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />

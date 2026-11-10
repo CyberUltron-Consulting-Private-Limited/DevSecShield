@@ -26,10 +26,10 @@ export default function MCPPage() {
   });
 
   if (team_id <= 0 || conversation_id <= 0) {
-    toast.error("Conversation id not found");
+    toast.error("Scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-zinc-600 dark:text-zinc-400 mb-4">Conversation id not found</p>
+        <p className="text-zinc-600 dark:text-zinc-400 mb-4">Scan id not found</p>
       </div>
     );
   }

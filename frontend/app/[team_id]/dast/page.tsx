@@ -661,7 +661,7 @@ export default function DASTPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">DAST Scans</h1>
-              <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your DAST scan conversations.</p>
+              <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your DAST scans.</p>
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>

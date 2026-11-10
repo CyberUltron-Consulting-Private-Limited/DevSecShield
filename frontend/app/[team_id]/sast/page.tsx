@@ -1075,7 +1075,7 @@ export default function SASTPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteSastConversation(team_id, scan_id),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
-      toast.success('Sast conversation deleted successfully');
+      toast.success('SAST scan deleted successfully');
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -1084,7 +1084,7 @@ export default function SASTPage() {
     mutationFn: renameSastConversation,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
-      toast.success('Sast conversation renamed successfully');
+      toast.success('SAST scan renamed successfully');
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -1654,10 +1654,10 @@ export default function SASTPage() {
                                     </DropdownMenuItem>
                                   )}
                                   <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
-                                    <Pencil className="h-4 w-4 mr-2" />Rename
+                                    <Pencil className="h-4 w-4 mr-2" />Rename scan
                                   </DropdownMenuItem>
                                   <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
-                                    <Trash2 className="h-4 w-4 mr-2" />Delete
+                                    <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
@@ -1847,11 +1847,11 @@ export default function SASTPage() {
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename Conversation</DialogTitle>
-            <DialogDescription>Enter a new name for this conversation.</DialogDescription>
+            <DialogTitle>Rename scan</DialogTitle>
+            <DialogDescription>Enter a new name for this scan.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Conversation name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1864,7 +1864,7 @@ export default function SASTPage() {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Conversation</DialogTitle>
+            <DialogTitle>Delete scan</DialogTitle>
             <DialogDescription>Are you sure you want to delete &quot;{selectedConversation?.title}&quot;? This action cannot be undone.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1903,7 +1903,7 @@ export default function SASTPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Scan</DialogTitle>
-            <DialogDescription>Enter a title for your new SAST scan conversation.</DialogDescription>
+            <DialogDescription>Enter a title for your new SAST scan.</DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />

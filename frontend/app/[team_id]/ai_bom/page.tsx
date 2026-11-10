@@ -948,10 +948,10 @@ export default function AIBOMPage() {
                                       <Eye className="h-4 w-4 mr-2" />View metadata
                                     </DropdownMenuItem>
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
-                                      <Pencil className="h-4 w-4 mr-2" />Rename
+                                      <Pencil className="h-4 w-4 mr-2" />Rename scan
                                     </DropdownMenuItem>
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
-                                      <Trash2 className="h-4 w-4 mr-2" />Delete
+                                      <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>

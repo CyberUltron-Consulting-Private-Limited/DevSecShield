@@ -194,7 +194,7 @@ const getSastConversations = async (team_id: number): Promise<SastListResponse> 
 const deleteSastConversation = async (team_id: number, scan_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/sast/scan/${scan_id}`)
-        toast.success("Sast conversation deleted successfully")
+        toast.success("SAST scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -204,7 +204,7 @@ const deleteSastConversation = async (team_id: number, scan_id: number) => {
 const renameSastConversation = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/sast/scan/${scan_id}`, { title })
-        toast.success("Sast conversation renamed successfully")
+        toast.success("SAST scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -649,7 +649,7 @@ const getLLMConversations = async (team_id: number): Promise<LLMScansListRespons
 const deleteLLMConversation = async (team_id: number, conversation_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/llm/scan/${conversation_id}`)
-        toast.success("LLM conversation deleted successfully")
+        toast.success("LLM scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -659,7 +659,7 @@ const deleteLLMConversation = async (team_id: number, conversation_id: number) =
 const renameLLMConversation = async ({ team_id, conversation_id, title }: { team_id: number; conversation_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/llm/scan/${conversation_id}`, { title })
-        toast.success("LLM conversation renamed successfully")
+        toast.success("LLM scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1037,7 +1037,7 @@ const getMCPConversations = async (team_id: number): Promise<MCPScansListRespons
 const deleteMCPConversation = async (team_id: number, conversation_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/mcp/scan/${conversation_id}`)
-        toast.success("MCP conversation deleted successfully")
+        toast.success("MCP scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1047,7 +1047,7 @@ const deleteMCPConversation = async (team_id: number, conversation_id: number) =
 const renameMCPConversation = async ({ team_id, conversation_id, title }: { team_id: number; conversation_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/mcp/scan/${conversation_id}`, { title })
-        toast.success("MCP conversation renamed successfully")
+        toast.success("MCP scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1575,7 +1575,7 @@ const getIACConversations = async (team_id: number): Promise<IACListResponse> =>
 const deleteIACConversation = async (team_id: number, scan_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/iac/scan/${scan_id}`)
-        toast.success("IAC conversation deleted successfully")
+        toast.success("IAC scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1585,7 +1585,7 @@ const deleteIACConversation = async (team_id: number, scan_id: number) => {
 const renameIACConversation = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/iac/scan/${scan_id}`, { title })
-        toast.success("IAC conversation renamed successfully")
+        toast.success("IAC scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1896,7 +1896,7 @@ const getSCASBOMConversations = async (): Promise<SCASBOMConversation[]> => {
 const deleteSCASBOMConversation = async (conversation_id: number) => {
     try {
         const response = await api.delete(`/sbom_sca/conversation/${conversation_id}`);
-        toast.success("SCA + SBOM conversation deleted successfully");
+        toast.success("SCA + SBOM scan deleted successfully");
         return response.data;
     } catch (error) {
         throw error;
@@ -1913,7 +1913,7 @@ const renameSCASBOMConversation = async ({
 }) => {
     try {
         const response = await api.put(`/sbom_sca/conversation/${conversation_id}`, { title });
-        toast.success("SCA + SBOM conversation renamed successfully");
+        toast.success("SCA + SBOM scan renamed successfully");
         return response.data;
     } catch (error) {
         throw error;
@@ -2963,7 +2963,7 @@ const getDiscoveryConversations = async (): Promise<DiscoveryConversation[]> => 
 const deleteDiscoveryConversation = async (conversation_id: number) => {
     try {
         const response = await api.delete(`/agent_discovery/conversation/${conversation_id}`)
-        toast.success("Discovery conversation deleted successfully")
+        toast.success("Discovery scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -2973,7 +2973,7 @@ const deleteDiscoveryConversation = async (conversation_id: number) => {
 const renameDiscoveryConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
     try {
         const response = await api.put(`/agent_discovery/conversation/${conversation_id}`, { title: title })
-        toast.success("Discovery conversation renamed successfully")
+        toast.success("Discovery scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -3106,7 +3106,7 @@ const getLeakageConversations = async (): Promise<LeakageConversation[]> => {
 const deleteLeakageConversation = async (conversation_id: number) => {
     try {
         const response = await api.delete(`/leakage/conversation/${conversation_id}`)
-        toast.success("Leakage conversation deleted successfully")
+        toast.success("Leakage scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -3116,7 +3116,7 @@ const deleteLeakageConversation = async (conversation_id: number) => {
 const renameLeakageConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
     try {
         const response = await api.put(`/leakage/conversation/${conversation_id}`, { title: title })
-        toast.success("Leakage conversation renamed successfully")
+        toast.success("Leakage scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -3675,7 +3675,7 @@ const getDASTConversations = async (): Promise<DASTConversation[]> => {
 const deleteDASTConversation = async (conversation_id: number) => {
     try {
         const response = await api.delete(`/dast/conversation/${conversation_id}`)
-        toast.success("DAST conversation deleted successfully")
+        toast.success("DAST scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -3685,7 +3685,7 @@ const deleteDASTConversation = async (conversation_id: number) => {
 const renameDASTConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
     try {
         const response = await api.put(`/dast/conversation/${conversation_id}`, { title: title })
-        toast.success("DAST conversation renamed successfully")
+        toast.success("DAST scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
