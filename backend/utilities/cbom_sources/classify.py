@@ -153,7 +153,8 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
     # A self-signature is never verified by a client (the certificate is trusted, or pinned, as itself), so SHA-1 there
     # is not a forgery risk and is not SIG_SHA1; the text says so and asks for SHA-256 at the next re-issue.
     sha1_note = (f"its {facts.get('sig_alg')} self-signature is not checked by clients (they trust the certificate "
-                 "itself); re-issue it with SHA-256 so policies and scanners stop flagging it")
+                 "itself), so it is deliberately not reported as a weak SHA-1 signature (SIG_SHA1); re-issue it with "
+                 "SHA-256 so policies and scanners stop flagging it")
     if facts.get("self_signed") and not facts.get("is_ca") and facts.get("source") != "idp":
         # identity-provider signing certificates are self-signed by design (trust comes from metadata)
         out.add("CERT_SELF_SIGNED", "Low", "Self-signed certificate" + (f"; {sha1_note}" if sha1 else ""))

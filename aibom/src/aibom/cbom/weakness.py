@@ -582,6 +582,16 @@ def _weak_cert_hash(sig_alg: str) -> str | None:
     return None
 
 
+def _self_signature_text(name: str, sig_alg: str) -> str:
+    """A self-signed certificate's own signature is never verified (it is a trust anchor: trusted, or pinned, as
+    itself), so a broken digest there does not make it forgeable; say so instead of claiming it can be forged.  The
+    scan-node path does not raise SIG_SHA1 for it at all (owner decision)."""
+    return (f"Certificate {name} is self-signed with {sig_alg}. Clients never verify a self-signed certificate's own "
+            f"signature (it is trusted, or pinned, as itself), so this weak digest does not let anyone forge it; it "
+            f"is reported because policies and scanners refuse MD5/SHA-1 signatures (CA/Browser Forum, NIST SP "
+            f"800-131A): reissue it with a SHA-256+ signature.")
+
+
 def certificate_findings(component: AIComponent) -> list[tuple[str, str, str]]:
     """Return every certificate-depth weakness on a certificate asset (C4).
 
@@ -599,14 +609,16 @@ def certificate_findings(component: AIComponent) -> list[tuple[str, str, str]]:
     name = component.name
     findings: list[tuple[str, str, str]] = []
 
-    # 1) Broken signature digest (MD2/MD4/MD5/SHA-1) -> the cert is forgeable.
+    # 1) Broken signature digest (MD2/MD4/MD5/SHA-1) -> the cert is forgeable (unless it signs itself).
     sig_alg = props.get("crypto:signatureAlgorithm", "")
     if sig_alg and _sig_digest_is_broken(sig_alg):
         findings.append(
             (
                 WEAK_CERTIFICATE_SIGNATURE,
                 _SEV,
-                f"Certificate {name} is signed with {sig_alg}: MD5/SHA-1 digests "
+                _self_signature_text(name, sig_alg)
+                if props.get("crypto:selfSigned") == "true"
+                else f"Certificate {name} is signed with {sig_alg}: MD5/SHA-1 digests "
                 f"are collision-broken (chosen-prefix), so the certificate can be "
                 f"forged; reissue with a SHA-256+ signature.",
             )
@@ -747,7 +759,9 @@ def cert_weakness_findings(
             (
                 WEAK_CERT_SIGNATURE,
                 _SEV,
-                f"Certificate {name} is signed with {weak_hash} "
+                _self_signature_text(name, sig_alg)
+                if props.get("crypto:selfSigned") == "true"
+                else f"Certificate {name} is signed with {weak_hash} "
                 f"({sig_alg}): a collision-broken hash (CA/Browser Forum SHA-1 "
                 f"sunset; NIST SP 800-131A); reissue with SHA-256+.",
             )
