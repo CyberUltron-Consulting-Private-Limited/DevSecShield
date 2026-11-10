@@ -212,6 +212,18 @@ export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; prox
   ].join("\n")
 }
 
+/** The server's reason for refusing a request (a 4xx with a ``detail`` sentence, e.g. 403 "User is not in team"), to
+ * show instead of a bare "Could not load this section" (lab UI r1: /7/cbom/sources for a team one is not in), as the
+ * toasts do since L1 (utils/error-handler.ts). Null for a network error, a 401 (the client signs in again), a 5xx or
+ * a detail that is not a sentence (a validation list). */
+export function refusalReason(error: unknown): string | null {
+  const response = (error as { response?: { status?: unknown; data?: unknown } } | null | undefined)?.response
+  const status = typeof response?.status === "number" ? response.status : 0
+  if (status < 400 || status >= 500 || status === 401) return null
+  const detail = (response?.data as { detail?: unknown } | null | undefined)?.detail
+  return typeof detail === "string" && detail.trim() ? detail.trim().slice(0, 300) : null
+}
+
 /** "Not read in this run" (lab UI r1 F2): assets of a compared source that the later run did not read because of a
  * coverage gap (a stopped target, a denied check). They are neither removed nor resolved, so they are listed apart,
  * grouped by why they were not read (the coverage row's detail, from the server) and by source. */

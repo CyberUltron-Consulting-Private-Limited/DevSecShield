@@ -239,7 +239,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   const assigned = nodes.reduce((sum, n) => sum + (n.assigned_targets || 0), 0);
 
   if (nodesQuery.isLoading) return <LoadingBlock />;
-  if (nodesQuery.isError && !nodesQuery.data) return <ErrorBlock onRetry={() => nodesQuery.refetch()} />;
+  if (nodesQuery.isError && !nodesQuery.data) return <ErrorBlock error={nodesQuery.error} onRetry={() => nodesQuery.refetch()} />;
 
   const command = created
     ? installCommand(createdNode?.deployment ?? wizard.deployment, {

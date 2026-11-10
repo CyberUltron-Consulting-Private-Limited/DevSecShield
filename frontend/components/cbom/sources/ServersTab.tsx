@@ -442,6 +442,7 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
   if ((nodesQuery.isError && !nodesQuery.data) || (sourcesQuery.isError && !sourcesQuery.data)) {
     return (
       <ErrorBlock
+        error={nodesQuery.error ?? sourcesQuery.error}
         onRetry={() => {
           nodesQuery.refetch();
           sourcesQuery.refetch();

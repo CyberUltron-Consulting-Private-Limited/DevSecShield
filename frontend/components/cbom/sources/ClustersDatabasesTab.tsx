@@ -353,6 +353,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
   if (failed) {
     return (
       <ErrorBlock
+        error={nodesQuery.error ?? clustersQuery.error ?? databasesQuery.error}
         onRetry={() => {
           nodesQuery.refetch();
           clustersQuery.refetch();

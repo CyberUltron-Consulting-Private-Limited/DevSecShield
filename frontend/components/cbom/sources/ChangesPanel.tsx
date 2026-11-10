@@ -47,7 +47,7 @@ export function RunChanges({ teamId, runId, finished }: { teamId: number; runId:
   });
   if (!finished) return <p className="text-xs text-zinc-500">Changes are listed when the run has finished.</p>;
   if (q.isLoading) return <LoadingBlock />;
-  if (q.isError || !q.data) return <ErrorBlock onRetry={() => q.refetch()} />;
+  if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
   const events = q.data.events;
   const shown = all ? events : events.slice(0, 25);
   return (
@@ -236,7 +236,7 @@ export function CompareDialog({ teamId, runId, runs, onClose }: {
             </SelectContent>
           </Select>
         </div>
-        {q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock onRetry={() => q.refetch()} /> : <DiffView diff={q.data} />}
+        {q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock error={q.error} onRetry={() => q.refetch()} /> : <DiffView diff={q.data} />}
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>Close</Button>
         </DialogFooter>
@@ -261,7 +261,7 @@ export function CodeChanges({ teamId, scanId }: { teamId: number; scanId: number
         Changes since the previous scan of this repository and branch
       </summary>
       <div className="mt-3">
-        {!open ? null : q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock onRetry={() => q.refetch()} /> : (
+        {!open ? null : q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock error={q.error} onRetry={() => q.refetch()} /> : (
           <>
             {q.data.against_scan_id && <p className="text-xs text-zinc-500 mb-2">Compared with scan #{q.data.against_scan_id}. Fixed findings of that scan are marked fixed and their Jira tickets closed.</p>}
             <DiffView diff={q.data} />
@@ -282,7 +282,7 @@ export function RunInsights({ teamId, runId, active }: { teamId: number; runId: 
     refetchInterval: active ? 20000 : false,
   });
   if (q.isLoading) return <LoadingBlock />;
-  if (q.isError || !q.data) return <ErrorBlock onRetry={() => q.refetch()} />;
+  if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
   if (q.data.rows.length === 0) return null;
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-insights">

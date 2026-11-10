@@ -390,6 +390,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   if (!settings || (cloudQuery.isError && !cloudQuery.data) || (identityQuery.isError && !identityQuery.data)) {
     return (
       <ErrorBlock
+        error={settingsQuery.error ?? cloudQuery.error ?? identityQuery.error}
         onRetry={() => {
           settingsQuery.refetch();
           cloudQuery.refetch();
@@ -435,6 +436,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   };
 
   const formKey = `${form.provider}-${form.source?.id ?? "new"}-${form.nonce}`;
+  // AWS on a deployment without AWS collection: no form, so the side panel must not ask for one (lab UI r1)
+  const awsOff = form.provider === "aws" && settings.aws_collection_configured === false;
   const provider = PROVIDERS.find((p) => p.value === form.provider) ?? PROVIDERS[0];
 
   return (
@@ -468,7 +471,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
             </div>
           }
         >
-          {form.provider === "aws" && settings.aws_collection_configured === false && (
+          {awsOff && (
             <p role="alert" data-testid="aws-not-configured"
               className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-200">
               {AWS_NOT_CONFIGURED}
@@ -498,12 +501,14 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           description={
             shownValidation
               ? `${shownValidation.name}${shownValidation.at ? ` · last run ${formatDateTime(shownValidation.at)}` : ""}`
-              : form.provider === "aws"
-                ? "Results appear after Validate connection"
-                : "Results appear after Save and validate"
+              : awsOff
+                ? "AWS collection is not set up on this deployment"
+                : form.provider === "aws"
+                  ? "Results appear after Validate connection"
+                  : "Results appear after Save and validate"
           }
         >
-          <ValidationPanel view={shownValidation} pending={validating} provider={form.provider} />
+          <ValidationPanel view={shownValidation} pending={validating} provider={form.provider} awsNotConfigured={awsOff} />
         </SectionCard>
       </div>
 
@@ -829,8 +834,23 @@ function scopeLabel(source: CbomSource): string {
 }
 
 // ---------------------------------------------------------------------------- validation panel
-function ValidationPanel({ view, pending, provider }: { view: ValidationView | null; pending: boolean; provider: Provider }) {
+function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: {
+  view: ValidationView | null;
+  pending: boolean;
+  provider: Provider;
+  /** AWS on a deployment without AWS collection: the form is replaced by AWS_NOT_CONFIGURED, nothing to validate */
+  awsNotConfigured?: boolean;
+}) {
   const isAws = provider === "aws";
+  if (awsNotConfigured && !view && !pending) {
+    return (
+      <div data-testid="cloud-validation" aria-live="polite" className="space-y-3">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400" data-testid="cloud-validation-aws-off">
+          Nothing to validate. {AWS_NOT_CONFIGURED}.
+        </p>
+      </div>
+    );
+  }
   return (
     <div data-testid="cloud-validation" aria-live="polite" className="space-y-3">
       {pending && (
@@ -1223,7 +1243,7 @@ function PolicyDialog({
           {query.isLoading ? (
             <LoadingBlock />
           ) : query.isError || !query.data ? (
-            <ErrorBlock message="Could not load the template." onRetry={() => query.refetch()} />
+            <ErrorBlock message="Could not load the template." error={query.error} onRetry={() => query.refetch()} />
           ) : (
             <CodeSnippet code={query.data} language="yaml" />
           )}
@@ -1587,7 +1607,7 @@ function ReaderScript({ teamId, provider, text }: { teamId: number; provider: "a
         (query.isLoading ? (
           <LoadingBlock />
         ) : query.isError || !query.data ? (
-          <ErrorBlock message="Could not load the script." onRetry={() => query.refetch()} />
+          <ErrorBlock message="Could not load the script." error={query.error} onRetry={() => query.refetch()} />
         ) : (
           <div className="min-w-0">
             <CodeSnippet code={query.data} language="bash" />

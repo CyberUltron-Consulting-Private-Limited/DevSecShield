@@ -128,7 +128,7 @@ export function CodeWavesPanel({ teamId, scanId }: { teamId: number; scanId: num
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [onlyPlanned, setOnlyPlanned] = useState(true);
   if (q.isLoading) return <LoadingBlock />;
-  if (q.isError || !q.data) return <ErrorBlock onRetry={() => q.refetch()} />;
+  if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
   const items = q.data.items.filter((i) => !onlyPlanned || i.wave != null);
   const toggle = (key: string) => setSelected((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   return (

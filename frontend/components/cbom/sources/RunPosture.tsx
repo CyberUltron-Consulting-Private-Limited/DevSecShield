@@ -148,7 +148,7 @@ export function RunPostureCard({ teamId, runId, active }: { teamId: number; runI
     refetchInterval: active ? 15000 : false,
   });
   if (query.isLoading) return <LoadingBlock />;
-  if (query.isError || !query.data) return <ErrorBlock onRetry={() => query.refetch()} />;
+  if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
   const p = query.data;
   if (p.assets === 0) return null;
   const m = p.mosca;
@@ -265,7 +265,7 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
     staleTime: 60_000,
   });
   if (query.isLoading) return <LoadingBlock />;
-  if (query.isError || !query.data) return <ErrorBlock onRetry={() => query.refetch()} />;
+  if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
   const a = query.data;
   const cls = CLASS_LABEL[a.pqc_class];
   return (
