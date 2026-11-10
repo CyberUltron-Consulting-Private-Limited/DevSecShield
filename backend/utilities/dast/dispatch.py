@@ -15,7 +15,7 @@ from backend.new_models import DastScanProfile, Scan
 from backend.utilities.celery.celery_connection import get_celery_app
 from backend.utilities.dast.auth_crypto import decrypt_auth, redact_auth
 from backend.utilities.dast.credits import credits_for_auto_dast
-from backend.utilities.dast.ssrf import DastSsrfError, assert_urls_allowed, host_from_url
+from backend.utilities.dast.ssrf import DastSsrfError, assert_urls_allowed, dast_target_urls, host_from_url
 from backend.utilities.team.credits import deduct_credits_from_team, refund_credits_to_team
 from rich.console import Console
 
@@ -96,7 +96,7 @@ def run_dast_from_profile(
         auth = decrypt_auth(profile.auth_encrypted or {})
         login_url = (auth.get("login_url") or "").strip()
         try:
-            assert_urls_allowed([target_url, login_url], allowed)
+            assert_urls_allowed(dast_target_urls(target_url, login_url, profile.additional_urls_to_scan), allowed)
         except DastSsrfError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

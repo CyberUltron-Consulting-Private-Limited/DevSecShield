@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import zipfile
 
 import pytest
 from fastapi import UploadFile
@@ -45,7 +46,10 @@ def test_scan_history_is_ignored_for_an_uploaded_archive(monkeypatch) -> None:
 
     monkeypatch.setattr(scan_format, "upload_file", lambda _io, **_kw: {"bucket": "b", "object_name": "o"})
     payload = StartScanPayload.model_validate_json('{"cbom": {"zip_file_used": true, "scan_history": true}}')
-    upload = UploadFile(file=io.BytesIO(b"PK\x03\x04 not empty"), filename="x.zip")
+    archive = io.BytesIO()  # a real archive: zip uploads are checked (test_zip_upload_must_be_zip.py)
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("main.py", "import hashlib\n")
+    upload = UploadFile(file=io.BytesIO(archive.getvalue()), filename="x.zip")
     kwargs = asyncio.run(format_input_for_scan("cbom", payload, upload))
     assert "zip_dict_context" in kwargs and "scan_history" not in kwargs
     assert get_scan_metadata_for_type("cbom", payload)["scan_history"] is False

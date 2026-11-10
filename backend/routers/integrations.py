@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import uuid
 from typing import Annotated, Any, Literal
 
@@ -154,6 +155,28 @@ def _check_secret(kind: str, name: str, value: str) -> str:
     return value
 
 
+def _refuse_unusable_destination(cfg: Any) -> None:
+    """Saving an enabled integration refuses a destination every connection would refuse (outbound.resolve: the same
+    check and message as Test and delivery). Round 5, L1: loopback, metadata and unlisted private destinations were
+    saved, then every Test and every delivery failed. A name that does not resolve (yet) is not refused here; Test
+    shows it. Disabling is never blocked, so an integration whose destination became refused can still be turned off."""
+    url = getattr(cfg, "url", None) or getattr(cfg, "instance_url", None)
+    field = "url" if getattr(cfg, "url", None) else "instance_url"
+    try:
+        if url:
+            host, port, _path = outbound.check_https_url(str(url))
+            outbound.resolve(host, port)
+        elif getattr(cfg, "host", None):
+            field = "host"
+            transport = getattr(cfg, "transport", "tls")
+            port = getattr(cfg, "port", None) or (6514 if transport == "tls" else 514)
+            outbound.resolve(cfg.host, port, kind=socket.SOCK_DGRAM if transport == "udp" else socket.SOCK_STREAM)
+    except outbound.Refused as exc:
+        raise HTTPException(status_code=400, detail=f"config.{field}: {exc}") from None
+    except outbound.TransportError:
+        pass
+
+
 def _save(engine, team_id: int, user_id: int, kind: str, body: IntegrationSave) -> dict:
     spec = SPECS[kind]
     try:
@@ -162,6 +185,8 @@ def _save(engine, team_id: int, user_id: int, kind: str, body: IntegrationSave) 
         err = bad_request(exc)
         err.detail = f"config.{err.detail}" if not str(err.detail).startswith("config") else err.detail
         raise err from None
+    if body.enabled:
+        _refuse_unusable_destination(cfg)
     now = utcnow()
     with Session(engine) as session:
         require_admin(session, user_id, team_id, "integrations")

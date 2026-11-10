@@ -6,7 +6,19 @@ from backend.utilities.db.s3_utils import upload_file
 from io import BytesIO
 from rich.console import Console
 from backend.utilities.scan.sanitize_path_patterns import sanitize_path_patterns
+from backend.utilities.dast.ssrf import DastSsrfError, assert_manual_dast_allowed
+import zipfile
 console = Console()
+
+
+def _require_zip(data: bytes) -> None:
+    """A "zip file" upload must be a zip archive. Round 5, L1: a non-zip file uploaded in zip mode was stored and
+    handed to the worker, which failed inside the task ("Error in getting directory from zip context: File is not a
+    zip file", e.g. cbom_estimation) instead of the customer being told."""
+    if not zipfile.is_zipfile(BytesIO(data)):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="uploaded file is not a zip archive; upload a .zip of the code (or choose the "
+                                   "option for a single SBOM / CBOM / AI-BOM file)")
 
 async def format_input_for_scan(
     scan_type: scan_types,
@@ -36,6 +48,7 @@ async def format_input_for_scan(
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="uploaded file is empty")
                     if len(uploaded_file_bytes) > 50 * 1024 * 1024:
                         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="uploaded file too large (max 50MB)")
+                    _require_zip(uploaded_file_bytes)
                     bytes_io_zip_file_object = BytesIO(uploaded_file_bytes)
                     s3_upload_response = upload_file(bytes_io_zip_file_object)
                     if not s3_upload_response:
@@ -66,6 +79,7 @@ async def format_input_for_scan(
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="uploaded file is empty")
                     if len(uploaded_file_bytes) > 50 * 1024 * 1024:
                         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="uploaded file too large (max 50MB)")
+                    _require_zip(uploaded_file_bytes)
                     bytes_io_zip_file_object = BytesIO(uploaded_file_bytes)
                     s3_upload_response = upload_file(bytes_io_zip_file_object)
                     if not s3_upload_response:
@@ -95,6 +109,7 @@ async def format_input_for_scan(
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="uploaded file is empty")
                     if len(uploaded_file_bytes) > 50 * 1024 * 1024:
                         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="uploaded file too large (max 50MB)")
+                    _require_zip(uploaded_file_bytes)
                     bytes_io_zip_file_object = BytesIO(uploaded_file_bytes)
                     s3_upload_response = upload_file(bytes_io_zip_file_object, extension=".json")
                     if not s3_upload_response:
@@ -150,6 +165,14 @@ async def format_input_for_scan(
             case "dast":
                 if not start_scan_payload.dast:
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="DAST context is required")
+                # Manual estimate and start: the profile-scan URL rule (utilities/dast/ssrf.py), before any worker
+                # crawls a customer-named URL.
+                dast = start_scan_payload.dast
+                try:
+                    assert_manual_dast_allowed(dast.target_url, dast.auth.login_url if dast.auth else None,
+                                               dast.additional_urls_to_scan)
+                except DastSsrfError as exc:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
                 scan_kwargs["dast_dict_context"] = start_scan_payload.dast.model_dump()
                 console.print(
                     f"DAST kwargs assembled target={start_scan_payload.dast.target_url} "
@@ -167,6 +190,7 @@ async def format_input_for_scan(
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="uploaded file is empty")
                     if len(uploaded_file_bytes) > 50 * 1024 * 1024:
                         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="uploaded file too large (max 50MB)")
+                    _require_zip(uploaded_file_bytes)
                     bytes_io_zip_file_object = BytesIO(uploaded_file_bytes)
                     s3_upload_response = upload_file(bytes_io_zip_file_object)
                     if not s3_upload_response:
@@ -222,6 +246,7 @@ async def format_input_for_scan(
                         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="uploaded file is empty")
                     if len(uploaded_file_bytes) > 50 * 1024 * 1024:
                         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="uploaded file too large (max 50MB)")
+                    _require_zip(uploaded_file_bytes)
                     bytes_io_zip_file_object = BytesIO(uploaded_file_bytes)
                     s3_upload_response = upload_file(bytes_io_zip_file_object)
                     if not s3_upload_response:

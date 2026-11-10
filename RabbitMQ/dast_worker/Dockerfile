@@ -78,6 +78,13 @@ COPY --from=builder /app /app
 # Copy Playwright browsers from builder
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
+# nuclei runs headless templates with -system-chrome (helpers/checks/nuclei/run_nuclei.py), which looks for
+# `chromium` on PATH: point it at the Chromium above, so nothing is downloaded at run time (go-rod would otherwise
+# fetch its own browser into /root/.cache/rod on first use).
+RUN chrome="$(ls -d /root/.cache/ms-playwright/chromium-*/chrome-linux*/chrome | head -n 1)" && \
+    test -x "${chrome}" && ln -s "${chrome}" /usr/local/bin/chromium && \
+    test ! -e /root/.cache/rod
+
 # tini as PID 1 reaps Nuclei/Chrome zombies that uv/celery will not.
 ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 CMD ["uv", "run", "celery", "-A", "dast_worker", "worker", "-P", "threads", "--loglevel=info"]

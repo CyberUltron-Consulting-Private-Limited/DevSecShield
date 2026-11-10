@@ -22,6 +22,7 @@
 #      https://<API_HOST>), STAGING_COMPONENTS (images, default backend,frontend,scan-worker,dast-worker),
 #      STAGING_SERVICES (compose services to start, default all), STAGING_INCLUDE_INFRA=1 (also ship the postgres,
 #      mongo, rabbitmq, nginx and, with profile minio, MinIO images, for a host without registry access),
+#      GRYPE_DB_ARCHIVE (save: also ship this Grype database archive as images/grype-db.tar.zst),
 #      STAGING_CHECK_INSECURE=1 (accept a self-signed certificate in the checks), SSH_OPTS (extra ssh/scp options).
 set -euo pipefail
 
@@ -42,6 +43,7 @@ INFRA_SERVICES=" postgres mongo rabbitmq minio "
 ONESHOT_SERVICES=" migrate minio-init "
 INFRA_IMAGES=(postgres:15-alpine mongo:8.0.6 rabbitmq:4.1-management-alpine nginx:1.27-alpine)
 DEFAULT_MINIO_IMAGE=minio/minio:RELEASE.2025-04-22T22-12-26Z  # docker-compose.yml's MINIO_IMAGE default
+GRYPE_DB_FILE=grype-db.tar.zst  # GRYPE_DB_ARCHIVE is copied under this name next to the images (save)
 # `next dev` markers. A production `next build` (Turbopack or webpack) has none of them; note that Next.js 16
 # production builds do reference a /_next/static/chunks/turbopack-<hash>.js runtime chunk, so "turbopack" alone is
 # not a dev marker. "development" is the fixed build id of `next dev`.
@@ -106,6 +108,15 @@ cmd_save() {
   mv "${out}.part" "${out}"
   (cd "${IMAGES_DIR}" && sha256sum "$(basename "${out}")" >"$(basename "${out}").sha256")
   log "saved $(du -h "${out}" | cut -f1): $(cat "${out}.sha256")"
+  # An air-gapped site cannot download Grype's vulnerability database: ship one (`grype db list` / the Anchore
+  # listing, fetched on a connected machine) next to the images; the site imports it (README "Air gap").
+  if [[ -n "${GRYPE_DB_ARCHIVE:-}" ]]; then
+    [[ -f "${GRYPE_DB_ARCHIVE}" ]] || die "GRYPE_DB_ARCHIVE=${GRYPE_DB_ARCHIVE} is not a file"
+    cp "${GRYPE_DB_ARCHIVE}" "${IMAGES_DIR}/${GRYPE_DB_FILE}.part"
+    mv "${IMAGES_DIR}/${GRYPE_DB_FILE}.part" "${IMAGES_DIR}/${GRYPE_DB_FILE}"
+    (cd "${IMAGES_DIR}" && sha256sum "${GRYPE_DB_FILE}" >"${GRYPE_DB_FILE}.sha256")
+    log "added Grype database ${GRYPE_DB_ARCHIVE} as ${IMAGES_DIR}/${GRYPE_DB_FILE}"
+  fi
 }
 
 cmd_push() {
