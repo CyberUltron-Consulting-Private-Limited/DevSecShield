@@ -404,7 +404,7 @@ def _context_free_facts(
     seen = {f.line for f in facts}
     named = _key_name_check(crypto_ctx)
     for fact in (*_literal_key_facts(lines, lang, named), *_config_key_facts(lines, config_lookup, crypto_ctx),
-                 *_notebook_output_facts(text, named)):
+                 *_notebook_output_facts(text, named), *_inline_key_facts(lines, lang)):
         if fact.line not in seen:
             seen.add(fact.line)
             facts.append(fact)
@@ -556,6 +556,55 @@ def _joined_literal(pieces: list[str]) -> str | None:
         out.append(m.group(2))
         text = text[m.end():]
     return "".join(out) or None
+
+
+# --------------------------------------------------------------------------- #
+# A key literal written straight into a key-taking constructor (no name to judge, the call says it is a key).  Only
+# the KEY argument position is matched: an IV / nonce literal (``AES.new(key, mode, b"...")``, ``createCipheriv(alg,
+# key, Buffer.from("..."))``, ``IvParameterSpec``, ``aes.IV = ...``) is never read as a key.  A literal shorter than
+# 8 characters is a placeholder, not a key.
+# --------------------------------------------------------------------------- #
+_PY_LIT = r"b?(?P<q>[\"'])(?P<val>[^\"'\\]{8,})(?P=q)"
+_STR_LIT = r"(?P<q>[\"'`])(?P<val>[^\"'`\\]{8,})(?P=q)"
+_INLINE_KEY_RE: dict[str, tuple[re.Pattern[str], ...]] = {
+    "python": (
+        re.compile(r"\b(?:Fernet|AESGCM|AESCCM|AESOCB3|AESSIV|ChaCha20Poly1305|algorithms\.(?:AES|AES128|AES256|"
+                   r"TripleDES|Camellia|ChaCha20|Blowfish|ARC4|CAST5|SEED|SM4|IDEA))\(\s*(?:key\s*=\s*)?" + _PY_LIT),
+        re.compile(r"\b(?:AES|DES|DES3|ARC2|ARC4|Blowfish|CAST|ChaCha20|ChaCha20_Poly1305|Salsa20)\.new\(\s*"
+                   r"(?:key\s*=\s*)?" + _PY_LIT),
+        re.compile(r"\b(?:hmac\.new|hmac\.HMAC|HMAC)\(\s*(?:key\s*=\s*)?" + _PY_LIT),
+    ),
+    "java": (re.compile(r"\bnew\s+SecretKeySpec\(\s*\"(?P<val>[^\"\\]{8,})\"\s*\.getBytes\("),),
+    "kotlin": (re.compile(r"\bSecretKeySpec\(\s*\"(?P<val>[^\"\\]{8,})\"\s*\.(?:toByteArray|encodeToByteArray)\("),),
+    "javascript": (
+        re.compile(r"\bcreate(?:De)?[cC]ipheriv\(\s*[^,()]+,\s*(?:Buffer\.from\(\s*)?" + _STR_LIT),
+        re.compile(r"\bcreateHmac\(\s*[^,()]+,\s*(?:Buffer\.from\(\s*)?" + _STR_LIT),
+    ),
+    "go": (
+        re.compile(r"\b(?:aes|des|rc4|blowfish|cast5|twofish|chacha20poly1305)\.(?:NewCipher|NewTripleDESCipher|New|"
+                   r"NewX)\(\s*\[\]byte\(\s*\"(?P<val>[^\"\\]{8,})\""),
+        re.compile(r"\bhmac\.New\(\s*[^,()]+(?:\(\))?\s*,\s*\[\]byte\(\s*\"(?P<val>[^\"\\]{8,})\""),
+    ),
+    "csharp": (
+        re.compile(r"\.Key\s*=\s*(?:Encoding\.\w+\.GetBytes|Convert\.From(?:Base64|Hex)String)\(\s*"
+                   r"\"(?P<val>[^\"\\]{8,})\""),
+        re.compile(r"\bnew\s+HMAC\w*\(\s*(?:Encoding\.\w+\.GetBytes|Convert\.From(?:Base64|Hex)String)\(\s*"
+                   r"\"(?P<val>[^\"\\]{8,})\""),
+    ),
+}
+_INLINE_KEY_RE["typescript"] = _INLINE_KEY_RE["javascript"]
+
+
+def _inline_key_facts(lines: list[str], lang: str) -> list[MaterialMisuse]:
+    """A literal in the key position of a key-taking constructor (``Fernet(b"...")``, ``AES.new(b"...", ...)``,
+    ``new SecretKeySpec("...".getBytes(), "AES")``, ``createCipheriv(alg, "...", iv)``, ``aes.NewCipher([]byte("..."))``,
+    ``aes.Key = Encoding.UTF8.GetBytes("...")``) is a hardcoded key."""
+    patterns = _INLINE_KEY_RE.get(lang) or ()
+    facts: list[MaterialMisuse] = []
+    for idx, line in enumerate(lines, start=1):
+        if any(p.search(line) for p in patterns):
+            facts.append(MaterialMisuse(kind="secret-key", var=None, line=idx, hardcoded=True))
+    return facts
 
 
 _KEYISH_LINE = re.compile(r"(?i:key|secret)|\b[kK]\s*[:=]")
