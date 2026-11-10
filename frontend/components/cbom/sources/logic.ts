@@ -212,6 +212,22 @@ export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; prox
   ].join("\n")
 }
 
+/** What Reset says for a node of an agent pool (a DaemonSet pod): the server issues it no registration token, since
+ * the pod enrolls again by itself with the pool token after its next heartbeat (every 30 s) is refused (lab UI r1 N1:
+ * Reset opened "Register <node> again" with a standalone Helm command and a fresh 24-hour token). */
+export const POOL_NODE_REENROLLS = "The pod enrolls again by itself within a minute."
+
+/** After New registration token / Reset: the install wizard with the token, or (a pool node, no token) nothing to copy. */
+export function registrationOutcome(data: { registration_token: string | null }): { wizard: true; token: string } | { wizard: false; note: string } {
+  return data.registration_token ? { wizard: true, token: data.registration_token } : { wizard: false, note: POOL_NODE_REENROLLS }
+}
+
+/** A row menu offers "New registration token" only to a standalone node that has not registered; a pool node is
+ * never given one (the server refuses), so it is offered Reset instead. */
+export function offersRegistrationToken(node: { pool_id?: number | null; status: string }): boolean {
+  return node.pool_id == null && (node.status === "pending_registration" || node.status === "registration_expired")
+}
+
 export function ansibleSnippet(publicKey: string, user: string): string {
   return [
     "- name: ZeroShield CBOM read-only account",

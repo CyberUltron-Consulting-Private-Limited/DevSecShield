@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Circle, KeyRound, Loader2, MoreVertical, Pencil, Plus, RotateCcw, Server, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, KeyRound, Loader2, MoreVertical, Pencil, Plus, RotateCcw, Server, Trash2, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,18 @@ import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
-import { DEPLOY_SUPPORT, ago, installCommand, nodeInstallNames, offlineImageSteps, readTextFile, type DeployMethod } from "./logic";
+import {
+  DEPLOY_SUPPORT,
+  ago,
+  installCommand,
+  nodeInstallNames,
+  offersRegistrationToken,
+  offlineImageSteps,
+  readTextFile,
+  registrationOutcome,
+  type DeployMethod,
+} from "./logic";
+import { revealById } from "./reveal";
 import {
   Checkbox2,
   ChoiceCards,
@@ -42,6 +53,7 @@ import {
   StatCard,
   StatusBadge,
   Truncate,
+  useMenuReveal,
 } from "./shared";
 
 const NODE_IMAGE = process.env.NEXT_PUBLIC_CBOM_NODE_IMAGE || "registry.zeroshield.ai/cbom/scan-node:1.0";
@@ -92,9 +104,10 @@ const EMPTY_WIZARD: WizardState = {
 
 const WIZARD_ID = "scan-node-wizard";
 
-/** After the wizard opens (next render), scroll it into view: it sits below the node list and the other cards. */
+/** After the wizard opens (next render), bring it into view with focus on its first field: it sits below the node
+ * list and the other cards. */
 function scrollToWizard() {
-  window.setTimeout(() => document.getElementById(WIZARD_ID)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  window.setTimeout(() => revealById(WIZARD_ID), 0);
 }
 
 function apiHost(): string {
@@ -133,6 +146,9 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   const [editing, setEditing] = useState<CbomScanNode | null>(null);
   const [deleting, setDeleting] = useState<CbomScanNode | null>(null);
   const [resetting, setResetting] = useState<CbomScanNode | null>(null);
+  // A pool node was reset: no token to copy, its pod enrolls again by itself (r1 N1)
+  const [reenrolling, setReenrolling] = useState<{ name: string; note: string } | null>(null);
+  const rowMenu = useMenuReveal();
 
   const nodesQuery = useQuery({
     queryKey: cbomSourcesKeys.nodes(teamId),
@@ -170,7 +186,15 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   const tokenMutation = useMutation({
     mutationFn: ({ node, reset }: { node: CbomScanNode; reset: boolean }) => newCbomNodeRegistration(teamId, node.id, reset),
     onSuccess: (data) => {
-      setCreated({ nodeId: data.node.id, token: data.registration_token, again: true });
+      setResetting(null);
+      const outcome = registrationOutcome(data);
+      if (!outcome.wizard) {
+        // An agent pool node: the server issued no registration token, so there is no install command to show.
+        setReenrolling({ name: data.node.name, note: outcome.note });
+        return;
+      }
+      setReenrolling(null);
+      setCreated({ nodeId: data.node.id, token: outcome.token, again: true });
       // The (read-only) wizard shows the node this token is for, not the last values typed into it.
       setWizard({
         ...EMPTY_WIZARD,
@@ -181,7 +205,6 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
         proxyUrl: data.node.proxy_url ?? "",
       });
       setWizardOpen(true);
-      setResetting(null);
       scrollToWizard();
     },
     onSettled: invalidate,
@@ -248,6 +271,20 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
           </Button>
         }
       >
+        {reenrolling && (
+          <div
+            role="status"
+            className="mb-4 flex items-start justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-200"
+            data-testid="node-reenrolling"
+          >
+            <span>
+              {reenrolling.name}: credential revoked. {reenrolling.note}
+            </span>
+            <button type="button" className="cursor-pointer shrink-0" aria-label="Dismiss" onClick={() => setReenrolling(null)}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         {nodes.length === 0 ? (
           <EmptyState
             title="No scan nodes yet"
@@ -311,13 +348,21 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" onCloseAutoFocus={rowMenu.onCloseAutoFocus}>
                             <DropdownMenuItem className="cursor-pointer" onSelect={() => setEditing(node)}>
                               <Pencil className="h-4 w-4" />
                               Details and edit
                             </DropdownMenuItem>
-                            {node.status === "pending_registration" || node.status === "registration_expired" ? (
-                              <DropdownMenuItem className="cursor-pointer" onSelect={() => tokenMutation.mutate({ node, reset: false })}>
+                            {offersRegistrationToken(node) ? (
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                onSelect={() => {
+                                  // the wizard opens when the token arrives; the menu must not pull focus (and the
+                                  // page) back to this row afterwards (reveal.ts)
+                                  rowMenu.request(WIZARD_ID);
+                                  tokenMutation.mutate({ node, reset: false });
+                                }}
+                              >
                                 <KeyRound className="h-4 w-4" />
                                 New registration token
                               </DropdownMenuItem>

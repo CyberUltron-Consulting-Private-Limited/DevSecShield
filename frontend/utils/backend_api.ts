@@ -4708,12 +4708,15 @@ const deleteCbomScanNode = async (team_id: number, node_id: number): Promise<voi
     }
 }
 
-/** reset=false: new token for a node that never registered; reset=true: revoke and register again. */
-const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string }> => {
+/** reset=false: new token for a node that never registered; reset=true: revoke and register again.  An agent pool
+ * node gets no token (null): its pod enrolls again by itself with the pool token. */
+const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string | null }> => {
     try {
         const path = reset ? "reset" : "registration-token"
         const response = await api.post(`${cbomSourcesBase(team_id)}/nodes/${node_id}/${path}`)
-        toast.success(reset ? "Node credential revoked; register the node again" : "New registration token issued")
+        toast.success(!reset ? "New registration token issued"
+            : response.data?.registration_token ? "Node credential revoked; register the node again"
+            : "Node credential revoked; the pod enrolls again by itself")
         return response.data
     } catch (error) {
         showErrorToast(error, "Error issuing a registration token")

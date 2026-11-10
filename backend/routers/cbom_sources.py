@@ -334,15 +334,27 @@ async def update_node(team_id: TeamId, node_id: ObjectId, body: NodeUpdate, Auth
     return _ok(await _run("update node", team_id, _update_node, engine, team_id, user.id, node_id, body))
 
 
+POOL_NODE_NO_TOKEN = ("This node belongs to an agent pool: its pod enrolls again by itself with the pool token, so it "
+                      "never needs a registration token. Use Reset if its credential may have leaked.")
+
+
 def _new_registration(engine, team_id: int, user_id: int, node_id: int, reset: bool) -> dict:
     now = utcnow()
-    token = new_token("zsr_")
     with Session(engine) as session:
         node = _get_owned(session, CbomScanNode, node_id, team_id, "Scan node")
         require_owner_or_admin(session, user_id, team_id, node.owner_user_id, "scan node")
-        values = dict(registration_token_hash=sha256_hex(token), registration_issued_at=now,
-                      registration_expires_at=now + REGISTRATION_TTL, row_version=node.row_version + 1,
-                      updated_by_user_id=user_id, last_updated=now)
+        # A node of an agent pool (a DaemonSet pod) takes itself back with the pool token once its credential is
+        # revoked (agents.node_to_rebind), so a reset issues no registration token for it: one would only be shown
+        # as a standalone install command for a pod (lab UI r1 N1) and be a second way to take the node.  A node
+        # whose pool was deleted (pool_id set to NULL) is a standalone node again and gets a token as before.
+        pooled = node.pool_id is not None
+        if pooled and not reset:
+            raise HTTPException(status_code=409, detail=POOL_NODE_NO_TOKEN)
+        token = None if pooled else new_token("zsr_")
+        values = dict(registration_token_hash=sha256_hex(token) if token else None,
+                      registration_issued_at=now if token else None,
+                      registration_expires_at=now + REGISTRATION_TTL if token else None,
+                      row_version=node.row_version + 1, updated_by_user_id=user_id, last_updated=now)
         stmt = update(CbomScanNode).where(CbomScanNode.id == node.id, CbomScanNode.team_id == team_id)
         if reset:
             values.update(node_token_hash=None, enrolled_at=None, last_heartbeat_at=None)
@@ -360,7 +372,9 @@ def _new_registration(engine, team_id: int, user_id: int, node_id: int, reset: b
               action="node.reset" if reset else "node.token", object_type="node", object_id=node.id)
         session.commit()
         session.refresh(node)
-        log("node reset" if reset else "node token regenerated", team=team_id, node=node.id, by=user_id)
+        log("node reset" if reset else "node token regenerated", team=team_id, node=node.id, by=user_id,
+            pool=node.pool_id)
+        # None for a pool node: nothing to copy, its pod enrolls again by itself
         return {"node": public_node(node, now), "registration_token": token}
 
 
@@ -372,7 +386,7 @@ async def regenerate_token(team_id: TeamId, node_id: ObjectId, Authorization: Au
 
 
 @router.post(BASE + "/nodes/{node_id}/reset", dependencies=WRITE,
-             summary="Revoke the node's credential and issue a new registration token")
+             summary="Revoke the node's credential and issue a new registration token (none for an agent pool node)")
 async def reset_node(team_id: TeamId, node_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("node reset", team_id, _new_registration, engine, team_id, user.id, node_id, True))
