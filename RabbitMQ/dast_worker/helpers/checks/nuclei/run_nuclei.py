@@ -41,6 +41,10 @@ def build_nuclei_command(
         "-u",
         url,
         "-headless",
+        # The Chromium the image ships (Playwright's, linked as /usr/local/bin/chromium by the Dockerfile). Without
+        # it nuclei's go-rod downloads its own Chromium on first use into /root/.cache/rod (~580 MB per container,
+        # impossible air-gapped; round 5 saw "Failed to get the debug url" from it).
+        "-system-chrome",
         "-t",
         template_path,
         "-timeout",
