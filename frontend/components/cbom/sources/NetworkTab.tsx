@@ -37,6 +37,7 @@ import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import {
+  addressProgress,
   ago,
   countHours,
   csvFirstColumn,
@@ -1082,6 +1083,7 @@ function DiscoveryJobRow({ teamId, job }: { teamId: number; job: CbomJob }) {
     retry: 1,
   });
   const count = live.asset_count ?? 0;
+  const progress = addressProgress(live);
   return (
     <li className="text-sm space-y-1" data-testid={`network-discovery-job-${job.id}`}>
       <div className="flex flex-wrap items-center gap-2">
@@ -1093,6 +1095,11 @@ function DiscoveryJobRow({ teamId, job }: { teamId: number; job: CbomJob }) {
           </button>
         )}
         {note && <span className="text-xs text-zinc-500">{note}</span>}
+        {progress && (
+          <span className="text-xs text-zinc-700 dark:text-zinc-300" data-testid={`network-discovery-progress-${job.id}`}>
+            {progress}
+          </span>
+        )}
       </div>
       {open && (
         <ul className="max-h-48 overflow-y-auto rounded border border-zinc-200 dark:border-zinc-800 p-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">

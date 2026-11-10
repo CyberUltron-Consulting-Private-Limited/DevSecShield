@@ -395,7 +395,15 @@ class AssetIn(BaseModel):
         return v
 
 
+class JobProgress(_Body):
+    """A network range while it runs: addresses swept (or skipped) so far, of the addresses in scope."""
+    done: int = Field(ge=0, le=16_777_216)
+    total: int = Field(ge=0, le=16_777_216)
+
+
 class AssetsBody(_Body):
     lease_id: str = Field(min_length=8, max_length=32)
     batch_id: str | None = Field(default=None, max_length=64)
     assets: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+    # sent by nodes from round 5 on, for network ranges only (older nodes send none: nothing is shown)
+    progress: JobProgress | None = None

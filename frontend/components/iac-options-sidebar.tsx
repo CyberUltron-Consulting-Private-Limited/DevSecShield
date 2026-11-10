@@ -42,6 +42,7 @@ import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 
 export type Mode = RepoMode | "unknown";
 
@@ -162,6 +163,25 @@ export function IACOptionsSidebar({
 
   const INVALID_CREDITS_MESSAGE =
     "Invalid inputs from user. Make sure that there are documents that match the patterns included/excluded";
+
+  // a scan opened by "Run again" on a failed scan: its settings, except an uploaded file and an access token
+  const rerun = useRerunPrefill("iac", scan_id, (p) => {
+    if (p.repo_url) setRepoUrl(p.repo_url);
+    if (p.mode) setMode(p.mode);
+    if (p.branch) setBranch(p.branch);
+    const env = p.options.environment;
+    if (env === "production" || env === "staging" || env === "development") setEnvironment(env);
+    const contexts = p.options.iac_contexts;
+    if (Array.isArray(contexts) && contexts.length) {
+      setIacContexts(contexts.filter((c) => c && typeof c === "object").map((c) => ({
+        id: crypto.randomUUID(),
+        mode: String((c as { mode?: unknown }).mode ?? "terraform") as IACContextMode,
+        include_path_arrays: Array.isArray((c as { include_path_arrays?: unknown }).include_path_arrays)
+          ? (c as { include_path_arrays: unknown[] }).include_path_arrays.filter(Array.isArray).map((a) => (a as unknown[]).map(String))
+          : [],
+      })));
+    }
+  });
 
   const estimateCreditsMutation = useMutation({
     mutationFn: () =>
@@ -328,6 +348,7 @@ export function IACOptionsSidebar({
       {optionsSidebarState === "ready" && (
         <>
           <div className="p-6 space-y-4">
+            <RerunNotice prefill={rerun} />
             <RepositoryCard
               uploadedFile={uploaded_file}
               setUploadedFile={setUploadedFile}
@@ -545,14 +566,18 @@ export function IACOptionsSidebar({
           <p className="text-red-400 text-center">
             {error_message ?? "An error occurred during the scan. Please try again."}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
-          >
-            <span>Try Again</span>
-          </Button>
+          {query.data?.scan_status === "failure" ? (
+            <RunAgainButton type="iac" teamId={team_id} scan={query.data} />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => window.location.reload()}
+              className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
+            >
+              <span>Try Again</span>
+            </Button>
+          )}
         </div>
       )}
 

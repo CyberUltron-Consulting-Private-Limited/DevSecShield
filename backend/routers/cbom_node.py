@@ -397,7 +397,8 @@ def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> 
                 valid.append(AssetIn.model_validate(item).model_dump())
             except (ValidationError, TypeError):
                 rejected += 1
-        out = J.add_assets(session, node, job_id, body.lease_id, valid, now)
+        out = J.add_assets(session, node, job_id, body.lease_id, valid, now,
+                           progress=body.progress.model_dump() if body.progress else None)
         session.commit()
         out["rejected"] += rejected
         out["batch_id"] = body.batch_id

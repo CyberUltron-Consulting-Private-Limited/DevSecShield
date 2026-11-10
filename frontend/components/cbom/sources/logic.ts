@@ -251,6 +251,15 @@ export function formatDateTime(iso: string | null | undefined, timeZone?: string
   }
 }
 
+/** "120 of 254 addresses" for a network range while it runs; null when the scan node does not report it (an older
+ * node, another kind of job) or the job is not running, so those rows show what they showed before. */
+export function addressProgress(job: { status: string; progress?: { done: number; total: number } | null }): string | null {
+  const p = job.progress
+  if (job.status !== "claimed" || !p || !Number.isFinite(p.total) || p.total <= 0) return null
+  const done = Math.min(Math.max(0, Math.floor(p.done)), p.total)
+  return `${done.toLocaleString()} of ${pluralize(p.total, "address", "addresses")}`
+}
+
 /** A YYYY-MM-DD date shown without time-zone shifting. */
 export function formatDay(day: string | null | undefined): string {
   if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return "—"

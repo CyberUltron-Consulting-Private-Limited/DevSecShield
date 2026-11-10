@@ -822,11 +822,27 @@ def _insert_ignore(session: Session, rows: list[dict[str, Any]]) -> int:
     return int(session.exec(stmt).rowcount or 0)  # type: ignore[call-overload]
 
 
+def _record_progress(session: Session, job: CbomCollectionJob, lease_id: str, progress: dict[str, Any],
+                     now: _dt.datetime) -> None:
+    """Keep a running network range's "addresses done / total" on the job (``result.progress``, for this attempt;
+    the job's result replaces it when the job ends).  Lease-checked, like the asset counter."""
+    total = max(0, int(progress.get("total") or 0))
+    done = min(max(0, int(progress.get("done") or 0)), total)
+    result = {**(job.result or {}), "progress": {"done": done, "total": total, "attempt": job.attempts,
+                                                  "at": now.replace(microsecond=0).isoformat() + "Z"}}
+    session.exec(update(CbomCollectionJob)
+                 .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "claimed",
+                        CbomCollectionJob.lease_id == lease_id)
+                 .values(result=result))
+
+
 def add_assets(
     session: Session, node: CbomScanNode | None, job_id: int, lease_id: str, assets: list[dict[str, Any]],
     now: _dt.datetime, *, team_id: int | None = None, known_secrets: list[str] | None = None,
+    progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Store one batch of a running job's assets.  Team, run and source always come from the job row."""
+    """Store one batch of a running job's assets (and a network range's progress, when the node sends it).  Team,
+    run and source always come from the job row."""
     job = _owned_job(session, node, job_id, team_id)
     if job.status != "claimed" or job.lease_id != lease_id:
         raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
@@ -925,6 +941,8 @@ def add_assets(
     if cap_reached and isinstance(job.result, dict):
         job.result = {**job.result, "truncated": True}
         session.add(job)
+    if progress is not None:
+        _record_progress(session, job, lease_id, progress, now)
     return {"accepted": inserted, "duplicate": duplicate, "rejected": rejected, "dropped": dropped,
             "total_for_attempt": total, "cap_reached": cap_reached}
 

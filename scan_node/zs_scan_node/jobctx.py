@@ -149,6 +149,32 @@ class JobContext:
     coverage_seen: set = field(default_factory=set)
     collected: list[dict] = field(default_factory=list)  # CLI mode only (poster is None)
     cancel_reason: str | None = None
+    # A network range: addresses swept so far of the addresses in scope, posted with the asset batches (at least every
+    # FLUSH_INTERVAL_S) so ZeroShield shows "N of M addresses" while the job runs.  None: not reported.
+    progress_total: int | None = None
+    progress_done: int = 0
+    _progress_sent: dict | None = None
+
+    # ------------------------------------------------------------------ progress
+    def set_progress_total(self, total: int) -> None:
+        with self._lock:
+            self.progress_total, self.progress_done = max(0, int(total)), 0
+
+    def address_done(self, n: int = 1) -> None:
+        """``n`` more addresses finished (swept or skipped).  Posts the count, with any buffered assets, once
+        FLUSH_INTERVAL_S has passed since the last post: a sparse range has few assets to carry it."""
+        with self._lock:
+            self.progress_done += n
+            due = time.monotonic() - self._last_flush >= FLUSH_INTERVAL_S
+            if due:
+                self._last_flush = time.monotonic()  # this thread posts; the others wait for the next interval
+        if due:
+            self.flush()
+
+    def _progress_now(self) -> dict | None:
+        if self.progress_total is None:
+            return None
+        return {"done": min(self.progress_done, self.progress_total), "total": self.progress_total}
 
     # ------------------------------------------------------------------ control
     def time_left(self) -> float:
@@ -212,8 +238,11 @@ class JobContext:
         with self._lock:
             batch, self._buffer, self._buffer_bytes = self._buffer, [], 0
             self._last_flush = time.monotonic()
-            if not batch:
+            progress = self._progress_now()
+            # no assets: post only a progress count that changed (an empty batch carries it)
+            if not batch and (progress is None or progress == self._progress_sent):
                 return
+            self._progress_sent = progress
             self._seq += 1
             batch_id = f"{self.job_id}-{self.attempt}-{self._seq}"
         self.sent += len(batch)
@@ -221,20 +250,24 @@ class JobContext:
             self.collected.extend(batch)
             self.accepted += len(batch)
             return
-        self._post(batch, batch_id)
+        self._post(batch, batch_id, progress)
 
-    def _post(self, batch: list[dict], batch_id: str) -> None:
+    def _post(self, batch: list[dict], batch_id: str, progress: dict | None = None) -> None:
         """Post one batch; a body the server finds too large is split and retried, so no asset is dropped for size.
         Raises LeaseLost.  Any other refusal is counted in ``lost`` and reported, never silently ignored."""
         from zs_scan_node.api import ApiError  # local import: api imports this module
 
         try:
-            counters = self.poster(batch, batch_id)
+            # only network ranges report progress; other jobs post exactly what they always posted
+            counters = self.poster(batch, batch_id) if progress is None else self.poster(batch, batch_id, progress)
         except ApiError as exc:
             if exc.status == 413 and len(batch) > 1:
                 half = len(batch) // 2
-                self._post(batch[:half], f"{batch_id}a")
-                self._post(batch[half:], f"{batch_id}b")
+                self._post(batch[:half], f"{batch_id}a", progress)
+                self._post(batch[half:], f"{batch_id}b", progress)
+                return
+            if not batch:  # only a progress count: nothing collected was lost, the next post carries a newer count
+                self.log("progress not accepted", batch=batch_id, error=str(exc)[:200], level="warn")
                 return
             with self._lock:
                 self.lost += len(batch)

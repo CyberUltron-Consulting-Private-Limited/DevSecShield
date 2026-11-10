@@ -13,21 +13,21 @@ assert.equal(
     scan_metadata: { repo_url: null, zip_file_used: true },
   }),
   "The scan failed: Error occured while running agent : Error in getting vector store: QDRANT_API_KEY not found. " +
-    "Create a new scan to run it again.",
+    "Use Run again to start it as a new scan with the same settings.",
 );
 // info stored as a JSON string
 assert.equal(
   scanFailureMessage({ info: JSON.stringify({ error: "Clone failed." }) }),
-  "The scan failed: Clone failed. Create a new scan to run it again.",
+  "The scan failed: Clone failed. Use Run again to start it as a new scan with the same settings.",
 );
 // an older server that sent scan_metadata.error_message
 assert.equal(
   scanFailureMessage({ info: null, scan_metadata: { error_message: "boom" } }),
-  "The scan failed: boom. Create a new scan to run it again.",
+  "The scan failed: boom. Use Run again to start it as a new scan with the same settings.",
 );
 // nothing stored
-assert.equal(scanFailureMessage({ info: null, scan_metadata: {} }), "The scan failed. Create a new scan to run it again.");
-assert.equal(scanFailureMessage(undefined), "The scan failed. Create a new scan to run it again.");
-assert.equal(scanFailureMessage({ info: { error: "   " } }), "The scan failed. Create a new scan to run it again.");
-assert.equal(scanFailureMessage({ info: "not json" }), "The scan failed. Create a new scan to run it again.");
+assert.equal(scanFailureMessage({ info: null, scan_metadata: {} }), "The scan failed. Use Run again to start it as a new scan with the same settings.");
+assert.equal(scanFailureMessage(undefined), "The scan failed. Use Run again to start it as a new scan with the same settings.");
+assert.equal(scanFailureMessage({ info: { error: "   " } }), "The scan failed. Use Run again to start it as a new scan with the same settings.");
+assert.equal(scanFailureMessage({ info: "not json" }), "The scan failed. Use Run again to start it as a new scan with the same settings.");
 console.log("scanFailure tests passed");
