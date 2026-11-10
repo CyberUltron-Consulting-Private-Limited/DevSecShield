@@ -58,7 +58,7 @@ import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 import { readinessText } from "@/utils/cbomReadiness";
-import { isBrokenToday, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
+import { inventoryRows, isBrokenToday, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
 import { importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
 import {
   buildRefAliasMap,
@@ -1092,6 +1092,8 @@ export default function CbomResults({
   // A code scan's coverage: archives, images, binaries and firmware it skipped or only counted (null when none)
   const coverageReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_coverage ?? null) as CbomCoverageReport | null;
   const informationalRows = dashboard?.card_data?.total_informational ?? 0;
+  // Every crypto asset (findings + clean inventory) for the readiness gauge, as the PDF and the scan list count them
+  const allRows = useMemo(() => inventoryRows(data, findingsList ?? []), [data, findingsList]);
 
   // Crypto-asset charts from the aibom CBOM lane's run-object (C9). Present only
   // on scans produced by the reconciled aibom lane; legacy worker CBOM scans
@@ -1430,6 +1432,7 @@ export default function CbomResults({
               compliance={cryptoCompliance}
               onAttest={handleCertInAttest}
               findings={findingsList ?? []}
+              inventory={allRows}
               onOpenFinding={(f) => setSelectedFinding(f)}
             />
           )}

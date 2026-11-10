@@ -74,10 +74,10 @@ def test_a_reset_pool_node_is_taken_back_by_its_pod_with_the_pool_token(api, wor
         assert [(n.id, n.name, n.mode) for n in rows] == [(node_id, "k8s-worker-a", "agent")]  # no duplicate
         assert s.get(CbomNodePool, pool["id"]).enrollments == 1  # a full pool still takes its node back
         assert len(s.exec(select(CbomCollectionSource).where(CbomCollectionSource.node_id == node_id)).all()) == 1
-    # the single-use token the reset issued is void once the pod has its node back (no other pod can take the row)
-    with pytest.raises(node_api.Unauthorized):
-        _client(api).enroll({"registration_token": reset.json()["registration_token"], "mode": "agent",
-                             "node_name": "k8s-worker-b"})
+    # a reset pool node gets no registration token at all (r1 N1): nothing a standalone install could take it with
+    assert reset.json()["registration_token"] is None
+    with Session(engine) as s:
+        assert s.get(CbomScanNode, node_id).registration_token_hash is None
 
 
 def test_a_deleted_pool_node_comes_back_as_a_new_node_within_the_cap(api, world, tmp_path, monkeypatch):

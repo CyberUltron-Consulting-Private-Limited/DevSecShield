@@ -84,6 +84,7 @@ import {
   TestStatusBadge,
   Truncate,
   nodeStatusLabel,
+  useMenuReveal,
   usePolledJob,
   type Tone,
 } from "./shared";
@@ -345,6 +346,7 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
   const [formNonce, setFormNonce] = useState(0);
   const [testView, setTestView] = useState<{ sourceId: number; jobId: number | null } | null>(null);
   const [deleting, setDeleting] = useState<CbomSource | null>(null);
+  const rowMenu = useMenuReveal();
 
   const nodesQuery = useQuery({
     queryKey: cbomSourcesKeys.nodes(teamId),
@@ -406,14 +408,16 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
     setFormNonce((n) => n + 1);
     window.setTimeout(() => scrollToId("servers-form"), 0);
   };
+  // From the row menu: the form is revealed when the menu has closed (reveal.ts), not here.
   const startEdit = (source: CbomSource) => {
     setEditing(source);
     setTestView(source.last_test_status === "never" ? null : { sourceId: source.id, jobId: source.last_test_job_id });
-    window.setTimeout(() => scrollToId("servers-form"), 0);
+    rowMenu.request("servers-form");
   };
-  const showResults = (source: CbomSource) => {
+  const showResults = (source: CbomSource, fromMenu = false) => {
     setTestView({ sourceId: source.id, jobId: source.last_test_job_id });
-    window.setTimeout(() => scrollToId("servers-test"), 0);
+    if (fromMenu) rowMenu.request("servers-test");
+    else window.setTimeout(() => scrollToId("servers-test"), 0);
   };
   const onSaved = (source: CbomSource, jobId: number | null, tested: boolean) => {
     if (tested) {
@@ -438,6 +442,7 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
   if ((nodesQuery.isError && !nodesQuery.data) || (sourcesQuery.isError && !sourcesQuery.data)) {
     return (
       <ErrorBlock
+        error={nodesQuery.error ?? sourcesQuery.error}
         onRetry={() => {
           nodesQuery.refetch();
           sourcesQuery.refetch();
@@ -570,7 +575,7 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" onCloseAutoFocus={rowMenu.onCloseAutoFocus}>
                             <DropdownMenuItem className="cursor-pointer" onSelect={() => startEdit(source)} data-testid={`servers-edit-${source.id}`}>
                               <Pencil className="h-4 w-4" />
                               Edit
@@ -585,7 +590,7 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
                               Run connection test
                             </DropdownMenuItem>
                             {source.last_test_status !== "never" && (
-                              <DropdownMenuItem className="cursor-pointer" onSelect={() => showResults(source)}>
+                              <DropdownMenuItem className="cursor-pointer" onSelect={() => showResults(source, true)}>
                                 <Server className="h-4 w-4" />
                                 Test results
                               </DropdownMenuItem>

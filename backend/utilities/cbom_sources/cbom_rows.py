@@ -45,6 +45,23 @@ def display_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def page_row(row: dict[str, Any]) -> dict[str, Any]:
+    """A code-scan row as the results page receives it (GET scan ``data``, the CI run page): ``display_row``, then
+    placeholders for an unknown type or strength.  The page's PQC readiness gauge counts these rows by the rule
+    cbom_metrics.CodeRowSummary applies to the stored rows (lab UI r1 F3: the page counted the findings only and said
+    0 % where the PDF and the scan list said 10 %), so they must be the rows the backend counts."""
+    if not isinstance(row, dict):
+        return row
+    out = dict(display_row(row))
+    kind = out.get("algorithm_type")
+    if not kind or str(kind).lower() in ("unknown", "none", "null"):
+        out["algorithm_type"] = out.get("asset_type") or "other"
+    strength = out.get("crypto_strength")
+    if not strength or str(strength).lower() in ("unknown", "none", "null"):
+        out["crypto_strength"] = "not-applicable"
+    return out
+
+
 def is_finding(row: dict[str, Any]) -> bool:
     """Whether a CBOM code-scan row is a FINDING (counted on dashboards, reports and tickets) or clean inventory.
 
@@ -64,4 +81,4 @@ def is_finding(row: dict[str, Any]) -> bool:
     return bool(row.get("weak") is True or row.get("quantum_vulnerable") is True)
 
 
-__all__ = ["display_row", "is_finding", "WEAK_EXTRA_CODES"]
+__all__ = ["display_row", "is_finding", "page_row", "WEAK_EXTRA_CODES"]

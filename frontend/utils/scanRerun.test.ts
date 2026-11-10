@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { readRerun, rerunNotes, rerunPrefill, rerunTitle, saveRerun } from "./scanRerun";
+import { OPTION_KEYS, readRerun, rerunNotes, rerunPrefill, rerunTitle, saveRerun } from "./scanRerun";
 
 // what GET /{team}/{type}/scan/{id} returns for a failed scan (scan_metadata from backend utilities/db/metadata.py)
 const sast = {
@@ -67,5 +67,18 @@ for (const [file, type] of Object.entries(types)) {
   assert.ok(src.includes(`<RunAgainButton type="${type}" teamId={team_id} scan={query.data} />`), `${file}: Run again on a failed scan`);
   assert.ok(src.includes(`useRerunPrefill("${type}", scan_id,`), `${file}: the new scan is prefilled`);
   assert.ok(/RerunNotice prefill=\{rerun\}/.test(src), `${file}: says what to give again`);
+  // every option the server returns for Run again (lab UI r1 F4) is put back in the sidebar
+  for (const key of OPTION_KEYS[type as keyof typeof OPTION_KEYS]) {
+    assert.ok(src.includes(`p.options.${key}`), `${file}: applies ${key}`);
+  }
+}
+// the server returns those options in scan_metadata (backend tests/test_scan_metadata_rerun.py reads OPTION_KEYS)
+const backendMeta = fs.readFileSync(path.join(__dirname, "../../backend/utilities/dashboard/scan_metadata.py"), "utf8");
+for (const [type, keys] of Object.entries(OPTION_KEYS)) {
+  const allowed = new RegExp(`"${type}": \\(([^)]*)\\)`).exec(backendMeta)?.[1] ?? "";
+  for (const key of ["repo_type", ...keys]) {
+    if (type === "cbom" && key === "scan_binaries") continue; // returned on its own (scan_binaries) for every CBOM scan
+    assert.ok(allowed.includes(`"${key}"`), `backend returns ${type}.${key}`);
+  }
 }
 console.log("scanRerun tests passed");

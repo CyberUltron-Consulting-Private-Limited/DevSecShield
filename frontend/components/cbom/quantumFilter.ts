@@ -2,7 +2,7 @@
 
 export type QuantumFilter = "all" | "safe" | "broken" | "vulnerable";
 
-interface QuantumFields {
+export interface QuantumFields {
   quantum_safe?: boolean | null;
   crypto_strength?: string | null;
 }
@@ -32,9 +32,19 @@ export interface QuantumCounts {
   readinessPct: number | null;
 }
 
+/** One decimal as Python's round(x, 1) (the backend's quantum_readiness_pct): nearest, an exact tie to even. A tie
+ * needs x to end in .25 or .75 exactly (x = odd / 4); Math.round would give 6.3 for 1 of 16 where the PDF says 6.2. */
+export function round1(x: number): number {
+  if (Number.isInteger(x * 4) && !Number.isInteger(x * 2)) {
+    const whole = Math.floor(x);
+    return Number((whole + (x - whole === 0.25 ? 0.2 : 0.8)).toFixed(1));
+  }
+  return Number(x.toFixed(1)); // the exact value of x, rounded to nearest (no tie left)
+}
+
 /** The PQC readiness gauge and its legend count the rows by the Quantum column's rule: a row that is broken today
- * is judged and is NOT quantum-safe (MD5 and DES used to count as safe: a lab scan showed 77 %). Same rule as the
- * backend's cbom_metrics.CodeRowSummary (scan card and PDF). */
+ * is judged and is NOT quantum-safe (MD5 and DES used to count as safe: a lab scan showed 77 %). Same rule and the
+ * same rounding as the backend's cbom_metrics.CodeRowSummary (scan dashboard, scan list and PDF). */
 export function quantumCounts(rows: QuantumFields[]): QuantumCounts {
   let safe = 0;
   let broken = 0;
@@ -45,6 +55,19 @@ export function quantumCounts(rows: QuantumFields[]): QuantumCounts {
     else if (r.quantum_safe === false) vulnerable += 1;
   }
   const judged = safe + broken + vulnerable;
-  const readinessPct = judged ? Math.round((1000 * safe) / judged) / 10 : null;
+  const readinessPct = judged ? round1((100 * safe) / judged) : null;
   return { safe, broken, vulnerable, judged, readinessPct };
+}
+
+/** The rows the readiness gauge counts: EVERY cryptographic asset of the scan, findings and clean inventory (an
+ * ML-KEM-768 row with no finding is a quantum-safe asset), as the PDF and the scan list do (cbom_metrics over
+ * scan_data.results). The GET scan's ``data`` is that row list; the findings table lists findings only, so passing
+ * it made the page say 0 % where the PDF and the scan list said 10 % (lab UI r1 F3, scan #51). Falls back to the
+ * findings when the scan carries no row list. */
+export function inventoryRows(data: unknown, findings: QuantumFields[]): QuantumFields[] {
+  if (Array.isArray(data)) {
+    const rows = data.filter((r): r is QuantumFields => !!r && typeof r === "object" && !Array.isArray(r));
+    if (rows.length > 0) return rows;
+  }
+  return findings;
 }

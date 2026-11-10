@@ -186,6 +186,7 @@ class Gap:
     prefixes: tuple[str, ...]  # () = the whole target
     incomplete: bool  # assets under it may be listed with facts missing
     types: tuple[str, ...] = ()  # () = every asset type; else only these types (node checks, NODE_CHECK_TYPES)
+    reason: str | None = None  # the coverage row's detail, shown with what it left "not read"
 
     def covers(self, view: View, *, listed: bool) -> bool:
         if listed and not self.incomplete:
@@ -234,16 +235,32 @@ def job_gaps(rows: Iterable[CbomCollectedAsset]) -> list[Gap]:
         facts = row.facts or {}
         if str(facts.get("status") or "") in NOT_GAPS:
             continue
+        reason = _gap_reason(facts)
         scope = facts.get("scope")
         prefixes = tuple(p for p in scope if isinstance(p, str) and p) if isinstance(scope, list) else ()
         typed = None if prefixes or "scope" in facts else _node_check_types(str(facts.get("check") or ""))
         if typed is not None:
-            out.append(Gap(target=str(row.target or ""), prefixes=(), incomplete=typed[1], types=typed[0]))
+            out.append(Gap(target=str(row.target or ""), prefixes=(), incomplete=typed[1], types=typed[0],
+                           reason=reason))
             continue
         # no scope: nothing says which assets the gap left out, so it covers its whole target, listed ones included
         out.append(Gap(target=str(row.target or ""), prefixes=prefixes,
-                       incomplete=bool(facts.get("incomplete")) or not prefixes))
+                       incomplete=bool(facts.get("incomplete")) or not prefixes, reason=reason))
     return out
+
+
+def _gap_reason(facts: Mapping[str, Any]) -> str | None:
+    """Why the gap's assets were not read: the coverage row's detail ("172.31.67.4 did not answer on any listed port
+    ..."), else its check and status."""
+    detail = str(facts.get("detail") or "").strip()
+    if detail:
+        return detail[:300]
+    check, status = str(facts.get("check") or "").strip(), str(facts.get("status") or "").strip()
+    return ": ".join(p for p in (check, status) if p)[:300] or None
+
+
+def _gap_for(view: View, gaps: list[Gap], *, listed: bool) -> Gap | None:
+    return next((g for g in gaps if g.covers(view, listed=listed)), None)
 
 
 def readiness(views: Mapping[str, View]) -> float | None:
@@ -260,9 +277,11 @@ def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterabl
     gaps = list(gaps)
     added = [after[i] for i in sorted(after) if i not in before]
     gone = [before[i] for i in sorted(before) if i not in after]
-    removed = [v for v in gone if not any(g.covers(v, listed=False) for g in gaps)]
-    not_read: list[dict[str, Any]] = [{**v.public(), "asset_removed": True, "codes": sorted(v.codes)}
-                                      for v in gone if any(g.covers(v, listed=False) for g in gaps)]
+    removed = [v for v in gone if _gap_for(v, gaps, listed=False) is None]
+    # "reason": the covering coverage row's detail, so a list of what was not read says why (lab UI r1 F2)
+    not_read: list[dict[str, Any]] = [
+        {**v.public(), "asset_removed": True, "codes": sorted(v.codes), "reason": gap.reason}
+        for v in gone if (gap := _gap_for(v, gaps, listed=False)) is not None]
     changed: list[dict[str, Any]] = []
     opened: list[dict[str, Any]] = []
     resolved: list[dict[str, Any]] = []
@@ -279,8 +298,9 @@ def compare(before: Mapping[str, View], after: Mapping[str, View], gaps: Iterabl
         for code in sorted(a.codes - b.codes):
             opened.append({**a.public(), "code": code})
         vanished = sorted(b.codes - a.codes)
-        if vanished and any(g.covers(b, listed=True) for g in gaps):
-            not_read.append({**b.public(), "asset_removed": False, "codes": vanished})
+        gap = _gap_for(b, gaps, listed=True) if vanished else None
+        if gap is not None:
+            not_read.append({**b.public(), "asset_removed": False, "codes": vanished, "reason": gap.reason})
             continue
         for code in vanished:
             resolved.append({**b.public(), "code": code, "asset_removed": False})
@@ -599,6 +619,33 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         "complete_sources": sum(1 for j in jobs if job_comparable(j)[0]),
         "assets": sum(int(j.asset_count or 0) for j in jobs), "events": _kind_counts(rows[:EVENT_CAP])})
     return stored
+
+
+def run_not_read(session: Session, run: CbomCollectionRun) -> list[dict[str, Any]]:
+    """What each complete collection of ``run`` did not read again (under one of its coverage gaps) that the source's
+    previous complete collection had: the same comparison as ``record_run_drift``, whose events leave these out
+    (they are neither removed nor resolved), so the run's "Changes" can list them apart with the reason (lab UI r1
+    F2: a stopped TLS target silently dropped out)."""
+    sources = _sources(session, run.team_id)
+    out: list[dict[str, Any]] = []
+    for job in _run_jobs(session, run):
+        if not job_comparable(job)[0]:
+            continue
+        a_rows = _job_assets(session, job)
+        gaps = job_gaps(a_rows)
+        if not gaps:  # nothing is "not read" without a gap
+            continue
+        src = sources.get(job.source_id or 0)
+        ref, name = ID.job_source_ref(job, src), ID.job_source_name(job, src)
+        base = _baseline_job(session, job, ref, sources)
+        if base is None:
+            continue
+        base_run = session.get(CbomCollectionRun, base.run_id) if base.run_id else None
+        reclassify = rules_differ(base_run, run)
+        diff = compare(node_views(_job_assets(session, base), ref, reclassify=reclassify),
+                       node_views(a_rows, ref, reclassify=reclassify), gaps)
+        out += [{**d, "source_name": name} for d in diff["not_read"]]
+    return out
 
 
 def _kind_counts(rows: list[dict[str, Any]]) -> dict[str, int]:

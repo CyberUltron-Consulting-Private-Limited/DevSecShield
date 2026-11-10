@@ -212,6 +212,53 @@ export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; prox
   ].join("\n")
 }
 
+/** The server's reason for refusing a request (a 4xx with a ``detail`` sentence, e.g. 403 "User is not in team"), to
+ * show instead of a bare "Could not load this section" (lab UI r1: /7/cbom/sources for a team one is not in), as the
+ * toasts do since L1 (utils/error-handler.ts). Null for a network error, a 401 (the client signs in again), a 5xx or
+ * a detail that is not a sentence (a validation list). */
+export function refusalReason(error: unknown): string | null {
+  const response = (error as { response?: { status?: unknown; data?: unknown } } | null | undefined)?.response
+  const status = typeof response?.status === "number" ? response.status : 0
+  if (status < 400 || status >= 500 || status === 401) return null
+  const detail = (response?.data as { detail?: unknown } | null | undefined)?.detail
+  return typeof detail === "string" && detail.trim() ? detail.trim().slice(0, 300) : null
+}
+
+/** "Not read in this run" (lab UI r1 F2): assets of a compared source that the later run did not read because of a
+ * coverage gap (a stopped target, a denied check). They are neither removed nor resolved, so they are listed apart,
+ * grouped by why they were not read (the coverage row's detail, from the server) and by source. */
+export const NOT_READ_NO_REASON = "The scan node reported a coverage gap here"
+export function groupNotRead<T extends { reason?: string | null; source_name?: string | null }>(
+  items: T[],
+): { reason: string; source: string | null; items: T[] }[] {
+  const groups = new Map<string, { reason: string; source: string | null; items: T[] }>()
+  for (const item of items) {
+    const reason = item.reason?.trim() || NOT_READ_NO_REASON
+    const source = item.source_name ?? null
+    const key = `${source ?? ""}\u0000${reason}`
+    const group = groups.get(key) ?? { reason, source, items: [] }
+    group.items.push(item)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+}
+
+/** What Reset says for a node of an agent pool (a DaemonSet pod): the server issues it no registration token, since
+ * the pod enrolls again by itself with the pool token after its next heartbeat (every 30 s) is refused (lab UI r1 N1:
+ * Reset opened "Register <node> again" with a standalone Helm command and a fresh 24-hour token). */
+export const POOL_NODE_REENROLLS = "The pod enrolls again by itself within a minute."
+
+/** After New registration token / Reset: the install wizard with the token, or (a pool node, no token) nothing to copy. */
+export function registrationOutcome(data: { registration_token: string | null }): { wizard: true; token: string } | { wizard: false; note: string } {
+  return data.registration_token ? { wizard: true, token: data.registration_token } : { wizard: false, note: POOL_NODE_REENROLLS }
+}
+
+/** A row menu offers "New registration token" only to a standalone node that has not registered; a pool node is
+ * never given one (the server refuses), so it is offered Reset instead. */
+export function offersRegistrationToken(node: { pool_id?: number | null; status: string }): boolean {
+  return node.pool_id == null && (node.status === "pending_registration" || node.status === "registration_expired")
+}
+
 export function ansibleSnippet(publicKey: string, user: string): string {
   return [
     "- name: ZeroShield CBOM read-only account",

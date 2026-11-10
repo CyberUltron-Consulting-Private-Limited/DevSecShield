@@ -383,6 +383,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   if (!settings || (rangesQuery.isError && !rangesQuery.data)) {
     return (
       <ErrorBlock
+        error={settingsQuery.error ?? rangesQuery.error}
         onRetry={() => {
           settingsQuery.refetch();
           rangesQuery.refetch();

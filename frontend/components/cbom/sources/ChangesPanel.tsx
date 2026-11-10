@@ -24,7 +24,7 @@ import {
 } from "@/utils/api/cbom_ops";
 
 import { ASSET_TYPE_LABEL } from "./RunResults";
-import { formatDateTime, pluralize } from "./logic";
+import { formatDateTime, groupNotRead, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, StatusBadge, type Tone } from "./shared";
 
 export const DRIFT_LABEL: Record<CbomDriftKind, [string, Tone]> = {
@@ -47,7 +47,7 @@ export function RunChanges({ teamId, runId, finished }: { teamId: number; runId:
   });
   if (!finished) return <p className="text-xs text-zinc-500">Changes are listed when the run has finished.</p>;
   if (q.isLoading) return <LoadingBlock />;
-  if (q.isError || !q.data) return <ErrorBlock onRetry={() => q.refetch()} />;
+  if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
   const events = q.data.events;
   const shown = all ? events : events.slice(0, 25);
   return (
@@ -56,7 +56,8 @@ export function RunChanges({ teamId, runId, finished }: { teamId: number; runId:
         {(Object.keys(DRIFT_LABEL) as CbomDriftKind[]).filter((k) => q.data.counts[k]).map((k) => (
           <StatusBadge key={k} tone={DRIFT_LABEL[k][1]}>{DRIFT_LABEL[k][0]}: {q.data.counts[k]}</StatusBadge>
         ))}
-        {events.length === 0 && (
+        {!!q.data.not_read_count && <StatusBadge tone="amber">Not read: {q.data.not_read_count}</StatusBadge>}
+        {events.length === 0 && !q.data.not_read?.length && (
           <p className="text-xs text-zinc-500">
             No changes: either nothing changed since each source&apos;s previous complete collection, or this is the first one.
           </p>
@@ -80,6 +81,7 @@ export function RunChanges({ teamId, runId, finished }: { teamId: number; runId:
           {all ? "Show fewer" : `Show all ${events.length}`}
         </button>
       )}
+      <NotReadList items={q.data.not_read} total={q.data.not_read_count} testId="run-changes-not-read" />
     </div>
   );
 }
@@ -103,6 +105,45 @@ function AssetList({ title, items, tone, testId }: { title: string; items: CbomD
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** What the later run did not read (a coverage gap: a stopped target, a denied check). Not removed, findings not
+ * resolved: never listed with "resolved" (lab UI r1 F2: the Compare dialog left these out entirely). */
+export function NotReadList({ items, total, testId }: { items: CbomDiffAsset[] | undefined; total?: number; testId: string }) {
+  if (!items?.length) return null;
+  const count = Math.max(total ?? 0, items.length);
+  return (
+    <div data-testid={testId} className="rounded-md border border-dashed border-amber-500/70 dark:border-amber-500/50 bg-amber-50/60 dark:bg-amber-950/20 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300 mb-1">
+        <StatusBadge tone="amber">{count}</StatusBadge> not read in this run
+      </p>
+      <p className="text-xs text-zinc-600 dark:text-zinc-400 mb-2">
+        Not confirmed either way: these are not counted as removed, and their findings stay open until a run reads them again.
+      </p>
+      <div className="space-y-2 max-h-56 overflow-y-auto">
+        {groupNotRead(items.slice(0, 200)).map((g) => (
+          <div key={`${g.source ?? ""}-${g.reason}`}>
+            <p className="text-xs text-amber-800 dark:text-amber-300 [overflow-wrap:anywhere]" data-testid={`${testId}-reason`}>
+              {g.source ? <span className="font-medium">{g.source}: </span> : null}{g.reason}
+            </p>
+            <ul className="mt-0.5 space-y-0.5 text-xs text-zinc-700 dark:text-zinc-300">
+              {g.items.map((a, i) => (
+                <li key={`${a.key}-${i}`} className="[overflow-wrap:anywhere]">
+                  {a.label}
+                  <span className="text-zinc-500"> · {ASSET_TYPE_LABEL[a.type] ?? a.type}</span>
+                  <span className="ml-1 text-zinc-500">
+                    {a.asset_removed ? "(not seen in this run" : "(listed, some facts not read"}
+                    {a.codes?.length ? `; findings not confirmed: ${a.codes.join(", ")})` : ")"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      {count > Math.min(items.length, 200) && <p className="mt-1 text-xs text-zinc-500">Showing {Math.min(items.length, 200)} of {count}.</p>}
     </div>
   );
 }
@@ -152,6 +193,7 @@ export function DiffView({ diff }: { diff: CbomDiff }) {
           </div>
         )}
       </div>
+      <NotReadList items={diff.not_read} total={diff.counts?.not_read} testId="diff-not-read" />
       {diff.truncated && <p className="text-xs text-zinc-500">Lists are cut at 500 entries each.</p>}
     </div>
   );
@@ -194,7 +236,7 @@ export function CompareDialog({ teamId, runId, runs, onClose }: {
             </SelectContent>
           </Select>
         </div>
-        {q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock onRetry={() => q.refetch()} /> : <DiffView diff={q.data} />}
+        {q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock error={q.error} onRetry={() => q.refetch()} /> : <DiffView diff={q.data} />}
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>Close</Button>
         </DialogFooter>
@@ -219,7 +261,7 @@ export function CodeChanges({ teamId, scanId }: { teamId: number; scanId: number
         Changes since the previous scan of this repository and branch
       </summary>
       <div className="mt-3">
-        {!open ? null : q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock onRetry={() => q.refetch()} /> : (
+        {!open ? null : q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock error={q.error} onRetry={() => q.refetch()} /> : (
           <>
             {q.data.against_scan_id && <p className="text-xs text-zinc-500 mb-2">Compared with scan #{q.data.against_scan_id}. Fixed findings of that scan are marked fixed and their Jira tickets closed.</p>}
             <DiffView diff={q.data} />
@@ -240,7 +282,7 @@ export function RunInsights({ teamId, runId, active }: { teamId: number; runId: 
     refetchInterval: active ? 20000 : false,
   });
   if (q.isLoading) return <LoadingBlock />;
-  if (q.isError || !q.data) return <ErrorBlock onRetry={() => q.refetch()} />;
+  if (q.isError || !q.data) return <ErrorBlock error={q.error} onRetry={() => q.refetch()} />;
   if (q.data.rows.length === 0) return null;
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-insights">

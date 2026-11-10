@@ -222,7 +222,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
   // Wait for this visit's own fetch: other tabs share this cache entry and may have loaded it before the
   // network ranges or cloud sources existed, and the Start card takes its include defaults from the first data.
   if (overviewQuery.isLoading || (!overviewQuery.isFetchedAfterMount && overviewQuery.isFetching)) return <LoadingBlock />;
-  if (overviewQuery.isError && !overviewQuery.data) return <ErrorBlock onRetry={() => overviewQuery.refetch()} />;
+  if (overviewQuery.isError && !overviewQuery.data) return <ErrorBlock error={overviewQuery.error} onRetry={() => overviewQuery.refetch()} />;
   const overview = overviewQuery.data;
   if (!overview) return <LoadingBlock />;
 
@@ -425,7 +425,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
         {runsQuery.isLoading ? (
           <LoadingBlock />
         ) : runsQuery.isError && !runsQuery.data ? (
-          <ErrorBlock onRetry={() => runsQuery.refetch()} />
+          <ErrorBlock error={runsQuery.error} onRetry={() => runsQuery.refetch()} />
         ) : runs.length === 0 ? (
           <EmptyState
             title="No runs yet"
@@ -801,6 +801,7 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
           ) : runQuery.isError && !run ? (
             <ErrorBlock
               message={httpStatus(runQuery.error) === 404 ? "This run no longer exists." : undefined}
+              error={runQuery.error}
               onRetry={httpStatus(runQuery.error) === 404 ? undefined : () => runQuery.refetch()}
             />
           ) : jobs.length === 0 ? (

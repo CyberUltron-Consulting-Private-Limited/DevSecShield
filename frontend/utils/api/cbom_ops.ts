@@ -20,6 +20,9 @@ export interface CbomDiffAsset {
   asset_removed?: boolean
   new_asset?: boolean
   rule_change?: string
+  /** not_read only: the findings that could not be confirmed, and why (the coverage row's detail) */
+  codes?: string[]
+  reason?: string | null
 }
 
 export interface CbomDiffSource {
@@ -43,6 +46,8 @@ export interface CbomDiff {
   changed?: CbomDiffAsset[]
   opened?: CbomDiffAsset[]
   resolved?: CbomDiffAsset[]
+  /** assets of a compared source that the later run did not read (a coverage gap): neither removed nor resolved */
+  not_read?: CbomDiffAsset[]
   rule_changes?: { key: string; label: string; code: string; direction: string; label_change: string }[]
   readiness?: { before: number | null; after: number | null; delta: number | null }
   counts?: Record<string, number>
@@ -73,6 +78,9 @@ export interface CbomRunChanges {
   recorded: boolean
   counts: Partial<Record<CbomDriftKind, number>>
   events: CbomDriftEvent[]
+  /** not read again under a coverage gap (no event: neither removed nor resolved), with the reason */
+  not_read?: CbomDiffAsset[]
+  not_read_count?: number
 }
 
 export interface CbomHeatCell {

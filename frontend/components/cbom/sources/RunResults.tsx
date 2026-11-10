@@ -190,7 +190,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
   const types = Object.entries(data?.facets.type ?? {}).sort((a, b) => b[1] - a[1]);
 
   if (query.isLoading) return <LoadingBlock />;
-  if (query.isError && !data) return <ErrorBlock onRetry={() => query.refetch()} />;
+  if (query.isError && !data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
   if (!data) return null;
 
   return (

@@ -30,6 +30,14 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
+import { refusalReason } from "./logic";
+import { menuReveal, type MenuReveal } from "./reveal";
+
+/** For a table's row menus whose items move to a form below: see reveal.ts. One per tab, shared by its row menus. */
+export function useMenuReveal(): MenuReveal {
+  const [reveal] = useState(() => menuReveal((id) => document.getElementById(id)));
+  return reveal;
+}
 
 // ---------------------------------------------------------------------------- badges
 export type Tone = "green" | "red" | "amber" | "blue" | "zinc";
@@ -181,10 +189,16 @@ export function LoadingBlock() {
   );
 }
 
-export function ErrorBlock({ message, onRetry }: { message?: string; onRetry?: () => void }) {
+/** ``error``: the failed query's error; a refusal shows the server's reason (refusalReason), never only "Could not
+ * load this section". */
+export function ErrorBlock({ message, error, onRetry }: { message?: string; error?: unknown; onRetry?: () => void }) {
+  const reason = refusalReason(error);
   return (
-    <div className="text-center py-10">
-      <p className="text-zinc-600 dark:text-zinc-400 mb-4">{message ?? "Could not load this section. Please try again."}</p>
+    <div className="text-center py-10" role="alert">
+      <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+        {message ?? reason ?? "Could not load this section. Please try again."}
+        {message && reason && <span className="block mt-1 text-sm">{reason}</span>}
+      </p>
       {onRetry && (
         <Button variant="outline" className="cursor-pointer" onClick={onRetry}>
           Try again

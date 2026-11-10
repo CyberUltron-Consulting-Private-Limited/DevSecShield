@@ -243,7 +243,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
   });
 
   if (evidenceQuery.isLoading) return <LoadingBlock />;
-  if (evidenceQuery.isError && !evidenceQuery.data) return <ErrorBlock onRetry={() => evidenceQuery.refetch()} />;
+  if (evidenceQuery.isError && !evidenceQuery.data) return <ErrorBlock error={evidenceQuery.error} onRetry={() => evidenceQuery.refetch()} />;
   const data = evidenceQuery.data;
   if (!data) return <LoadingBlock />;
 

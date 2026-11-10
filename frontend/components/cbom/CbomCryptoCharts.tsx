@@ -77,7 +77,7 @@ import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
 import type { CbomFinding, CbomGraph } from "@/utils/backend_api";
 import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
-import { quantumCounts } from "@/components/cbom/quantumFilter";
+import { quantumCounts, type QuantumFields } from "@/components/cbom/quantumFilter";
 import { ComplianceMatrix, type AttestHandler, type Compliance } from "@/components/compliance/ComplianceMatrix";
 import { FRAMEWORK_GROUPS_CBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
 import {
@@ -368,10 +368,12 @@ function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
   );
 }
 
-/** 3 — PQC readiness gauge. Counts the scan's rows by the results table's Quantum column ("Quantum-safe" /
- * "Broken today" / "Quantum-vulnerable", quantumFilter.quantumCounts): an algorithm that is broken today is not
- * quantum-ready. Falls back to the stored ``distributions.pqc`` only when the page has no rows. */
-function PqcReadinessGauge({ pqc, rows }: { pqc: CbomDistributions["pqc"]; rows?: CbomFinding[] | null }) {
+/** 3 — PQC readiness gauge. Counts EVERY cryptographic asset of the scan (findings and clean inventory,
+ * quantumFilter.inventoryRows) by the results table's Quantum column ("Quantum-safe" / "Broken today" /
+ * "Quantum-vulnerable", quantumFilter.quantumCounts): an algorithm that is broken today is not quantum-ready. Same
+ * rows and rule as the PDF and the scan list. Falls back to the stored ``distributions.pqc`` only when the page has
+ * no rows. */
+function PqcReadinessGauge({ pqc, rows }: { pqc: CbomDistributions["pqc"]; rows?: QuantumFields[] | null }) {
   const counts = rows && rows.length > 0 ? quantumCounts(rows) : null;
   const safe = counts ? counts.safe : pqc?.quantum_safe ?? 0;
   const vuln = counts ? counts.vulnerable : pqc?.quantum_vulnerable ?? 0;
@@ -389,7 +391,7 @@ function PqcReadinessGauge({ pqc, rows }: { pqc: CbomDistributions["pqc"]; rows?
           <Atom className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           PQC readiness
         </CardTitle>
-        <CardDescription>Quantum-safe share; algorithms broken today are not quantum-ready</CardDescription>
+        <CardDescription>Quantum-safe share of every crypto asset (findings and clean inventory); algorithms broken today are not quantum-ready</CardDescription>
       </CardHeader>
       <CardContent>
         {total === 0 ? (
@@ -1238,6 +1240,7 @@ export function CbomCryptoCharts({
   compliance,
   onAttest,
   findings,
+  inventory,
   onOpenFinding,
 }: {
   distributions?: CbomDistributions | null;
@@ -1248,6 +1251,8 @@ export function CbomCryptoCharts({
   onAttest?: AttestHandler;
   /** Findings list for bom_ref → Dialog join (optional; HoverCard still works). */
   findings?: CbomFinding[] | null;
+  /** Every row of the scan (findings + clean inventory) for the readiness gauge; the findings when absent. */
+  inventory?: QuantumFields[] | null;
   onOpenFinding?: (finding: CbomFinding) => void;
 }) {
   if (!distributions) return null;
@@ -1304,7 +1309,7 @@ export function CbomCryptoCharts({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <AlgorithmDistribution data={distributions.algorithms} />
         <WeakCryptoFindings data={distributions.weakness} />
-        <PqcReadinessGauge pqc={distributions.pqc} rows={findings} />
+        <PqcReadinessGauge pqc={distributions.pqc} rows={inventory ?? findings} />
       </div>
       {hasPqcDetail && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

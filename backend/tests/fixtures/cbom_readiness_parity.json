@@ -1,0 +1,1431 @@
+{
+ "about": "Stored CBOM code-scan rows and the numbers the results page gauge (frontend quantumFilter quantumCounts over page_rows: the stored rows as GET scan data serves them, cbom_rows.page_row), the PDF, the scan dashboard and the scan list (cbom_metrics.CodeRowSummary) must all show. Lab UI r1 F3; read by backend tests/test_cbom_readiness_parity.py and frontend components/cbom/quantumFilter.test.ts.",
+ "cases": [
+  {
+   "name": "scan 51 (lab UI r1 F3): 33 findings + 3 clean rows, 2 of them quantum-safe",
+   "rows": [
+    {
+     "title": "MD5-0",
+     "algorithm_name": "MD5-0",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-0.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-1",
+     "algorithm_name": "MD5-1",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-1.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-2",
+     "algorithm_name": "MD5-2",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-2.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-3",
+     "algorithm_name": "MD5-3",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-3.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-4",
+     "algorithm_name": "MD5-4",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-4.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-5",
+     "algorithm_name": "MD5-5",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-5.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-6",
+     "algorithm_name": "MD5-6",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-6.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-7",
+     "algorithm_name": "MD5-7",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-7.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-8",
+     "algorithm_name": "MD5-8",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-8.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-9",
+     "algorithm_name": "MD5-9",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-9.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-10",
+     "algorithm_name": "MD5-10",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-10.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-11",
+     "algorithm_name": "MD5-11",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-11.py",
+     "impact": "High"
+    },
+    {
+     "title": "RSA-2048-0",
+     "algorithm_name": "RSA-2048-0",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-0.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-1",
+     "algorithm_name": "RSA-2048-1",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-1.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-2",
+     "algorithm_name": "RSA-2048-2",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-2.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-3",
+     "algorithm_name": "RSA-2048-3",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-3.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-4",
+     "algorithm_name": "RSA-2048-4",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-4.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-5",
+     "algorithm_name": "RSA-2048-5",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-5.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "key-0",
+     "algorithm_name": "key-0",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-0.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-1",
+     "algorithm_name": "key-1",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-1.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-2",
+     "algorithm_name": "key-2",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-2.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-3",
+     "algorithm_name": "key-3",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-3.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-4",
+     "algorithm_name": "key-4",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-4.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-5",
+     "algorithm_name": "key-5",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-5.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-6",
+     "algorithm_name": "key-6",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-6.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-7",
+     "algorithm_name": "key-7",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-7.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-8",
+     "algorithm_name": "key-8",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-8.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-9",
+     "algorithm_name": "key-9",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-9.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-10",
+     "algorithm_name": "key-10",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-10.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-11",
+     "algorithm_name": "key-11",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-11.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-12",
+     "algorithm_name": "key-12",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-12.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-13",
+     "algorithm_name": "key-13",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-13.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-14",
+     "algorithm_name": "key-14",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-14.py",
+     "impact": "High"
+    },
+    {
+     "title": "ML-KEM-768",
+     "algorithm_name": "ML-KEM-768",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [],
+     "location": "src/ML-KEM-768.py"
+    },
+    {
+     "title": "AES-256-GCM",
+     "algorithm_name": "AES-256-GCM",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [],
+     "location": "src/AES-256-GCM.py"
+    },
+    {
+     "title": "SHA-256",
+     "algorithm_name": "SHA-256",
+     "algorithm_type": "hash",
+     "asset_type": "hash",
+     "crypto_strength": "strong",
+     "quantum_safe": null,
+     "finding_codes": [],
+     "location": "src/SHA-256.py"
+    }
+   ],
+   "expected": {
+    "rows": 36,
+    "findings": 33,
+    "informational": 3,
+    "safe": 2,
+    "broken": 12,
+    "vulnerable": 6,
+    "judged": 20,
+    "readiness": 10.0
+   },
+   "page_rows": [
+    {
+     "title": "MD5-0",
+     "algorithm_name": "MD5-0",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-0.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-1",
+     "algorithm_name": "MD5-1",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-1.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-2",
+     "algorithm_name": "MD5-2",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-2.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-3",
+     "algorithm_name": "MD5-3",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-3.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-4",
+     "algorithm_name": "MD5-4",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-4.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-5",
+     "algorithm_name": "MD5-5",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-5.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-6",
+     "algorithm_name": "MD5-6",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-6.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-7",
+     "algorithm_name": "MD5-7",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-7.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-8",
+     "algorithm_name": "MD5-8",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-8.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-9",
+     "algorithm_name": "MD5-9",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-9.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-10",
+     "algorithm_name": "MD5-10",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-10.py",
+     "impact": "High"
+    },
+    {
+     "title": "MD5-11",
+     "algorithm_name": "MD5-11",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "WEAK_HASH"
+     ],
+     "location": "src/MD5-11.py",
+     "impact": "High"
+    },
+    {
+     "title": "RSA-2048-0",
+     "algorithm_name": "RSA-2048-0",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-0.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-1",
+     "algorithm_name": "RSA-2048-1",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-1.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-2",
+     "algorithm_name": "RSA-2048-2",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-2.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-3",
+     "algorithm_name": "RSA-2048-3",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-3.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-4",
+     "algorithm_name": "RSA-2048-4",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-4.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2048-5",
+     "algorithm_name": "RSA-2048-5",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2048-5.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "key-0",
+     "algorithm_name": "key-0",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-0.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-1",
+     "algorithm_name": "key-1",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-1.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-2",
+     "algorithm_name": "key-2",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-2.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-3",
+     "algorithm_name": "key-3",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-3.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-4",
+     "algorithm_name": "key-4",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-4.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-5",
+     "algorithm_name": "key-5",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-5.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-6",
+     "algorithm_name": "key-6",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-6.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-7",
+     "algorithm_name": "key-7",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-7.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-8",
+     "algorithm_name": "key-8",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-8.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-9",
+     "algorithm_name": "key-9",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-9.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-10",
+     "algorithm_name": "key-10",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-10.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-11",
+     "algorithm_name": "key-11",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-11.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-12",
+     "algorithm_name": "key-12",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-12.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-13",
+     "algorithm_name": "key-13",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-13.py",
+     "impact": "High"
+    },
+    {
+     "title": "key-14",
+     "algorithm_name": "key-14",
+     "algorithm_type": "key",
+     "asset_type": "key",
+     "crypto_strength": "not-applicable",
+     "quantum_safe": null,
+     "finding_codes": [
+      "HARDCODED_KEY"
+     ],
+     "location": "src/key-14.py",
+     "impact": "High"
+    },
+    {
+     "title": "ML-KEM-768",
+     "algorithm_name": "ML-KEM-768",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [],
+     "location": "src/ML-KEM-768.py"
+    },
+    {
+     "title": "AES-256-GCM",
+     "algorithm_name": "AES-256-GCM",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [],
+     "location": "src/AES-256-GCM.py"
+    },
+    {
+     "title": "SHA-256",
+     "algorithm_name": "SHA-256",
+     "algorithm_type": "hash",
+     "asset_type": "hash",
+     "crypto_strength": "strong",
+     "quantum_safe": null,
+     "finding_codes": [],
+     "location": "src/SHA-256.py"
+    }
+   ]
+  },
+  {
+   "name": "1 of 16 judged is safe: 6.25 rounds to 6.2 (Python round, half to even)",
+   "rows": [
+    {
+     "title": "ML-KEM-768",
+     "algorithm_name": "ML-KEM-768",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [],
+     "location": "src/ML-KEM-768.py"
+    },
+    {
+     "title": "RSA-0",
+     "algorithm_name": "RSA-0",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-0.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-1",
+     "algorithm_name": "RSA-1",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-1.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2",
+     "algorithm_name": "RSA-2",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-3",
+     "algorithm_name": "RSA-3",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-3.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-4",
+     "algorithm_name": "RSA-4",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-4.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-5",
+     "algorithm_name": "RSA-5",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-5.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-6",
+     "algorithm_name": "RSA-6",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-6.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-7",
+     "algorithm_name": "RSA-7",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-7.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-8",
+     "algorithm_name": "RSA-8",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-8.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-9",
+     "algorithm_name": "RSA-9",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-9.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-10",
+     "algorithm_name": "RSA-10",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-10.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-11",
+     "algorithm_name": "RSA-11",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-11.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-12",
+     "algorithm_name": "RSA-12",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-12.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-13",
+     "algorithm_name": "RSA-13",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-13.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-14",
+     "algorithm_name": "RSA-14",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-14.py",
+     "impact": "Medium"
+    }
+   ],
+   "expected": {
+    "rows": 16,
+    "findings": 15,
+    "informational": 1,
+    "safe": 1,
+    "broken": 0,
+    "vulnerable": 15,
+    "judged": 16,
+    "readiness": 6.2
+   },
+   "page_rows": [
+    {
+     "title": "ML-KEM-768",
+     "algorithm_name": "ML-KEM-768",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [],
+     "location": "src/ML-KEM-768.py"
+    },
+    {
+     "title": "RSA-0",
+     "algorithm_name": "RSA-0",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-0.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-1",
+     "algorithm_name": "RSA-1",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-1.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-2",
+     "algorithm_name": "RSA-2",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-2.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-3",
+     "algorithm_name": "RSA-3",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-3.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-4",
+     "algorithm_name": "RSA-4",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-4.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-5",
+     "algorithm_name": "RSA-5",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-5.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-6",
+     "algorithm_name": "RSA-6",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-6.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-7",
+     "algorithm_name": "RSA-7",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-7.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-8",
+     "algorithm_name": "RSA-8",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-8.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-9",
+     "algorithm_name": "RSA-9",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-9.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-10",
+     "algorithm_name": "RSA-10",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-10.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-11",
+     "algorithm_name": "RSA-11",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-11.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-12",
+     "algorithm_name": "RSA-12",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-12.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-13",
+     "algorithm_name": "RSA-13",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-13.py",
+     "impact": "Medium"
+    },
+    {
+     "title": "RSA-14",
+     "algorithm_name": "RSA-14",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "moderate",
+     "quantum_safe": false,
+     "finding_codes": [
+      "QUANTUM_VULNERABLE"
+     ],
+     "location": "src/RSA-14.py",
+     "impact": "Medium"
+    }
+   ]
+  },
+  {
+   "name": "a legacy library row is broken today once display_row reads it",
+   "rows": [
+    {
+     "title": "openssl-1.0.2",
+     "algorithm_name": "openssl-1.0.2",
+     "algorithm_type": "other",
+     "asset_type": "other",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [
+      "VULNERABLE_CRYPTO_LIBRARY"
+     ],
+     "location": "src/openssl-1.0.2.py",
+     "impact": "High"
+    },
+    {
+     "title": "AES-256-GCM",
+     "algorithm_name": "AES-256-GCM",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [],
+     "location": "src/AES-256-GCM.py"
+    }
+   ],
+   "expected": {
+    "rows": 2,
+    "findings": 1,
+    "informational": 1,
+    "safe": 1,
+    "broken": 1,
+    "vulnerable": 0,
+    "judged": 2,
+    "readiness": 50.0
+   },
+   "page_rows": [
+    {
+     "title": "openssl-1.0.2",
+     "algorithm_name": "openssl-1.0.2",
+     "algorithm_type": "library",
+     "asset_type": "other",
+     "crypto_strength": "weak",
+     "quantum_safe": true,
+     "finding_codes": [
+      "VULNERABLE_CRYPTO_LIBRARY"
+     ],
+     "location": "src/openssl-1.0.2.py",
+     "impact": "High",
+     "weak": true
+    },
+    {
+     "title": "AES-256-GCM",
+     "algorithm_name": "AES-256-GCM",
+     "algorithm_type": "algorithm",
+     "asset_type": "algorithm",
+     "crypto_strength": "strong",
+     "quantum_safe": true,
+     "finding_codes": [],
+     "location": "src/AES-256-GCM.py"
+    }
+   ]
+  }
+ ]
+}

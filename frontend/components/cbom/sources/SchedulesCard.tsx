@@ -165,7 +165,7 @@ export default function SchedulesCard({ teamId }: { teamId: number }) {
   return (
     <SectionCard title="Scheduled runs" description="Re-scan on a schedule to see what changed and prove fixes landed">
       <div className="space-y-3" data-testid="schedules-card">
-        {q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock onRetry={() => q.refetch()} /> : (
+        {q.isLoading ? <LoadingBlock /> : q.isError || !q.data ? <ErrorBlock error={q.error} onRetry={() => q.refetch()} /> : (
           <>
             {q.data.schedules.length === 0 && !adding && (
               <EmptyState title="No schedules" body="A weekly run keeps the inventory current and resolves findings that were fixed." />
