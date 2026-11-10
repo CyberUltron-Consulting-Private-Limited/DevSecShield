@@ -344,9 +344,9 @@ class Agent:
         deadline, reason = _deadline(scope, int(job.get("lease_seconds") or 900))
         lease_id = str(job.get("lease_id") or "")
 
-        def poster(assets: list[dict], batch_id: str) -> dict:
+        def poster(assets: list[dict], batch_id: str, progress: dict | None = None) -> dict:
             try:
-                return self.api.assets(job_id, attempt, lease_id, batch_id, assets)
+                return self.api.assets(job_id, attempt, lease_id, batch_id, assets, progress)
             except Unauthorized:  # our ZeroShield revoked the token: stop every job, post nothing more
                 self.on_unauthorized()
                 raise LeaseLost("ZeroShield no longer accepts this node's token") from None

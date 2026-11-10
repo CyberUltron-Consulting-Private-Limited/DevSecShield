@@ -32,7 +32,7 @@ import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { startRefusal } from "./startRefusal";
 import { SourceMetadataCard } from "./SourceMetadata";
-import { credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
+import { addressProgress, credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
 import {
   Checkbox2,
   ConfirmDialog,
@@ -833,6 +833,11 @@ function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: n
                           <JobStatusBadge status={job.status} title={job.waiting_reason} />
                           {job.waiting_reason && (
                             <p className="mt-1 whitespace-normal text-xs text-zinc-500">{job.waiting_reason}</p>
+                          )}
+                          {addressProgress(job) && (
+                            <p className="mt-0.5 whitespace-normal text-xs text-zinc-700 dark:text-zinc-300" data-testid={`review-job-progress-${job.id}`}>
+                              {addressProgress(job)}
+                            </p>
                           )}
                         </TableCell>
                         <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.asset_count ?? 0}</TableCell>

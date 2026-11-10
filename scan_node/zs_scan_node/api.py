@@ -248,8 +248,11 @@ class Api:
         status, data = self.call("POST", "/cbom/node/jobs/claim", body, retries=1)
         return None if status == 204 else data
 
-    def assets(self, job_id: int, attempt: int, lease_id: str, batch_id: str, assets: list[dict]) -> dict:
-        body = {"lease_id": lease_id, "batch_id": batch_id, "assets": assets}
+    def assets(self, job_id: int, attempt: int, lease_id: str, batch_id: str, assets: list[dict],
+               progress: dict | None = None) -> dict:
+        body: dict = {"lease_id": lease_id, "batch_id": batch_id, "assets": assets}
+        if progress is not None:  # a network range: {"done": addresses swept, "total": addresses in scope}
+            body["progress"] = progress
         return self.call("POST", f"/cbom/node/jobs/{job_id}/assets", body, job=f"{job_id}/{attempt}",
                          lease_sensitive=True)[1] or {}
 

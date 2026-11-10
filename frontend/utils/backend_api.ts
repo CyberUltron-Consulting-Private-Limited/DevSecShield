@@ -4258,6 +4258,9 @@ export interface CbomJob {
     runner?: "node" | "cloud"
     samples: string[]
     server_time: string
+    /** A network range while it runs: addresses swept of the addresses in scope (null: not reported, e.g. an older
+     * scan node, or the job is not running). */
+    progress?: { done: number; total: number } | null
 }
 
 export type CbomImpact = "Critical" | "High" | "Medium" | "Low"

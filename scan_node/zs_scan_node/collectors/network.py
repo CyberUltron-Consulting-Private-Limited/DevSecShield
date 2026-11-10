@@ -613,6 +613,8 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
             ctx.log("address error", target=ip, error=exc.__class__.__name__, level="warn")
             ctx.outcome(ip, "error", f"node error ({exc.__class__.__name__})")
             return 0
+        finally:
+            ctx.address_done()
 
     def _do_address(ip: str, mode: str):
         started = time.monotonic()
@@ -707,15 +709,20 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
         ctx.outcome(ip, "ok", "; ".join(failures)[:250] if failures else None, started=started, assets=assets)
         return len(open_eps)
 
+    # every address in scope, once: the job reports "N of M addresses" while it runs
+    addresses = list(_addresses(ctx, ranges))
+    ctx.set_progress_total(len(addresses))
     with cf.ThreadPoolExecutor(max_workers=parallel) as pool:
         pending: set[cf.Future] = set()
-        for ip, mode in _addresses(ctx, ranges):
+        for ip, mode in addresses:
             if open_endpoints >= MAX_OPEN_ENDPOINTS:
                 truncated = True
                 ctx.outcome(ip, "skipped_deadline", "open-endpoint cap reached")
+                ctx.address_done()
                 continue
             if ctx.should_stop(network=True):
                 ctx.outcome(ip, ctx.should_stop(network=True) or "skipped_deadline")
+                ctx.address_done()
                 continue
             pending.add(pool.submit(do_address, ip, mode))
             if len(pending) >= parallel * 2:

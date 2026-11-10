@@ -99,6 +99,7 @@ def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings
 def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: CbomCollectionSettings,
                now: _dt.datetime, source: CbomCollectionSource | None = None) -> dict[str, Any]:
     params = dict(job.params or {})
+    progress = (job.result or {}).get("progress")
     return {
         "id": job.id,
         "run_id": job.run_id,
@@ -116,7 +117,11 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
         "claimed_at": iso_z(job.claimed_at),
         "finished_at": iso_z(job.finished_at),
         # per-target rows are served by /jobs/{id}/assets and /runs/{id}/assets, not on every poll
-        "result": {k: v for k, v in (job.result or {}).items() if k not in ("targets",)},
+        "result": {k: v for k, v in (job.result or {}).items() if k not in ("targets", "progress")},
+        # a network range while it runs ("N of M addresses"); null for older nodes, other jobs and ended jobs
+        "progress": ({"done": progress["done"], "total": progress["total"]}
+                     if job.status == "claimed" and isinstance(progress, dict) and progress.get("attempt") == job.attempts
+                     else None),
         "error": job.error,
         "outcome": job.outcome,
         "asset_count": job.asset_count,
