@@ -96,6 +96,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
     by_type: Dict[str, int] = {str(k).strip().lower(): v for k, v in summary.algorithm_types.items()}
     quantum_vulnerable = summary.quantum["quantum_vulnerable"]
     quantum_safe_count = summary.quantum["quantum_safe"]
+    broken_today = summary.quantum["broken_today"]  # the results table's "Broken today": not counted as quantum-safe
     avg_risk = summary.average_risk
     readiness = summary.readiness_pct  # one definition for every CBOM surface (cbom_metrics.quantum_readiness_pct)
     readiness_text = "n/a" if readiness is None else f"{readiness:.1f}%"  # as the team deliverables print it
@@ -131,6 +132,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                 [INFORMATIONAL_LABEL + " (no finding)", str(informational)],
                 ["Quantum-vulnerable algorithms", str(quantum_vulnerable)],
                 ["Quantum-safe algorithms", str(quantum_safe_count)],
+                ["Broken today (classically broken, not quantum-safe)", str(broken_today)],
                 ["Quantum readiness", readiness_text],
                 ["Weak algorithms", str(summary.weak)],
                 ["Average risk score", f"{avg_risk:.1f} / 10"],
@@ -145,6 +147,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
         (INFORMATIONAL_LABEL + " (no finding)", str(informational)),
         ("Quantum-vulnerable", str(quantum_vulnerable)),
         ("Quantum-safe", str(quantum_safe_count)),
+        ("Broken today", str(broken_today)),
         ("Average risk score (0–10)", f"{avg_risk:.1f}"),
         ("Report generated", datetime.now().strftime("%B %d, %Y at %I:%M %p")),
     ]

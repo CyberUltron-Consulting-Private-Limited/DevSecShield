@@ -163,14 +163,17 @@ FIXTURE_LEVELS = {
     "Level 3": ("2", "1"),
     "Level 4": ("1", "0"),
     "Level 5": ("6", "1"),
-    "Not recorded": ("18", "0"),  # 19 -> 18: the WP2 AES-CBC duplicate (no NIST level) is gone
-    "Total quantum-safe": ("31", "2"),
+    # 19 -> 18: the WP2 AES-CBC duplicate (no NIST level) is gone; 18 -> 10: the 8 broken-today occurrences
+    # (3DES-CBC, AES-ECB, MD5, RC4 in two repos) are not quantum-safe (round 5, G3)
+    "Not recorded": ("10", "0"),
+    "Total quantum-safe": ("23", "2"),
 }
 FIXTURE_KPIS = {
     "Quantum-vulnerable": "5",
     "Distinct kinds": "2",
-    "Quantum readiness": "86.1%",  # 31 / (31 + 5); was 86.5% before WP2 removed a duplicate row
-    "Quantum-safe": "31",
+    # round 5 (G3): 3DES-CBC, AES-ECB, MD5, RC4 (x2 repos) are "Broken today", not quantum-safe: 23 / (23 + 8 + 5)
+    "Quantum readiness": "63.9%",  # was 86.1% (31 / 36) while broken algorithms counted as safe
+    "Quantum-safe": "23",
     "Hybrid": "2",
     "Not gradeable": "0",
 }
@@ -749,8 +752,8 @@ def test_kpi_strip_carries_the_appendix_b_numbers(team_body):
     assert list(cards) == list(FIXTURE_KPIS)  # the planned order
 
 
-def test_readiness_is_86_1_percent_in_the_pdf_text(team_text):
-    assert has(team_text, "86.1%")
+def test_readiness_is_63_9_percent_in_the_pdf_text(team_text):
+    assert has(team_text, "63.9%")  # 86.1% before broken-today algorithms stopped counting as quantum-safe
     assert has(team_text, "Quantum readiness")
 
 

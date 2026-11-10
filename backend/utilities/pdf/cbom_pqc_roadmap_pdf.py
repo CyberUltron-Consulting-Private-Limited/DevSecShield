@@ -489,7 +489,8 @@ def _no_rows(view: TeamCbomView, styles: Styles, title_prefix: str) -> list[Flow
 
 def _safe_section(view: TeamCbomView, styles: Styles, width: float, title: str) -> list[Flowable]:
     safe = [
-        a for a in view.assets if a.current and _is_algorithm(a) and a.quantum_vulnerable is False
+        a for a in view.assets
+        if a.current and _is_algorithm(a) and a.quantum_vulnerable is False and not a.broken_today  # not MD5, DES ...
     ]
     parts: list[Flowable] = [_heading(title, styles)]
     if not safe:

@@ -603,7 +603,7 @@ def test_executive_kpis_equal_appendix_b(sec):
     assert value_after(block, "Sources") == "7"
     assert value_after(block, "Scans included") == "8"
     assert value_after(block, "Unique certificates") == "14"
-    assert value_after(block, "Quantum readiness") == "86.1%"  # 31 / 36 (WP2 duplicate removed)
+    assert value_after(block, "Quantum readiness") == "63.9%"  # 23 / 36: 8 broken-today occurrences are not safe
     assert "Critical 1 \u00b7 High 25 \u00b7 Medium 5 \u00b7 Low 0" in joined(block)
     assert "of 9 eligible" in joined(block)
 
@@ -623,7 +623,8 @@ def test_executive_sentences_carry_the_live_numbers(sec):
     assert "Findings were raised on 31 of them: Critical 1, High 25, Medium 5, Low 0." in text
     assert "Posture grade F (Critical risk, score 100 of 100)" in text
     assert "not a regulatory rating" in text
-    assert "Quantum readiness is 86.1%: 5 of 36 gradeable algorithm occurrences" in text
+    assert "Quantum readiness is 63.9%: 5 of 36 gradeable algorithm occurrences" in text
+    assert "and 8 are broken today (MD5, DES and the like)." in text
     assert "1 certificate has expired and 1 expires within 90 days." in text
 
 
@@ -702,9 +703,9 @@ def test_quantum_readiness_numbers(raw, sec):
         for row in current_rows(raw)
         if row.get("asset_type") == "algorithm" and row.get("hybrid") is True
     )
-    assert value_after(block, "Readiness") == "86.1%"
+    assert value_after(block, "Readiness") == "63.9%"
     assert value_after(block, "Quantum-vulnerable") == "5"
-    assert value_after(block, "Quantum-safe") == "31"  # WP2: the AES-CBC duplicate is gone
+    assert value_after(block, "Quantum-safe") == "23"  # 31 before the 8 broken-today occurrences left "safe"
     assert value_after(block, "Not gradeable") == "0"
     assert f"of which {hybrid} hybrid" in joined(block)
 

@@ -601,7 +601,7 @@ def _certificate_sentence(certs: CertPosture) -> str:
 
 
 def _quantum_sentence(view: TeamCbomView) -> str:
-    graded = view.pqc_safe + view.pqc_vulnerable
+    graded = view.pqc_safe + view.pqc_vulnerable + view.pqc_broken_today
     if view.readiness_pct is None:
         return (
             "Quantum readiness cannot be computed because no algorithm occurrence could be graded."
@@ -609,7 +609,8 @@ def _quantum_sentence(view: TeamCbomView) -> str:
     verb = "uses" if view.pqc_vulnerable == 1 else "use"
     return (
         f"Quantum readiness is {view.readiness_pct:.1f}%: {view.pqc_vulnerable} of {graded} "
-        f"gradeable algorithm occurrences {verb} quantum-vulnerable public-key cryptography."
+        f"gradeable algorithm occurrences {verb} quantum-vulnerable public-key cryptography"
+        + (f" and {view.pqc_broken_today} are broken today (MD5, DES and the like)." if view.pqc_broken_today else ".")
     )
 
 
@@ -670,7 +671,7 @@ def _summary_section(view: TeamCbomView, posture: PostureGrade, styles: Styles, 
     )
     first.setStyle(_flat())
     detail = (
-        f"{view.pqc_vulnerable} of {view.pqc_safe + view.pqc_vulnerable} algorithm occurrences "
+        f"{view.pqc_vulnerable} of {view.pqc_safe + view.pqc_vulnerable + view.pqc_broken_today} algorithm occurrences "
         "quantum-vulnerable"
         if view.readiness_pct is not None
         else "no algorithm occurrence could be graded"
