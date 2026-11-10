@@ -23,7 +23,7 @@ class CreateTeamData(BaseModel):
 
 class JiraTeamSettingsData(BaseModel):
     email: str | None = None
-    api_token: str | None = None
+    api_token: str | None = Field(default=None, repr=False)  # secret: never printed
     url: str | None = None
 
 class TicketingIntegrationSettingsData(BaseModel):
@@ -75,7 +75,7 @@ def _validate_repo_url(repo_url: str, provider_host: str, provider_label: str) -
 class GithubContextSchema(BaseModel):
     mode: Literal["github"] = "github"
     repo_url: str
-    PAT: str
+    PAT: str = Field(repr=False)  # secret: never in a printed or logged model
     branch: str = "main"
 
     @model_validator(mode="after")
@@ -86,7 +86,7 @@ class GithubContextSchema(BaseModel):
 class GitlabContextSchema(BaseModel):
     mode: Literal["gitlab"] = "gitlab"
     repo_url: str
-    PAT: str
+    PAT: str = Field(repr=False)  # secret: never in a printed or logged model
     branch: str = "main"
 
     @model_validator(mode="after")
@@ -97,7 +97,7 @@ class GitlabContextSchema(BaseModel):
 class BitbucketContextSchema(BaseModel):
     mode: Literal["bitbucket"] = "bitbucket"
     repo_url: str
-    PAT: str
+    PAT: str = Field(repr=False)  # secret: never in a printed or logged model
     branch: str = "main"
 
     @model_validator(mode="after")
@@ -178,7 +178,7 @@ class StartLLMBenchmarkingData(BaseModel):
     model_name: str
     generations: int | None = 1
     probes: list[str] = ["all"]
-    api_key: str | None = None
+    api_key: str | None = Field(default=None, repr=False)  # secret: never printed
     headers: dict | None = None
     request_template: dict | None = None
     response_json_field: str | None = None
@@ -191,7 +191,7 @@ class AuthRequirements(BaseModel):
     xpath_of_username_field: str 
     xpath_of_password_field: str    
     username: str 
-    password: str 
+    password: str = Field(repr=False)  # secret: never in a printed or logged model
     xpath_of_submit_button: str 
 
 class StartDASTScanData(BaseModel):
