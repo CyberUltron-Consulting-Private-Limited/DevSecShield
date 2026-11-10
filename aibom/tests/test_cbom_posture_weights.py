@@ -38,6 +38,8 @@ ADDED_AFTER_BASE = {
     "LIBRARY_CVE_RANGE": 1,
     # CODE@severity override: an encrypted private key committed to the repository is Medium, not High
     "HARDCODED_KEY@warning": 4,
+    # a self-signed certificate with a SHA-1 self-signature: Low, like the scan-node path
+    "CERT_SELF_SIGNED": 1,
 }
 
 

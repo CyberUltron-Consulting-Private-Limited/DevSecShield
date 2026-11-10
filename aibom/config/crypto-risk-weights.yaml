@@ -31,6 +31,7 @@ flags:
   # ── quantum-vulnerable / trust smell -> MEDIUM (a future/latent risk; SARIF warning) ──
   QUANTUM_VULNERABLE: 4   # RSA/ECC/DH/DSA — harvest-now-decrypt-later; PQC migration
   SELF_SIGNED_LEAF: 4     # self-signed end-entity cert — a production trust smell (C4)
+  CERT_SELF_SIGNED: 1     # self-signed cert whose own SHA-1 signature is never verified: Low (scan-node verdict)
   # ── posture findings (config and IaC). Weights follow the SARIF bands. ──
   UNENCRYPTED_AT_REST: 8
   UNENCRYPTED_IN_TRANSIT: 8

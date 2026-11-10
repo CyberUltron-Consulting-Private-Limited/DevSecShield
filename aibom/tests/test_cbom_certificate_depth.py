@@ -116,9 +116,12 @@ def test_chain_edge_links_leaf_to_issuer() -> None:
 
 
 def test_sha1_signed_cert_flagged() -> None:
+    # weak-sha1.crt is SELF-signed: its own SHA-1 signature is never verified -> CERT_SELF_SIGNED (Low), aligned
+    # with the scan node; a CA-issued SHA-1 certificate keeps WEAK_CERTIFICATE_SIGNATURE (unit test above)
     result = _scan()
     cert = _cert_by_source(result, "weak-sha1.crt")
-    assert WEAK_CERTIFICATE_SIGNATURE in _codes_for(result, cert.bom_ref)
+    codes = _codes_for(result, cert.bom_ref)
+    assert "CERT_SELF_SIGNED" in codes and WEAK_CERTIFICATE_SIGNATURE not in codes
 
 
 def test_undersized_key_cert_flagged() -> None:
@@ -162,11 +165,9 @@ def test_certificate_findings_stack_all_weaknesses() -> None:
         }
     )
     codes = {c for c, _s, _m in certificate_findings(comp)}
-    assert codes == {
-        WEAK_CERTIFICATE_SIGNATURE,
-        WEAK_CERTIFICATE_KEY,
-        SELF_SIGNED_LEAF,
-    }
+    # a SHA-1 SELF-signature is not a weak signature: the leaf is CERT_SELF_SIGNED (Low) instead of
+    # WEAK_CERTIFICATE_SIGNATURE + SELF_SIGNED_LEAF (aligned with the scan node)
+    assert codes == {"CERT_SELF_SIGNED", WEAK_CERTIFICATE_KEY}
     # ...and stacks on top of expiry (a truly broken, expired, self-signed cert).
     expired = _cert_comp(
         **{
@@ -180,23 +181,26 @@ def test_certificate_findings_stack_all_weaknesses() -> None:
     assert {c for c, _s, _m in sig} == {WEAK_CERTIFICATE_SIGNATURE}
 
 
-def test_self_signed_weak_signature_text_does_not_claim_forgery() -> None:
-    """A self-signed certificate's own signature is never verified (trust anchor), so the text must not say it can be
-    forged (the scan-node path does not raise SIG_SHA1 for it at all: owner decision).  A CA-issued one still can."""
-    from aibom.cbom.weakness import WEAK_CERT_SIGNATURE, cert_weakness_findings
+def test_self_signed_sha1_is_low_self_signed_not_a_weak_signature() -> None:
+    """Aligned with the scan node (owner: keep, and say so; integrator: align): a self-signed certificate's own SHA-1
+    signature is never verified, so there is no weak-signature finding; it is CERT_SELF_SIGNED at Low with the
+    policy text.  A CA-issued SHA-1 certificate stays High.  An MD5 self-signature stays a weak signature."""
+    from aibom.cbom.weakness import CERT_SELF_SIGNED, WEAK_CERT_SIGNATURE, cert_weakness_findings
 
     sha1 = {"crypto:signatureAlgorithm": "sha1WithRSAEncryption", "crypto:publicKeyAlgorithm": "rsaEncryption",
             "crypto:keySize": "2048"}
-    own = _cert_comp(**{**sha1, "crypto:selfSigned": "true"})
+    for ca in ("true", "false"):  # a self-signed root and a self-signed leaf
+        own = _cert_comp(**{**sha1, "crypto:selfSigned": "true", "crypto:isCertificateAuthority": ca})
+        found = {c: (s, m) for c, s, m in certificate_findings(own)}
+        assert set(found) == {CERT_SELF_SIGNED}, found
+        severity, text = found[CERT_SELF_SIGNED]
+        assert severity == "note"  # Low
+        assert "deliberately not reported as a weak SHA-1 signature" in text and "SHA-256" in text
+        assert not [c for c, _s, _m in cert_weakness_findings(own, date(2026, 6, 29)) if c == WEAK_CERT_SIGNATURE]
     issued = _cert_comp(**{**sha1, "crypto:selfSigned": "false"})
-    for findings, code in ((certificate_findings, WEAK_CERTIFICATE_SIGNATURE),
-                           (lambda c: cert_weakness_findings(c, date(2026, 6, 29)), WEAK_CERT_SIGNATURE)):
-        text = next(m for c, _s, m in findings(own) if c == code)
-        assert "can be forged" not in text and "collision-broken hash" not in text
-        assert "is self-signed with sha1WithRSAEncryption" in text
-        assert "never verify a self-signed certificate's own signature" in text and "SHA-256" in text
-        other = next(m for c, _s, m in findings(issued) if c == code)
-        assert "self-signed" not in other and ("can be forged" in other or "collision-broken" in other)
+    assert [(c, s) for c, s, _m in certificate_findings(issued)] == [(WEAK_CERTIFICATE_SIGNATURE, "error")]
+    md5_self = _cert_comp(**{**sha1, "crypto:signatureAlgorithm": "md5WithRSAEncryption", "crypto:selfSigned": "true"})
+    assert WEAK_CERTIFICATE_SIGNATURE in {c for c, _s, _m in certificate_findings(md5_self)}
 
 
 def test_certificate_findings_empty_for_strong_ca() -> None:

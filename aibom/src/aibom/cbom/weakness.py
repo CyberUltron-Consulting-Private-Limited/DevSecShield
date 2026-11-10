@@ -47,6 +47,10 @@ WEAK_CERTIFICATE_KEY = "WEAK_CERTIFICATE_KEY"
 WEAK_CERT_SIGNATURE = WEAK_CERTIFICATE_SIGNATURE
 WEAK_CERT_KEY_SIZE = WEAK_CERTIFICATE_KEY
 SELF_SIGNED_LEAF = "SELF_SIGNED_LEAF"
+# A self-signed certificate whose own signature uses SHA-1: Low, like the scan-node path (classify.CERT_SELF_SIGNED).
+# Its self-signature is never verified, so it is not a weak-signature finding (owner / integrator decision).
+CERT_SELF_SIGNED = "CERT_SELF_SIGNED"
+_SEV_LOW = "note"  # SARIF note == Low impact
 # C6 related-crypto-material misuse codes (source-derived; see
 # :mod:`aibom.cbom.misuse` for detection). Each is a present-day break:
 #   * WEAK_RNG      — key/IV/nonce/salt from a non-crypto PRNG (CWE-338);
@@ -620,6 +624,19 @@ def _weak_cert_hash(sig_alg: str) -> str | None:
     return None
 
 
+def _self_signed_sha1(props: dict[str, str]) -> bool:
+    """A self-signed certificate whose own signature uses SHA-1 (not MD5/MD2, which stay a weak signature)."""
+    sig_alg = props.get("crypto:signatureAlgorithm", "")
+    return props.get("crypto:selfSigned") == "true" and bool(sig_alg) and _weak_cert_hash(sig_alg) == "SHA-1"
+
+
+def _self_sha1_text(name: str, sig_alg: str) -> str:
+    """The scan-node wording (backend classify, CERT_SELF_SIGNED with the SHA-1 note)."""
+    return (f"Self-signed certificate {name}: its {sig_alg} self-signature is not checked by clients (they trust "
+            f"the certificate itself), so it is deliberately not reported as a weak SHA-1 signature; re-issue it "
+            f"with SHA-256 so policies and scanners stop flagging it.")
+
+
 def _self_signature_text(name: str, sig_alg: str) -> str:
     """A self-signed certificate's own signature is never verified (it is a trust anchor: trusted, or pinned, as
     itself), so a broken digest there does not make it forgeable; say so instead of claiming it can be forged.  The
@@ -647,9 +664,11 @@ def certificate_findings(component: AIComponent) -> list[tuple[str, str, str]]:
     name = component.name
     findings: list[tuple[str, str, str]] = []
 
-    # 1) Broken signature digest (MD2/MD4/MD5/SHA-1) -> the cert is forgeable (unless it signs itself).
+    # 1) Broken signature digest (MD2/MD4/MD5/SHA-1) -> the cert is forgeable.  A self-signed certificate's own
+    #    SHA-1 signature is never verified: no weak-signature finding, it is reported as self-signed at Low (step 3).
     sig_alg = props.get("crypto:signatureAlgorithm", "")
-    if sig_alg and _sig_digest_is_broken(sig_alg):
+    sha1_self = _self_signed_sha1(props)
+    if sig_alg and _sig_digest_is_broken(sig_alg) and not sha1_self:
         findings.append(
             (
                 WEAK_CERTIFICATE_SIGNATURE,
@@ -683,7 +702,10 @@ def certificate_findings(component: AIComponent) -> list[tuple[str, str, str]]:
     # 3) Self-signed leaf: a self-signed cert that is explicitly NOT a CA is an
     #    end-entity trusting itself — a production trust smell (a real root CA is
     #    self-signed but carries BasicConstraints CA:TRUE, so is not flagged).
-    if (
+    #    With a SHA-1 self-signature it is CERT_SELF_SIGNED at Low with the policy text (the scan-node verdict).
+    if sha1_self:
+        findings.append((CERT_SELF_SIGNED, _SEV_LOW, _self_sha1_text(name, sig_alg)))
+    elif (
         props.get("crypto:selfSigned") == "true"
         and props.get("crypto:isCertificateAuthority") == "false"
     ):
@@ -792,7 +814,7 @@ def cert_weakness_findings(
     # 2) Collision-broken signature hash (MD2/MD4/MD5/SHA-1).
     sig_alg = props.get("crypto:signatureAlgorithm", "")
     weak_hash = _weak_cert_hash(sig_alg) if sig_alg else None
-    if weak_hash is not None:
+    if weak_hash is not None and not _self_signed_sha1(props):  # a SHA-1 self-signature is never verified
         findings.append(
             (
                 WEAK_CERT_SIGNATURE,
@@ -833,6 +855,7 @@ __all__ = [
     "WEAK_CERTIFICATE_SIGNATURE",
     "WEAK_CERTIFICATE_KEY",
     "SELF_SIGNED_LEAF",
+    "CERT_SELF_SIGNED",
     "WEAK_RNG",
     "STATIC_IV",
     "REUSED_NONCE",

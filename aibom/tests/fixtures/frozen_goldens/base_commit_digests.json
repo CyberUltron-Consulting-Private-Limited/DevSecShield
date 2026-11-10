@@ -13,8 +13,8 @@
     },
     "synthetic-crypto-certs": {
       "cyclonedx": "3b0abc5ac7fb475766429ae2ee95613695cd2c6129e2bd47c681bedfd93f3dd2",
-      "normalize": "bfe55d01fa1807a6e7f1bd648c8bf9d8ef1e4106ec70ff6e8a3a09286ff38c4d",
-      "scan": "8d7527874a4f73f95c2d6917ad2a0a3c4156342dfb634a92c762f0103fb33df1"
+      "normalize": "3205cea6aed1230e95c32249c5da92af937b60a31d6575b590fdafb6d056c03c",
+      "scan": "17cb7760de509da0a94ded665ef24fe79106a300759ab9e713cce141c6ea8b03"
     },
     "synthetic-crypto-certs-harden": {
       "cyclonedx": "ca5af5d7fee496f3bc1e7d0b6f362538f1cf53b89d25e4664304dbba617389cf",
