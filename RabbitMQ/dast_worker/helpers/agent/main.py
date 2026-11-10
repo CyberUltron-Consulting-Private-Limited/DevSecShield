@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from rich.console import Console
 from helpers.checks.security_headers import SecurityHeadersCheck
 from helpers.crawler.crawler import Crawler
@@ -15,6 +16,21 @@ from helpers.agent.scan_config import ScanRuntime
 from helpers.agent.utils import fetch_authenticated_page, get_auth_login_template
 from helpers.checks.nuclei.run_nuclei import reap_orphan_browsers, set_nuclei_concurrency
 console = Console(markup=False)
+
+# Checks whose failure is recorded per URL. A check that could not run is not "no findings": when one of them failed
+# on every scanned URL the scan cannot be reported as a clean "Completed" (found on the local stack, round 5: with
+# Amazon Bedrock unavailable every XSS, SQLi and page-analysis check raised, each was logged and turned into an empty
+# list, and Juice Shop came back "Completed, 0 findings, coverage 100%").
+CHECK_LABELS = {
+    "headers": "security headers",
+    "page": "page analysis",
+    "xss": "XSS",
+    "sqli": "SQL injection",
+}
+
+
+class DastChecksDidNotRun(Exception):
+    """One or more checks failed on every URL of the scan; the message names them and the first error of each."""
 
 
 
@@ -43,6 +59,9 @@ class DASTAgent():
         self.metadata = {}
         self.urls = []
         self.state_update_writer = state_update_writer
+        # check -> {url: first error message}; written from the URL worker threads
+        self.check_errors: dict[str, dict[str, str]] = {name: {} for name in CHECK_LABELS}
+        self._errors_lock = threading.Lock()
 
         if not self.auth_requirements.username or not self.auth_requirements.password or not self.auth_requirements.xpath_of_username_field or not self.auth_requirements.xpath_of_password_field or not self.auth_requirements.xpath_of_submit_button:
             raise Exception("Username, password, xpath of username field, xpath of password field, and xpath of submit button are required for authentication")
@@ -70,6 +89,7 @@ class DASTAgent():
             return self._attach_url(parsed, url)
         except Exception as e:
             console.print(f"Error in security headers check for {url}: {e}",style="dim red")
+            self._record_check_error("headers", url, e)
             return []
 
     def _fetch_page(self, url: str):
@@ -96,6 +116,7 @@ class DASTAgent():
             return self._attach_url(parsed, url)
         except Exception as e:
             console.print(f"Error in page analysis check for {url}: {e}",style="dim red")
+            self._record_check_error("page", url, e)
             return []
 
     def _run_xss(self, url: str, page_content: str, auth_login_template: str) -> list[dict]:
@@ -117,6 +138,7 @@ class DASTAgent():
             return self._attach_url(parsed, url)
         except Exception as e:
             console.print(f"Error in XSS check for {url}: {e}",style="dim red")
+            self._record_check_error("xss", url, e)
             return []
 
     def _run_sqli(self, url: str, page_content: str, auth_login_template: str) -> list[dict]:
@@ -138,7 +160,33 @@ class DASTAgent():
             return self._attach_url(parsed, url)
         except Exception as e:
             console.print(f"Error in SQLi check for {url}: {e}",style="dim red")
+            self._record_check_error("sqli", url, e)
             return []
+
+    def _record_check_error(self, check: str, url: str, error: Exception) -> None:
+        with self._errors_lock:
+            self.check_errors[check].setdefault(url, str(error).replace("\n", " ")[:300])
+
+    def _checks_that_never_ran(self) -> list[str]:
+        """Checks that failed on every scanned URL."""
+        if not self.urls:
+            return []
+        return [name for name, by_url in self.check_errors.items() if len(by_url) >= len(self.urls)]
+
+    def _judge_checks(self) -> None:
+        """Record partial check failures in the metadata; refuse to report a scan whose checks did not run."""
+        partial = {name: len(by_url) for name, by_url in self.check_errors.items() if by_url}
+        if partial:
+            self.metadata["check_errors"] = {"urls_scanned": len(self.urls), "failed_urls_per_check": partial}
+        never = self._checks_that_never_ran()
+        if never:
+            reasons = "; ".join(
+                f"{CHECK_LABELS[name]}: {next(iter(self.check_errors[name].values()))}" for name in never
+            )
+            raise DastChecksDidNotRun(
+                f"The scan could not run its {', '.join(CHECK_LABELS[n] for n in never)} check(s) on any of the "
+                f"{len(self.urls)} URLs, so its results would be incomplete ({reasons[:600]})"
+            )
 
     def _report_progress(self, completed: int, total: int):
         if not self.state_update_writer or total <= 0:
@@ -247,6 +295,7 @@ class DASTAgent():
 
             
             # STEP [ 4 ] : ----------------------- Return the Vulnerabilities ----------------------------------------
+            self._judge_checks()
             if self.state_update_writer:
                 self.state_update_writer.write_progress_percentage(100)
 

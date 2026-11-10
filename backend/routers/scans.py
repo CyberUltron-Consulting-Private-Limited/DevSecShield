@@ -1062,7 +1062,8 @@ async def create_ticket(
         
         # STEP [ 3 ] : ============= create the ticket ======================
         if data.ticket_type == "jira":
-            if "jira" not in team.integration_settings or "jira" not in scan.integration_settings:
+            # .get: a team whose admin removed Jira keeps "jira": null
+            if not team.integration_settings.get("jira") or not scan.integration_settings.get("jira"):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Jira integration settings are not found, cannot create ticket")
             
             jira_project_id = scan.integration_settings["jira"]["jira_project_id"]

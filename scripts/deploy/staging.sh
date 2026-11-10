@@ -21,8 +21,8 @@
 # Env: DSS_TAG (default: short git commit), DSS_IMAGE_PREFIX (default dss-staging), NEXT_PUBLIC_BACKEND_URL (default
 #      https://<API_HOST>), STAGING_COMPONENTS (images, default backend,frontend,scan-worker,dast-worker),
 #      STAGING_SERVICES (compose services to start, default all), STAGING_INCLUDE_INFRA=1 (also ship the postgres,
-#      mongo, rabbitmq and nginx images, for a host without registry access), STAGING_CHECK_INSECURE=1 (accept a
-#      self-signed certificate in the checks), SSH_OPTS (extra ssh/scp options).
+#      mongo, rabbitmq, nginx and, with profile minio, MinIO images, for a host without registry access),
+#      STAGING_CHECK_INSECURE=1 (accept a self-signed certificate in the checks), SSH_OPTS (extra ssh/scp options).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -41,6 +41,7 @@ ALEMBIC_INI=/prod_database_migrations/alembic.ini
 INFRA_SERVICES=" postgres mongo rabbitmq minio "
 ONESHOT_SERVICES=" migrate minio-init "
 INFRA_IMAGES=(postgres:15-alpine mongo:8.0.6 rabbitmq:4.1-management-alpine nginx:1.27-alpine)
+DEFAULT_MINIO_IMAGE=minio/minio:RELEASE.2025-04-22T22-12-26Z  # docker-compose.yml's MINIO_IMAGE default
 # `next dev` markers. A production `next build` (Turbopack or webpack) has none of them; note that Next.js 16
 # production builds do reference a /_next/static/chunks/turbopack-<hash>.js runtime chunk, so "turbopack" alone is
 # not a dev marker. "development" is the fixed build id of `next dev`.
@@ -90,7 +91,13 @@ cmd_save() {
   local tag=${DSS_TAG:-$(default_tag)} c out
   local -a images=()
   for c in $(components); do images+=("$(image_of "${c}" "${tag}")"); done
-  [[ "${STAGING_INCLUDE_INFRA:-0}" == 1 ]] && images+=("${INFRA_IMAGES[@]}")
+  if [[ "${STAGING_INCLUDE_INFRA:-0}" == 1 ]]; then
+    images+=("${INFRA_IMAGES[@]}")
+    # The optional local S3 (profile "minio") is infrastructure too: an air-gapped site that runs it needs its image.
+    if [[ ",${COMPOSE_PROFILES:-$(env_get COMPOSE_PROFILES)}," == *,minio,* ]]; then
+      images+=("$(env_get MINIO_IMAGE "${DEFAULT_MINIO_IMAGE}")")
+    fi
+  fi
   for c in "${images[@]}"; do docker image inspect "${c}" >/dev/null 2>&1 || die "image ${c} not found (run build)"; done
   mkdir -p "${IMAGES_DIR}"
   out="$(archive_of "${tag}")"
@@ -144,6 +151,26 @@ require_host_files() {
   if grep -Eq '^[[:space:]]*(DSS_DEV_MODE|LOCAL_DEV_VERIFICATION_(EMAIL|CODE))=' "${ENV_FILE}" "${STAGING_DIR}/backend.env"; then
     die "DSS_DEV_MODE / LOCAL_DEV_VERIFICATION_* must never be set on staging"
   fi
+}
+
+record_services() { # <tag>: the STAGING_SERVICES <tag> is deployed with; no file means every service
+  local f="${RELEASES_DIR}/$1/services"
+  if [[ -n "${STAGING_SERVICES:-}" ]]; then
+    # shellcheck disable=SC2086 # service names, one per line: split on purpose
+    printf '%s\n' ${STAGING_SERVICES//,/ } >"${f}"
+  else
+    rm -f "${f}"
+  fi
+}
+
+# `make check-staging` and `make rollback-staging` run this script over ssh without the STAGING_SERVICES the release
+# was deployed with: without one from the operator, use the set recorded for <tag>, so a partial deploy is checked
+# and rolled back as the partial deploy it is.
+use_recorded_services() { # <tag>
+  local f="${RELEASES_DIR}/$1/services"
+  [[ -z "${STAGING_SERVICES:-}" && -s "${f}" ]] || return 0
+  STAGING_SERVICES="$(paste -sd ' ' "${f}")"
+  log "services: ${STAGING_SERVICES} (the STAGING_SERVICES $1 was deployed with)"
 }
 
 previous_of() { # <tag>: the tag that was running when <tag> was last deployed (deploy-history), empty if none
@@ -270,6 +297,7 @@ cmd_deploy() {
     record_files "${tag}"
   fi
   [[ -z "${head}" ]] || printf '%s\n' "${head}" >"${RELEASES_DIR}/${tag}/alembic-head"
+  record_services "${tag}"
   set_tag "${tag}"
   if ! up; then
     [[ -n "${previous}" && "${previous}" != "${tag}" ]] && log "start failed; to go back: staging.sh rollback"
@@ -330,6 +358,7 @@ cmd_rollback() {
   current="$(env_get DSS_TAG)"
   previous="$(previous_of "${current}")"
   [[ -n "${previous}" && "${previous}" != none ]] || die "no previous tag recorded for ${current} in ${HISTORY_FILE}"
+  use_recorded_services "${previous}"
   for c in $(components); do
     docker image inspect "$(image_of "${c}" "${previous}")" >/dev/null 2>&1 || [[ -n "${STAGING_SERVICES:-}" ]] ||
       die "image $(image_of "${c}" "${previous}") is no longer on this host; cannot roll back to ${previous}"
@@ -411,6 +440,7 @@ cmd_check() {
   local tag fe api scheme port cert_dir tmp code chunk found=0 m
   tag="$(env_get DSS_TAG)"
   [[ -n "${tag}" ]] || die "DSS_TAG is not set in ${ENV_FILE}"
+  use_recorded_services "${tag}"
   check_services "${tag}"
   fe="$(env_get FRONTEND_HOST devsec-staging.zeroshield.ai)"
   api="$(env_get API_HOST devsec-staging-api.zeroshield.ai)"

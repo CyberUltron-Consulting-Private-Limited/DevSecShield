@@ -8,6 +8,7 @@ import string
 from starlette.concurrency import run_in_threadpool
 from backend.utilities.auth.email import send_email_with_credentials
 from backend.utilities.auth.auth_utils import get_hashed_password, normalise_email
+from backend.utilities.auth.auth_schema import clean_email
 from fastapi import HTTPException , status
 
 console = Console()
@@ -20,26 +21,48 @@ def generate_random_password() -> str:
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(INVITE_PASSWORD_CHARS))
 
+def _valid_invite_emails(email_ids: list[str]) -> list[str]:
+    """The addresses, cleaned as on sign-up (lower case, trimmed, one '@', no spaces), duplicates dropped. One address
+    that is not an email refuses the whole request before anything is stored: before, "bad email" became a user
+    account with its own default team, and only the invitation mail then failed (400)."""
+    cleaned: list[str] = []
+    for raw in email_ids:
+        if not (raw or "").strip():
+            continue
+        try:
+            email = clean_email(raw)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Enter a valid email address ({str(raw).strip()[:80]!r} is not one)") from None
+        local, _, domain = email.rpartition("@")
+        if not local or "." not in domain or domain.startswith(".") or domain.endswith(".") or any(c in email for c in "\r\n\x00"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Enter a valid email address ({email[:80]!r} is not one)")
+        cleaned.append(email)
+    return list(dict.fromkeys(cleaned))
+
+
 async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine) -> None:
-    email_ids = list(dict.fromkeys(normalise_email(email) for email in email_ids if normalise_email(email)))
-    
+    email_ids = _valid_invite_emails(email_ids)
+    if not email_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter at least one email address")
+
     with Session(engine) as session:
         team = session.exec(select(Team).where(Team.id == team_id)).first()
 
 
-        # STEP [ 1 ] : =============================== create users if they dont exist ================================================= 
+        # STEP [ 1 ] : =============================== create users if they dont exist =================================================
         for email in email_ids:
-            # ---------------------------> creating a new user and send them an email with credentials 
+            # ---------------------------> creating a new user and send them an email with credentials
             user = session.exec(select(User).where(func.lower(User.email) == email)).first()
             if not user:
-                # ---------------------------> creating a new default team for this new user 
+                # ---------------------------> creating a new default team for this new user
                 default_team_for_new_user = Team(
                     name=f"{email.split('@')[0]}'s Default Team",
                     description=f"Default team for {email.split('@')[0]}",
                 )
                 session.add(default_team_for_new_user)
-                session.commit()
-                session.refresh(default_team_for_new_user)
+                session.flush()  # its id, without committing: nothing is kept unless the invitation goes out
 
                 # ---------------------------> create user model 
                 generated_password = generate_random_password()
@@ -56,10 +79,16 @@ async def add_emails_to_team(email_ids: list[str], team_id: int, engine: Engine)
                 # ---------------------------> add the user to the team 
                 team_membership = TeamMembership(user=user, team=default_team_for_new_user , role="admin")
                 session.add(team_membership)
+                session.flush()
 
-
+                # The account exists only once its first password has been mailed: a refused address or a mail
+                # relay that is down leaves no user behind that nobody can sign in to.
+                try:
+                    await send_email_with_credentials(email=email, password=generated_password,team_name=team.name)
+                except Exception:
+                    session.rollback()
+                    raise
                 session.commit()
-                await send_email_with_credentials(email=email, password=generated_password,team_name=team.name)
                 console.print(f"Email {email} does not exist for any user , creating a new user and sending email with credentials 📧", style="bold orange1")
         
         

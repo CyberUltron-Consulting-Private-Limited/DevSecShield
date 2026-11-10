@@ -31,7 +31,10 @@ workflow runs it from CI.
    Set `ENCRYPTION_KEY` before the first start (see `docs/security/secret-rotation.md`).
    **`DSS_DEV_MODE` and `LOCAL_DEV_VERIFICATION_*` must never be set here**; `staging.sh` refuses to deploy if
    they are.
-3. Optional local S3: `AWS_ENDPOINT_URL_S3=http://minio:9000` in `.env` and `COMPOSE_PROFILES=minio`.
+3. Optional local S3: `AWS_ENDPOINT_URL_S3=http://minio:9000` in `.env` and `COMPOSE_PROFILES=minio`. The default
+   `MINIO_IMAGE` is no longer on Docker Hub (MinIO removed the repository): set `MINIO_IMAGE` to an image you have
+   loaded (mirrored, or built from the MinIO source). MinIO's root credentials are `AWS_ACCESS_KEY_ID` /
+   `AWS_SECRET_ACCESS_KEY` from `.env`, read inside the container (a shell's exported AWS variables do not apply).
 
 ## Deploy (build machine)
 
@@ -47,16 +50,21 @@ recorded in `deploy-history`; each tag's deploy files (compose file, nginx confi
 the head of its migrations are kept in `releases/<tag>/` for a rollback. `deploy` refuses a tag whose migrations do
 not contain the database's revision (an older tag than the one that migrated it): that is what `rollback` is for.
 
-Without registry access on the host, add `STAGING_INCLUDE_INFRA=1` to ship the postgres, mongo, rabbitmq and nginx
-images in the same archive. Behind a TLS-intercepting proxy, build with `UV_BASE_IMAGE` / `NODE_BASE_IMAGE` set to
-base images that trust the proxy CA. Plain-HTTP staging (no certificates): build with
+Without registry access on the host, add `STAGING_INCLUDE_INFRA=1` to ship the postgres, mongo, rabbitmq and nginx (and, with the minio profile, MinIO)
+images in the same archive. Behind a TLS-intercepting proxy, build with `UV_BASE_IMAGE` (backend, scan worker, DAST
+worker), `NODE_BASE_IMAGE` (frontend) and `GO_BASE_IMAGE` (the scan worker's cbomkit-theia stage) set to base images
+that trust the proxy CA: the system bundle (`/etc/ssl/certs/ca-certificates.crt`, which apt, apk, curl, git and
+Python read) must contain it, and `SSL_CERT_FILE` / `UV_NATIVE_TLS=1` / `NODE_EXTRA_CA_CERTS` set so uv and npm do. Plain-HTTP staging (no certificates): build with
 `NEXT_PUBLIC_BACKEND_URL=http://<API_HOST>` and set `CORS_ORIGINS=http://<FRONTEND_HOST>`.
 
 ## Checks
 
 `staging.sh check` (run by `deploy` and `rollback`) first asks compose: every service (or each of
 `STAGING_SERVICES`) has a container from `DSS_TAG`'s images that is running, and healthy when it has a health check;
-the one-shots (`migrate`, `minio-init`) exited 0. Then it talks to nginx on this host with the real host names:
+the one-shots (`migrate`, `minio-init`) exited 0. A deploy with `STAGING_SERVICES` records that set for its tag
+(`releases/<tag>/services`); `check` and `rollback` (so `make check-staging` and `make rollback-staging`) use the
+recorded set when they are not given one, and a later deploy without `STAGING_SERVICES` starts and checks every
+service again. Then it talks to nginx on this host with the real host names:
 * `GET https://<API_HOST>/health` answers 200 `healthy`;
 * `GET https://<FRONTEND_HOST>/login` answers 200, references `/_next/static/chunks/*.js` that all load, and
   carries no `next dev` marker (HMR client chunk, `"development"` build id, `webpack-hmr`, `react-refresh`). A
@@ -135,6 +143,12 @@ node reset). Browsers are asked for a certificate only if they hold one from tha
 `ZS_CLIENT_KEY` and, for a private server CA, `ZS_CA_FILE`. Refusals are 403 with `X-ZS-Refused`; every node
 answer carries `X-ZS-Deployment` (one id per deployment, created by migration `wp5a0node001`; a migration
 downgrade and upgrade makes a new one, which nodes adopt from their next successful request).
+
+AI analysis: SAST, IaC and the SCA + SBOM chat call Amazon Bedrock with the `AWS_*` of `.env` and need a Qdrant
+vector store (`QDRANT_HOST`, `QDRANT_PORT`, `QDRANT_API_KEY`; not part of this compose file). Without them those
+scans end as "failed"; CBOM and AI-BOM code scans need neither. SCA + SBOM downloads Grype's vulnerability database
+(about 1 GB) into the scan-worker container on its first scan: keep that much free disk, and on an air-gapped site
+that download is not possible.
 
 Air-gapped sites: `GIT_ALLOWED_HOSTS` (self-hosted Git; same value for backend and workers),
 `CBOM_IDP_ALLOWED_PRIVATE` + `CBOM_EXTRA_CA_FILE` (identity provider on a private network with a private CA),

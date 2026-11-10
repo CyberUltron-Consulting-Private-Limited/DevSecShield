@@ -1,7 +1,11 @@
+# Base image of both stages. scripts/deploy/build_images.sh passes UV_BASE_IMAGE when it is set: behind a
+# TLS-intercepting proxy, a base that trusts the proxy's CA (deploy/staging/README.md).
+ARG UV_BASE_IMAGE=ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
 # ============================================================
 # Stage 1: Builder — install dependencies and compile bytecode
 # ============================================================
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+FROM ${UV_BASE_IMAGE} AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -30,7 +34,7 @@ RUN uv run playwright install --with-deps chromium
 # ============================================================
 # Stage 2: Runtime
 # ============================================================
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+FROM ${UV_BASE_IMAGE}
 
 ENV IS_DOCKER_CONTAINER="True" \
     PYTHONUNBUFFERED=1 \
@@ -51,16 +55,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgdk-pixbuf-2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install nuclei binary directly (skip Homebrew entirely — saves ~500MB)
+# Install nuclei binary directly (skip Homebrew entirely — saves ~500MB). A pinned release, checked against the
+# release's own checksums file: the "latest" lookup through the unauthenticated GitHub API is rate-limited per address
+# (60 requests an hour), and when it was refused the build downloaded an error page and failed with "not a zipfile".
+ARG NUCLEI_VERSION=3.4.10
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then NUCLEI_ARCH="linux_amd64"; \
     elif [ "$ARCH" = "arm64" ]; then NUCLEI_ARCH="linux_arm64"; \
     else echo "Unsupported arch: $ARCH" && exit 1; fi && \
-    NUCLEI_VERSION=$(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/') && \
-    curl -sSL "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_${NUCLEI_ARCH}.zip" -o /tmp/nuclei.zip && \
-    unzip /tmp/nuclei.zip -d /usr/local/bin/ nuclei && \
+    base="https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}" && \
+    zip="nuclei_${NUCLEI_VERSION}_${NUCLEI_ARCH}.zip" && \
+    curl -fsSL --retry 3 "${base}/${zip}" -o "/tmp/${zip}" && \
+    curl -fsSL --retry 3 "${base}/nuclei_${NUCLEI_VERSION}_checksums.txt" -o /tmp/nuclei_checksums.txt && \
+    (cd /tmp && grep " ${zip}\$" nuclei_checksums.txt | sha256sum -c -) && \
+    unzip "/tmp/${zip}" -d /usr/local/bin/ nuclei && \
     chmod +x /usr/local/bin/nuclei && \
-    rm /tmp/nuclei.zip
+    rm "/tmp/${zip}" /tmp/nuclei_checksums.txt
 
 # Copy app + venv from builder
 COPY --from=builder /app /app

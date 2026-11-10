@@ -16,7 +16,8 @@ import { FaApple } from "react-icons/fa"
 import { FaXTwitter } from "react-icons/fa6" // Keeping this. If this still fails, confirm react-icons version/install.
 import { toast } from "sonner"
 import router, { useSearchParams } from "next/navigation"
-import api from "@//utils/interceptors"
+import api, { retryAfterSeconds } from "@//utils/interceptors"
+import { resendLabel, useResendCountdown, waitAfterFailedSend } from "@/utils/resend_countdown"
 import { useRouter } from "next/navigation"
 import { handleApiError, showErrorToast } from "@/utils/error-handler"
 import { text_input_validation } from "@/utils/input_validation"
@@ -40,24 +41,11 @@ export default function LoginPage({
     method: "login" | "signup"
 }) {
   const [ userData, setUserData ] = useState<UserData>(method === "login" ? emptyLoginUserData : emptyRegisterUserData)
-  
-  //timer to send verification code
-  const [timer, setTimer] = useState(delay*1000)
-  const [ timerId , setTimerId ] = useState<NodeJS.Timeout | null>(null)
-  const [timerStarted, setTimerStarted] = useState(false)
+
+  // wait before "Send Verification Code" can be pressed again
+  const countdown = useResendCountdown(delay)
   const [sendingCode, setSendingCode] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    if(timer===0){
-      clearInterval(timerId!)
-      setTimerStarted(false)
-      setTimer(delay*1000)
-    }
-    return () => {
-      if (timerId) clearInterval(timerId)
-    }
-  }, [timer, timerId])
 
   // get query params for redirect url after auth ( and redirect to that url after auth if this query param is present)
   const searchParams = useSearchParams()
@@ -83,21 +71,20 @@ export default function LoginPage({
             return
         }
         setSendingCode(true)
-        setTimerStarted(true)
-            setTimerId(setInterval(() => {
-              setTimer(prev=>prev - 1000)
-            }, 1000))
+        countdown.start()
         const response = await api.post("/send_code",{email: userData?.email.trim()})
         if(response.status === 200){
             toast.success("Verification code sent successfully")
-            
+
         }else{
+            countdown.stop()
             toast.error("Error while sending verification code",{description: response.data.detail})
         }
     }
     catch(error:any){
-        const apiError = handleApiError(error);
-        showErrorToast(error, "Error while sending verification code");
+        // nothing was sent: no wait before the next try (only the server's Retry-After for a 429)
+        const apiError = showErrorToast(error, "Error while sending verification code");
+        countdown.start(waitAfterFailedSend(apiError.status, retryAfterSeconds(error)))
     }
     finally{
         setSendingCode(false)
@@ -178,9 +165,14 @@ export default function LoginPage({
         }
     }
     catch(error:any){
-      setUserData(emptyLoginUserData)
-      const apiError = handleApiError(error);
-      showErrorToast(error, "Error while logging in");
+      // Keep the address. The code is spent by any attempt that reached the password check, so ask for a new one
+      // (before, the whole form was emptied and a retry with the same code said "Invalid verification code").
+      setUserData({ ...emptyLoginUserData, email: userData?.email ?? "" })
+      const apiError = showErrorToast(error, "Error while logging in");
+      if (apiError.status === 400) {
+        countdown.stop()
+        toast.info("Each verification code works once: request a new code, then sign in again.")
+      }
     }
     finally{
         setSubmitting(false)
@@ -304,9 +296,9 @@ export default function LoginPage({
                 <div className="flex items-center w-full ">
                   <button 
                     type="button"
-                    disabled={timerStarted || sendingCode}
+                    disabled={countdown.running || sendingCode}
                     className="w-fit cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-sm items-center ml-auto flex flex-row gap-2 hover:text-blue-300 hover:underline" onClick={handleSendVerificationCode}>
-                    {sendingCode ? "Sending code..." : timerStarted ? `Resend in ${timer/1000}s` : "Send Verification Code"} <ArrowUpRight size={18}/>
+                    {resendLabel(sendingCode, countdown.left)} <ArrowUpRight size={18}/>
                   </button>
                 </div>
               </div>

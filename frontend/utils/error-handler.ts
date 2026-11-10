@@ -33,6 +33,12 @@ export const handleLogout = async () => {
   }
 }
 
+/** The 403 details with which the backend refuses a session itself (backend/utilities/auth/auth_utils.py), as opposed
+ * to an authorisation refusal ("User is not in team", "User is not a superuser", ...). */
+export function isClosedSession(detail: unknown): boolean {
+  return detail === "Session not active";
+}
+
 /** "Value error, Password must be 8 to 128 characters long" -> "Password must be 8 to 128 characters long". */
 function validationMessage(detail: unknown): string | null {
   if (typeof detail === "string" && detail.trim()) return detail;
@@ -86,9 +92,18 @@ export const handleApiError = (error: unknown): ApiError => {
         status: 401
       };
     } else if (status === 403) {
-      handleLogout();
+      // 403 is "not allowed here" (not a member of the team, not its admin, not a superuser): show why and keep
+      // the session. Only a session the server has closed ends it. Logging out on every 403 also revoked every
+      // token of the account (GET /logout), so opening a link to a team one had left signed the user out
+      // everywhere.
+      const detail = error.response?.data?.detail;
+      if (isClosedSession(detail)) {
+        handleLogout();
+      }
       return {
-        message: 'Access forbidden. You do not have permission to perform this action.',
+        message: typeof detail === "string" && detail.trim()
+          ? detail
+          : 'Access forbidden. You do not have permission to perform this action.',
         status: 403
       };
     } else if (status === 404) {
