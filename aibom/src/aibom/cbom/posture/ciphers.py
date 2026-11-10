@@ -202,6 +202,21 @@ def _basis_value(fact: EncryptionFact, name: str) -> str | None:
     )
 
 
+def _nginx_protocol_fix(fact: EncryptionFact) -> str | None:
+    """Exactly what to change for nginx legacy TLS, in the scan node's wording (backend classify._web_tls_fix)."""
+    protocols = _basis_value(fact, "protocols")
+    if fact.native_type != "nginx" or not protocols:
+        return None
+    tokens = [p for p in protocols.split(",") if p]
+    legacy = [p for p in tokens if p in _WEAK_TLS]
+    if not legacy:
+        return None
+    where = f"{fact.path} line {fact.line}" if _basis_value(fact, "context") == "http" else fact.path
+    return (f"nginx enables {' and '.join(legacy)} in {where} (ssl_protocols {' '.join(tokens)};): change it to "
+            "\"ssl_protocols TLSv1.2 TLSv1.3;\" (and in any server block that sets its own ssl_protocols), then run "
+            "\"nginx -t\" and reload nginx (systemctl reload nginx).")
+
+
 def protocol_asset(fact: EncryptionFact) -> CryptoAssetComponent | None:
     """A TLS protocol asset for a recorded cipher list or protocol floor."""
     suite = _basis_value(fact, "cipher_suite")
@@ -227,6 +242,11 @@ def protocol_asset(fact: EncryptionFact) -> CryptoAssetComponent | None:
         props["crypto:protocolVersion"] = floor
         if floor in _WEAK_TLS or (ssh and floor == "SSH-1"):
             props["crypto:strength"] = "weak"
+            fix = _nginx_protocol_fix(fact)
+            if fix:
+                props["crypto:remediation"] = fix
+                if _basis_value(fact, "context") == "http":  # the http-defaults fact sits on the directive itself
+                    props["crypto:line"] = str(fact.line)
     return CryptoAssetComponent(
         bom_ref=f"crypto-proto-{fact.id}",
         name="SSH" if ssh else "TLS",

@@ -194,7 +194,9 @@ def score_result(result: ScanResult, weights_path: str | None = None) -> ScanRes
     by_component: dict[str, float] = {}
     total = 0.0
     for flag in result.flags:
-        w = _weight_for(flag.code, weights)
+        # ``CODE@severity`` in the weights file weighs a code raised at a lower severity on its own (an encrypted
+        # committed private key: HARDCODED_KEY at warning); otherwise the code's weight
+        w = weights.get(f"{flag.code}@{flag.severity}", _weight_for(flag.code, weights))
         by_flag[flag.code] = by_flag.get(flag.code, 0.0) + w
         if flag.target:
             by_component[flag.target] = by_component.get(flag.target, 0.0) + w

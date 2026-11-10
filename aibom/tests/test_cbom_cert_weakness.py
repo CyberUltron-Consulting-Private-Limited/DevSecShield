@@ -206,7 +206,8 @@ def test_pipeline_flags_rsa1024_cert_weak_key_size() -> None:
 
 def test_pipeline_flags_sha1_cert_weak_signature() -> None:
     codes = _flags_on(_scan(), "sha1.pem")
-    assert WEAK_CERT_SIGNATURE in codes
+    # sha1.pem is SELF-signed: not a weak signature, CERT_SELF_SIGNED at Low (aligned with the scan node)
+    assert WEAK_CERT_SIGNATURE not in codes and "CERT_SELF_SIGNED" in codes
     assert WEAK_CERT_KEY_SIZE not in codes  # it is RSA-2048
 
 
@@ -221,5 +222,7 @@ def test_pipeline_weak_certs_band_high_in_scores() -> None:
     sev = (result.scores or {}).get("component_severity", {})
     for c in result.components:
         src = (c.properties or {}).get("discovery:source") or ""
-        if src in ("rsa1024.pem", "sha1.pem"):
+        if src == "rsa1024.pem":
             assert sev.get(c.bom_ref) == "high", f"{src} should band high (weight 8)"
+        if src == "sha1.pem":  # self-signed SHA-1: CERT_SELF_SIGNED only -> low
+            assert sev.get(c.bom_ref) == "low", f"{src} self-signed SHA-1 bands low"

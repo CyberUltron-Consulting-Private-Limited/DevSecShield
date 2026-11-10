@@ -13,13 +13,13 @@
     },
     "synthetic-crypto-certs": {
       "cyclonedx": "3b0abc5ac7fb475766429ae2ee95613695cd2c6129e2bd47c681bedfd93f3dd2",
-      "normalize": "bfe55d01fa1807a6e7f1bd648c8bf9d8ef1e4106ec70ff6e8a3a09286ff38c4d",
-      "scan": "8d7527874a4f73f95c2d6917ad2a0a3c4156342dfb634a92c762f0103fb33df1"
+      "normalize": "3205cea6aed1230e95c32249c5da92af937b60a31d6575b590fdafb6d056c03c",
+      "scan": "17cb7760de509da0a94ded665ef24fe79106a300759ab9e713cce141c6ea8b03"
     },
     "synthetic-crypto-certs-harden": {
-      "cyclonedx": "5affbffef1e77903a94db35d5f0e9198d150ccc0cba8db522798b28f52bc6188",
-      "normalize": "1b74c3adb842b086e000af8b19833c1d4f0787778a3d87ed2251c1ee6ff495db",
-      "scan": "0996bdcfebc9842c7cb1f5ff4e6a97fd758328db92320dc48b53c1ecffec2383"
+      "cyclonedx": "ca5af5d7fee496f3bc1e7d0b6f362538f1cf53b89d25e4664304dbba617389cf",
+      "normalize": "11ad2d88e622972e692029d1802dee094c5304eea72062df722ca19a926d78b5",
+      "scan": "0a676c31a3595846e8483767001793a304a365a239633ac170812c1cc7f6238c"
     },
     "synthetic-crypto-dataflow": {
       "cyclonedx": "a1c901de11a50ef0ddbe687e44d92fcf7902aa5f777124d1e352d60ded117bd5",

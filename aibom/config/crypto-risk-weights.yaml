@@ -25,11 +25,13 @@ flags:
   STATIC_IV: 8            # constant/predictable IV or nonce reaching a cipher (CWE-329)
   REUSED_NONCE: 8         # same static IV/nonce securing >1 encryption (CWE-323)
   HARDCODED_KEY: 8        # symmetric/private key embedded as a source literal (CWE-321)
+  "HARDCODED_KEY@warning": 4  # an ENCRYPTED private key committed to the repository: Medium (CODE@severity override)
   VULNERABLE_CRYPTO_LIBRARY: 8  # locked or declared version matches the offline advisory file
   CUSTOM_CRYPTO: 4        # private algorithm constants (CWE-1240); reported, does not fail CI
   # ── quantum-vulnerable / trust smell -> MEDIUM (a future/latent risk; SARIF warning) ──
   QUANTUM_VULNERABLE: 4   # RSA/ECC/DH/DSA — harvest-now-decrypt-later; PQC migration
   SELF_SIGNED_LEAF: 4     # self-signed end-entity cert — a production trust smell (C4)
+  CERT_SELF_SIGNED: 1     # self-signed cert whose own SHA-1 signature is never verified: Low (scan-node verdict)
   # ── posture findings (config and IaC). Weights follow the SARIF bands. ──
   UNENCRYPTED_AT_REST: 8
   UNENCRYPTED_IN_TRANSIT: 8
