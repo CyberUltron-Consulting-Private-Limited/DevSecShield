@@ -1,4 +1,41 @@
+import re
+
 from backend.new_models import scan_types , Scan
+
+# The settings a failed code scan is run again with ("Run again", frontend utils/scanRerun.ts OPTION_KEYS): the
+# options utilities/db/metadata.py stores when the scan starts.  Before, only repo_url / branch / zip_file_used came
+# back, so "Run again" on a failed SAST scan left the language at "Select language" (lab UI r1 F4).  Allow-listed per
+# type; a repository token is never among them (metadata.py never stores one) and _without_secrets drops any key that
+# names one, at any depth, in case an older row holds it.
+_RERUN_OPTIONS: dict[str, tuple[str, ...]] = {
+    "sast": ("repo_type", "app_lang", "exclude_path_arrays"),
+    "iac": ("repo_type", "environment", "iac_contexts"),
+    "sbom_sca": ("repo_type", "sbom_file_used"),
+    "cbom": ("repo_type", "include_vendored", "scan_history"),
+    "ai_bom": ("repo_type",),
+}
+_SECRET_WORDS = frozenset({"pat", "token", "tokens", "password", "passwd", "passphrase", "secret", "secrets",
+                           "authorization", "credential", "credentials", "cookie", "apikey", "headers"})
+
+
+def _secret_key(key) -> bool:
+    name = str(key).lower()
+    words = set(re.split(r"[^a-z0-9]+", name))
+    return bool(words & _SECRET_WORDS) or any(w in name for w in ("api_key", "apikey", "private_key", "access_key"))
+
+
+def _without_secrets(value):
+    if isinstance(value, dict):
+        return {k: _without_secrets(v) for k, v in value.items() if not _secret_key(k)}
+    if isinstance(value, list):
+        return [_without_secrets(v) for v in value]
+    return value
+
+
+def rerun_options(scan_type: str, meta: dict) -> dict:
+    """The stored, non-secret start options of a code scan, for "Run again" (None when the scan never stored one)."""
+    return {key: _without_secrets(meta.get(key)) for key in _RERUN_OPTIONS.get(scan_type, ())
+            if not _secret_key(key)}
 
 _CBOM_INPUT_COUNTS = ("components_total", "crypto_assets", "imported", "skipped_not_crypto", "skipped_invalid",
                       "duplicates")
@@ -54,6 +91,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
+            **rerun_options("sast", _meta),
             "files_scanned": files_scanned,
             "total_files": total_files,
             "code_coverage": code_coverage,
@@ -73,6 +111,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
+            **rerun_options("iac", _meta),
             "dependency_diagram": dependency_diagram,
         }
 
@@ -116,6 +155,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "repo_url": repo_url,
             "branch": branch,
             "zip_file_used": zip_file_used,
+            **rerun_options("sbom_sca", _meta),
             "sbom_compliance": sbom_compliance,
             "sbom_json": sbom_json,
             "rbi_csf_rollup": rbi_csf_rollup,
@@ -259,6 +299,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "branch": branch,
             "zip_file_used": zip_file_used,
             "cbom_file_used": cbom_file_used,
+            **rerun_options("cbom", _meta),
             # a code scan: what it left out (archives, images, binaries, firmware ...) from crypto:coverage:* (WP8b)
             "cbom_coverage": None if cbom_file_used else coverage_report(cbom_json),
             # an uploaded CBOM file: what was read, skipped or truncated, and the notes to show the user
@@ -364,6 +405,7 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "branch": branch,
             "zip_file_used": zip_file_used,
             "ai_bom_file_used": ai_bom_file_used,
+            **rerun_options("ai_bom", _meta),
             "scan_binaries": scan_binaries,
             "ai_bom_json": ai_bom_json,
             "ai_bom_compliance": ai_bom_compliance,

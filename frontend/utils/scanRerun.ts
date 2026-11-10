@@ -21,12 +21,15 @@ export interface RerunPrefill {
 }
 
 const MODES = new Set(["github", "gitlab", "bitbucket"]);
-const OPTION_KEYS: Record<CodeScanType, string[]> = {
+/** The options each sidebar takes over. The server returns them in scan_metadata (backend
+ * utilities/dashboard/scan_metadata.py rerun_options; before lab UI r1 F4 it dropped them, so nothing was copied).
+ * AI BOM has none: its sidebar offers no option (it never sends scan_binaries). */
+export const OPTION_KEYS: Record<CodeScanType, string[]> = {
   sast: ["app_lang", "exclude_path_arrays"],
   iac: ["environment", "iac_contexts"],
   sbom_sca: [],
   cbom: ["scan_binaries", "include_vendored", "scan_history"],
-  ai_bom: ["scan_binaries"],
+  ai_bom: [],
 };
 
 function record(value: unknown): Record<string, unknown> | null {
