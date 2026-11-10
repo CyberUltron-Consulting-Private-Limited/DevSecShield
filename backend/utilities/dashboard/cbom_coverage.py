@@ -33,6 +33,8 @@ _LABELS: dict[str, tuple[str, str]] = {
     "vendoredIncluded": ("\"Scan vendored and build directories\" was on: vendor/, dist/, build/ and node_modules/ "
                          "were read", "info"),
     "binariesRead": ("{n} binary file(s) were read for crypto imports, constants and embedded keys", "info"),
+    "rawBinariesRead": ("{n} other binary file(s) in no recognised format (for example a raw firmware dump) were "
+                        "searched for embedded keys and certificates only", "info"),
     "binariesTooLarge": ("{n} binary file(s) over the size cap were not read", "skipped"),
     "firmwareImagesRead": ("{n} firmware image(s) were unpacked and read", "info"),
     "firmwareSymlinksNotFollowed": ("{n} symbolic link(s) inside firmware were not followed", "skipped"),

@@ -6,7 +6,7 @@ from typing import Annotated
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import APIRouter, Form, UploadFile
-from fastapi import BackgroundTasks, Depends, HTTPException, Header, status
+from fastapi import BackgroundTasks, Depends, HTTPException, Header, Request, status
 from fastapi.responses import FileResponse
 from backend.utilities.ratelimit import RateLimiter
 from pydantic import ValidationError
@@ -57,6 +57,10 @@ read_limiter = RateLimiter("scans.read", times=120, seconds=60)
 write_limiter = RateLimiter("scans.write", times=30, seconds=60)
 start_limiter = RateLimiter("scans.start", times=10, seconds=60)  # start, re-run, estimate, AI remediation
 finding_limiter = RateLimiter("scans.finding", times=600, seconds=60)
+# A CBOM finding's remediation is the offline knowledge base (no AI, no credits) and the results page asks for it each
+# time a finding opens: reviewing findings is read-like, so it has its own budget and never spends the one that
+# estimates and starts scans. AI remediation (every other scan type) is also charged to start_limiter.
+remediate_limiter = RateLimiter("scans.remediate", times=120, seconds=60)
     
 # revamped ✅
 @router.get("/{team_id}/{type}/scans",summary="List all scans for a team", dependencies=[Depends(read_limiter)])
@@ -1193,8 +1197,9 @@ async def toggle_finding_state(
 
 
 @router.post("/{team_id}/{type}/scan/{scan_id}/finding/{finding_id}/remediate",
-             summary="Generate AI remediation (fix code + exploit payload) for a finding", dependencies=[Depends(start_limiter)])
+             summary="Generate AI remediation (fix code + exploit payload) for a finding", dependencies=[Depends(remediate_limiter)])
 async def generate_finding_remediation(
+    request: Request,
     team_id: int,
     type: scan_types,
     scan_id: int,
@@ -1207,6 +1212,9 @@ async def generate_finding_remediation(
     Results are cached in MongoDB — subsequent calls return the stored result.
     """
     from backend.utilities.ai.remediation import generate_remediation
+
+    if type != "cbom":
+        await start_limiter(request)  # AI remediation calls a model and spends credits: the scan-start budget
 
     try:
         # STEP [ 0 ] : =========== Auth + team check ======================

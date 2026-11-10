@@ -42,7 +42,12 @@ def _impact_color(impact: str):
     return severity_color(impact)
 
 
-def _quantum_label(quantum_safe: Any) -> str:
+def _quantum_label(quantum_safe: Any, strength: Any = None) -> str:
+    # The results page's Quantum column rule: an algorithm a quantum computer does not break but that is already
+    # broken (MD5, SHA-1, DES, RC4, ECB ...) is "Broken today", never "Quantum-Safe" (the PDF said Quantum-Safe for
+    # every weak symmetric finding: lab UI run u2, round 5).
+    if quantum_safe is True and str(strength or "").lower() == "weak":
+        return "Broken today (classically broken: replace now)"
     if quantum_safe is True:
         return "Quantum-Safe"
     if quantum_safe is False:
@@ -225,7 +230,7 @@ def generate_pdf(scan_results: Union[dict, list], output_path: Optional[str] = N
                         ("Type", alg_type),
                         ("Key size", key_size_text),
                         ("Strength", strength.title()),
-                        ("Quantum status", _quantum_label(v.get("quantum_safe"))),
+                        ("Quantum status", _quantum_label(v.get("quantum_safe"), strength)),
                         ("Where it was found", location),
                         *([("CWE", ", ".join(map(str, v.get("cwe") or [])))] if v.get("cwe") else []),
                         *([("CVE", ", ".join(map(str, v.get("cves") or [])))] if v.get("cves") else []),

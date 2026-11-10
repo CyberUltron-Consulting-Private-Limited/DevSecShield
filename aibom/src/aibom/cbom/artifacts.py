@@ -492,9 +492,36 @@ def collect(walk) -> ArtifactReport:
                 if data is not None:
                     collector = Collector(report, budget, detail=True)
                     collector.absorb(rel, [("lang", item) for item in collector._jar(data, 1, rel)])
+            elif b"\0" in head:
+                _raw_blob(report, budget, walk, path, rel)
             continue
         _firmware(report, budget, walk, path, rel, kind)
     return report
+
+
+def _raw_blob(report: ArtifactReport, budget, walk, path: Path, rel: str) -> None:
+    """A binary file no reader recognises (a raw flash dump, a vendor firmware blob, a data file): its keys and
+    certificates are still found by their PEM armour or DER prefix (:func:`aibom.cbom.binscan._embedded`), and it is
+    counted, so the coverage never says nothing was left out when such a file was in the tree. A raw blob with an
+    embedded private key was neither read nor counted (lab UI run u2, round 5)."""
+    from aibom.cbom.binscan import _embedded
+
+    size = path.stat(follow_symlinks=False).st_size if not path.is_symlink() else 0
+    if size > MAX_BINARY_BYTES:
+        report.count("binariesTooLarge")
+        return
+    data = walk.read_bytes(path, MAX_BINARY_BYTES)
+    if data is None:
+        return
+    report.count("rawBinariesRead")
+    facts = BinaryFacts("raw")
+    _embedded(data, facts)
+    if facts.embedded:
+        collector = Collector(report, budget, detail=True)
+        items: list[tuple[str, object]] = []
+        for emb in facts.embedded:
+            items.extend(collector._embedded(f"{rel}!embedded-{emb.offset:x}", emb.label, emb.der))
+        collector.absorb(rel, items)
 
 
 def _firmware(report: ArtifactReport, budget, walk, path: Path, rel: str, kind: str) -> None:

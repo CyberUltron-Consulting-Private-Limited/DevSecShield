@@ -70,7 +70,7 @@ function DiffViewer({ diff }: { diff: string }) {
         <CopyButton text={diff} />
       </div>
       <ScrollArea className="max-h-[300px]">
-        <pre className="text-xs font-mono leading-relaxed py-2">
+        <pre className="text-xs font-mono leading-relaxed py-2 overflow-x-auto">
           {lines.map((line, i) => (
             <DiffLine key={i} line={line} />
           ))}

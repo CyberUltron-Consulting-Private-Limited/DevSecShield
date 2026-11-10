@@ -460,3 +460,22 @@ def test_binaries_and_firmware_rows(tmp_path: Path) -> None:
     assert got[("AES", fw + "bin/init")] == set()  # inventory, no finding
     assert result.properties["crypto:coverage:firmwareImagesRead"] == "1"
     assert result.properties["crypto:coverage:binariesIncluded"] == "true"
+
+
+def test_a_raw_blob_is_searched_for_embedded_keys_and_counted(tmp_path: Path) -> None:
+    """A binary in no recognised format (a raw flash dump) was neither read nor counted, so its embedded private key
+    was missed while the coverage said nothing was skipped (lab UI run u2, round 5)."""
+    key = pem("RSA PRIVATE KEY", fake_rsa_der(1024))
+    blob = b"U2FW\x01\x00" + b"\x00" * 58 + b"\xff" * 4096 + key + b"\x00" * 4096
+    (tmp_path / "firmware").mkdir()
+    (tmp_path / "firmware" / "router_fw.bin").write_bytes(blob)
+    (tmp_path / "app.py").write_text("x = 1\n")  # text: not a blob
+    run, result = _rows(tmp_path, scan_binaries=True)
+    got = {(r["title"], r["location"]): set(r["finding_codes"]) for r in run["results"]}
+    offset = f"{blob.index(b'-----BEGIN'):x}"
+    where = f"firmware/router_fw.bin!embedded-{offset}"
+    assert got[(f"private-key (embedded-{offset})", where)] == {"HARDCODED_KEY"}
+    assert "WEAK_KEY_SIZE" in got[("RSA", where)]
+    assert result.properties["crypto:coverage:rawBinariesRead"] == "1"
+    off_run, off = _rows(tmp_path)
+    assert off_run["results"] == [] and "crypto:coverage:rawBinariesRead" not in off.properties

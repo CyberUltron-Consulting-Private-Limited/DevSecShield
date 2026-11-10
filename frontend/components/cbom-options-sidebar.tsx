@@ -44,6 +44,9 @@ import {
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { scanFailureMessage } from "@/utils/scanFailure";
+import { importHeadline, importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
+import type { CbomImportReport } from "@/utils/api/cbom_outputs";
 
 export type Mode = RepoMode | "unknown";
 
@@ -211,6 +214,8 @@ export function CBOMOptionsSidebar({
       setEstimationProcessDone(false);
       setOptionsSidebarState("scanning");
       queryClient.invalidateQueries({ queryKey: ["cbom-conversation-data", team_id, scan_id] });
+      // the credits are charged at start: the team balance in the app sidebar must show it now, not after a reload
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
       // The code scan is running; queue the included sources as a linked run (its failure only toasts).
       if (snapshot && snapshot.estimate.items.some((i) => i.status === "queued")) {
         startSourcesRunMutation.mutate(snapshot);
@@ -268,6 +273,9 @@ export function CBOMOptionsSidebar({
       : estimatedCredits;
   const canRunScan = estimationProcessDone && !creditsInvalid && (!anySourceIncluded || !!currentSourcesEstimate);
 
+  const failureMessage = scanFailureMessage(query.data);
+  // an uploaded CBOM file's import report (null for code scans): shown right here when the run finishes
+  const importReport = ((query.data?.scan_metadata as Record<string, unknown> | undefined)?.cbom_input ?? null) as CbomImportReport | null;
   useEffect(() => {
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
@@ -278,9 +286,7 @@ export function CBOMOptionsSidebar({
       setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
-      const msg =
-        (query.data?.scan_metadata as { error_message?: string } | undefined)?.error_message ??
-        "The scan failed.";
+      const msg = failureMessage;
       setErrorMessage(msg);
       setOptionsSidebarState("error");
     }
@@ -288,7 +294,15 @@ export function CBOMOptionsSidebar({
       setOptionsSidebarState("ready");
       setErrorMessage(null);
     }
-  }, [query.data?.scan_status, query.data?.scan_metadata]);
+  }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
+
+  // A finished scan settles its credits (a failed one is refunded): refresh the team balance in the app sidebar,
+  // which otherwise kept showing the balance from before the scan until a reload.
+  useEffect(() => {
+    if (query.data?.scan_status === "success" || query.data?.scan_status === "failure") {
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+    }
+  }, [query.data?.scan_status, queryClient]);
 
   const exportMutation = useMutation({
     mutationFn: () => getCBOMExportResults(team_id, scan_id),
@@ -578,6 +592,15 @@ export function CBOMOptionsSidebar({
             <p className="text-zinc-300 text-center">
               Scan has run successfully. Open the results to see every finding with its fix and proof.
             </p>
+            {importReport && importReportHasNews(importReport) && (
+              <div className="w-full rounded-md border border-amber-700/60 bg-amber-950/30 p-3 text-xs text-amber-200 space-y-1"
+                role="status" data-testid="cbom-sidebar-import-notes">
+                <p className="font-semibold">{importHeadline(importReport)}</p>
+                <ul className="list-disc pl-4 space-y-1 break-words">
+                  {importNoteLines(importReport).map((line, i) => <li key={i}>{line}</li>)}
+                </ul>
+              </div>
+            )}
             <Button
               variant="ghost"
               size="sm"

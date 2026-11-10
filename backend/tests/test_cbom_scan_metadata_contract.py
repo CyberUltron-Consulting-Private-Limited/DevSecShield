@@ -106,3 +106,18 @@ def test_legacy_scan_keys_present_but_none() -> None:
     out = get_scan_metadata("cbom", _scan({"branch": "main"}, {"results": []}))
     for key in _ADDITIVE_KEYS:
         assert key in out and out[key] is None
+
+
+def test_only_a_repository_scan_has_a_branch() -> None:
+    """A zip upload or an uploaded CBOM / AI-BOM file has no branch: the results page said "Branch: main" for both
+    (lab UI run u2, round 5). A repository scan without a stored branch still reads as main (the clone default)."""
+    for scan_type in ("cbom", "ai_bom", "sast"):
+        zip_scan = get_scan_metadata(scan_type, _scan({"repo_url": None, "branch": None, "zip_file_used": True}))
+        assert zip_scan["branch"] is None, scan_type
+        assert get_scan_metadata(scan_type, _scan({}))["branch"] is None, scan_type
+        repo = get_scan_metadata(scan_type, _scan({"repo_url": "https://github.com/o/r", "branch": None}))
+        assert repo["branch"] == "main", scan_type
+        dev = get_scan_metadata(scan_type, _scan({"repo_url": "https://github.com/o/r", "branch": "dev"}))
+        assert dev["branch"] == "dev", scan_type
+    cbom_file = get_scan_metadata("cbom", _scan({"cbom_file_used": True}))
+    assert cbom_file["branch"] is None and cbom_file["cbom_file_used"] is True

@@ -199,8 +199,10 @@ class IACAgent(BaseAgent):
         except Exception as e:
             console.print(f"Error occured in run_agent : {str(e)}",style="bold red")
             self.clean_up()
-            return None
-    
+            # raise like the SAST / SBOM agents: returning None made the task fail with "cannot unpack
+            # non-iterable NoneType object" and the real cause never reached the scan's failure reason
+            raise Exception(f"Error occured while running agent : {str(e)}") from e
+
 
     def estimate_credits_required(self)->int:
         """

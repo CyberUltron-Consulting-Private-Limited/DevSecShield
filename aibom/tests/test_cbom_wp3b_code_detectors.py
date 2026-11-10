@@ -335,6 +335,10 @@ def test_key_deleted_from_the_tree_is_found_in_history(tmp_path: Path, pack: boo
     assert props["crypto:historyOnly"] == "true" and len(props["crypto:gitCommit"]) == 40
     assert props["crypto:keySize"] == "128"
     assert result.properties["crypto:coverage:gitHistoryCommits"] == "2"
+    # the deleted key is a finding (it was "Info" inventory, invisible on the results page: lab UI run u2, round 5)
+    flags = [f for f in result.flags if f.target == rows[0].bom_ref]
+    assert [f.code for f in flags] == ["HARDCODED_KEY"]
+    assert "Key in git history" in flags[0].message and props["crypto:gitCommit"][:12] in flags[0].message
     # opted out, or a shallow clone: history is not read
     assert not [c for c in scan_crypto(root, scan_history=False).components
                 if (c.properties or {}).get("discovery:source") == "config/old_deploy.key"]

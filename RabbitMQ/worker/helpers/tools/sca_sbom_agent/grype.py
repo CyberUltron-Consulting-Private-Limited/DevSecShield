@@ -5,6 +5,7 @@ import tempfile
 import shutil
 from git import Repo, GitCommandError
 from rich.console import Console
+from helpers.tools.sca_sbom_agent.grype_errors import grype_failure_reason
 from helpers.context.scan_context import clone_repo, is_github_url, GithubContext, GitlabContext, BitbucketContext
 
 def run_sbom_scan(
@@ -68,7 +69,8 @@ def run_sbom_scan(
                 ]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode != 0:
-                raise RuntimeError(f"SBOM scan failed: {result.stderr}")
+                # the cause, not grype's first (harmless) warning line: the scan's failure reason keeps one line
+                raise RuntimeError(f"SBOM scan failed: {grype_failure_reason(result.stderr)}")
 
         with open(json_temp.name, "r", errors="ignore") as f:
             sbom_json = json.load(f)
