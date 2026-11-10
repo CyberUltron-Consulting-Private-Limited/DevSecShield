@@ -399,15 +399,17 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
     onSettled: invalidate,
   });
 
+  // Scroll after the re-render: the form is remounted (new key) and the test panel opens, so a scroll started before
+  // them lands below the form (lab UI round 5: Edit from the table left the page at the table, scrolled further down).
   const startNew = () => {
     setEditing(null);
     setFormNonce((n) => n + 1);
-    scrollToId("servers-form");
+    window.setTimeout(() => scrollToId("servers-form"), 0);
   };
   const startEdit = (source: CbomSource) => {
     setEditing(source);
     setTestView(source.last_test_status === "never" ? null : { sourceId: source.id, jobId: source.last_test_job_id });
-    scrollToId("servers-form");
+    window.setTimeout(() => scrollToId("servers-form"), 0);
   };
   const showResults = (source: CbomSource) => {
     setTestView({ sourceId: source.id, jobId: source.last_test_job_id });
