@@ -117,9 +117,11 @@ def project_cbom_ci_page(run: dict) -> dict | None:
         "total_not_started": status.get("not_started", 0),
         "total_ignored": status.get("ignored", 0),
     }
+    from backend.utilities.cbom_sources.cbom_rows import page_row
+
     findings = [_finding(row, index) for index, row in flagged]
     return {
-        "data": [_display_row(row) for row in rows if isinstance(row, dict)],
+        "data": [page_row(row) for row in rows if isinstance(row, dict)],  # what the readiness gauge counts
         "dashboard": dashboard,
         "findings": findings,
         "scan_metadata": get_scan_metadata(scan_type="cbom", scan=scan),

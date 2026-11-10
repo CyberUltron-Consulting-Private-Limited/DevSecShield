@@ -396,20 +396,11 @@ async def get_scan(
                         remapped.append(r)
                     scan_result = remapped
                 elif type == "cbom":
-                    remapped = []
-                    for row in scan_result:
-                        if not isinstance(row, dict):
-                            remapped.append(row)
-                            continue
-                        r = dict(row)
-                        at = r.get("algorithm_type")
-                        if not at or str(at).lower() in ("unknown", "none", "null"):
-                            r["algorithm_type"] = r.get("asset_type") or "other"
-                        cs = r.get("crypto_strength")
-                        if not cs or str(cs).lower() in ("unknown", "none", "null"):
-                            r["crypto_strength"] = "not-applicable"
-                        remapped.append(r)
-                    scan_result = remapped
+                    from backend.utilities.cbom_sources.cbom_rows import page_row
+
+                    # the rows every backend counter reads (cbom_metrics: the PDF, the scan list): the page's
+                    # readiness gauge counts them by the same rule (lab UI r1 F3)
+                    scan_result = [page_row(row) for row in scan_result]
         data = {
                 "title": scan.title,
                 "scan_metadata": scan_metadata,
