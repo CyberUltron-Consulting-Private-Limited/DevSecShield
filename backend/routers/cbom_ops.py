@@ -135,9 +135,12 @@ def _run_changes(engine, team_id: int, run_id: int, limit: int) -> dict:
             DRIFT.record_run_drift(session, run, now)  # the scheduler may not have reached it yet
             session.commit()
             session.refresh(run)
+        # not read again under a coverage gap: no event (neither removed nor resolved), listed apart with the reason
+        not_read = DRIFT.run_not_read(session, run) if run.status in DRIFT.FINISHED else []
         return {"run_id": run.id, "status": run.status, "recorded": run.drift_at is not None,
                 "recorded_at": iso_z(run.drift_at), "counts": _counts(session, team_id, run_id=run.id),
-                "events": _events(session, team_id, run_id=run.id, limit=limit)}
+                "events": _events(session, team_id, run_id=run.id, limit=limit),
+                "not_read": not_read[:limit], "not_read_count": len(not_read)}
 
 
 @router.get(SRC + "/runs/{run_id}/changes", dependencies=READ,

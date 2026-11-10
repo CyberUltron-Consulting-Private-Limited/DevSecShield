@@ -212,6 +212,25 @@ export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; prox
   ].join("\n")
 }
 
+/** "Not read in this run" (lab UI r1 F2): assets of a compared source that the later run did not read because of a
+ * coverage gap (a stopped target, a denied check). They are neither removed nor resolved, so they are listed apart,
+ * grouped by why they were not read (the coverage row's detail, from the server) and by source. */
+export const NOT_READ_NO_REASON = "The scan node reported a coverage gap here"
+export function groupNotRead<T extends { reason?: string | null; source_name?: string | null }>(
+  items: T[],
+): { reason: string; source: string | null; items: T[] }[] {
+  const groups = new Map<string, { reason: string; source: string | null; items: T[] }>()
+  for (const item of items) {
+    const reason = item.reason?.trim() || NOT_READ_NO_REASON
+    const source = item.source_name ?? null
+    const key = `${source ?? ""}\u0000${reason}`
+    const group = groups.get(key) ?? { reason, source, items: [] }
+    group.items.push(item)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+}
+
 /** What Reset says for a node of an agent pool (a DaemonSet pod): the server issues it no registration token, since
  * the pod enrolls again by itself with the pool token after its next heartbeat (every 30 s) is refused (lab UI r1 N1:
  * Reset opened "Register <node> again" with a standalone Helm command and a fresh 24-hour token). */
