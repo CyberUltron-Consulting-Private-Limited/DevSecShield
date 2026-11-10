@@ -94,11 +94,21 @@ def test_test_button_goes_through_the_ssrf_guard(api, monkeypatch):
     for url, words in (("https://127.0.0.1/hook", "never allowed"), ("https://169.254.169.254/latest", "never allowed"),
                        ("https://[::1]:8443/x", "never allowed"), ("https://100.100.100.200/", "never allowed"),
                        ("https://10.20.30.40/hook", "INTEGRATION_ALLOWED_PRIVATE")):
-        assert api("PUT", "/1/integrations/webhook", json={**HOOK, "config": {"url": url}}).status_code == 200
+        # Round 5, L1: saving it enabled is refused with Test's own message (it was saved, then every Test failed)
+        refused = api("PUT", "/1/integrations/webhook", json={**HOOK, "config": {"url": url}})
+        assert refused.status_code == 400 and words in refused.json()["detail"], (url, refused.text)
+        assert refused.json()["detail"].startswith("config.url: ")
+        # saved disabled it is kept (turning an integration off is never blocked), and Test still refuses it
+        assert api("PUT", "/1/integrations/webhook",
+                   json={**HOOK, "enabled": False, "config": {"url": url}}).status_code == 200
         r = api("POST", "/1/integrations/webhook/test")
         assert r.status_code == 200 and r.json()["ok"] is False and words in r.json()["message"], (url, r.text)
     syslog = api("PUT", "/1/integrations/syslog", json={"enabled": True, "config": {"host": "169.254.169.254",
                                                                                    "transport": "udp"}})
+    assert syslog.status_code == 400 and syslog.json()["detail"].startswith("config.host: ")
+    assert "never allowed" in syslog.json()["detail"]
+    syslog = api("PUT", "/1/integrations/syslog", json={"enabled": False, "config": {"host": "169.254.169.254",
+                                                                                    "transport": "udp"}})
     assert syslog.status_code == 200
     assert "never allowed" in api("POST", "/1/integrations/syslog/test").json()["message"]
     listed = {i["kind"]: i for i in api("GET", "/1/integrations").json()["integrations"]}
@@ -251,12 +261,15 @@ def test_events_older_than_the_max_age_are_dead_lettered_on_failure(api, world, 
 
 def test_refused_destination_is_a_retry_not_a_silent_drop(api, world, monkeypatch):
     engine, _ = world
+    # Saving a refused destination is itself refused now; a destination can still become refused later (the
+    # operator withdraws INTEGRATION_ALLOWED_PRIVATE): the dispatcher must keep the events, not drop them.
+    monkeypatch.setenv(outbound.ENV_ALLOWED_PRIVATE, "10.20.0.0/16")
+    assert api("PUT", "/1/integrations/webhook", json={**HOOK, "config": {"url": "https://10.20.30.40/x"}}).status_code == 200
     monkeypatch.delenv(outbound.ENV_ALLOWED_PRIVATE, raising=False)
-    assert api("PUT", "/1/integrations/webhook", json={**HOOK, "config": {"url": "https://169.254.169.254/x"}}).status_code == 200
     _drift(engine, 1)
     assert D.tick(engine)["retry"] == 1
     with Session(engine) as s:
-        assert "never allowed" in s.exec(select(TeamIntegration)).one().last_error
+        assert "INTEGRATION_ALLOWED_PRIVATE" in s.exec(select(TeamIntegration)).one().last_error
         assert s.exec(select(IntegrationDelivery)).one().status == "pending"
 
 
