@@ -387,6 +387,14 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                         <TableCell colSpan={9} className="bg-zinc-50 dark:bg-zinc-800/50">
                           <div className="max-w-[900px] space-y-2 whitespace-normal">
                             {asset.finding && <p className="text-sm text-zinc-900 dark:text-white">{asset.finding}</p>}
+                            {asset.as_of_run && (
+                              <p className="text-xs text-amber-700 dark:text-amber-400" data-testid="asset-as-of-run">
+                                Judged today ({asset.as_of_run.judged_on}): a certificate expiry or library end-of-life date
+                                passed after this run. The run on {asset.as_of_run.date} recorded{" "}
+                                {asset.as_of_run.impact ? `${asset.as_of_run.impact}` : "no finding"}
+                                {asset.as_of_run.finding_codes.length > 0 ? ` (${asset.as_of_run.finding_codes.join(", ")})` : ""}.
+                              </p>
+                            )}
                             <p className="text-xs text-zinc-500">
                               Source: {asset.source_name ?? "—"}
                               {asset.finding_codes.length > 0 ? ` · ${asset.finding_codes.join(", ")}` : ""}

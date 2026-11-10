@@ -4262,6 +4262,16 @@ export interface CbomJob {
 
 export type CbomImpact = "Critical" | "High" | "Medium" | "Low"
 
+/** A date-based rule (certificate expiry, library end of life) judged this asset differently today than its run did:
+ * the finding shown is today's, and this is what the run itself recorded. */
+export interface CbomAsOfRun {
+    date: string
+    judged_on: string
+    impact: CbomImpact | null
+    finding_codes: string[]
+    finding: string | null
+}
+
 export interface CbomAsset {
     id: number
     type: string
@@ -4279,6 +4289,7 @@ export interface CbomAsset {
     impact: CbomImpact | null
     finding: string | null
     finding_codes: string[]
+    as_of_run?: CbomAsOfRun | null
     facts: Record<string, unknown>
 }
 
@@ -4409,6 +4420,7 @@ export interface CbomAssetDetail {
     impact: CbomImpact | null
     finding: string | null
     finding_codes: string[]
+    as_of_run?: CbomAsOfRun | null
     algorithm: string | null
     key_size: number | null
     protocol: string | null

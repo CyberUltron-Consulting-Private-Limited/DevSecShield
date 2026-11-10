@@ -183,6 +183,100 @@ def test_library_end_of_life_is_as_of_the_run_and_today_when_it_differs(api, wor
     assert detail["eol_today"]["passed"] is True and detail["eol_today"]["date"] == detail["eol"]["date"]
 
 
+def test_a_library_that_reached_end_of_life_after_the_run_is_a_finding_in_every_view(api, world):
+    """One rule: a date-based finding (library end of life, certificate expiry) is judged TODAY wherever a run's
+    findings are shown - the list, its impact chips and filters, the posture totals, the heat map, the remediation
+    waves, the asset panel and the CycloneDX JSON/XML - with the run's own verdict kept beside it; the stored row
+    (the history drift and OSCAL compare) is never rewritten."""
+    from sqlmodel import Session
+
+    from backend.new_models import CbomCollectedAsset
+    from backend.utilities.cbom_sources import crypto_kb
+    from backend.utilities.cbom_sources.inventory import export_serial
+
+    engine, _ = world
+    _src, run, claim, hdr = _collect_job(api, engine)
+    lib = {"type": "crypto_library", "target": "10.20.0.1", "location": "package:openssl", "name": "openssl",
+           "facts": {"name": "openssl", "version": "3.0.2-0ubuntu1.15", "source": "package"}}
+    assert _post_assets(api, claim["job"], hdr, [lib, PRIVATE_TLS]).status_code == 200
+    base = f"/1/cbom/sources/runs/{run['id']}"
+    lib_id = next(i["id"] for i in api("GET", f"{base}/assets").json()["items"] if i["type"] == "crypto_library")
+    with Session(engine) as s:  # the run happened before the 3.0 branch's end of life (2026-09-07): its record
+        from backend.utilities.cbom_sources.classify import classify
+
+        row = s.get(CbomCollectedAsset, lib_id)
+        row.created_at = dt.datetime(2026, 1, 15)
+        then = classify(row.asset_type, row.algorithm, row.key_size, row.protocol, row.facts, row.created_at)
+        row.impact, row.finding_codes, row.finding = then["impact"], then["finding_codes"], then["finding"]
+        s.add(row)
+        s.commit()
+        run_impact, run_codes = row.impact, list(row.finding_codes or [])
+    assert "LIB_EOL" not in run_codes and run_impact != "Medium"  # what the run itself recorded
+
+    listing = api("GET", f"{base}/assets").json()
+    item = next(i for i in listing["items"] if i["id"] == lib_id)
+    assert "LIB_EOL" in item["finding_codes"] and item["impact"] == "Medium" and "end of life" in item["finding"]
+    assert item["as_of_run"] == {"date": "2026-01-15", "judged_on": dt.datetime.utcnow().date().isoformat(),
+                                 "impact": run_impact, "finding_codes": run_codes, "finding": item["as_of_run"]["finding"]}
+    assert listing["facets"]["impact"].get("Medium", 0) >= 1
+    assert lib_id in [i["id"] for i in api("GET", f"{base}/assets?impact=Medium").json()["items"]]
+    if run_impact:
+        assert lib_id not in [i["id"] for i in api("GET", f"{base}/assets?impact={run_impact}").json()["items"]]
+    assert [i["id"] for i in api("GET", f"{base}/assets?q=reached%20end%20of%20life").json()["items"]] == [lib_id]
+
+    posture = api("GET", f"{base}/posture").json()["posture"]
+    assert "LIB_EOL" in {c["code"] for c in posture["top_codes"]}
+    assert any(r["id"] == lib_id and r["impact"] == "Medium" for r in posture["top_risks"])
+
+    heat = api("GET", f"{base}/heatmap?by=type").json()
+    assert any(c["column"] == "crypto_library" and c["by_impact"]["Medium"] == 1 for c in heat["cells"])
+    waves = api("GET", f"{base}/remediation").json()["items"]
+    assert any(w["asset_id"] == lib_id and w["impact"] == "Medium" and "LIB_EOL" in w["finding_codes"] for w in waves)
+
+    detail = api("GET", f"/1/cbom/sources/assets/{lib_id}").json()["asset"]
+    assert detail["impact"] == "Medium" and "LIB_EOL" in [d["code"] for d in detail["details"]]
+    assert detail["as_of_run"]["date"] == "2026-01-15" and detail["library"]["eol_today"]["passed"] is True
+
+    bom = api("GET", f"{base}/cbom").json()
+    comp = next(c for c in bom["components"] if c["bom-ref"] == f"zs-asset-{lib_id}")
+    props = [(p["name"], p["value"]) for p in comp["properties"]]
+    assert ("zs:finding_code", "LIB_EOL") in props and ("zs:impact", "Medium") in props
+    assert ("zs:run_impact", run_impact or "Info") in props and ("zs:judged_on", item["as_of_run"]["judged_on"]) in props
+    assert "ZS-CBOM-LIB_EOL" in {v["id"] for v in bom["vulnerabilities"]}
+    assert bom["serialNumber"] != export_serial(run["id"], crypto_kb.version())  # not the run's own record
+    xml = api("GET", f"{base}/cbom?format=xml")
+    assert xml.status_code == 200 and "LIB_EOL" in xml.text
+
+    with Session(engine) as s:  # the history is kept: the stored verdict is the run's
+        row = s.get(CbomCollectedAsset, lib_id)
+        assert (row.impact, list(row.finding_codes or [])) == (run_impact, run_codes)
+
+
+def test_certificate_expiry_follows_the_same_rule():
+    from backend.utilities.cbom_sources.classify import verdict_today
+
+    run, now = dt.datetime(2026, 1, 15), dt.datetime(2026, 11, 10)
+    cert = {"not_after": "2026-03-01T00:00:00Z", "sig_alg": "sha256WithRSAEncryption", "key_alg": "RSA", "key_size": 2048}
+    today = verdict_today("certificate", "RSA", 2048, None, cert, run, now)  # valid at the run, expired since
+    assert "CERT_EXPIRED" in today["finding_codes"] and today["impact"] == "High"
+    soon = verdict_today("certificate", "RSA", 2048, None, {**cert, "not_after": "2026-11-25T00:00:00Z"}, run, now)
+    assert "CERT_EXPIRES_30D" in soon["finding_codes"]
+    far = {**cert, "not_after": "2030-01-01T00:00:00Z"}
+    assert verdict_today("certificate", "RSA", 2048, None, far, run, now) is None  # nothing date-based changed
+    assert verdict_today("tls_endpoint", None, None, None, {"protocols": ["TLSv1.2"]}, run, now) is None
+    assert verdict_today("certificate", "RSA", 2048, None, {**cert, "trust_store": True}, run, now) is None
+
+
+def test_a_library_collected_after_its_end_of_life_shows_no_second_verdict(api, world):
+    engine, _ = world
+    _src, run, claim, hdr = _collect_job(api, engine)
+    lib = {"type": "crypto_library", "target": "10.20.0.1", "location": "package:openssl", "name": "openssl",
+           "facts": {"name": "openssl", "version": "3.0.2-0ubuntu1.15", "source": "package"}}
+    assert _post_assets(api, claim["job"], hdr, [lib]).status_code == 200
+    item = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets").json()["items"][0]
+    assert "LIB_EOL" in item["finding_codes"] and item["as_of_run"] is None  # the run already found it
+
+
 # ------------------------------------------------------------------------------------------- node-run export
 def test_run_records_versions_and_the_export_serial_is_deterministic(api, world):
     from backend.utilities.cbom_sources import crypto_kb

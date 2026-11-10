@@ -670,3 +670,70 @@ def _rules_version() -> str:
 
 
 CLASSIFIER_VERSION = _rules_version()
+
+
+# ----------------------------------------------------------------------------- date-based rules, judged today
+# Two rules read the calendar: a certificate's expiry (CERT_EXPIRED, CERT_EXPIRES_30D) and a library's upstream end
+# of life from the knowledge base (LIB_EOL). A run stores its verdict as of its collection date, and that record is
+# kept (drift and the OSCAL assessment compare runs by it). Every view of a run's findings (the asset list and its
+# counts, the posture totals, the heat map, the migration waves, the asset panel and the CycloneDX export) shows the
+# verdict judged TODAY instead, with the run's verdict beside it, so a library that reaches end of life after a run
+# is a finding everywhere at once, not only in the panel, and not only after the next run.
+CERT_DATED_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate"})
+LIBRARY_DATED_TYPES = frozenset({"crypto_library", "process_library"})
+DATED_TYPES = CERT_DATED_TYPES | LIBRARY_DATED_TYPES
+_EXPIRY_WINDOW = _dt.timedelta(days=31)  # CERT_EXPIRES_30D looks 30 days ahead
+
+
+def _date_may_matter(asset_type: str, facts: dict[str, Any], then: _dt.datetime, now: _dt.datetime) -> bool:
+    """Cheap pre-check: can the date-based rules judge this asset differently ``now`` than ``then``?"""
+    if asset_type in LIBRARY_DATED_TYPES:
+        version = str(facts.get("version") or "")
+        package = str(facts.get("name") or facts.get("package") or "")
+        if not version or not package or facts.get("eol"):
+            return False
+        before = (crypto_kb.library_status(package, version, today=then.date()) or {}).get("eol") or {}
+        after = (crypto_kb.library_status(package, version, today=now.date()) or {}).get("eol") or {}
+        return bool(before.get("passed")) != bool(after.get("passed"))
+    if asset_type in CERT_DATED_TYPES:
+        not_after = _parse_time(facts.get("not_after"))
+        return not_after is not None and (not_after - then <= _EXPIRY_WINDOW or not_after - now <= _EXPIRY_WINDOW)
+    return False
+
+
+def verdict_today(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,
+                  collected_at: _dt.datetime | None, now: _dt.datetime | None = None) -> dict[str, Any] | None:
+    """The verdict of a stored asset judged ``now`` when a date-based rule judges it differently than on its
+    collection date; None when the stored verdict stands (no date-based rule applies, or nothing changed)."""
+    if asset_type not in DATED_TYPES or collected_at is None:
+        return None
+    facts = facts or {}
+    now = now or _dt.datetime.utcnow()
+    collected_at, now = (_parse_time(t.isoformat()) or t for t in (collected_at, now))  # naive UTC, as the rules use
+    if not _date_may_matter(asset_type, facts, collected_at, now):
+        return None
+    then_v = classify(asset_type, algorithm, key_size, protocol, facts, collected_at)
+    now_v = classify(asset_type, algorithm, key_size, protocol, facts, now)
+    if (then_v["finding_codes"], then_v["impact"], then_v["finding"]) == \
+            (now_v["finding_codes"], now_v["impact"], now_v["finding"]):
+        return None
+    return now_v
+
+
+def shown(row: Any, now: _dt.datetime | None = None) -> dict[str, Any]:
+    """What every view shows for a stored asset row: its stored verdict, or today's when a date-based rule changed
+    it, with the run's verdict kept in ``as_of_run`` (None when nothing changed)."""
+    now = now or _dt.datetime.utcnow()
+    try:
+        today = verdict_today(row.asset_type, row.algorithm, row.key_size, row.protocol, row.facts or {},
+                              row.created_at, now)
+    except Exception:  # an asset the current rules cannot read keeps its stored verdict
+        today = None
+    codes = [c for c in row.finding_codes or [] if isinstance(c, str)]
+    if today is None:
+        return {"impact": row.impact, "finding_codes": codes, "finding": row.finding, "impacts": None,
+                "as_of_run": None}
+    return {"impact": today["impact"], "finding_codes": list(today["finding_codes"]), "finding": today["finding"],
+            "impacts": today["impacts"],
+            "as_of_run": {"date": row.created_at.date().isoformat(), "judged_on": now.date().isoformat(),
+                          "impact": row.impact, "finding_codes": codes, "finding": row.finding}}
