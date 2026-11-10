@@ -4359,6 +4359,8 @@ export interface CbomExclusionItem { cidr: string; reason: string }
 
 export interface CbomSourcesSettings {
     aws_external_id: string
+    /** false: the deployment has no CBOM_AWS_PRINCIPAL_ARN, so AWS accounts cannot be connected */
+    aws_collection_configured?: boolean
     cert_domains: string[]
     network_exclusions: CbomExclusionItem[]
     sni_hostnames: string[]

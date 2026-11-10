@@ -446,6 +446,18 @@ def zeroshield_account_id() -> str | None:
     return match.group(1) if match else None
 
 
+AWS_NOT_CONFIGURED = (
+    "This ZeroShield deployment is not set up for AWS collection; contact your administrator"
+)
+
+
+def aws_collection_configured() -> bool:
+    """Whether customers can connect AWS accounts: the reader role's trust policy names ZeroShield's own AWS account
+    (CBOM_AWS_PRINCIPAL_ARN). Without it the template could only trust the placeholder 000000000000 and could
+    never work, so the form, the template download and Validate all say AWS_NOT_CONFIGURED instead."""
+    return zeroshield_account_id() is not None
+
+
 def cloudformation_template(external_id: str, scope: str, read_lambda_cmk: bool = False, read_glue: bool = False) -> str:
     """The reader role.  The two opt-ins are CloudFormation parameters (so they can also be flipped on the stack);
     the arguments only choose their defaults, which is what the source's switches in ZeroShield say."""
