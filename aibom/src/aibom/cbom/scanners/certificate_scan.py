@@ -26,6 +26,7 @@ serialization is C4.
 from __future__ import annotations
 
 import base64
+import binascii
 import re
 from pathlib import Path
 
@@ -109,10 +110,15 @@ def _iter_files(walk: FileWalk, exts: frozenset[str] | None) -> list[Path]:
     return walk.files(lambda p: exts is None or p.suffix.lower() in exts)
 
 
-def _sources(walk: FileWalk, exts: frozenset[str]):
-    """(rel, bytes, suffix, extra properties) of the key/certificate files on disk, then of those inside archives
-    (``outer.zip!inner.pem``) and in git history (:meth:`FileWalk.virtual_files`)."""
-    for path in _iter_files(walk, exts):
+# OpenSSH's default private-key file names, which carry no extension (a committed ``id_rsa`` is a key file).
+_SSH_KEY_NAMES = frozenset({"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "id_ecdsa_sk", "id_ed25519_sk"})
+
+
+def _sources(walk: FileWalk, exts: frozenset[str], names: frozenset[str] = frozenset()):
+    """(rel, bytes, suffix, extra properties) of the key/certificate files on disk (by extension, or by one of
+    ``names``), then of those inside archives (``outer.zip!inner.pem``) and in git history
+    (:meth:`FileWalk.virtual_files`)."""
+    for path in walk.files(lambda p: p.suffix.lower() in exts or p.name in names):
         raw = walk.read_bytes(path)
         if raw is not None:
             yield walk.rel(path), raw, path.suffix.lower(), None
@@ -184,7 +190,7 @@ class CertificateMaterialScanner(Scanner):
     def _scan_cert_files(
         self, ctx: ScanContext, seen: set[str], chain: list
     ) -> None:
-        for rel, raw, ext, extra in _sources(file_walk(ctx), _CERT_EXTS):
+        for rel, raw, ext, extra in _sources(file_walk(ctx), _CERT_EXTS, _SSH_KEY_NAMES):
             before = len(ctx.components)
             if b"-----BEGIN" in raw:
                 text = raw.decode("utf-8", "ignore")
@@ -270,18 +276,20 @@ class CertificateMaterialScanner(Scanner):
             if cert is not None:
                 self._emit_certificate(ctx, seen, chain, cert, rel)
         elif _PRIVATE_KEY_RE.search(label):
-            self._emit_key_block(ctx, seen, "private-key", rel, label, body)
+            self._emit_key_block(ctx, seen, "private-key", rel, label, body, key_file=True)
         elif _PUBLIC_KEY_RE.search(label):
             self._emit_key_block(ctx, seen, "public-key", rel, label, body)
 
     def _emit_key_block(
-        self, ctx: ScanContext, seen: set[str], kind: str, rel: str, label: str, body: str
+        self, ctx: ScanContext, seen: set[str], kind: str, rel: str, label: str, body: str, key_file: bool = False
     ) -> None:
-        """A PEM / OpenPGP armored key block -> private-/public-key material."""
+        """A PEM / OpenPGP armored key block -> private-/public-key material.  A private key FILE is committed key
+        material (:func:`_committed_key_props`); a block pasted inside source keeps its inventory treatment."""
+        committed = _committed_key_props(rel, label, body) if kind == "private-key" and key_file else {}
         if not label.startswith("PGP "):
-            self._emit_material(ctx, seen, kind, rel, _label_alg(label))
+            self._emit_material(ctx, seen, kind, rel, _label_alg(label), extra=committed or None)
             return
-        extra = {"crypto:containerFormat": "openpgp"}
+        extra = {"crypto:containerFormat": "openpgp", **committed}
         info = _openpgp_key_info(body)
         if info is not None and info[1]:
             extra["crypto:keySize"] = str(info[1])
@@ -402,6 +410,37 @@ class CertificateMaterialScanner(Scanner):
         ctx.add_component(
             CryptoAssetComponent(bom_ref=ref, name=name, properties=props)
         )
+
+
+def _pem_encrypted(label: str, body: str) -> bool:
+    """A passphrase-protected private key: PKCS#8 ``ENCRYPTED PRIVATE KEY``, a legacy PEM with ``Proc-Type:
+    4,ENCRYPTED``, or an OpenSSH key whose cipher is not ``none``."""
+    if "ENCRYPTED" in label.upper() or "Proc-Type: 4,ENCRYPTED" in body:
+        return True
+    if "OPENSSH" in label.upper():
+        try:
+            blob = base64.b64decode(re.sub(r"\s+", "", body)[:200] + "==", validate=False)
+        except (ValueError, binascii.Error):
+            return False
+        magic = b"openssh-key-v1\x00"
+        if blob.startswith(magic) and len(blob) >= len(magic) + 4:
+            size = int.from_bytes(blob[len(magic):len(magic) + 4], "big")
+            return blob[len(magic) + 4:len(magic) + 4 + size] not in (b"none", b"")
+    return False
+
+
+def _committed_key_props(rel: str, label: str, body: str) -> dict[str, str]:
+    """A private key committed to the repository (a key file, or a PEM block inside source) is hard-coded key
+    material: the weakness lane raises HARDCODED_KEY (Medium when the key is encrypted).  A key under a
+    non-production path (tests/, fixtures/, examples/ ...: the engine's posture path rule) stays inventory."""
+    from aibom.cbom.posture.model import path_context
+
+    if path_context(rel) == "non_production_hint":
+        return {"crypto:pathContext": "non_production_hint"}
+    props = {"crypto:hardcoded": "true", "crypto:committed": "true"}
+    if _pem_encrypted(label, body):
+        props["crypto:encrypted"] = "true"
+    return props
 
 
 def _label_alg(label: str) -> str | None:

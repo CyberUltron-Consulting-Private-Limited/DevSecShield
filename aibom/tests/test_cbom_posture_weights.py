@@ -36,6 +36,8 @@ ADDED_AFTER_BASE = {
     # container images, binaries and firmware (artifact_scan, scan option scan_binaries)
     "EOL_CRYPTO_LIBRARY": 4,
     "LIBRARY_CVE_RANGE": 1,
+    # CODE@severity override: an encrypted private key committed to the repository is Medium, not High
+    "HARDCODED_KEY@warning": 4,
 }
 
 

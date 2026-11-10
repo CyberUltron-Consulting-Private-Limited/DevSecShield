@@ -398,15 +398,37 @@ def material_misuse_findings(component: AIComponent) -> list[tuple[str, str, str
         derived = props.get("crypto:derivedWith")
         how = (f"derived from a constant through {derived}, so it is fixed by the source and the "
                f"derivation is not a key-derivation function" if derived else "embedded as a source literal")
-        findings.append(
-            (
-                HARDCODED_KEY,
-                _SEV,
-                f"Hardcoded key {name}: a symmetric/private key is {how} "
-                f"(CWE-321); anyone with the code has the key. "
-                f"Load key material from a secret manager / KMS, never source.",
+        if props.get("crypto:committed") == "true" and props.get("crypto:encrypted") == "true":
+            findings.append(
+                (
+                    HARDCODED_KEY,
+                    _SEV_MED,
+                    f"Hardcoded key {name}: an encrypted (passphrase-protected) private key is committed to the "
+                    f"repository (CWE-321). It is encrypted, so the code alone does not give the key, but anyone "
+                    f"who also has the passphrase does and the repository history keeps it. Remove it from the "
+                    f"repository and its history, rotate it, and load keys from a secret manager / KMS.",
+                )
             )
-        )
+        elif props.get("crypto:committed") == "true":
+            findings.append(
+                (
+                    HARDCODED_KEY,
+                    _SEV,
+                    f"Hardcoded key {name}: an unencrypted private key is committed to the repository (CWE-321); "
+                    f"anyone with the code has the key. Remove it from the repository and its history, rotate it, "
+                    f"and load keys from a secret manager / KMS.",
+                )
+            )
+        else:
+            findings.append(
+                (
+                    HARDCODED_KEY,
+                    _SEV,
+                    f"Hardcoded key {name}: a symmetric/private key is {how} "
+                    f"(CWE-321); anyone with the code has the key. "
+                    f"Load key material from a secret manager / KMS, never source.",
+                )
+            )
     elif props.get("crypto:historyOnly") == "true" and kind in ("secret-key", "private-key", "key"):
         # "Scan git history for keys" (aibom.cbom.githistory): a key file committed and later deleted is still in
         # every clone. It was reported as clean inventory (no finding, "Info"), so the option the customer turned on
