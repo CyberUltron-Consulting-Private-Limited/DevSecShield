@@ -187,7 +187,7 @@ if argv[:1] == ["compose"]:
             st["containers"]["postgres"] = {"image": INFRA["postgres"], "state": "running", "health": "healthy", "exit": 0}
             save({"cmd": "up-postgres", "tag": tag})
             sys.exit(0)
-        entry = {"cmd": "up", "tag": tag, "marker": marker, "db_before": list(st["db"])}
+        entry = {"cmd": "up", "tag": tag, "marker": marker, "db_before": list(st["db"]), "services": names}
         if st.get("fail_up"):
             save(entry)
             print("dependency failed to start: container frontend is unhealthy", file=sys.stderr)
@@ -206,6 +206,8 @@ if argv[:1] == ["compose"]:
             sys.exit(1)
         st["db"] = [revs(tag)[-1]]
         for svc in st["services"]:
+            if names and svc not in names:  # `compose up <services>` starts only those
+                continue
             c = {"image": image(svc, tag), "state": "running", "health": "healthy" if svc in (
                 "postgres", "mongo", "rabbitmq", "backend", "frontend", "nginx") else "", "exit": 0}
             if svc == "migrate":
@@ -304,12 +306,12 @@ class Host:
     def staging(self, *args: str, **kw) -> subprocess.CompletedProcess:
         return self.run("staging.sh", *args, **kw)
 
-    def ship(self, tag: str) -> subprocess.CompletedProcess:
+    def ship(self, tag: str, env: dict | None = None) -> subprocess.CompletedProcess:
         """What `staging.sh push` does on the host: the release's files in place, then `staging.sh deploy <tag>`."""
         for rel in MARKED:
             (self.root / rel).write_text((ROOT / rel).read_text() + f"\n# release-marker: {tag}\n")
         (self.root / "deploy/staging/releases/files-tag").unlink(missing_ok=True)
-        return self.staging("deploy", tag)
+        return self.staging("deploy", tag, env=env)
 
 
 def ok(proc: subprocess.CompletedProcess) -> subprocess.CompletedProcess:
@@ -498,6 +500,47 @@ def test_check_fails_unless_every_service_runs_the_tag_and_is_up(tmp_path, servi
     host.update(containers=containers)
     proc = failed(host.staging("check"))
     assert message in proc.stdout and "not every service runs t1" in proc.stderr
+
+
+# ------------------------------------------------------------------------------------------------ STAGING_SERVICES
+CORE = "postgres mongo rabbitmq migrate backend frontend nginx"
+
+
+def worker_images(tag: str) -> list[str]:
+    return [f"dss-staging/scan-worker:{tag}", f"dss-staging/dast-worker:{tag}"]
+
+
+def test_check_and_rollback_keep_the_services_a_partial_deploy_started(tmp_path):
+    """Found releasing to a stand-in host (round 5, L1): `make deploy-staging` with STAGING_SERVICES started the core
+    services and passed its own check, then `make check-staging` failed on the workers left out on purpose
+    ("FAIL scan-worker: no container") and `make rollback-staging` refused because their images were never shipped:
+    neither target passes STAGING_SERVICES over ssh. The deploy now records the set it started, per tag."""
+    host = Host(tmp_path, {"t1": ["r1"], "t2": ["r1"]})
+    host.update(missing=worker_images("t1") + worker_images("t2"))
+    partial = {"STAGING_SERVICES": CORE}
+    ok(host.ship("t1", env=partial))
+    ok(host.ship("t2", env=partial))
+    assert set(host.state["containers"]) == set(CORE.split())
+    proc = ok(host.staging("check"))  # what `make check-staging` runs: no STAGING_SERVICES
+    assert "FAIL" not in proc.stdout and "deployed with" in proc.stdout
+    mark = len(host.state["log"])
+    ok(host.staging("rollback"))  # what `make rollback-staging` runs
+    up = [e for e in host.log_since(mark) if e["cmd"] == "up"]
+    assert len(up) == 1 and sorted(up[0]["services"]) == sorted(CORE.split())
+    assert host.env_tag() == "t1" and running_tags(host) == {"t1"}
+
+
+def test_a_full_deploy_after_a_partial_one_checks_every_service(tmp_path):
+    host = Host(tmp_path, {"t1": ["r1"], "t2": ["r1"]})
+    host.update(missing=worker_images("t1"))
+    ok(host.ship("t1", env={"STAGING_SERVICES": CORE.replace(" ", ",")}))
+    ok(host.ship("t2"))
+    ok(host.staging("check"))
+    containers = host.state["containers"]
+    del containers["dast-worker"]
+    host.update(containers=containers)
+    proc = failed(host.staging("check"))
+    assert "FAIL dast-worker: no container" in proc.stdout
 
 
 # ------------------------------------------------------------------------------------------------ Makefile

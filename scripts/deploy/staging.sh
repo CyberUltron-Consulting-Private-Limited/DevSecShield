@@ -153,6 +153,26 @@ require_host_files() {
   fi
 }
 
+record_services() { # <tag>: the STAGING_SERVICES <tag> is deployed with; no file means every service
+  local f="${RELEASES_DIR}/$1/services"
+  if [[ -n "${STAGING_SERVICES:-}" ]]; then
+    # shellcheck disable=SC2086 # service names, one per line: split on purpose
+    printf '%s\n' ${STAGING_SERVICES//,/ } >"${f}"
+  else
+    rm -f "${f}"
+  fi
+}
+
+# `make check-staging` and `make rollback-staging` run this script over ssh without the STAGING_SERVICES the release
+# was deployed with: without one from the operator, use the set recorded for <tag>, so a partial deploy is checked
+# and rolled back as the partial deploy it is.
+use_recorded_services() { # <tag>
+  local f="${RELEASES_DIR}/$1/services"
+  [[ -z "${STAGING_SERVICES:-}" && -s "${f}" ]] || return 0
+  STAGING_SERVICES="$(paste -sd ' ' "${f}")"
+  log "services: ${STAGING_SERVICES} (the STAGING_SERVICES $1 was deployed with)"
+}
+
 previous_of() { # <tag>: the tag that was running when <tag> was last deployed (deploy-history), empty if none
   [[ -f "${HISTORY_FILE}" ]] || return 0
   awk -v t="$1" '$2 == "deploy" && $3 == t && $4 == "previous" { p = $5 } END { print p }' "${HISTORY_FILE}"
@@ -277,6 +297,7 @@ cmd_deploy() {
     record_files "${tag}"
   fi
   [[ -z "${head}" ]] || printf '%s\n' "${head}" >"${RELEASES_DIR}/${tag}/alembic-head"
+  record_services "${tag}"
   set_tag "${tag}"
   if ! up; then
     [[ -n "${previous}" && "${previous}" != "${tag}" ]] && log "start failed; to go back: staging.sh rollback"
@@ -337,6 +358,7 @@ cmd_rollback() {
   current="$(env_get DSS_TAG)"
   previous="$(previous_of "${current}")"
   [[ -n "${previous}" && "${previous}" != none ]] || die "no previous tag recorded for ${current} in ${HISTORY_FILE}"
+  use_recorded_services "${previous}"
   for c in $(components); do
     docker image inspect "$(image_of "${c}" "${previous}")" >/dev/null 2>&1 || [[ -n "${STAGING_SERVICES:-}" ]] ||
       die "image $(image_of "${c}" "${previous}") is no longer on this host; cannot roll back to ${previous}"
@@ -418,6 +440,7 @@ cmd_check() {
   local tag fe api scheme port cert_dir tmp code chunk found=0 m
   tag="$(env_get DSS_TAG)"
   [[ -n "${tag}" ]] || die "DSS_TAG is not set in ${ENV_FILE}"
+  use_recorded_services "${tag}"
   check_services "${tag}"
   fe="$(env_get FRONTEND_HOST devsec-staging.zeroshield.ai)"
   api="$(env_get API_HOST devsec-staging-api.zeroshield.ai)"

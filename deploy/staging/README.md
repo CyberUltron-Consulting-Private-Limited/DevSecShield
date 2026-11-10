@@ -61,7 +61,10 @@ Python read) must contain it, and `SSL_CERT_FILE` / `UV_NATIVE_TLS=1` / `NODE_EX
 
 `staging.sh check` (run by `deploy` and `rollback`) first asks compose: every service (or each of
 `STAGING_SERVICES`) has a container from `DSS_TAG`'s images that is running, and healthy when it has a health check;
-the one-shots (`migrate`, `minio-init`) exited 0. Then it talks to nginx on this host with the real host names:
+the one-shots (`migrate`, `minio-init`) exited 0. A deploy with `STAGING_SERVICES` records that set for its tag
+(`releases/<tag>/services`); `check` and `rollback` (so `make check-staging` and `make rollback-staging`) use the
+recorded set when they are not given one, and a later deploy without `STAGING_SERVICES` starts and checks every
+service again. Then it talks to nginx on this host with the real host names:
 * `GET https://<API_HOST>/health` answers 200 `healthy`;
 * `GET https://<FRONTEND_HOST>/login` answers 200, references `/_next/static/chunks/*.js` that all load, and
   carries no `next dev` marker (HMR client chunk, `"development"` build id, `webpack-hmr`, `react-refresh`). A
