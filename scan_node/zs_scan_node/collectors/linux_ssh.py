@@ -498,8 +498,9 @@ def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -
                     trust.setdefault(path.rsplit("/", 1)[0], []).append(path)
             for directory, files in trust.items():
                 if len(files) > 1:  # e.g. /etc/pki/ca-trust/extracted/pem/directory-hash: one summary row
-                    emitted += _trust_dir(ctx, sess, loc, directory, files, t_deadline)
-                    paths = [p for p in paths if p not in set(files)]
+                    n_rows, folded = _trust_dir(ctx, sess, loc, directory, files, t_deadline)
+                    emitted += n_rows
+                    paths = [p for p in paths if p not in set(folded)]  # leaf certificates are inspected below
             for path in paths:
                 if time.monotonic() > t_deadline or ctx.should_stop():
                     ctx.coverage(loc, "key and certificate files", "truncated", "time limit reached while reading files")
@@ -523,10 +524,18 @@ def _inspect_file(ctx: JobContext, sess: Session, loc: str, real_path: str) -> i
         status, out, err, timed_out = sess.run(_file_cmd(C.CERTS_IN_FILE, real_path), FILE_CMD_TIMEOUT)
         certs = P.storeutl_certs(out) if status == 0 else []
         if len(certs) > 1 and (_is_trust_store(path) or P.is_ca_bundle(certs)):
-            # a system CA bundle: one summary row instead of 100+ certificate rows
-            ctx.emit("certificate", loc, path, name=f"Trust store ({len(certs)} CA certificates)",
-                     facts={"path": path, **_trust_summary(certs)})
-            return 1
+            # a system CA bundle: one summary row for its CA certificates instead of 100+ certificate rows; a leaf
+            # (server) certificate kept in it is its own row (findings, certificate calendar)
+            anchors, leaves = P.split_trust_anchors(certs)
+            if anchors:
+                ctx.emit("certificate", loc, path, name=f"Trust store ({len(anchors)} CA certificates)",
+                         facts={"path": path, **_trust_summary(anchors)})
+                n += 1
+            for i, c in leaves[:200]:
+                ctx.emit("certificate", loc, f"{path}#{i}", name=c.get("subject", ""), algorithm=c.get("key_alg"),
+                         key_size=c.get("key_size"), facts={**c, "path": path, "index": i})
+                n += 1
+            return n
         for i, c in enumerate(certs[:200]):
             ctx.emit("certificate", loc, path if len(certs) == 1 else f"{path}#{i}", name=c.get("subject", ""),
                      algorithm=c.get("key_alg"), key_size=c.get("key_size"), facts={**c, "path": path, "index": i})
@@ -610,19 +619,32 @@ def _trust_summary(certs: list[dict]) -> dict:
             "expired": sum(1 for c in certs if (c.get("not_after") or "9") < _today())}
 
 
-def _trust_dir(ctx: JobContext, sess: Session, loc: str, directory: str, files: list[str], deadline: float) -> int:
+def _trust_dir(ctx: JobContext, sess: Session, loc: str, directory: str, files: list[str],
+               deadline: float) -> tuple[int, list[str]]:
+    """One summary row for the directory's CA certificates; returns (rows emitted, files folded into it).
+
+    A file holding a leaf (server) certificate is not folded: the caller inspects it as its own certificate row."""
     certs: list[dict] = []
     read = 0
+    folded: list[str] = []
     for path in files:
         if time.monotonic() > deadline or ctx.should_stop():
-            break
+            folded.append(path)  # not read: stays in the summary's file count, as before
+            continue
         status, out, _err, _t = sess.run(_file_cmd(C.CERTS_IN_FILE, path), FILE_CMD_TIMEOUT)
+        file_certs = P.storeutl_certs(out) if status == 0 else []
+        if file_certs and not all(P.is_trust_anchor(c) for c in file_certs):
+            continue
+        folded.append(path)
         if status == 0:
-            certs.extend(P.storeutl_certs(out))
+            certs.extend(file_certs)
             read += 1
-    ctx.emit("certificate", loc, P.display_path(directory), name=f"Trust store directory ({len(files)} files)",
-             facts={"path": P.display_path(directory), "files": len(files), "files_read": read, **_trust_summary(certs)})
-    return 1
+    if not folded:
+        return 0, folded
+    ctx.emit("certificate", loc, P.display_path(directory), name=f"Trust store directory ({len(folded)} files)",
+             facts={"path": P.display_path(directory), "files": len(folded), "files_read": read,
+                    **_trust_summary(certs)})
+    return 1, folded
 
 
 def _today() -> str:

@@ -279,6 +279,20 @@ def classify_file(path: str) -> str:
 CA_BUNDLE_MIN = 5
 
 
+def is_trust_anchor(cert: dict[str, Any]) -> bool:
+    """A CA certificate (basicConstraints CA:TRUE): the only kind a trust store's summary row stands for.
+
+    A leaf / server certificate kept in a trust-store location (Debian keeps server certificates in /etc/ssl/certs) is
+    reported as its own certificate row, so its expiry, key size and signature reach the findings and the certificate
+    calendar (round 5, G3: the summary counted them and nothing else did)."""
+    return bool(cert.get("is_ca"))
+
+
+def split_trust_anchors(certs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[tuple[int, dict[str, Any]]]]:
+    """``(CA certificates, [(index, leaf certificate)])`` of one file, in file order."""
+    return [c for c in certs if is_trust_anchor(c)], [(i, c) for i, c in enumerate(certs) if not is_trust_anchor(c)]
+
+
 def is_ca_bundle(certs: list[dict[str, Any]]) -> bool:
     if len(certs) < CA_BUNDLE_MIN or not all(c.get("is_ca") for c in certs):
         return False

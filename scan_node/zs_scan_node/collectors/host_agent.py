@@ -172,9 +172,18 @@ def _inspect(ctx: JobContext, fs: HostFS, loc: str, path: str) -> int:
     if kind in ("pem", "cert"):
         certs = [cert_facts(c, "file") for c in load_certs(got.data, 500)]
         if len(certs) > 1 and (_is_trust_store(shown) or P.is_ca_bundle(certs)):
-            ctx.emit("certificate", loc, shown, name=f"Trust store ({len(certs)} CA certificates)",
-                     facts={"path": shown, **_trust_summary(certs)})
-            return 1
+            # the CA certificates fold into one summary row (inventory); a leaf kept in the bundle is its own row
+            anchors, leaves = P.split_trust_anchors(certs)
+            n = 0
+            if anchors:
+                ctx.emit("certificate", loc, shown, name=f"Trust store ({len(anchors)} CA certificates)",
+                         facts={"path": shown, **_trust_summary(anchors)})
+                n += 1
+            for i, c in leaves[:200]:
+                ctx.emit("certificate", loc, f"{shown}#{i}", name=c.get("subject", ""), algorithm=c.get("key_alg"),
+                         key_size=c.get("key_size"), facts={**c, "path": shown, "index": i})
+                n += 1
+            return n
         n = 0
         for i, c in enumerate(certs[:200]):
             ctx.emit("certificate", loc, shown if len(certs) == 1 else f"{shown}#{i}", name=c.get("subject", ""),
@@ -342,14 +351,21 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         if _is_trust_store(path) and P.classify_file(path) in ("pem", "cert"):
             trust.setdefault(path.rsplit("/", 1)[0], []).append(path)
     for directory, files in trust.items():
-        if len(files) > 1:  # a hashed CA directory: one summary row
+        if len(files) > 1:  # a hashed CA directory: one summary row for its CA certificates
             certs: list[dict] = []
+            folded: list[str] = []
             for path in files:
                 got = fs.read(path, MAX_SMALL)
-                certs += [cert_facts(c, "file") for c in load_certs(got.data, 500)] if got.ok else []
-            emit("certificate", loc, directory, name=f"Trust store directory ({len(files)} files)",
-                 facts={"path": directory, "files": len(files), "files_read": len(files), **_trust_summary(certs)})
-            paths = [p for p in paths if p not in set(files)]
+                file_certs = [cert_facts(c, "file") for c in load_certs(got.data, 500)] if got.ok else []
+                if file_certs and not all(P.is_trust_anchor(c) for c in file_certs):
+                    continue  # a server (leaf) certificate kept here: inspected below as its own certificate row
+                certs += file_certs
+                folded.append(path)
+            if folded:
+                emit("certificate", loc, directory, name=f"Trust store directory ({len(folded)} files)",
+                     facts={"path": directory, "files": len(folded), "files_read": len(folded),
+                            **_trust_summary(certs)})
+            paths = [p for p in paths if p not in set(folded)]
     # one coverage row per check and status: what the search and the reads left out, together
     truncated: list[str] = []
     if stats.stopped:
