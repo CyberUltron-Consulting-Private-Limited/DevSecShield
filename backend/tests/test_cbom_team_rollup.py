@@ -1236,8 +1236,11 @@ def test_libraries_dedupe_by_casefolded_name_across_sources(view):
 
 def test_pqc_headline_counts_and_readiness_match_appendix_b(view):
     # safe 32 -> 31: the WP2 AES-CBC duplicate is gone; library rows are not algorithms
-    assert (view.pqc_vulnerable, view.pqc_safe, view.pqc_hybrid, view.pqc_ungraded) == (5, 31, 2, 0)
-    assert view.readiness_pct == 86.1
+    # round 5 (G3): 3DES-CBC, AES-ECB, MD5 and RC4 in two repos are "Broken today" (the results table's Quantum
+    # column), not quantum-safe: safe 31 -> 23, readiness 86.1 -> 63.9 (23 of 36 judged)
+    assert (view.pqc_vulnerable, view.pqc_safe, view.pqc_hybrid, view.pqc_ungraded) == (5, 23, 2, 0)
+    assert view.pqc_broken_today == 8
+    assert view.readiness_pct == 63.9
     vulnerable = {
         (a.source_key, a.title)
         for a in view.assets
@@ -2306,7 +2309,7 @@ FROZEN_FIELDS = {
         "description primitive key_size curve mode protocol_version material_kind parameter_set "
         "not_valid_after security_strength_bits risk_score quantum_vulnerable quantum_safe hybrid "
         "nist_quantum_security_level pqc_migration_target pqc_migration_roadmap tier current "
-        "first_seen last_seen scan_count scan_ids latest_scan_id"
+        "first_seen last_seen scan_count scan_ids latest_scan_id broken_today"
     ),
     "CertAgg": (
         "key identity_strong name file_names subject_cn issuer_cn not_before not_after "
@@ -2331,7 +2334,7 @@ FROZEN_FIELDS = {
         "history_truncated fidelity_full fidelity_reduced window_start window_end fingerprint "
         "scans sources assets certs libs frameworks requirements asset_occurrences "
         "assets_by_type assets_by_impact issue_by_impact finding_counts pqc_vulnerable pqc_safe "
-        "pqc_hybrid pqc_ungraded readiness_pct compliance_sources_pooled "
+        "pqc_hybrid pqc_broken_today pqc_ungraded readiness_pct compliance_sources_pooled "
         "compliance_legacy_excluded warnings posture remediation"  # remediation: WP10 (loader only, not compared)
     ),
 }

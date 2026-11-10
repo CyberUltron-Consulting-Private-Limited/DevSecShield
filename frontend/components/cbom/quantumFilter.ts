@@ -21,3 +21,30 @@ export function matchesQuantumFilter(f: QuantumFields, filter: string): boolean 
   if (filter === "vulnerable") return f.quantum_safe === false;
   return true;
 }
+
+export interface QuantumCounts {
+  safe: number;
+  broken: number;
+  vulnerable: number;
+  /** rows with a quantum verdict: safe + broken + vulnerable */
+  judged: number;
+  /** quantum-safe share of the judged rows (one decimal); null when nothing was judged */
+  readinessPct: number | null;
+}
+
+/** The PQC readiness gauge and its legend count the rows by the Quantum column's rule: a row that is broken today
+ * is judged and is NOT quantum-safe (MD5 and DES used to count as safe: a lab scan showed 77 %). Same rule as the
+ * backend's cbom_metrics.CodeRowSummary (scan card and PDF). */
+export function quantumCounts(rows: QuantumFields[]): QuantumCounts {
+  let safe = 0;
+  let broken = 0;
+  let vulnerable = 0;
+  for (const r of rows) {
+    if (isBrokenToday(r)) broken += 1;
+    else if (r.quantum_safe === true) safe += 1;
+    else if (r.quantum_safe === false) vulnerable += 1;
+  }
+  const judged = safe + broken + vulnerable;
+  const readinessPct = judged ? Math.round((1000 * safe) / judged) / 10 : null;
+  return { safe, broken, vulnerable, judged, readinessPct };
+}

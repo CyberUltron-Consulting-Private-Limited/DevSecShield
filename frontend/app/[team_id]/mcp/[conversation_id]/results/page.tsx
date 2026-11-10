@@ -16,11 +16,11 @@ export default function MCPResultsPage() {
   const conversation_id = parseInt((params?.conversation_id as string) ?? pathname?.split("/").filter(Boolean)[2] ?? "0", 10);
 
   if (!team_id || !conversation_id) {
-    toast.error("Conversation id not found");
+    toast.error("Scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          Conversation id not found
+          Scan id not found
         </p>
       </div>
     );
@@ -75,7 +75,7 @@ export default function MCPResultsPage() {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-          No MCP results found for this conversation.
+          No MCP results found for this scan.
         </p>
       </div>
     );

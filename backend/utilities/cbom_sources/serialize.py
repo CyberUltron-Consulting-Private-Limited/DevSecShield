@@ -156,6 +156,12 @@ def public_run(run: CbomCollectionRun, jobs: list[dict[str, Any]] | None = None)
     return out
 
 
+def _aws_configured() -> bool:
+    from backend.utilities.cbom_sources.templates import aws_collection_configured
+
+    return aws_collection_configured()
+
+
 def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str, Any]:
     nxt = None
     try:
@@ -164,6 +170,7 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
         nxt = None
     return {
         "aws_external_id": row.aws_external_id,
+        "aws_collection_configured": _aws_configured(),
         "cert_domains": row.cert_domains or [],
         "network_exclusions": row.network_exclusions or [],
         "sni_hostnames": row.sni_hostnames or [],

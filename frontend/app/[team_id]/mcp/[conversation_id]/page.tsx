@@ -26,10 +26,10 @@ export default function MCPPage() {
   });
 
   if (team_id <= 0 || conversation_id <= 0) {
-    toast.error("Conversation id not found");
+    toast.error("Scan id not found");
     return (
       <div className="flex h-screen w-full items-center justify-center">
-        <p className="text-zinc-600 dark:text-zinc-400 mb-4">Conversation id not found</p>
+        <p className="text-zinc-600 dark:text-zinc-400 mb-4">Scan id not found</p>
       </div>
     );
   }
@@ -70,9 +70,9 @@ export default function MCPPage() {
   const isInProgress = scan_status === "pending" || scan_status === "started";
 
   return (
-    <div className="flex h-screen">
+    <div className="flex flex-col md:flex-row h-screen overflow-y-auto md:overflow-hidden">
       {/* Main Content Area */}
-      <div className="flex-1 bg-white dark:bg-zinc-900 overflow-auto">
+      <div className="flex-1 min-h-[75vh] md:min-h-0 min-w-0 bg-white dark:bg-zinc-900 overflow-auto">
         <div className="mx-auto">
           <ChatWindow
             query={query}

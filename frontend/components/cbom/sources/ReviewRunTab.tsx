@@ -31,7 +31,7 @@ import RunResults from "./RunResults";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { SourceMetadataCard } from "./SourceMetadata";
-import { credits, formatDateTime, mixedGroupScope, newRequestId, pluralize } from "./logic";
+import { credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
 import {
   Checkbox2,
   ConfirmDialog,
@@ -250,10 +250,17 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     const groupItems = items.filter((i) => i.group === group);
     const issues = skipped.filter((i) => i.group === group).length;
     const failed = g?.failed_tests ?? 0;
+    // scan-node jobs wait for their scan window (the network row prints the team window itself)
+    const windowNote = group === "network" ? null : windowLine(groupItems);
     rows.push({
       key: group,
       label,
-      scope: sources ? scope(sources, units, kindsSummary(g?.by_kind)) : "Nothing configured",
+      scope: !sources ? "Nothing configured" : windowNote ? (
+        <>
+          <span>{scope(sources, units, kindsSummary(g?.by_kind))}</span>
+          <span className="block text-xs text-zinc-500" data-testid={`review-window-${group}`}>{windowNote}</span>
+        </>
+      ) : scope(sources, units, kindsSummary(g?.by_kind)),
       through: sources ? reachedThrough(groupItems, cloudSide) : "—",
       lastTest: !sources ? "—" : failed ? <span className="text-red-600 dark:text-red-400">{failed} failed</span> : "No failed tests",
       credits: sources ? credits(plan.groups?.[group]?.credits ?? 0) : "—",
@@ -664,6 +671,11 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
               {queued.length === 0 && (
                 <p className="text-sm text-amber-600 dark:text-amber-400">
                   Every source in the chosen groups will be skipped; see the list above.
+                </p>
+              )}
+              {windowStartNotice(queued) && (
+                <p className="text-sm text-amber-600 dark:text-amber-400" data-testid="review-window-notice">
+                  {windowStartNotice(queued)}
                 </p>
               )}
               {waiting > 0 && (

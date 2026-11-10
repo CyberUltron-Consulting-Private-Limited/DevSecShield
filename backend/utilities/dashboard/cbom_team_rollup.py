@@ -324,6 +324,8 @@ class AssetAgg:
     scan_count: int = 0
     scan_ids: tuple[int, ...] = ()  # newest MAX_SCAN_IDS
     latest_scan_id: int | None = None
+    # the results table's "Broken today" (cbom_metrics.code_row_broken_today): not quantum-vulnerable, not ready
+    broken_today: bool = False
 
 
 @dataclass
@@ -684,10 +686,11 @@ class TeamCbomView:
     # quantum verdicts are cbom_metrics.code_row_quantum_vulnerable (the stored quantum_safe tri-state): the current
     # engine grades algorithms only; a legacy worker row may also grade a certificate or key
     pqc_vulnerable: int = 0  # current assets with quantum_vulnerable is True
-    pqc_safe: int = 0  # current assets with quantum_vulnerable is False (hybrid included)
+    pqc_safe: int = 0  # current assets with quantum_vulnerable is False and not broken today (hybrid included)
     pqc_hybrid: int = 0  # subset of pqc_safe flagged hybrid
+    pqc_broken_today: int = 0  # current assets the results table calls "Broken today" (MD5, DES ...): not in pqc_safe
     pqc_ungraded: int = 0  # current ALGORITHM assets without a verdict (left out of the readiness denominator)
-    readiness_pct: float | None = None  # round(100 * safe / (safe + vulnerable), 1); None if 0
+    readiness_pct: float | None = None  # round(100 * safe / (safe + broken + vulnerable), 1); None if 0
     compliance_sources_pooled: int = 0  # current full-fidelity sources (Appendix B: 6)
     compliance_legacy_excluded: int = 0  # current reduced-fidelity sources left out (Appendix B: 1)
     warnings: tuple[str, ...] = ()  # skipped / coerced inputs; capped (renderers may print count)
@@ -1054,7 +1057,8 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
     ``code_row_quantum_vulnerable`` (the row's stored ``quantum_safe`` tri-state; certificates, keys and protocols of
     the current engine keep None, so only rows the engine graded count towards readiness)."""
     # one set of numbers for every CBOM view (pure modules: stdlib plus cbom_rows)
-    from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable, finding_severity
+    from backend.utilities.cbom_sources.cbom_metrics import (
+        code_row_broken_today, code_row_quantum_vulnerable, finding_severity)
 
     asset_type = _asset_type_of(row)
     title = _text(row.get("title")) or _text(row.get("algorithm_name")) or "(unnamed)"
@@ -1088,6 +1092,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         security_strength_bits=_int(row.get("security_strength_bits")),
         risk_score=_float(row.get("risk_score")),
         quantum_vulnerable=quantum_vulnerable,
+        broken_today=quantum_vulnerable is False and code_row_broken_today(dict(row)),
         quantum_safe=quantum_safe,
         hybrid=_tri(row.get("hybrid")),
         nist_quantum_security_level=_int(row.get("nist_quantum_security_level")),
@@ -2874,8 +2879,9 @@ def fold_scans(
     # cbom_metrics.quantum_readiness_pct over every asset with a verdict (the scan page's rule): the current engine
     # grades algorithms only, a legacy worker row also graded its certificates and keys.
     vulnerable = sum(1 for asset in live if asset.quantum_vulnerable is True)
-    safe = sum(1 for asset in live if asset.quantum_vulnerable is False)
-    hybrid = sum(1 for a in live if a.quantum_vulnerable is False and a.hybrid is True)
+    broken = sum(1 for asset in live if asset.quantum_vulnerable is False and asset.broken_today)
+    safe = sum(1 for asset in live if asset.quantum_vulnerable is False and not asset.broken_today)
+    hybrid = sum(1 for a in live if a.quantum_vulnerable is False and not a.broken_today and a.hybrid is True)
     ungraded_algorithms = sum(1 for a in live if a.asset_type == ASSET_ALGORITHM and a.quantum_vulnerable is None)
     codes = Counter(code for asset in live for code in asset.finding_codes)
 
@@ -2947,8 +2953,9 @@ def fold_scans(
         pqc_vulnerable=vulnerable,
         pqc_safe=safe,
         pqc_hybrid=hybrid,
+        pqc_broken_today=broken,
         pqc_ungraded=ungraded_algorithms,
-        readiness_pct=quantum_readiness_pct(vulnerable, safe + vulnerable),
+        readiness_pct=quantum_readiness_pct(vulnerable + broken, safe + vulnerable + broken),
         compliance_sources_pooled=len(full),
         compliance_legacy_excluded=legacy_excluded,
         warnings=tuple(warning_text),

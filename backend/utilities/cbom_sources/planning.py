@@ -92,13 +92,19 @@ class PlanItem:
     status: str  # queued | skipped
     reason: str | None = None
     waiting: bool = False
+    # a scan-node job waits for its scan window (the team's, or a server source's own; jobs.job_waiting_reason):
+    # window_applies says the source has one; window_starts_at is when a run queued now may start (None: now)
+    window_applies: bool = False
+    window_starts_at: _dt.datetime | None = None
 
     def public(self) -> dict[str, Any]:
+        starts = self.window_starts_at
         return {
             "source_id": self.source_id, "name": self.name, "kind": self.kind, "group": self.group,
             "node_id": self.node_id, "node_name": self.node_name, "units": self.units, "unit": self.unit,
             "credits": credits(self.credits_c), "status": self.status, "reason": self.reason,
-            "waiting_for_node": self.waiting,
+            "waiting_for_node": self.waiting, "window_applies": self.window_applies,
+            "window_starts_at": starts.strftime("%Y-%m-%dT%H:%M:%SZ") if starts else None,
         }
 
 
@@ -205,6 +211,19 @@ def plan_run(
         else:
             item.status = "queued"
             item.waiting = status == "offline"
+            if needs_node:  # node jobs wait for their scan window; cloud jobs do not (jobs.job_waiting_reason)
+                from backend.utilities.cbom_sources.jobs import _job_window
+                from backend.utilities.cbom_sources.settings import _grid, next_window_start, window_allows
+
+                grid = _job_window(source, settings)
+                item.window_applies = _grid(grid) is not None
+                if not window_allows(grid, settings.window_timezone, now):
+                    item.window_starts_at = next_window_start(grid, settings.window_timezone, now)
+                    if item.window_starts_at is None:  # an empty grid: the job would never start
+                        item.reason = "Its scan window allows no hour; the run would never start"
+                        item.status = "skipped"
+                        plan.items.append(item)
+                        continue
             if source.kind == "container_images":
                 item.credits_c = RATES_C["image"] * units
             elif group == "servers" or source.kind == "appliance":

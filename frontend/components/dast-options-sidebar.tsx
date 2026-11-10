@@ -354,7 +354,7 @@ export function DASTOptionsSidebar({
   };
 
   return (
-    <ScrollArea className="w-80 h-screen bg-zinc-900 dark:bg-zinc-950 border-l border-zinc-800 overflow-hidden">
+    <ScrollArea className="w-full md:w-80 shrink-0 md:h-screen bg-zinc-900 dark:bg-zinc-950 border-t md:border-t-0 md:border-l border-zinc-800 overflow-hidden">
       <div className="p-6">
         <h2 className="text-xl font-bold text-white mb-2">DAST Options</h2>
         <p className="text-sm text-zinc-400">

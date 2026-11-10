@@ -17,7 +17,8 @@ from typing import Any
 
 from backend.utilities.cbom_sources.common import log, new_ref
 from backend.utilities.cbom_sources.kinds import aws_account_id
-from backend.utilities.cbom_sources.templates import LAMBDA_DECRYPT_CONDITION, REQUIRED_DENY, zeroshield_account_id
+from backend.utilities.cbom_sources.templates import (
+    AWS_NOT_CONFIGURED, LAMBDA_DECRYPT_CONDITION, REQUIRED_DENY, zeroshield_account_id)
 
 DEADLINE_SECONDS = 20.0
 LAMBDA_CHECK = "Lambda customer-key decryption only through Lambda"
@@ -174,6 +175,9 @@ def validate_aws_role(team_id: int, role_arn: str, external_id: str, regions: li
         names.append(GLUE_CHECK)
 
     own_account = zeroshield_account_id()
+    if own_account is None:  # the role could only trust the placeholder account: nothing to validate
+        return {"status": "failed", "checks": [_row(names[0], "fail", AWS_NOT_CONFIGURED)]
+                + [_row(n, "skipped", "Not run") for n in names[1:]]}
     customer_account = aws_account_id(role_arn)
     if own_account and customer_account == own_account:
         rows.append(_row(names[0], "fail", "This role is in ZeroShield's own AWS account; use a role in your account"))

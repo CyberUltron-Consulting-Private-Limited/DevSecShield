@@ -77,6 +77,7 @@ import { pickBomGraph } from "@/components/bom/layout";
 import type { BomGraph } from "@/components/bom/types";
 import type { CbomFinding, CbomGraph } from "@/utils/backend_api";
 import { filterFindingsByRelatedRefs } from "@/utils/relatedFindingMatch";
+import { quantumCounts } from "@/components/cbom/quantumFilter";
 import { ComplianceMatrix, type AttestHandler, type Compliance } from "@/components/compliance/ComplianceMatrix";
 import { FRAMEWORK_GROUPS_CBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
 import {
@@ -367,12 +368,16 @@ function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
   );
 }
 
-/** 3 — PQC readiness gauge: nistQuantumSecurityLevel-derived readiness %. */
-function PqcReadinessGauge({ pqc }: { pqc: CbomDistributions["pqc"] }) {
-  const safe = pqc?.quantum_safe ?? 0;
-  const vuln = pqc?.quantum_vulnerable ?? 0;
-  const total = safe + vuln;
-  const pct = pqc?.readiness_pct ?? 0;
+/** 3 — PQC readiness gauge. Counts the scan's rows by the results table's Quantum column ("Quantum-safe" /
+ * "Broken today" / "Quantum-vulnerable", quantumFilter.quantumCounts): an algorithm that is broken today is not
+ * quantum-ready. Falls back to the stored ``distributions.pqc`` only when the page has no rows. */
+function PqcReadinessGauge({ pqc, rows }: { pqc: CbomDistributions["pqc"]; rows?: CbomFinding[] | null }) {
+  const counts = rows && rows.length > 0 ? quantumCounts(rows) : null;
+  const safe = counts ? counts.safe : pqc?.quantum_safe ?? 0;
+  const vuln = counts ? counts.vulnerable : pqc?.quantum_vulnerable ?? 0;
+  const broken = counts ? counts.broken : 0;
+  const total = safe + vuln + broken;
+  const pct = counts ? counts.readinessPct ?? 0 : pqc?.readiness_pct ?? 0;
   const gaugeData = [{ name: "readiness", value: pct, fill: C.quantumSafe }];
   const gaugeConfig = {
     value: { label: "Readiness", color: C.quantumSafe },
@@ -384,7 +389,7 @@ function PqcReadinessGauge({ pqc }: { pqc: CbomDistributions["pqc"] }) {
           <Atom className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           PQC readiness
         </CardTitle>
-        <CardDescription>Quantum-safe share (nistQuantumSecurityLevel)</CardDescription>
+        <CardDescription>Quantum-safe share; algorithms broken today are not quantum-ready</CardDescription>
       </CardHeader>
       <CardContent>
         {total === 0 ? (
@@ -411,10 +416,16 @@ function PqcReadinessGauge({ pqc }: { pqc: CbomDistributions["pqc"] }) {
             </div>
             <div className="flex flex-wrap justify-center gap-2 mt-3">
               <Badge variant="outline" className="border-blue-500/50 text-blue-600 dark:text-blue-400">
-                Safe: {safe}
+                Quantum-safe: {safe}
               </Badge>
+              {broken > 0 && (
+                <Badge variant="outline" className="border-amber-500/60 text-amber-700 dark:text-amber-400"
+                  title="Already broken without a quantum computer: replace it now">
+                  Broken today: {broken}
+                </Badge>
+              )}
               <Badge variant="outline" className="border-orange-500/50 text-orange-600 dark:text-orange-400">
-                Vulnerable: {vuln}
+                Quantum-vulnerable: {vuln}
               </Badge>
               {(pqc?.hybrid ?? 0) > 0 && (
                 <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">
@@ -1293,7 +1304,7 @@ export function CbomCryptoCharts({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <AlgorithmDistribution data={distributions.algorithms} />
         <WeakCryptoFindings data={distributions.weakness} />
-        <PqcReadinessGauge pqc={distributions.pqc} />
+        <PqcReadinessGauge pqc={distributions.pqc} rows={findings} />
       </div>
       {hasPqcDetail && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

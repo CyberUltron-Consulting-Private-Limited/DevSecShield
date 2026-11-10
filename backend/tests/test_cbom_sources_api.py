@@ -434,6 +434,7 @@ def test_aws_validation_uses_external_id_and_stores_checks(api, world, monkeypat
     settings = api("GET", "/1/cbom/sources/settings").json()["settings"]
     assert r["status"] == "passed" and calls["external_id"] == settings["aws_external_id"]
     assert api("GET", f"/1/cbom/sources/items/{src['id']}").json()["source"]["last_test_status"] == "passed"
+    monkeypatch.setenv("CBOM_AWS_PRINCIPAL_ARN", "arn:aws:iam::123456789012:role/zeroshield-cbom")
     tpl = api("GET", "/1/cbom/sources/aws/template?scope=organization")
     assert tpl.status_code == 200 and settings["aws_external_id"] in tpl.text and "secretsmanager:GetSecretValue" in tpl.text
 
@@ -445,6 +446,7 @@ def test_aws_validation_reports_platform_errors_without_crashing(monkeypatch):
         raise RuntimeError("no boto")
 
     monkeypatch.setattr(aws_validate, "_boto", boom)
+    monkeypatch.setenv("CBOM_AWS_PRINCIPAL_ARN", "arn:aws:iam::123456789012:role/zeroshield-cbom")
     out = aws_validate.validate_aws_role(1, "arn:aws:iam::111122223333:role/R", "zs-ext-AAAA-BBBB-CCCC-DDDD", ["us-east-1"], "account")
     assert out["status"] == "error" and all(c["status"] == "error" for c in out["checks"])
 

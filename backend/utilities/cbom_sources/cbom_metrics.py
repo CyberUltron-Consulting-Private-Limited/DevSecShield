@@ -57,6 +57,16 @@ def code_row_quantum_vulnerable(row: dict[str, Any]) -> bool | None:
     return None
 
 
+def code_row_broken_today(row: dict[str, Any]) -> bool:
+    """Not broken by a quantum computer but already broken without one (MD5, SHA-1, DES, RC4, ECB ...).
+
+    The results table's Quantum column calls these rows "Broken today", never "Safe" (frontend quantumFilter.ts
+    ``isBrokenToday``): an algorithm that is broken today is not quantum-ready."""
+    if not isinstance(row, dict):
+        return False
+    return row.get("quantum_safe") is True and str(row.get("crypto_strength") or "").strip().lower() == "weak"
+
+
 def finding_severity(row: dict[str, Any]) -> str | None:
     """Lower-case severity of a finding row, or None for clean inventory."""
     if not is_finding(row):
@@ -83,7 +93,8 @@ class CodeRowSummary:
         self.severity = {s: 0 for s in SEVERITIES}
         self.algorithm_types: dict[str, int] = defaultdict(int)
         self.strengths = {"weak": 0, "moderate": 0, "strong": 0, "quantum_safe": 0}
-        self.quantum = {"quantum_safe": 0, "quantum_vulnerable": 0}
+        # the results table's Quantum column: Quantum-safe / Broken today / Quantum-vulnerable (one rule)
+        self.quantum = {"quantum_safe": 0, "quantum_vulnerable": 0, "broken_today": 0}
         self.weak = 0
         self.certificates = 0
         self.keys = 0
@@ -111,7 +122,9 @@ class CodeRowSummary:
             if strength == "weak":
                 self.weak += 1
             verdict = code_row_quantum_vulnerable(row)
-            if verdict is False:
+            if verdict is False and code_row_broken_today(row):
+                self.quantum["broken_today"] += 1
+            elif verdict is False:
                 self.quantum["quantum_safe"] += 1
             elif verdict is True:
                 self.quantum["quantum_vulnerable"] += 1
@@ -153,8 +166,9 @@ class CodeRowSummary:
 
     @property
     def readiness_pct(self) -> float | None:
-        judged = self.quantum["quantum_safe"] + self.quantum["quantum_vulnerable"]
-        return quantum_readiness_pct(self.quantum["quantum_vulnerable"], judged)
+        """Quantum-safe rows over judged rows; a row that is broken today is judged and not ready."""
+        not_ready = self.quantum["quantum_vulnerable"] + self.quantum["broken_today"]
+        return quantum_readiness_pct(not_ready, self.quantum["quantum_safe"] + not_ready)
 
     @property
     def average_risk(self) -> float:
@@ -179,5 +193,5 @@ def finding_rows(rows: Iterable[Any]) -> list[dict[str, Any]]:
 
 __all__ = [
     "CodeRowSummary", "IMPACT_RISK", "INFORMATIONAL", "INFORMATIONAL_LABEL", "SEVERITIES", "average_risk",
-    "code_row_quantum_vulnerable", "finding_rows", "finding_severity", "quantum_readiness_pct", "summarize_code_rows",
+    "code_row_broken_today", "code_row_quantum_vulnerable", "finding_rows", "finding_severity", "quantum_readiness_pct", "summarize_code_rows",
 ]

@@ -51,6 +51,12 @@ for _t, _n in (("!If", "Fn::If"), ("!Ref", "Ref"), ("!Sub", "Fn::Sub"), ("!Equal
     _CfnLoader.add_constructor(_t, _tag(_n))
 
 
+@pytest.fixture(autouse=True)
+def _configured_deployment(monkeypatch):
+    """These tests exercise a deployment set up for AWS collection (Validate refuses otherwise: G3 item 6)."""
+    monkeypatch.setenv("CBOM_AWS_PRINCIPAL_ARN", "arn:aws:iam::123456789012:role/zeroshield-cbom")
+
+
 def _resolve_template(text: str, overrides: dict[str, str] | None = None) -> tuple[dict, list[dict]]:
     """(parameters used, inline policies) of the role, as CloudFormation would create them."""
     doc = yaml.load(text, Loader=_CfnLoader)  # noqa: S506 - SafeLoader subclass with CloudFormation tags only

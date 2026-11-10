@@ -77,7 +77,8 @@ def api(tmp_path, monkeypatch):
     return call
 
 
-def test_template_endpoint_sets_the_switch_defaults(api):
+def test_template_endpoint_sets_the_switch_defaults(api, monkeypatch):
+    monkeypatch.setenv("CBOM_AWS_PRINCIPAL_ARN", "arn:aws:iam::123456789012:role/zeroshield-cbom")
     off = api("GET", "/1/cbom/sources/aws/template?scope=account")
     on = api("GET", "/1/cbom/sources/aws/template?scope=account&lambda_cmk=true&glue=true")
     assert off.status_code == on.status_code == 200

@@ -92,7 +92,8 @@ from backend.utilities.cbom_sources.serialize import (
     public_vendor,
 )
 from backend.utilities.cbom_sources.settings import ensure_evidence_areas, get_or_create_settings
-from backend.utilities.cbom_sources.templates import TEMPLATE_NAMES, cloudformation_template, template_text
+from backend.utilities.cbom_sources.templates import (
+    AWS_NOT_CONFIGURED, TEMPLATE_NAMES, aws_collection_configured, cloudformation_template, template_text)
 
 import os
 
@@ -219,7 +220,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
             "code": {"cbom_scans": int(code_scans or 0)},
             "settings": {k: v for k, v in public_settings(settings, now).items()
                          if k in ("stop_all_network", "next_window_start", "in_window_now", "window_timezone",
-                                  "aws_external_id")} | {
+                                  "aws_external_id", "aws_collection_configured")} | {
                 "network_exclusions": len(settings.network_exclusions or []),
                 "ports": len(settings.ports or []), "sni_hostnames": len(settings.sni_hostnames or []),
                 "cert_domains": len(settings.cert_domains or []),
@@ -1025,6 +1026,8 @@ async def stop_all(team_id: TeamId, body: StopAll, Authorization: AuthHeader = N
 
 # ============================================================================ templates
 def _aws_template(engine, team_id: int, scope: str, lambda_cmk: bool = False, glue: bool = False) -> str:
+    if not aws_collection_configured():  # a template trusting the placeholder account could never work
+        raise HTTPException(status_code=409, detail=AWS_NOT_CONFIGURED)
     with Session(engine) as session:
         return cloudformation_template(get_or_create_settings(session, team_id).aws_external_id, scope,
                                        read_lambda_cmk=lambda_cmk, read_glue=glue)

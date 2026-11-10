@@ -67,8 +67,8 @@ export default function IACPage() {
   const isInProgress = scan_status === "pending" || scan_status === "started";
 
   return (
-    <div className="flex h-screen">
-      <div className="flex-1 bg-white dark:bg-zinc-900 overflow-auto flex flex-col">
+    <div className="flex flex-col md:flex-row h-screen overflow-y-auto md:overflow-hidden">
+      <div className="flex-1 min-h-[75vh] md:min-h-0 min-w-0 bg-white dark:bg-zinc-900 overflow-auto flex flex-col">
         <div className="mx-auto flex-1 w-full">
           <ChatWindow
             query={query}

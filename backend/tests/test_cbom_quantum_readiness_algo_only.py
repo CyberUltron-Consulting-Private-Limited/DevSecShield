@@ -84,6 +84,7 @@ def test_quantum_readiness_excludes_na_never_unknown(monkeypatch) -> None:
     assert qr == {
         "quantum_safe": 1,
         "quantum_vulnerable": 1,
+        "broken_today": 0,  # the results table's "Broken today" (MD5, DES ...): not quantum-safe
     }
     assert out["card_data"]["quantum_readiness_score"] == 50.0
     assert out["card_data"]["total_quantum_vulnerable"] == 1

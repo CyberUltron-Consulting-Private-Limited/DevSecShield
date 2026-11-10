@@ -720,7 +720,7 @@ export default function MCPPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteMCPConversation(team_id, scan_id),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['mcp-conversations', String(variables.team_id)] });
-      toast.success('MCP conversation deleted successfully');
+      toast.success('MCP scan deleted successfully');
     },
     onError: (error) => {
       showErrorToast(error);
@@ -731,7 +731,7 @@ export default function MCPPage() {
     mutationFn: renameMCPConversation,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['mcp-conversations', String(variables.team_id)] });
-      toast.success('MCP conversation renamed successfully');
+      toast.success('MCP scan renamed successfully');
     },
     onError: (error) => {
       showErrorToast(error);
@@ -820,7 +820,7 @@ export default function MCPPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">MCP Scans</h1>
-              <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your MCP server scan conversations.</p>
+              <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your MCP server scans.</p>
             </div>
             <div className="flex flex-row items-center gap-2">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
@@ -1056,10 +1056,10 @@ export default function MCPPage() {
                                       </DropdownMenuItem>
                                     )}
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
-                                      <Pencil className="h-4 w-4 mr-2" />Rename
+                                      <Pencil className="h-4 w-4 mr-2" />Rename scan
                                     </DropdownMenuItem>
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
-                                      <Trash2 className="h-4 w-4 mr-2" />Delete
+                                      <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -1082,16 +1082,16 @@ export default function MCPPage() {
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rename Conversation</DialogTitle>
+            <DialogTitle>Rename scan</DialogTitle>
             <DialogDescription>
-              Enter a new name for this conversation.
+              Enter a new name for this scan.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="Conversation name"
+              placeholder="Scan name"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   confirmRename();
@@ -1125,7 +1125,7 @@ export default function MCPPage() {
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Conversation</DialogTitle>
+            <DialogTitle>Delete scan</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete &quot;{selectedConversation?.title}&quot;? This action cannot be undone.
             </DialogDescription>
@@ -1167,7 +1167,7 @@ export default function MCPPage() {
           <DialogHeader>
             <DialogTitle>Create New Scan</DialogTitle>
             <DialogDescription>
-              Enter a title for your new MCP scan conversation.
+              Enter a title for your new MCP scan.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">

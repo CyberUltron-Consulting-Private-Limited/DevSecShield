@@ -294,6 +294,10 @@ function useInvalidate(teamId: number) {
 }
 
 // ---------------------------------------------------------------------------- tab
+/** The backend's sentence (templates.AWS_NOT_CONFIGURED): the template could only trust a placeholder account. */
+export const AWS_NOT_CONFIGURED =
+  "This ZeroShield deployment is not set up for AWS collection; contact your administrator";
+
 export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
   const invalidate = useInvalidate(teamId);
   const enabled = Number.isFinite(teamId);
@@ -461,7 +465,13 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
             </div>
           }
         >
-          {form.provider === "aws" && (
+          {form.provider === "aws" && settings.aws_collection_configured === false && (
+            <p role="alert" data-testid="aws-not-configured"
+              className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-200">
+              {AWS_NOT_CONFIGURED}
+            </p>
+          )}
+          {form.provider === "aws" && settings.aws_collection_configured !== false && (
             <AwsForm
               key={formKey}
               teamId={teamId}
