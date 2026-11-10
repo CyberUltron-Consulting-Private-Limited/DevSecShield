@@ -411,7 +411,7 @@ const getSastConversationMessages = async ({ queryKey }: { queryKey: ['sast-conv
     const [, team_id, scan_id] = queryKey
     try {
         const response = await api.get(`/${team_id}/sast/scan/${scan_id}`)
-        toast.success("Sast conversation messages fetched successfully")
+        // no success toast: the scan page polls this every 6 s while a scan runs (a toast per poll, u2 round 5)
         return response.data as SastConversationResponse
     } catch (error) {
         showErrorToast(error,"Error fetching sast conversation messages")
@@ -1628,7 +1628,7 @@ const getIACConversationMessages = async ({ queryKey }: { queryKey: ['iac-conver
     const [, team_id, scan_id] = queryKey;
     try {
         const response = await api.get(`/${team_id}/iac/scan/${scan_id}`);
-        toast.success("IAC conversation messages fetched successfully");
+        // no success toast: the scan page polls this every 6 s while a scan runs (a toast per poll, u2 round 5)
         return response.data as IACConversationResponse;
     } catch (error) {
         showErrorToast(error, "Error fetching iac conversation messages");
@@ -1976,7 +1976,7 @@ const getSBOMSCAScanData = async ({
     const [, team_id, scan_id] = queryKey;
     try {
         const response = await api.get(`/${team_id}/sbom_sca/scan/${scan_id}`);
-        toast.success("SCA + SBOM scan data fetched successfully");
+        // no success toast: the scan page polls this every 6 s while a scan runs (a toast per poll, u2 round 5)
         return response.data as SCASBOMConversationResponse;
     } catch (error) {
         showErrorToast(error, "Error fetching sbom_sca scan data");
@@ -1989,7 +1989,7 @@ const getSCASBOMConversationMessages = async ({queryKey}: {queryKey: ['sbom_sca-
     const conversation_id = queryKey[1]
     try {
         const response = await api.get(`/sbom_sca/conversation/${conversation_id}`)
-        toast.success("SCA + SBOM conversation messages fetched successfully")
+        // no success toast: the scan page polls this every 6 s while a scan runs (a toast per poll, u2 round 5)
         return response.data as SCASBOMConversationResponse
     } catch (error) {
         showErrorToast(error,"Error fetching sbom_sca conversation messages")
@@ -2359,7 +2359,7 @@ const getCBOMScanData = async ({
   const [, team_id, scan_id] = queryKey;
   try {
     const response = await api.get(`/${team_id}/cbom/scan/${scan_id}`);
-    toast.success("CBOM scan data fetched successfully");
+    // no success toast: the scan page polls this every 6 s while a scan runs (a toast per poll, u2 round 5)
     return response.data as CBOMConversationResponse;
   } catch (error) {
     showErrorToast(error, "Error fetching CBOM scan data");

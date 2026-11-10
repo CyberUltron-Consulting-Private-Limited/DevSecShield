@@ -59,6 +59,7 @@ import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type
 import { downloadOscal } from "@/utils/api/integrations";
 import { readinessText } from "@/utils/cbomReadiness";
 import { isBrokenToday, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
+import { importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
 import {
   buildRefAliasMap,
   findingMatchesRelatedRefs,
@@ -753,13 +754,6 @@ function CbomDashboardCharts({
 
 /** Quantum column: "Broken today" for a classically broken algorithm (MD5, SHA-1, DES …) instead of a misleading
  * "Safe"; "—" when quantum readiness does not apply (libraries, configuration, certificates). */
-/** The uploaded-file card shows whenever the import left something out, not only when the engine wrote a note: a
- * re-uploaded CBOM silently lost its library findings because the card stayed hidden (lab UI run u2, round 5). */
-function importReportHasNews(r: CbomImportReport): boolean {
-  return r.notes.length > 0 || (r.skipped_not_crypto ?? 0) > 0 || (r.skipped_invalid ?? 0) > 0 ||
-    (r.duplicates ?? 0) > 0 || r.truncated;
-}
-
 function QuantumBadge({ quantumSafe, strength, yesNo = false }: { quantumSafe?: boolean | null; strength?: string | null; yesNo?: boolean }) {
   if (isBrokenToday({ quantum_safe: quantumSafe, crypto_strength: strength })) {
     return (
@@ -1299,14 +1293,7 @@ export default function CbomResults({
           </CardHeader>
           <CardContent>
             <ul className="list-disc pl-5 space-y-1 text-sm text-amber-900 dark:text-amber-200 break-words">
-              {importReport.notes.map((note, i) => <li key={i}>{note}</li>)}
-              {(importReport.skipped_not_crypto ?? 0) > 0 && (
-                <li data-testid="cbom-import-not-crypto">
-                  {importReport.skipped_not_crypto} component(s) of the file are not cryptographic assets (for example
-                  libraries or applications) and were not judged here: a library&apos;s known vulnerabilities come from a
-                  code scan or the dependency scan.
-                </li>
-              )}
+              {importNoteLines(importReport).map((note, i) => <li key={i}>{note}</li>)}
             </ul>
           </CardContent>
         </Card>

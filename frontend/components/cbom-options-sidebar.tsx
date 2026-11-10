@@ -45,6 +45,8 @@ import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";
+import { importHeadline, importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
+import type { CbomImportReport } from "@/utils/api/cbom_outputs";
 
 export type Mode = RepoMode | "unknown";
 
@@ -272,6 +274,8 @@ export function CBOMOptionsSidebar({
   const canRunScan = estimationProcessDone && !creditsInvalid && (!anySourceIncluded || !!currentSourcesEstimate);
 
   const failureMessage = scanFailureMessage(query.data);
+  // an uploaded CBOM file's import report (null for code scans): shown right here when the run finishes
+  const importReport = ((query.data?.scan_metadata as Record<string, unknown> | undefined)?.cbom_input ?? null) as CbomImportReport | null;
   useEffect(() => {
     if (query.data?.scan_status === "success") {
       setOptionsSidebarState("done");
@@ -588,6 +592,15 @@ export function CBOMOptionsSidebar({
             <p className="text-zinc-300 text-center">
               Scan has run successfully. Open the results to see every finding with its fix and proof.
             </p>
+            {importReport && importReportHasNews(importReport) && (
+              <div className="w-full rounded-md border border-amber-700/60 bg-amber-950/30 p-3 text-xs text-amber-200 space-y-1"
+                role="status" data-testid="cbom-sidebar-import-notes">
+                <p className="font-semibold">{importHeadline(importReport)}</p>
+                <ul className="list-disc pl-4 space-y-1 break-words">
+                  {importNoteLines(importReport).map((line, i) => <li key={i}>{line}</li>)}
+                </ul>
+              </div>
+            )}
             <Button
               variant="ghost"
               size="sm"
