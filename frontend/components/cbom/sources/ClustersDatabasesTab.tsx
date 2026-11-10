@@ -49,6 +49,7 @@ import {
   StatusBadge,
   TestStatusBadge,
   Truncate,
+  useMenuReveal,
   usePolledJob,
 } from "./shared";
 
@@ -237,6 +238,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
   const [kmNonce, setKmNonce] = useState(0);
   const [activeTest, setActiveTest] = useState<{ sourceId: number; jobId: number } | null>(null);
   const [deleting, setDeleting] = useState<CbomSource | null>(null);
+  const rowMenu = useMenuReveal();
 
   const pendingInterval = (data: { sources: CbomSource[] } | undefined) => (data?.sources.some((s) => s.last_test_status === "pending") ? 6000 : 30000);
   const nodesQuery = useQuery({
@@ -314,17 +316,17 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
     setEditingKm(null);
     setKmNonce((n) => n + 1);
   };
+  // From the row menu: the form is revealed when the menu has closed (reveal.ts), not here.
   const startEdit = (source: CbomSource) => {
-    // after the re-render that remounts the form (see ServersTab startEdit)
     if (source.kind === "kubernetes") {
       setEditingCluster(source);
-      window.setTimeout(() => scrollToId("k8s-form"), 0);
+      rowMenu.request("k8s-form");
     } else if (source.kind === "key_manager") {
       setEditingKm(source);
-      window.setTimeout(() => scrollToId("km-form"), 0);
+      rowMenu.request("km-form");
     } else {
       setEditingDb(source);
-      window.setTimeout(() => scrollToId("db-form"), 0);
+      rowMenu.request("db-form");
     }
   };
   // "Test" keeps the form on the saved source (so it can be fixed and tested again); "Save" returns to a blank form.
@@ -519,7 +521,7 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                            <DropdownMenuContent align="end" onCloseAutoFocus={rowMenu.onCloseAutoFocus}>
                               <DropdownMenuItem className="cursor-pointer" onSelect={() => startEdit(source)} data-testid={`k8sdb-edit-${source.id}`}>
                                 <Pencil className="h-4 w-4" />
                                 Edit

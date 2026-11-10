@@ -30,6 +30,13 @@ import {
 } from "@/utils/backend_api";
 
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
+import { menuReveal, type MenuReveal } from "./reveal";
+
+/** For a table's row menus whose items move to a form below: see reveal.ts. One per tab, shared by its row menus. */
+export function useMenuReveal(): MenuReveal {
+  const [reveal] = useState(() => menuReveal((id) => document.getElementById(id)));
+  return reveal;
+}
 
 // ---------------------------------------------------------------------------- badges
 export type Tone = "green" | "red" | "amber" | "blue" | "zinc";

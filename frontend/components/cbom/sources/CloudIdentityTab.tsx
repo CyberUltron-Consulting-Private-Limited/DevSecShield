@@ -54,6 +54,7 @@ import {
   StatusBadge,
   TestStatusBadge,
   Truncate,
+  useMenuReveal,
   usePolledJob,
   type Tone,
 } from "./shared";
@@ -305,6 +306,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
   const [validation, setValidation] = useState<ValidationView | null>(null);
   const [deleting, setDeleting] = useState<CbomSource | null>(null);
   const [metadataFor, setMetadataFor] = useState<CbomSource | null>(null);
+  const rowMenu = useMenuReveal();
   const [caDialog, setCaDialog] = useState<{ row: CaRow; source: CbomSource | null; nonce: number } | null>(null);
   const [idpDialog, setIdpDialog] = useState<{ row: IdpRow; source: CbomSource | null; nonce: number } | null>(null);
 
@@ -425,10 +427,11 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     resetForm();
   };
 
+  // From the accounts table's row menu: the form is revealed when the menu has closed (reveal.ts), not here.
   const startEdit = (source: CbomSource) => {
     setValidation(null);
     setForm((f) => ({ provider: PROVIDER_OF_KIND[source.kind] ?? "aws", source, nonce: f.nonce + 1 }));
-    document.getElementById("cbom-cloud-connect")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    rowMenu.request("cbom-cloud-connect");
   };
 
   const formKey = `${form.provider}-${form.source?.id ?? "new"}-${form.nonce}`;
@@ -568,7 +571,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                            <DropdownMenuContent align="end" onCloseAutoFocus={rowMenu.onCloseAutoFocus}>
                               <DropdownMenuItem className="cursor-pointer" disabled={busy} onSelect={() => testMutation.mutate(s)}>
                                 <ShieldCheck className="h-4 w-4" />
                                 Validate connection
