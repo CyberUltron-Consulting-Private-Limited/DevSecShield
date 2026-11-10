@@ -604,7 +604,7 @@ entry("KMS_KEY_DELETION_UNPROTECTED", title="Key vault purge protection off", ca
           {"platform": "Terraform (azurerm)", "how": "purge_protection_enabled = true on azurerm_key_vault / azurerm_key_vault_managed_hardware_security_module"},
           {"platform": "Azure CLI", "how": "az keyvault update --name {name} --enable-purge-protection true"}]},
       verify=[{"label": "Purge protection setting", "command": "az keyvault show --name {name} --query properties.enablePurgeProtection"}], references=[])
-entry("KMS_KEY_POLICY_PUBLIC", title="KMS key policy open to everyone", category="cloud", default_impact="Critical",
+entry("KMS_KEY_POLICY_PUBLIC", title="KMS key policy open to everyone", category="cloud", default_impact="High",
       description="A KMS key policy grants access to a wildcard principal without a restricting condition.",
       attack="Any AWS principal (in any account) allowed by the policy can use or manage the key, and so decrypt data protected by it.",
       cwe=["CWE-732", "CWE-284"], owasp=["access", "crypto"], cves=[], standards=[], compliance=["key_mgmt"],
