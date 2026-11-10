@@ -88,6 +88,9 @@ def test_weak_protocol_tls_10_is_flagged() -> None:
     assert proto["TLS 1.0"] in flagged
 
 
+_COMMITTED_KEY = "crypto-material-private-key-crypto-app-py"
+
+
 def test_certificate_and_material_are_not_weak_flagged() -> None:
     # C5 is weak-ALGORITHM detection; certificates / private-key material are
     # not algorithm-weakness findings and must not get weak-crypto flags.
@@ -99,14 +102,19 @@ def test_certificate_and_material_are_not_weak_flagged() -> None:
         in ("certificate", "related-crypto-material"),
     )
     for name, ref in others.items():
+        if ref == _COMMITTED_KEY:  # a PEM private key pasted into source: HARDCODED_KEY (integrator decision)
+            assert {f.code for f in result.flags if f.target == ref} == {"HARDCODED_KEY"}
+            continue
         assert ref not in flagged, f"{name} ({ref}) wrongly weak-flagged"
 
 
 def test_flag_count_matches_oracle_weak_total() -> None:
-    # 5 weak algorithms + 1 weak protocol = 6 weak-crypto findings.
+    # 5 weak algorithms + 1 weak protocol = 6 weak-crypto findings; the committed private key's HARDCODED_KEY
+    # (integrator decision) is key material, not an algorithm, and is counted on its own.
     result = _scan()
-    weak_flags = [f for f in result.flags if f.code in WEAK_CRYPTO_CODES]
+    weak_flags = [f for f in result.flags if f.code in WEAK_CRYPTO_CODES and f.code != "HARDCODED_KEY"]
     assert len(weak_flags) == 6, [f"{f.code}:{f.target}" for f in weak_flags]
+    assert [f.target for f in result.flags if f.code == "HARDCODED_KEY"] == [_COMMITTED_KEY]
 
 
 def test_weak_flags_are_high_severity_error() -> None:
@@ -120,7 +128,8 @@ def test_weak_flags_are_high_severity_error() -> None:
 def test_weak_count_matches_manifest_counts() -> None:
     manifest = _manifest()
     result = _scan()
-    weak_flags = [f for f in result.flags if f.code in WEAK_CRYPTO_CODES]
+    # the manifest counts algorithms and protocols; the committed private key's HARDCODED_KEY is not one
+    weak_flags = [f for f in result.flags if f.code in WEAK_CRYPTO_CODES and f.code != "HARDCODED_KEY"]
     expected = (
         manifest["counts"]["weak_algorithms"]
         + manifest["counts"]["weak_protocols"]

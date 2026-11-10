@@ -134,7 +134,8 @@ def test_self_signed_leaf_flagged() -> None:
     result = _scan()
     cert = _cert_by_source(result, "selfsigned-leaf.crt")
     codes = _codes_for(result, cert.bom_ref)
-    assert SELF_SIGNED_LEAF in codes
+    # integrator decision: CERT_SELF_SIGNED at Low (like the scan node), no longer SELF_SIGNED_LEAF at Medium
+    assert "CERT_SELF_SIGNED" in codes and SELF_SIGNED_LEAF not in codes
     # A self-signed leaf with a strong SHA-256 signature is not a sig weakness.
     assert WEAK_CERTIFICATE_SIGNATURE not in codes
 
@@ -201,6 +202,25 @@ def test_self_signed_sha1_is_low_self_signed_not_a_weak_signature() -> None:
     assert [(c, s) for c, s, _m in certificate_findings(issued)] == [(WEAK_CERTIFICATE_SIGNATURE, "error")]
     md5_self = _cert_comp(**{**sha1, "crypto:signatureAlgorithm": "md5WithRSAEncryption", "crypto:selfSigned": "true"})
     assert WEAK_CERTIFICATE_SIGNATURE in {c for c, _s, _m in certificate_findings(md5_self)}
+
+
+def test_every_self_signed_leaf_is_low_cert_self_signed_like_the_scan_node() -> None:
+    """Integrator decision: a self-signed leaf (CA:FALSE) is CERT_SELF_SIGNED at Low whatever its hash (a SHA-256
+    one was Medium SELF_SIGNED_LEAF while a SHA-1 one was Low).  Weak keys and MD5/MD2 signatures keep their own
+    findings and severity."""
+    from aibom.cbom.weakness import CERT_SELF_SIGNED
+
+    leaf = {"crypto:selfSigned": "true", "crypto:isCertificateAuthority": "false",
+            "crypto:publicKeyAlgorithm": "rsaEncryption", "crypto:keySize": "2048"}
+    sha256 = {c: s for c, s, _m in certificate_findings(_cert_comp(**{**leaf, "crypto:signatureAlgorithm":
+                                                                         "sha256WithRSAEncryption"}))}
+    assert sha256 == {CERT_SELF_SIGNED: "note"}
+    md5 = {c: s for c, s, _m in certificate_findings(_cert_comp(**{**leaf, "crypto:signatureAlgorithm":
+                                                                      "md5WithRSAEncryption"}))}
+    assert md5 == {CERT_SELF_SIGNED: "note", WEAK_CERTIFICATE_SIGNATURE: "error"}
+    weak_key = {c: s for c, s, _m in certificate_findings(_cert_comp(**{
+        **leaf, "crypto:keySize": "1024", "crypto:signatureAlgorithm": "sha256WithRSAEncryption"}))}
+    assert weak_key == {CERT_SELF_SIGNED: "note", WEAK_CERTIFICATE_KEY: "error"}
 
 
 def test_certificate_findings_empty_for_strong_ca() -> None:

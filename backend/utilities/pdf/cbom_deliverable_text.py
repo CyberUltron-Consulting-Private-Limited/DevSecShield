@@ -205,7 +205,7 @@ FINDING_LABELS = {
     "WEAK_CERTIFICATE_SIGNATURE": "Certificate signed with a weak hash",
     "WEAK_CERTIFICATE_KEY": "Certificate with an undersized key",
     "SELF_SIGNED_LEAF": "Self-signed leaf certificate",
-    "CERT_SELF_SIGNED": "Self-signed certificate with a SHA-1 self-signature",
+    "CERT_SELF_SIGNED": "Self-signed certificate",
     "EXPIRED_CERTIFICATE": "Expired certificate",
     "CERT_NEAR_EXPIRY": "Certificate nearing expiry",
     "QUANTUM_VULNERABLE": "Quantum-vulnerable public-key algorithm",
@@ -286,10 +286,11 @@ FINDING_ACTIONS = {
         "Replace it with a certificate issued by a trusted CA; reserve self-signed "
         "certificates for local testing."
     ),
-    # Product decision: a self-signed certificate's own SHA-1 signature is never verified (scan-node CERT_SELF_SIGNED)
+    # Product decision: a self-signed certificate is Low (scan-node CERT_SELF_SIGNED); its own SHA-1 signature is
+    # never verified, so it is not a weak-signature finding
     "CERT_SELF_SIGNED": (
-        "Re-issue it with a SHA-256 signature so policies and scanners stop flagging it; its own SHA-1 "
-        "self-signature is not checked by clients."
+        "Issue it from a trusted CA before relying on it in production; if it is signed with SHA-1, re-issue it "
+        "with SHA-256 so policies and scanners stop flagging it."
     ),
     # Source: RFC 5280, certificate validity period: https://www.rfc-editor.org/rfc/rfc5280
     "EXPIRED_CERTIFICATE": "Renew the certificate, or remove it if it is no longer used.",

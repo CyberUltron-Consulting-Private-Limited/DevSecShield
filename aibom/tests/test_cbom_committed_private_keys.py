@@ -67,9 +67,26 @@ def test_committed_private_keys_are_findings(tmp_path: Path) -> None:
         assert rows[rel]["finding_codes"] == [], rel  # fixtures and public keys stay inventory
 
 
-def test_a_private_key_block_inside_source_keeps_its_inventory_treatment() -> None:
-    """Scope: key FILES.  A PEM block pasted into source is still inventory, as the frozen app's oracle pins
-    (an open decision, reported)."""
+def test_a_private_key_block_inside_source_is_a_finding(tmp_path: Path) -> None:
+    """Integrator decision: a PEM private key pasted into source follows the key-file rules (High; Medium when
+    encrypted; inventory under test/fixture/example paths); public keys and certificates stay clean."""
     run = normalize_crypto(scan_crypto(_FX / "synthetic-crypto-app"), duration_of_scan=0.0)
     keys = [r for r in run["results"] if r["location"] == "crypto_app.py" and r["title"].startswith("private-key")]
-    assert keys and keys[0]["finding_codes"] == []
+    assert keys and keys[0]["finding_codes"] == ["HARDCODED_KEY"] and keys[0]["impact"] == "High"
+
+    def src(block: bytes) -> str:
+        return f'KEY_PEM = """\n{block.decode()}"""\n'
+
+    files = {
+        "app/plain.py": src(pem("RSA PRIVATE KEY", fake_rsa_der(2048))),
+        "app/enc.py": src(_legacy_encrypted()),
+        "tests/fixture_keys.py": src(pem("RSA PRIVATE KEY", fake_rsa_der(2048))),
+        "app/pub.py": src(pem("PUBLIC KEY", os.urandom(294))),
+    }
+    for rel, text in files.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(text)
+    rows = _rows(tmp_path)
+    assert (rows["app/plain.py"]["finding_codes"], rows["app/plain.py"]["impact"]) == (["HARDCODED_KEY"], "High")
+    assert (rows["app/enc.py"]["finding_codes"], rows["app/enc.py"]["impact"]) == (["HARDCODED_KEY"], "Medium")
+    assert rows["tests/fixture_keys.py"]["finding_codes"] == [] and rows["app/pub.py"]["finding_codes"] == []

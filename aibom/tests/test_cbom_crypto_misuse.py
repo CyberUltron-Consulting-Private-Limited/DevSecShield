@@ -185,4 +185,7 @@ def test_detector_excludes_secure_rng() -> None:
 def test_no_phantom_misuse_on_frozen_app() -> None:
     app = os.path.join(_HERE, "fixtures", "synthetic-crypto-app")
     result = scan_crypto(app)
-    assert not [f for f in result.flags if f.code in _MISUSE_CODES]
+    # the one misuse is real: the PEM private key pasted into crypto_app.py is a committed key (HARDCODED_KEY,
+    # integrator decision); nothing else may be invented on the frozen app
+    misuse = [(f.code, f.target) for f in result.flags if f.code in _MISUSE_CODES]
+    assert misuse == [("HARDCODED_KEY", "crypto-material-private-key-crypto-app-py")]

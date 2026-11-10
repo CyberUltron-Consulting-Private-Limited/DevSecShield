@@ -47,8 +47,9 @@ WEAK_CERTIFICATE_KEY = "WEAK_CERTIFICATE_KEY"
 WEAK_CERT_SIGNATURE = WEAK_CERTIFICATE_SIGNATURE
 WEAK_CERT_KEY_SIZE = WEAK_CERTIFICATE_KEY
 SELF_SIGNED_LEAF = "SELF_SIGNED_LEAF"
-# A self-signed certificate whose own signature uses SHA-1: Low, like the scan-node path (classify.CERT_SELF_SIGNED).
-# Its self-signature is never verified, so it is not a weak-signature finding (owner / integrator decision).
+# A self-signed leaf (any hash), or a self-signed certificate whose own signature uses SHA-1: Low, like the scan-node
+# path (classify.CERT_SELF_SIGNED).  A SHA-1 self-signature is never verified, so it is not a weak-signature finding.
+# SELF_SIGNED_LEAF (Medium) is no longer raised; it stays defined for scans stored before (integrator decisions).
 CERT_SELF_SIGNED = "CERT_SELF_SIGNED"
 _SEV_LOW = "note"  # SARIF note == Low impact
 # C6 related-crypto-material misuse codes (source-derived; see
@@ -709,11 +710,13 @@ def certificate_findings(component: AIComponent) -> list[tuple[str, str, str]]:
         props.get("crypto:selfSigned") == "true"
         and props.get("crypto:isCertificateAuthority") == "false"
     ):
+        # Any self-signed leaf is CERT_SELF_SIGNED at Low, like the scan node, whatever its hash (integrator
+        # decision; SELF_SIGNED_LEAF at Medium is no longer raised).  Weak keys / MD5 keep their own findings.
         findings.append(
             (
-                SELF_SIGNED_LEAF,
-                _SEV_MED,
-                f"Self-signed leaf certificate {name} (BasicConstraints CA:FALSE): "
+                CERT_SELF_SIGNED,
+                _SEV_LOW,
+                f"Self-signed certificate {name} (BasicConstraints CA:FALSE): "
                 f"an end-entity certificate acting as its own trust anchor; issue "
                 f"it from a proper CA before relying on it in production.",
             )

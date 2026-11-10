@@ -283,8 +283,8 @@ class CertificateMaterialScanner(Scanner):
     def _emit_key_block(
         self, ctx: ScanContext, seen: set[str], kind: str, rel: str, label: str, body: str, key_file: bool = False
     ) -> None:
-        """A PEM / OpenPGP armored key block -> private-/public-key material.  A private key FILE is committed key
-        material (:func:`_committed_key_props`); a block pasted inside source keeps its inventory treatment."""
+        """A PEM / OpenPGP armored key block -> private-/public-key material.  A committed private key (a key file,
+        or a block pasted inside source) is committed key material (:func:`_committed_key_props`)."""
         committed = _committed_key_props(rel, label, body) if kind == "private-key" and key_file else {}
         if not label.startswith("PGP "):
             self._emit_material(ctx, seen, kind, rel, _label_alg(label), extra=committed or None)
@@ -318,7 +318,8 @@ class CertificateMaterialScanner(Scanner):
                     if cert is not None:
                         self._emit_certificate(ctx, seen, chain, cert, rel)
                 elif _PRIVATE_KEY_RE.search(up):
-                    self._emit_key_block(ctx, seen, "private-key", rel, up, body)
+                    # a private key pasted into source is committed key material too (integrator decision)
+                    self._emit_key_block(ctx, seen, "private-key", rel, up, body, key_file=True)
                 elif _PUBLIC_KEY_RE.search(up):
                     self._emit_key_block(ctx, seen, "public-key", rel, up, body)
             # Conservative hardcoded IV / salt / secret-key literals.
