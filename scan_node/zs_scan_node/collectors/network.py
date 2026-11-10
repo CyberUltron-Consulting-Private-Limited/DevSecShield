@@ -21,6 +21,7 @@ from __future__ import annotations
 import concurrent.futures as cf
 import ipaddress
 import socket
+import threading
 import time
 from typing import Any
 
@@ -38,6 +39,14 @@ TLS_LIKE = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-
             "modbus-tls"}
 OT_PROTOCOLS = {"opcua", "modbus", "modbus-tls"}
 MAX_OPEN_ENDPOINTS = 5000
+CONNECT_TIMEOUT = 2.0  # the sweep's TCP connect: a silent (filtered or absent) address costs this per port
+# Addresses swept at once.  The sweep is latency-bound (a silent port holds a worker for CONNECT_TIMEOUT), so enough
+# workers that the agreed connections per second, not the timeouts, set the pace; the TLS/SSH probes of open
+# endpoints keep their own, smaller concurrency (``deep``) so live hosts see no more parallel handshakes than before.
+MAX_SWEEP_PARALLEL = 64
+# Hosts that answered on no listed port get a coverage row each (drift: their earlier assets are "not read", never
+# removed or resolved); past this many, one job-wide row says so instead of thousands of rows.
+MAX_NO_ANSWER_ROWS = 2048
 TARPIT_TIMEOUTS = 3
 ENDPOINT_MAX_S = 90
 IKE_SPACING = 0.2  # seconds between two packets to the same IKE endpoint (at least)
@@ -138,18 +147,19 @@ class NetworkScan:
         return None
 
     def tcp_open(self, ip: str, port: int) -> str:
-        """'open' | 'closed' | a skip status."""
+        """'open' | 'closed' (refused: the host answered) | 'silent' (no answer: filtered or no host) | a skip
+        status."""
         gate = self._gate(ip)
         if gate:
             return gate
         try:
-            sock = _tcp(ip, port, self.ctx.never_scan, 2.0)
+            sock = _tcp(ip, port, self.ctx.never_scan, CONNECT_TIMEOUT)
             sock.close()
             return "open"
         except Blocked:
             return "skipped_never_scan"
         except T.ProbeError as exc:
-            return "closed" if exc.code in ("refused", "timeout", "unreachable", "no_route") else "closed"
+            return "closed" if exc.code == "refused" else "silent"
 
     def handshake(self, ep: Endpoint, budget: Budget, fn, *args):
         if not budget.take():
@@ -239,12 +249,14 @@ class NetworkScan:
                                                          "curve", "sig_alg", "fingerprint_sha256", "self_signed", "san")}
         # 2. protocol versions
         versions: dict[str, bool | None] = {}
+        unread: list[str] = []  # checks that could not run: their findings must not read as fixed (drift)
         tls13 = fh.ok and fh.version == "TLSv1.3"
         for v in (T.SSL3, T.TLS10, T.TLS11, T.TLS12):
             name = T.VERSION_NAMES[v]
             if time.monotonic() > endpoint_deadline:
                 versions[name] = None
                 facts["endpoint_time_cap"] = True
+                unread.append(f"{name}: endpoint time cap")
                 continue
             if fh.ok and fh.version == name:
                 versions[name] = True
@@ -259,9 +271,12 @@ class NetworkScan:
             except T.ProbeError as exc:
                 versions[name] = None
                 facts.setdefault("probe_errors", []).append(f"{name}: {exc.code}")
+                if exc.code != "refused":  # a reset is this server's way to refuse a version, every time
+                    unread.append(f"{name}: {exc.code}")
                 continue
             if r == "budget":
                 versions[name] = None
+                unread.append(f"{name}: handshake budget")
                 continue
             versions[name] = bool(r.ok and r.version == v)
         if tls13:
@@ -271,8 +286,12 @@ class NetworkScan:
                 r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
                                    T.build_client_hello(T.TLS12, T.TLS13_SUITES, tls13=True, key_share_groups=[29]), 8.0)
                 versions["TLSv1.3"] = None if r == "budget" else bool(r.ok and (r.version == T.TLS13 or r.hrr))
-            except (T.ProbeError, T.StarttlsUnavailable):
+                if r == "budget":
+                    unread.append("TLSv1.3: handshake budget")
+            except (T.ProbeError, T.StarttlsUnavailable) as exc:
                 versions["TLSv1.3"] = None
+                if getattr(exc, "code", None) != "refused":
+                    unread.append(f"TLSv1.3: {getattr(exc, 'code', 'starttls')}")
         facts["versions"] = versions
         supported = [k for k, v in versions.items() if v]
         if not fh.ok and not supported:
@@ -318,10 +337,13 @@ class NetworkScan:
                 try:
                     r = self.handshake(ep, budget, T.probe, ep.ip, ep.port, ep.protocol,
                                        T.build_client_hello(legacy, suites), 8.0, label == "dhe")
-                except (T.ProbeError, T.StarttlsUnavailable):
+                except (T.ProbeError, T.StarttlsUnavailable) as exc:
+                    if getattr(exc, "code", None) != "refused":
+                        unread.append(f"{label} ciphers: {getattr(exc, 'code', 'starttls')}")
                     continue
                 if r == "budget":
                     facts["budget_exhausted"] = True
+                    unread.append(f"{label} ciphers: handshake budget")
                     break
                 if r.ok and r.cipher in suites:
                     accepted.setdefault(label, []).append(r.cipher_name)
@@ -344,6 +366,11 @@ class NetworkScan:
         facts["handshakes_used"] = budget.used
         facts["handshake_budget"] = budget.limit
         facts["tls"] = True
+        if unread:
+            facts["checks_not_run"] = unread[:20]
+            # listed, with some facts missing: a finding that vanishes from this endpoint is not proven fixed
+            ctx.coverage(ep.ip, f"TLS checks {ep.where}", "incomplete", "; ".join(unread)[:900],
+                         scope=[ep.where], incomplete=True)
         top = next((v for v in ("TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1.0", "SSLv3") if versions.get(v)), fh.version)
         ctx.emit("tls_endpoint", ep.ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}",
                  algorithm=fh.cipher, protocol=top, facts=facts)
@@ -541,11 +568,41 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
     ranges = _scope_ranges(scope)
     if not ranges:
         return "no ranges in scope"
-    parallel = max(1, min(int((scope.get("rate_limits") or {}).get("connections_per_second") or 20) // 2, 16))
+    cps = max(1, int((scope.get("rate_limits") or {}).get("connections_per_second") or 20))
+    per_server = max(1, int((scope.get("rate_limits") or {}).get("parallel_per_server") or 2))
+    # handshakes (openssl, raw probes, SSH, IKE) on open endpoints: as many addresses at once as before
+    deep = threading.BoundedSemaphore(max(1, min(cps // 2, 16)))
+    # the TCP sweep: each address sweeps its ports ``per_server`` at a time; enough addresses at once that silent
+    # ports (CONNECT_TIMEOUT each) do not set the pace -- the agreed connections per second do (the limiter)
+    parallel = max(1, min(int(cps * CONNECT_TIMEOUT) + 1, MAX_SWEEP_PARALLEL))
     open_endpoints = 0
     truncated = False
+    no_answer = [0]  # addresses that answered on no listed port
+    no_answer_lock = threading.Lock()
 
-    per_server = max(1, int((scope.get("rate_limits") or {}).get("parallel_per_server") or 2))
+    def note_silent(ip: str, ports_tried: list[dict]) -> None:
+        """Coverage for an address that answered on no listed port: drift lists its earlier assets as "not read"
+        (it may be down, filtered or gone; one sweep cannot tell), never as removed or fixed."""
+        with no_answer_lock:
+            no_answer[0] += 1
+            n = no_answer[0]
+        if n <= MAX_NO_ANSWER_ROWS:
+            listed = ", ".join(str(p["port"]) for p in ports_tried[:20])
+            ctx.coverage(ip, "no answer", "unreachable",
+                         f"{ip} did not answer on any listed port ({listed}{', ...' if len(ports_tried) > 20 else ''}); "
+                         "filtered, down or no host at this address")
+        else:
+            ctx.coverage("", "no answer", "unreachable", f"more than {MAX_NO_ANSWER_ROWS} addresses did not answer on "
+                         "any listed port; the rest are not listed one by one", once=True)
+
+    def sweep(ip: str) -> tuple[str | None, list[tuple[dict, str]]]:
+        """(skip status or None, [(port, state)]) -- ports ``per_server`` at a time, each through the limiter."""
+        if not tcp_ports:
+            return None, []
+        with cf.ThreadPoolExecutor(max_workers=min(per_server, len(tcp_ports))) as sp:
+            states = list(sp.map(lambda p: (p, scan.tcp_open(ip, p["port"])), tcp_ports))
+        skip = next((s for _p, s in states if s.startswith("skipped_")), None)
+        return skip, states
 
     def do_address(ip: str, mode: str):
         try:
@@ -566,18 +623,19 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
         if ctx.never_scan.blocks_ip(ip):
             ctx.outcome(ip, "skipped_never_scan", started=started)
             return 0
-        open_eps: list[Endpoint] = []
-        for p in tcp_ports:
-            state = scan.tcp_open(ip, p["port"])
-            if state.startswith("skipped_"):
-                ctx.outcome(ip, state, started=started)
-                return 0
-            if state == "open":
-                open_eps.append(Endpoint(ip, p["port"], p["protocol"], p["label"]))
+        skip, states = sweep(ip)
+        if skip:
+            ctx.outcome(ip, skip, started=started)
+            return 0
+        open_eps = [Endpoint(ip, p["port"], p["protocol"], p["label"]) for p, s in states if s == "open"]
+        tcp_answered = any(s in ("open", "closed") for _p, s in states)
+        silent_ports = [p for p, s in states if s == "silent"]
         if discovery_only:
             for ep in open_eps:
                 ctx.emit("open_port", ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}", protocol=ep.protocol,
                          facts={"port": ep.port, "protocol": ep.protocol, "label": ep.label})
+            # no coverage rows here: a discovery job's assets are its open ports (the UI counts them as "open
+            # endpoints"), and discovery is never compared for drift
             ctx.outcome(ip, "ok", started=started, assets=len(open_eps))
             return len(open_eps)
         failures: list[str] = []
@@ -595,17 +653,23 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
             status, err, n = scan.scan_endpoint(ep, mode)
             return ep, status, err, n, t0
 
-        with cf.ThreadPoolExecutor(max_workers=workers) as eps_pool:
-            for ep, status, err, n, t0 in eps_pool.map(one, open_eps):
-                assets += n
-                if status.startswith("skipped_"):
-                    skip_status = skip_status or status
-                    continue
-                if status != "ok":
-                    failures.append(f"{ep.port}:{status}")
-                    ctx.outcome(ep.where, status, err, started=t0, assets=n, counted=False)
+        if open_eps:
+            with deep, cf.ThreadPoolExecutor(max_workers=workers) as eps_pool:
+                for ep, status, err, n, t0 in eps_pool.map(one, open_eps):
+                    assets += n
+                    if status.startswith("skipped_"):
+                        skip_status = skip_status or status
+                        continue
+                    if status != "ok":
+                        failures.append(f"{ep.port}:{status}")
+                        ctx.outcome(ep.where, status, err, started=t0, assets=n, counted=False)
+                        # the port is open but was not read: what it showed before is "not read", not fixed
+                        ctx.coverage(ip, f"endpoint {ep.where}", "error" if status in ("not_supported",) else status,
+                                     f"{ep.label or ep.protocol} {ep.where}: {err or status}"[:900],
+                                     scope=[ep.where], incomplete=False)
         # IKE over UDP: no connect to tell an open port, so every listed IKE port gets a probe; the first silent one
         # (no answer to IKEv2 or IKEv1) ends IKE on this address
+        ike_answered = False
         for i, p in enumerate(ike_ports):
             ep = Endpoint(ip, p["port"], "ike", p["label"])
             t0 = time.monotonic()
@@ -624,12 +688,22 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
                 break
             if status == "no_answer":
                 break
+            ike_answered = True
             if status != "ok":
                 failures.append(f"{ep.port}/udp:{status}")
                 ctx.outcome(f"{ep.where}/udp", status, err, started=t0, assets=n, counted=False)
         if skip_status and assets == 0:
             ctx.outcome(ip, skip_status, started=started)
             return len(open_eps)
+        if not tcp_answered and not ike_answered:
+            note_silent(ip, tcp_ports + ike_ports)
+        elif silent_ports and not skip_status:
+            # the host is up, these ports did not answer (filtered): an endpoint seen there before is "not read"
+            ctx.coverage(ip, "ports not answering", "timeout",
+                         "no answer on " + ", ".join(str(p["port"]) for p in silent_ports[:40]) +
+                         " (filtered, or a host firewall drops the connection)",
+                         scope=[f"{ip}:{p['port']}" if ":" not in ip else f"[{ip}]:{p['port']}" for p in silent_ports],
+                         incomplete=False)
         ctx.outcome(ip, "ok", "; ".join(failures)[:250] if failures else None, started=started, assets=assets)
         return len(open_eps)
 

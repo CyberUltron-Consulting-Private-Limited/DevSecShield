@@ -13,6 +13,7 @@ import {
   defaultWindow,
   EXPOSURE_CHOICES,
   exposureFrom,
+  formatDateTime,
   formatDay,
   helmAgentCommand,
   installCommand,
@@ -100,6 +101,11 @@ assert.deepEqual(zoneFileHostnames(zone).sort(), ["api.bank.example", "bank.exam
 assert.equal(ago("2026-10-31T10:00:00Z", "2026-10-31T10:00:30Z"), "30 s ago");
 assert.equal(ago(null, null), "Never");
 assert.equal(formatDay("bad"), "—");
+// schedules: the next run in the team's zone, matching "Daily at 19:11 (Asia/Kolkata)" whatever the browser's zone
+assert.match(formatDateTime("2026-11-10T13:41:00Z", "Asia/Kolkata"), /07:11|19:11/);
+assert.match(formatDateTime("2026-11-10T13:41:00Z", "UTC"), /01:41|13:41/);
+assert.equal(formatDateTime("2026-11-10T13:41:00Z", "Not/AZone"), formatDateTime("2026-11-10T13:41:00Z"));
+assert.equal(formatDateTime(null, "UTC"), "—");
 
 // source metadata: exposure override (Cloud & Identity tab metadata dialog, Review & Run)
 assert.equal(exposureFrom({ exposure: "internet" }), "internet");
