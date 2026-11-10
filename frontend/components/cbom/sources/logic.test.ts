@@ -17,6 +17,7 @@ import {
   helmAgentCommand,
   installCommand,
   nodeInstallNames,
+  mixedGroupScope,
   normalizeGrid,
   readTextFile,
   setCell,
@@ -135,6 +136,15 @@ const fileChecks = (async () => {
   await assert.rejects(readTextFile(new File(["-----BEGIN\0CERTIFICATE-----\n"], "x.pem")), /is a binary file/);
   await assert.rejects(readTextFile(new File([new Uint8Array([0xff, 0xfe, 0x41])], "x.pem")), /not UTF-8/);
 })();
+
+// Local lab round 5 (u1): one container images source with two images and no cluster read "Kubernetes: 2 clusters"
+// on Review & Run (its units are images, planning.py); an HSM counted as a database the same way.
+assert.equal(mixedGroupScope("kubernetes", { container_images: 1 }, 2), "2 container images");
+assert.equal(mixedGroupScope("kubernetes", { kubernetes: 2, container_images: 1 }, 5), "2 clusters · 3 container images");
+assert.equal(mixedGroupScope("kubernetes", { kubernetes: 1 }, 1), "1 cluster");
+assert.equal(mixedGroupScope("databases", { database: 2 }, 2), "2 databases");
+assert.equal(mixedGroupScope("databases", { database: 2, key_manager: 1 }, 3), "2 databases · 1 HSM or key manager");
+assert.equal(mixedGroupScope("databases", { key_manager: 2 }, 2), "2 HSMs or key managers");
 
 fileChecks.then(
   () => console.log("logic.test.ts: all checks passed"),

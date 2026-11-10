@@ -247,6 +247,24 @@ export function pluralize(count: number, one: string, many = `${one}s`): string 
   return `${count.toLocaleString()} ${count === 1 ? one : many}`
 }
 
+/** Review & Run coverage text for the groups whose units mix kinds: a container images source counts its images (not
+ * clusters) in the Kubernetes group, and HSMs / key managers count in the Databases group (backend planning.py). */
+export function mixedGroupScope(group: "kubernetes" | "databases", byKind: Record<string, number> | undefined, units: number): string {
+  const n = (kind: string) => byKind?.[kind] ?? 0
+  const parts: string[] = []
+  if (group === "kubernetes") {
+    const clusters = n("kubernetes")
+    if (clusters) parts.push(pluralize(clusters, "cluster"))
+    if (n("container_images")) parts.push(pluralize(Math.max(0, units - clusters), "container image"))
+    return parts.join(" · ") || pluralize(units, "cluster")
+  }
+  const keyManagers = n("key_manager")
+  const databases = Math.max(0, units - keyManagers)
+  if (databases || !keyManagers) parts.push(pluralize(databases, "database"))
+  if (keyManagers) parts.push(pluralize(keyManagers, "HSM or key manager", "HSMs or key managers"))
+  return parts.join(" · ")
+}
+
 export function credits(value: number | null | undefined): string {
   if (value == null) return "—"
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })

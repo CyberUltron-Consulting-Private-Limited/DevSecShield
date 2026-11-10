@@ -31,7 +31,7 @@ import RunResults from "./RunResults";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { SourceMetadataCard } from "./SourceMetadata";
-import { credits, formatDateTime, newRequestId, pluralize } from "./logic";
+import { credits, formatDateTime, mixedGroupScope, newRequestId, pluralize } from "./logic";
 import {
   Checkbox2,
   ConfirmDialog,
@@ -262,8 +262,8 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
   };
 
   groupRow("servers", "Linux and Windows servers", (s, u, k) => `${pluralize(s, "source")} · ${pluralize(u, "target")}${k ? ` (${k})` : ""}`);
-  groupRow("kubernetes", "Kubernetes", (_s, u) => pluralize(u, "cluster"));
-  groupRow("databases", "Databases", (_s, u) => pluralize(u, "database"));
+  groupRow("kubernetes", "Kubernetes", (_s, u) => mixedGroupScope("kubernetes", overview.groups?.kubernetes?.by_kind, u));
+  groupRow("databases", "Databases", (_s, u) => mixedGroupScope("databases", overview.groups?.databases?.by_kind, u));
   groupRow("cloud", "Cloud", (_s, u, k) => `${pluralize(u, "account")}${k ? ` (${k})` : ""}`, true);
   groupRow(
     "identity",
