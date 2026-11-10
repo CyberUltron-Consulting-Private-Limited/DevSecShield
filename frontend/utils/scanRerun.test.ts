@@ -50,13 +50,13 @@ assert.equal(rerunTitle(undefined), "Scan (run again)");
 
 // it travels to the new scan in sessionStorage (blocked storage: the new scan opens empty)
 const store = new Map<string, string>();
-(globalThis as any).sessionStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v),
+(globalThis as unknown as { sessionStorage: unknown }).sessionStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v),
   removeItem: (k: string) => void store.delete(k) };
 saveRerun("sast", 42, rerunPrefill("sast", sast)!);
 assert.deepEqual(readRerun("sast", 42), rerunPrefill("sast", sast));
 assert.equal(readRerun("sast", 43), null);
 assert.equal(readRerun("iac", 42), null);
-(globalThis as any).sessionStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+(globalThis as unknown as { sessionStorage: unknown }).sessionStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
 assert.equal(readRerun("sast", 42), null);
 saveRerun("sast", 42, cz);
 

@@ -7,17 +7,17 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { AxiosError, AxiosHeaders } from "axios";
+import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from "axios";
 
 function refused(status: number, data: unknown, headers: Record<string, string> = {}): AxiosError {
-  const config = { headers: new AxiosHeaders() } as any;
+  const config = { headers: new AxiosHeaders() } as InternalAxiosRequestConfig;
   return new AxiosError(`Request failed with status code ${status}`, "ERR_BAD_REQUEST", config, null, {
     status, statusText: "", headers, config, data,
   });
 }
 
-(globalThis as any).window = { location: { href: "/1/cbom/sources" } };
-(globalThis as any).localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} };
+(globalThis as unknown as { window: unknown }).window = { location: { href: "/1/cbom/sources" } };
+(globalThis as unknown as { localStorage: unknown }).localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {}, clear: () => {} };
 
 async function main() {
   const { startRefusal } = await import("./startRefusal");
