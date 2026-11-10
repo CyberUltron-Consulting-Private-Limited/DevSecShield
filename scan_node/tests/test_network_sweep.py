@@ -140,7 +140,8 @@ def test_ike_only_gateway_is_not_reported_as_silent(monkeypatch):
     assert len(_cov(ctx, "ports not answering")) == 1
 
 
-def test_discovery_reports_silent_addresses(monkeypatch):
+def test_discovery_assets_are_only_open_ports(monkeypatch):
+    """The Network TLS tab shows a discovery job's asset count as "N open endpoints": no coverage rows there."""
     tcp, _state = _fake_tcp(open_ports=(443,), live=("192.0.2.1",))
     monkeypatch.setattr(N, "_tcp", tcp)
     ctx = _ctx()
@@ -149,8 +150,8 @@ def test_discovery_reports_silent_addresses(monkeypatch):
                         "rate_limits": {"connections_per_second": 1000, "parallel_per_server": 2}},
                   discovery_only=True)
     ctx.flush()
-    assert [a["location"] for a in ctx.collected if a["type"] == "open_port"] == ["192.0.2.1:443"]
-    assert sorted(a["target"] for a in _cov(ctx, "no answer")) == ["192.0.2.2"]
+    assert [a["location"] for a in ctx.collected] == ["192.0.2.1:443"]
+    assert {o.target: o.status for o in ctx.outcomes} == {"192.0.2.1": "ok", "192.0.2.2": "ok"}
 
 
 def test_silent_rows_are_capped_with_one_job_wide_row(monkeypatch):

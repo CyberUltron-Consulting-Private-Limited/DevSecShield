@@ -634,8 +634,8 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
             for ep in open_eps:
                 ctx.emit("open_port", ip, ep.where, name=f"{ep.label or ep.protocol} {ep.where}", protocol=ep.protocol,
                          facts={"port": ep.port, "protocol": ep.protocol, "label": ep.label})
-            if not tcp_answered:
-                note_silent(ip, tcp_ports)
+            # no coverage rows here: a discovery job's assets are its open ports (the UI counts them as "open
+            # endpoints"), and discovery is never compared for drift
             ctx.outcome(ip, "ok", started=started, assets=len(open_eps))
             return len(open_eps)
         failures: list[str] = []
