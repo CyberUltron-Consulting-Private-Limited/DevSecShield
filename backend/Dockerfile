@@ -14,9 +14,9 @@ FROM scratch AS migrations
 COPY _migrations /
 
 # ============================================================
-# Stage 1: Builder — install dependencies and compile bytecode
+# Stage 1: deps — the virtualenv, from pyproject.toml + uv.lock only (never the source), bytecode compiled
 # ============================================================
-FROM ${UV_BASE_IMAGE} AS builder
+FROM ${UV_BASE_IMAGE} AS deps
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -26,16 +26,12 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /backend
 
-# Install dependencies first (cached layer)
+# pyproject.toml has no [build-system]: uv never installs the project itself, so this venv is the complete
+# runtime environment and depends on nothing but these two files.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project
-
-# Copy application source and install the project
-COPY . /backend
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked
 
 # ============================================================
 # Stage 2: Runtime — slim image with only what's needed
@@ -52,8 +48,11 @@ ENV IS_DOCKER_CONTAINER="True" \
 
 WORKDIR /backend
 
-# Copy the entire app + venv from builder
-COPY --from=builder /backend /backend
+# The venv is its own layer, then the source (.dockerignore keeps the context's .venv out). A release that changes
+# only source reuses the venv layer and adds a small one. Round 5 (L1): one COPY of the builder's whole /backend
+# put venv + source in a single layer, ~700 MB of new layer per release.
+COPY --from=deps /backend/.venv /backend/.venv
+COPY . /backend
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 COPY --from=migrations /alembic.ini /prod_database_migrations/alembic.ini
 COPY --from=migrations /migrations /prod_database_migrations/migrations
