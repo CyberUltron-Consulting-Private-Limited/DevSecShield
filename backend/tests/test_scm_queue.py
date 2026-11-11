@@ -293,7 +293,8 @@ def test_caps_are_never_exceeded_and_each_team_gets_its_share(engine):
     assert len(first) == 6 and per_team == {1: 2, 2: 2, 3: 2}  # water-filling: equal shares, not first-come
     # nothing more while the slots are full
     assert tick(engine, launcher, worker, max_inflight=6, team_max=4) == []
-    # drain: finish whatever is in flight each tick; the global and per-team caps hold on every tick
+    # drain: finish whatever is in flight each tick; the global cap and the (optional, here 4) per-team cap hold on
+    # every tick
     rounds = 0
     while requests(engine, status="queued") and rounds < 100:
         for r in requests(engine, status="dispatched"):
@@ -311,6 +312,36 @@ def test_caps_are_never_exceeded_and_each_team_gets_its_share(engine):
     for idx, call in enumerate(launcher.sent):
         done_at.setdefault(call["team"], []).append(idx)
     assert max(done_at[3]) < 12 and max(done_at[2]) < 20
+
+
+def test_a_team_alone_uses_every_slot_and_a_newcomer_takes_the_next_free_ones(engine):
+    """Work-conserving water-filling (no per-team limit, the default): one team with a backlog fills the global cap;
+    a second team that queues work takes the slots that free up until both have the same number in flight."""
+    ids = make_world(engine, repos_per_team={1: 30, 2: 6}, balances={1: 1e4, 2: 1e4})
+    with Session(engine) as s:
+        est = Q.estimate(s, 1, repo_ids=ids["repos"][1], products=["sbom_sca"])
+    Q.create_run(engine, 1, ids["users"][1], trigger="manual", repo_ids=ids["repos"][1], products=["sbom_sca"],
+                 expected_credits=est["credits"], client_request_id="big", now=NOW)
+    launcher, worker = FakeLauncher(), FakeWorker(engine)
+    assert len(tick(engine, launcher, worker, max_inflight=6)) == 6  # alone: all six slots
+    with Session(engine) as s:
+        est2 = Q.estimate(s, 2, repo_ids=ids["repos"][2], products=["sbom_sca"])
+    Q.create_run(engine, 2, ids["users"][2], trigger="manual", repo_ids=ids["repos"][2], products=["sbom_sca"],
+                 expected_credits=est2["credits"], client_request_id="small", now=NOW)
+    assert tick(engine, launcher, worker, max_inflight=6) == []  # full: nobody is pre-empted
+    for r in requests(engine, status="dispatched")[:3]:  # three of team 1's scans finish
+        worker.finish(r.scan_id)
+    tick(engine, launcher, worker, max_inflight=6)
+    assert Counter(r.team_id for r in requests(engine, status="dispatched")) == {1: 3, 2: 3}  # the newcomer caught up
+    for r in requests(engine, status="dispatched"):
+        worker.finish(r.scan_id)
+    tick(engine, launcher, worker, max_inflight=6)
+    assert Counter(r.team_id for r in requests(engine, status="dispatched")) == {1: 3, 2: 3}  # equal shares
+    # an operator limit per team still holds when it is set
+    for r in requests(engine, status="dispatched"):
+        worker.finish(r.scan_id)
+    tick(engine, launcher, worker, max_inflight=6, team_max=1)  # team 2 has nothing left to queue
+    assert Counter(r.team_id for r in requests(engine, status="dispatched")) == {1: 1}
 
 
 def test_priority_push_before_manual_before_schedule(engine):

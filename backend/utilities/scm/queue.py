@@ -13,12 +13,13 @@ Credits per run
 
 The queue (``scmscanrequest``) and the dispatcher
 * Priority: push (0) > manual (1) > schedule (2), then age.
-* Caps: at most ``REPO_SCAN_MAX_INFLIGHT`` (default 8) repository scans in Celery at once, and at most
-  ``REPO_SCAN_TEAM_MAX_INFLIGHT`` (default 4) per team, so bulk runs never fill ``scan_worker_queue`` ahead of the
-  scans people start by hand.
-* Fairness: free slots are filled by water-filling. Each slot goes to the team with the FEWEST scans in flight (ties:
-  the team served least recently, then the lower team id) that is under its cap. A team with 1,000 queued repositories
-  gets the same share as a team with 3 while both are waiting; the small team is never behind the big one's backlog.
+* Bounded: at most ``REPO_SCAN_MAX_INFLIGHT`` (default 8) repository scans in Celery at once, so bulk runs never
+  fill ``scan_worker_queue`` ahead of the scans people start by hand. ``REPO_SCAN_TEAM_MAX_INFLIGHT`` (default 0: no
+  limit) can also bound one team's parallelism, e.g. to spare a customer's SCM.
+* Fair and work-conserving: each free slot goes to the waiting team with the FEWEST scans in flight (ties: the team
+  served least recently, then the lower team id). A team alone uses every slot; when another team queues work it takes
+  the next slots that free up until both have the same number in flight. A team with 1,000 queued repositories gets
+  the same share as a team with 3 while both are waiting, so the small team is never behind the big one's backlog.
 * One decider at a time: on PostgreSQL the tick holds an advisory lock (so two dispatchers cannot both see a free
   slot), and every claim is a compare-and-set (``queued -> dispatching``), so no request is ever sent twice.
 * A dispatcher that died mid-claim leaves ``dispatching`` rows; after ``DISPATCH_LEASE`` they are re-queued (or
@@ -67,7 +68,8 @@ def env_max_inflight() -> int:
 
 
 def env_team_max_inflight() -> int:
-    return max(1, int(os.environ.get("REPO_SCAN_TEAM_MAX_INFLIGHT", "4") or 4))
+    """0 (the default): no per-team limit; water-filling alone shares the slots."""
+    return max(0, int(os.environ.get("REPO_SCAN_TEAM_MAX_INFLIGHT", "0") or 0))
 
 
 class EstimateChanged(Exception):
@@ -584,7 +586,7 @@ def dispatch_tick(engine: Engine, now: dt.datetime, *, launcher: Launcher | None
     launcher = launcher or celery_launcher
     token_for = token_for or default_token_for
     cap = max_inflight or env_max_inflight()
-    per_team = team_max or env_team_max_inflight()
+    per_team = env_team_max_inflight() if team_max is None else team_max
     sent: list[int] = []
     with _PgLock(engine) as locked:
         if not locked:
@@ -610,7 +612,8 @@ def dispatch_tick(engine: Engine, now: dt.datetime, *, launcher: Launcher | None
         floor = dt.datetime.min
         tick_order = 0
         while free > 0:
-            eligible = [t for t in waiting if t not in exhausted and inflight[t] < per_team]
+            # water-filling is the fairness; the optional per-team cap (0: none) only bounds one team's parallelism
+            eligible = [t for t in waiting if t not in exhausted and (per_team <= 0 or inflight[t] < per_team)]
             if not eligible:
                 break
             team = min(eligible, key=lambda t: (inflight[t], last_served.get(t) or floor, t))
@@ -619,7 +622,7 @@ def dispatch_tick(engine: Engine, now: dt.datetime, *, launcher: Launcher | None
                     backlog[team] = list(session.exec(
                         select(ScmScanRequest.id).where(ScmScanRequest.team_id == team,
                                                         ScmScanRequest.status == "queued")
-                        .order_by(ScmScanRequest.priority, ScmScanRequest.id).limit(max(per_team, free) * 2)).all())
+                        .order_by(ScmScanRequest.priority, ScmScanRequest.id).limit(max(per_team, free, 1) * 2)).all())
                 if not backlog[team]:
                     exhausted.add(team)
                     continue

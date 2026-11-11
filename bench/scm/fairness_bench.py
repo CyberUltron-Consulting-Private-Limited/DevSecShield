@@ -1,6 +1,6 @@
 """F3 scale proof: a 1,000-repository scheduled run, with per-team fairness measured.
 
-Three teams share one dispatcher (global cap 8, per-team cap 4 by default):
+Three teams share one dispatcher (global cap 8; no per-team limit unless --team-cap is given):
 
 * team A: a scheduled policy over 1,000 repositories fires at tick 0;
 * team B: a manual bulk run of 50 repositories, started at tick 20;
@@ -197,7 +197,10 @@ def simulate(engine, mode, *, n_a, n_b, n_c, cap, team_cap, seed, max_ticks):
         mine = [r for r in reqs if r.team_id == tid]
         waits = [(r.dispatched_at - r.enqueued_at).total_seconds() / TICK.total_seconds() for r in mine if r.dispatched_at]
         ends = [(r.finished_at - T0).total_seconds() / TICK.total_seconds() for r in mine if r.finished_at]
+        arrival = {1: 0, 2: 20, 3: 40}[tid]
+        firsts = [(r.dispatched_at - T0).total_seconds() / TICK.total_seconds() for r in mine if r.dispatched_at]
         teams[names[tid]] = {"scans": len(mine), "done": sum(1 for r in mine if r.status == "done"),
+                             "first_slot_after_ticks": (min(firsts) - arrival) if firsts else None,
                              "wait_ticks_p50": pct(waits, 50), "wait_ticks_p95": pct(waits, 95),
                              "wait_ticks_max": max(waits) if waits else None,
                              "last_finished_tick": max(ends) if ends else None}
@@ -229,7 +232,7 @@ def main() -> int:
     ap.add_argument("--db", required=True, help="SQLAlchemy URL of a throwaway database (tables are dropped)")
     ap.add_argument("--repos", type=int, default=1000)
     ap.add_argument("--cap", type=int, default=8)
-    ap.add_argument("--team-cap", type=int, default=4)
+    ap.add_argument("--team-cap", type=int, default=0, help="optional per-team limit (0: none, the default)")
     ap.add_argument("--seed", type=int, default=11)
     ap.add_argument("--max-ticks", type=int, default=3000)
     ap.add_argument("--out", default="")
@@ -238,7 +241,7 @@ def main() -> int:
     started = time.monotonic()
     fair = simulate(engine, "fair", n_a=args.repos, n_b=50, n_c=10, cap=args.cap, team_cap=args.team_cap,
                     seed=args.seed, max_ticks=args.max_ticks)
-    fifo = simulate(engine, "fifo", n_a=args.repos, n_b=50, n_c=10, cap=args.cap, team_cap=args.cap,
+    fifo = simulate(engine, "fifo", n_a=args.repos, n_b=50, n_c=10, cap=args.cap, team_cap=0,
                     seed=args.seed, max_ticks=args.max_ticks)
     SQLModel.metadata.drop_all(engine)
     out = {"db": engine.dialect.name, "cap": args.cap, "team_cap": args.team_cap, "fair": fair, "fifo_baseline": fifo,
@@ -246,7 +249,8 @@ def main() -> int:
     b, c = fair["teams"]["B (50 manual)"], fair["teams"]["C (10 push)"]
     a = fair["teams"]["A (1,000 scheduled)"]
     out["pass"] = (a["done"] == args.repos and b["done"] == 50 and c["done"] == 10
-                   and fair["max_inflight_total"] <= args.cap and fair["max_inflight_one_team"] <= args.team_cap
+                   and fair["max_inflight_total"] <= args.cap
+                   and (args.team_cap <= 0 or fair["max_inflight_one_team"] <= args.team_cap)
                    and b["wait_ticks_max"] < fifo["teams"]["B (50 manual)"]["wait_ticks_max"]
                    and c["wait_ticks_max"] < fifo["teams"]["C (10 push)"]["wait_ticks_max"])
     text = json.dumps(out, indent=2, default=str)
