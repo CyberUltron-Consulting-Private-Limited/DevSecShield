@@ -44,7 +44,9 @@ on:
         type: string
         default: ""
       cache:
-        description: Use the GitHub Actions cache for build layers (written on push events, read everywhere).
+        description: >-
+          Use the GitHub Actions cache for build layers (mode=min: the final image's layers). A PR run reads the
+          base branch's cache and its own earlier runs' cache, so a re-run does not rebuild from scratch.
         type: boolean
         default: true
       timeout-minutes:
@@ -113,7 +115,7 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: ${{ inputs.cache && format('type=gha,scope=img-{0}', matrix.image.name) || '' }}
-          cache-to: ${{ inputs.cache && github.event_name == 'push' && format('type=gha,scope=img-{0},mode=min', matrix.image.name) || '' }}
+          cache-to: ${{ inputs.cache && format('type=gha,scope=img-{0},mode=min', matrix.image.name) || '' }}
 
       - name: Image size
         run: docker image inspect "$IMAGE_REF" --format 'size={{.Size}} bytes' | tee -a "$GITHUB_STEP_SUMMARY"

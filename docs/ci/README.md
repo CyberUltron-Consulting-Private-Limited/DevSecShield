@@ -217,7 +217,7 @@ Each workflow reads only the caller's checkout. Repo-specific files are optional
 
 **reusable-image-build.yml**: `images` (required; a JSON array of `{name, context, dockerfile, build-args?,
 build-contexts?}`), `pre-build-command`, `trivy-severity` (`HIGH,CRITICAL`), `trivy-fail-on` (empty, which means
-report only), `cache` (`true`; layers are written to the Actions cache only on push events).
+report only), `cache` (`true`; the final image layers go to the Actions cache, so re-runs reuse them).
 
 **reusable-pr-checks.yml**: `flows` (`staging:dev main:staging`), `title-regex`, `title-max-length` (100),
 `require-acceptance-criteria` (`true`; bots are exempt), `acceptance-heading-regex`, `forbidden-files-regex`
