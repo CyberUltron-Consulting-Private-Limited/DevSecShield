@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.schema import CreateSchema, DropSchema
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
@@ -237,7 +238,7 @@ def pg_schema():
     schema = f"f4audit_{uuid.uuid4().hex[:10]}"
     admin = create_engine(PG_URL)
     with admin.begin() as conn:
-        conn.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+        conn.execute(CreateSchema(schema))  # a quoted identifier, never interpolated SQL
     engine = create_engine(PG_URL, pool_size=20, max_overflow=0,
                            connect_args={"options": f"-csearch_path={schema}"})
     try:
@@ -245,7 +246,7 @@ def pg_schema():
     finally:
         engine.dispose()
         with admin.begin() as conn:
-            conn.execute(sa.text(f'DROP SCHEMA "{schema}" CASCADE'))
+            conn.execute(DropSchema(schema, cascade=True))
         admin.dispose()
 
 
