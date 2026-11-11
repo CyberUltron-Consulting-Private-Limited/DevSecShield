@@ -193,8 +193,8 @@ def _target(ctx: JobContext, config: dict) -> Target:
     label = host.strip("[]").lower().rstrip(".")
     try:
         return Target(label, resolve_checked(host, ctx.never_scan)[0])  # the network gate: resolve once, check
-    except Blocked:
-        raise KmipFail("skipped_never_scan", f"{label} is on the never-scan list") from None
+    except Blocked as exc:
+        raise KmipFail("skipped_never_scan", str(exc)) from None
     except OSError as exc:
         raise KmipFail("unreachable", f"could not resolve {label}: {exc.__class__.__name__}") from None
 

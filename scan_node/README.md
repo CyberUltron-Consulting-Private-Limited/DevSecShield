@@ -183,9 +183,21 @@ the CA server's own template cache).
 
 **Network gate.** Every connection a collector makes to a target goes through `netutil`: `resolve_checked()`
 resolves once and applies the never-scan list, `checked_ip()` re-checks right before a driver connects,
-`connect()` opens the socket to the checked address and `http_client()` pins an HTTP client to it (Host, SNI and
-the certificate name stay the host name). `tests/test_network_gate.py` fails when a collector module opens
-sockets or HTTP clients any other way, so new collectors must use it.
+`checked_target()` re-checks an expanded server target, `connect()` opens the socket to the checked address and
+`http_client()` pins an HTTP client to it (Host, SNI and the certificate name stay the host name).
+`tests/test_network_gate.py` fails when a collector module opens sockets or HTTP clients any other way, so new
+collectors must use it.
+
+**Never-scan rule.** A *name* (a server, database, registry, token service, blob redirect, database redirect, CA,
+KMIP or Kubernetes API host) is skipped as `skipped_never_scan` when the name is listed or when ANY address it
+resolves to is listed (an IPv4-mapped IPv6 address counts as its IPv4 address), so a dual-stack host listed by its
+IPv4 address is not scanned over IPv6 and the other way round; the outcome names the address that matched. An *IP
+address* target is checked as itself. *CIDR and `a-b` ranges* are checked address by address: the listed addresses
+inside a range are skipped (one outcome each) and the rest are scanned. A range has no names, so the other address
+of a dual-stack host that lies inside a scanned range is scanned unless it is listed too. The list can change while
+a job runs: server targets expanded when the job starts (SSH, appliances) are re-checked before connecting against
+the name and every address it resolved to, and WinRM resolves the name again. A name that resolves to no address
+is `unreachable`.
 
 **Network.** Per open endpoint a capped list of handshakes (`handshakes_per_endpoint`): one full handshake
 (`openssl s_client`), raw ClientHello per protocol version, a TLS 1.3 post-quantum group probe (ML-KEM hybrid

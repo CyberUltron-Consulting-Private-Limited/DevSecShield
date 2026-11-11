@@ -214,8 +214,10 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
     user = str(config.get("login_user") or "zs-cbom")
     policy = config.get("host_key_policy") or "tofu"
     host_port = f"{target.ip}:{port}"
-    if ctx.never_scan.blocks_ip(str(target.ip)):  # a never-scan target is skipped before anything else is judged
-        raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list")
+    try:  # a never-scan target is skipped before anything else is judged: a name by every address it resolved to
+        netutil.checked_target(target, ctx.never_scan)
+    except netutil.Blocked as exc:
+        raise TargetFail("skipped_never_scan", str(exc)) from None
     if "password" in creds and "key" not in creds and policy != "pinned":
         # a first-seen host key proves nothing, so a password could go to an impostor (whole ranges make that
         # easy): passwords go only to hosts pinned in known_hosts.  Key logins never reveal the key.
@@ -729,9 +731,10 @@ def _service_and_config_crypto(sess: Session, loc: str, emit) -> None:
 
 # ----------------------------------------------------------------------------- entry points
 def _targets(ctx: JobContext, scope: dict) -> list[Target]:
-    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan)
+    reasons: dict[str, str] = {}  # a skipped name says which of its addresses is listed
+    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan, reasons=reasons)
     for label in skipped:
-        ctx.outcome(label, "skipped_never_scan")
+        ctx.outcome(label, "skipped_never_scan", reasons.get(label))
     return targets
 
 

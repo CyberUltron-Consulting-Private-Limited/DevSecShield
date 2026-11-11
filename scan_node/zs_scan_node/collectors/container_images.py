@@ -172,10 +172,10 @@ class Registry:
         if origin[0] != "https":
             raise ImageError("tls_unavailable", f"{origin[1]} is not HTTPS; the node does not use plain HTTP")
         if origin not in self.clients:
-            try:
+            try:  # the registry, its token service and every redirect: one listed address skips the whole name
                 ip = netutil.resolve_checked(origin[1], self.ctx.never_scan)[0]
-            except netutil.Blocked:
-                raise ImageError("skipped_never_scan", f"{origin[1]} is on the never-scan list") from None
+            except netutil.Blocked as exc:
+                raise ImageError("skipped_never_scan", str(exc)) from None
             except OSError:
                 raise ImageError("unreachable", f"{origin[1]} does not resolve") from None
             if origin == self.origin:

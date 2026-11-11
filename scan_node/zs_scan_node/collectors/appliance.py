@@ -151,11 +151,11 @@ def _api_outputs(ctx: JobContext, target: Target, vendor: str, config: dict, sec
             raise ConfigError("no password is stored for this source")
         ctx.scrubber.add(secrets["password"])
         headers, auth = {}, (str(config.get("login_user") or ""), secrets["password"])
-    try:
-        client = netutil.http_client(url, str(target.ip), ctx.never_scan, verify=verify, headers=headers, timeout=20.0,
-                                     auth=auth)
-    except Blocked:
-        raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list") from None
+    try:  # a name is re-checked by every address it resolved to; the client connects only to the checked one
+        client = netutil.http_client(url, netutil.checked_target(target, ctx.never_scan), ctx.never_scan,
+                                     verify=verify, headers=headers, timeout=20.0, auth=auth)
+    except Blocked as exc:
+        raise TargetFail("skipped_never_scan", str(exc)) from None
     out: dict[str, Any] = {}
     try:
         for key, path in API_PATHS[vendor].items():

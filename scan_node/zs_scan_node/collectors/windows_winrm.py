@@ -259,16 +259,16 @@ def _is_ip(text: str) -> bool:
 
 def check_name(ctx: JobContext, target: Target) -> None:
     """WinRM connects by the name (so the certificate can prove the server), and the HTTP client resolves it again.
-    Every address the name has must therefore be allowed, not just the one checked when targets were expanded."""
+    Every address the name has now must therefore be allowed (resolve_checked refuses the name if any is listed),
+    not just those checked when targets were expanded."""
     try:
         if _is_ip(target.label):
             # checked again per target: a never-scan entry added after the job started applies to the rest of it
             checked_ip(target.ip or target.label, ctx.never_scan)
             return
-        resolve_checked(target.label, ctx.never_scan, every=True)
-    except Blocked:
-        raise _Fail("skipped_never_scan", f"{target.label} is on the never-scan list or resolves to an address on "
-                                          "it") from None
+        resolve_checked(target.label, ctx.never_scan)
+    except Blocked as exc:
+        raise _Fail("skipped_never_scan", str(exc)) from None
     except OSError:
         raise _Fail("unreachable", f"could not resolve {target.label}") from None
 
@@ -399,9 +399,10 @@ def _password(ctx: JobContext, config: dict, secrets: dict) -> str:
 
 def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | None:
     password = _password(ctx, config, secrets)
-    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan)
+    reasons: dict[str, str] = {}  # a skipped name says which of its addresses is listed
+    targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan, reasons=reasons)
     for label in skipped:
-        ctx.outcome(label, "skipped_never_scan")
+        ctx.outcome(label, "skipped_never_scan", reasons.get(label))
 
     def one(target: Target):
         started = time.monotonic()

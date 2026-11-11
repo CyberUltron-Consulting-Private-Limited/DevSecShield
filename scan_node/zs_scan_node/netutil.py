@@ -1,8 +1,10 @@
 """Targets, the never-scan list and rate limits.
 
 * Target lines (IP, CIDR, ``a-b`` range, hostname) are expanded lazily and de-duplicated by IP.
-* A hostname is resolved once; every address it resolves to is checked against never-scan and the node
-  connects only to an address it checked (no second lookup, so DNS rebinding cannot redirect it).
+* A hostname is resolved once and the node connects only to an address it checked (no second lookup, so DNS
+  rebinding cannot redirect it).  The never-scan list applies to the whole name: if the name, or ANY address it
+  resolves to, is on the list, the name is skipped (a dual-stack host listed by its IPv4 address is not scanned
+  over IPv6).  An IP literal is checked as itself; CIDR and ``a-b`` ranges are checked address by address.
 * The never-scan list can change while a job runs (heartbeat); ``NeverScan.update`` swaps it atomically.
 """
 from __future__ import annotations
@@ -63,6 +65,7 @@ class Target:
     label: str  # what the customer wrote (IP or hostname)
     ip: str | None  # checked address to connect to (None = could not resolve)
     error: str | None = None
+    addresses: tuple[str, ...] = ()  # a hostname: every address it resolved to (all checked); an IP: empty
 
 
 def resolve(name: str, timeout: float = 5.0) -> list[str]:
@@ -84,8 +87,9 @@ def resolve(name: str, timeout: float = 5.0) -> list[str]:
 # ----------------------------------------------------------------------------- the network gate
 # Every connection a collector makes to a customer target goes through one of these, so the never-scan list is applied
 # to the exact address that is connected to, at the moment of connecting (it can change while a job runs):
-#   resolve_checked(host, never)        resolve once; drop (or, with every=True, refuse) never-scan addresses
+#   resolve_checked(host, never)        resolve once; refuse the name if it or ANY of its addresses is never-scan
 #   checked_ip(ip, never)               re-check an address just before a driver (psycopg, paramiko ...) connects to it
+#   checked_target(target, never)       re-check an expanded target: a name by every address it resolved to
 #   connect(ip, port, never, timeout)   check + open the TCP socket to that address
 #   udp_connect(ip, port, never, ...)   check + a connected UDP socket to that address (IKE)
 #   http_client(url, ip, never, ...)    an httpx client pinned to the checked address (Host/SNI/certificate name kept)
@@ -93,13 +97,16 @@ def resolve(name: str, timeout: float = 5.0) -> list[str]:
 
 
 class Blocked(Exception):
-    """The target (name or address) is on the never-scan list."""
+    """The target (name or address) is on the never-scan list, or ``what`` is a name and ``address``, one of the
+    addresses it resolves to, is."""
 
     status = "skipped_never_scan"
+    address: str | None = None
 
-    def __init__(self, what: str) -> None:
-        super().__init__(f"{what} is on the never-scan list")
-        self.what = what
+    def __init__(self, what: str, address: str | None = None) -> None:
+        super().__init__(f"{what} resolves to {address}, which is on the never-scan list" if address
+                         else f"{what} is on the never-scan list")
+        self.what, self.address = what, address
 
 
 def _is_ip(text: str) -> bool:
@@ -117,21 +124,42 @@ def checked_ip(ip: str, never: NeverScan) -> str:
     return ip
 
 
-def resolve_checked(host: str, never: NeverScan, every: bool = False, timeout: float = 5.0) -> list[str]:
-    """Resolve once and apply never-scan.  Returns the allowed addresses (IPv4 first); connect only to one of them.
-    every=True: refuse the whole name if ANY address is blocked (for clients that resolve the name again themselves).
-    Raises Blocked, or OSError when the name does not resolve."""
+def _check_name(name: str, addresses, never: NeverScan) -> None:
+    """Raise Blocked if the name or ANY of its addresses is on the never-scan list."""
+    if never.blocks_host(name):
+        raise Blocked(name)
+    for ip in addresses:
+        if never.blocks_ip(ip):
+            raise Blocked(name, ip)
+
+
+def resolve_checked(host: str, never: NeverScan, timeout: float = 5.0) -> list[str]:
+    """Resolve once and apply never-scan to the whole name: if the name or ANY address it resolves to is on the list,
+    the name is refused, so a dual-stack host listed by one address is not scanned over the other, and a client that
+    resolves the name again itself (WinRM, a driver) cannot reach a listed address either.  Returns every address
+    (IPv4 first); connect only to one of them.  An IP literal is checked as itself.
+    Raises Blocked, or OSError when the name does not resolve (or resolves to no address)."""
     text = str(host or "").strip().strip("[]")
     if _is_ip(text):
         return [checked_ip(text, never)]
     name = text.lower().rstrip(".")
-    if never.blocks_host(name):
-        raise Blocked(name)
+    _check_name(name, (), never)  # a listed name is not looked up
     addresses = resolve(name, timeout)
-    allowed = [ip for ip in addresses if not never.blocks_ip(ip)]
-    if not allowed or (every and len(allowed) != len(addresses)):
-        raise Blocked(f"{name} (resolves to a never-scan address)")
-    return allowed
+    if not addresses:
+        raise socket.gaierror(socket.EAI_NONAME, f"{name} has no address")
+    _check_name(name, addresses, never)
+    return addresses
+
+
+def checked_target(target: Target, never: NeverScan) -> str:
+    """Re-check an expanded target just before connecting (the list can change while a job runs): an address by
+    itself, a name by its own entry and by EVERY address it resolved to.  Returns the address to connect to (it is
+    checked again at connect time).  Raises Blocked."""
+    if target.ip is None:
+        raise ValueError(f"{target.label} has no address to connect to")
+    if target.addresses:
+        _check_name(target.label, target.addresses, never)
+    return checked_ip(target.ip, never)
 
 
 def connect(ip: str, port: int, never: NeverScan, timeout: float) -> socket.socket:
@@ -210,8 +238,11 @@ def iter_line_ips(line: str) -> Iterator[str] | None:
         return None
 
 
-def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED) -> tuple[list[Target], list[str]]:
-    """(targets to scan, labels skipped by never-scan).  Duplicate IPs are scanned once."""
+def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED,
+                   reasons: dict[str, str] | None = None) -> tuple[list[Target], list[str]]:
+    """(targets to scan, labels skipped by never-scan).  Duplicate IPs are scanned once.  A hostname is skipped when
+    it or any address it resolves to is on the list; IP, CIDR and range lines are checked address by address.
+    ``reasons``, when given, receives why each skipped hostname was skipped (label -> text naming the address)."""
     seen: set[str] = set()
     targets: list[Target] = []
     skipped: list[str] = []
@@ -219,23 +250,21 @@ def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED
         ips = iter_line_ips(line)
         if ips is None:
             name = line.strip().lower().rstrip(".")
-            if never.blocks_host(name):
-                skipped.append(name)
-                continue
             try:
-                addrs = resolve(name)
+                addrs = resolve_checked(name, never)
+            except Blocked as exc:
+                skipped.append(name)
+                if reasons is not None:
+                    reasons[name] = str(exc)
+                continue
             except OSError as exc:
                 targets.append(Target(name, None, f"could not resolve {name}: {exc.__class__.__name__}"))
                 continue
-            allowed = [a for a in addrs if not never.blocks_ip(a)]
-            if not allowed:
-                skipped.append(name)
-                continue
-            ip = allowed[0]
+            ip = addrs[0]
             if ip in seen:
                 continue
             seen.add(ip)
-            targets.append(Target(name, ip))
+            targets.append(Target(name, ip, addresses=tuple(addrs)))
             continue
         for ip in ips:
             if len(seen) >= limit:

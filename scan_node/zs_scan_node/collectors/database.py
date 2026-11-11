@@ -530,8 +530,8 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
     label = host.strip("[]").lower().rstrip(".")  # an IPv6 literal may come in brackets
     try:  # the network gate: resolve once, apply never-scan, connect only to the checked address
         target = Target(label, resolve_checked(host, ctx.never_scan)[0])
-    except Blocked:
-        return Target(label, None), "skipped_never_scan", None, 0
+    except Blocked as exc:
+        return Target(label, None), "skipped_never_scan", str(exc), 0
     except OSError as exc:
         return Target(label, None), "unreachable", f"could not resolve {label}: {exc.__class__.__name__}", 0
     port = int(config.get("port") or DEFAULT_PORTS[engine])

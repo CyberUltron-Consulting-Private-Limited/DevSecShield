@@ -45,8 +45,8 @@ def _target(ctx: JobContext, url: str) -> Target:
     host = (urlsplit(url).hostname or "").lower().rstrip(".")
     try:
         return Target(host, resolve_checked(host, ctx.never_scan)[0])  # the network gate: resolve once, check
-    except Blocked:
-        raise CaFail("skipped_never_scan", f"{host} is on the never-scan list") from None
+    except Blocked as exc:
+        raise CaFail("skipped_never_scan", str(exc)) from None
     except OSError as exc:
         raise CaFail("unreachable", f"could not resolve {host}: {exc.__class__.__name__}") from None
 
@@ -537,8 +537,8 @@ def collect_adcs(ctx: JobContext, config: dict, password: str) -> tuple[Target, 
     label = host.strip("[]").lower().rstrip(".")
     try:
         target = Target(label, resolve_checked(host, ctx.never_scan)[0])
-    except Blocked:
-        raise CaFail("skipped_never_scan", f"{label} is on the never-scan list") from None
+    except Blocked as exc:
+        raise CaFail("skipped_never_scan", str(exc)) from None
     except OSError as exc:
         raise CaFail("unreachable", f"could not resolve {label}: {exc.__class__.__name__}") from None
     wcfg = {"port": int(config.get("port") or 5986), "login_user": config.get("login"), "ca_pem": config.get("ca_pem")}

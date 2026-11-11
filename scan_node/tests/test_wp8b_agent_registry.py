@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 from cryptography.x509.oid import NameOID
 
-from zs_scan_node import pkgdb
+from zs_scan_node import netutil, pkgdb
 from zs_scan_node.collectors import container_images as CI
 from zs_scan_node.collectors import host_agent, run_job
 from zs_scan_node.hostfs import HostFS, WalkStats
@@ -513,19 +513,25 @@ def test_basic_auth_and_redirected_blobs_never_leak_the_registry_authorization(l
     assert cdn and all(auth is None for _s, _p, auth in cdn)
 
 
-def test_never_scan_applies_to_the_registry_and_to_redirect_targets(lab_factory):
+def test_never_scan_applies_to_the_registry_and_to_redirect_targets(lab_factory, monkeypatch):
     lab = lab_factory(redirect_blobs=True)
     lab.push("1.0", _image_layers())
     # a skipped image is not a failure of the job (the never-scan list did what it should)
     _s, _e, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:1.0", ctx=_ctx(never=["127.0.0.2"]))
     assert ctx.outcomes[0].status == "skipped_never_scan" and "127.0.0.2" in ctx.outcomes[0].error
     assert not [s for s in lab.seen if s[0] == "other"]  # the redirect target was never contacted
-    # "localhost" is 127.0.0.1 AND ::1 on a dual-stack host (GitHub's runners). The gate drops never-scan addresses and
-    # connects to what is left, so with only 127.0.0.1 listed it tried ::1 and reported "unreachable" there; list both
-    # loopback addresses so the name resolves to nothing scannable on any host.
-    _s, _e, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:1.0",
-                           ctx=_ctx(never=["127.0.0.1", "::1"]))
+    _s, _e, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:1.0", ctx=_ctx(never=["127.0.0.1"]))
     assert ctx.outcomes[0].status == "skipped_never_scan"
+    assert not [s for s in lab.seen if s[0] == "other"]
+    # Regression for #17: "localhost" is 127.0.0.1 AND ::1 on a dual-stack host (GitHub's runners), and the node used
+    # to drop the listed 127.0.0.1 and connect to ::1. One listed address skips the whole name; force the dual-stack
+    # answer so this is proven on IPv4-only hosts too.
+    real = netutil.resolve
+    monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: list(dict.fromkeys(
+        real(name, timeout) + (["::1"] if name == "localhost" else []))))
+    assert netutil.resolve("localhost") == ["127.0.0.1", "::1"]
+    _s, _e, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:1.0", ctx=_ctx(never=["127.0.0.1"]))
+    assert ctx.outcomes[0].status == "skipped_never_scan" and "127.0.0.1" in ctx.outcomes[0].error
     assert not [s for s in lab.seen if s[0] == "other"]
 
 
