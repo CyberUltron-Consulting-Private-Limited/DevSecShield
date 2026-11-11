@@ -35,6 +35,7 @@ import {
   offlineImageSteps,
   readTextFile,
   registrationOutcome,
+  singleFlight,
   type DeployMethod,
 } from "./logic";
 import { revealById } from "./reveal";
@@ -168,6 +169,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
 
+  const [createGuard] = useState(singleFlight);
   const createMutation = useMutation({
     mutationFn: () =>
       createCbomScanNode(teamId, {
@@ -231,7 +233,9 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
       return;
     }
     setWizardError(null);
-    createMutation.mutate();
+    // One create per click burst: the second click of a double-click arrives before isPending disables the button.
+    if (!createGuard.tryStart()) return;
+    createMutation.mutate(undefined, { onSettled: () => createGuard.done() });
   };
 
   const online = nodes.filter((n) => n.status === "online").length;
