@@ -43,6 +43,9 @@ export const COVERED: string[] = [
   // MCP
   "app/[team_id]/mcp/page.tsx",
   "components/mcp-options-sidebar.tsx",
+  // LLM red teaming
+  "app/[team_id]/llm/page.tsx",
+  "components/llm-options-sidebar.tsx",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>([]);

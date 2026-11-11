@@ -486,13 +486,13 @@ export const INFO_TIPS = {
     what: "This scan's average severity weight, from 1 to 4: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. Empty when it found nothing.",
     example: "1 Critical and 1 Low finding: (4+1)/2 = 2.5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135, frontend/app/[team_id]/dast/page.tsx:120-127, frontend/app/[team_id]/ai_bom/page.tsx:114-121 — tiers on the score shown in the Risk score column
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135, frontend/app/[team_id]/dast/page.tsx:120-127, frontend/app/[team_id]/ai_bom/page.tsx:114-121, frontend/app/[team_id]/llm/page.tsx:123-130 — tiers on the score shown in the Risk score column
   "scan.filter.risk": {
     label: "Risk score filter",
     what: "Shows only scans whose Risk score column value is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Scans without findings are hidden by any tier.",
     example: "Low keeps every scan with a score under 5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614 — sorts the loaded rows; missing values count as -1
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581 — sorts the loaded rows; missing values count as -1
   "scan.filter.sort": {
     label: "Sort",
     what: "Orders the table by creation date, risk score or credits, high or low first. Scans with no value for the chosen column go last when sorting high first.",
@@ -1199,6 +1199,184 @@ export const INFO_TIPS = {
     label: "Vulnerabilities",
     what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
     example: "1 red, 2 orange, 0 amber, 4 blue.",
+  },
+
+  // ────────────────────────────────────────────────────────────── LLM red teaming: scan configuration (components/llm-options-sidebar.tsx)
+  // src: backend/utilities/db/schemas.py:176-186 — openai, anthropic, gemini or custom
+  "llm.cfg.model_type": {
+    label: "Model Type",
+    what: "Where the model under test is hosted: OpenAI, Anthropic, Google Gemini, or Custom (any HTTP endpoint you describe below).",
+    example: "Custom for your own chatbot API.",
+  },
+  // src: backend/utilities/db/schemas.py:178, backend/utilities/db/scan_list_item.py:350 — the provider's model id
+  "llm.cfg.model_name": {
+    label: "Model Name",
+    what: "The model id the provider expects, exactly as in its API, or a name for your custom model. It also labels the scan in the Model Risk Comparison chart.",
+    example: "gpt-4o-mini.",
+  },
+  // src: backend/utilities/db/schemas.py:181 — secret field, never printed
+  "llm.cfg.api_key": {
+    label: "API Key",
+    what: "The provider API key the red-team prompts are sent with. Every test prompt is billed by your provider on this key. It is never printed in logs.",
+    example: "An OpenAI key from a project with a spending limit.",
+  },
+  // src: backend/utilities/db/schemas.py:179, RabbitMQ/worker/helpers/tools/llm_agent/main.py:142-155 — answers per prompt; not part of the credit price
+  "llm.cfg.generations": {
+    label: "Generations per benchmark",
+    what: "How many answers the model is asked to give for each attack prompt. More generations catch inconsistent behaviour but send more requests to your provider; the credit price does not change.",
+    example: "3 sends each prompt three times.",
+  },
+  // src: backend/utilities/db/schemas.py:185 — the endpoint of a custom model
+  "llm.cfg.model_uri": {
+    label: "Model URI",
+    what: "The URL the scan calls to talk to your custom model (POST by default).",
+    example: "https://chat.example.com/api/v1/complete.",
+  },
+  // src: backend/utilities/db/schemas.py:182 — HTTP headers of the custom request
+  "llm.cfg.headers": {
+    label: "Headers (JSON)",
+    what: "HTTP headers sent with every request to the custom model, as a JSON object, usually for authentication.",
+    example: "{\"Authorization\": \"Bearer <token>\"}.",
+  },
+  // src: backend/utilities/db/schemas.py:183 — the JSON body with the prompt placeholder
+  "llm.cfg.request_template": {
+    label: "Request Template",
+    what: "The JSON body sent to your model, with a placeholder where each attack prompt goes.",
+    example: "{\"message\": \"$INPUT\"}.",
+  },
+  // src: backend/utilities/db/schemas.py:184 — where the answer is in the response
+  "llm.cfg.response_field": {
+    label: "Response JSON Field",
+    what: "The field of your model's JSON response that holds the answer text, which the detectors then judge.",
+    example: "reply for a response {\"reply\": \"…\"}.",
+  },
+  // src: backend/utilities/db/schemas.py:180, RabbitMQ/worker/helpers/tools/llm_agent/main.py:142-155 — garak probes; 0.002 credits each
+  "llm.cfg.probes": {
+    label: "Security Benchmarks",
+    what: "The attack families (garak probes) to run against the model, such as jailbreaks, prompt injection, data leakage or toxicity. Each selected benchmark costs 0.002 credits.",
+    example: "promptinject and dan for a customer-facing chatbot.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/llm_agent/main.py:142-155, backend/utilities/scan/estimate_scan.py:210 — number of probes x 0.002
+  "llm.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "Prices the scan at 0.002 credits per selected benchmark, rounded to 0.01. Your model provider bills its own usage separately. Nothing is charged until you start the scan.",
+    example: "10 benchmarks: 0.02 credits.",
+  },
+
+  // ────────────────────────────────────────────────────────────── LLM red teaming: list page (app/[team_id]/llm/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:1500-1518 — the same status counters as SAST (UTC day for today)
+  "llm.kpi.status": {
+    label: "Scan counts by status",
+    what: "LLM scans of this team per status (Not started, Pending, Started, Success, Failure), and how many were created or changed since 00:00 UTC today.",
+    example: "Updated today 2: two scans started or finished today (UTC).",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1553-1555, backend/utilities/dashboard/scan_list.py:1638 — successful scans
+  "llm.kpi.success": {
+    label: "Scans (success)",
+    what: "LLM scans that finished successfully. Only these feed the risk cards and charts.",
+    example: "5 scans succeeded.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1619-1626 — weight/4*10 per finding, averaged
+  "llm.kpi.avg_risk": {
+    label: "Avg Risk Score",
+    what: "Average over all findings of successful LLM scans, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5.",
+    example: "One Critical and one Low: 6.3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1564-1567, backend/utilities/dashboard/scan_list.py:1617-1618 — findings of successful scans
+  "llm.kpi.vulns": {
+    label: "Vulnerabilities",
+    what: "Findings of successful LLM scans: all of them (Total Vulns), and those rated Critical (Critical Vulns).",
+    example: "Total 12, Critical 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1532-1543, backend/utilities/dashboard/scan_list.py:1628-1631 — 10 minus the number of OWASP LLM categories with a finding
+  "llm.kpi.owasp": {
+    label: "OWASP Score",
+    what: "10 minus the number of OWASP Top 10 for LLM categories that have at least one finding. 10 means no category was hit; it does not weigh how many findings each has.",
+    example: "Findings in LLM01 and LLM06 only: 8.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1602-1606, backend/utilities/dashboard/scan_list.py:1633-1635 — (tests - hits) / tests over successful scans
+  "llm.kpi.passed_rate": {
+    label: "Passed Rate",
+    what: "Share of attack attempts the models resisted, over all successful scans: attempts that did not trigger a detector divided by all attempts.",
+    example: "1,000 attempts, 80 hits: 92.0%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1564-1567 — findings by impact
+  "llm.chart.risk_level": {
+    label: "Risk Level Distribution",
+    what: "Findings of successful LLM scans by severity: Critical, High, Medium, Low.",
+    example: "High 4, Medium 6, Low 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1592-1601 — per probe: passed and failed attempts
+  "llm.chart.attack_vectors": {
+    label: "Attack Vector Test Results",
+    what: "For each benchmark (garak probe), how many attack attempts the models resisted (passed) and how many succeeded (failed), over all successful scans.",
+    example: "dan: 45 passed, 5 failed.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1581-1590, backend/utilities/dashboard/scan_list.py:1653-1656 — per model name: findings-weighted 0-10 score
+  "llm.chart.model_risk": {
+    label: "Model Risk Comparison",
+    what: "The average risk score (0 to 10, weights Critical 4, High 3, Medium 2, Low 1) of each model's findings, across its successful scans.",
+    example: "gpt-4o-mini 5.0, my-chatbot 7.5.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1544-1551, backend/utilities/dashboard/scan_list.py:1607-1613, backend/utilities/dashboard/scan_list.py:1659-1665 — average of each scan's resistance scores
+  "llm.chart.posture": {
+    label: "AI Security Posture Overview",
+    what: "Average of the scans' resistance scores in six areas: jailbreak resistance, injection resistance, hallucination resistance, bias resistance, content safety and data privacy. 0 where no scan reported one.",
+    example: "Jailbreak resistance 7.2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1532-1543, backend/utilities/dashboard/scan_list.py:1568-1580, backend/utilities/dashboard/scan_list.py:1666-1669 — findings per OWASP LLM category
+  "llm.chart.owasp": {
+    label: "OWASP Top 10 LLM Metrics",
+    what: "Findings per OWASP Top 10 for LLM Applications category (LLM01 Prompt Injection to LLM10). A finding mapped to two categories counts in both.",
+    example: "LLM01 6, LLM06 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1502-1519 — every LLM scan by its UTC creation date
+  "llm.chart.scans_per_day": {
+    label: "Scans Per Day",
+    what: "How many LLM scans were created on each day (UTC), whatever their status.",
+    example: "3 scans created on 10 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1500-1512 — counts by status
+  "llm.chart.status": {
+    label: "Scan Status Breakdown",
+    what: "All LLM scans of this team by their current status.",
+    example: "5 Success, 1 Failure.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:366 — model type from the scan's settings
+  "llm.table.model_type": {
+    label: "Model type",
+    what: "Where the tested model is hosted: openai, anthropic, gemini or custom.",
+    example: "openai.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:350, backend/utilities/db/scan_list_item.py:367 — model name from the settings or the results
+  "llm.table.model_name": {
+    label: "Model name",
+    what: "The model id that was tested.",
+    example: "gpt-4o-mini.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:369 — number of selected probes
+  "llm.table.probes": {
+    label: "Probes",
+    what: "How many security benchmarks (garak probes) the scan was configured with.",
+    example: "10 probes selected.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:338-346, backend/utilities/db/scan_list_item.py:372 — distinct MITRE ATLAS tactics of the findings
+  "llm.table.mitre": {
+    label: "MITRE",
+    what: "How many different MITRE ATLAS tactics (the adversarial-AI attack stages) the scan's findings map to.",
+    example: "3: initial access, ML model access and exfiltration.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:293-310 — counts per impact of a successful scan
+  "llm.table.vulns": {
+    label: "Vulnerabilities",
+    what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
+    example: "1 red, 0 orange, 3 amber, 2 blue.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:330-336 — 0-10 weighted per scan
+  "llm.table.risk": {
+    label: "Risk score",
+    what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10.",
+    example: "1 Critical and 1 Medium: (4+2)/2 = 3, so 7.5.",
   },
 } as const satisfies Record<string, InfoTipEntry>;
 
