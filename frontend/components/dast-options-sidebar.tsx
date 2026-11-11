@@ -178,8 +178,9 @@ export function DASTOptionsSidebar({
       }
     },
     onError: (err) => {
+      // A refused estimate (private target, bad URL) is said under the button and the form keeps what was typed:
+      // the error view's "Try Again" reloads the page and cleared the target and every authentication field.
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
     },
   });
 
@@ -210,8 +211,9 @@ export function DASTOptionsSidebar({
       });
     },
     onError: (err) => {
+      // The scan was refused before it started: back to the filled-in form with the reason, as for the estimate.
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
+      setOptionsSidebarState("ready");
     },
   });
 
@@ -219,6 +221,7 @@ export function DASTOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
+    setErrorMessage(null);
   }, [
     targetUrl,
     scanSpeed,
@@ -733,6 +736,11 @@ export function DASTOptionsSidebar({
               )}
             </Button>
             <ScanInputHint validation={validateScanInputs()} />
+            {errorMessage && optionsSidebarState === "ready" && (
+              <p role="alert" data-testid="dast-request-error" className="text-xs text-red-400 mt-2">
+                {errorMessage}
+              </p>
+            )}
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (

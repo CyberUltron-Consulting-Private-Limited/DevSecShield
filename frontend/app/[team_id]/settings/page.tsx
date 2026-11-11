@@ -37,6 +37,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Trash2, UserPlus, UserMinus, Pencil, PenLine, Coins, Users, Info } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
+import { toast } from "sonner";
+import { jiraToSave } from "@/utils/jiraSettings";
 
 
 export default function TeamSettingsPage() {
@@ -119,14 +121,17 @@ export default function TeamSettingsPage() {
   };
 
   const handleSaveJira = () => {
-    const email = jiraEmail.trim();
-    const api_token = jiraApiToken.trim();
-    const url = jiraUrl.trim();
+    // a partly filled form used to save jira: null and still say "Team updated successfully"
+    const decision = jiraToSave(jiraEmail, jiraUrl, jiraApiToken);
+    if (!decision.ok) {
+      toast.error(decision.message);
+      return;
+    }
     const integration_settings: TicketingIntegrationSettingsData = {
       ...(team?.team_integration_settings && typeof team.team_integration_settings === "object" && !Array.isArray(team.team_integration_settings)
         ? (team.team_integration_settings as TicketingIntegrationSettingsData)
         : {}),
-      jira: email && api_token && url ? { email, api_token, url } : null,
+      jira: decision.jira,
     };
     updateTeamMutation.mutate({
       name: team?.team_name ?? undefined,

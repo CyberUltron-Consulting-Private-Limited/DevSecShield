@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, AlertTriangle, TrendingUp, TrendingDown, Bug, Shield, CircleDot, Timer, Clock, Crosshair, Activity, Percent, DollarSign, Check, ChevronDown, ChevronRight, Filter, ArrowUpDown, Info } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { singleFlight } from "@/utils/single_flight";
 import { SastConversation, deleteSastConversation, getSastConversations, renameSastConversation, createSastConversation } from "@/utils/backend_api";
 import type { ScanListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1089,6 +1090,8 @@ export default function SASTPage() {
     onError: (error) => { showErrorToast(error); },
   });
 
+  // One create per click burst (double-click, Enter twice): isPending disables Create only after a re-render.
+  const [createGuard] = useState(singleFlight);
   const createSastConversationMutation = useMutation({
     mutationFn: ({ team_id, title }: { team_id: number; title: string }) => createSastConversation(team_id, title),
     onSuccess: (scan_id, variables) => {
@@ -1145,7 +1148,8 @@ export default function SASTPage() {
 
   const confirmCreate = () => {
     if (newScanTitle.trim() && team_id) {
-      createSastConversationMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() });
+      if (!createGuard.tryStart()) return;
+      createSastConversationMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() }, { onSettled: () => createGuard.done() });
     }
   };
 

@@ -1,5 +1,8 @@
 // Pure helpers for the CBOM Sources pages (no React, no network) so they can be unit-tested with tsx.
 
+// One request per click burst for the Create node button (see utils/single_flight.ts).
+export { singleFlight } from "../../../utils/single_flight"
+
 export type WindowGrid = boolean[][] // 7 rows (Monday first) x 24 hours
 
 export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const

@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, Shield, Percent, Bug, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { singleFlight } from "@/utils/single_flight";
 import { deleteLLMConversation, getLLMConversations, renameLLMConversation, createLLMConversation, type LLMScanListItem } from "@/utils/backend_api";
 import { getProbeDisplayName } from "@/utils/probe-display-names";
 import { OWASP_LLM_KEY_TO_LABEL } from "@/lib/owasp-compliance-labels";
@@ -610,6 +611,8 @@ export default function LLMPage() {
     }
   });
 
+  // One create per click burst (double-click, Enter twice): isPending disables Create only after a re-render.
+  const [createGuard] = useState(singleFlight);
   const createLLMConversationMutation = useMutation({
     mutationFn: ({ team_id, title }: { team_id: number; title: string }) => createLLMConversation(team_id, title),
     onSuccess: (scan_id, variables) => {
@@ -658,7 +661,8 @@ export default function LLMPage() {
 
   const confirmCreate = () => {
     if (newScanTitle.trim() && team_id) {
-      createLLMConversationMutation.mutate({ team_id: Number(team_id), title: newScanTitle.trim() });
+      if (!createGuard.tryStart()) return;
+      createLLMConversationMutation.mutate({ team_id: Number(team_id), title: newScanTitle.trim() }, { onSettled: () => createGuard.done() });
     }
   };
 

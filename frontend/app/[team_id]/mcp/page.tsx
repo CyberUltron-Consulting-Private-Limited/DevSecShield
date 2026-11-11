@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, Search, X, Shield, Activity, AlertTriangle, ChevronDown, ArrowUpDown, Check, CalendarPlus, CalendarCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { singleFlight } from "@/utils/single_flight";
 import { MCPConversation, deleteMCPConversation, getMCPConversations, renameMCPConversation, createMCPConversation } from "@/utils/backend_api";
 import type { MCPListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -738,6 +739,8 @@ export default function MCPPage() {
     }
   });
 
+  // One create per click burst (double-click, Enter twice): isPending disables Create only after a re-render.
+  const [createGuard] = useState(singleFlight);
   const createMCPConversationMutation = useMutation({
     mutationFn: (title: string) => createMCPConversation(Number(team_id), title),
     onSuccess: (conversationId) => {
@@ -808,7 +811,8 @@ export default function MCPPage() {
 
   const confirmCreate = () => {
     if (newScanTitle.trim() && team_id) {
-      createMCPConversationMutation.mutate(newScanTitle.trim());
+      if (!createGuard.tryStart()) return;
+      createMCPConversationMutation.mutate(newScanTitle.trim(), { onSettled: () => createGuard.done() });
     }
   };
 
