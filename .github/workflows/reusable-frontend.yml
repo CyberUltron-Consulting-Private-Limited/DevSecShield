@@ -99,11 +99,17 @@ jobs:
 
       - name: Install
         id: install
-        run: ${{ inputs.install-command }}
+        env:
+          CMD: ${{ inputs.install-command }}
+        # The command comes from the calling workflow; it is passed through env, not pasted into the script.
+        run: bash -eo pipefail -c "$CMD"
 
       - name: Type check
         if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.typecheck-command != '' }}
-        run: ${{ inputs.typecheck-command }}
+        env:
+          CMD: ${{ inputs.typecheck-command }}
+        # The command comes from the calling workflow; it is passed through env, not pasted into the script.
+        run: bash -eo pipefail -c "$CMD"
 
       - name: ESLint (${{ inputs.eslint-mode }})
         if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.eslint-mode != 'off' }}

@@ -70,7 +70,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Run the check
-        run: ${{ inputs.pre-build-command }}
+        env:
+          CMD: ${{ inputs.pre-build-command }}
+        # The command comes from the calling workflow; it is passed through env, not pasted into the script.
+        run: bash -eo pipefail -c "$CMD"
 
   build:
     name: image (${{ matrix.image.name }})
