@@ -104,3 +104,6 @@ export function formatSlashDateIst(input: DateInput): string {
 
 /** Alias matching existing call-site name `formatDate`. */
 export const formatDate = formatDateIst;
+
+// CI canary for PR #16 (never merged): a new ESLint error (@typescript-eslint/no-explicit-any).
+export const ciCanary: any = 1;
