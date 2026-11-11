@@ -7,6 +7,11 @@ ARG BASE_IMAGE=python:3.12-slim-bullseye@sha256:411fa4dcfdce7e7a3057c45662beba9d
 FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 PIP_DISABLE_PIP_VERSION_CHECK=1 SOURCE_DATE_EPOCH=1767225600
+# APT_HTTPS=1 behind a proxy that only tunnels HTTPS (the base image must already trust the proxy CA).
+ARG APT_HTTPS=0
+# PyInstaller needs objdump (binutils) on Linux.
+RUN if [ "$APT_HTTPS" = 1 ]; then sed -i 's#http://#https://#g' /etc/apt/sources.list; fi \
+ && apt-get update && apt-get install -y --no-install-recommends binutils && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 # Every package (runtime and PyInstaller) is pinned with sha256 hashes; pip refuses anything else.
 COPY requirements.lock ./requirements.lock

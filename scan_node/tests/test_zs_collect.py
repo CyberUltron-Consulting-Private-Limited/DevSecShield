@@ -10,7 +10,6 @@ Each read-only guarantee of CONTRACT section 4 has a test here:
 """
 from __future__ import annotations
 
-import base64
 import copy
 import io
 import json
@@ -489,10 +488,8 @@ def test_no_inet_socket_syscalls(tmp_path):
     assert inet == [] and listening == [], (inet + listening)[:10]
 
 
-def test_writes_only_inside_tmp_dir(tmp_path):
-    calls = "open,openat,openat2,creat,mkdir,mkdirat,rename,renameat,renameat2,unlink,unlinkat,rmdir,link,linkat," \
-            "symlink,symlinkat,truncate,chmod,fchmodat,chown,fchownat,mknod,mknodat"
-    lines, run = _strace(tmp_path, calls)
+def _writes_outside(lines: list[str], run: Path) -> list[str]:
+    """strace lines of write-like syscalls whose path is outside ``run`` (failed calls and read-only opens excluded)."""
     import re
 
     bad = []
@@ -508,4 +505,29 @@ def test_writes_only_inside_tmp_dir(tmp_path):
         absolute = path if path.startswith("/") else os.path.join(str(run), path)
         if not os.path.realpath(absolute).startswith(os.path.realpath(str(run))):
             bad.append(line)
+    return bad
+
+
+def test_write_detector_flags_writes_outside_and_ignores_reads(tmp_path):
+    run = tmp_path / "run"
+    lines = [
+        f'123 openat(AT_FDCWD, "{run}/x", O_WRONLY|O_CREAT|O_TRUNC, 0600) = 3',
+        '123 openat(AT_FDCWD, "/etc/os-release", O_RDONLY|O_CLOEXEC) = 3',
+        '123 openat(AT_FDCWD, "/dev/null", O_RDWR) = 3',
+        '124 openat(AT_FDCWD, "/etc/evil", O_WRONLY|O_CREAT, 0644) = 3',
+        '124 mkdir("/var/tmp/zs", 0700) = 0',
+        '124 unlinkat(AT_FDCWD, "/home/u/.bash_history", 0) = 0',
+        '124 openat(AT_FDCWD, "/root/.rnd", O_WRONLY|O_CREAT, 0600) = -1 EACCES (Permission denied)',
+    ]
+    bad = _writes_outside(lines, run)
+    assert [b.split('"')[1] for b in bad] == ["/etc/evil", "/var/tmp/zs", "/home/u/.bash_history"]
+
+
+def test_writes_only_inside_tmp_dir(tmp_path):
+    calls = "open,openat,openat2,creat,mkdir,mkdirat,rename,renameat,renameat2,unlink,unlinkat,rmdir,link,linkat," \
+            "symlink,symlinkat,truncate,chmod,fchmodat,chown,fchownat,mknod,mknodat"
+    lines, run = _strace(tmp_path, calls)
+    writes = [line for line in lines if "O_WRONLY" in line or "O_RDWR" in line or "O_CREAT" in line]
+    assert writes, "strace saw no write-like call at all: the detector would prove nothing"
+    bad = _writes_outside(lines, run)
     assert bad == [], bad[:10]

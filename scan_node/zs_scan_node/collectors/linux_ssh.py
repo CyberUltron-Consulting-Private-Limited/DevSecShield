@@ -41,6 +41,7 @@ CMD_TIMEOUT = 60
 FILE_CMD_TIMEOUT = 20
 MAX_FILES = 2000
 RSA_ALGS = ("rsa-sha2-512", "rsa-sha2-256", "ssh-rsa")
+EOF_GRACE_S = 2.0  # how long Session.run waits for EOF after exit-status (output may still be on its way)
 _pin_lock = threading.Lock()
 
 
@@ -177,6 +178,7 @@ class Session:
             out, err = bytearray(), bytearray()
             deadline = time.monotonic() + timeout
             timed_out = False
+            drain_until = None  # exit-status can arrive before the last output: wait for EOF, briefly
             while True:
                 if time.monotonic() > deadline:
                     timed_out = True
@@ -193,7 +195,14 @@ class Session:
                         err += data[: 65536 - len(err)]
                     progressed = True
                 if chan.exit_status_ready() and not chan.recv_ready() and not chan.recv_stderr_ready():
-                    break
+                    # OpenSSH sends exit-status when it reaps the command, possibly before it has read the command's
+                    # last stdout/stderr bytes; those follow, then EOF.  Stop at EOF (or close), or after a short
+                    # grace for a server that never sends EOF.
+                    if getattr(chan, "eof_received", 0) or getattr(chan, "closed", False):
+                        break
+                    drain_until = drain_until or time.monotonic() + EOF_GRACE_S
+                    if time.monotonic() >= drain_until:
+                        break
                 if not progressed:
                     time.sleep(0.02)
             status = chan.recv_exit_status() if not timed_out else None

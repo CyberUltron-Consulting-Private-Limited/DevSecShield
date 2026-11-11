@@ -224,6 +224,27 @@ proposals, key sizes; nothing else (pre-shared keys, passwords) leaves it. Only 
 vendor defaults that the configuration does not print are not assumed. `tests/sim_appliance.py` is a SIMULATED
 appliance (paramiko) used by the tests and the lab proof; no real device was available.
 
+## zs-collect (agentless through the customer's AWX/AAP, Salt or SSM)
+
+`zs-collect` (`zs_scan_node/zscollect.py`) runs the Linux collector above on the host itself, for a customer's own
+automation to launch. It runs the same command lines through `LocalSession` (the SSH `Session.run` contract), so the
+assets are those of the SSH path on the same host (`bench/f1_transports/parity.py`: 20 hosts, empty normalised diff).
+It checks every command line against an allow-list built from `commands.py` before running it, opens no socket,
+writes only inside its temp dir, drops from root to `--run-as` (default `zs-cbom`, with its groups) so the same sudoers
+file decides Tier 2, and prints one `zs-collect/1` document (`schemas/zs-collect-1.schema.json`) that echoes the run
+nonce; `--output chunks` gzips it into lines of at most 512 KB for AWX job events.
+
+Releases are a PyInstaller one-file binary per architecture (`zs_collect/build.sh`, Debian bullseye builder, so
+glibc 2.31 or newer on the host), a manifest with each binary's sha256, and an Ed25519 signature of the manifest
+(`zs_collect/release.py`; public key `zs_collect/zs-release-ed25519.pub`). The launcher every transport runs
+(`release.py wrapper`) copies the binary into a private `mktemp -d` under `$TMPDIR` (point `TMPDIR` at a directory
+that allows exec on hosts that mount /tmp `noexec`), refuses it unless its sha256 is the manifest's, verifies the
+mirrored manifest with `openssl pkeyutl -verify -rawin` when OpenSSL 3 is present, runs it and removes the temp dir.
+
+```sh
+zs-collect --nonce run-0123456789abcdef --tier 2 --label 10.0.0.5      # as root: collects as zs-cbom
+```
+
 ## Develop and test
 
 ```sh

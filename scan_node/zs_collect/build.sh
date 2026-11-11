@@ -20,7 +20,8 @@ mkdir -p "$OUT"
 TAG="zs-collect-build:$VERSION-$ARCH"
 set -- --platform "linux/$ARCH" -f "$HERE/Dockerfile.build" -t "$TAG"
 [ -n "${BASE_IMAGE:-}" ] && set -- "$@" --build-arg "BASE_IMAGE=$BASE_IMAGE"
-[ -n "${HTTPS_PROXY:-}" ] && set -- "$@" --build-arg "HTTPS_PROXY=$HTTPS_PROXY" --network host
+[ -n "${HTTPS_PROXY:-}" ] && set -- "$@" --build-arg "HTTPS_PROXY=$HTTPS_PROXY" --build-arg "https_proxy=$HTTPS_PROXY" \
+  --build-arg APT_HTTPS=1 --network host
 docker build "$@" "$NODE"
 CID="$(docker create "$TAG")"
 trap 'docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT

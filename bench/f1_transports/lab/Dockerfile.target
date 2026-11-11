@@ -1,0 +1,32 @@
+# A Linux target for the zs-collect parity proof: sshd, sudo with the exact zs-cbom sudoers file, and a few planted
+# crypto findings (a world-readable private key, an RSA-1024/SHA-1 certificate, nginx TLS directives, openssl enc in
+# cron). Host keys are generated when each container starts, so every container is a distinct host.
+# Built by bench/f1_transports/parity.py (it writes sudoers.zs-cbom from zs_scan_node.commands.sudoers_file()).
+ARG BASE_IMAGE=debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+FROM ${BASE_IMAGE}
+ARG APT_HTTPS=0
+RUN if [ "$APT_HTTPS" = 1 ]; then sed -i 's#http://#https://#g' /etc/apt/sources.list.d/debian.sources; fi \
+ && apt-get update && apt-get install -y --no-install-recommends openssh-server sudo openssl procps iproute2 \
+      util-linux \
+ && rm -rf /var/lib/apt/lists/* /etc/ssh/ssh_host_*
+COPY sudoers.zs-cbom /etc/sudoers.d/zs-cbom
+COPY entrypoint.sh /usr/local/sbin/lab-entrypoint
+RUN useradd --create-home --shell /bin/bash zs-cbom \
+ && install -d -m 0700 -o zs-cbom -g zs-cbom /home/zs-cbom/.ssh \
+ && chmod 0440 /etc/sudoers.d/zs-cbom && visudo -cf /etc/sudoers.d/zs-cbom \
+ && useradd --create-home --shell /bin/bash deploy && install -d -m 0700 -o deploy /home/deploy/.ssh \
+ && mkdir -p /srv/app /etc/nginx/sites-enabled /etc/cron.d \
+ && openssl req -x509 -newkey rsa:2048 -nodes -keyout /etc/ssl/private/lab.key -out /srv/app/server.pem \
+      -subj "/CN=lab.example" -days 30 2>/dev/null \
+ && chmod 0644 /etc/ssl/private/lab.key \
+ && openssl req -x509 -newkey rsa:1024 -sha1 -nodes -keyout /srv/app/legacy.key -out /srv/app/legacy.pem \
+      -subj "/CN=legacy.example" -days 400 2>/dev/null \
+ && chmod 0600 /srv/app/legacy.key \
+ && ssh-keygen -q -t ed25519 -N "" -C "deploy@laptop" -f /root/deploy_key \
+ && cp /root/deploy_key.pub /home/deploy/.ssh/authorized_keys && rm -f /root/deploy_key \
+ && printf 'server {\n  listen 443 ssl;\n  ssl_protocols TLSv1 TLSv1.2;\n  ssl_ciphers HIGH:!aNULL;\n}\n' \
+      > /etc/nginx/sites-enabled/default \
+ && printf '0 1 * * * root openssl enc -aes-128-cbc -md md5 -pass pass:x -in /srv/a -out /srv/b\n' > /etc/cron.d/backup \
+ && chmod 0755 /usr/local/sbin/lab-entrypoint
+EXPOSE 22
+ENTRYPOINT ["/usr/local/sbin/lab-entrypoint"]
