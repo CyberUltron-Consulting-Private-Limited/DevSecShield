@@ -25,6 +25,7 @@ import { Mode } from "@/utils/backend_api";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import { DiscoveryConversationResponse, startDiscoveryScan, getDiscoveryExportResults, reinitializeDiscoveryScan } from "@/utils/backend_api";
 import { toast } from "sonner";
+import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { useParams, useRouter } from "next/navigation";
 // import { generateAndDownloadPDF } from "@/components/PDF_Report";
 
@@ -382,13 +383,15 @@ export function DiscoveryOptionsSidebar({
           <Button 
             variant="ghost" 
             size="sm"
+            data-testid="scan-try-again"
             onClick={() => {
-              // refresh the entire page to reset the state
-              window.location.reload();
+              // back to the view that matches the scan, with the form still filled in (no reload)
+              setOptionsSidebarState(stateAfterError(query.data?.scan_status));
+              void query.refetch();
             }}
             className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
           >
-            <span>Try Again</span>
+            <span>Try again</span>
           </Button>
         </div>
       )}

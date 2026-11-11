@@ -512,7 +512,7 @@ export function MCPOptionsSidebar({
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
           <p role="alert" data-testid="scan-error-message" className="text-red-400 text-center">
-            {errorMessage ?? "The request failed. Try again."}
+            {query.data?.scan_status === "failure" ? scanFailureMessage(query.data) : (errorMessage ?? "The request failed. Try again.")}
           </p>
           {query.data?.scan_status === "failure" ? (
             <NewScanRunAgainButton type="mcp" teamId={team_id} scan={query.data}

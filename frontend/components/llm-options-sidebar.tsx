@@ -25,6 +25,11 @@ import {
   reinitializeLLMScan,
 } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
+import { scanFailureMessage } from "@/utils/scanFailure";
+import { readFormRerun } from "@/utils/formRerun";
+import { NewScanRunAgainButton } from "@/components/scan-run-again";
+import { stateAfterError } from "@/utils/scanErrorRecovery";
+import { ScanRequestError } from "@/components/scan-request-error";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import ModelChoicePicker from "./ModelChoicePicker";
@@ -84,8 +89,24 @@ export function LLMOptionsSidebar({
       model_uri: ""
   });
 
+  // a scan opened by "Run again" on a failed LLM scan: its model and probes (the API key and headers are typed again)
+  useEffect(() => {
+    const p = Number.isFinite(scan_id) ? readFormRerun("llm", scan_id) : null;
+    if (!p) return;
+    setCreationData((prev) => ({
+      ...prev,
+      ...(typeof p.model_type === "string" ? { model_type: p.model_type } : {}),
+      ...(typeof p.model_name === "string" ? { model_name: p.model_name } : {}),
+      ...(Array.isArray(p.probes) ? { probes: p.probes.filter((x): x is string => typeof x === "string") } : {}),
+      ...(typeof p.generations === "number" ? { generations: p.generations } : {}),
+      ...(typeof p.request_template === "string" ? { request_template: p.request_template } : {}),
+      ...(typeof p.response_json_field === "string" ? { response_json_field: p.response_json_field } : {}),
+      ...(typeof p.model_uri === "string" ? { model_uri: p.model_uri } : {}),
+    }));
+  }, [scan_id]);
+
   // Helper function to update creation data
-  const updateCreationData = (field: keyof LLMScanCreateData, value: any) => {
+  const updateCreationData =(field: keyof LLMScanCreateData, value: any) => {
       setCreationData(prev => ({
           ...prev,
           [field]: value
@@ -188,7 +209,6 @@ export function LLMOptionsSidebar({
     },
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
     },
   });
 
@@ -202,7 +222,7 @@ export function LLMOptionsSidebar({
     },
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
+      setOptionsSidebarState("ready");
     },
   });
 
@@ -227,6 +247,7 @@ export function LLMOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
+    setErrorMessage(null);
   }, [
     creationData.model_type,
     creationData.model_name,
@@ -278,7 +299,7 @@ export function LLMOptionsSidebar({
       setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
-      const msg = (query.data?.scan_metadata as { error_message?: string } | undefined)?.error_message ?? "The scan failed.";
+      const msg = scanFailureMessage(query.data); // the worker's reason (scan.info.error)
       setErrorMessage(msg);
       setOptionsSidebarState("error");
     }
@@ -488,6 +509,7 @@ export function LLMOptionsSidebar({
                 <>Estimate credits required</>
               )}
             </Button>
+            {optionsSidebarState === "ready" && <ScanRequestError message={errorMessage} />}
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
@@ -585,19 +607,30 @@ export function LLMOptionsSidebar({
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
           <p className="text-red-400 text-center">
-            {errorMessage ?? "An error occurred during the scan. Please try again."}
+            {query.data?.scan_status === "failure" ? scanFailureMessage(query.data) : (errorMessage ?? "The request failed. Try again.")}
           </p>
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={() => {
-              // refresh the entire page to reset the state
-              window.location.reload();
-            }}
-            className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
-          >
-            <span>Try Again</span>
-          </Button>
+          {query.data?.scan_status === "failure" ? (
+            <NewScanRunAgainButton type="llm" teamId={team_id} scan={query.data} settings={{
+              model_type: creationData.model_type, model_name: creationData.model_name, probes: creationData.probes,
+              generations: creationData.generations, request_template: creationData.request_template,
+              response_json_field: creationData.response_json_field, model_uri: creationData.model_uri,
+            }} />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="scan-try-again"
+              onClick={() => {
+                // back to the view that matches the scan, with the form still filled in (no reload)
+                setErrorMessage(null);
+                setOptionsSidebarState(stateAfterError(query.data?.scan_status));
+                void query.refetch();
+              }}
+              className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
+            >
+              <span>Try again</span>
+            </Button>
+          )}
         </div>
       )}
 
