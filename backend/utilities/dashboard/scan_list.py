@@ -1721,7 +1721,7 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict
         for row in _cbom_results(scan):
             ident = code_row_identity(row, cert_ids[scan.id])
             if ident:
-                code_observations.append((scan.id, scan.created_at, ident))
+                code_observations.append((scan.id, getattr(scan, "created_at", None), ident))
     resolution = resolve(code_observations, sources.rows)
 
     for scan in scans:
@@ -1731,7 +1731,8 @@ def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict
                    if resolution.code_kept(scan.id, code_row_identity(row, cert_ids.get(scan.id, {})))]
         if not results:
             continue
-        summary.add_rows(results, origin={"kind": ORIGIN_CODE, "scan_id": scan.id, "scan_title": scan.title})
+        summary.add_rows(results, origin={"kind": ORIGIN_CODE, "scan_id": scan.id,
+                                          "scan_title": getattr(scan, "title", None)})
 
         # Framework FAIL counts from cbom_compliance (mirrors single-scan CBOM dashboard)
         _cbom_compliance = (
