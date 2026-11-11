@@ -241,5 +241,5 @@ __all__ = ["attach_snippets", "code_window", "redact_line", "is_generated", "SCA
 
 
 def _ci_canary() -> None:
-    """CI canary for PR #16 (never merged): a new ruff finding (F841) for the no-new-findings gate."""
+    """CI canary for PR #16 (never merged): one new ruff finding, F841."""
     unused = 1
