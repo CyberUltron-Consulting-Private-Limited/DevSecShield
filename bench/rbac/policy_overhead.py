@@ -15,6 +15,7 @@ import time
 import uuid
 
 import sqlalchemy as sa
+from sqlalchemy.schema import CreateSchema, DropSchema
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -24,7 +25,7 @@ def main() -> int:
     schema = f"rbac_bench_{uuid.uuid4().hex[:8]}"
     admin = create_engine(url)
     with admin.begin() as conn:
-        conn.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+        conn.execute(CreateSchema(schema))  # a quoted identifier, never interpolated SQL
     engine = create_engine(url, pool_size=5, connect_args={"options": f"-csearch_path={schema}"})
     try:
         import contextlib
@@ -106,7 +107,7 @@ def main() -> int:
     finally:
         engine.dispose()
         with admin.begin() as conn:
-            conn.execute(sa.text(f'DROP SCHEMA "{schema}" CASCADE'))
+            conn.execute(DropSchema(schema, cascade=True))
         admin.dispose()
     return 0
 
