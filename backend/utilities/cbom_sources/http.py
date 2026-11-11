@@ -8,6 +8,9 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
+from collections import OrderedDict
 from typing import Annotated, Any, Callable
 
 from fastapi import HTTPException, Path, Request
@@ -94,12 +97,48 @@ def _node_id_for_token(token: str) -> int | None:
         return session.exec(select(CbomScanNode.id).where(CbomScanNode.node_token_hash == sha256_hex(token))).first()
 
 
+# token SHA-256 -> (node id, monotonic expiry): which budget a node request is charged to, without a database round
+# trip per request (F1.1: at 10,000 nodes this lookup was a second token query on every node call).  Positive answers
+# only, so an unknown token still falls back to the address; it never authenticates anything (the route checks the
+# token against the database itself), so a reset node's entry living on for up to NODE_KEY_TTL_S changes only which
+# bucket that request is counted in.
+_NODE_KEYS: "OrderedDict[str, tuple[int, float]]" = OrderedDict()
+_NODE_KEYS_LOCK = threading.Lock()
+NODE_KEY_TTL_S = 60.0
+NODE_KEY_MAX = 100_000
+
+
+def _cached_node_id(digest: str) -> int | None:
+    now = time.monotonic()
+    with _NODE_KEYS_LOCK:
+        hit = _NODE_KEYS.get(digest)
+        if hit is None:
+            return None
+        if hit[1] < now:
+            del _NODE_KEYS[digest]
+            return None
+        return hit[0]
+
+
+def _remember_node_id(digest: str, node_id: int) -> None:
+    with _NODE_KEYS_LOCK:
+        _NODE_KEYS[digest] = (node_id, time.monotonic() + NODE_KEY_TTL_S)
+        _NODE_KEYS.move_to_end(digest)
+        while len(_NODE_KEYS) > NODE_KEY_MAX:
+            _NODE_KEYS.popitem(last=False)
+
+
 async def node_key(request: Request) -> Key:
     """A verified scan node is charged by node id; an unknown token falls back to the address, so guessing
     tokens never buys fresh budgets."""
     token = request.headers.get("x-zs-node-token") or ""
     if token.startswith("zsn_") and len(token) <= 128:
-        node_id = await run_in_threadpool(_node_id_for_token, token)
+        digest = sha256_hex(token)
+        node_id = _cached_node_id(digest)
+        if node_id is None:
+            node_id = await run_in_threadpool(_node_id_for_token, token)
+            if node_id is not None:
+                _remember_node_id(digest, node_id)
         if node_id is not None:
             return ("node", str(node_id))
     return await ip_key(request)

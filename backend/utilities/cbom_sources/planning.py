@@ -42,6 +42,16 @@ def node_status(node: CbomScanNode | None, now: _dt.datetime) -> str:
     return "offline"
 
 
+def segment_status(nodes: dict[int, CbomScanNode], segment: str, now: _dt.datetime) -> str:
+    """A segment source's "node" status (F1.1): online when an enrolled agentless node of that segment is online,
+    offline when such nodes exist but none is, missing when the team has none."""
+    members = [n for n in nodes.values()
+               if (n.segment or "") == segment and (n.mode or "agentless") != "agent" and n.node_token_hash is not None]
+    if not members:
+        return "missing"
+    return "online" if any(node_status(n, now) == "online" for n in members) else "offline"
+
+
 def source_targets(source: CbomCollectionSource, settings: CbomCollectionSettings) -> dict[str, Any]:
     """Units the source covers after the team's never-scan list (and its own, for servers)."""
     cfg = source.config or {}
@@ -163,6 +173,7 @@ def plan_run(
     wanted = set(source_ids) if source_ids else None
     plan = Plan()
     counted_blocks: list[T.Interval] = []
+    segments: dict[str, str] = {}
     for source in sources:
         spec = KINDS.get(source.kind)
         if spec is None:
@@ -174,9 +185,11 @@ def plan_run(
         if wanted is not None and source.id not in wanted:
             continue
         node = nodes.get(source.node_id) if source.node_id else None
+        segment = getattr(source, "node_segment", None) if not source.node_id else None
         info = source_targets(source, settings)
         units = int(info["units"])
-        item = PlanItem(source.id, source.name, source.kind, group, source.node_id, node.name if node else None,
+        item = PlanItem(source.id, source.name, source.kind, group, source.node_id,
+                        node.name if node else (f"segment {segment}" if segment else None),
                         units, info["unit"], 0, "skipped")
         try:
             cfg_model = spec.model.model_validate(source.config or {})
@@ -184,7 +197,9 @@ def plan_run(
             cfg_model = None
         needs_node = bool(cfg_model is not None and spec.needs_node(cfg_model))
         collectable = bool(cfg_model is not None and spec.collectable(cfg_model))
-        status = node_status(node, now) if needs_node else "n/a"
+        if segment and segment not in segments:
+            segments[segment] = segment_status(nodes, segment, now)  # once per segment, not once per source
+        status = (segments[segment] if segment else node_status(node, now)) if needs_node else "n/a"
         if not source.enabled:
             item.reason = "Disabled"
         elif cfg_model is None:
@@ -192,7 +207,9 @@ def plan_run(
         elif not collectable:
             item.reason = ("Cloud collection is not available yet" if group == "cloud"
                            else "Collection for this connector is not available yet")
-        elif needs_node and node is None:
+        elif needs_node and segment and status == "missing":
+            item.reason = f"No enrolled agentless scan node is in segment {segment}"
+        elif needs_node and node is None and not segment:
             item.reason = "No scan node assigned"
         elif needs_node and status in ("pending_registration", "registration_expired"):
             item.reason = f"Scan node {node.name} has not registered yet"

@@ -22,7 +22,7 @@ from test_cbom_wp8b_agents import _client, _enroll_agent, _pool  # noqa: E402
 from backend.new_models import CbomCollectionJob, CbomCollectionSource, CbomNodePool, CbomScanNode  # noqa: E402
 from backend.routers import cbom_node, cbom_node_pools  # noqa: E402
 from backend.utilities.cbom_sources import agents as AG  # noqa: E402
-from backend.utilities.cbom_sources import jobs as J  # noqa: E402
+from backend.utilities.cbom_sources import secret_refs as SR  # noqa: E402
 from backend.utilities.cbom_sources import node_auth as NA  # noqa: E402
 from backend.utilities.cbom_sources.schemas import EnrollBody, PoolCreate  # noqa: E402
 from zs_scan_node import api as node_api  # noqa: E402
@@ -179,7 +179,7 @@ def test_a_node_restarted_in_agent_mode_is_never_handed_a_secret(api, world, mon
     engine, _ = world
     client, node_id, linux = _agentless_with_a_password_job(api)
     calls = []
-    monkeypatch.setattr(J, "decrypt_secrets", lambda blob: calls.append(blob) or {"password": PASSWORD})
+    monkeypatch.setattr(SR, "decrypt_secrets", lambda blob: calls.append(blob) or {"password": PASSWORD})
     # restarted with ZS_MODE=agent, it claims before its first heartbeat: the claim says so
     assert client.claim({"mode": "agent"}) is None
     assert not calls  # before: the password was decrypted and sent (the node then refused it)
@@ -248,7 +248,7 @@ def _hold(barrier):
 
 def test_two_pool_tokens_created_at_once_cannot_pass_the_cap(api, world, monkeypatch):
     engine, ids = world
-    monkeypatch.setattr(AG, "MAX_POOLS", 1)
+    monkeypatch.setenv("CBOM_MAX_POOLS", "1")
     barrier = threading.Barrier(2)
     real = cbom_node_pools.sha256_hex
     hold = _hold(barrier)
@@ -262,7 +262,7 @@ def test_two_pool_tokens_created_at_once_cannot_pass_the_cap(api, world, monkeyp
 
 def test_two_pods_of_two_pools_cannot_pass_the_agent_node_cap(api, world, monkeypatch):
     engine, _ = world
-    monkeypatch.setattr(AG, "MAX_AGENT_NODES", 1)
+    monkeypatch.setenv("CBOM_MAX_AGENT_NODES", "1")
     (_p1, t1), (_p2, t2) = _pool(api, name="one"), _pool(api, name="two")
     barrier = threading.Barrier(2)
     real = NA.check_mtls

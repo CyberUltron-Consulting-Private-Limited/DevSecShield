@@ -31,14 +31,14 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionSettings, CbomCollectionSource, CbomNodePool, CbomScanNode
+from backend.utilities.cbom_sources import limits as L
 from backend.utilities.cbom_sources.common import audit, log
 
 AGENT = "agent"
 AGENTLESS = "agentless"
 POOL_PREFIX = "zsp_"
-MAX_AGENT_NODES = 1000  # per team; separate from the 50 agentless nodes
-MAX_POOLS = 50
-MAX_POOL_ENROLLMENTS = 1000
+# Per-team caps on agent nodes, pool tokens and enrollments per token: limits.py (CBOM_MAX_AGENT_NODES,
+# CBOM_MAX_POOLS, CBOM_MAX_POOL_ENROLLMENTS; F1.1, were 1,000 / 50 / 1,000 fixed here)
 MAX_POOL_HOURS = 24 * 90
 HOST_KIND = "host_agent"
 _NAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
@@ -170,5 +170,5 @@ def public_pool(pool: CbomNodePool, now: _dt.datetime, nodes: list[CbomScanNode]
         "max_enrollments": pool.max_enrollments, "enrollments": pool.enrollments,
         "revoked_at": iso_z(pool.revoked_at), "last_enrolled_at": iso_z(pool.last_enrolled_at),
         "created_at": iso_z(pool.created_at),
-        "nodes": [{"id": n.id, "name": n.name} for n in (nodes or [])][:MAX_POOL_ENROLLMENTS],
+        "nodes": [{"id": n.id, "name": n.name} for n in (nodes or [])][:L.max_pool_enrollments()],
     }

@@ -40,6 +40,7 @@ from backend.new_models import (
     Team,
 )
 from backend.utilities.cbom_sources import agents as AG
+from backend.utilities.cbom_sources import limits as LIM
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
@@ -104,8 +105,8 @@ READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
 BASE = "/{team_id}/cbom/sources"
 REGISTRATION_TTL = _dt.timedelta(hours=24)
-MAX_NODES = 50
-MAX_SOURCES = 500
+# Caps on agentless scan nodes and hand-made sources: utilities/cbom_sources/limits.py (CBOM_MAX_AGENTLESS_NODES,
+# CBOM_MAX_SOURCES; F1.1, was 50 and 500 fixed here)
 MAX_VENDORS = 100
 
 warn_if_key_is_weak()
@@ -263,9 +264,11 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
     now = utcnow()
     with Session(engine) as session:
         existing = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()
-        # agent-mode nodes (one per Kubernetes node of a DaemonSet) have their own cap (agents.MAX_AGENT_NODES)
-        if sum(1 for n in existing if not AG.is_agent(n)) >= MAX_NODES:
-            raise HTTPException(status_code=400, detail=f"A team can have at most {MAX_NODES} scan nodes")
+        # agent-mode nodes (one per Kubernetes node of a DaemonSet) have their own cap (CBOM_MAX_AGENT_NODES)
+        cap = LIM.max_agentless_nodes()
+        if sum(1 for n in existing if not AG.is_agent(n)) >= cap:
+            raise HTTPException(status_code=400, detail=f"A team can have at most {cap} scan nodes "
+                                                        "(CBOM_MAX_AGENTLESS_NODES)")
         if any(n.name.lower() == body.name.lower() for n in existing):
             raise HTTPException(status_code=409, detail=f"A scan node named {body.name} already exists")
         token = new_token("zsr_")
@@ -512,8 +515,9 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
         settings = get_or_create_settings(session, team_id)
         total = session.exec(select(func.count()).select_from(CbomCollectionSource)
                              .where(CbomCollectionSource.team_id == team_id)).one()
-        if total >= MAX_SOURCES:
-            raise HTTPException(status_code=400, detail=f"A team can have at most {MAX_SOURCES} sources")
+        cap = LIM.max_sources()
+        if total >= cap:
+            raise HTTPException(status_code=400, detail=f"A team can have at most {cap} sources (CBOM_MAX_SOURCES)")
         needs_node = spec.needs_node(cfg)
         if needs_node and body.node_id is None:
             raise HTTPException(status_code=400, detail="node_id: choose the scan node that reaches these targets")

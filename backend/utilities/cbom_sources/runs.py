@@ -91,9 +91,12 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
             # criticality / exposure / owner ... as of now: posture scores this run with them, whatever changes later
             "metadata": J.metadata_snapshot(source, nodes.get(source.node_id or 0)),
         }
+        node_less = KINDS[source.kind].node_less
+        # a source on a segment (no node) queues a segment job: any agentless node of that segment claims it (F1.1)
+        segment = None if node_less or source.node_id else (source.node_segment or None)
         session.add(CbomCollectionJob(
             team_id=team_id, run_id=run.id, source_id=source.id,
-            node_id=None if KINDS[source.kind].node_less else source.node_id, kind="collect", params=params,
+            node_id=None if node_less else source.node_id, node_segment=segment, kind="collect", params=params,
             source_version=source.row_version, weight_c=item.credits_c, created_by_user_id=user_id, created_at=now,
         ))
     audit(session, team_id=team_id, actor_type="system" if schedule_id else "user", actor_id=user_id,

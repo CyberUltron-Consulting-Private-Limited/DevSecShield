@@ -43,6 +43,7 @@ class FakeApi:
         self.strip_token = False  # a proxy in front of this server drops the X-ZS-Node-Token header
         self.registration_tokens = {"zsr_good_token_0123456789"}  # accepted at enrollment (add an agent pool token)
         self.enroll_bodies: list[dict] = []
+        self.claim_hints = False  # True: heartbeat answers carry "claim" like a protocol-2 server (F1.1)
 
     def check_signature(self, method, path, headers, raw, key):
         ts, nonce, sig = (headers.get(h) for h in ("X-ZS-Timestamp", "X-ZS-Nonce", "X-ZS-Signature"))
@@ -97,8 +98,12 @@ class FakeApi:
                 return refused
         if path == "/cbom/node/heartbeat":
             self.heartbeats.append(body)
-            return 200, {"cancel_job_ids": sorted(self.cancel), "never_scan": [], "stop_all_network": self.stop,
-                         "heartbeat_interval_s": 5}
+            answer = {"cancel_job_ids": sorted(self.cancel), "never_scan": [], "stop_all_network": self.stop,
+                      "heartbeat_interval_s": 5}
+            if self.claim_hints:
+                with self.lock:
+                    answer["claim"] = bool(self.jobs)
+            return 200, answer
         if path == "/cbom/node/jobs/claim":
             with self.lock:
                 if not self.jobs:
@@ -361,3 +366,30 @@ def test_heartbeat_loop_marks_the_node_alive_even_when_the_server_fails(server, 
     assert _wait(lambda: os.path.getmtime(alive) > stale + 60)
     ag.shutdown.set()
     t.join(10)
+
+
+def test_protocol2_node_claims_only_when_a_heartbeat_says_so(server, tmp_path, monkeypatch):
+    """F1.1: against a server that sends claim hints the node does not poll every 5 s; it claims when a heartbeat says
+    work is waiting, drains, and signs with sequence nonces.  (Against a server without hints it polls: the tests
+    above.)"""
+    api, url = server
+    srv, port = _listener()
+    api.claim_hints = True
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+    assert api.enroll_bodies[-1]["capabilities"]["protocol"] == 2
+    ag.heartbeat_once()
+    assert ag.server_hints and not ag.claim_wanted.is_set()
+    t = threading.Thread(target=ag.claim_loop, daemon=True)
+    t.start()
+    time.sleep(1.5)
+    assert api.calls.count("/cbom/node/jobs/claim") == 0  # no work announced: no claim at all
+    api.jobs.append(_job(51, port))
+    ag.heartbeat_once()  # "claim": true
+    assert _wait(lambda: 51 in api.results)
+    ag.shutdown.set()
+    assert 1 <= api.calls.count("/cbom/node/jobs/claim") <= 3  # the claim, then the drain that found nothing
+    assert all(n.startswith("s2_") and len(n) == 22 for n in api.nonces)
+    seqs = sorted(int(n[3:]) for n in api.nonces)
+    assert len(set(seqs)) == len(seqs)
+    srv.close()

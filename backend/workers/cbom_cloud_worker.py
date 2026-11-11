@@ -7,7 +7,8 @@ KMS / CA Service / Secret Manager, identity providers).
 It uses the same job table, guarded claims and leases as scan nodes: several workers can run side by
 side, a crashed worker's job is re-queued when its lease expires, and every asset batch re-checks the
 lease so a stale worker can never write into a job another worker re-claimed.  It also runs the job
-reaper for every team once a minute, so jobs no node or worker will finish are refunded on time.
+reaper for every team every 30 s on its own thread (a long collection never delays it), so a dead scan node's job
+goes back to the queue when its lease expires and jobs no node or worker will finish are refunded on time.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ import argparse
 import os
 import signal
 import socket
+import threading
 import time
 from typing import Any
 
@@ -28,7 +30,8 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 BATCH = 500
 RENEW_EVERY_S = 60
-REAP_EVERY_S = 60
+REAP_EVERY_S = 30  # lease expiry, max runtime, unconfirmed cancels and pending TTLs for every team (F1.1)
+REAP_PASSES = 20  # a pass handles up to jobs.REAP_BATCH jobs per rule; a backlog is drained in up to this many passes
 IDLE_SLEEP_S = 5
 _stopping = False
 
@@ -176,9 +179,37 @@ def run_once(engine, worker: str) -> bool:
     return True
 
 
-def reap_all(engine) -> None:
-    with Session(engine) as session:
-        J.safe_reap(session, utcnow())
+def reap_all(engine) -> int:
+    """Reap every team's jobs that need it (each pass reads only those jobs, through partial indexes)."""
+    moved = 0
+    for _ in range(REAP_PASSES):
+        with Session(engine) as session:
+            now = utcnow()
+            try:
+                n = J.reap(session, now)
+                session.commit()
+            except Exception as exc:  # a database hiccup: the next tick tries again
+                session.rollback()
+                log("reap FAILED", ref=new_ref(), error=type(exc).__name__)
+                return moved
+        moved += n
+        if n < J.REAP_BATCH:
+            break
+    return moved
+
+
+def start_reaper(engine) -> threading.Event:
+    """Reap on its own thread: the job loop can be busy with one AWS collection for hours, and a dead scan node's job
+    must still go back to the queue when its lease expires."""
+    stop = threading.Event()
+
+    def loop() -> None:
+        while not stop.is_set():
+            reap_all(engine)
+            stop.wait(REAP_EVERY_S)
+
+    threading.Thread(target=loop, name="cbom-reaper", daemon=True).start()
+    return stop
 
 
 def main() -> None:
@@ -202,11 +233,8 @@ def main() -> None:
     from backend.workers.integration_dispatcher import start_thread as start_dispatcher
 
     dispatcher_stop = start_dispatcher(engine)
-    last_reap = 0.0
+    reaper_stop = start_reaper(engine)
     while not _stopping:
-        if time.monotonic() - last_reap >= REAP_EVERY_S:
-            reap_all(engine)
-            last_reap = time.monotonic()
         try:
             busy = run_once(engine, worker)
         except Exception as exc:  # database hiccup: wait and carry on
@@ -214,6 +242,7 @@ def main() -> None:
             busy = False
         if not busy:
             time.sleep(IDLE_SLEEP_S)
+    reaper_stop.set()
     if scheduler_stop is not None:
         scheduler_stop.set()
     if dispatcher_stop is not None:

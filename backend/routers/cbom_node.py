@@ -24,13 +24,14 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import APIKeyHeader
 from pydantic import ValidationError
-from sqlalchemy import update
+from sqlalchemy import func, update
 from sqlmodel import Session, select
 
 from backend.get_db import get_db
-from backend.new_models import CbomCollectionJob, CbomNodePool, CbomScanNode
+from backend.new_models import CbomNodePool, CbomScanNode
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import limits as LIM
 from backend.utilities.cbom_sources import node_auth as NA
 from backend.utilities.cbom_sources.common import audit, clean_text, iso_z, log, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import scrub
@@ -50,8 +51,10 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings, team
 
 router = APIRouter(tags=["cbom-node"], route_class=CbomRoute)
 node_token_header = APIKeyHeader(name="X-ZS-Node-Token", auto_error=False)
-HEARTBEAT_SECONDS = 30
-BUSY_HEARTBEAT_SECONDS = 5
+# Node protocol this server speaks.  2 (F1.1): server-driven heartbeat with jitter (limits.heartbeat_seconds), a
+# ``claim`` hint in every heartbeat answer (a protocol-2 node claims only then), sequence nonces checked against a
+# per-node replay window.  Protocol-1 nodes (scan node 1.0/1.1) are served exactly as before.
+PROTOCOL = 2
 SMALL_BODY = 16 * 1024
 RESULT_BODY = 256 * 1024
 ASSETS_BODY = 1024 * 1024
@@ -107,14 +110,18 @@ def _node_for(token: str | None, session: Session) -> CbomScanNode:
 
 
 def _authenticate(session: Session, token: str | None, req: NA.NodeRequest, raw: bytes,
-                  now: _dt.datetime) -> CbomScanNode:
+                  now: _dt.datetime, touch: dict[str, Any] | None = None) -> tuple[CbomScanNode, bool]:
     """Token (401), then client certificate and request signature (403 with a refusal code), all before the body is
-    parsed.  A node with a signing key must sign; a legacy node is refused when its team requires signed nodes."""
+    parsed.  A node with a signing key must sign; a legacy node is refused when its team requires signed nodes.
+
+    ``touch``: node columns (last seen) written in the same statement as the replay check when the node uses
+    protocol-2 sequence nonces.  Returns (node, written): the caller writes ``touch`` itself when not written."""
     node = _node_for(token, session)
     NA.check_mtls(node, req)
     if node.signing_public_key:
-        NA.verify_signature(session, node.id, node.signing_public_key, req, raw, now)  # type: ignore[arg-type]
-        return node
+        written = NA.verify_signature(session, node.id, node.signing_public_key, req, raw, now,  # type: ignore[arg-type]
+                                      touch=touch)
+        return node, written
     if get_or_create_settings(session, node.team_id).require_signed_nodes:
         message = ("Refused: this team requires signed scan nodes. Reset the node in ZeroShield and enroll it again "
                    "with scan node 1.1 or later")
@@ -124,7 +131,14 @@ def _authenticate(session: Session, token: str | None, req: NA.NodeRequest, raw:
             session.commit()
         log("node request refused", team=node.team_id, node=node.id, reason="signed_nodes_required", path=req.path)
         raise NA.refuse("signed_nodes_required", message)
-    return node
+    return node, False
+
+
+def authenticate_node(session: Session, token: str | None, req: NA.NodeRequest, raw: bytes,
+                      now: _dt.datetime) -> CbomScanNode:
+    """The authenticated node of a node request (token, client certificate, signature and replay check), for routes
+    other parts add (F1 contract, section 3).  The node's last-seen stamp is not touched."""
+    return _authenticate(session, token, req, raw, now)[0]
 
 
 async def _guard(what: str, fn, *args):
@@ -165,7 +179,7 @@ def _rebind_pool_node(session: Session, pool: CbomNodePool, node: CbomScanNode, 
     signing = "required" if body.signing_public_key else "legacy"
     log("agent node enrolled again", team=node.team_id, node=node.id, pool=pool.id, signing=signing)
     return {"node_id": node.id, "team_id": node.team_id, "node_token": token,
-            "heartbeat_interval_s": HEARTBEAT_SECONDS, "server_time": iso_z(now),
+            "heartbeat_interval_s": LIM.heartbeat_seconds(), "server_time": iso_z(now), "protocol": PROTOCOL,
             "deployment_id": NA.deployment_id(get_db()), "signing": signing, "mode": AG.AGENT}
 
 
@@ -200,10 +214,12 @@ def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> 
             log("agent pool enroll refused", team=pool.team_id, pool=pool.id, reason=status)
             raise refused
         AG.lock_team(session, pool.team_id)  # held to the commit: concurrent enrollments count one after another
-        agents = session.exec(select(CbomScanNode.id).where(CbomScanNode.team_id == pool.team_id,
-                                                            CbomScanNode.mode == AG.AGENT)).all()
-        if len(agents) >= AG.MAX_AGENT_NODES:
-            raise HTTPException(status_code=400, detail=f"A team can have at most {AG.MAX_AGENT_NODES} agent nodes")
+        agents = session.exec(select(func.count()).select_from(CbomScanNode).where(
+            CbomScanNode.team_id == pool.team_id, CbomScanNode.mode == AG.AGENT)).one()
+        cap = LIM.max_agent_nodes()  # CBOM_MAX_AGENT_NODES
+        if agents >= cap:
+            raise HTTPException(status_code=400, detail=f"A team can have at most {cap} agent nodes "
+                                                        "(CBOM_MAX_AGENT_NODES)")
         # the slot first: verify_signature commits (to record the nonce), so the slot, the node and its source are
         # committed together or, when anything before that fails, not at all
         taken = session.exec(
@@ -236,7 +252,7 @@ def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> 
         signing = "required" if body.signing_public_key else "legacy"
         log("agent node enrolled", team=node.team_id, node=node.id, pool=pool.id, signing=signing)
         return {"node_id": node.id, "team_id": node.team_id, "node_token": token,
-                "heartbeat_interval_s": HEARTBEAT_SECONDS, "server_time": iso_z(now),
+                "heartbeat_interval_s": LIM.heartbeat_seconds(), "server_time": iso_z(now), "protocol": PROTOCOL,
                 "deployment_id": NA.deployment_id(engine), "signing": signing, "mode": AG.AGENT}
 
 
@@ -286,7 +302,7 @@ def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
         signing = "required" if body.signing_public_key else "legacy"
         log("node enrolled", team=node.team_id, node=node.id, signing=signing, client_cert=bool(fingerprint), mode=mode)
         return {"node_id": node.id, "team_id": node.team_id, "node_token": token,
-                "heartbeat_interval_s": HEARTBEAT_SECONDS, "server_time": iso_z(now),
+                "heartbeat_interval_s": LIM.heartbeat_seconds(), "server_time": iso_z(now), "protocol": PROTOCOL,
                 "deployment_id": NA.deployment_id(engine), "signing": signing, "mode": mode}
 
 
@@ -300,54 +316,81 @@ async def enroll(request: Request):
 
 
 # ----------------------------------------------------------------------------- heartbeat
+def _facts(node: CbomScanNode, body: HeartbeatBody, now: _dt.datetime) -> dict[str, Any]:
+    """The node columns this heartbeat changes (only those that differ, so an idle fleet writes nothing but its
+    last-seen stamp).  The clock skew is rewritten only when it moved by more than 10 s (request latency jitters it;
+    signatures allow 300 s)."""
+    out: dict[str, Any] = {}
+
+    def put(column: str, value: Any) -> None:
+        if value != getattr(node, column):
+            out[column] = value
+
+    put("hostname", clean_text(body.hostname, 255) or node.hostname)
+    put("node_version", clean_text(body.version, 32) or node.node_version)
+    if body.source_ips:
+        put("source_ips", _ips(body.source_ips))
+    if body.capabilities:
+        put("capabilities", scrub(body.capabilities))
+    skew = _clock_skew(body.clock, now)
+    if skew is not None and (node.clock_skew_s is None or abs(skew - node.clock_skew_s) > 10):
+        out["clock_skew_s"] = skew
+    return out
+
+
 def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
+    """One heartbeat.  An idle node on protocol 2 costs: the node read, ONE UPDATE (replay window + last seen, committed
+    with the signature check), the settings read, its claimed jobs (partial index, usually none), a bounded count of
+    the jobs it could claim, and a read-only commit.  No nonce row, no reap of the whole queue, no count of every
+    pending job."""
     now = utcnow()
-    with Session(get_db()) as session:
-        node = _authenticate(session, token, req, raw, now)
+    seen = {"last_heartbeat_at": now, "last_seen_ip": ip}
+    with Session(get_db(), expire_on_commit=False) as session:
+        node, stamped = _authenticate(session, token, req, raw, now, touch=seen)
         body = _parse(HeartbeatBody, parse_json(raw))
-        NA.sweep_nonces(session, now)
+        NA.sweep_nonces(session, now)  # protocol-1 nonces; at most once a minute per worker
         gap = (now - node.last_heartbeat_at).total_seconds() if node.last_heartbeat_at else None
-        node.hostname = clean_text(body.hostname, 255) or node.hostname
-        node.node_version = clean_text(body.version, 32) or node.node_version
-        if body.source_ips:
-            node.source_ips = _ips(body.source_ips)
-        if body.capabilities:
-            node.capabilities = scrub(body.capabilities)
+        changes = _facts(node, body, now)
+        if not stamped:
+            changes.update(seen)
         mode_note = AG.reconcile_mode(session, node, (body.capabilities or {}).get("mode"), now)
-        skew = _clock_skew(body.clock, now)
-        if skew is not None:
-            node.clock_skew_s = skew
-        node.last_node_error = clean_text(scrub(body.last_error), 512) if body.last_error else mode_note
-        if node.last_node_error:
-            log("node error", team=node.team_id, node=node.id, error=node.last_node_error)
-        node.last_heartbeat_at = now
-        node.last_seen_ip = ip
-        session.add(node)
+        error = clean_text(scrub(body.last_error), 512) if body.last_error else mode_note
+        if error != node.last_node_error:
+            changes["last_node_error"] = error
+        if error:
+            log("node error", team=node.team_id, node=node.id, error=error)
+        if changes:
+            session.exec(update(CbomScanNode).where(CbomScanNode.id == node.id).values(**changes)
+                         .execution_options(synchronize_session=False))
         running = None if body.running is None else [(r.job_id, r.lease_id) for r in body.running]
-        released = J.renew_leases(session, node, now, running)
-        J.reap(session, now, node_id=node.id)
+        claimed = J.claimed_jobs(session, node)
+        released = J.renew_leases(session, node, now, running, claimed)
+        J.reap_claimed(session, now, claimed)  # this node's own jobs past their runtime or an unconfirmed cancel
         settings = get_or_create_settings(session, node.team_id)
-        cancel_ids = J.cancel_ids_for_node(session, node, settings)
+        cancel_ids = J.cancel_ids_for_node(session, node, settings, claimed) if claimed else []
         if running is not None:
             # jobs the node runs but the server already ended (released, reaped, cancelled) must stop too
             live = {job_id for job_id, _lease in running}
+            held = {job.id: job for job in claimed if job.status == "claimed"}
             for job_id, lease in running:
-                job = session.get(CbomCollectionJob, job_id)
-                if job is None or job.node_id != node.id or job.status != "claimed" or job.lease_id != lease:
+                job = held.get(job_id)
+                if job is None or job.lease_id != lease:
                     cancel_ids.append(job_id)
             cancel_ids = sorted(set(cancel_ids) | (set(released) & live))
-        pending = len(session.exec(select(CbomCollectionJob.id).where(
-            CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "pending")).all())
-        busy = session.exec(select(CbomCollectionJob.id).where(
-            CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")).first() is not None
+        busy = [job for job in claimed if job.status == "claimed"]
+        network = any(J.is_network_job(session, job) for job in busy)
+        pending = J.claimable_count(session, node)
         exclusions = team_exclusions(settings)
         session.commit()
         if gap is not None and gap > 120:
             log("node back", team=node.team_id, node=node.id, gap_s=int(gap))
         return {"server_time": iso_z(now), "stop_all_network": settings.stop_all_network,
                 "never_scan": exclusions.normalized, "pending_jobs": pending, "cancel_job_ids": cancel_ids,
-                # while a job runs, beat faster so a cancel or a network stop reaches the node within seconds
-                "heartbeat_interval_s": BUSY_HEARTBEAT_SECONDS if busy else HEARTBEAT_SECONDS}
+                # server-driven cadence with jitter: idle 60 s; while a network job runs, every few seconds so a
+                # stop-all reaches it fast; other busy nodes in between (limits.heartbeat_seconds)
+                "heartbeat_interval_s": LIM.heartbeat_seconds(busy=bool(busy), network=network),
+                # protocol 2: claim only when told (a protocol-1 node ignores this and polls)
+                "claim": pending > 0, "protocol": PROTOCOL}
 
 
 @router.post("/cbom/node/heartbeat", dependencies=[Depends(node_limiter)], summary="Report that the node is alive")
@@ -360,12 +403,13 @@ async def heartbeat(request: Request, token: Annotated[str | None, Security(node
 # ----------------------------------------------------------------------------- claim
 def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict | None:
     now = utcnow()
-    with Session(get_db()) as session:
-        node = _authenticate(session, token, req, raw, now)
+    seen = {"last_heartbeat_at": now, "last_seen_ip": ip}
+    with Session(get_db(), expire_on_commit=False) as session:
+        node, stamped = _authenticate(session, token, req, raw, now, touch=seen)
         body = _parse(ClaimBody, parse_json(raw)) if raw else None  # older nodes send no body
-        node.last_seen_ip = ip
-        node.last_heartbeat_at = now
-        session.add(node)
+        if not stamped:
+            session.exec(update(CbomScanNode).where(CbomScanNode.id == node.id).values(**seen)
+                         .execution_options(synchronize_session=False))
         # a node restarted in agent mode may claim before its first heartbeat: it is never given a secret again
         AG.reconcile_mode(session, node, body.mode if body else None, now)
         settings = get_or_create_settings(session, node.team_id)
@@ -388,7 +432,7 @@ async def claim(request: Request, token: Annotated[str | None, Security(node_tok
 def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
     with Session(get_db()) as session:
-        node = _authenticate(session, token, req, raw, now)
+        node = authenticate_node(session, token, req, raw, now)
         body = _parse(AssetsBody, parse_json(raw))
         valid: list[dict[str, Any]] = []
         rejected = 0
@@ -418,7 +462,7 @@ async def assets(job_id: int, request: Request, token: Annotated[str | None, Sec
 def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
     with Session(get_db()) as session:
-        node = _authenticate(session, token, req, raw, now)
+        node = authenticate_node(session, token, req, raw, now)
         body = _parse(ResultBody, parse_json(raw))
         job = J.finish_job(session, node, job_id, body.lease_id, body.status, body.result, body.error, now)
         session.commit()

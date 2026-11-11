@@ -17,6 +17,11 @@ Environment:
   ZS_NODE_NAME            agent mode: the name to enroll under (the Helm DaemonSet passes the Kubernetes node name)
   ZS_HOST_ROOT / ZS_HOST_PROC  agent mode: where the host's / is mounted read-only (default /host), and its /proc
 
+Protocol 2 (F1.1, against a server that supports it): the heartbeat interval is the server's (60 s with jitter when
+idle), and the node claims only when a heartbeat answer says ``claim: true`` (then keeps claiming until nothing is
+left, and again whenever a job slot frees), instead of polling every 5 s; against an older server, whose answers carry
+no ``claim``, it polls every 5 s as before.  Request nonces are sequence numbers (api.py).
+
 Every request is signed with a per-enrollment Ed25519 key (api.py).  The node clears its token only when the
 ZeroShield deployment it enrolled with (X-ZS-Deployment) says explicitly that the token is revoked (401 with
 X-ZS-Refused: node_token_revoked); any other 401, or a 403 from another server, is a wrong server or proxy: the token
@@ -45,7 +50,9 @@ from zs_scan_node.scrub import Scrubber
 from zs_scan_node.state import NodeState
 from zs_scan_node.tlsprobe import have_openssl
 
-POLL_SECONDS = 5
+POLL_SECONDS = 5  # claim polling against a server without claim hints (protocol 1)
+PROTOCOL = 2
+MAX_HEARTBEAT_SECONDS = 600  # the server sets the interval; never wait longer than this between heartbeats
 CLAIM_GRACE = 0  # the heartbeat reports running jobs immediately after claim
 POOL_PREFIX = "zsp_"  # agent pool tokens: one token for every pod of a DaemonSet, usable again after a reset
 ALIVE_FILE = "alive"  # touched by every heartbeat-loop pass; the Docker HEALTHCHECK checks its age
@@ -108,6 +115,9 @@ class Agent:
         self.stop_sent = 0.0
         self.never_sent = 0.0
         self.heartbeat_interval = 30
+        # protocol 2: set once a heartbeat answer carried "claim" (the server tells the node when work is waiting)
+        self.server_hints = False
+        self.claim_wanted = threading.Event()
         self.last_error: str | None = None
         self.server_skew_s = 0.0
         reg = os.environ.get("ZS_REGISTRATION_TOKEN", "")
@@ -199,7 +209,7 @@ class Agent:
     def capabilities(self) -> dict:
         return {"collectors": AGENT_CAPABILITIES if self.agent_mode else CAPABILITIES, "openssl": have_openssl(),
                 "ipv6": has_ipv6(), "max_jobs": self.max_jobs, "vault": bool(self.vault_prefix),
-                "mode": "agent" if self.agent_mode else "agentless"}
+                "mode": "agent" if self.agent_mode else "agentless", "protocol": PROTOCOL}
 
     # ------------------------------------------------------------------ heartbeat
     def heartbeat_once(self) -> None:
@@ -213,6 +223,10 @@ class Agent:
         data = self.api.heartbeat(body)
         self.last_error = None
         self.heartbeat_interval = int(data.get("heartbeat_interval_s") or self.heartbeat_interval)
+        if "claim" in data:
+            self.server_hints = True
+            if data.get("claim"):
+                self.claim_wanted.set()
         self.apply_control(data, sent)
         cancel = set(int(i) for i in data.get("cancel_job_ids") or [] if str(i).isdigit())
         with self.lock:
@@ -263,7 +277,13 @@ class Agent:
             except Exception as exc:  # keep the heartbeat alive whatever happens
                 log("heartbeat error", error=exc.__class__.__name__, level="error")
             self.mark_alive()
-            self.shutdown.wait(max(5, min(self.heartbeat_interval, 60)))
+            # the server drives the cadence (and adds jitter); the alive file is touched at least every 60 s while
+            # waiting, so the image HEALTHCHECK (stale after 180 s) holds for any interval the server sets
+            end = time.monotonic() + max(5, min(self.heartbeat_interval, MAX_HEARTBEAT_SECONDS))
+            while not self.shutdown.is_set() and (left := end - time.monotonic()) > 0:
+                if self.shutdown.wait(min(left, 60)):
+                    break
+                self.mark_alive()
 
     def mark_alive(self) -> None:
         """Touch <state dir>/alive once per heartbeat-loop pass (at most every 60 s). The image HEALTHCHECK reads its
@@ -301,6 +321,11 @@ class Agent:
             if busy:
                 self.shutdown.wait(2)
                 continue
+            if self.server_hints and not self.claim_wanted.is_set():
+                # protocol 2: wait for a heartbeat that says work is waiting, or a job slot that frees
+                self.claim_wanted.wait(POLL_SECONDS)
+                continue
+            self.claim_wanted.clear()
             sent = time.monotonic()
             try:
                 # the mode goes with every claim: a node restarted in agent mode is never handed a secret, even
@@ -319,8 +344,10 @@ class Agent:
                 self.shutdown.wait(POLL_SECONDS * 3)
                 continue
             if not payload:
-                self.shutdown.wait(POLL_SECONDS)
+                if not self.server_hints:
+                    self.shutdown.wait(POLL_SECONDS)
                 continue
+            self.claim_wanted.set()  # got one: ask again (drain) once a slot is free
             job = payload.get("job") or {}
             job_id = int(job.get("id") or 0)
             with self.lock:
@@ -457,6 +484,7 @@ class Agent:
     def _done(self, running: Running) -> None:
         with self.lock:
             self.running.pop(running.job_id, None)
+        self.claim_wanted.set()  # a slot is free: claim again (an empty claim answer clears this)
 
     # ------------------------------------------------------------------ main
     def run(self) -> None:

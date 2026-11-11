@@ -15,12 +15,24 @@ Signed requests
 
         METHOD \\n PATH \\n TIMESTAMP \\n NONCE \\n hex(sha256(raw body))
 
-    The server checks the signature on the raw bytes before it parses them, refuses timestamps more than
-    ``SKEW_S`` away from its clock, and stores each nonce until the timestamp is out of that window (``cbomnodenonce``,
-    shared by every worker), so a captured request cannot be replayed.  A node with a key on file must sign every
-    request (no downgrade); a node enrolled before signing existed is "legacy" until it enrolls again, and a team can
-    refuse legacy nodes altogether (``require_signed_nodes``).  Refusals are 403 with ``X-ZS-Refused: <code>``: never
-    401, which would make the node drop its token.
+    The server checks the signature on the raw bytes before it parses them and refuses timestamps more than
+    ``SKEW_S`` away from its clock.  A captured request cannot be replayed:
+
+    * protocol 2 (scan node 1.2+): the nonce is a per-node sequence number, ``s2_<19 digits>`` (dense within a node
+      process, larger after every restart).  The node row keeps an anti-replay window (RFC 4303 section 3.4.3 / RFC
+      6479): the highest sequence accepted (``replay_hwm``) and a bitmap of the ``REPLAY_WINDOW`` below it
+      (``replay_bits``).  ONE conditional UPDATE of the node row checks and advances it (and stamps last-seen in the
+      same statement), so requests that arrive slightly out of order are accepted, a repeat is refused, and two
+      workers or replicas can never both accept the same sequence (the row lock serialises them and the WHERE is
+      re-checked).  A sequence below the window is refused with ``replay_window`` and ``X-ZS-Seq-Next``: a node whose
+      clock went back across a restart re-bases its counter there and signs again.  No row is inserted.
+    * protocol 1 (scan node 1.0/1.1, random nonces): each nonce is stored until its timestamp is outside the window
+      (``cbomnodenonce``, shared by every worker), exactly as before.  A ``s2_`` nonce sent to an older server is just
+      a nonce there, so new nodes work against older servers too.
+
+    A node with a key on file must sign every request (no downgrade); a node enrolled before signing existed is
+    "legacy" until it enrolls again, and a team can refuse legacy nodes altogether (``require_signed_nodes``).
+    Refusals are 403 with ``X-ZS-Refused: <code>``: never 401, which would make the node drop its token.
 
 mTLS
     The TLS proxy (``deploy/staging/nginx``) verifies node client certificates and always overwrites
@@ -46,9 +58,9 @@ from urllib.parse import unquote
 
 from fastapi import HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import delete
+from sqlalchemy import BigInteger, Integer, and_, case, cast, delete, literal, or_, update
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from backend.get_db import get_db
 from backend.new_models import CbomDeployment, CbomNodeNonce, CbomScanNode
@@ -56,6 +68,10 @@ from backend.utilities.cbom_sources.common import iso_z, log
 
 SKEW_S = 300  # accepted distance between the node's timestamp and the server clock, either way
 NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+SEQ_NONCE_RE = re.compile(r"^s2_([0-9]{19})$")  # protocol 2: a per-node sequence number
+REPLAY_WINDOW = 63  # sequences below the highest accepted one that are still remembered (bits 0..62 of a BIGINT)
+_WINDOW_MASK = (1 << REPLAY_WINDOW) - 1
+SEQ_NEXT_HEADER = "X-ZS-Seq-Next"
 DEPLOYMENT_HEADER = "X-ZS-Deployment"
 REFUSED_HEADER = "X-ZS-Refused"
 NODE_PREFIX = "/cbom/node/"
@@ -165,10 +181,63 @@ def load_public_key(text: str):
     return Ed25519PublicKey.from_public_bytes(raw)
 
 
+def seq_of(nonce: str | None) -> int | None:
+    """The sequence number of a protocol-2 nonce, or None (a protocol-1 random nonce)."""
+    m = SEQ_NONCE_RE.match(nonce or "")
+    if not m:
+        return None
+    value = int(m.group(1))
+    return value if 0 < value < (1 << 63) else None
+
+
+def window_accepts(hwm: int, bits: int, seq: int) -> tuple[bool, int, int]:
+    """Reference anti-replay window (what ``_record_seq`` does in one UPDATE): (accepted, new hwm, new bits).
+    Bit k of ``bits`` set = sequence ``hwm - k`` was accepted."""
+    if seq > hwm:
+        shift = seq - hwm
+        return True, seq, (1 if shift >= REPLAY_WINDOW else ((bits << shift) | 1) & _WINDOW_MASK)
+    k = hwm - seq
+    if k >= REPLAY_WINDOW or bits & (1 << k):
+        return False, hwm, bits
+    return True, hwm, bits | (1 << k)
+
+
+def _record_seq(session: Session, node_id: int, seq: int, touch: dict[str, Any] | None) -> bool:
+    """Check and advance the node's anti-replay window in ONE conditional UPDATE (plus ``touch``, e.g. last-seen
+    columns, in the same statement) and commit it.  True = accepted.  The shift amounts are clamped to 0..62 inside
+    the expressions so no branch PostgreSQL evaluates early can overflow."""
+    hwm, bits = CbomScanNode.replay_hwm, CbomScanNode.replay_bits
+    s = literal(seq, BigInteger)
+    ahead = s - hwm   # > 0: a new highest sequence
+    behind = hwm - s  # >= 0: inside or below the window
+
+    def clamp(expr):
+        return cast(case((and_(expr >= 0, expr < REPLAY_WINDOW), expr), else_=0), Integer)
+
+    one = cast(literal(1), BigInteger)  # a typed 1: an untyped one is int4 on PostgreSQL, and 1 << 40 wraps there
+    new_bits = case(
+        (ahead >= REPLAY_WINDOW, one),
+        (ahead > 0, (bits.op("<<")(clamp(ahead)).op("|")(one)).op("&")(literal(_WINDOW_MASK, BigInteger))),
+        else_=bits.op("|")(one.op("<<")(clamp(behind))),
+    )
+    fresh = or_(ahead > 0, and_(behind < REPLAY_WINDOW, bits.op("&")(one.op("<<")(clamp(behind))) == 0))
+    changed = session.exec(  # type: ignore[call-overload]
+        update(CbomScanNode).where(CbomScanNode.id == node_id, fresh)
+        .values(replay_hwm=case((ahead > 0, s), else_=hwm), replay_bits=new_bits, **(touch or {}))
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    session.commit()
+    return changed == 1
+
+
 def verify_signature(session: Session, node_id: int, key_b64: str, req: NodeRequest, body: bytes,
-                     now: _dt.datetime) -> None:
+                     now: _dt.datetime, touch: dict[str, Any] | None = None) -> bool:
     """Check timestamp, signature and nonce; record the nonce (committed at once, so a replay of a request that later
-    fails is refused too).  Raises 403 with a refusal code."""
+    fails is refused too).  Raises 403 with a refusal code.
+
+    ``touch``: node columns to set in the same statement when the request uses protocol-2 sequence nonces (the
+    heartbeat's and claim's last-seen stamp).  Returns True when they were written, False when the caller must write
+    them itself (protocol 1)."""
     from cryptography.exceptions import InvalidSignature
 
     if not (req.timestamp and req.nonce and req.signature):
@@ -189,6 +258,18 @@ def verify_signature(session: Session, node_id: int, key_b64: str, req: NodeRequ
     except (binascii.Error, ValueError, InvalidSignature):
         log("node request refused", node=node_id, reason="signature_invalid", path=req.path)
         raise refuse("signature_invalid", "The request signature does not verify with this node's key") from None
+    seq = seq_of(req.nonce)
+    if seq is not None:
+        if _record_seq(session, node_id, seq, touch):
+            return bool(touch)
+        hwm = session.exec(select(CbomScanNode.replay_hwm).where(CbomScanNode.id == node_id)).first() or 0
+        if seq <= hwm - REPLAY_WINDOW:
+            log("node request refused", node=node_id, reason="replay_window", path=req.path, behind=hwm - seq)
+            raise HTTPException(status_code=403, detail="This request's sequence number is older than the replay "
+                                                        "window; sign it again with a newer one",
+                                headers={REFUSED_HEADER: "replay_window", SEQ_NEXT_HEADER: str(hwm + 1)})
+        log("node request refused", node=node_id, reason="replay", path=req.path)
+        raise refuse("replay", "This request was already received (sequence reused)")
     expires = _dt.datetime.fromtimestamp(ts, _dt.timezone.utc).replace(tzinfo=None) + _dt.timedelta(seconds=SKEW_S + 60)
     try:
         session.add(CbomNodeNonce(node_id=node_id, nonce=req.nonce, expires_at=expires))
@@ -197,6 +278,7 @@ def verify_signature(session: Session, node_id: int, key_b64: str, req: NodeRequ
         session.rollback()
         log("node request refused", node=node_id, reason="replay", path=req.path)
         raise refuse("replay", "This request was already received (nonce reused)") from None
+    return False
 
 
 _SWEPT = [0.0]

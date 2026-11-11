@@ -2,8 +2,8 @@ import datetime
 import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
-from sqlalchemy import Text, UniqueConstraint
-from sqlalchemy import Index as _SaIndex, func as _sa_func
+from sqlalchemy import BigInteger, Text, UniqueConstraint
+from sqlalchemy import Index as _SaIndex, func as _sa_func, text as _sa_text
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
 
@@ -307,6 +307,10 @@ class CbomScanNode(SQLModel, table=True):
     mode: str = Field(default="agentless", max_length=16, sa_column_kwargs={"server_default": "agentless"})
     # the agent pool token it enrolled with (one node per Kubernetes node of a DaemonSet)
     pool_id: int | None = Field(default=None, foreign_key="cbomnodepool.id", index=True, ondelete="SET NULL")
+    # Protocol-2 anti-replay window (node_auth): the highest request sequence accepted and a bitmap of the 63 below
+    # it. Checked and advanced by one conditional UPDATE per request instead of a nonce row (F1.1).
+    replay_hwm: int = Field(default=0, sa_type=BigInteger, sa_column_kwargs={"server_default": "0"})
+    replay_bits: int = Field(default=0, sa_type=BigInteger, sa_column_kwargs={"server_default": "0"})
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
@@ -369,6 +373,8 @@ class CbomCollectionSource(SQLModel, table=True):
     name: str = Field(max_length=64)
     name_lower: str = Field(max_length=64)
     node_id: int | None = Field(default=None, foreign_key="cbomscannode.id", index=True)
+    # F1.1: no node_id and a segment = any agentless scan node of the team whose ``segment`` is this one runs its jobs
+    node_segment: str | None = Field(default=None, max_length=64)
     enabled: bool = Field(default=True)
     config: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
     secret_encrypted: str | None = Field(default=None, sa_type=Text)
@@ -423,6 +429,9 @@ class CbomCollectionJob(SQLModel, table=True):
     run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)
     source_id: int | None = Field(default=None, foreign_key="cbomcollectionsource.id", index=True)
     node_id: int | None = Field(default=None, foreign_key="cbomscannode.id", index=True)
+    # F1.1: set = a segment job: while pending (node_id NULL) any agentless node of the team in this segment may claim
+    # it (SKIP LOCKED); the claim sets node_id to the claimer, and a lease that expires clears it again
+    node_segment: str | None = Field(default=None, max_length=64)
     kind: str = Field(max_length=16)
     status: str = Field(default="pending", max_length=16, index=True)
     params: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
@@ -444,6 +453,24 @@ class CbomCollectionJob(SQLModel, table=True):
     first_claimed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     cancel_requested_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     cancel_reason: str | None = Field(default=None, max_length=255)
+
+
+# Hot-path indexes (F1.1, migration r6f11node001). The partial ones cover only open jobs, so they stay small however
+# much history a team keeps: a claim reads (node, oldest pending), a heartbeat reads the node's claimed jobs, the reaper
+# reads expired leases and stale pending jobs, and a run's status is decided from (run, status) without loading its jobs.
+_PENDING = _sa_text("status = 'pending'")
+_CLAIMED = _sa_text("status = 'claimed'")
+_SaIndex("ix_cbomcollectionjob_run_status", CbomCollectionJob.run_id, CbomCollectionJob.status)
+_SaIndex("ix_cbomcollectionjob_node_pending", CbomCollectionJob.node_id, CbomCollectionJob.id,
+         postgresql_where=_PENDING, sqlite_where=_PENDING)
+_SaIndex("ix_cbomcollectionjob_node_claimed", CbomCollectionJob.node_id,
+         postgresql_where=_CLAIMED, sqlite_where=_CLAIMED)
+_SaIndex("ix_cbomcollectionjob_claimed_lease", CbomCollectionJob.lease_expires_at,
+         postgresql_where=_CLAIMED, sqlite_where=_CLAIMED)
+_SaIndex("ix_cbomcollectionjob_pending_created", CbomCollectionJob.created_at,
+         postgresql_where=_PENDING, sqlite_where=_PENDING)
+_SaIndex("ix_cbomcollectionjob_team_status_segment", CbomCollectionJob.team_id, CbomCollectionJob.status,
+         CbomCollectionJob.node_segment, CbomCollectionJob.id)
 
 
 class CbomCollectedAsset(SQLModel, table=True):

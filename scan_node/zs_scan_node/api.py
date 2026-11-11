@@ -4,6 +4,13 @@
   ``X-ZS-Timestamp``, ``X-ZS-Nonce`` and ``X-ZS-Signature`` over ``METHOD\\nPATH\\nTIMESTAMP\\nNONCE\\nsha256(body)``;
   the body is sent as exactly the bytes that were signed.  A ``clock_skew`` refusal (403) re-signs once with the offset
   learned from the server's ``Date`` header.
+* Protocol 2 (F1.1): the nonce is a per-process sequence number, ``s2_<19 digits>`` = (process start, Unix
+  microseconds) << 11, plus one per request: dense within this process (requests that overtake each other stay
+  inside the server's 63-wide replay window) and larger after every restart (a process would have to sign 2,048
+  requests per microsecond of its life to reach the next start's range; the value fits 63 bits until 2112).  The server checks it with one UPDATE of the node row instead of storing
+  every nonce.  An older server treats it as an ordinary nonce.  A ``replay_window`` refusal (a sequence below the
+  window: the clock went back across a restart) carries ``X-ZS-Seq-Next``; the node re-bases its counter there and
+  re-signs once.
 * mTLS: ``ZS_CLIENT_CERT`` + ``ZS_CLIENT_KEY`` (PEM files) present a client certificate to the TLS proxy;
   ``ZS_CA_FILE`` replaces the trusted CAs for the ZeroShield API (for a private CA or a TLS-inspecting proxy).
 * 401 is ``Unauthorized`` (the credential is revoked) only when the ZeroShield this node enrolled with says so
@@ -26,7 +33,6 @@ import hashlib
 import json
 import os
 import random
-import secrets
 import ssl
 import threading
 import time
@@ -43,6 +49,11 @@ DEPLOYMENT_HEADER = "X-ZS-Deployment"
 REFUSED_HEADER = "X-ZS-Refused"
 # The only 401 codes that end a credential (backend/routers/cbom_node.py), and only from this node's deployment.
 REVOKED_CODES = frozenset({"node_token_revoked", "registration_token_refused"})
+SEQ_NEXT_HEADER = "X-ZS-Seq-Next"
+SEQ_SHIFT = 11  # counter bits below the process-start microsecond
+# One sequence per process, shared by every Api object (a node process has one; tests create several).
+_SEQ = [(time.time_ns() // 1000) << SEQ_SHIFT]
+_SEQ_LOCK = threading.Lock()
 
 
 class Unauthorized(Exception):
@@ -124,11 +135,32 @@ class Api:
             h["X-ZS-Job"] = job
         return h
 
+    def next_nonce(self) -> str:
+        """The next protocol-2 sequence nonce (thread-safe: heartbeat, claim and job threads sign concurrently)."""
+        with _SEQ_LOCK:
+            _SEQ[0] += 1
+            return f"s2_{_SEQ[0]:019d}"
+
+    def _rebase(self, r: httpx.Response) -> bool:
+        """After a ``replay_window`` refusal: continue the sequence above the server's window.  False when the
+        answer carries no usable value."""
+        try:
+            floor = int(r.headers.get(SEQ_NEXT_HEADER) or "")
+        except ValueError:
+            return False
+        if not 0 < floor < (1 << 63):
+            return False
+        with _SEQ_LOCK:
+            _SEQ[0] = max(_SEQ[0], floor - 1)  # the next nonce is exactly the server's next acceptable sequence
+        log("request sequence re-based above the server's replay window (did this host's clock go back?)",
+            level="warn")
+        return True
+
     def _sign(self, method: str, path: str, data: bytes) -> dict[str, str]:
         if self.signing_key is None:
             return {}
         ts = str(int(time.time() + self.skew))
-        nonce = secrets.token_urlsafe(18)
+        nonce = self.next_nonce()
         sig = self.signing_key.sign(signing_message(method, path, ts, nonce, data))
         return {"X-ZS-Timestamp": ts, "X-ZS-Nonce": nonce, "X-ZS-Signature": base64.b64encode(sig).decode()}
 
@@ -163,7 +195,7 @@ class Api:
         data = b"" if body is None else json.dumps(body, ensure_ascii=False, separators=(",", ":"),
                                                    allow_nan=False).encode("utf-8")
         delay = 2.0
-        skew_retried = False
+        skew_retried = rebased = False
         for attempt in range(retries + 1):
             headers = self._headers(job)
             headers.update(self._sign(method, path, data))
@@ -196,6 +228,9 @@ class Api:
             if r.status_code == 403 and refused == "clock_skew" and not skew_retried:
                 skew_retried = True
                 self._learn_skew(r)
+                continue
+            if r.status_code == 403 and refused == "replay_window" and not rebased and self._rebase(r):
+                rebased = True
                 continue
             if lease_sensitive and r.status_code in (404, 409):
                 raise LeaseLost(_detail(r))
