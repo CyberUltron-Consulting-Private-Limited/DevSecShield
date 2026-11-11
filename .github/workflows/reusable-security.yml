@@ -61,7 +61,9 @@ on:
       trusted-heads:
         description: >-
           Space-separated head branches whose gitleaks config and .gitleaksignore are trusted on a PR (promotion PRs:
-          that content already passed review on its way in). For every other PR they come from the base commit.
+          that content already passed review on its way in), but only while the branch is PROTECTED (the API's
+          `protected` flag) and the PR comes from this repository. Otherwise they come from the base commit, because
+          an unprotected branch can take a direct push that allowlists its own secret.
         type: string
         default: dev staging
       secret-fixture-label:
@@ -246,12 +248,28 @@ jobs:
           args=(git --redact --no-banner --report-format sarif --report-path security-reports/gitleaks.sarif --exit-code 0
                 --ignore-gitleaks-allow --gitleaks-ignore-path "$RUNNER_TEMP/gl-ignore")
           if [ "$MODE" = diff ]; then
-            # Promotion PRs (dev -> staging -> main) re-scan every commit since the last release; their head's
-            # config and ignore list were reviewed on the way into dev, so they are trusted. Any other change
+            # Promotion PRs (dev -> staging -> main) re-scan every commit since the last release. Their head's
+            # config and ignore list are trusted only if that branch is protected (so nothing reached it without a
+            # reviewed PR), the PR comes from this repository and the branch is in trusted-heads. Any other change
             # gets the base commit's.
+            protected=false
+            if [ -n "$PR_NUMBER" ] && [ -n "$HEAD_REF" ]; then
+              protected=$(gh api "repos/$GITHUB_REPOSITORY/branches/$(jq -rn --arg b "$HEAD_REF" '$b | @uri')" --jq .protected 2>/dev/null || echo false)
+            fi
+            trust=$(PROTECTED="$protected" python3 - <<'PY'
+          import os
+          e = os.environ
+          # the gitleaks config source for a diff scan: "head" only for a protected, same-repository, listed head
+          ok = (bool(e.get("PR_NUMBER")) and e.get("HEAD_REPO") == e.get("GITHUB_REPOSITORY")
+                and e.get("HEAD_REF", "") in e.get("TRUSTED_HEADS", "").split() and e.get("PROTECTED") == "true")
+          print("head" if ok else "base")
+          PY
+            )
             src=$BASE_SHA; from="the base commit"
-            if [ -n "$PR_NUMBER" ] && [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] && [[ " $TRUSTED_HEADS " == *" $HEAD_REF "* ]]; then
-              src=$HEAD_SHA; from="the promotion head ($HEAD_REF)"
+            if [ "$trust" = head ]; then
+              src=$HEAD_SHA; from="the protected promotion head ($HEAD_REF)"
+            elif [[ " $TRUSTED_HEADS " == *" $HEAD_REF "* ]] && [ -n "$PR_NUMBER" ]; then
+              echo "::notice::'$HEAD_REF' is a trusted head but not a protected branch (or the PR is from a fork), so the base commit's gitleaks config and .gitleaksignore are used. See docs/ci/README.md, Branch protection."
             fi
             if git cat-file -e "${src}:${CONFIG}" 2>/dev/null; then
               git show "${src}:${CONFIG}" > "$RUNNER_TEMP/gitleaks-base.toml"
@@ -269,6 +287,23 @@ jobs:
             args+=("--log-opts=--full-history --all --text --diff-merges=remerge")
             scope="the whole history ($(git rev-list --count --all) commits on all fetched refs)"
           fi
+          # Only 4-field fingerprints (commit:file:rule:line) may stay: a 3-field line (file:rule:line) matches that
+          # line in EVERY commit, so it would silence a future secret there.
+          python3 - "$RUNNER_TEMP/gl-ignore/.gitleaksignore" <<'PY'
+          import re, sys
+          path = sys.argv[1]
+          keep, dropped = [], []
+          for line in open(path, encoding="utf-8", errors="replace"):
+              s = line.strip()
+              if not s or s.startswith("#") or re.match(r"[0-9a-f]{40}:", s):
+                  keep.append(line)
+              else:
+                  dropped.append(s)
+          for d in dropped[:20]:
+              print(f"::warning file=.gitleaksignore::ignored entry without a commit SHA (it would apply to every commit): {d[:120]}")
+          open(path, "w", encoding="utf-8").writelines(keep)
+          print(f"gitleaksignore: {len(keep)} line(s) kept, {len(dropped)} without a commit SHA dropped")
+          PY
           # gitleaks also reads ./.gitleaksignore from the scanned directory; only the copy chosen above may count.
           rm -f .gitleaksignore
           gitleaks "${args[@]}" .
@@ -585,7 +620,9 @@ jobs:
           MIN: ${{ inputs.semgrep-min-level }}
         run: |
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
-          args=(scan --metrics=off --disable-version-check --quiet --sarif-output="$R/semgrep.sarif")
+          # --disable-nosem: a `# nosemgrep` comment the change adds must not hide its own finding (findings already
+          # suppressed on the base commit are on both sides, so they stay "not new").
+          args=(scan --metrics=off --disable-version-check --quiet --disable-nosem --sarif-output="$R/semgrep.sarif")
           for c in $CONFIGS; do args+=(--config "$c"); done
           for e in $EXCLUDES; do args+=(--exclude "$e"); done
           if [ "$MODE" = diff ]; then args+=(--baseline-commit "$BASE_SHA"); fi

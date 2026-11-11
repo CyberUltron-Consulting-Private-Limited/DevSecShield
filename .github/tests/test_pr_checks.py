@@ -70,12 +70,17 @@ class HygieneRegexes(unittest.TestCase):
                   "ID_RSA", ".ssh/id_rsa_prod", ".ssh/id_ed25519_sk", "keys/id_rsa.old", "secrets/aws-dev.env",
                   "compose/prod.env", ".envrc", ".aws/credentials", ".npmrc", ".pypirc", ".netrc", ".git-credentials",
                   "infra/prod.tfvars", "deploy/kubeconfig", "gcp/service-account.json", "apple/AuthKey_ABC123.p8",
-                  "aibom/tests/fixtures/leak/.env", "backend/tests/fixtures/real.pem"]:
+                  "aibom/tests/fixtures/leak/.env", "backend/tests/fixtures/real.pem",
+                  # security re-review 5856745968
+                  "infra/terraform.tfstate.backup", "Downloads/accessKeys.csv", "aws/credentials.csv", ".pgpass",
+                  "deploy/.htpasswd", ".s3cfg", "vpn/office.ovpn", "krb/svc.keytab", ".docker/config.json",
+                  "home/ci/.docker/config.json"]:
             with self.subTest(p):
                 self.assertTrue(self.blocked(p))
 
     def test_templates_public_keys_and_code_pass(self):
-        for p in [".env.example", "backend/.env.sample", "keys/deploy.pub", "frontend/app/page.tsx", "docs/ci/README.md"]:
+        for p in [".env.example", "backend/.env.sample", "keys/deploy.pub", "frontend/app/page.tsx", "docs/ci/README.md",
+                  "docker/config.json", "docs/credentials-rotation.md"]:
             with self.subTest(p):
                 self.assertFalse(self.blocked(p))
 
@@ -99,22 +104,25 @@ PROMOTION = (Path(__file__).resolve().parents[1] / "PULL_REQUEST_TEMPLATE" / "pr
 class Hygiene(unittest.TestCase):
     """The pr-hygiene script, on PR data as the API returns it (QA review 5856030118)."""
 
-    def check(self, title: str, body: str, files: list[str] = (), labels: list[str] = (), base: str = "dev",
+    def check(self, title: str, body: str, files: list = (), labels: list[str] = (), base: str = "dev",
               bot: bool = False) -> subprocess.CompletedProcess:
+        """files: paths (status "modified", a one-line patch) or dicts as the pulls/<n>/files API returns them."""
         import json
         import tempfile
         with tempfile.TemporaryDirectory() as d:
             pr = {"title": title, "body": body, "labels": [{"name": n} for n in labels], "base": {"ref": base},
                   "user": {"type": "Bot" if bot else "User"}}
             (Path(d) / "pr.json").write_text(json.dumps(pr))
-            (Path(d) / "files.txt").write_text("\n".join(files) + "\n")
+            entries = [f if isinstance(f, dict) else {"status": "modified", "filename": f, "patch": "@@ -1 +1 @@\n+x"}
+                       for f in files]
+            (Path(d) / "files.txt").write_text("".join(json.dumps(e) + "\n" for e in entries))
             env = dict(os.environ, GITHUB_STEP_SUMMARY=str(Path(d) / "s.md"), NEED_AC="true",
                        **{k: input_default(v) for k, v in [
                            ("TITLE_RE", "title-regex"), ("TITLE_MAX", "title-max-length"),
                            ("AC_RE", "acceptance-heading-regex"), ("FORBID_RE", "forbidden-files-regex"),
                            ("ALLOW_RE", "allowed-files-regex"), ("FIXTURE_LABEL", "secret-fixture-label"),
                            ("FIXTURE_RE", "secret-fixture-regex"), ("CONFIG_RE", "security-config-regex"),
-                           ("CONFIG_LABEL", "security-config-label")]})
+                           ("CONFIG_LABEL", "security-config-label"), ("SUPPRESS_RE", "suppression-regex")]})
             return subprocess.run(["python3", "-c", hygiene_script(), str(Path(d) / "pr.json"), str(Path(d) / "files.txt")],
                                   env=env, capture_output=True, text=True)
 
@@ -164,9 +172,89 @@ class Hygiene(unittest.TestCase):
                          labels=["security-config-reviewed"], bot=True)
         self.assertEqual(out.returncode, 0, out.stdout)
 
+    def test_deleting_a_gate_file_needs_the_security_label(self):
+        # security re-review 5856745968: removed files were dropped before the config rule saw them
+        removed = [{"status": "removed", "filename": f} for f in
+                   (".github/CODEOWNERS", ".github/workflows/security-scheduled.yml", ".github/dependabot.yml")]
+        out = self.check("chore: tidy", self.body("x"), removed)
+        self.assertEqual(out.returncode, 1, out.stdout)
+        self.assertIn("3 file(s) that configure the CI or security gates", out.stdout)
+        self.assertEqual(self.check("chore: tidy", self.body("x"), removed, labels=["security-config-reviewed"]).returncode, 0)
+
+    def test_renaming_a_gate_file_away_needs_the_security_label(self):
+        moved = [{"status": "renamed", "filename": "docs/old-ci.yml", "previous_filename": ".github/workflows/ci.yml",
+                  "patch": ""}]
+        self.assertEqual(self.check("chore: tidy", self.body("x"), moved).returncode, 1)
+
+    def test_deleting_a_secret_file_is_allowed(self):
+        out = self.check("fix(backend): stop tracking .env", self.body("x"), [{"status": "removed", "filename": "backend/.env"}])
+        self.assertEqual(out.returncode, 0, out.stdout)
+
+    def test_added_inline_suppressions_need_the_security_label(self):
+        for line in ("+    eval(x)  # nosemgrep", "+# checkov:skip=CKV_K8S_20: reason", "+# hadolint ignore=DL3008",
+                     "+# shellcheck disable=SC2086", "+  #trivy:ignore:AVD-DS-0002"):
+            with self.subTest(line):
+                f = [{"status": "modified", "filename": "backend/app.py", "patch": f"@@ -1,2 +1,3 @@\n a\n{line}\n b"}]
+                out = self.check("feat(api): add an endpoint", self.body("x"), f)
+                self.assertEqual(out.returncode, 1, out.stdout)
+                self.assertIn("inline scanner suppression", out.stdout)
+                self.assertEqual(self.check("feat(api): add an endpoint", self.body("x"), f, labels=["security-config-reviewed"]).returncode, 0)
+        # removing a suppression, or one that was already there (context line), needs nothing
+        f = [{"status": "modified", "filename": "backend/app.py", "patch": "@@ -1,2 +1,2 @@\n x  # nosemgrep\n-y  # nosemgrep\n+y"}]
+        self.assertEqual(self.check("feat(api): add an endpoint", self.body("x"), f).returncode, 0)
+
     def test_modified_env_file_blocks_a_promotion(self):
         out = self.check("release: promote staging to main", self.body("run 1"), ["backend/.env"], base="main")
         self.assertEqual(out.returncode, 1, out.stdout)
+
+
+def review_labels_script() -> str:
+    blocks = [textwrap.dedent(b) for b in re.findall(r"<<'PY'\n(.*?)\n[ \t]*PY\n", TEXT, re.S) if "review = [" in b]
+    assert len(blocks) == 1
+    return blocks[0]
+
+
+class ReviewLabels(unittest.TestCase):
+    """review-labels: which review labels a new push outdates (security re-review 5856745968)."""
+
+    def drop(self, labels: list[str], files: list[dict] | None) -> list[str]:
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "labels.txt").write_text("\n".join(labels) + "\n")
+            if files is not None:
+                (Path(d) / "new.jsonl").write_text("".join(json.dumps(f) + "\n" for f in files))
+            env = dict(os.environ, CONFIG_LABEL="security-config-reviewed", FIXTURE_LABEL="secret-fixtures-reviewed",
+                       CONFIG_RE=input_default("security-config-regex"), FIXTURE_RE=input_default("secret-fixture-regex"),
+                       SUPPRESS_RE=input_default("suppression-regex"))
+            out = subprocess.run(["python3", "-c", review_labels_script(), str(Path(d) / "labels.txt"),
+                                  str(Path(d) / "new.jsonl")], env=env, capture_output=True, text=True)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            return [l for l in out.stdout.split("\n") if l]
+
+    BOTH = ["security-config-reviewed", "secret-fixtures-reviewed", "size/S"]
+
+    def test_a_new_gate_change_drops_the_config_label(self):
+        self.assertEqual(self.drop(self.BOTH, [{"filename": ".gitleaksignore", "patch": "+x"}]), ["security-config-reviewed"])
+        self.assertEqual(self.drop(self.BOTH, [{"filename": "docs/x.yml", "previous_filename": ".github/workflows/a.yml"}]),
+                         ["security-config-reviewed"])
+
+    def test_a_new_fixture_drops_the_fixture_label(self):
+        self.assertEqual(self.drop(self.BOTH, [{"filename": "backend/tests/fixtures/k.env", "patch": "+A=1"}]),
+                         ["secret-fixtures-reviewed"])
+
+    def test_a_new_suppression_drops_the_config_label(self):
+        self.assertEqual(self.drop(self.BOTH, [{"filename": "a.py", "patch": "@@ -1 +1 @@\n+x()  # nosemgrep"}]),
+                         ["security-config-reviewed"])
+
+    def test_ordinary_code_keeps_the_labels(self):
+        self.assertEqual(self.drop(self.BOTH, [{"filename": "backend/app.py", "patch": "+x = 1"}]), [])
+
+    def test_an_unreadable_comparison_drops_both(self):
+        self.assertEqual(sorted(self.drop(self.BOTH, None)), ["secret-fixtures-reviewed", "security-config-reviewed"])
+
+    def test_only_labels_that_are_present_are_dropped(self):
+        self.assertEqual(self.drop(["size/S"], None), [])
 
 
 if __name__ == "__main__":

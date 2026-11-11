@@ -4,14 +4,19 @@
 #     pr:
 #       if: github.event_name == 'pull_request'
 #       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-pr-checks.yml@<ref>
-#       permissions: { contents: read, pull-requests: read }
+#       permissions: { contents: read, pull-requests: write }   # write: review-labels removes outdated labels
 #
 # branch-flow   promotion order: a PR into `staging` must come from `dev`; a PR into `main` from `staging`, or from
 #               a `hotfix/*` branch (urgent production fix, back-merged main -> dev afterwards). Configurable through
 #               `flows`; feature PRs into any other base are allowed.
+# review-labels on a new push, drops `security-config-reviewed` / `secret-fixtures-reviewed` when the new commits
+#               touch gate or fixture paths or add an inline scanner suppression: a review covers the commits it
+#               saw. It runs before pr-hygiene, so the same push can never be judged with the old label. Needs
+#               `pull-requests: write`; it checks out nothing.
 # pr-hygiene    title format; the template's "Acceptance criteria" table filled in (bots exempt); no secret-bearing
 #               file (.env, keys, keystores, credential files; case-insensitive) added or modified (deleting one is
-#               allowed); and changes to the security gates themselves (.github/**, scanner configs, ignore files)
+#               allowed); and changes to the security gates themselves (.github/**, scanner configs, ignore files;
+#               added, modified, renamed or DELETED) and added inline suppressions (nosemgrep, checkov:skip, ...)
 #               need the `security-config-reviewed` label. Title, body and labels are read from the API when the job
 #               runs, so after editing the PR or adding a label, re-run the failed jobs.
 name: reusable / pr checks
@@ -47,7 +52,7 @@ on:
         description: Files a PR may not add or modify (matched case-insensitively against the repo-relative path).
         type: string
         default: >-
-          (^|/)(\.env(\..*)?|[^/]*\.env|\.envrc|\.npmrc|\.pypirc|\.netrc|\.git-credentials|kubeconfig|\.?credentials(\.json)?)$|\.(pem|key|p12|pfx|p8|jks|keystore|ppk|kdbx|tfvars|tfstate|der|asc|gpg)$|(^|/)id_(rsa|dsa|ecdsa|ed25519)[^/]*$|service[-_]?account[^/]*\.json$
+          (^|/)(\.env(\..*)?|[^/]*\.env|\.envrc|\.npmrc|\.pypirc|\.netrc|\.git-credentials|\.pgpass|\.htpasswd|\.s3cfg|kubeconfig|\.?credentials(\.json|\.csv)?|accesskeys\.csv)$|\.(pem|key|p12|pfx|p8|jks|keystore|ppk|kdbx|tfvars|tfstate|tfstate\.backup|der|asc|gpg|ovpn|keytab)$|(^|/)\.docker/config\.json$|(^|/)id_(rsa|dsa|ecdsa|ed25519)[^/]*$|service[-_]?account[^/]*\.json$
       allowed-files-regex:
         description: >-
           Exceptions to forbidden-files-regex (case-insensitive): public keys and env templates. Fabricated fixture
@@ -69,6 +74,12 @@ on:
       security-config-label:
         type: string
         default: security-config-reviewed
+      suppression-regex:
+        description: >-
+          Added lines (case-insensitive) that switch a scanner off inline. A PR that adds one needs
+          security-config-label, like a change to a gate's configuration.
+        type: string
+        default: 'nosemgrep|checkov:skip|hadolint ignore|shellcheck disable|trivy:ignore'
 
 permissions:
   contents: read
@@ -107,8 +118,68 @@ jobs:
           done
           echo "ok: '$BASE' is not a promotion branch; '$HEAD' -> '$BASE' is allowed"
 
+  review-labels:
+    name: review labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Drop review labels that the new commits outdate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          FIXTURE_LABEL: ${{ inputs.secret-fixture-label }}
+          FIXTURE_RE: ${{ inputs.secret-fixture-regex }}
+          CONFIG_RE: ${{ inputs.security-config-regex }}
+          CONFIG_LABEL: ${{ inputs.security-config-label }}
+          SUPPRESS_RE: ${{ inputs.suppression-regex }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PR" ] || [ "$ACTION" != synchronize ]; then echo "not a new push to a pull request; nothing to check"; exit 0; fi
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name' > "$RUNNER_TEMP/labels.txt"
+          # What the new commits changed. If that cannot be read (e.g. a force push removed BEFORE), every review
+          # label counts as outdated.
+          if ! gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$AFTER" --jq '.files[] | @json' > "$RUNNER_TEMP/new.jsonl"; then
+            echo "::warning::could not compare $BEFORE...$AFTER"; rm -f "$RUNNER_TEMP/new.jsonl"
+          fi
+          drop=$(python3 - "$RUNNER_TEMP/labels.txt" "$RUNNER_TEMP/new.jsonl" <<'PY'
+          import json, os, re, sys
+          env = os.environ
+          labels = {l.strip() for l in open(sys.argv[1], encoding="utf-8") if l.strip()}
+          review = [env["CONFIG_LABEL"], env["FIXTURE_LABEL"]]
+          if not os.path.exists(sys.argv[2]):
+              print("\n".join(l for l in review if l in labels)); sys.exit(0)
+          files = [json.loads(l) for l in open(sys.argv[2], encoding="utf-8") if l.strip()]
+          paths = [p for f in files for p in (f.get("filename"), f.get("previous_filename")) if p]
+          config, fixture = re.compile(env["CONFIG_RE"]), re.compile(env["FIXTURE_RE"], re.I)
+          suppress = re.compile(env["SUPPRESS_RE"], re.I)
+          added = [l for f in files for l in (f.get("patch") or "").split("\n") if l.startswith("+") and not l.startswith("+++")]
+          truncated = len(files) >= 300  # the compare API lists at most 300 files
+          drop = []
+          if env["CONFIG_LABEL"] in labels and (truncated or any(config.search(p) for p in paths) or any(suppress.search(l) for l in added)):
+              drop.append(env["CONFIG_LABEL"])
+          if env["FIXTURE_LABEL"] in labels and (truncated or any(fixture.search(p) for p in paths)):
+              drop.append(env["FIXTURE_LABEL"])
+          print("\n".join(drop))
+          PY
+          )
+          [ -z "$drop" ] && { echo "the new commits leave the review labels valid"; exit 0; }
+          while IFS= read -r label; do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/$(jq -rn --arg l "$label" '$l | @uri')" > /dev/null
+            echo "::warning::removed '$label': the new commits ($BEFORE..$AFTER) change what it covered. A reviewer re-checks them and adds it again."
+            echo "- Removed \`$label\`: the new commits change gate, fixture or suppression lines it covered." >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$drop"
+
   pr-hygiene:
     name: pr-hygiene
+    # after review-labels, so a label the new commits outdate is already gone; it runs even if that job failed
+    needs: review-labels
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -129,18 +200,22 @@ jobs:
           FIXTURE_RE: ${{ inputs.secret-fixture-regex }}
           CONFIG_RE: ${{ inputs.security-config-regex }}
           CONFIG_LABEL: ${{ inputs.security-config-label }}
+          SUPPRESS_RE: ${{ inputs.suppression-regex }}
         run: |
           set -euo pipefail
           if [ -z "$PR" ]; then echo "::notice::not a pull request; nothing to check"; exit 0; fi
           # Live PR data (title, body, author type, labels): a re-run after an edit or a new label sees the change.
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" > "$RUNNER_TEMP/pr.json"
-          # Files the PR adds, modifies, renames or copies (not removals). The API lists at most 3,000 files.
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | select(.status != "removed") | .filename' > "$RUNNER_TEMP/files.txt"
-          python3 - "$RUNNER_TEMP/pr.json" "$RUNNER_TEMP/files.txt" <<'PY'
+          # Every file the PR touches, with its status, former name and patch. The API lists at most 3,000 files.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | {status, filename, previous_filename, patch} | @json' > "$RUNNER_TEMP/files.jsonl"
+          python3 - "$RUNNER_TEMP/pr.json" "$RUNNER_TEMP/files.jsonl" <<'PY'
           import json, os, re, sys
           env = os.environ
           pr = json.load(open(sys.argv[1], encoding="utf-8"))
-          files = [f for f in open(sys.argv[2], encoding="utf-8").read().split("\n") if f]
+          entries = [json.loads(l) for l in open(sys.argv[2], encoding="utf-8") if l.strip()]
+          files = [e["filename"] for e in entries if e.get("status") != "removed"]  # added, modified, renamed, copied
+          # every path the PR touches, including deleted files and the old name of a renamed one
+          all_paths = list(dict.fromkeys(p for e in entries for p in (e.get("filename"), e.get("previous_filename")) if p))
           labels = {l["name"] for l in pr.get("labels", [])}
           problems, notes = [], []
           title = pr.get("title") or ""
@@ -198,15 +273,31 @@ jobs:
               problems.append(f"{len(bad) - len(waived)} forbidden file(s) added or modified: {', '.join(f for f in bad if f not in waived)[:500]}.{hint}")
           if waived:
               notes.append(f"Fixture key files allowed by the `{env['FIXTURE_LABEL']}` label: " + ", ".join(f"`{f}`" for f in waived))
-          # Changes to the gates themselves: visible, and only with an explicit label.
+          # Changes to the gates themselves, deletions included, and inline scanner suppressions the PR adds:
+          # visible, and only with an explicit label.
           config = re.compile(env["CONFIG_RE"])
-          touched = [f for f in files if config.search(f)]
-          if touched:
-              notes.append(f"Security-gate files changed ({len(touched)}): " + ", ".join(f"`{f}`" for f in touched[:40]))
+          touched = [f for f in all_paths if config.search(f)]
+          suppress = re.compile(env["SUPPRESS_RE"], re.I)
+          suppressions = []
+          for e in entries:
+              for l in (e.get("patch") or "").split("\n"):
+                  if l.startswith("+") and not l.startswith("+++") and suppress.search(l):
+                      suppressions.append(e["filename"])
+                      print(f"::warning file={e['filename']}::inline scanner suppression added: {suppress.search(l).group(0)}")
+          no_patch = [e["filename"] for e in entries if e.get("status") != "removed" and not e.get("patch")]
+          if no_patch:
+              notes.append(f"{len(no_patch)} file(s) have no patch in the API (binary or too large), so their lines were not checked for suppressions.")
+          if touched or suppressions:
+              if touched:
+                  notes.append(f"Security-gate files changed ({len(touched)}): " + ", ".join(f"`{f}`" for f in touched[:40]))
+              if suppressions:
+                  notes.append(f"Inline scanner suppressions added in {len(set(suppressions))} file(s): " + ", ".join(f"`{f}`" for f in list(dict.fromkeys(suppressions))[:20]))
+              what = " and ".join(x for x in (f"{len(touched)} file(s) that configure the CI or security gates" if touched else "",
+                                                f"{len(suppressions)} inline scanner suppression(s)" if suppressions else "") if x)
               if env["CONFIG_LABEL"] in labels:
-                  print(f"::warning::{len(touched)} security-gate file(s) changed; allowed by the '{env['CONFIG_LABEL']}' label.")
+                  print(f"::warning::This PR changes {what}; allowed by the '{env['CONFIG_LABEL']}' label.")
               else:
-                  problems.append(f"This PR changes {len(touched)} file(s) that configure the CI or security gates. A security reviewer must check them and add the '{env['CONFIG_LABEL']}' label, then re-run this job.")
+                  problems.append(f"This PR changes {what} (added, modified, renamed or deleted). A security reviewer must check them and add the '{env['CONFIG_LABEL']}' label, then re-run this job.")
           with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
               s.write("### PR hygiene\n\n" + ("All checks passed.\n" if not problems else "\n".join(f"- {p}" for p in problems) + "\n"))
               if notes:
