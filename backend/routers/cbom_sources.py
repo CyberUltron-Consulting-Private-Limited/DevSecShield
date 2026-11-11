@@ -453,7 +453,6 @@ def _validate_config(kind: str, config: dict[str, Any]):
         return spec.model.model_validate(config)
     except ValidationError as exc:
         err = bad_request(exc)
-        err.detail = f"config.{err.detail}" if not str(err.detail).startswith("config") else err.detail
         raise err from None
     except ValueError as exc:
         raise bad_request(exc) from None
@@ -466,7 +465,7 @@ def _check_refs(session: Session, team_id: int, kind: str, cfg: Any) -> None:
     target = session.get(CbomCollectionSource, ref)
     wanted = ("aws_account", "azure_subscription", "gcp_project") if kind == "kubernetes" else ("aws_account",)
     if target is None or target.team_id != team_id or target.kind not in wanted:
-        raise HTTPException(status_code=400, detail="config: the linked cloud account was not found in this team")
+        raise HTTPException(status_code=400, detail="The linked cloud account was not found in this team")
 
 
 def _merge_secrets(kind: str, cfg: Any, current: dict[str, str], provided: dict[str, str], *,
@@ -619,7 +618,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
             incoming = {**{f: getattr(old_cfg, f, None) for f in METADATA_FIELDS if f not in incoming}, **incoming}
         cfg = _validate_config(source.kind, incoming) if incoming is not None else old_cfg
         if cfg is None:
-            raise HTTPException(status_code=400, detail="config: required")
+            raise HTTPException(status_code=400, detail="The source settings are required")
         changed: set[str] = set()
         new_node_id = source.node_id
         if body.clear_node:

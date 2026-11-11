@@ -137,7 +137,7 @@ export function AiBomOptionsSidebar({
       if (data.credits_required !== -1) {
         toast.success(`This scan will use ${data.credits_required} credits`);
       } else {
-        toast.error("Invalid Input from user");
+        toast.error("These settings cannot be scanned. Check them and estimate again.");
       }
     },
     onError: (err) => {
@@ -372,7 +372,7 @@ export function AiBomOptionsSidebar({
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
-                  <span className="font-semibold text-amber-400">Invalid Input from user</span>
+                  <span className="font-semibold text-amber-400">These settings cannot be scanned. Check them and estimate again.</span>
                 ) : (
                   <>Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span></>
                 )}

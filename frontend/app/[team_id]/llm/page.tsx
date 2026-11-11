@@ -593,7 +593,7 @@ export default function LLMPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteLLMConversation(team_id, scan_id),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['llm-conversations', String(variables.team_id)] });
-      toast.success('LLM scan deleted successfully');
+      toast.success('LLM scan deleted');
     },
     onError: (error) => {
       showErrorToast(error);
@@ -604,7 +604,7 @@ export default function LLMPage() {
     mutationFn: renameLLMConversation,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['llm-conversations', String(variables.team_id)] });
-      toast.success('LLM scan renamed successfully');
+      toast.success('LLM scan renamed');
     },
     onError: (error) => {
       showErrorToast(error);

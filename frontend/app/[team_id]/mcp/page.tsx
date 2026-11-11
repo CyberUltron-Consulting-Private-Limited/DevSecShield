@@ -721,7 +721,7 @@ export default function MCPPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteMCPConversation(team_id, scan_id),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['mcp-conversations', String(variables.team_id)] });
-      toast.success('MCP scan deleted successfully');
+      toast.success('MCP scan deleted');
     },
     onError: (error) => {
       showErrorToast(error);
@@ -732,7 +732,7 @@ export default function MCPPage() {
     mutationFn: renameMCPConversation,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['mcp-conversations', String(variables.team_id)] });
-      toast.success('MCP scan renamed successfully');
+      toast.success('MCP scan renamed');
     },
     onError: (error) => {
       showErrorToast(error);

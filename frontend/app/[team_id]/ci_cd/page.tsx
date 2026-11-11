@@ -109,7 +109,7 @@ export default function CicdPage() {
       setCreateDialogOpen(false);
       setFormTitle("");
       setFormScanType("");
-      toast.success('CI/CD integration created successfully');
+      toast.success('CI/CD integration created');
       router.push(`/${team_id}/ci_cd/${data.integration_id}`);
     },
     onError: (error) => {
@@ -121,7 +121,7 @@ export default function CicdPage() {
     mutationFn: (integration_id: number) => deleteCicdIntegration(Number(team_id), integration_id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cicd-integrations', team_id] });
-      toast.success('CI/CD integration deleted successfully');
+      toast.success('CI/CD integration deleted');
       setDeleteDialogOpen(false);
       setSelectedIntegration(null);
     },
@@ -135,7 +135,7 @@ export default function CicdPage() {
       renameCicdIntegration({ team_id: Number(team_id), integration_id, title }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cicd-integrations', team_id] });
-      toast.success('CI/CD integration renamed successfully');
+      toast.success('CI/CD integration renamed');
       setRenameDialogOpen(false);
       setSelectedIntegration(null);
       setNewName("");

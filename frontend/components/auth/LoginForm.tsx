@@ -74,7 +74,7 @@ export default function LoginPage({
         countdown.start()
         const response = await api.post("/send_code",{email: userData?.email.trim()})
         if(response.status === 200){
-            toast.success("Verification code sent successfully")
+            toast.success("Verification code sent")
 
         }else{
             countdown.stop()
@@ -156,7 +156,7 @@ export default function LoginPage({
         }
         const response = await api.post("/login",data)
         if(response.status === 200){
-            toast.success("Logged in successfully")
+            toast.success("Signed in")
             localStorage.setItem("access_token", response.data.access_token)
             localStorage.setItem("refresh_token", response.data.refresh_token)
             router.push(redirectUrl || "/home")

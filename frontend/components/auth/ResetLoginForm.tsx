@@ -53,7 +53,7 @@ export default function ResetLoginForm() {
         countdown.start()
         const response = await api.post("/send_code",{email: userData?.email.trim()})
         if(response.status === 200){
-            toast.success("Verification code sent successfully")
+            toast.success("Verification code sent")
             
         }else{
             toast.error("Error while sending verification code",{description: response.data.detail})
@@ -95,7 +95,7 @@ export default function ResetLoginForm() {
             // the reset signed out every session of this account (earlier tokens are revoked)
             localStorage.removeItem("access_token")
             localStorage.removeItem("refresh_token")
-            toast.success("Password reset successfully. Please log in with your new password.")
+            toast.success("Password changed. Sign in with your new password.")
             router.push("/login")
         }else{
             toast.error("Error while resetting password",{description: response.data.detail})

@@ -197,7 +197,7 @@ export function DASTOptionsSidebar({
       if (data.credits_required !== -1) {
         toast.success(`This scan will use ${data.credits_required} credits`);
       } else {
-        toast.error("Invalid input from user");
+        toast.error("These settings cannot be scanned. Check them and estimate again.");
       }
     },
     onError: (err) => {
@@ -777,7 +777,7 @@ export function DASTOptionsSidebar({
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
-                  <span className="font-semibold text-amber-400">Invalid input from user</span>
+                  <span className="font-semibold text-amber-400">These settings cannot be scanned. Check them and estimate again.</span>
                 ) : (
                   <>
                     Credits required:{" "}

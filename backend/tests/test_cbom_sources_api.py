@@ -218,7 +218,7 @@ def test_validation_errors_are_400_and_never_echo_input(api, world):
     node_id, _t, _ = enroll_node(api)
     body = linux_body(node_id=node_id, port=70000)
     r = api("POST", "/1/cbom/sources/items", json=body)
-    assert r.status_code == 400 and "port" in r.json()["detail"] and PASSWORD not in r.text
+    assert r.status_code == 400 and r.json()["detail"].startswith("Port: ") and PASSWORD not in r.text
     bad = linux_body(node_id=node_id, targets=["10.0.0.5/24"])
     r = api("POST", "/1/cbom/sources/items", json=bad)
     assert r.status_code == 400 and "did you mean 10.0.0.0/24" in r.json()["detail"]

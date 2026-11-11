@@ -118,7 +118,7 @@ export default function CicdIntegrationDashboardPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cicd-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
-      toast.success("Integration updated successfully");
+      toast.success("Integration updated");
     },
     onError: (error) => {
       showErrorToast(error);

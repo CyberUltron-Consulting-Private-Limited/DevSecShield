@@ -1076,7 +1076,7 @@ export default function SASTPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteSastConversation(team_id, scan_id),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
-      toast.success('SAST scan deleted successfully');
+      toast.success('SAST scan deleted');
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -1085,7 +1085,7 @@ export default function SASTPage() {
     mutationFn: renameSastConversation,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
-      toast.success('SAST scan renamed successfully');
+      toast.success('SAST scan renamed');
     },
     onError: (error) => { showErrorToast(error); },
   });

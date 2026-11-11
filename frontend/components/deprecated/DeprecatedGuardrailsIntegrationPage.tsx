@@ -235,7 +235,7 @@ export function DeprecatedGuardrailsIntegrationPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guardrails-integration-dashboard', team_id, integration_id, LOGS_PAGE_SIZE, logsOffset] });
       setEditSettings(false);
-      toast.success('Settings updated successfully');
+      toast.success('Settings updated');
     },
     onError: (error) => {
       showErrorToast(error);

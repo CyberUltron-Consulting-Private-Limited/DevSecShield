@@ -322,7 +322,7 @@ function AiRemediationPanel({
         queryClient.invalidateQueries({ queryKey: ["teams"] });
         queryClient.invalidateQueries({ queryKey: ["teams-dashboard"] });
         queryClient.invalidateQueries({ queryKey: ["team-dashboard"] });
-        toast.success("AI remediation generated successfully");
+        toast.success("AI remediation generated");
       } else {
         toast.error("Remediation generation failed: " + (data.error || "Unknown error"));
       }

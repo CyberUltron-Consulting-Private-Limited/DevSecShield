@@ -183,7 +183,6 @@ export interface SastListResponse {
 const getSastConversations = async (team_id: number): Promise<SastListResponse> => {
     try {
         const response = await api.get(`/${team_id}/sast/scans`)
-        toast.success("Sast conversations fetched successfully")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching sast conversations")
@@ -194,7 +193,6 @@ const getSastConversations = async (team_id: number): Promise<SastListResponse> 
 const deleteSastConversation = async (team_id: number, scan_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/sast/scan/${scan_id}`)
-        toast.success("SAST scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -204,7 +202,6 @@ const deleteSastConversation = async (team_id: number, scan_id: number) => {
 const renameSastConversation = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/sast/scan/${scan_id}`, { title })
-        toast.success("SAST scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -214,7 +211,7 @@ const renameSastConversation = async ({ team_id, scan_id, title }: { team_id: nu
 const createSastConversation = async (team_id: number, title: string): Promise<number> => {
     try {
         const response = await api.post(`/${team_id}/sast/scan`, { title })
-        toast.success("Sast conversation created successfully")
+        toast.success("SAST scan created")
         return response.data.scan_id as number
     } catch (error) {
         throw error
@@ -444,7 +441,7 @@ const startSastScan = async (params: {
 const getExportResults = async (team_id: number, scan_id: number): Promise<any> => {
     try {
         const response = await api.get(`/${team_id}/sast/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("Sast export results fetched successfully")
+        toast.success("SAST report downloaded")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching sast export results")
@@ -473,7 +470,7 @@ const reinitializeSastScan = async (params: {
     const response = await api.post(`/${params.team_id}/sast/scan/${params.scan_id}/reinitialize`, form, {
         headers: { "Content-Type": "multipart/form-data" },
     })
-    toast.success("Sast scan reinitialized successfully")
+    toast.success("SAST scan restarted")
     return response.data
 }
 
@@ -538,7 +535,7 @@ const startScan = async (
     form,
     { headers: { "Content-Type": "multipart/form-data" } }
   );
-  toast.success("Scan started successfully");
+  toast.success("Scan started");
   return response.data;
 }
 
@@ -649,7 +646,6 @@ export interface LLMScansListResponse {
 const getLLMConversations = async (team_id: number): Promise<LLMScansListResponse> => {
     try {
         const response = await api.get(`/${team_id}/llm/scans`)
-        toast.success("LLM conversations fetched successfully")
         return response.data as LLMScansListResponse
     } catch (error) {
         showErrorToast(error, "Error fetching LLM conversations")
@@ -660,7 +656,6 @@ const getLLMConversations = async (team_id: number): Promise<LLMScansListRespons
 const deleteLLMConversation = async (team_id: number, conversation_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/llm/scan/${conversation_id}`)
-        toast.success("LLM scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -670,7 +665,6 @@ const deleteLLMConversation = async (team_id: number, conversation_id: number) =
 const renameLLMConversation = async ({ team_id, conversation_id, title }: { team_id: number; conversation_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/llm/scan/${conversation_id}`, { title })
-        toast.success("LLM scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -680,7 +674,7 @@ const renameLLMConversation = async ({ team_id, conversation_id, title }: { team
 const createLLMConversation = async (team_id: number, title: string): Promise<number> => {
     try {
         const response = await api.post(`/${team_id}/llm/scan`, { title })
-        toast.success("LLM conversation created successfully")
+        toast.success("LLM scan created")
         return response.data.scan_id as number
     } catch (error) {
         throw error
@@ -723,7 +717,6 @@ const getLLMConversationMessages = async ({ queryKey }: { queryKey: ['llm-conver
             integration_settings?: Record<string, unknown> | null
             info?: ScanInfoField | null
         }
-        toast.success("LLM conversation messages fetched successfully")
         return {
             title: raw.title,
             model_type: (raw.scan_metadata?.model_type as string) ?? null,
@@ -775,7 +768,7 @@ const startLLMScan = async (
         const response = await api.post(`/${team_id}/llm/scan/${scan_id}/start`, form, {
             headers: { "Content-Type": "multipart/form-data" },
         })
-        toast.success("LLM scan started successfully")
+        toast.success("LLM scan started")
         return response.data
     } catch (error) {
         throw error
@@ -785,7 +778,7 @@ const startLLMScan = async (
 const getLLMExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
     try {
         const response = await api.get(`/${team_id}/llm/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("LLM export results fetched successfully")
+        toast.success("LLM report downloaded")
         return response.data
     } catch (error) {
         showErrorToast(error, "Error fetching LLM export results")
@@ -801,7 +794,7 @@ const reinitializeLLMScan = async (
         const response = await api.post(`/${team_id}/llm/scan/${scan_id}/reinitialize`, form, {
             headers: { "Content-Type": "multipart/form-data" },
         })
-        toast.success("LLM scan reinitialized successfully")
+        toast.success("LLM scan restarted")
         return response.data
     } catch (error) {
         throw error
@@ -961,7 +954,6 @@ const getMCPConversationMessages = async ({ queryKey }: { queryKey: ['mcp-conver
             integration_settings?: Record<string, unknown> | null
             info?: ScanInfoField | null
         }
-        toast.success("MCP conversation messages fetched successfully")
         return {
             id: scan_id,
             title: raw.title,
@@ -1037,7 +1029,6 @@ export interface MCPScansListResponse {
 const getMCPConversations = async (team_id: number): Promise<MCPScansListResponse> => {
     try {
         const response = await api.get(`/${team_id}/mcp/scans`)
-        toast.success("MCP conversations fetched successfully")
         return response.data as MCPScansListResponse
     } catch (error) {
         showErrorToast(error, "Error fetching MCP conversations")
@@ -1048,7 +1039,6 @@ const getMCPConversations = async (team_id: number): Promise<MCPScansListRespons
 const deleteMCPConversation = async (team_id: number, conversation_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/mcp/scan/${conversation_id}`)
-        toast.success("MCP scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1058,7 +1048,6 @@ const deleteMCPConversation = async (team_id: number, conversation_id: number) =
 const renameMCPConversation = async ({ team_id, conversation_id, title }: { team_id: number; conversation_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/mcp/scan/${conversation_id}`, { title })
-        toast.success("MCP scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1068,7 +1057,7 @@ const renameMCPConversation = async ({ team_id, conversation_id, title }: { team
 const createMCPConversation = async (team_id: number, title: string): Promise<number> => {
     try {
         const response = await api.post(`/${team_id}/mcp/scan`, { title })
-        toast.success("MCP conversation created successfully")
+        toast.success("MCP scan created")
         return response.data.scan_id as number
     } catch (error) {
         throw error
@@ -1084,7 +1073,7 @@ const startMCPScan = async (
         const response = await api.post(`/${team_id}/mcp/scan/${scan_id}/start`, form, {
             headers: { "Content-Type": "multipart/form-data" },
         })
-        toast.success("MCP scan started successfully")
+        toast.success("MCP scan started")
         return response.data
     } catch (error) {
         throw error
@@ -1094,7 +1083,7 @@ const startMCPScan = async (
 const getMCPExportResults = async (team_id: number, scan_id: number): Promise<Blob> => {
     try {
         const response = await api.get(`/${team_id}/mcp/scan/${scan_id}/export`, { responseType: "blob" })
-        toast.success("MCP export results fetched successfully")
+        toast.success("MCP report downloaded")
         return response.data
     } catch (error) {
         showErrorToast(error, "Error fetching MCP export results")
@@ -1110,7 +1099,7 @@ const reinitializeMCPScan = async (
         const response = await api.post(`/${team_id}/mcp/scan/${scan_id}/reinitialize`, form, {
             headers: { "Content-Type": "multipart/form-data" },
         })
-        toast.success("MCP scan reinitialized successfully")
+        toast.success("MCP scan restarted")
         return response.data
     } catch (error) {
         throw error
@@ -1140,7 +1129,6 @@ export interface UserProfile {
 const getUserProfile = async (): Promise<UserProfile> => {
     try {
         const response = await api.get("/get_user")
-        toast.success("User profile fetched successfully")
         return response.data as UserProfile
     } catch (error) {
         showErrorToast(error,"Error fetching user profile")
@@ -1151,7 +1139,7 @@ const getUserProfile = async (): Promise<UserProfile> => {
 const logout = async () => {
     try {
         const response = await api.get("/logout")
-        toast.success("Logged out successfully")
+        toast.success("Signed out")
         // Clear tokens from localStorage
         localStorage.removeItem("access_token")
         localStorage.removeItem("refresh_token")
@@ -1358,7 +1346,7 @@ const getTeams = async (): Promise<TeamListItem[]> => {
 const createTeam = async (data: CreateTeamData) => {
     try {
         const response = await api.post("/team", data)
-        toast.success("Team created successfully")
+        toast.success("Team created")
         return response.data as { team_id: number; team_name: string; team_description: string | null; team_members: string[] }
     } catch (error) {
         showErrorToast(error, "Error creating team")
@@ -1379,7 +1367,7 @@ const getTeam = async (team_id: number): Promise<TeamDetails> => {
 const updateTeam = async (team_id: number, data: UpdateTeamData) => {
     try {
         const response = await api.put(`/team/${team_id}`, data)
-        toast.success("Team updated successfully")
+        toast.success("Team updated")
         return response.data
     } catch (error) {
         showErrorToast(error, "Error updating team")
@@ -1401,7 +1389,7 @@ const removeOrAddTeamMembers = async (team_id: number, data: RemoveOrAddMembersT
 const deleteTeam = async (team_id: number) => {
     try {
         await api.delete(`/team/${team_id}`)
-        toast.success("Team deleted successfully")
+        toast.success("Team deleted")
     } catch (error) {
         showErrorToast(error, "Error deleting team")
         throw error
@@ -1575,7 +1563,6 @@ export interface IACListResponse {
 const getIACConversations = async (team_id: number): Promise<IACListResponse> => {
     try {
         const response = await api.get(`/${team_id}/iac/scans`)
-        toast.success("IAC conversations fetched successfully")
         return response.data
     } catch (error) {
         showErrorToast(error, "Error fetching iac conversations")
@@ -1586,7 +1573,6 @@ const getIACConversations = async (team_id: number): Promise<IACListResponse> =>
 const deleteIACConversation = async (team_id: number, scan_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/iac/scan/${scan_id}`)
-        toast.success("IAC scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1596,7 +1582,6 @@ const deleteIACConversation = async (team_id: number, scan_id: number) => {
 const renameIACConversation = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/iac/scan/${scan_id}`, { title })
-        toast.success("IAC scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -1606,7 +1591,7 @@ const renameIACConversation = async ({ team_id, scan_id, title }: { team_id: num
 const createIACConversation = async (team_id: number, title: string): Promise<number> => {
     try {
         const response = await api.post(`/${team_id}/iac/scan`, { title })
-        toast.success("IAC conversation created successfully")
+        toast.success("IAC scan created")
         return response.data.scan_id as number
     } catch (error) {
         throw error
@@ -1661,7 +1646,7 @@ const startIACScan = async (
     }) => {
     try {
         const response = await api.post(`/iac/conversation/${conversation_id}/scan`, { iac_data: { repo_url: repo_url, PAT: PAT, mode: mode } });
-        toast.success("IAC scan started successfully");
+        toast.success("IAC scan started");
         return response.data;
     } catch (error) {
         throw error;
@@ -1672,7 +1657,7 @@ const startIACScan = async (
 const getIACExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
     try {
         const response = await api.get(`/${team_id}/iac/scan/${scan_id}/export`, { responseType: "blob" });
-        toast.success("IAC export results fetched successfully");
+        toast.success("IAC report downloaded");
         return response.data;
     } catch (error) {
         showErrorToast(error, "Error fetching iac export results");
@@ -1694,7 +1679,7 @@ const reinitializeIACScan = async (
     }) => {
     try {
         const response = await api.post(`/iac/conversation/${conversation_id}/reinitialize`, { iac_data: { repo_url, PAT, mode } });
-        toast.success("IAC scan reinitialized successfully");
+        toast.success("IAC scan restarted");
         return response.data;
     } catch (error) {
         throw error;
@@ -1714,7 +1699,7 @@ const reinitializeIACScanWithPayload = async (
         form,
         { headers: { "Content-Type": "multipart/form-data" } }
     );
-    toast.success("IAC scan reinitialized successfully");
+    toast.success("IAC scan restarted");
     return response.data;
 };
 
@@ -1808,7 +1793,6 @@ export interface SBOMSCAListResponse {
 const getSBOMSCAScans = async (team_id: number): Promise<SBOMSCAListResponse> => {
     try {
         const response = await api.get(`/${team_id}/sbom_sca/scans`);
-        toast.success("SCA + SBOM scans fetched successfully");
         return response.data as SBOMSCAListResponse;
     } catch (error) {
         showErrorToast(error, "Error fetching sbom_sca scans");
@@ -1819,7 +1803,6 @@ const getSBOMSCAScans = async (team_id: number): Promise<SBOMSCAListResponse> =>
 const deleteSBOMSCAScan = async (team_id: number, scan_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/sbom_sca/scan/${scan_id}`);
-        toast.success("SCA + SBOM scan deleted successfully");
         return response.data;
     } catch (error) {
         throw error;
@@ -1837,7 +1820,6 @@ const renameSBOMSCAScan = async ({
 }) => {
     try {
         const response = await api.put(`/${team_id}/sbom_sca/scan/${scan_id}`, { title });
-        toast.success("SCA + SBOM scan renamed successfully");
         return response.data;
     } catch (error) {
         throw error;
@@ -1884,7 +1866,7 @@ const toggleFindingState = async ({
 const createSBOMSCAScan = async (team_id: number, title: string): Promise<number> => {
     try {
         const response = await api.post(`/${team_id}/sbom_sca/scan`, { title });
-        toast.success("SCA + SBOM scan created successfully");
+        toast.success("SCA + SBOM scan created");
         return response.data.scan_id as number;
     } catch (error) {
         throw error;
@@ -1895,7 +1877,6 @@ const createSBOMSCAScan = async (team_id: number, title: string): Promise<number
 const getSCASBOMConversations = async (): Promise<SCASBOMConversation[]> => {
     try {
         const response = await api.get("/sbom_sca/conversations");
-        toast.success("SCA + SBOM conversations fetched successfully");
         return response.data as SCASBOMConversation[];
     } catch (error) {
         showErrorToast(error, "Error fetching sbom_sca conversations");
@@ -1907,7 +1888,6 @@ const getSCASBOMConversations = async (): Promise<SCASBOMConversation[]> => {
 const deleteSCASBOMConversation = async (conversation_id: number) => {
     try {
         const response = await api.delete(`/sbom_sca/conversation/${conversation_id}`);
-        toast.success("SCA + SBOM scan deleted successfully");
         return response.data;
     } catch (error) {
         throw error;
@@ -1924,7 +1904,6 @@ const renameSCASBOMConversation = async ({
 }) => {
     try {
         const response = await api.put(`/sbom_sca/conversation/${conversation_id}`, { title });
-        toast.success("SCA + SBOM scan renamed successfully");
         return response.data;
     } catch (error) {
         throw error;
@@ -1935,7 +1914,7 @@ const renameSCASBOMConversation = async ({
 const createSCASBOMConversation = async (title: string) => {
     try {
         const response = await api.post("/sbom_sca/conversation", { title });
-        toast.success("SCA + SBOM conversation created successfully");
+        toast.success("SCA + SBOM scan created");
         return response.data.conversation_id as number;
     } catch (error) {
         throw error;
@@ -2022,7 +2001,7 @@ const startSCASBOMScan = async (
     }) => {
     try {
         const response = await api.post(`/sbom_sca/conversation/${conversation_id}/scan`, { sbom_sca_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("SCA + SBOM scan started successfully")
+        toast.success("SCA + SBOM scan started")
         return response.data
     } catch (error) {
         throw error
@@ -2032,7 +2011,7 @@ const startSCASBOMScan = async (
 const getSCASBOMExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/sbom_sca/conversation/${conversation_id}/export`)
-        toast.success("SCA + SBOM export results fetched successfully")
+        toast.success("SCA + SBOM report downloaded")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching sbom_sca export results")
@@ -2044,7 +2023,7 @@ const getSCASBOMExportResults = async (conversation_id: number): Promise<any> =>
 const getSBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
     try {
         const response = await api.get(`/${team_id}/sbom_sca/scan/${scan_id}/export`, { responseType: "blob" });
-        toast.success("SCA + SBOM export results fetched successfully");
+        toast.success("SCA + SBOM report downloaded");
         return response.data;
     } catch (error) {
         showErrorToast(error, "Error fetching sbom_sca export results");
@@ -2065,7 +2044,7 @@ const reinitializeSBOMScanWithPayload = async (
         form,
         { headers: { "Content-Type": "multipart/form-data" } }
     );
-    toast.success("SCA + SBOM scan reinitialized successfully");
+    toast.success("SCA + SBOM scan restarted");
     return response.data;
 };
 
@@ -2083,7 +2062,7 @@ const reinitializeSCASBOMScan = async (
     }) => {
     try {
         const response = await api.post(`/sbom_sca/conversation/${conversation_id}/reinitialize`, { sbom_sca_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("SCA + SBOM scan reinitialized successfully")
+        toast.success("SCA + SBOM scan restarted")
         return response.data
     } catch (error) {
         throw error
@@ -2353,7 +2332,6 @@ export interface CBOMConversationResponse {
 const getCBOMScans = async (team_id: number): Promise<CBOMListResponse> => {
   try {
     const response = await api.get(`/${team_id}/cbom/scans`);
-    toast.success("CBOM scans fetched successfully");
     return response.data as CBOMListResponse;
   } catch (error) {
     showErrorToast(error, "Error fetching CBOM scans");
@@ -2381,7 +2359,7 @@ const getCBOMScanData = async ({
 const createCBOMScan = async (team_id: number, title: string): Promise<number> => {
   try {
     const response = await api.post(`/${team_id}/cbom/scan`, { title });
-    toast.success("CBOM scan created successfully");
+    toast.success("CBOM scan created");
     return response.data.scan_id as number;
   } catch (error) {
     throw error;
@@ -2391,7 +2369,6 @@ const createCBOMScan = async (team_id: number, title: string): Promise<number> =
 const deleteCBOMScan = async (team_id: number, scan_id: number) => {
   try {
     const response = await api.delete(`/${team_id}/cbom/scan/${scan_id}`);
-    toast.success("CBOM scan deleted successfully");
     return response.data;
   } catch (error) {
     throw error;
@@ -2409,7 +2386,6 @@ const renameCBOMScan = async ({
 }) => {
   try {
     const response = await api.put(`/${team_id}/cbom/scan/${scan_id}`, { title });
-    toast.success("CBOM scan renamed successfully");
     return response.data;
   } catch (error) {
     throw error;
@@ -2420,7 +2396,7 @@ const renameCBOMScan = async ({
 const getCBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
   try {
     const response = await api.get(`/${team_id}/cbom/scan/${scan_id}/export`, { responseType: "blob" });
-    toast.success("CBOM export results fetched successfully");
+    toast.success("CBOM report downloaded");
     return response.data;
   } catch (error) {
     showErrorToast(error, "Error fetching CBOM export results");
@@ -2506,7 +2482,7 @@ const reinitializeCBOMScanWithPayload = async (
     form,
     { headers: { "Content-Type": "multipart/form-data" } }
   );
-  toast.success("CBOM scan reinitialized successfully");
+  toast.success("CBOM scan restarted");
   return response.data;
 };
 
@@ -2757,7 +2733,7 @@ const getAIBOMScanData = async ({
 const createAIBOMScan = async (team_id: number, title: string): Promise<number> => {
   try {
     const response = await api.post(`/${team_id}/ai_bom/scan`, { title });
-    toast.success("AI BOM scan created successfully");
+    toast.success("AI BOM scan created");
     return response.data.scan_id as number;
   } catch (error) {
     throw error;
@@ -2767,7 +2743,6 @@ const createAIBOMScan = async (team_id: number, title: string): Promise<number> 
 const deleteAIBOMScan = async (team_id: number, scan_id: number) => {
   try {
     const response = await api.delete(`/${team_id}/ai_bom/scan/${scan_id}`);
-    toast.success("AI BOM scan deleted successfully");
     return response.data;
   } catch (error) {
     throw error;
@@ -2785,7 +2760,6 @@ const renameAIBOMScan = async ({
 }) => {
   try {
     const response = await api.put(`/${team_id}/ai_bom/scan/${scan_id}`, { title });
-    toast.success("AI BOM scan renamed successfully");
     return response.data;
   } catch (error) {
     throw error;
@@ -2796,7 +2770,7 @@ const renameAIBOMScan = async ({
 const getAIBOMExportResults = async (team_id: number, scan_id: number): Promise<Blob | ArrayBuffer> => {
   try {
     const response = await api.get(`/${team_id}/ai_bom/scan/${scan_id}/export`, { responseType: "blob" });
-    toast.success("AI BOM export results fetched successfully");
+    toast.success("AI BOM report downloaded");
     return response.data;
   } catch (error) {
     showErrorToast(error, "Error fetching AI BOM export results");
@@ -2817,7 +2791,7 @@ const reinitializeAIBOMScanWithPayload = async (
     form,
     { headers: { "Content-Type": "multipart/form-data" } }
   );
-  toast.success("AI BOM scan reinitialized successfully");
+  toast.success("AI BOM scan restarted");
   return response.data;
 };
 
@@ -2963,7 +2937,6 @@ export interface DiscoveryConversation {
 const getDiscoveryConversations = async (): Promise<DiscoveryConversation[]> => {
     try {
         const response = await api.get("/agent_discovery/conversations")
-        toast.success("Discovery conversations fetched successfully")
         return response.data as DiscoveryConversation[]
     } catch (error) {
         showErrorToast(error,"Error fetching discovery conversations")
@@ -2974,7 +2947,7 @@ const getDiscoveryConversations = async (): Promise<DiscoveryConversation[]> => 
 const deleteDiscoveryConversation = async (conversation_id: number) => {
     try {
         const response = await api.delete(`/agent_discovery/conversation/${conversation_id}`)
-        toast.success("Discovery scan deleted successfully")
+        toast.success("Discovery scan deleted")
         return response.data
     } catch (error) {
         throw error
@@ -2984,7 +2957,7 @@ const deleteDiscoveryConversation = async (conversation_id: number) => {
 const renameDiscoveryConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
     try {
         const response = await api.put(`/agent_discovery/conversation/${conversation_id}`, { title: title })
-        toast.success("Discovery scan renamed successfully")
+        toast.success("Discovery scan renamed")
         return response.data
     } catch (error) {
         throw error
@@ -2994,7 +2967,7 @@ const renameDiscoveryConversation = async ({conversation_id, title}: {conversati
 const createDiscoveryConversation = async (title: string) => {
     try {
         const response = await api.post("/agent_discovery/conversation", { title: title })
-        toast.success("Discovery conversation created successfully")
+        toast.success("Discovery scan created")
         return response.data.conversation_id as number  
     } catch (error) {
         throw error
@@ -3021,7 +2994,6 @@ const getDiscoveryConversationMessages = async ({queryKey}: {queryKey: ['discove
     const conversation_id = queryKey[1]
     try {
         const response = await api.get(`/agent_discovery/conversation/${conversation_id}`)
-        toast.success("Discovery conversation messages fetched successfully")
         return response.data as DiscoveryConversationResponse
     } catch (error) {
         showErrorToast(error,"Error fetching discovery conversation messages")
@@ -3043,7 +3015,7 @@ const startDiscoveryScan = async (
     }) => {
     try {
         const response = await api.post(`/agent_discovery/conversation/${conversation_id}/scan`, { agent_discovery_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Discovery scan started successfully")
+        toast.success("Discovery scan started")
         return response.data
     } catch (error) {
         throw error
@@ -3053,7 +3025,7 @@ const startDiscoveryScan = async (
 const getDiscoveryExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/agent_discovery/conversation/${conversation_id}/export`)
-        toast.success("Discovery export results fetched successfully")
+        toast.success("Discovery report downloaded")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching discovery export results")
@@ -3075,7 +3047,7 @@ const reinitializeDiscoveryScan = async (
     }) => {
     try {
         const response = await api.post(`/agent_discovery/conversation/${conversation_id}/reinitialize`, { agent_discovery_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Discovery scan reinitialized successfully")
+        toast.success("Discovery scan restarted")
         return response.data
     } catch (error) {
         throw error
@@ -3106,7 +3078,6 @@ export interface LeakageConversation {
 const getLeakageConversations = async (): Promise<LeakageConversation[]> => {
     try {
         const response = await api.get("/leakage/conversations")
-        toast.success("Leakage conversations fetched successfully")
         return response.data as LeakageConversation[]
     } catch (error) {
         showErrorToast(error,"Error fetching leakage conversations")
@@ -3117,7 +3088,7 @@ const getLeakageConversations = async (): Promise<LeakageConversation[]> => {
 const deleteLeakageConversation = async (conversation_id: number) => {
     try {
         const response = await api.delete(`/leakage/conversation/${conversation_id}`)
-        toast.success("Leakage scan deleted successfully")
+        toast.success("Leakage scan deleted")
         return response.data
     } catch (error) {
         throw error
@@ -3127,7 +3098,7 @@ const deleteLeakageConversation = async (conversation_id: number) => {
 const renameLeakageConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
     try {
         const response = await api.put(`/leakage/conversation/${conversation_id}`, { title: title })
-        toast.success("Leakage scan renamed successfully")
+        toast.success("Leakage scan renamed")
         return response.data
     } catch (error) {
         throw error
@@ -3137,7 +3108,7 @@ const renameLeakageConversation = async ({conversation_id, title}: {conversation
 const createLeakageConversation = async (title: string) => {
     try {
         const response = await api.post("/leakage/conversation", { title: title })
-        toast.success("Leakage conversation created successfully")
+        toast.success("Leakage scan created")
         return response.data.conversation_id as number  
     } catch (error) {
         throw error
@@ -3164,7 +3135,6 @@ const getLeakageConversationMessages = async ({queryKey}: {queryKey: ['leakage-c
     const conversation_id = queryKey[1]
     try {
         const response = await api.get(`/leakage/conversation/${conversation_id}`)
-        toast.success("Leakage conversation messages fetched successfully")
         return response.data as LeakageConversationResponse
     } catch (error) {
         showErrorToast(error,"Error fetching leakage conversation messages")
@@ -3186,7 +3156,7 @@ const startLeakageScan = async (
     }) => {
     try {
         const response = await api.post(`/leakage/conversation/${conversation_id}/scan`, { leakage_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Leakage scan started successfully")
+        toast.success("Leakage scan started")
         return response.data
     } catch (error) {
         throw error
@@ -3196,7 +3166,7 @@ const startLeakageScan = async (
 const getLeakageExportResults = async (conversation_id: number): Promise<any> => {
     try {   
         const response = await api.get(`/leakage/conversation/${conversation_id}/export`)
-        toast.success("Leakage export results fetched successfully")
+        toast.success("Leakage report downloaded")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error fetching leakage export results")
@@ -3218,7 +3188,7 @@ const reinitializeLeakageScan = async (
     }) => {
     try {
         const response = await api.post(`/leakage/conversation/${conversation_id}/reinitialize`, { leakage_data: { repo_url: repo_url, PAT: PAT, mode: mode } })
-        toast.success("Leakage scan reinitialized successfully")
+        toast.success("Leakage scan restarted")
         return response.data
     } catch (error) {
         throw error
@@ -3293,7 +3263,6 @@ export interface GuardrailsIntegrationsResponse {
 const getGuardrailsIntegrations = async (team_id: number): Promise<GuardrailsIntegrationsResponse> => {
     try {
         const response = await api.get(`/guardrails/${team_id}/integrations`)
-        toast.success("Guardrails integrations fetched successfully")
         const data = response.data as { integrations: GuardrailsIntegration[]; dashboard_data: GuardrailsListDashboardData }
         return data
     } catch (error) {
@@ -3306,7 +3275,7 @@ const getGuardrailsIntegrations = async (team_id: number): Promise<GuardrailsInt
 const deleteGuardrailsIntegration = async (team_id: number, integration_id: number) => {
     try {
         const response = await api.delete(`/guardrails/${team_id}/integration/${integration_id}`)
-        toast.success("Guardrails integration deleted successfully")
+        toast.success("Guardrails integration deleted")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error deleting guardrails integration")
@@ -3452,7 +3421,6 @@ const getGuardrailsIntegrationDashboard = async ({queryKey}: {queryKey: ['guardr
         const response = await api.get(`/guardrails/${team_id}/integration/${integration_id}`, {
             params: { limit, offset },
         })
-        toast.success("Guardrails integration dashboard fetched successfully")
         return response.data as GuardrailsIntegrationDashboard
     } catch (error) {
         showErrorToast(error,"Error fetching guardrails integration dashboard")
@@ -3468,7 +3436,7 @@ export interface CreateGuardrailsIntegrationData {
 const createGuardrailsIntegration = async (team_id: number, data: CreateGuardrailsIntegrationData) => {
     try {
         const response = await api.post(`/guardrails/${team_id}/integration`, data)
-        toast.success("Guardrails integration created successfully")
+        toast.success("Guardrails integration created")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error creating guardrails integration")
@@ -3495,7 +3463,7 @@ export interface UpdateGuardrailsIntegrationData {
 const updateGuardrailsIntegration = async ({ team_id, integration_id, data }: { team_id: number; integration_id: number; data: UpdateGuardrailsIntegrationData }) => {
     try {
         const response = await api.put(`/guardrails/${team_id}/integration/${integration_id}`, data)
-        toast.success("Guardrails integration updated successfully")
+        toast.success("Guardrails integration updated")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error updating guardrails integration")
@@ -3613,7 +3581,6 @@ export interface DASTScanResponse {
 const getDASTScans = async (team_id: number): Promise<DASTListResponse> => {
     try {
         const response = await api.get(`/${team_id}/dast/scans`)
-        toast.success("Refreshed successfully")
         return response.data as DASTListResponse
     } catch (error) {
         showErrorToast(error, "Error fetching DAST scans")
@@ -3634,7 +3601,6 @@ const getDASTScan = async (team_id: number, scan_id: number): Promise<DASTScanRe
 const deleteDASTScan = async (team_id: number, scan_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/dast/scan/${scan_id}`)
-        toast.success("DAST scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -3644,7 +3610,6 @@ const deleteDASTScan = async (team_id: number, scan_id: number) => {
 const renameDASTScan = async ({ team_id, scan_id, title }: { team_id: number; scan_id: number; title: string }) => {
     try {
         const response = await api.put(`/${team_id}/dast/scan/${scan_id}`, { title })
-        toast.success("DAST scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -3654,7 +3619,7 @@ const renameDASTScan = async ({ team_id, scan_id, title }: { team_id: number; sc
 const createDASTScan = async (team_id: number, title: string): Promise<number> => {
     try {
         const response = await api.post(`/${team_id}/dast/scan`, { title })
-        toast.success("DAST scan created successfully")
+        toast.success("DAST scan created")
         return (response.data as { scan_id: number }).scan_id
     } catch (error) {
         throw error
@@ -3675,7 +3640,6 @@ export interface DASTConversation {
 const getDASTConversations = async (): Promise<DASTConversation[]> => {
     try {
         const response = await api.get("/dast/conversations")
-        toast.success("DAST conversations fetched successfully")
         return response.data as DASTConversation[]
     } catch (error) {
         showErrorToast(error,"Error fetching dast conversations")
@@ -3686,7 +3650,6 @@ const getDASTConversations = async (): Promise<DASTConversation[]> => {
 const deleteDASTConversation = async (conversation_id: number) => {
     try {
         const response = await api.delete(`/dast/conversation/${conversation_id}`)
-        toast.success("DAST scan deleted successfully")
         return response.data
     } catch (error) {
         throw error
@@ -3696,7 +3659,6 @@ const deleteDASTConversation = async (conversation_id: number) => {
 const renameDASTConversation = async ({conversation_id, title}: {conversation_id: number, title: string}) => {
     try {
         const response = await api.put(`/dast/conversation/${conversation_id}`, { title: title })
-        toast.success("DAST scan renamed successfully")
         return response.data
     } catch (error) {
         throw error
@@ -3706,7 +3668,7 @@ const renameDASTConversation = async ({conversation_id, title}: {conversation_id
 const createDASTConversation = async (title: string) => {
     try {
         const response = await api.post("/dast/conversation", { title: title })
-        toast.success("DAST conversation created successfully")
+        toast.success("DAST scan created")
         return response.data.conversation_id as number  
     } catch (error) {
         throw error
@@ -3737,7 +3699,6 @@ const getDASTConversationMessages = async ({queryKey}: {queryKey: ['dast-convers
     const conversation_id = queryKey[1]
     try {
         const response = await api.get(`/dast/conversation/${conversation_id}`)
-        toast.success("DAST conversation messages fetched successfully")
         return response.data as DASTConversationResponse
     } catch (error) {
         showErrorToast(error,"Error fetching dast conversation messages")
@@ -3781,7 +3742,7 @@ const getDASTExportResults = async (team_id: number, scan_id: number): Promise<B
         const response = await api.get(`/${team_id}/dast/scan/${scan_id}/export`, {
             responseType: "blob",
         })
-        toast.success("DAST export results fetched successfully")
+        toast.success("DAST report downloaded")
         return response.data
     } catch (error) {
         showErrorToast(error, "Error fetching DAST export results")
@@ -3802,7 +3763,7 @@ const reinitializeDASTScan = async (
             form,
             { headers: { "Content-Type": "multipart/form-data" } }
         )
-        toast.success("DAST scan reinitialized successfully")
+        toast.success("DAST scan restarted")
         return response.data
     } catch (error) {
         throw error
@@ -3985,7 +3946,6 @@ export interface CicdIntegrationsResponse {
 const getCicdIntegrations = async (team_id: number): Promise<CicdIntegrationsResponse> => {
     try {
         const response = await api.get(`/${team_id}/cicd/integrations`)
-        toast.success("CI/CD integrations fetched successfully")
         return response.data as CicdIntegrationsResponse
     } catch (error) {
         showErrorToast(error,"Error fetching CI/CD integrations")
@@ -4001,7 +3961,7 @@ export interface CreateCicdIntegrationData {
 const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData) => {
     try {
         const response = await api.post(`/${team_id}/cicd/integration`, data)
-        toast.success("CI/CD integration created successfully")
+        toast.success("CI/CD integration created")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error creating CI/CD integration")
@@ -4057,7 +4017,6 @@ const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integra
         const response = await api.get(`/${team_id}/cicd/integration/${integration_id}`, {
             params: { limit, offset },
         })
-        toast.success("CI/CD integration dashboard fetched successfully")
         return response.data as CicdIntegrationDashboard
     } catch (error) {
         showErrorToast(error,"Error fetching CI/CD integration dashboard")
@@ -4068,7 +4027,7 @@ const getCicdIntegrationDashboard = async ({queryKey}: {queryKey: ['cicd-integra
 const deleteCicdIntegration = async (team_id: number, integration_id: number) => {
     try {
         const response = await api.delete(`/${team_id}/cicd/integration/${integration_id}`)
-        toast.success("CI/CD integration deleted successfully")
+        toast.success("CI/CD integration deleted")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error deleting CI/CD integration")
@@ -4100,7 +4059,7 @@ export interface UpdateCicdIntegrationData {
 const updateCicdIntegration = async ({ team_id, integration_id, data }: { team_id: number; integration_id: number; data: UpdateCicdIntegrationData }) => {
     try {
         const response = await api.put(`/${team_id}/cicd/integration/${integration_id}`, data)
-        toast.success("CI/CD integration updated successfully")
+        toast.success("CI/CD integration updated")
         return response.data
     } catch (error) {
         showErrorToast(error,"Error updating CI/CD integration")

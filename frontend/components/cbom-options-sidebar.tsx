@@ -196,7 +196,7 @@ export function CBOMOptionsSidebar({
         const total = Math.round((data.credits_required + (sources?.total_credits ?? 0)) * 100) / 100;
         toast.success(`This scan will use ${total} credits`);
       } else {
-        toast.error("Invalid Input from user");
+        toast.error("These settings cannot be scanned. Check them and estimate again.");
       }
     },
     onError: (err) => {
@@ -548,7 +548,7 @@ export function CBOMOptionsSidebar({
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
-                  <span className="font-semibold text-amber-400">Invalid Input from user</span>
+                  <span className="font-semibold text-amber-400">These settings cannot be scanned. Check them and estimate again.</span>
                 ) : (
                   <>Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span></>
                 )}

@@ -105,7 +105,7 @@ export function DeprecatedGuardrailsPage() {
       queryClient.invalidateQueries({ queryKey: ['guardrails-integrations', team_id] });
       setDeleteDialogOpen(false);
       setSelectedIntegration(null);
-      toast.success('Guardrails integration deleted successfully');
+      toast.success('Guardrails integration deleted');
     },
     onError: (error) => {
       showErrorToast(error);
@@ -117,7 +117,7 @@ export function DeprecatedGuardrailsPage() {
       renameGuardrailsIntegration({ team_id: Number(team_id), integration_id, title }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guardrails-integrations', team_id] });
-      toast.success('Guardrails integration renamed successfully');
+      toast.success('Guardrails integration renamed');
     },
     onError: (error) => {
       showErrorToast(error);

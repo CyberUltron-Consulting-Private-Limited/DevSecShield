@@ -632,7 +632,7 @@ export default function IACPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteIACConversation(team_id, scan_id),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["iac-conversations", variables.team_id.toString()] });
-      toast.success("IAC scan deleted successfully");
+      toast.success("IAC scan deleted");
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -641,7 +641,7 @@ export default function IACPage() {
     mutationFn: renameIACConversation,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["iac-conversations", variables.team_id.toString()] });
-      toast.success("IAC scan renamed successfully");
+      toast.success("IAC scan renamed");
     },
     onError: (error) => { showErrorToast(error); },
   });

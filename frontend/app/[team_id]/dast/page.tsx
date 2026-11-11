@@ -537,7 +537,7 @@ export default function DASTPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteDASTScan(team_id, scan_id),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["dast-scans", variables.team_id.toString()] });
-      toast.success("DAST scan deleted successfully");
+      toast.success("DAST scan deleted");
     },
     onError: (error) => showErrorToast(error),
   });
@@ -546,7 +546,7 @@ export default function DASTPage() {
     mutationFn: renameDASTScan,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["dast-scans", variables.team_id.toString()] });
-      toast.success("DAST scan renamed successfully");
+      toast.success("DAST scan renamed");
     },
     onError: (error) => showErrorToast(error),
   });

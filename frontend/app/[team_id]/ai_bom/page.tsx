@@ -519,7 +519,7 @@ export default function AIBOMPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteAIBOMScan(team_id, scan_id),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["ai_bom-scans", variables.team_id.toString()] });
-      toast.success("AI BOM scan deleted successfully");
+      toast.success("AI BOM scan deleted");
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -528,7 +528,7 @@ export default function AIBOMPage() {
     mutationFn: renameAIBOMScan,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["ai_bom-scans", variables.team_id.toString()] });
-      toast.success("AI BOM scan renamed successfully");
+      toast.success("AI BOM scan renamed");
     },
     onError: (error) => { showErrorToast(error); },
   });
