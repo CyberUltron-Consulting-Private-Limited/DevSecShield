@@ -97,6 +97,26 @@ jobs:
           key: next-${{ runner.os }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}-${{ github.sha }}
           restore-keys: next-${{ runner.os }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}-
 
+      # Before `npm ci` runs any PR code (install scripts): fetch the base commit for the ESLint diff. The token is
+      # used for this one fetch and is not in the environment of any later step.
+      - name: Base commit for the ESLint diff
+        id: base
+        if: inputs.eslint-mode == 'diff' && github.event.pull_request.base.sha != ''
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          FETCH_TOKEN: ${{ github.token }}
+        working-directory: .
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch -q --no-tags --depth=1 origin "$BASE_SHA" \
+             && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null; then
+            echo "dir=$RUNNER_TEMP/base" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not check out the base commit $BASE_SHA; ESLint errors will be reported, not gated"
+          fi
+
       - name: Install
         id: install
         env:
@@ -117,8 +137,8 @@ jobs:
           MODE: ${{ inputs.eslint-mode }}
           ESLINT_ARGS: ${{ inputs.eslint-args }}
           WD: ${{ inputs.working-directory }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          FETCH_TOKEN: ${{ github.token }}
+          BASE_DIR: ${{ steps.base.outputs.dir }}
+          IS_PR: ${{ github.event.pull_request.number != '' }}
         run: |
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           out="$RUNNER_TEMP/eslint"; mkdir -p "$out"
@@ -132,23 +152,16 @@ jobs:
           rc=$?
           [ "$rc" -le 1 ] || { echo "::error::eslint did not run (exit $rc)"; exit "$rc"; }
           gate="report"
-          fetch_base() { # the checkout keeps no credentials, so pass the job token for this one fetch only
-            local auth; auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
-            echo "::add-mask::$auth"
-            git -C "$GITHUB_WORKSPACE" -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
-              fetch --no-tags --depth=1 origin "$BASE_SHA" \
-              && git -C "$GITHUB_WORKSPACE" worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
-          }
-          if [ -n "$BASE_SHA" ]; then
-            if ! fetch_base; then
-              echo "::warning::could not check out the base commit; ESLint errors are reported, not gated"
-            elif [ ! -d "$RUNNER_TEMP/base/$WD" ]; then
+          if [ "$IS_PR" = true ]; then
+            if [ -z "$BASE_DIR" ]; then
+              echo "::warning::no base checkout; ESLint errors are reported, not gated"
+            elif [ ! -d "$BASE_DIR/$WD" ]; then
               echo '[]' > "$out/base.json"; gate="diff"   # the project is new in this PR: every error is new
             else
               # The base commit's files, linted with this run's dependencies and the base's own config.
-              ln -s "$PWD/node_modules" "$RUNNER_TEMP/base/$WD/node_modules"
+              ln -s "$PWD/node_modules" "$BASE_DIR/$WD/node_modules"
               # shellcheck disable=SC2086
-              (cd "$RUNNER_TEMP/base/$WD" && npx eslint -f json -o "$out/base.json" $ESLINT_ARGS)
+              (cd "$BASE_DIR/$WD" && npx eslint -f json -o "$out/base.json" $ESLINT_ARGS)
               if [ $? -le 1 ] && [ -s "$out/base.json" ]; then
                 gate="diff"
               else
@@ -156,9 +169,18 @@ jobs:
               fi
             fi
           fi
-          python3 - "$out/head.json" "$out/base.json" "$gate" "$PWD" "$RUNNER_TEMP/base/$WD" <<'PY'
-          import collections, json, os, sys
+          python3 - "$out/head.json" "$out/base.json" "$gate" "$PWD" "${BASE_DIR:-$RUNNER_TEMP/base}/$WD" <<'PY'
+          import collections, json, os, re, sys
           head, base, gate, head_root, base_root = sys.argv[1:6]
+          ROOTS = [r.rstrip("/") + "/" for r in (head_root, base_root) if r]
+          def norm(msg):
+              # First line only: React Compiler rules (react-hooks/*) append a code frame with the absolute path and
+              # line numbers, which differ between the head and base checkouts. Also drop roots and "line 123".
+              msg = (msg or "").strip().splitlines()[:1] or [""]
+              msg = msg[0]
+              for r in ROOTS:
+                  msg = msg.replace(r, "")
+              return " ".join(re.sub(r"\bline \d+", "line N", msg).split())
           def load(path, root):
               c, where = collections.Counter(), {}
               if not os.path.exists(path):
@@ -168,7 +190,7 @@ jobs:
                   for m in f.get("messages", []):
                       if m.get("severity") != 2:  # errors only; warnings never block
                           continue
-                      k = (rel, m.get("ruleId") or "parse", " ".join(m.get("message", "").split()))
+                      k = (rel, m.get("ruleId") or "parse", norm(m.get("message")))
                       c[k] += 1
                       where.setdefault(k, m.get("line", 1))
               return c, where

@@ -41,7 +41,8 @@ pull_request / push to dev, staging, main
 - **Permissions.** The workflow defaults to `contents: read`, and each job asks only for what it needs.
 - **Pinned actions.** Every action is pinned to a full commit SHA with the version in a comment. Tool binaries
   (gitleaks, Trivy, OSV-Scanner, Hadolint, ShellCheck, actionlint) are pinned by version and SHA-256. Dependabot
-  keeps both up to date.
+  updates the action SHAs only. It cannot see the `*-version` / `*-sha256` inputs, or the PyPI and npm tools
+  (Semgrep, Checkov, ggshield, tsx), which are pinned by top-level version only, so bump those by hand.
 
 ## The gating rule: no new findings
 
@@ -54,13 +55,48 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
   only on findings the change adds.** Semgrep uses its own `--baseline-commit`. gitleaks scans only the new commits
   and blocks on anything it finds there.
 - **Schedule and manual runs ("full" mode):** everything is scanned and **reported**: SARIF and JSON in the
-  artifacts, counts in the run summary. The one exception is gitleaks, which fails the scheduled run while any
-  secret remains in the history.
+  artifacts, counts in the run summary. Nothing is gated, gitleaks included (`gitleaks-fail-full: false`). Until the
+  history is cleaned, a full scan that is always red would be ignored. New secrets are already blocked by the
+  diff-mode scan of every pull request and push.
 - **Tests, type checks and builds always block.** pytest, `tsc --noEmit`, the tsx tests, `next build`, the
   `uv lock --check` and the image builds have no "existing debt" mode. They must pass.
 
 Every run's summary page shows a table per tool: findings now, findings on the base commit, new findings, and the
 result.
+
+### What a change cannot do to the secret gate
+
+A pull request runs its own workflows and configs, so gitleaks is set up so that a change cannot exempt its own
+secret. These cases were reproduced with fabricated tokens (security review on PR #16):
+
+| A change that... | is still caught because |
+|---|---|
+| adds a `[[allowlists]]` entry to `.gitleaks.toml` | diff mode reads `.gitleaks.toml` from the **base** commit |
+| adds its own fingerprint to `.gitleaksignore` | diff mode reads `.gitleaksignore` from the base commit and deletes the checkout's copy |
+| ends the line with `# gitleaks:allow` | `--ignore-gitleaks-allow` |
+| marks the file `-diff` in `.gitattributes` | `git log --text` |
+| hides the secret in a merge's conflict resolution | `git log --diff-merges=remerge` shows what a merge adds beyond the automatic merge |
+| puts a real `.env` under `tests/fixtures/` | there is no path allowlist any more (see below) |
+
+GitGuardian gets the same treatment: `.gitguardian.yaml` is taken from the base commit.
+
+**Fabricated secrets for detector tests.** A gitleaks finding whose file is under a `tests/fixtures/` directory
+passes only when the PR carries the **`secret-fixtures-reviewed`** label. A reviewer adds the label after checking
+that every value is fabricated, then re-runs the failed jobs. A finding anywhere else can never be waived by a
+label. pr-hygiene applies the same label to forbidden key files under fixture directories. Existing fixture findings
+in history get commit-pinned fingerprints in `.gitleaksignore` (`commit:file:rule:line`, which no future change can
+reuse), copied from the first full-history scan on `main`.
+
+**Changes to the gates themselves.** pr-hygiene fails when a PR changes `.github/**`, `.gitleaks.toml`,
+`.gitleaksignore`, `.gitattributes`, `CODEOWNERS`, `.coderabbit.yaml` or any scanner config (`.semgrepignore`,
+`.trivyignore`, `trivy.yaml`, `osv-scanner.toml`, `.hadolint.yaml`, `.shellcheckrc`, `.checkov.yaml`,
+`.gitguardian.yaml`). Such a PR passes only once a security reviewer adds the **`security-config-reviewed`**
+label. The touched files are listed in the job summary. pr-hygiene reads the title, body and labels from the API
+when it runs, so after editing the PR or adding a label, use *Re-run failed jobs*.
+
+**Reports hold no secret values.** gitleaks runs with `--redact`. Semgrep's text output, which prints each matched
+line, is discarded. Every SARIF file has its `snippet` / `contextRegion` / `fixes` removed before upload, and the
+job fails if any snippet is left.
 
 ## Workflows
 
@@ -147,8 +183,12 @@ jobs:
 
 **Access.** This repository is private. Another repository can call its workflows only when (a) it belongs to the
 same owner and (b) this repository allows it: *Settings → Actions → General → Access → "Accessible from
-repositories owned by the user"*. For repositories under other owners, copy the files, or make this one public.
-The workflows hold no secrets, so either option is safe.
+repositories owned by the user"*. For repositories under other owners, copy the workflow files into a separate
+public repository that holds only them, and call them from there.
+
+**Do not make this repository public** until every credential in the debt table below is rotated and the history
+is purged. Today's tree holds 81 live-looking secrets, including 12 `.env` files and `cu-devsecshield-key.pem`, and
+the history holds 328. Making it public would publish all of them.
 
 Each workflow reads only the caller's checkout. Repo-specific files are optional and used when present:
 `.gitleaks.toml`, `.semgrepignore`, `.trivyignore`, `.hadolint.yaml`, `.github/labeler.yml`.
@@ -200,12 +240,14 @@ Each workflow reads only the caller's checkout. Repo-specific files are optional
 | Input | Default |
 |---|---|
 | `mode` | `auto`: PRs and pushes use diff, everything else full |
-| `exclude-regex` | node_modules, .venv, .next, dist, `tests/fixtures`, `fixtures`, `bench/repos`, `examples` (does not apply to gitleaks) |
-| `gitleaks-config`, `gitleaks-fail-full` | `.gitleaks.toml`, `true` |
+| `exclude-regex` | `node_modules`, `.venv`, `venv`, `.next`, `dist` (does not apply to gitleaks). `ci.yml` adds this repo's fixture roots, anchored (`^aibom/tests/fixtures/`, ...), so a future product directory named `fixtures` or `examples` is still scanned |
+| `gitleaks-config`, `gitleaks-fail-full` | `.gitleaks.toml` (taken from the base commit in diff mode), `false` |
+| `secret-fixture-label`, `secret-fixture-regex` | `secret-fixtures-reviewed`, `(^\|/)tests?/fixtures/` |
 | `semgrep-configs` | `p/ci p/python p/typescript p/secrets p/dockerfile` |
 | `semgrep-min-level`, `hadolint-min-level`, `shellcheck-severity` | `warning` |
 | `trivy-scanners`, `trivy-severity` | `vuln,misconfig`, `HIGH,CRITICAL` (secrets are left to gitleaks) |
-| `checkov-frameworks` | `helm kubernetes terraform` |
+| `checkov-frameworks` | `kubernetes terraform` |
+| `helm-charts` | One chart per line, `<dir> [helm template args]`. Each is rendered for head and base and scanned as Kubernetes manifests. A chart that fails to render, input Checkov cannot process, or a rendered chart with zero evaluated checks fails the step. `ci.yml` passes `deploy/helm/cbom-scan-node` with CI placeholder values and the DaemonSet switched on |
 | `*-version`, `*-sha256` | Pinned tool versions and checksums. Change both together. |
 | `upload-sarif` | `false`. Set `true` only where code scanning exists, and grant `security-events: write` |
 
@@ -225,9 +267,11 @@ image, which pulls torch through garak, fails with "No space left on device").
 
 **reusable-pr-checks.yml**: `flows` (`staging:dev main:staging`), `title-regex`, `title-max-length` (100),
 `require-acceptance-criteria` (`true`; bots are exempt), `acceptance-heading-regex`, `forbidden-files-regex`
-(`.env*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, keystores, `id_rsa`-style keys, credentials files),
-`allowed-files-regex` (`.env.example` / `.sample` / `.template`, `tests/fixtures/`). The caller grants
-`pull-requests: read`.
+(case-insensitive: `.env` and `*.env` files, `.envrc`, `.npmrc`, `.pypirc`, `.netrc`, `.git-credentials`, `kubeconfig`,
+`credentials`, `*.pem` / `.key` / `.p12` / `.pfx` / `.p8` / `.jks` / `.keystore` / `.ppk` / `.kdbx` / `.tfvars` / `.tfstate` / `.der`,
+`id_rsa*`-style keys, service-account JSON), `allowed-files-regex` (`*.pub`, `.env.example` / `.sample` /
+`.template` / `.dist`), `secret-fixture-label` / `secret-fixture-regex`, `security-config-regex` /
+`security-config-label`. The caller grants `pull-requests: read`.
 
 **pr-labels.yml**: `configuration-path` (`.github/labeler.yml`), `size-thresholds` (`10 50 250 1000`). The caller
 grants `pull-requests: write`.
@@ -327,7 +371,7 @@ Measured on `dev` 8314739. These findings do not block a PR (only new ones do), 
 
 | Area | Count | Notes |
 |---|---:|---|
-| **Secrets in git history** (gitleaks, after the fixture allowlist) | 328 | 81 in today's tree across 42 tracked files, 12 of them `.env` files. They include OpenAI, AWS, GitHub fine-grained PATs, Atlassian, Azure AD and GCP keys, and `cu-devsecshield-key.pem` at the root. Main places: `backend/.env`, `backend/utilities/ai/` (`.env`, `llm.py`, `chatbot.py`, `testing.py`), `RabbitMQ/.env`, `RabbitMQ/{worker,dast_worker,guardrail_worker}/.env`, `RabbitMQ/worker/helpers/context/.env`, `RabbitMQ/worker/helpers/tests/*`, `RabbitMQ/worker/celery_test.py`, `RabbitMQ/worker/Dockerfile`, `RabbitMQ/dast_worker/Dockerfile`, `RabbitMQ/guardrail_worker/ticketing/jira.py`, `docs/Docs.md`, `.playwright-mcp/scan367_api.json`. **Rotate every credential first.** Then remove the files, and decide whether to rewrite history. |
+| **Secrets in git history** (gitleaks, excluding the fabricated detector fixtures) | 328 | 81 in today's tree across 42 tracked files, 12 of them `.env` files. They include OpenAI, AWS, GitHub fine-grained PATs, Atlassian, Azure AD and GCP keys, and `cu-devsecshield-key.pem` at the root. Main places: `backend/.env`, `backend/utilities/ai/` (`.env`, `llm.py`, `chatbot.py`, `testing.py`), `RabbitMQ/.env`, `RabbitMQ/{worker,dast_worker,guardrail_worker}/.env`, `RabbitMQ/worker/helpers/context/.env`, `RabbitMQ/worker/helpers/tests/*`, `RabbitMQ/worker/celery_test.py`, `RabbitMQ/worker/Dockerfile`, `RabbitMQ/dast_worker/Dockerfile`, `RabbitMQ/guardrail_worker/ticketing/jira.py`, `docs/Docs.md`, `.playwright-mcp/scan367_api.json`. **Rotate every credential first.** Then remove the files, and decide whether to rewrite history. |
 | Dependency vulnerabilities (OSV-Scanner) | 2,608 | Across 12 lockfiles (benchmark fixtures excluded) |
 | ESLint errors (frontend) | 208 | 113 `no-explicit-any`, 77 react-hooks |
 | ruff (aibom `src` + `tests`) | about 2,600 | Mostly E501 at 88 columns. Either set line-length to 120 or reformat |
@@ -344,9 +388,9 @@ the file and the rule.
 ```bash
 # workflows
 pipx run actionlint-py==1.7.12.25                                 # or: uvx --from actionlint-py actionlint
-# secrets (gitleaks 8.30.1): the PR's commits, or the whole history
-gitleaks git --redact --config .gitleaks.toml --log-opts="origin/dev..HEAD" .
-gitleaks git --redact --config .gitleaks.toml .
+# secrets (gitleaks 8.30.1), as CI runs them: the PR's commits, or the whole history
+gitleaks git --redact --ignore-gitleaks-allow --log-opts="--text --diff-merges=remerge origin/dev..HEAD" .
+gitleaks git --redact --ignore-gitleaks-allow --log-opts="--full-history --all --text --diff-merges=remerge" .
 # Semgrep, the same rulesets as CI
 uvx --from semgrep==1.181.1 semgrep scan --metrics=off --config p/ci --config p/python --config p/typescript \
   --config p/secrets --config p/dockerfile
@@ -365,8 +409,9 @@ cd frontend && npm ci && npx tsc --noEmit && npx eslint . && \
   account. GitHub's terms allow CodeQL only on public repositories and on organisation repositories with GitHub
   Code Security. SARIF upload is refused the same way: the code-scanning API returns 403, "Code scanning is not
   enabled". The `codeql` job therefore prints a notice, and every SARIF report is kept as a workflow artifact
-  (14 days). Semgrep provides SAST in the meantime. Once the repository is public or moved to an organisation with
-  Code Security, set the variable `CODEQL_ENABLED=true` and, if wanted, `upload-sarif: true`.
+  (14 days). Semgrep provides SAST in the meantime. To enable CodeQL, move the repository to an organisation with
+  GitHub Code Security, then set the variable `CODEQL_ENABLED=true` and, if wanted, `upload-sarif: true`. Making it
+  public is **not** an option until the credentials are rotated and the history is purged (see above).
 - **Schedules run from the default branch only.** `security-scheduled.yml` and the nightlies fire from `main`.
   Until this PR reaches `main`, run them by hand, or keep the old copies on `main`.
 - **Dependabot and `ARG`-based base images.** Dependabot's docker updater rewrites `FROM image:tag` lines. The

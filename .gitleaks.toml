@@ -1,47 +1,17 @@
-# gitleaks configuration (used by .github/workflows/reusable-security.yml and by `gitleaks git` / `gitleaks dir` run
-# locally). It keeps every default gitleaks rule and allowlists ONLY files that are genuine test fixtures: deliberately
-# fabricated keys and tokens that DevSecShield's own secret / crypto detectors are tested against. Nothing outside the
-# test trees is allowlisted, so real credentials (for example a committed .env file) are always reported.
+# gitleaks configuration for .github/workflows/reusable-security.yml and for local `gitleaks git` / `gitleaks dir`.
 #
-# Before adding an entry: confirm the value is fabricated (a comment in the file says so, or it is generated at test
-# time), add the narrowest path that covers it, and write the reason on the line above. Never allowlist a .env file.
+# Every built-in rule, and NO path allowlist. An allowlisted directory or file is a blind spot: a real secret added
+# there later would never be reported. On pull requests and pushes, CI reads this file, and .gitleaksignore, from
+# the BASE commit, so a change cannot exempt its own secret. CI also ignores inline `gitleaks:allow` comments.
+#
+# Fabricated secrets in DevSecShield's detector tests (aibom/tests/fixtures/, scan_node/tests/fixtures/, ...):
+#   * New ones: a finding whose file is under a tests/fixtures/ directory passes only when the pull request has the
+#     `secret-fixtures-reviewed` label, which a reviewer sets after checking that the value is fabricated. A finding
+#     anywhere else can never be waived by a label.
+#   * Existing ones in history: list their fingerprints (commit:file:rule:line, which a future change cannot reuse)
+#     in .gitleaksignore, taken from the weekly full scan's report.
 
 title = "DevSecShield gitleaks config"
 
 [extend]
 useDefault = true
-
-[[allowlists]]
-description = "Fabricated secrets in DevSecShield's own detector tests (each path is a test fixture, see comments)"
-paths = [
-  # Synthetic target applications the AI-BOM / CBOM scanners are tested against. Planted fake keys, marked
-  # "PLANTED FAKE ... NOT a real credential" in the files; aibom/pyproject.toml excludes them from linting for the
-  # same reason.
-  '''^aibom/tests/fixtures/''',
-  # Captured network-appliance output (show crypto key ...) parsed by the scan-node collector tests.
-  '''^scan_node/tests/fixtures/''',
-  # Builds an OpenSSH private-key PEM at test time from a key generated in the test.
-  '''^aibom/tests/test_cbom_committed_private_keys\.py$''',
-  # Fake RSA PEM fed to the CBOM file walker.
-  '''^aibom/tests/test_cbom_file_walk\.py$''',
-  # Redaction tests: fake AWS key / API key / PEM header that must be masked in code snippets.
-  '''^aibom/tests/test_cbom_occurrences_snippets\.py$''',
-  # False-positive regression corpus: public-by-design keys (Algolia search-only, Sentry DSN) and "cache key" text.
-  '''^aibom/tests/test_cbom_review5_detector_fps\.py$''',
-  # Fake disk-encryption settings text for the posture scanner.
-  '''^aibom/tests/test_cbom_posture_settings_databases\.py$''',
-  # Fake algorithm map entries in an artifact scan test.
-  '''^aibom/tests/test_cbom_artifacts\.py$''',
-  # Scrubber tests: fake password, kubeconfig token and PEM that the scan node must redact.
-  '''^scan_node/tests/test_safety\.py$''',
-  # Fake service-config values classified by encoding (text / base64).
-  '''^scan_node/tests/test_host_services_configs\.py$''',
-  # CBOM cloud-collector tests: fabricated Lambda / Glue env values, PEM bodies and ARNs that the collectors must
-  # classify without leaking.
-  '''^backend/tests/test_cbom_aws_collect_wp4\.py$''',
-  '''^backend/tests/test_cbom_aws_config_secrets\.py$''',
-  '''^backend/tests/test_cbom_r5_coverage_drift\.py$''',
-  '''^backend/tests/test_cbom_sources_api\.py$''',
-  # Certificate-register fixture keys ("name:a.pem|repo:x"), not secrets.
-  '''^backend/tests/test_cbom_deliverable_scope_register\.py$''',
-]

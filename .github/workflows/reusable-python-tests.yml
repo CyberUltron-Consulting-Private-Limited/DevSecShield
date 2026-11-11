@@ -218,6 +218,26 @@ jobs:
         if: inputs.lock-check
         run: uv lock --check
 
+      # Before the install runs any PR code: fetch the base commit for the lint diff. The token is used for this one
+      # fetch and is not in the environment of any later step.
+      - name: Base commit for the lint diff
+        id: base
+        if: inputs.lint-diff-command != '' && github.event.pull_request.base.sha != ''
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          FETCH_TOKEN: ${{ github.token }}
+        working-directory: .
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch -q --no-tags --depth=1 origin "$BASE_SHA" \
+             && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null; then
+            echo "dir=$RUNNER_TEMP/base" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not check out the base commit $BASE_SHA; lint findings will be reported, not gated"
+          fi
+
       - name: Install
         id: install
         env:
@@ -238,29 +258,17 @@ jobs:
         env:
           LINT_CMD: ${{ inputs.lint-diff-command }}
           WD: ${{ inputs.working-directory }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_DIR: ${{ steps.base.outputs.dir }}
           SUITE: ${{ inputs.suite-name }}
-          FETCH_TOKEN: ${{ github.token }}
         run: |
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           out="$RUNNER_TEMP/lintdiff"; mkdir -p "$out"
           bash -c "$LINT_CMD" > "$out/head.txt" 2>&1
           echo "head run exit $?; $(wc -l < "$out/head.txt") output lines"
-          fetch_base() { # the checkout keeps no credentials, so pass the job token for this one fetch only
-            local auth; auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
-            echo "::add-mask::$auth"
-            git -C "$GITHUB_WORKSPACE" -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
-              fetch --no-tags --depth=1 origin "$BASE_SHA" \
-              && git -C "$GITHUB_WORKSPACE" worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
-          }
-          if [ -n "$BASE_SHA" ] && ! fetch_base; then
-            echo "::warning::could not check out the base commit; lint findings are reported, not gated"
-            BASE_SHA=""
-          fi
-          if [ -n "$BASE_SHA" ]; then
+          if [ -n "$BASE_DIR" ]; then
             # The base commit's files, linted with this run's tool versions (same venv).
-            if [ -d "$RUNNER_TEMP/base/$WD" ]; then
-              (cd "$RUNNER_TEMP/base/$WD" && UV_PROJECT_ENVIRONMENT="$GITHUB_WORKSPACE/$WD/.venv" bash -c "$LINT_CMD") > "$out/base.txt" 2>&1
+            if [ -d "$BASE_DIR/$WD" ]; then
+              (cd "$BASE_DIR/$WD" && UV_PROJECT_ENVIRONMENT="$GITHUB_WORKSPACE/$WD/.venv" bash -c "$LINT_CMD") > "$out/base.txt" 2>&1
               echo "base run exit $?; $(wc -l < "$out/base.txt") output lines"
             else
               : > "$out/base.txt"
@@ -269,10 +277,16 @@ jobs:
           else
             mode=report
           fi
-          python3 - "$out/head.txt" "$out/base.txt" "$mode" "$SUITE lint" "$PWD" "$RUNNER_TEMP/base/$WD" <<'PY'
+          python3 - "$out/head.txt" "$out/base.txt" "$mode" "$SUITE lint" "$PWD" "${BASE_DIR:-$RUNNER_TEMP/base}/$WD" <<'PY'
           import collections, os, re, sys
           head, base, mode, label, head_root, base_root = sys.argv[1:7]
           pat = re.compile(r"^(?P<path>[^\s:][^:]*?):(?P<line>\d+)(?::\d+)?:\s*(?P<rest>.+)$")
+          ROOTS = [r.rstrip("/") + "/" for r in (head_root, base_root) if r]
+          def norm(msg):
+              # what identifies a finding: no checkout root, no "line 123" (ruff F811, mypy notes), one line
+              for r in ROOTS:
+                  msg = msg.replace(r, "")
+              return " ".join(re.sub(r"\bline \d+", "line N", msg).split())
           def load(path, root):
               found = collections.Counter(); where = {}
               if not os.path.exists(path):
@@ -285,7 +299,7 @@ jobs:
                   for r in (root.rstrip("/") + "/", "./"):
                       if p.startswith(r):
                           p = p[len(r):]
-                  key = (p, m["rest"].strip())
+                  key = (p, norm(m["rest"]))
                   found[key] += 1
                   where.setdefault(key, m["line"])
               return found, where

@@ -1,0 +1,7 @@
+# gitleaks fingerprints to ignore, one per line: <commit>:<file>:<rule>:<line> (copy them from a gitleaks JSON
+# report's "Fingerprint" field). A fingerprint names one finding in one commit, so it can never cover a new secret.
+# Only fabricated test fixtures belong here, never a real credential: a real one is rotated, not ignored.
+# CI reads this file from the BASE commit of a change, so an entry takes effect only after its own reviewed PR.
+#
+# Empty for now: the fixture fingerprints come from the first full-history scan on main (security-scheduled.yml),
+# because they name commits older than any local shallow clone.

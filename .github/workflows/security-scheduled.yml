@@ -1,5 +1,6 @@
-# Weekly full security scan: gitleaks over the WHOLE git history (fails while any secret is in it), and every other
-# scanner over the whole tree in report mode (SARIF in the artifacts, counts in the run summary).
+# Weekly full security scan, report mode: gitleaks over the WHOLE git history of every fetched ref, and every other
+# scanner over the whole tree (SARIF in the artifacts, counts in the run summary). New secrets are blocked earlier, by
+# the diff-mode scan of every pull request and push.
 # GitHub runs schedules only from the default branch, so this starts firing once it is promoted to `main`; until
 # then run it by hand (Actions -> Security (scheduled) -> Run workflow).
 name: Security (scheduled)
@@ -21,8 +22,19 @@ jobs:
     name: security
     permissions:
       contents: read
+      pull-requests: read # requested by the reusable workflow's secrets job (unused on a schedule)
     uses: ./.github/workflows/reusable-security.yml
     with:
       mode: full
+      exclude-regex: >-
+        ^(aibom/tests/fixtures|scan_node/tests/fixtures|backend/tests/fixtures|e2e/fixtures|bench/repos|aibom/bench/repos|aibom/examples)/|(^|/)(node_modules|\.venv|venv|\.next|dist)/
+      semgrep-exclude: >-
+        aibom/tests/fixtures scan_node/tests/fixtures backend/tests/fixtures e2e/fixtures bench/repos aibom/bench/repos
+        aibom/examples node_modules .venv
+      trivy-skip-dirs: >-
+        aibom/tests/fixtures,scan_node/tests/fixtures,backend/tests/fixtures,e2e/fixtures,bench/repos,aibom/bench/repos,aibom/examples,**/node_modules,**/.venv
+      helm-charts: >-
+        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
+        --set agent.enabled=true --set agent.poolToken=ci-placeholder
     secrets:
       GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}

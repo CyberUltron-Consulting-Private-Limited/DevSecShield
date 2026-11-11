@@ -50,6 +50,7 @@ jobs:
       scan-node: ${{ steps.filter.outputs.scan-node == 'true' || github.event_name == 'workflow_dispatch' }}
       frontend: ${{ steps.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' }}
       code: ${{ steps.filter.outputs.code == 'true' || github.event_name == 'workflow_dispatch' }}
+      pipeline: ${{ steps.filter.outputs.selftest == 'true' || github.event_name == 'workflow_dispatch' }}
       images: ${{ steps.images.outputs.images }}
     steps:
       # Pull requests: the file list comes from the API. Pushes: from git, comparing with the commit before the push.
@@ -103,6 +104,9 @@ jobs:
               - '**/*.tsx'
               - '**/*.js'
               - '**/*.mjs'
+            selftest:
+              - '.github/workflows/**'
+              - '.github/tests/**'
             img-all:
               - *pipeline
               - 'scripts/deploy/**'
@@ -141,6 +145,21 @@ jobs:
           echo "images=$images" >> "$GITHUB_OUTPUT"
           echo "images: $(jq -r 'map(.name) | join(", ")' <<< "$images")"
 
+  ci-selftest:
+    name: ci-selftest
+    needs: changes
+    if: needs.changes.outputs.pipeline == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Unit tests of the no-new-findings comparators (.github/tests)
+        run: python3 -m unittest discover -s .github/tests -v
+
   pr-checks:
     name: pr-checks
     if: github.event_name == 'pull_request'
@@ -161,7 +180,9 @@ jobs:
       working-directory: backend
       python-version: "3.12" # the production image (backend/Dockerfile) runs 3.12; backend/.python-version says 3.10
       postgres: true
-      postgres-image: postgres:15-alpine # as in compose/ and deploy/staging/
+      # as in compose/ and deploy/staging/, pinned by digest (Dependabot does not update workflow service images;
+      # bump it by hand with `docker buildx imagetools inspect postgres:15-alpine`)
+      postgres-image: postgres:15-alpine@sha256:aae6554de426ae1990f1a939ff183a0299146cf7142a6f4c379c3357af9cc2d8
       postgres-databases: c1 auth cbom p1
       # test_cbom_sources_as_results reads the generated PDFs with pdftotext (poppler-utils).
       apt-packages: poppler-utils
@@ -285,7 +306,23 @@ jobs:
     name: security
     permissions:
       contents: read
+      pull-requests: read # gitleaks reads the PR's secret-fixtures-reviewed label
     uses: ./.github/workflows/reusable-security.yml
+    with:
+      # Deliberately vulnerable detector fixtures and benchmark clones, anchored to their real roots (a future
+      # product directory named "fixtures" or "examples" elsewhere is still scanned). gitleaks ignores this list.
+      exclude-regex: >-
+        ^(aibom/tests/fixtures|scan_node/tests/fixtures|backend/tests/fixtures|e2e/fixtures|bench/repos|aibom/bench/repos|aibom/examples)/|(^|/)(node_modules|\.venv|venv|\.next|dist)/
+      semgrep-exclude: >-
+        aibom/tests/fixtures scan_node/tests/fixtures backend/tests/fixtures e2e/fixtures bench/repos aibom/bench/repos
+        aibom/examples node_modules .venv
+      trivy-skip-dirs: >-
+        aibom/tests/fixtures,scan_node/tests/fixtures,backend/tests/fixtures,e2e/fixtures,bench/repos,aibom/bench/repos,aibom/examples,**/node_modules,**/.venv
+      # The customer-side scan-node chart, rendered with CI placeholder values (apiUrl is `required`) and with the
+      # host-agent DaemonSet switched on, so Checkov sees every manifest the chart can produce.
+      helm-charts: >-
+        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
+        --set agent.enabled=true --set agent.poolToken=ci-placeholder
     secrets:
       GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
 
@@ -316,7 +353,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, pr-checks, backend, aibom, cbom-action, scan-node, frontend, security, codeql, images]
+    needs: [changes, ci-selftest, pr-checks, backend, aibom, cbom-action, scan-node, frontend, security, codeql, images]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

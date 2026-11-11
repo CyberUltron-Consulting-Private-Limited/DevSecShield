@@ -39,7 +39,7 @@ on:
       exclude-regex:
         description: Paths (regex on repo-relative paths) whose findings are ignored by every scanner except gitleaks.
         type: string
-        default: '(^|/)(node_modules|\.venv|venv|\.next|dist)/|(^|/)tests?/fixtures/|(^|/)fixtures/|(^|/)bench/repos/|(^|/)examples/'
+        default: '(^|/)(node_modules|\.venv|venv|\.next|dist)/'
       gitleaks-version:
         type: string
         default: "8.30.1"
@@ -52,9 +52,22 @@ on:
         type: string
         default: .gitleaks.toml
       gitleaks-fail-full:
-        description: In full mode, fail when gitleaks finds anything in the history.
+        description: >-
+          In full mode, fail when gitleaks finds anything in the history. Off by default: until the history is
+          cleaned, a full scan that is always red gets ignored; new secrets are blocked by the diff-mode scans of
+          every pull request and push.
         type: boolean
-        default: true
+        default: false
+      secret-fixture-label:
+        description: >-
+          Pull-request label that lets diff-mode gitleaks findings pass when EVERY one of them is in a file matching
+          secret-fixture-regex (fabricated values for detector tests). Findings anywhere else always fail.
+        type: string
+        default: secret-fixtures-reviewed
+      secret-fixture-regex:
+        description: Paths where a reviewed, labelled pull request may add fabricated secrets.
+        type: string
+        default: '(^|/)tests?/fixtures/'
       ggshield-version:
         type: string
         default: "1.56.1"
@@ -68,7 +81,7 @@ on:
       semgrep-exclude:
         description: Space-separated --exclude globs for Semgrep.
         type: string
-        default: tests/fixtures fixtures node_modules .venv bench/repos examples
+        default: node_modules .venv
       semgrep-min-level:
         description: Lowest SARIF level that blocks (note, warning, error).
         type: string
@@ -97,13 +110,21 @@ on:
       trivy-skip-dirs:
         description: Comma-separated globs Trivy does not walk.
         type: string
-        default: "**/node_modules,**/.venv,**/tests/fixtures,**/fixtures,**/bench/repos,**/examples"
+        default: "**/node_modules,**/.venv"
       checkov-version:
         type: string
         default: "3.3.30"
       checkov-frameworks:
+        description: Checkov frameworks for the tree (Helm charts go through helm-charts, rendered, as kubernetes).
         type: string
-        default: helm kubernetes terraform
+        default: kubernetes terraform
+      helm-charts:
+        description: >-
+          One chart per line: `<chart dir> [helm template args]`, e.g. `deploy/helm/app --set apiUrl=https://ci.invalid`.
+          Each is rendered for the head and the base commit and scanned as Kubernetes manifests; a chart that fails to
+          render fails the step.
+        type: string
+        default: ""
       hadolint-version:
         type: string
         default: "2.15.1"
@@ -158,6 +179,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      pull-requests: read # the secret-fixture label, read live (a re-run sees a label added after the push)
     env:
       HAS_GG_KEY: ${{ secrets.GITGUARDIAN_API_KEY != '' }}
     steps:
@@ -199,31 +221,66 @@ jobs:
         env:
           CONFIG: ${{ inputs.gitleaks-config }}
           FAIL_FULL: ${{ inputs.gitleaks-fail-full }}
+          FIXTURE_LABEL: ${{ inputs.secret-fixture-label }}
+          FIXTURE_RE: ${{ inputs.secret-fixture-regex }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
-          mkdir -p security-reports
-          args=(git --redact --no-banner --report-format sarif --report-path security-reports/gitleaks.sarif --exit-code 0)
-          [ -f "$CONFIG" ] && args+=(--config "$CONFIG")
+          mkdir -p security-reports "$RUNNER_TEMP/gl-ignore"
+          # A change must not be able to exempt its own secret, so:
+          #  - inline `gitleaks:allow` comments are ignored;
+          #  - every file is diffed as text (a `.gitattributes` "-diff" would hide it as "Binary files differ");
+          #  - merge commits are diffed against their automatic merge (`--diff-merges=remerge`), so a secret added
+          #    while resolving a merge is seen, and content merged in from elsewhere is not reported twice;
+          #  - in diff mode the config and the .gitleaksignore come from the BASE commit, never from the change.
+          args=(git --redact --no-banner --report-format sarif --report-path security-reports/gitleaks.sarif --exit-code 0
+                --ignore-gitleaks-allow --gitleaks-ignore-path "$RUNNER_TEMP/gl-ignore")
           if [ "$MODE" = diff ]; then
-            args+=("--log-opts=${BASE_SHA}..${HEAD_SHA}")
+            if git cat-file -e "${BASE_SHA}:${CONFIG}" 2>/dev/null; then
+              git show "${BASE_SHA}:${CONFIG}" > "$RUNNER_TEMP/gitleaks-base.toml"
+              args+=(--config "$RUNNER_TEMP/gitleaks-base.toml")
+              cfg="$CONFIG from the base commit"
+            else
+              cfg="gitleaks' built-in rules (no $CONFIG on the base commit)"
+            fi
+            git show "${BASE_SHA}:.gitleaksignore" > "$RUNNER_TEMP/gl-ignore/.gitleaksignore" 2>/dev/null || : > "$RUNNER_TEMP/gl-ignore/.gitleaksignore"
+            args+=("--log-opts=--text --diff-merges=remerge ${BASE_SHA}..${HEAD_SHA}")
             scope="commits ${BASE_SHA:0:12}..${HEAD_SHA:0:12} ($(git rev-list --count "${BASE_SHA}..${HEAD_SHA}") commits)"
           else
-            scope="the whole history ($(git rev-list --count HEAD) commits on this ref)"
+            if [ -f "$CONFIG" ]; then args+=(--config "$CONFIG"); cfg="$CONFIG"; else cfg="gitleaks' built-in rules"; fi
+            cp .gitleaksignore "$RUNNER_TEMP/gl-ignore/.gitleaksignore" 2>/dev/null || : > "$RUNNER_TEMP/gl-ignore/.gitleaksignore"
+            args+=("--log-opts=--full-history --all --text --diff-merges=remerge")
+            scope="the whole history ($(git rev-list --count --all) commits on all fetched refs)"
           fi
+          # gitleaks also reads ./.gitleaksignore from the scanned directory; only the copy chosen above may count.
+          rm -f .gitleaksignore
           gitleaks "${args[@]}" .
           rc=$?
           [ "$rc" -eq 0 ] || { echo "::error::gitleaks did not run (exit $rc)"; exit "$rc"; }
           n=$(jq '[.runs[].results[]] | length' security-reports/gitleaks.sarif)
+          ignored=$(grep -cvE '^\s*(#|$)' "$RUNNER_TEMP/gl-ignore/.gitleaksignore")
           # File and rule only; the values are redacted in the report and never printed.
           jq -r '.runs[].results[] | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine // 1)::gitleaks \(.ruleId) (commit \((.partialFingerprints.commitSha // "")[0:12]))"' \
             security-reports/gitleaks.sarif | head -50
           {
             echo "### gitleaks"
             echo
-            echo "Scanned $scope: **$n finding(s)**. Values are redacted; see the \`security-reports\` artifact."
+            echo "Scanned $scope with $cfg and $ignored fingerprint(s) in .gitleaksignore: **$n finding(s)**."
+            echo "Values are redacted; see the \`security-reports-secrets\` artifact."
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$n" -gt 0 ] && [ "$MODE" = diff ] && [ -n "$PR_NUMBER" ]; then
+            outside=$(jq -r --arg re "$FIXTURE_RE" '[.runs[].results[] | select(.locations[0].physicalLocation.artifactLocation.uri | test($re) | not)] | length' security-reports/gitleaks.sarif)
+            labelled=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" --jq "[.[].name] | index(\"$FIXTURE_LABEL\") != null" 2>/dev/null || echo false)
+            if [ "$outside" -eq 0 ] && [ "$labelled" = true ]; then
+              echo "::warning::gitleaks: all $n finding(s) are in test fixtures and the PR has the '$FIXTURE_LABEL' label; passing. Reviewers: confirm every value is fabricated."
+              echo "Passed on the \`$FIXTURE_LABEL\` label: all $n finding(s) are under test fixtures." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            [ "$outside" -eq 0 ] && echo "::notice::All findings are under test fixtures. If every value is fabricated, a reviewer can add the '$FIXTURE_LABEL' label and re-run this job."
+          fi
           if [ "$n" -gt 0 ] && { [ "$MODE" = diff ] || [ "$FAIL_FULL" = true ]; }; then
-            echo "::error::gitleaks found $n secret(s) in $scope. Remove them, rotate the credential, and only allowlist genuine test fixtures in $CONFIG."
+            echo "::error::gitleaks found $n secret(s) in $scope. Remove them and rotate the credential."
             exit 1
           fi
 
@@ -254,6 +311,9 @@ jobs:
             echo "::notice::GitGuardian runs on pull requests and pushes only (full-history scans use API quota)."
             exit 0
           fi
+          # Only the base commit's GitGuardian config counts: a change must not exempt its own secret.
+          rm -f .gitguardian.yaml .gitguardian.yml
+          git show "${BASE_SHA}:.gitguardian.yaml" > .gitguardian.yaml 2>/dev/null || rm -f .gitguardian.yaml
           uvx --from "ggshield==${V}" ggshield secret scan ci
           printf '### GitGuardian\n\nggshield %s: no secret in the new commits.\n' "$V" >> "$GITHUB_STEP_SUMMARY"
 
@@ -324,6 +384,14 @@ jobs:
           exclude = re.compile(os.environ.get("EXCLUDE_RE") or r"(?!x)x")
           roots = [r for r in (os.environ.get("GITHUB_WORKSPACE", ""), os.environ.get("BASE_DIR", "")) if r]
 
+          def norm(msg):
+              # what identifies a finding: one line, no checkout root, no "line 123", single spaces
+              msg = (msg or "").strip().splitlines()[:1] or [""]
+              msg = msg[0]
+              for r in roots:
+                  msg = msg.replace(r.rstrip("/") + "/", "")
+              return " ".join(re.sub(r"\bline \d+", "line N", msg).split())
+
           def rel(uri):
               u = uri[7:] if uri.startswith("file://") else uri
               for r in roots:
@@ -347,18 +415,18 @@ jobs:
                           loc = ((res.get("locations") or [{}])[0]).get("physicalLocation", {})
                           uri = rel((loc.get("artifactLocation") or {}).get("uri", ""))
                           line = (loc.get("region") or {}).get("startLine") or 1
-                          msg = " ".join(((res.get("message") or {}).get("text") or "").split())
+                          msg = norm((res.get("message") or {}).get("text"))
                           out.append((rid, uri, msg, lvl, line))
               elif a.format == "shellcheck":
                   doc = json.load(open(path, encoding="utf-8"))
                   for c in doc.get("comments", []):
-                      out.append((f"SC{c['code']}", rel(c["file"]), " ".join(c["message"].split()), c["level"], c["line"]))
+                      out.append((f"SC{c['code']}", rel(c["file"]), norm(c["message"]), c["level"], c["line"]))
               else:
                   pat = re.compile(r"^(?P<path>[^\s:][^:]*?):(?P<line>\d+)(?::\d+)?:\s*(?P<rest>.+)$")
                   for raw in open(path, encoding="utf-8", errors="replace"):
                       m = pat.match(raw.rstrip("\n"))
                       if m:
-                          out.append(("", rel(m["path"]), m["rest"].strip(), "error", int(m["line"])))
+                          out.append(("", rel(m["path"]), norm(m["rest"]), "error", int(m["line"])))
               keep = LEVELS.get(a.min_level, 1)
               return [f for f in out if LEVELS.get(f[3], 2) >= keep and not exclude.search(f[1])]
 
@@ -452,7 +520,9 @@ jobs:
           for c in $CONFIGS; do args+=(--config "$c"); done
           for e in $EXCLUDES; do args+=(--exclude "$e"); done
           if [ "$MODE" = diff ]; then args+=(--baseline-commit "$BASE_SHA"); fi
-          uvx --from "semgrep==${V}" semgrep "${args[@]}" > "$R/semgrep.log" 2>&1
+          # stdout is Semgrep's text report, which prints each matched source line (a p/secrets match is the secret
+          # itself), so it is discarded; stderr (errors) is kept.
+          uvx --from "semgrep==${V}" semgrep "${args[@]}" > /dev/null 2> "$R/semgrep.log"
           rc=$?
           tail -5 "$R/semgrep.log"
           [ "$rc" -eq 0 ] || { echo "::error::semgrep did not run (exit $rc); see $R/semgrep.log in the artifact"; exit "$rc"; }
@@ -514,22 +584,54 @@ jobs:
             python3 "$RUNNER_TEMP/findings.py" --tool trivy --head "$R/trivy.sarif" --gate report
           fi
 
-      - name: Checkov (Helm, Kubernetes, Terraform)
+      - name: Checkov (Kubernetes, Terraform, rendered Helm charts)
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           V: ${{ inputs.checkov-version }}
           FRAMEWORKS: ${{ inputs.checkov-frameworks }}
+          HELM_CHARTS: ${{ inputs.helm-charts }}
         run: |
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           uv tool install --quiet "checkov==${V}" >/dev/null
-          scan() { # <dir> <out dir>
-            mkdir -p "$2"
+          # Helm charts are rendered with `helm template` and the values given in `helm-charts`, then scanned as
+          # Kubernetes manifests. Checkov's own helm runner renders with default values only, and a chart with a
+          # `required` value fails to render there while the step still "passes" with nothing scanned.
+          # Checkov matches --skip-path against paths that may start with "/", so a leading ^ also accepts "/".
+          charts=(); skip="$EXCLUDE_RE"
+          if [ "${skip:0:2}" = "^(" ]; then skip="(^|/)(${skip:2}"; fi
+          while IFS= read -r line; do
+            [ -z "${line//[[:space:]]/}" ] && continue
+            charts+=("$line"); read -r -a parts <<< "$line"
+            skip="${skip}|(^|/)${parts[0]%/}/"   # the raw templates are not valid manifests; scan the rendered output
+          done <<< "$HELM_CHARTS"
+          scan() { # <checkout dir> <report dir>
+            local dir=$1 out=$2 n=0 line parts
+            mkdir -p "$out"; rm -rf "$dir/.ci-rendered"; mkdir -p "$dir/.ci-rendered"
+            for line in "${charts[@]}"; do
+              read -r -a parts <<< "$line"
+              n=$((n + 1))
+              if [ ! -d "$dir/${parts[0]}" ]; then echo "chart ${parts[0]} is not in $dir (new or removed in this change)"; continue; fi
+              if ! (cd "$dir" && helm template ci "${parts[@]}") > "$dir/.ci-rendered/chart-$n.yaml" 2> "$out/helm-$n.log"; then
+                cat "$out/helm-$n.log"; echo "::error::helm template failed for ${parts[0]} in $dir"; return 1
+              fi
+            done
             # shellcheck disable=SC2086 # FRAMEWORKS is a space-separated list
-            (cd "$1" && checkov -d . --framework $FRAMEWORKS --skip-path "$EXCLUDE_RE" --soft-fail --quiet --compact \
-              -o sarif --output-file-path "$2") > "$2/checkov.log" 2>&1
+            (cd "$dir" && checkov -d . --framework $FRAMEWORKS --skip-path "$skip" --soft-fail --quiet --compact \
+              -o cli -o sarif --output-file-path "$out") > "$out/checkov.log" 2>&1
             local rc=$?
-            if [ "$rc" -ne 0 ] || [ ! -f "$2/results_sarif.sarif" ]; then
-              tail -20 "$2/checkov.log"; echo "::error::checkov failed (exit $rc) in $1"; return 1
+            rm -rf "$dir/.ci-rendered"
+            if [ "$rc" -ne 0 ] || [ ! -f "$out/results_sarif.sarif" ]; then
+              tail -20 "$out/checkov.log"; echo "::error::checkov failed (exit $rc) in $dir"; return 1
+            fi
+            # A scan that could not read its input must not count as a pass.
+            if grep -qiE 'Failed processing|Failed to (parse|render)' "$out/checkov.log"; then
+              grep -iE 'Failed processing|Failed to (parse|render)' "$out/checkov.log" | head -5
+              echo "::error::checkov could not process some input in $dir (see checkov.log in the artifact)"; return 1
+            fi
+            local counted; counted=$(grep -hoE 'Passed checks: [0-9]+, Failed checks: [0-9]+' "$out"/results_cli.txt "$out/checkov.log" 2>/dev/null | sort -u | awk -F'[ ,]+' '{p+=$3; f+=$6} END {print p+f+0}')
+            echo "checkov in ${dir##*/}: ${#charts[@]} chart(s) rendered, ${counted:-0} check result(s)"
+            if [ "${#charts[@]}" -gt 0 ] && [ "${counted:-0}" -eq 0 ]; then
+              echo "::error::checkov evaluated no checks although ${#charts[@]} chart(s) were rendered"; return 1
             fi
           }
           scan "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$R/checkov" || exit 1
@@ -618,6 +720,27 @@ jobs:
             echo
             echo "Reports: the \`security-reports-scanners\` artifact (SARIF / JSON / text)."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Strip source snippets from the reports
+        # SARIF can carry the matched source line (Semgrep's region.snippet holds the secret for a p/secrets match).
+        # Reports keep rule, file, line and message only, before anything is uploaded.
+        if: always()
+        run: |
+          shopt -s globstar nullglob
+          for f in "$R"/**/*.sarif; do
+            jq 'del(.runs[]?.results[]?.locations[]?.physicalLocation.region.snippet,
+                    .runs[]?.results[]?.locations[]?.physicalLocation.contextRegion,
+                    .runs[]?.results[]?.relatedLocations[]?.physicalLocation.region.snippet,
+                    .runs[]?.results[]?.relatedLocations[]?.physicalLocation.contextRegion,
+                    .runs[]?.results[]?.codeFlows, .runs[]?.results[]?.fixes)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+          for f in "$R"/**/shellcheck.json; do jq 'del(.comments[]?.fix)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
+          left=0
+          for f in "$R"/**/*.sarif; do
+            n=$(jq '[.runs[]?.results[]? | .. | objects | select(has("snippet"))] | length' "$f")
+            [ "$n" -eq 0 ] || { echo "::error::$f still holds $n snippet(s)"; left=1; }
+          done
+          exit "$left"
 
       - name: Upload reports
         if: always()
