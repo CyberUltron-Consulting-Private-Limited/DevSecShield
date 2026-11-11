@@ -1,0 +1,17 @@
+# gitleaks configuration for .github/workflows/reusable-security.yml and for local `gitleaks git` / `gitleaks dir`.
+#
+# Every built-in rule, and NO path allowlist. An allowlisted directory or file is a blind spot: a real secret added
+# there later would never be reported. On pull requests and pushes, CI reads this file, and .gitleaksignore, from
+# the BASE commit, so a change cannot exempt its own secret. CI also ignores inline `gitleaks:allow` comments.
+#
+# Fabricated secrets in DevSecShield's detector tests (aibom/tests/fixtures/, scan_node/tests/fixtures/, ...):
+#   * New ones: a finding whose file is under a tests/fixtures/ directory passes only when the pull request has the
+#     `secret-fixtures-reviewed` label, which a reviewer sets after checking that the value is fabricated. A finding
+#     anywhere else can never be waived by a label.
+#   * Existing ones in history: list their fingerprints (commit:file:rule:line, which a future change cannot reuse)
+#     in .gitleaksignore, taken from the weekly full scan's report.
+
+title = "DevSecShield gitleaks config"
+
+[extend]
+useDefault = true

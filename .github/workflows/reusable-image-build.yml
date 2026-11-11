@@ -1,0 +1,198 @@
+# Reusable container image build + Trivy image scan. Builds each image (no push), loads it into the runner's
+# Docker, scans it with Trivy, keeps the SARIF and a table report as artifacts.
+#
+#   jobs:
+#     images:
+#       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-image-build.yml@<ref>
+#       with:
+#         images: >-
+#           [{"name":"api","context":"api","dockerfile":"api/Dockerfile"},
+#            {"name":"web","context":"web","dockerfile":"web/Dockerfile","build-args":"API_URL=http://localhost:8000"}]
+#
+# `images` is a JSON array; each item has name, context, dockerfile, and optionally build-args and build-contexts
+# (newline-separated, as for docker/build-push-action).
+#
+# Gating: the build must succeed. Trivy findings are reported; with `trivy-fail-on` set (for example CRITICAL) the
+# job also fails on fixable vulnerabilities of that severity.
+name: reusable / image build
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: JSON array of {name, context, dockerfile, build-args?, build-contexts?}.
+        type: string
+        required: true
+      pre-build-command:
+        description: >-
+          Optional command run once, in its own job, before the matrix builds (for example a check that no secret
+          file can enter a build context). The builds only start when it passes.
+        type: string
+        default: ""
+      trivy-version:
+        type: string
+        default: "0.76.1"
+      trivy-sha256:
+        description: SHA-256 of trivy_<version>_Linux-64bit.tar.gz
+        type: string
+        default: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+      trivy-severity:
+        type: string
+        default: HIGH,CRITICAL
+      trivy-fail-on:
+        description: Empty = report only; otherwise a severity list (e.g. CRITICAL) that fails the job (fixable only).
+        type: string
+        default: ""
+      cache:
+        description: >-
+          Use the GitHub Actions cache for build layers (mode=min: the final image's layers). A PR run reads the
+          base branch's cache and its own earlier runs' cache, so a re-run does not rebuild from scratch.
+        type: boolean
+        default: true
+      free-disk-space:
+        description: >-
+          Delete the runner's preinstalled Android SDK, .NET, GHC, CodeQL bundle and Docker images before building
+          (frees about 25 GB of the hosted runner's ~14 GB free). Large images (the scan worker pulls torch through
+          garak) otherwise fail with "No space left on device".
+        type: boolean
+        default: false
+      cache-write:
+        description: Also write the layer cache (else read only). ci.yml writes it from dev only.
+        type: boolean
+        default: true
+      timeout-minutes:
+        type: number
+        default: 45
+
+permissions:
+  contents: read
+
+jobs:
+  pre-build:
+    name: pre-build check
+    if: inputs.pre-build-command != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Run the check
+        env:
+          CMD: ${{ inputs.pre-build-command }}
+        # The command comes from the calling workflow; it is passed through env, not pasted into the script.
+        run: bash -eo pipefail -c "$CMD"
+
+  build:
+    name: image (${{ matrix.image.name }})
+    needs: pre-build
+    # Build when the pre-build check passed or was not configured.
+    if: ${{ !cancelled() && (needs.pre-build.result == 'success' || needs.pre-build.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(inputs.images) }}
+    env:
+      IMAGE_REF: ci.local/${{ matrix.image.name }}:${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        if: inputs.free-disk-space || matrix.image.free-disk-space
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost /usr/share/swift
+          docker image prune --all --force > /dev/null
+          df -h / | tail -1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build ${{ matrix.image.name }} (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          build-args: ${{ matrix.image.build-args }}
+          build-contexts: ${{ matrix.image.build-contexts }}
+          push: false
+          load: true
+          provenance: false
+          tags: ${{ env.IMAGE_REF }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: ${{ inputs.cache && format('type=gha,scope=img-{0}', matrix.image.name) || '' }}
+          cache-to: ${{ inputs.cache && inputs.cache-write && format('type=gha,scope=img-{0},mode=min', matrix.image.name) || '' }}
+
+      - name: Image size
+        run: docker image inspect "$IMAGE_REF" --format 'size={{.Size}} bytes' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Trivy
+        env:
+          V: ${{ inputs.trivy-version }}
+          SHA: ${{ inputs.trivy-sha256 }}
+        run: |
+          set -euo pipefail
+          f="trivy_${V}_Linux-64bit.tar.gz"
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/$f" "https://github.com/aquasecurity/trivy/releases/download/v${V}/${f}"
+          if [ -n "$SHA" ]; then echo "$SHA  $RUNNER_TEMP/$f" | sha256sum -c -; fi
+          mkdir -p "$RUNNER_TEMP/bin" && tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP/bin" trivy
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Day (Trivy DB cache key)
+        id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Trivy database
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/trivy-cache
+          # one entry a day (about 100 MB), not one per run
+          key: trivy-db-${{ inputs.trivy-version }}-${{ steps.day.outputs.day }}
+          restore-keys: trivy-db-${{ inputs.trivy-version }}-
+
+      - name: Trivy image scan
+        env:
+          SEVERITY: ${{ inputs.trivy-severity }}
+          FAIL_ON: ${{ inputs.trivy-fail-on }}
+          NAME: ${{ matrix.image.name }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          export TRIVY_CACHE_DIR="$RUNNER_TEMP/trivy-cache" TRIVY_DISABLE_TELEMETRY=true
+          mkdir -p image-reports
+          trivy image --quiet --scanners vuln --severity "$SEVERITY" --format sarif \
+            --output "image-reports/$NAME.sarif" --exit-code 0 "$IMAGE_REF" || { echo "::error::trivy failed"; exit 1; }
+          trivy image --quiet --scanners vuln --severity "$SEVERITY" --skip-db-update --format table \
+            --output "image-reports/$NAME.txt" --exit-code 0 "$IMAGE_REF"
+          total=$(jq '[.runs[].results[]] | length' "image-reports/$NAME.sarif")
+          {
+            echo "### Image $NAME"
+            echo
+            echo "Trivy ($SEVERITY): $total finding(s). Full table in the \`image-reports-$NAME\` artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$FAIL_ON" ]; then
+            trivy image --quiet --scanners vuln --severity "$FAIL_ON" --ignore-unfixed --skip-db-update \
+              --exit-code 1 --format table "$IMAGE_REF"
+          fi
+
+      - name: Upload image reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-reports-${{ matrix.image.name }}
+          path: image-reports/
+          if-no-files-found: ignore
+          retention-days: 14

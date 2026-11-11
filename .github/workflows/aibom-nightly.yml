@@ -1,4 +1,4 @@
-name: AI-BOM Nightly Benchmark (full 10 repos, live)
+name: AI-BOM Weekly Benchmark (full 10 repos, live)
 
 # The FULL live benchmark: installs both OSS oracles (Trusera + Cisco) and runs
 # them + ours on all 10 real repos + the synthetic fixture, then diffs (P7 gate).
@@ -6,9 +6,12 @@ name: AI-BOM Nightly Benchmark (full 10 repos, live)
 # per-PR (the per-PR aibom-gates.yml covers synthetic + 2 representative repos
 # hermetically/pinned). Requires AWS_* repo secrets for Bedrock.
 
+# Weekly, not nightly (PR #16, architecture review): from 1-10 Nov the AI-BOM run averaged 86 minutes a night
+# (8 of 10 cancelled at the 90-minute timeout) on July code, because schedules run from the default branch.
+# Make `dev` the default branch so the schedule runs current code; run by hand via workflow_dispatch.
 on:
   schedule:
-    - cron: "0 7 * * *"   # 07:00 UTC nightly
+    - cron: "0 7 * * 1"   # Mondays 07:00 UTC (was nightly)
   workflow_dispatch: {}
 
 permissions:
@@ -28,11 +31,13 @@ jobs:
       AWS_REGION: us-east-1
       AIBOM_BEDROCK_MODEL: global.anthropic.claude-haiku-4-5-20251001-v1:0
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
 
@@ -52,7 +57,7 @@ jobs:
 
       - name: Upload benchmark report + outputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aibom-nightly-benchmark
           path: |

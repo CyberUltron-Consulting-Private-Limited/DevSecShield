@@ -1,0 +1,14 @@
+# Code owners: GitHub asks these accounts to review pull requests that touch the matching paths.
+#
+# Kept to one entry on purpose. The only account that both owns this repository and appears in its git history as a
+# maintainer is the repository owner, so it owns everything. Other names in the history are not listed because
+# their write access to this repository is not established, and GitHub ignores (and flags) owners without it.
+# When the team adds people or moves the repo to an organisation, give the sensitive paths their own owners, e.g.
+#   /.github/            @<org>/platform
+#   /deploy/  /scripts/deploy/   @<org>/platform
+#   /backend/utilities/auth*     @<org>/security
+#
+# Do not turn on "Require review from Code Owners" in branch protection while every author and reviewer posts
+# through this same account: GitHub never lets a pull request's author satisfy that rule, so no PR could merge.
+
+* @AnshSinghal-CyberUltron

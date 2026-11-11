@@ -1,0 +1,4 @@
+# Tests of RabbitMQ/worker that CI deselects (ci.yml, job `worker`). One pytest node id per line, relative to
+# RabbitMQ/worker, followed by "# <reason and tracking issue>". Every entry is a test that fails today for a reason
+# tracked elsewhere: fix it and delete the line. The job summary lists what was deselected. This file is under
+# .github/, so a change to it needs the security-config-reviewed label.

@@ -1,0 +1,70 @@
+# The "PR bot": area labels from changed paths (actions/labeler, config in .github/labeler.yml) and a size label
+# from the PR's line count. Labels are informational: this workflow is not part of the ci-gate.
+#
+# Reuse from another repository (add your own .github/labeler.yml there):
+#   jobs:
+#     labels:
+#       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/pr-labels.yml@<ref>
+#       permissions: { contents: read, pull-requests: write }
+name: PR labels
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_call:
+    inputs:
+      configuration-path:
+        type: string
+        default: .github/labeler.yml
+      size-thresholds:
+        description: Upper line-count bounds for XS S M L (anything above is XL).
+        type: string
+        default: "10 50 250 1000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-labels-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: labels (area + size)
+    if: github.event_name == 'pull_request' || github.event.pull_request.number
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          configuration-path: ${{ inputs.configuration-path || '.github/labeler.yml' }}
+          sync-labels: false
+
+      # Same job, so a PR push costs one billed runner minute, not two.
+      - name: Apply size/XS..XL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          ADDITIONS: ${{ github.event.pull_request.additions }}
+          DELETIONS: ${{ github.event.pull_request.deletions }}
+          THRESHOLDS: ${{ inputs.size-thresholds || '10 50 250 1000' }}
+        run: |
+          set -euo pipefail
+          lines=$((ADDITIONS + DELETIONS))
+          read -r xs s m l <<< "$THRESHOLDS"
+          if   [ "$lines" -lt "$xs" ]; then size=XS
+          elif [ "$lines" -lt "$s" ];  then size=S
+          elif [ "$lines" -lt "$m" ];  then size=M
+          elif [ "$lines" -lt "$l" ];  then size=L
+          else size=XL; fi
+          want="size/$size"
+          for old in size/XS size/S size/M size/L size/XL; do
+            if [ "$old" != "$want" ]; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/${old/\//%2F}" >/dev/null 2>&1 || true
+            fi
+          done
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=$want" >/dev/null
+          echo "$lines changed lines -> $want" | tee -a "$GITHUB_STEP_SUMMARY"
