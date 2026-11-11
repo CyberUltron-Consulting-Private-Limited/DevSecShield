@@ -233,4 +233,4 @@ def test_nuclei_runs_only_through_the_guard(monkeypatch, tmp_path):
     headless = [b for a, b in pairs if a == "-ho"]
     assert "proxy-server=socks5://127.0.0.1:4321" in headless
     assert "proxy-bypass-list=<-loopback>" in headless
-    assert "host-resolver-rules=MAP * ~NOTFOUND,EXCLUDE 127.0.0.1" in headless
+    assert not any(h.startswith("host-resolver-rules") for h in headless)  # it blocked the guard itself (live)

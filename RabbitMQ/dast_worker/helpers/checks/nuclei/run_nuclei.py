@@ -43,12 +43,15 @@ def egress_guard_options(egress_proxy: str) -> list[str]:
         "-duc",                     # no update/template download at run time
         "-proxy", egress_proxy,     # nuclei's own (Go) HTTP client
         "-pi",                      # ... and its internal requests
-        # Chromium: every request through the guard, loopback too (Chromium bypasses a proxy for localhost by
-        # default); no local DNS at all (a name is resolved by the guard only); no WebRTC UDP outside the proxy.
+        # Chromium: every request through the guard (SOCKS5: the guard, not Chromium, picks the address), loopback too
+        # (without <-loopback> Chromium went straight to 127.0.0.1/localhost, proven live); no WebRTC UDP outside the
+        # proxy. No --host-resolver-rules "MAP * ~NOTFOUND": passed through -ho it also cut Chromium off from the
+        # guard itself (net::ERR_PROXY_CONNECTION_FAILED), and with every connection proxied it adds nothing.
         "-ho", f"proxy-server={egress_proxy}",
         "-ho", "proxy-bypass-list=<-loopback>",
-        "-ho", "host-resolver-rules=MAP * ~NOTFOUND,EXCLUDE 127.0.0.1",
         "-ho", "force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+        # Chromium's own background calls (clients2.google.com, www.google.com) also reach the guard and are refused
+        # as out of scope; they are counted in the scan's egress metadata.
     ]
 
 
