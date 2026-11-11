@@ -81,6 +81,15 @@ class ResetPassword(BaseModel):
     check_password = field_validator("password")(clean_new_password)
 
 
+class ChangePassword(BaseModel):
+    """Account page: the current password (sign-in rules) and a new one (sign-up rules)."""
+    current_password: str = Field(..., description="the current password")
+    new_password: str = Field(..., description="new password: 8 to 128 characters")
+
+    check_current = field_validator("current_password")(clean_login_password)
+    check_new = field_validator("new_password")(clean_new_password)
+
+
 class RefreshToken(BaseModel):
     refresh_token: str = Field(..., max_length=4096, description="refresh token")
 

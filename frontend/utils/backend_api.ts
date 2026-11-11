@@ -1136,6 +1136,16 @@ const getUserProfile = async (): Promise<UserProfile> => {
     }
 }
 
+/** Account page: change the password while signed in. Every other session is signed out (the server bumps the
+ * token version); the answer carries new tokens for this tab, stored here so this session goes on. */
+const changePassword = async (current_password: string, new_password: string): Promise<{ message: string }> => {
+    const response = await api.post("/change_password", { current_password, new_password })
+    const data = response.data as { message: string; access_token: string; refresh_token: string }
+    localStorage.setItem("access_token", data.access_token)
+    localStorage.setItem("refresh_token", data.refresh_token)
+    return { message: data.message }
+}
+
 const logout = async () => {
     try {
         const response = await api.get("/logout")
@@ -1399,6 +1409,7 @@ const deleteTeam = async (team_id: number) => {
 export {
     getUserProfile,
     logout,
+    changePassword,
     getTeams,
     createTeam,
     getTeam,
