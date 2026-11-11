@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import {
   createAIBOMScan,
   createCBOMScan,
+  createDASTScan,
   createIACConversation,
   createSastConversation,
   createSBOMSCAScan,
 } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { dastRerunPrefill, saveDastRerun } from "@/utils/dastRerun";
 import { readRerun, rerunNotes, rerunPrefill, rerunTitle, saveRerun, type CodeScanType, type RerunPrefill } from "@/utils/scanRerun";
 
 const CREATE: Record<CodeScanType, (teamId: number, title: string) => Promise<number>> = {
@@ -35,6 +37,34 @@ export function RunAgainButton({ type, teamId, scan }: { type: CodeScanType; tea
       const prefill = rerunPrefill(type, scan);
       if (prefill) saveRerun(type, newId, prefill);
       router.push(`/${teamId}/${type}/${newId}`);
+    },
+    onError: (err) => showErrorToast(err, "Could not create the new scan"),
+  });
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => create.mutate()}
+      disabled={create.isPending}
+      data-testid="scan-run-again"
+      className="w-full h-8 px-2 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer hover:text-white disabled:opacity-50"
+    >
+      {create.isPending ? <Loader2 className="size-4 mr-2 animate-spin" /> : <RotateCcw className="size-4 mr-2" />}
+      <span>Run again</span>
+    </Button>
+  );
+}
+
+/** "Run again" on a failed DAST scan: a new DAST scan with the failed scan's settings (utils/dastRerun.ts); the
+ * customer enters the login password again. */
+export function DastRunAgainButton({ teamId, scan }: { teamId: number; scan: unknown }) {
+  const router = useRouter();
+  const create = useMutation({
+    mutationFn: () => createDASTScan(teamId, rerunTitle((scan as { title?: unknown } | null)?.title)),
+    onSuccess: (newId) => {
+      const prefill = dastRerunPrefill(scan);
+      if (prefill) saveDastRerun(newId, prefill);
+      router.push(`/${teamId}/dast/${newId}`);
     },
     onError: (err) => showErrorToast(err, "Could not create the new scan"),
   });
