@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, BookOpen, Crosshair, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { singleFlight } from "@/utils/single_flight";
 import {
   deleteSBOMSCAScan,
   getSBOMSCAScans,
@@ -630,6 +631,8 @@ export default function SBOMSCAPage() {
     onError: (error) => { showErrorToast(error); },
   });
 
+  // One create per click burst (double-click, Enter twice): isPending disables Create only after a re-render.
+  const [createGuard] = useState(singleFlight);
   const createSBOMSCAScanMutation = useMutation({
     mutationFn: ({ team_id, title }: { team_id: number; title: string }) => createSBOMSCAScan(team_id, title),
     onSuccess: (scan_id, variables) => {
@@ -674,7 +677,8 @@ export default function SBOMSCAPage() {
 
   const confirmCreate = () => {
     if (newScanTitle.trim() && team_id) {
-      createSBOMSCAScanMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() });
+      if (!createGuard.tryStart()) return;
+      createSBOMSCAScanMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() }, { onSettled: () => createGuard.done() });
     }
   };
 

@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Search, X, Shield, AlertTriangle, Check, ScanSearch, Target, Percent, AlertCircle, Activity, Filter, ChevronDown, ArrowUpDown, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { singleFlight } from "@/utils/single_flight";
 import {
   getDASTScans,
   deleteDASTScan,
@@ -550,6 +551,8 @@ export default function DASTPage() {
     onError: (error) => showErrorToast(error),
   });
 
+  // One create per click burst (double-click, Enter twice): isPending disables Create only after a re-render.
+  const [createGuard] = useState(singleFlight);
   const createDASTScanMutation = useMutation({
     mutationFn: ({ team_id, title }: { team_id: number; title: string }) => createDASTScan(team_id, title),
     onSuccess: (scan_id, variables) => {
@@ -616,7 +619,8 @@ export default function DASTPage() {
 
   const confirmCreate = () => {
     if (newScanTitle.trim() && team_id) {
-      createDASTScanMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() });
+      if (!createGuard.tryStart()) return;
+      createDASTScanMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() }, { onSettled: () => createGuard.done() });
     }
   };
 

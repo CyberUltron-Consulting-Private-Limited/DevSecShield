@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, Play, CheckCircle, XCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, Shield, AlertTriangle, Check, ScanSearch, Target, Percent, AlertCircle, Server, Activity, Filter, ChevronDown, ArrowUpDown, DollarSign, TrendingUp, TrendingDown, Zap, Wrench, MinusCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { singleFlight } from "@/utils/single_flight";
 import { IACConversation, deleteIACConversation, getIACConversations, renameIACConversation, createIACConversation } from "@/utils/backend_api";
 import type { IACListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -645,6 +646,8 @@ export default function IACPage() {
     onError: (error) => { showErrorToast(error); },
   });
 
+  // One create per click burst (double-click, Enter twice): isPending disables Create only after a re-render.
+  const [createGuard] = useState(singleFlight);
   const createIACConversationMutation = useMutation({
     mutationFn: ({ team_id, title }: { team_id: number; title: string }) => createIACConversation(team_id, title),
     onSuccess: (scan_id, variables) => {
@@ -689,7 +692,8 @@ export default function IACPage() {
 
   const confirmCreate = () => {
     if (newScanTitle.trim() && team_id) {
-      createIACConversationMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() });
+      if (!createGuard.tryStart()) return;
+      createIACConversationMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() }, { onSettled: () => createGuard.done() });
     }
   };
 

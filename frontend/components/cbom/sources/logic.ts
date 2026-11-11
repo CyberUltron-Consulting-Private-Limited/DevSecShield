@@ -1,23 +1,7 @@
 // Pure helpers for the CBOM Sources pages (no React, no network) so they can be unit-tested with tsx.
 
-/**
- * Lets a submit handler start one request at a time. A double-click delivers both clicks before React re-renders the
- * button as disabled (useMutation's isPending is still false for the second click), so a disabled prop alone sent two
- * POSTs and created two scan nodes with the same name.
- */
-export function singleFlight() {
-  let busy = false
-  return {
-    tryStart(): boolean {
-      if (busy) return false
-      busy = true
-      return true
-    },
-    done(): void {
-      busy = false
-    },
-  }
-}
+// One request per click burst for the Create node button (see utils/single_flight.ts).
+export { singleFlight } from "../../../utils/single_flight"
 
 export type WindowGrid = boolean[][] // 7 rows (Monday first) x 24 hours
 

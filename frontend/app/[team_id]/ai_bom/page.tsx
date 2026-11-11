@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Bot, Database, Cloud, Scale } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { singleFlight } from "@/utils/single_flight";
 import {
   deleteAIBOMScan,
   getAIBOMScans,
@@ -532,6 +533,8 @@ export default function AIBOMPage() {
     onError: (error) => { showErrorToast(error); },
   });
 
+  // One create per click burst (double-click, Enter twice): isPending disables Create only after a re-render.
+  const [createGuard] = useState(singleFlight);
   const createAIBOMScanMutation = useMutation({
     mutationFn: ({ team_id, title }: { team_id: number; title: string }) => createAIBOMScan(team_id, title),
     onSuccess: (scan_id, variables) => {
@@ -576,7 +579,8 @@ export default function AIBOMPage() {
 
   const confirmCreate = () => {
     if (newScanTitle.trim() && team_id) {
-      createAIBOMScanMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() });
+      if (!createGuard.tryStart()) return;
+      createAIBOMScanMutation.mutate({ team_id: parseInt(team_id), title: newScanTitle.trim() }, { onSettled: () => createGuard.done() });
     }
   };
 
