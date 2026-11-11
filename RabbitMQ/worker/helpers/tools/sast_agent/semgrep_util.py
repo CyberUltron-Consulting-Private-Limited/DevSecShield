@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+
+from helpers.context.cancellation import run_tool
 import tempfile
 from rich.console import Console
 from helpers.context.scan_context import snippet_with_numbers
@@ -64,7 +66,7 @@ def run_sast_scan_on_directory(
             raise ValueError(f"Unsupported language: {app_lang}")
 
         cmd = _build_semgrep_cmd(json_path, directory, f"p/{app_lang}")
-        proc = subprocess.run(
+        proc = run_tool(
             cmd,
             capture_output=True,
             text=True,

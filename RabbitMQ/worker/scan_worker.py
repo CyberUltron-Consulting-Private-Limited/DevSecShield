@@ -20,8 +20,40 @@ from helpers.tools.llm_agent.context import LLMBenchmarkingContext
 from helpers.tools.llm_agent.main import LLMBenchmarkingAgent
 from helpers.context.s3_utils import delete_file
 from helpers.context.scan_context import validate_dict_with_context, validate_dict_with_zip_context, validate_dict_with_file_context
+from helpers.context.cancellation import cancellable as _cancellable
+from celery import signals
 
 console = Console()
+
+
+def delete_uploads(kwargs: dict) -> None:
+    """Delete a scan's uploaded archive / file from the bucket when the scan body never runs (a cancelled task):
+    the scan tasks' own ``finally`` does this for every scan that ran."""
+    for key, validate in (("zip_dict_context", validate_dict_with_zip_context),
+                          ("file_dict_context", validate_dict_with_file_context)):
+        raw = (kwargs or {}).get(key)
+        if not raw:
+            continue
+        try:
+            ctx = validate(raw)
+            if delete_file(ctx.bucket_name, ctx.object_name):
+                console.print("Deleted the upload of a cancelled scan from the bucket", style="bold green")
+        except Exception as err:
+            console.print(f"Could not delete the upload of a cancelled scan: {type(err).__name__}", style="bold red")
+
+
+# Code scans the customer can cancel (backend utilities/scan/cancel_scan.py CANCELLABLE_TYPES).
+cancellable = _cancellable(on_skip=delete_uploads)
+CANCELLABLE_TASKS = {"scan_worker.sast", "scan_worker.sbom_sca", "scan_worker.iac", "scan_worker.cbom", "scan_worker.ai_bom"}
+
+
+@signals.task_revoked.connect
+def _delete_uploads_of_revoked_scan(sender=None, request=None, **_kwargs):
+    """A queued task that a running worker discards because it was revoked never reaches ``cancellable``: delete
+    its upload here (the worker's main process runs this)."""
+    name = getattr(sender, "name", None) or getattr(request, "task", None) or getattr(request, "name", None)
+    if name in CANCELLABLE_TASKS:
+        delete_uploads(getattr(request, "kwargs", None) or {})
 
 #====================================== Setting credentials to connect to broker ================================================================
 try:
@@ -91,6 +123,7 @@ try:
     """
     
     @app.task(track_started=True, bind=True, soft_time_limit=7200, time_limit=9000)
+    @cancellable
     def sast(
         self,
         app_lang:Literal["python", "javascript", "java", "php", "c", "ruby", "rust", "swift", "csharp", "kotlin"],
@@ -166,6 +199,7 @@ try:
 
      # ------------------------------------------- SBOM + SCA Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True , bind=True)
+    @cancellable
     def sbom_sca(
         self,
         repo_dict_context: dict | None = None , 
@@ -268,6 +302,7 @@ try:
 
      # ------------------------------------------- IAC Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True , bind=True)
+    @cancellable
     def iac(
         self,
         iac_dict_contexts: list[dict],
@@ -615,6 +650,7 @@ try:
 
      # ------------------------------------------- CBOM Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True, bind=True)
+    @cancellable
     def cbom(
         self,
         repo_dict_context: dict | None = None,
@@ -679,6 +715,7 @@ try:
 
      # ------------------------------------------- AI BOM Scanning task -------------------------------------------------------------------------------------------
     @app.task(track_started=True, bind=True)
+    @cancellable
     def ai_bom(
         self,
         repo_dict_context: dict | None = None,
