@@ -33,7 +33,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { COMPLIANCE_KEY_TO_LABEL, OWASP_LLM_KEY_TO_LABEL, OWASP_COLORS, COMPLIANCE_COLORS } from "@/lib/owasp-compliance-labels";
 
 const OWASP_LLM_KEYS = Object.values(OWASP_LLM_KEY_TO_LABEL);

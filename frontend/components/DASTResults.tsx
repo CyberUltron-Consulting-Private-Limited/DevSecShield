@@ -89,7 +89,7 @@ import { Progress } from "@/components/ui/progress";
 import type { DASTSingleScanDashboard } from "@/utils/backend_api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toggleFindingState, createTicket, updateScan, type ScanTicketingIntegrationSettings } from "@/utils/backend_api";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";

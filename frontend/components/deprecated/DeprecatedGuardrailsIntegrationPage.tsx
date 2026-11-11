@@ -22,7 +22,7 @@ import {
 import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, X, Copy, Check, Settings, BarChart2, Save, Plus, BookOpen, Ticket, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
 import SettingsForm from "@/components/Settings";

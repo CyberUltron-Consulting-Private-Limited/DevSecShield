@@ -105,7 +105,7 @@ import {
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { type CertInRollupData } from "@/components/certin/certinShared";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 

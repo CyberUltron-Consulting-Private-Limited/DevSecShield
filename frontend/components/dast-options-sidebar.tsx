@@ -37,7 +37,7 @@ import {
   StartDASTScanData,
   AuthRequirements,
 } from "@/utils/backend_api";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";

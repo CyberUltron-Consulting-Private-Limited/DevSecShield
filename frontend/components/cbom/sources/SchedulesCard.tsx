@@ -7,7 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, Pause, Pencil, Play, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

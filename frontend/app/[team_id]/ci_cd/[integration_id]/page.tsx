@@ -16,7 +16,7 @@ import {
 import { Loader2, RefreshCcw, CheckCircle2, XCircle, Clock, PlayCircle, AlertCircle, Eye, Copy, Check, BarChart2, BookOpen, Settings, Ticket, Save, ChevronLeft, ChevronRight, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { getCicdIntegrationDashboard, CicdIntegrationDashboard, updateCicdIntegration, UpdateCicdIntegrationData, type SastAppLang } from "@/utils/backend_api";
 import { formatDateIst as formatDate, formatDateOnlyIst, formatMediumDateIst } from "@/utils/datetime";

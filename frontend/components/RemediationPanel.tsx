@@ -17,7 +17,7 @@ import {
   Zap,
   CheckCircle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import KbFindingDetails from "@/components/cbom/KbFindingDetails";
 
 interface RemediationPanelProps {

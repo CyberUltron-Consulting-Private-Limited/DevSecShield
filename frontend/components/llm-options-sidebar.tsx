@@ -30,7 +30,7 @@ import { readFormRerun } from "@/utils/formRerun";
 import { NewScanRunAgainButton } from "@/components/scan-run-again";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import ModelChoicePicker from "./ModelChoicePicker";
 import probeDescription from "@/garak_probes.json";

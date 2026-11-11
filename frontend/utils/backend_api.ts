@@ -1,6 +1,6 @@
 import api from "@/utils/interceptors"
 import { showErrorToast } from "./error-handler"
-import { toast } from "sonner"
+import { toast } from "@/utils/toast";
 
 
 // -------------------------------------------------------------- Start scan payload types (matches backend schemas) --------------------------------------------------------------

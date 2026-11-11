@@ -8,7 +8,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { ArrowLeft, FlaskConical, KeyRound, Loader2, RotateCw, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 import {
   Checkbox2,

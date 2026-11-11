@@ -24,7 +24,7 @@ import {
   ScanLine,
 } from "lucide-react";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import {
   estimateCreditsForScan,

@@ -8,7 +8,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DatabaseZap, Loader2, Upload } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";

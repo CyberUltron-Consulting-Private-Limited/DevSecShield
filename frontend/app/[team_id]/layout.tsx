@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import {
   useQuery,
   useMutation,

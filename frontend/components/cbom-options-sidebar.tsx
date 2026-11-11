@@ -41,7 +41,7 @@ import {
   type CbomInclude,
   type CbomIncludeKey,
 } from "@/utils/backend_api";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { stateAfterError } from "@/utils/scanErrorRecovery";

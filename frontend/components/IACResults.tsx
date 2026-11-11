@@ -62,7 +62,7 @@ import {
   YAxis,
 } from "recharts";
 import { PieChart, BarChart3, TrendingUp, GitBranch, FileArchive, ImageIcon, Github, Search, Filter, Check, X, ChevronDown } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 

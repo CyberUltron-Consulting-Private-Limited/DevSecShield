@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CirclePlay, CircleX, Loader2, OctagonX, Pencil, Plus, Radar, ShieldCheck, Trash2, X } from "lucide-react";
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";

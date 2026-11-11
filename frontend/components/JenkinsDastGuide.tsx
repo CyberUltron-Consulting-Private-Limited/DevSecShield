@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Copy, Check } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { listDASTProfiles } from "@/utils/backend_api";
 

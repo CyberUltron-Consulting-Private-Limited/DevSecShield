@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, ExternalLink, Loader2, MoreVertical, Pencil, Plus, ShieldCheck, Tags, Trash2, X } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";

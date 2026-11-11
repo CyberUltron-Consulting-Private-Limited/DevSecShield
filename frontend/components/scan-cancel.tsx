@@ -5,7 +5,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ban, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 import { RunAgainButton } from "@/components/scan-run-again";
 import { Button } from "@/components/ui/button";

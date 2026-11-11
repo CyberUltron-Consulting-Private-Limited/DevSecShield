@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSastConversationMessages } from "@/utils/backend_api";
 import { useParams } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const dashboardCards = [

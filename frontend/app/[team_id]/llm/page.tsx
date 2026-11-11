@@ -39,7 +39,7 @@ import type { LLMListDashboardData } from "@/utils/backend_api";
 
 const OWASP_LLM_KEYS = Object.values(OWASP_LLM_KEY_TO_LABEL);
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

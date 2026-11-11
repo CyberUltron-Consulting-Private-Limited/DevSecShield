@@ -42,7 +42,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatDateOnlyIst, formatMediumDateIst } from "@/utils/datetime";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useRouter, useParams } from "next/navigation";
 
 const vulnsOverTimeChartConfig = {

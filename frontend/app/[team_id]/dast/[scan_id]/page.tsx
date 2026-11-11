@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getDASTScan, type DASTScanResponse } from "@/utils/backend_api";
 import { useParams } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 export default function DASTPage() {
   const params = useParams();

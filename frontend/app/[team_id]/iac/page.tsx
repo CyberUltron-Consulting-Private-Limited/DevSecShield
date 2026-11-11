@@ -35,7 +35,7 @@ import { singleFlight } from "@/utils/single_flight";
 import { IACConversation, deleteIACConversation, getIACConversations, renameIACConversation, createIACConversation } from "@/utils/backend_api";
 import type { IACListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

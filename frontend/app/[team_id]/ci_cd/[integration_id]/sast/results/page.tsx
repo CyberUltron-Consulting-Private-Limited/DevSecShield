@@ -3,7 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import CbomResults from "@/components/CbomResults";
 import CicdSastResults from "@/components/cicd-sast-results";
 import { getCicdIntegrationDashboard } from "@/utils/backend_api";

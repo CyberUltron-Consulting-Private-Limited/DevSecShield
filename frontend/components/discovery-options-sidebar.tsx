@@ -24,7 +24,7 @@ import {
 import { Mode } from "@/utils/backend_api";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import { DiscoveryConversationResponse, startDiscoveryScan, getDiscoveryExportResults, reinitializeDiscoveryScan } from "@/utils/backend_api";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { useParams, useRouter } from "next/navigation";
 // import { generateAndDownloadPDF } from "@/components/PDF_Report";

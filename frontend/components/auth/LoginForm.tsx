@@ -14,7 +14,7 @@ import { Mail, Lock, Shield, ArrowRightFromLineIcon, ArrowUpRight } from "lucide
 import { FcGoogle } from "react-icons/fc"
 import { FaApple } from "react-icons/fa"
 import { FaXTwitter } from "react-icons/fa6" // Keeping this. If this still fails, confirm react-icons version/install.
-import { toast } from "sonner"
+import { toast } from "@/utils/toast";
 import router, { useSearchParams } from "next/navigation"
 import api, { retryAfterSeconds } from "@//utils/interceptors"
 import { resendLabel, useResendCountdown, waitAfterFailedSend } from "@/utils/resend_countdown"

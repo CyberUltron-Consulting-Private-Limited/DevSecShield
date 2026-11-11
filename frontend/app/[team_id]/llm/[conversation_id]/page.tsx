@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getLLMConversationMessages } from "@/utils/backend_api";
 import { useParams, usePathname } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 export default function LLMPage() {
   const params = useParams();

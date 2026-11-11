@@ -62,7 +62,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import type { MCPDashboardData, MCPFinding, MCPScanMetadata, ScanTicketingIntegrationSettings } from "@/utils/backend_api";
 import { updateScan, createTicket, toggleFindingState } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";

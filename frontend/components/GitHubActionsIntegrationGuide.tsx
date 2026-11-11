@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Copy, Check } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiBaseURL } from "@/utils/interceptors";
 import { indent, scanRequestScript, zipCommand } from "@/components/cicd/ciScanScript";
