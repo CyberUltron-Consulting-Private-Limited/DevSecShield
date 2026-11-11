@@ -86,6 +86,23 @@ def main() -> int:
             app.dependency_overrides.pop(policy, None)
         diff50 = statistics.median(with_policy) - statistics.median(without)
         print(f"policy cost per request (median difference): {diff50:.2f} ms")
+
+        # the policy's own database work, timed alone (less noisy than two whole-request runs on a busy host)
+        from backend.utilities.auth.auth_utils import access_token_claims
+        from backend.utilities.rbac.policy import _load_principal
+
+        claims = access_token_claims(headers["Authorization"].split()[1])
+        alone = []
+        for i in range(n + 50):
+            t0 = time.perf_counter()
+            principal, problem = _load_principal(engine, claims, team_id, False)
+            dt_ms = (time.perf_counter() - t0) * 1000
+            assert problem is None and principal.role == "member"
+            if i >= 50:
+                alone.append(dt_ms)
+        q = statistics.quantiles(alone, n=100)
+        print(f"policy lookups alone (account + membership) n={n}  p50={q[49]:.2f} ms  p95={q[94]:.2f} ms  "
+              f"p99={q[98]:.2f} ms")
     finally:
         engine.dispose()
         with admin.begin() as conn:
