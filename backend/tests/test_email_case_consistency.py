@@ -23,7 +23,8 @@ if str(ROOT) not in sys.path:
 
 from backend.new_models import Team, TeamMembership, User  # noqa: E402
 from backend.utilities.auth.auth_utils import user_by_email  # noqa: E402
-from backend.utilities.team import membership  # noqa: E402
+from backend.utilities.auth import email as invite_mail  # noqa: E402
+from backend.utilities.team import invitations, membership  # noqa: E402
 
 
 @pytest.fixture()
@@ -31,12 +32,15 @@ def engine(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{tmp_path / 'emails.db'}", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
     mails: list[str] = []
+    links: dict[str, str] = {}
 
-    async def fake_mail(email, password, team_name):
+    async def fake_mail(email, team_name, inviter, link, expires_on):
         mails.append(email)
+        links[email] = link.rsplit("/", 1)[1]
 
-    monkeypatch.setattr(membership, "send_email_with_credentials", fake_mail)
+    monkeypatch.setattr(invite_mail, "send_team_invitation_email", fake_mail)
     engine.mails = mails  # type: ignore[attr-defined]
+    engine.links = links  # type: ignore[attr-defined]
     return engine
 
 
@@ -79,8 +83,18 @@ def test_an_invitation_adds_only_the_account_the_address_signs_in_to(engine):
         assert user_by_email(s, "ANA@example.COM").id == winner  # what sign-in, codes and reset resolve to
     team = _team(engine, "finance")
     asyncio.run(membership.add_emails_to_team(["ANA@EXAMPLE.com"], team, engine))
+    assert _members(engine, team) == set() and engine.mails == ["ana@example.com"]  # nobody joins before accepting
+    token = engine.links["ana@example.com"]
+    with Session(engine) as s:
+        dup_user = s.get(User, duplicate)
+    with pytest.raises(Exception) as refused:
+        invitations.accept(token, dup_user, engine)  # the duplicate row is not the account the address signs in to
+    assert getattr(refused.value, "status_code", None) == 403
+    with Session(engine) as s:
+        win_user = s.get(User, winner)
+    invitations.accept(token, win_user, engine)
     assert _members(engine, team) == {winner}
-    assert duplicate not in _members(engine, team) and engine.mails == []
+    assert duplicate not in _members(engine, team)
 
 
 def test_an_invitation_in_another_case_never_creates_a_second_account(engine):
@@ -88,9 +102,21 @@ def test_an_invitation_in_another_case_never_creates_a_second_account(engine):
     asyncio.run(membership.add_emails_to_team([" New.Person@Corp.test "], team, engine))
     other = _team(engine, "audit")
     asyncio.run(membership.add_emails_to_team(["NEW.PERSON@corp.TEST"], other, engine))
+    assert engine.mails == ["new.person@corp.test", "new.person@corp.test"]
+    with Session(engine) as s:  # inviting creates no account
+        assert s.exec(select(User).where(User.email.ilike("new.person@corp.test"))).all() == []  # type: ignore[attr-defined]
+    first = engine.links["new.person@corp.test"]  # the second mail replaced the dict entry: re-invite ops for its link
+    user, joined = asyncio.run(invitations.register(first, "chosen-pass-1", "New", "Person", engine))
+    assert joined == other
+    with Session(engine) as s:
+        inv = s.exec(select(invitations.TeamInvitation).where(invitations.TeamInvitation.team_id == team)).first()
+    assert inv.status == "pending"
+    asyncio.run(invitations.resend_invitation(team, inv.id, None, engine))
+    assert invitations.describe(engine.links["new.person@corp.test"], engine)["account_exists"] is True
+    invitations.accept(engine.links["new.person@corp.test"], user, engine)
     with Session(engine) as s:
         rows = s.exec(select(User).where(User.email.ilike("new.person@corp.test"))).all()  # type: ignore[attr-defined]
-    assert [r.email for r in rows] == ["new.person@corp.test"] and engine.mails == ["new.person@corp.test"]
+    assert [r.email for r in rows] == ["new.person@corp.test"]
     assert _members(engine, team) & _members(engine, other) == {rows[0].id}
 
 

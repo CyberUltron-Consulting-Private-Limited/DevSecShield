@@ -271,13 +271,15 @@ def test_hash_and_verify_raise_no_deprecation_warning():
         assert ok and upgraded.startswith("$argon2id$")
 
 
-def test_hashing_is_off_the_event_loop_and_invites_get_strong_passwords(monkeypatch):
-    passwords = {membership.generate_random_password() for _ in range(50)}
-    assert len(passwords) == 50
-    assert all(len(p) == 20 and p.isalnum() for p in passwords)
+def test_hashing_is_off_the_event_loop_and_invites_never_generate_passwords(monkeypatch):
     import inspect
 
-    assert "run_in_threadpool(get_hashed_password" in inspect.getsource(membership.add_emails_to_team)
+    from backend.utilities.team import invitations
+
+    # an invitation never makes a password for somebody else (S2, round 5): the invitee chooses one
+    assert not hasattr(membership, "generate_random_password")
+    assert "get_hashed_password" not in inspect.getsource(membership)
+    assert "run_in_threadpool(get_hashed_password" in inspect.getsource(invitations.register)
     assert "run_in_threadpool(get_hashed_password" in inspect.getsource(admin_router.create_admin_user)
 
 

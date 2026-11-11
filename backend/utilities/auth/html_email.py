@@ -1,3 +1,12 @@
+import datetime
+import html
+
+
+def footer_year() -> int:
+    """The copyright year in every mail footer: the year the mail is sent (UTC), never a fixed one."""
+    return datetime.datetime.now(datetime.timezone.utc).year
+
+
 def create_verification_email_html(verification_code):
     """
     Generates the HTML string for a verification code email.
@@ -59,7 +68,7 @@ def create_verification_email_html(verification_code):
                     <tr>
                         <td class="footer-cell" style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">
                             <p class="footer-text" style="color: #999999; font-size: 12px; margin: 0;">
-                                &copy; 2024 Cyberultron Consulting Pvt Ltd. All rights reserved.
+                                &copy; {footer_year()} Cyberultron Consulting Pvt Ltd. All rights reserved.
                             </p>
                         </td>
                     </tr>
@@ -102,11 +111,10 @@ def create_user_password_email_html(password, email):
     return html_string
 
 
-def create_user_password_email_html_for_team_membership(password, email, team_name):
-    """
-    Generates the HTML string for an email that sends the user their username and password
-    to log in after being invited to join a team.
-    """
+def create_team_invitation_email_html(team_name, inviter, link, expires_on):
+    """The team invitation: who invited the address to which team, and the single-use link to accept or decline.
+    It never carries a password: the invitee chooses their own (or signs in to the account they have)."""
+    team_name, inviter, link, expires_on = (html.escape(str(v), quote=True) for v in (team_name, inviter, link, expires_on))
     html_string = f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -114,13 +122,12 @@ def create_user_password_email_html_for_team_membership(password, email, team_na
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Team Invitation - Your Login Details</title>
+    <title>Team Invitation</title>
     <style>
         @media (prefers-color-scheme: dark) {{
             body {{ background-color: #121212 !important; }}
             .main-table {{ background-color: #1e1e1e !important; }}
-            .title, .text, .credential-label, .credential-value, .footer-text {{ color: #e0e0e0 !important; }}
-            .credential-box {{ background-color: #333333 !important; border-color: #444 !important; }}
+            .title, .text, .footer-text {{ color: #e0e0e0 !important; }}
             .footer-cell {{ background-color: #262626 !important; }}
         }}
     </style>
@@ -134,38 +141,27 @@ def create_user_password_email_html_for_team_membership(password, email, team_na
                         <td style="padding: 40px; text-align: center;">
                             <h1 class="title" style="color: #333333; font-size: 28px; font-weight: bold; margin: 0 0 20px 0;">Cyberultron Consulting Pvt Ltd</h1>
                             <p class="text" style="color: #666666; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">
-                                You have been invited to join the team <strong>"{team_name}"</strong>.
+                                <strong>{inviter}</strong> invited you to join the team <strong>"{team_name}"</strong> on DevSecShield.
                             </p>
-                            <p class="text" style="color: #666666; font-size: 16px; line-height: 1.5; margin: 0 0 24px 0;">
-                                Use the credentials below to log in to your account:
+                            <p style="margin: 0 0 24px 0;">
+                                <a href="{link}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; font-size: 16px; padding: 12px 24px; border-radius: 6px;">View the invitation</a>
                             </p>
-                            <div style="text-align: left;">
-                                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="credential-box" style="margin: 0 auto; background-color: #e8e8e8; border-radius: 6px; padding: 24px; border: 1px solid #ddd;">
-                                    <tr>
-                                        <td class="credential-label" style="color: #333333; font-size: 14px; font-weight: bold; padding: 8px 0 4px 0; text-align: left;">Username (email)</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="credential-value" style="color: #333333; font-size: 16px; padding: 0 0 16px 0; word-break: break-all; text-align: left;">{email}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="credential-label" style="color: #333333; font-size: 14px; font-weight: bold; padding: 8px 0 4px 0; text-align: left;">Password</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="credential-value" style="color: #333333; font-size: 16px; font-weight: bold; padding: 0; text-align: left;">{password}</td>
-                                    </tr>
-                                </table>
-                            </div>
+                            <p class="text" style="color: #666666; font-size: 14px; line-height: 1.5; margin: 0 0 12px 0; word-break: break-all;">
+                                Or open this link: {link}
+                            </p>
                             <p class="text" style="color: #666666; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">
-                                Please keep these credentials secure and do not share them with anyone.
+                                You can accept or decline on that page. Nothing changes until you do.
                                 <br>
-                                If you did not expect this invitation, please disregard this email.
+                                The link works once and expires on {expires_on}.
+                                <br>
+                                If you did not expect this invitation, you can ignore this email.
                             </p>
                         </td>
                     </tr>
                     <tr>
                         <td class="footer-cell" style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">
                             <p class="footer-text" style="color: #999999; font-size: 12px; margin: 0;">
-                                &copy; 2024 Cyberultron Consulting Pvt Ltd. All rights reserved.
+                                &copy; {footer_year()} Cyberultron Consulting Pvt Ltd. All rights reserved.
                             </p>
                         </td>
                     </tr>

@@ -104,6 +104,21 @@ def _verified_claims(token: str, secret: str, typ: str) -> Optional[dict]:
     return claims
 
 
+PASSWORD_CHANGE_TOKEN_MINUTES = 10
+
+
+def create_password_change_token(subject: str, version: int) -> str:
+    """Issued by sign-in instead of a session when the account must choose a new password (its current one was
+    mailed to it by somebody else).  It only works on POST /change_password, once (that bumps the token version)."""
+    return _encode(subject, "pwchange", version, timedelta(minutes=PASSWORD_CHANGE_TOKEN_MINUTES), JWT_SECRET_KEY)
+
+
+def password_change_claims(token: str) -> Optional[dict]:
+    """Claims of a valid password-change token; its type must be stated (an old token without one never counts)."""
+    claims = _verified_claims(token, JWT_SECRET_KEY, "pwchange")
+    return claims if claims is not None and claims.get("typ") == "pwchange" else None
+
+
 def access_token_subject(token: str) -> Optional[str]:
     """The subject of a validly signed, unexpired access token (no database lookup; used for rate-limit keys)."""
     claims = _verified_claims(token, JWT_SECRET_KEY, "access")

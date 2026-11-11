@@ -22,7 +22,7 @@ assert.deepEqual(jiraToSave(" a@b.co ", " https://x.atlassian.net ", " t "), {
 
 const page = fs.readFileSync(path.join(__dirname, "..", "app", "[team_id]", "settings", "page.tsx"), "utf8")
 const save = page.slice(page.indexOf("const handleSaveJira"), page.indexOf("const toggleMemberSelection"))
-assert.ok(save.includes("const decision = jiraToSave(jiraEmail, jiraUrl, jiraApiToken);"), "the page asks the helper")
+assert.ok(save.includes("const decision = jiraToSave(jiraEmail, jiraUrl, jiraApiToken, jiraTokenSet);"), "the page asks the helper")
 assert.ok(save.indexOf("toast.error(decision.message);") < save.indexOf("updateTeamMutation.mutate"), "refused before any request")
 assert.ok(save.includes("jira: decision.jira,"), "only what the helper allowed is sent")
 

@@ -18,8 +18,10 @@ from starlette.concurrency import run_in_threadpool
 from backend.get_db import get_db
 from backend.new_models import Team, TeamMembership, User
 from backend.utilities.auth.auth_schema import (
+    ChangePassword,
     CodeSend,
     NoEchoValidationRoute,
+    PasswordChangeRequired,
     RefreshToken,
     ResetPassword,
     TokenSchema,
@@ -30,6 +32,9 @@ from backend.utilities.auth.auth_utils import (
     CodeSendLimited,
     consume_verification_code,
     create_access_token,
+    create_password_change_token,
+    password_change_claims,
+    verify_password,
     create_refresh_token,
     get_current_user_from_access_token,
     get_current_user_from_refresh_token,
@@ -128,8 +133,12 @@ async def create_user(data: UserSignup, request: Request):
         raise _db_error(e, "create user") from None
 
 
-@router.post('/login', summary="Create access and refresh tokens for user", response_model=TokenSchema,
-             dependencies=[Depends(credentials_ip_limiter)])
+PASSWORD_CHANGE_MESSAGE = ("Choose a new password to continue: the password you signed in with was mailed to you "
+                           "when you were added to a team.")
+
+
+@router.post('/login', summary="Create access and refresh tokens for user",
+             response_model=TokenSchema | PasswordChangeRequired, dependencies=[Depends(credentials_ip_limiter)])
 async def login(form_data: UserLogin, request: Request):
     """
     Request Fields:
@@ -170,6 +179,12 @@ async def login(form_data: UserLogin, request: Request):
                 ).rowcount
                 if upgraded:
                     log.info("login: stored hash upgraded to argon2id user_id=%s", user.id)
+            if user.must_change_password:
+                # no session until the account has a password nobody else has seen (POST /change_password)
+                session.commit()
+                log.info("login: a new credential is required before a session (user_id=%s)", user.id)
+                return {"password_change_required": True, "message": PASSWORD_CHANGE_MESSAGE,
+                        "change_token": create_password_change_token(user.email, user.token_version or 0)}
             session.exec(update(User).where(User.id == user.id).values(session_active=True))
             session.commit()
             user = session.exec(select(User).where(User.id == user.id)).first()
@@ -300,7 +315,7 @@ async def reset_password(data: ResetPassword, request: Request):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No account uses this email")
             session.exec(
                 update(User).where(User.id == user.id)
-                .values(password=hashed_pwd, token_version=User.token_version + 1)
+                .values(password=hashed_pwd, token_version=User.token_version + 1, must_change_password=False)
             )
             session.commit()
             log.info("credential reset done, earlier tokens revoked user_id=%s", user.id)
@@ -309,6 +324,50 @@ async def reset_password(data: ResetPassword, request: Request):
         }
     except Exception as e:
         raise _db_error(e, "reset password") from None
+
+
+@router.post("/change_password", summary="Choose a new password when sign-in asked for one",
+             response_model=TokenSchema, dependencies=[Depends(credentials_ip_limiter)])
+async def change_password(data: ChangePassword):
+    """
+    Request Fields:
+    - change_token: str (from /login, valid 10 minutes, works once)
+    - password: str (8 to 128 characters, not the current one)
+
+    Sets the password, clears the "must change" flag, revokes every earlier token and returns a new session.
+    """
+    claims = password_change_claims(data.change_token)
+    if claims is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="This password change has expired. Sign in again to choose a new password.")
+    try:
+        engine = get_db()
+        with Session(engine) as session:
+            user = session.exec(select(User).where(User.email == claims["sub"])).first()
+        if user is None or not user.must_change_password or claims["ver"] != (user.token_version or 0):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="This password change was already used. Sign in again.")
+        if await run_in_threadpool(verify_password, data.password, user.password):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Choose a password different from the one you were sent")
+        hashed_pwd = await run_in_threadpool(get_hashed_password, data.password)
+        with Session(engine) as session:
+            # compare-and-swap on the token version: one change per token, even when two arrive together
+            changed = session.exec(
+                update(User).where(User.id == user.id, User.token_version == claims["ver"],
+                                   User.must_change_password == True)  # noqa: E712
+                .values(password=hashed_pwd, must_change_password=False, session_active=True,
+                        token_version=User.token_version + 1)
+            ).rowcount
+            if changed != 1:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                    detail="This password change was already used. Sign in again.")
+            session.commit()
+            user = session.exec(select(User).where(User.id == user.id)).first()
+        log.info("credential replaced at sign-in, earlier tokens revoked (user_id=%s)", user.id)
+        return _tokens(user)
+    except Exception as e:
+        raise _db_error(e, "change password") from None
 
 
 @router.get("/logout", summary="Logout user", dependencies=[Depends(session_limiter)])

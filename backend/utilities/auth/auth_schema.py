@@ -65,6 +65,21 @@ class TokenSchema(BaseModel):
     refresh_token: str
 
 
+class PasswordChangeRequired(BaseModel):
+    """Sign-in answer for an account that must choose a new password first: no session, only a short-lived
+    ``change_token`` for POST /change_password."""
+    password_change_required: bool = True
+    change_token: str
+    message: str
+
+
+class ChangePassword(BaseModel):
+    change_token: str = Field(..., max_length=4096, description="the change_token from /login")
+    password: str = Field(..., description="new password: 8 to 128 characters")
+
+    check_password = field_validator("password")(clean_new_password)
+
+
 class CodeSend(BaseModel):
     email: str = Field(..., description="user email")
 
