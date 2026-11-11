@@ -196,6 +196,8 @@ SSHD_TEMPLATE = """# ZeroShield CBOM: scan sessions with short-lived SSH certifi
 #   install -m 0644 zs-cbom.principals /etc/ssh/zs-cbom/principals/zs-cbom
 #
 # Certificates carry no extensions (no PTY, forwarding or agent) and a source-address restriction to the scan node.
+# OpenSSH 9.8+ (PerSourcePenalties): refused logins from the scan node's address delay its next connections; fix the
+# cause (principals file, trusted keys) rather than exempting the node.
 Match User zs-cbom
     TrustedUserCAKeys /etc/ssh/zs-cbom/trusted_user_ca_keys
     RevokedKeys /etc/ssh/zs-cbom/revoked.krl
