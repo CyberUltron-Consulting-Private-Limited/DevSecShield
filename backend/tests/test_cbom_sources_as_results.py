@@ -241,3 +241,41 @@ def test_an_older_collection_of_the_same_source_is_history_not_a_second_result(a
     with Session(sources_run["engine"]) as s:  # run history keeps both runs and their assets
         jobs = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.kind == "collect")).all()
         assert {j.run_id for j in jobs} == {sources_run["run"]["id"], run2["id"]}
+
+
+# ------------------------------------------------------------------- one set of numbers with the run page (M1x-2)
+def test_one_run_has_the_same_severity_counts_on_the_run_page_dashboard_rollup_and_pdf(api, sources_run, no_mongo,
+                                                                                      tmp_path):
+    """The collector's verdict is kept exactly: an RSA host key that is only quantum-vulnerable is informational on
+    the run page, so it is not a Low finding on the team views either; the weak-cipher endpoint is High everywhere."""
+    from backend.utilities.dashboard.cbom_team_rollup import load_team_cbom_view
+
+    run_id = sources_run["run"]["id"]
+    page = api("GET", f"/1/cbom/sources/runs/{run_id}/posture").json()["posture"]["impacts"]
+    expected = {level.lower(): page.get(level, 0) for level in ("Critical", "High", "Medium", "Low")}
+    items = api("GET", f"/1/cbom/sources/runs/{run_id}/assets").json()["items"]
+    host_key = next(i for i in items if i["type"] == "ssh_host_key")
+    endpoint = next(i for i in items if i["type"] == "tls_endpoint")
+    assert host_key["impact"] is None and "QUANTUM_VULNERABLE" in host_key["finding_codes"]
+    assert endpoint["impact"] in ("High", "Critical") and "WEAK_CIPHER" in endpoint["finding_codes"]
+    assert expected["low"] == 0 and sum(expected.values()) == sum(1 for i in items if i["impact"])
+
+    listing, home, _manifest = _all_views(api)
+    data = listing["dashboard_data"]
+    assert {k: data["severity_distribution"][k] for k in expected} == expected
+    assert data["card_data"]["total_crypto_vulnerabilities"] == sum(expected.values())
+    assert data["card_data"]["total_informational"] == len(items) - sum(expected.values())
+    # the host key's quantum verdict still counts towards readiness (inventory, not a finding)
+    assert data["quantum_readiness"]["quantum_vulnerable"] == sum(1 for i in items if i["quantum_vulnerable"])
+    assert {k: home["high_and_critical_vuln_in_past_month"][k] for k in ("high", "critical")} == \
+        {k: expected[k] for k in ("high", "critical")}
+
+    view = load_team_cbom_view(sources_run["engine"], 1)
+    assert {level.lower(): view.issue_by_impact.get(level, 0) for level in ("Critical", "High", "Medium", "Low")} \
+        == expected
+    key_asset = next(a for a in view.assets if a.title == "RSA host key")
+    assert key_asset.impact == "Info" and key_asset.quantum_vulnerable is True
+
+    text, _headers = _pdf_text(api, tmp_path, "board-executive-report")
+    shown = " · ".join(f"{level} {expected[level.lower()]}" for level in ("Critical", "High", "Medium", "Low"))
+    assert shown in text, shown
