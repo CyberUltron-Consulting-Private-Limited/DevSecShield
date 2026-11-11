@@ -58,6 +58,7 @@ import { makeQueryClient } from "@/utils/query_client"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { getUserProfile, logout, getTeams, createTeam, type TeamListItem, type CreateTeamData } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { MobileNavBar } from "@/components/mobile-nav-bar";
 
 function UserFooter() {
   const router = useRouter();
@@ -367,7 +368,10 @@ export default function HomeLayout({
           </SidebarFooter>
         </Sidebar>
 
-        <SidebarInset className="overflow-auto">{children}</SidebarInset>
+        <SidebarInset className="overflow-auto">
+          <MobileNavBar />
+          {children}
+        </SidebarInset>
       </SidebarProvider>
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>

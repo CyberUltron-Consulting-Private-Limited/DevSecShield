@@ -56,6 +56,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { getUserProfile, logout, getTeams, type TeamListItem } from "@/utils/backend_api";
 import { Button } from "@/components/ui/button";
 import { Check, Users } from "lucide-react";
+import { MobileNavBar } from "@/components/mobile-nav-bar";
 
 function TeamSwitcher() {
   const pathname = usePathname();
@@ -415,7 +416,10 @@ export default function HomeLayout({
           </SidebarFooter>
         </Sidebar>
 
-        <SidebarInset className="overflow-auto">{children}</SidebarInset>
+        <SidebarInset className="overflow-auto">
+          <MobileNavBar />
+          {children}
+        </SidebarInset>
     </SidebarProvider>
     {/* <ReactQueryDevtools initialIsOpen={false} /> */}
     </QueryClientProvider>
