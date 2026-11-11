@@ -169,6 +169,8 @@ Each workflow reads only the caller's checkout. Repo-specific files are optional
 | `lint-diff-command` | empty | Lint whose `path:line[:col]: message` output is compared with the base commit (PRs fail on new lines) |
 | `test-command` | `uv run --frozen pytest -q` | Tests |
 | `env` | empty | Non-secret `KEY=VALUE` lines |
+| `apt-packages` | empty | Ubuntu packages the tests need (backend: `poppler-utils` for `pdftotext`) |
+| `setup-command` | empty | System setup before the install (backend: allow `nginx -t` to bind :80 as the runner user) |
 | `postgres` | `false` | Start PostgreSQL |
 | `postgres-image` | `postgres:15-alpine` | Image |
 | `postgres-databases` | `test` | Databases to create; each is exported as `PG_URL_<NAME>`, the first also as `DATABASE_URL` |

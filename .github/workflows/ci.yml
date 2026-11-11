@@ -163,6 +163,11 @@ jobs:
       postgres: true
       postgres-image: postgres:15-alpine # as in compose/ and deploy/staging/
       postgres-databases: c1 auth cbom p1
+      # test_cbom_sources_as_results reads the generated PDFs with pdftotext (poppler-utils).
+      apt-packages: poppler-utils
+      # test_ratelimit runs `nginx -t` on the staging site, which binds :80 / :443. The runner user is not root
+      # (a developer machine usually is), so allow unprivileged binds to low ports for this throwaway VM.
+      setup-command: sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0
       # The posture-PDF tests call aibom/.venv/bin/python, so the aibom venv is installed too.
       install-command: uv sync --frozen && (cd ../aibom && uv sync --frozen --all-extras --dev)
       lint-diff-command: uvx ruff@0.15.18 check --output-format concise --exclude .venv .

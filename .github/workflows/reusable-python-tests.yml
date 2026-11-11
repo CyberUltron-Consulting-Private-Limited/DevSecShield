@@ -69,6 +69,14 @@ on:
         description: Extra non-secret environment, one KEY=VALUE per line, set before install and tests.
         type: string
         default: ""
+      apt-packages:
+        description: Space-separated Ubuntu packages the tests need (for example poppler-utils for pdftotext).
+        type: string
+        default: ""
+      setup-command:
+        description: Optional command run before the install (system setup the tests need).
+        type: string
+        default: ""
       postgres:
         description: Start a throwaway PostgreSQL service.
         type: boolean
@@ -171,6 +179,22 @@ jobs:
           add_env no "$EXTRA_ENV"
           add_env yes "$SECRET_ENV"
           echo "uv $(uv --version | cut -d' ' -f2), python $(uv python find "$UV_PYTHON" 2>/dev/null || echo "$UV_PYTHON")"
+
+      - name: System packages
+        if: inputs.apt-packages != ''
+        env:
+          PKGS: ${{ inputs.apt-packages }}
+        run: |
+          sudo apt-get update -qq
+          # shellcheck disable=SC2086 # PKGS is a word list
+          sudo apt-get install -y -qq --no-install-recommends $PKGS > /dev/null
+          echo "installed: $PKGS"
+
+      - name: Setup
+        if: inputs.setup-command != ''
+        env:
+          CMD: ${{ inputs.setup-command }}
+        run: bash -eo pipefail -c "$CMD"
 
       - name: PostgreSQL databases
         if: inputs.postgres
