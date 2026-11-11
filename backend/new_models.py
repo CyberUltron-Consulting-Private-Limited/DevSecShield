@@ -105,7 +105,7 @@ class Scan(SQLModel,table=True):
     title : str = Field(default="New Scan")
     task_id : str | None = Field(default=None)
     scan_metadata : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))
-    scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
+    scan_status : Literal["pending" , "started" , "retry" , "failure" , "success" , "cancelled" , "NOT_STARTED"] = Field(default="NOT_STARTED",sa_type=String)
     created_at : datetime.datetime | None= Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc), sa_type=DateTime)
     last_updated : datetime.datetime | None= Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc), sa_type=DateTime)
     scan_data : Dict | None = Field(default_factory=dict,sa_column=Column(JSON))

@@ -117,6 +117,10 @@ def get_status_and_update_db(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
             previous_status = scan.scan_status  # capture BEFORE mutation, to detect the transition
             now = datetime.datetime.now(timezone.utc)
+            if previous_status == "cancelled":
+                # cancelled is final (utilities/scan/cancel_scan.py): the charge was refunded, so whatever the worker
+                # reports afterwards (a result that raced the cancel, a failure, "revoked") is never stored
+                return ("cancelled", {}, scan)
 
             if SCAN_STATUS == "success" and previous_status != "success":
                 results = simple_app.AsyncResult(task_id).result
@@ -124,7 +128,8 @@ def get_status_and_update_db(
                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Scan data not found in celery worker")
                 won = session.exec(
                     update(table)
-                    .where(table.id == scan_id, or_(table.scan_status.is_(None), table.scan_status != "success"))
+                    .where(table.id == scan_id, or_(table.scan_status.is_(None),
+                                                    table.scan_status.not_in(("success", "cancelled"))))
                     .values(scan_status="success", scan_data=results, info=None, last_updated=now)
                 ).rowcount == 1
                 session.commit()
@@ -173,7 +178,7 @@ def get_status_and_update_db(
                 won = session.exec(
                     update(table)
                     .where(table.id == scan_id, or_(table.scan_status.is_(None),
-                                                    table.scan_status.not_in(("failure", "success"))))
+                                                    table.scan_status.not_in(("failure", "success", "cancelled"))))
                     .values(scan_status="failure", info={"error": first_line[:500]}, last_updated=now)
                 ).rowcount == 1
                 session.commit()
@@ -189,22 +194,30 @@ def get_status_and_update_db(
                     except Exception as refund_err:
                         console.print(f"Refund failed for scan {scan_id}: {refund_err}", style="bold red")
             else:
-                scan.last_updated = now
+                # a conditional UPDATE, not an ORM write of the row read above: a final state committed in between
+                # (a cancel, or another poll's success / failure) is never moved back to "started" -- that would let a
+                # cancel refund a scan that completed, or refund a failed scan a second time
+                values = {"last_updated": now}
                 if previous_status != SCAN_STATUS and SCAN_STATUS not in ("success", "failure"):
-                    scan.scan_status = SCAN_STATUS
+                    values["scan_status"] = SCAN_STATUS
                     console.print(f"Scan with id: {task_id} status updated to {SCAN_STATUS} in main database" ,style="bold green")
                 if SCAN_STATUS == "started":
                     info = async_result.info
                     # info is None until the task emits its first progress meta (race at scan start) — guard the type.
                     if isinstance(info, dict) and "current" in info:
-                        scan.info = {"current": info["current"]}  # for progress bar updates
+                        values["info"] = {"current": info["current"]}  # for progress bar updates
                         console.print(f"Scan with id: {task_id} progress updated to {info['current']} in main database" ,style="bold green")
                 elif SCAN_STATUS == "success":
                     SCAN_DATA = scan.scan_data  # already ingested on a prior poll
-                    scan.info = None
+                    values["info"] = None
                 elif SCAN_STATUS != "failure":
-                    scan.info = None # reset the info field
-                session.add(scan)
+                    values["info"] = None # reset the info field
+                session.exec(
+                    update(table)
+                    .where(table.id == scan_id, or_(table.scan_status.is_(None),
+                                                    table.scan_status.not_in(("success", "failure", "cancelled"))))
+                    .values(**values)
+                )
                 session.commit()
 
             if SCAN_STATUS in ("success", "failure"):
@@ -216,6 +229,9 @@ def get_status_and_update_db(
 
             session.refresh(scan)
             SCAN_OBJECT = scan
+            if scan.scan_status == "cancelled":
+                # a cancel won the row while this poll ran: report the stored state, not the worker's
+                return ("cancelled", {}, scan)
 
         if ingested:
             try:
