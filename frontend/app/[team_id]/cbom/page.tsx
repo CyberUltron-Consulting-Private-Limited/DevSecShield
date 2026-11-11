@@ -49,6 +49,7 @@ import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
 import { readinessText, readinessTone, type ReadinessTone } from "@/utils/cbomReadiness";
+import { groupSourcesRuns, hasCbomResults, originLabel, sourcesRunsHref } from "@/components/cbom/resultOrigin";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -465,6 +466,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                       <TableHead>Strength</TableHead>
                       <TableHead>Quantum Safe</TableHead>
                       <TableHead>Impact</TableHead>
+                      <TableHead>Source</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -488,6 +490,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                           )}
                         </TableCell>
                         <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[200px] truncate" title={risk.impact}>{risk.impact}</TableCell>
+                        <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[220px] truncate" title={originLabel(risk.origin)} data-testid="cbom-top-risk-origin">{originLabel(risk.origin)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -685,6 +688,8 @@ export default function CBOMPage() {
   };
 
   const dashboardData = query.data?.dashboard_data;
+  const sourcesRuns = query.data?.sources_runs ?? [];
+  const sourcesRunRows = groupSourcesRuns(sourcesRuns);
 
   return (
     <div className="flex h-screen bg-white dark:bg-zinc-900">
@@ -694,7 +699,7 @@ export default function CBOMPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">CBOM Scans</h1>
-              <p className="text-zinc-600 dark:text-zinc-400">Cryptography Bill of Materials — analyze cryptographic assets across your codebase.</p>
+              <p className="text-zinc-600 dark:text-zinc-400">Cryptography Bill of Materials — analyze cryptographic assets across your codebase and the systems your CBOM Sources collect.</p>
             </div>
             <div className="flex flex-row flex-wrap items-center gap-2">
               <Button asChild variant="outline" className="cursor-pointer" data-testid="cbom-sources-link">
@@ -769,6 +774,47 @@ export default function CBOMPage() {
 
               {/* ── Table Tab ── */}
               <TabsContent value="table">
+                {/* CBOM Sources results: each source's latest completed collection, counted on the dashboard too */}
+                {sourcesRunRows.length > 0 && (
+                  <div className="mb-6" data-testid="cbom-sources-runs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">CBOM Sources runs</h3>
+                      <Link href={sourcesRunsHref(team_id)} className="text-sm text-blue-600 hover:underline cursor-pointer">Open CBOM Sources</Link>
+                    </div>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">The latest completed collection of each source. Its assets are counted on the Dashboard next to the code scans.</p>
+                    <ScrollArea className="w-full border rounded-lg">
+                      <div className="min-w-max">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Run</TableHead>
+                              <TableHead>Sources</TableHead>
+                              <TableHead>Finished</TableHead>
+                              <TableHead>Assets</TableHead>
+                              <TableHead>Endpoints probed</TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {sourcesRunRows.map((run) => (
+                              <TableRow key={run.run_id} data-testid={`cbom-sources-run-${run.run_id}`}>
+                                <TableCell className="font-medium">Sources run #{run.run_id}</TableCell>
+                                <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[320px] whitespace-normal">{run.sources.join(", ")}</TableCell>
+                                <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{formatDate(run.finished_at)}</TableCell>
+                                <TableCell className="text-sm">{run.asset_count}</TableCell>
+                                <TableCell className="text-sm">{run.endpoints_probed}</TableCell>
+                                <TableCell className="text-right">
+                                  <Link href={sourcesRunsHref(team_id)} className="text-sm text-blue-600 hover:underline cursor-pointer">View results</Link>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
+                  </div>
+                )}
                 {/* Filter bar */}
                 {conversations.length > 0 && (
                   <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -898,7 +944,11 @@ export default function CBOMPage() {
                 {/* Table content */}
                 {conversations.length === 0 ? (
                   <div className="text-center py-12">
-                    <p className="text-zinc-600 dark:text-zinc-400 mb-4">No scans yet. Create your first CBOM scan to get started.</p>
+                    <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+                      {hasCbomResults(conversations, sourcesRuns)
+                        ? "No code scans yet. The results above come from CBOM Sources runs; create a CBOM scan to add your code."
+                        : "No scans yet. Create your first CBOM scan or start a CBOM Sources run to get started."}
+                    </p>
                     <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="h-4 w-4 mr-2" />Create New Scan
                     </Button>
