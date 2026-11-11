@@ -37,6 +37,9 @@ export const COVERED: string[] = [
   "app/[team_id]/dast/page.tsx",
   "components/dast-options-sidebar.tsx",
   "components/dast",
+  // AI BOM
+  "app/[team_id]/ai_bom/page.tsx",
+  "components/ai-bom-options-sidebar.tsx",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>([]);
