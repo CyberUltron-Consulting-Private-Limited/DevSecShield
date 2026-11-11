@@ -1,0 +1,289 @@
+# Reusable Python test job, built on uv.
+#
+# Call it from any repository (pin the ref to a tag or a commit SHA):
+#
+#   jobs:
+#     backend:
+#       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-python-tests.yml@<ref>
+#       with:
+#         suite-name: backend
+#         working-directory: backend
+#         python-version: "3.12"
+#         install-command: uv sync --frozen
+#         test-command: uv run --frozen pytest -q
+#         postgres: true
+#
+# What it does, in order: checkout -> uv + Python -> optional `uv lock --check` -> install -> blocking lint ->
+# "no new findings" lint (PRs only fail on findings the PR adds) -> tests -> artifacts -> job summary.
+#
+# PostgreSQL: with `postgres: true` a throwaway PostgreSQL service starts and every database named in
+# `postgres-databases` is created. For each database NAME the job exports PG_URL_<NAME> (upper-case,
+# postgresql+psycopg2://...) and DATABASE_URL points at the first one. Map them to whatever the tests read
+# inside `test-command`.
+name: reusable / python tests
+
+on:
+  workflow_call:
+    inputs:
+      suite-name:
+        description: Name shown in the job title and the summary.
+        type: string
+        default: python
+      working-directory:
+        description: Directory of the Python project, relative to the repository root.
+        type: string
+        default: "."
+      python-version:
+        description: Python version (sets UV_PYTHON, so it wins over a .python-version file).
+        type: string
+        default: "3.12"
+      uv-version:
+        description: uv version to install.
+        type: string
+        default: "0.13.6"
+      lock-check:
+        description: Run `uv lock --check` (fails when uv.lock does not match pyproject.toml).
+        type: boolean
+        default: true
+      install-command:
+        description: Shell command that installs the project and its test dependencies.
+        type: string
+        default: uv sync --frozen
+      lint-command:
+        description: Optional blocking lint command (must exit 0). Empty skips it.
+        type: string
+        default: ""
+      lint-diff-command:
+        description: >-
+          Optional command whose output lists findings as `path:line[:col]: message` (for example
+          `uv run --frozen --no-sync ruff check --output-format concise src` or `uv run --frozen --no-sync mypy src`).
+          On pull requests it also runs on the base commit and the job fails only on findings the PR adds
+          (line numbers are ignored, so moved code is not "new"). On other events it only reports.
+        type: string
+        default: ""
+      test-command:
+        description: Shell command that runs the tests.
+        type: string
+        default: uv run --frozen pytest -q
+      env:
+        description: Extra non-secret environment, one KEY=VALUE per line, set before install and tests.
+        type: string
+        default: ""
+      postgres:
+        description: Start a throwaway PostgreSQL service.
+        type: boolean
+        default: false
+      postgres-image:
+        description: PostgreSQL image for the service.
+        type: string
+        default: postgres:15-alpine
+      postgres-databases:
+        description: Space-separated database names to create on the service.
+        type: string
+        default: test
+      fetch-depth:
+        description: Commits to fetch (0 = full history). PR lint-diff fetches the base commit itself.
+        type: number
+        default: 1
+      timeout-minutes:
+        description: Job timeout.
+        type: number
+        default: 30
+      runs-on:
+        description: Runner label.
+        type: string
+        default: ubuntu-latest
+      artifact-paths:
+        description: Optional newline-separated paths (relative to the repository root) uploaded after the run.
+        type: string
+        default: ""
+    secrets:
+      extra-env:
+        description: Optional secret environment, one KEY=VALUE per line (values are masked in logs).
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ inputs.suite-name }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    services:
+      postgres:
+        # An empty image means "no service": the container only starts when postgres: true.
+        image: ${{ inputs.postgres && inputs.postgres-image || '' }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres # throwaway, CI-only database on the runner's loopback
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    env:
+      PYTHONUNBUFFERED: "1"
+      UV_NO_PROGRESS: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: ${{ inputs.fetch-depth }}
+          persist-credentials: false
+
+      - name: Set up uv and Python ${{ inputs.python-version }}
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ inputs.uv-version }}
+          python-version: ${{ inputs.python-version }}
+          working-directory: ${{ inputs.working-directory }}
+          enable-cache: true
+
+      - name: Environment
+        env:
+          EXTRA_ENV: ${{ inputs.env }}
+          SECRET_ENV: ${{ secrets.extra-env }}
+        run: |
+          set -euo pipefail
+          add_env() { # <masked: yes|no> <lines>
+            local mask=$1 line key
+            while IFS= read -r line || [ -n "$line" ]; do
+              [ -z "${line//[[:space:]]/}" ] && continue
+              case "$line" in \#*) continue ;; esac
+              key=${line%%=*}
+              if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [ "$key" = "$line" ]; then
+                echo "::error::env line is not KEY=VALUE (key: ${key:0:40})"; exit 1
+              fi
+              [ "$mask" = yes ] && echo "::add-mask::${line#*=}"
+              printf '%s\n' "$line" >> "$GITHUB_ENV"
+            done <<< "$2"
+          }
+          add_env no "$EXTRA_ENV"
+          add_env yes "$SECRET_ENV"
+          echo "uv $(uv --version | cut -d' ' -f2), python $(uv python find "$UV_PYTHON" 2>/dev/null || echo "$UV_PYTHON")"
+
+      - name: PostgreSQL databases
+        if: inputs.postgres
+        env:
+          DBS: ${{ inputs.postgres-databases }}
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          first=""
+          for db in $DBS; do
+            [[ "$db" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "::error::bad database name: $db"; exit 1; }
+            docker exec "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -qc "CREATE DATABASE \"$db\""
+            url="postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/$db"
+            echo "PG_URL_${db^^}=$url" >> "$GITHUB_ENV"
+            [ -z "$first" ] && first=$url
+          done
+          echo "DATABASE_URL=$first" >> "$GITHUB_ENV"
+          echo "created: $DBS"
+
+      - name: Lockfile is up to date
+        if: inputs.lock-check
+        run: uv lock --check
+
+      - name: Install
+        id: install
+        run: ${{ inputs.install-command }}
+
+      # Lint and tests each run once the install succeeded, so one failing step does not hide the others.
+      - name: Lint (blocking)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.lint-command != '' }}
+        run: ${{ inputs.lint-command }}
+
+      - name: Lint (no new findings)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.lint-diff-command != '' }}
+        env:
+          LINT_CMD: ${{ inputs.lint-diff-command }}
+          WD: ${{ inputs.working-directory }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SUITE: ${{ inputs.suite-name }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/lintdiff"; mkdir -p "$out"
+          bash -c "$LINT_CMD" > "$out/head.txt" 2>&1
+          echo "head run exit $?; $(wc -l < "$out/head.txt") output lines"
+          if [ -n "$BASE_SHA" ]; then
+            # The base commit's files, linted with this run's tool versions (same venv).
+            git -C "$GITHUB_WORKSPACE" fetch --no-tags --depth=1 origin "$BASE_SHA"
+            git -C "$GITHUB_WORKSPACE" worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
+            if [ -d "$RUNNER_TEMP/base/$WD" ]; then
+              (cd "$RUNNER_TEMP/base/$WD" && UV_PROJECT_ENVIRONMENT="$GITHUB_WORKSPACE/$WD/.venv" bash -c "$LINT_CMD") > "$out/base.txt" 2>&1
+              echo "base run exit $?; $(wc -l < "$out/base.txt") output lines"
+            else
+              : > "$out/base.txt"
+            fi
+            mode=gate
+          else
+            mode=report
+          fi
+          python3 - "$out/head.txt" "$out/base.txt" "$mode" "$SUITE lint" "$PWD" "$RUNNER_TEMP/base/$WD" <<'PY'
+          import collections, os, re, sys
+          head, base, mode, label, head_root, base_root = sys.argv[1:7]
+          pat = re.compile(r"^(?P<path>[^\s:][^:]*?):(?P<line>\d+)(?::\d+)?:\s*(?P<rest>.+)$")
+          def load(path, root):
+              found = collections.Counter(); where = {}
+              if not os.path.exists(path):
+                  return found, where
+              for raw in open(path, encoding="utf-8", errors="replace"):
+                  m = pat.match(raw.rstrip("\n"))
+                  if not m:
+                      continue
+                  p = m["path"]
+                  for r in (root.rstrip("/") + "/", "./"):
+                      if p.startswith(r):
+                          p = p[len(r):]
+                  key = (p, m["rest"].strip())
+                  found[key] += 1
+                  where.setdefault(key, m["line"])
+              return found, where
+          h, where = load(head, head_root)
+          b, _ = load(base, base_root)
+          new = h - b if mode == "gate" else collections.Counter()
+          total, n_new = sum(h.values()), sum(new.values())
+          for (p, rest), n in list(new.items())[:50]:
+              print(f"::error file={p},line={where[(p, rest)]}::{label}: {rest}" + (f" (x{n})" if n > 1 else ""))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
+              s.write(f"### {label}\n\n| findings now | on base | new in this PR |\n|---:|---:|---:|\n")
+              s.write(f"| {total} | {sum(b.values()) if mode == 'gate' else 'n/a'} | {n_new if mode == 'gate' else 'n/a (not a PR)'} |\n\n")
+          print(f"{label}: {total} findings, {n_new} new" + ("" if mode == "gate" else " (report only: not a pull request)"))
+          sys.exit(1 if n_new else 0)
+          PY
+
+      - name: Tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: ${{ inputs.test-command }}
+
+      - name: Upload artifacts
+        if: ${{ always() && inputs.artifact-paths != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.suite-name }}-artifacts
+          path: ${{ inputs.artifact-paths }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        env:
+          SUITE: ${{ inputs.suite-name }}
+          PY: ${{ inputs.python-version }}
+          STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "### ${SUITE}: ${STATUS}"
+            echo
+            echo "Python ${PY}, uv $(uv --version | cut -d' ' -f2), directory \`${PWD#"$GITHUB_WORKSPACE"/}\`."
+          } >> "$GITHUB_STEP_SUMMARY"

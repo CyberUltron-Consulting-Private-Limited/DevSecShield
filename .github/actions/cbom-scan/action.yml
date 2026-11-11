@@ -12,19 +12,42 @@ inputs:
     description: Exit 0 even when high findings are present.
     required: false
     default: "false"
+outputs:
+  exit-code:
+    description: >-
+      Exit code of `aibom cbom` (0 = no high finding, 1 = high findings). Any other value means the scan itself did
+      not run (for example 127 = command not found), which a caller must never read as "blocked".
+    value: ${{ steps.scan.outputs.exit-code }}
 runs:
   using: composite
   steps:
+    # The action used to call `uv` without installing it, so on a clean runner every scan exited 127 ("uv: command
+    # not found"): the clean tree "failed" and the vulnerable tree "was blocked" for the wrong reason.
+    - name: Set up uv
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        version: "0.13.6"
+        python-version: "3.12"
+        working-directory: aibom
+        enable-cache: true
+    - name: Install the scanner
+      shell: bash
+      working-directory: aibom
+      run: uv sync --frozen
     - name: Scan the repository
+      id: scan
       shell: bash
       working-directory: aibom
       env:
         SCAN_PATH: ${{ inputs.path }}
         NO_FAIL: ${{ inputs.no-fail }}
       run: |
-        set -euo pipefail
+        set -uo pipefail
         args=(cbom "$GITHUB_WORKSPACE/$SCAN_PATH")
         if [ "$NO_FAIL" = "true" ]; then
           args+=(--no-fail)
         fi
-        uv run aibom "${args[@]}"
+        uv run --frozen --no-sync aibom "${args[@]}"
+        rc=$?
+        echo "exit-code=$rc" >> "$GITHUB_OUTPUT"
+        exit "$rc"
