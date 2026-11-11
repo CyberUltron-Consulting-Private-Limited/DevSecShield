@@ -200,7 +200,7 @@ jobs:
           CONFIG: ${{ inputs.gitleaks-config }}
           FAIL_FULL: ${{ inputs.gitleaks-fail-full }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           mkdir -p security-reports
           args=(git --redact --no-banner --report-format sarif --report-path security-reports/gitleaks.sarif --exit-code 0)
           [ -f "$CONFIG" ] && args+=(--config "$CONFIG")
@@ -447,7 +447,7 @@ jobs:
           EXCLUDES: ${{ inputs.semgrep-exclude }}
           MIN: ${{ inputs.semgrep-min-level }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           args=(scan --metrics=off --disable-version-check --quiet --sarif-output="$R/semgrep.sarif")
           for c in $CONFIGS; do args+=(--config "$c"); done
           for e in $EXCLUDES; do args+=(--exclude "$e"); done
@@ -466,7 +466,7 @@ jobs:
       - name: OSV-Scanner (lockfiles)
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           lockfiles() { # in the current directory: lockfile arguments for osv-scanner
             git ls-files | grep -E '(^|/)(uv\.lock|poetry\.lock|Pipfile\.lock|requirements[^/]*\.(txt|lock)|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|Cargo\.lock|Gemfile\.lock|composer\.lock)$' \
               | grep -Ev "$EXCLUDE_RE" | while IFS= read -r f; do
@@ -500,7 +500,7 @@ jobs:
           SEVERITY: ${{ inputs.trivy-severity }}
           SKIP_DIRS: ${{ inputs.trivy-skip-dirs }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           export TRIVY_CACHE_DIR="$RUNNER_TEMP/trivy-cache" TRIVY_DISABLE_TELEMETRY=true
           scan() { # <dir> <out.sarif> [--skip-db-update]
             (cd "$1" && trivy fs --quiet --scanners "$SCANNERS" --severity "$SEVERITY" --skip-dirs "$SKIP_DIRS" \
@@ -520,7 +520,7 @@ jobs:
           V: ${{ inputs.checkov-version }}
           FRAMEWORKS: ${{ inputs.checkov-frameworks }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           uv tool install --quiet "checkov==${V}" >/dev/null
           scan() { # <dir> <out dir>
             mkdir -p "$2"
@@ -545,7 +545,7 @@ jobs:
         env:
           MIN: ${{ inputs.hadolint-min-level }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           scan() { # <dir> <out.sarif>
             local files; mapfile -t files < <(cd "$1" && git ls-files | grep -E '(^|/)([^/]*\.)?Dockerfile(\.[^/]*)?$|\.[Dd]ockerfile$' | grep -Ev '\.dockerignore$' | grep -Ev "$EXCLUDE_RE")
             if [ "${#files[@]}" -eq 0 ]; then echo '{"runs":[]}' > "$2"; return 0; fi
@@ -564,7 +564,7 @@ jobs:
         env:
           SEVERITY: ${{ inputs.shellcheck-severity }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           scan() { # <dir> <out.json>
             local files; mapfile -t files < <(cd "$1" && git ls-files '*.sh' '*.bash' | grep -Ev "$EXCLUDE_RE")
             if [ "${#files[@]}" -eq 0 ]; then echo '{"comments":[]}' > "$2"; return 0; fi
@@ -584,7 +584,7 @@ jobs:
       - name: actionlint (workflows)
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           # shellcheck disable=SC2016 # a Go template for actionlint (it turns \n into a newline), not a shell expansion
           fmt='{{range $err := .}}{{$err.Filepath}}:{{$err.Line}}:{{$err.Column}}: {{$err.Message}} [{{$err.Kind}}]\n{{end}}'
           scan() { # <dir> <out.txt>

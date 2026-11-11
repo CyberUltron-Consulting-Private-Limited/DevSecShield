@@ -218,7 +218,7 @@ jobs:
           SUITE: ${{ inputs.suite-name }}
           FETCH_TOKEN: ${{ github.token }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           out="$RUNNER_TEMP/lintdiff"; mkdir -p "$out"
           bash -c "$LINT_CMD" > "$out/head.txt" 2>&1
           echo "head run exit $?; $(wc -l < "$out/head.txt") output lines"

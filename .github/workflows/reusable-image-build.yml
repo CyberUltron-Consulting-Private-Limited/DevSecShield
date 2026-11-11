@@ -143,7 +143,7 @@ jobs:
           FAIL_ON: ${{ inputs.trivy-fail-on }}
           NAME: ${{ matrix.image.name }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           export TRIVY_CACHE_DIR="$RUNNER_TEMP/trivy-cache" TRIVY_DISABLE_TELEMETRY=true
           mkdir -p image-reports
           trivy image --quiet --scanners vuln --severity "$SEVERITY" --format sarif \

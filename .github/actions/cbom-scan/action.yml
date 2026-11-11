@@ -42,7 +42,7 @@ runs:
         SCAN_PATH: ${{ inputs.path }}
         NO_FAIL: ${{ inputs.no-fail }}
       run: |
-        set -uo pipefail
+        set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
         args=(cbom "$GITHUB_WORKSPACE/$SCAN_PATH")
         if [ "$NO_FAIL" = "true" ]; then
           args+=(--no-fail)

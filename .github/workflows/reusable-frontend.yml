@@ -120,7 +120,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           FETCH_TOKEN: ${{ github.token }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           out="$RUNNER_TEMP/eslint"; mkdir -p "$out"
           if [ "$MODE" = blocking ]; then
             # shellcheck disable=SC2086 # ESLINT_ARGS is a word list
@@ -191,7 +191,7 @@ jobs:
           PATTERN: ${{ inputs.test-pattern }}
           RUNNER: ${{ inputs.test-runner }}
         run: |
-          set -uo pipefail
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           mapfile -t tests < <(find . -name "$PATTERN" -not -path './node_modules/*' -not -path './.next/*' | sort)
           if [ "${#tests[@]}" -eq 0 ]; then echo "::notice::no $PATTERN files"; exit 0; fi
           failed=()
