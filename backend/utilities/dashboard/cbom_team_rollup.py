@@ -2749,11 +2749,9 @@ def fold_scans(
     ASCII JSON, sorted and joined with ``","`` (addendum A-2).  A scan set without attestation
     records keeps the previous text and therefore the previous value.  The same scan set and the
     same records give the same fingerprint whatever the order of ``heads`` or ``batch_size``.
-    Every date derives from ``now``.
+    Every date derives from ``now``.  Headline counts: ``_headline`` (one quantum-readiness definition for every
+    CBOM view, ``cbom_metrics.quantum_readiness_pct``).
     """
-    # one quantum-readiness definition for every CBOM view (a pure, stdlib-only module)
-    from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
-
     moment = _utc(now) or _EPOCH
     hard = _bounded(hard_max, HARD_MAX_SCANS, 0)
     batch = _bounded(batch_size, BATCH_SIZE, 1)
@@ -2893,9 +2891,8 @@ def fold_scans(
         )
     source_rows.sort(key=lambda source: (source.label.casefold(), source.key))
 
-    # 4. headline counts: CURRENT state only, computed once so every document agrees.  Readiness is
-    # cbom_metrics.quantum_readiness_pct over every asset with a verdict (the scan page's rule): the current engine
-    # grades algorithms only, a legacy worker row also graded its certificates and keys.
+    # 4. headline counts (``_headline`` below, in the TeamCbomView call): CURRENT state only, computed once so every
+    # document agrees; the current engine grades algorithms only, a legacy worker row also graded certificates and keys.
     posture_view = _finish_posture(posture_accs, sources, attempt, moment)
     pair_endpoints(posture_view)
     posture_view = replace(posture_view, warnings=_posture_warnings(folded))

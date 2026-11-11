@@ -159,6 +159,7 @@ _SOURCE_KIND_NOUNS = (
     (SOURCE_ZIP, "zip upload", "zip uploads"),
     (SOURCE_FILE, "uploaded CBOM file", "uploaded CBOM files"),
     (SOURCE_SCAN, "other scan", "other scans"),
+    ("sources", "CBOM Sources source", "CBOM Sources sources"),  # cbom_team_rollup.SOURCE_SOURCES
 )
 _EXCLUSION_TEXT = {
     EXCLUDED_FAILURE: "Excluded: failed",

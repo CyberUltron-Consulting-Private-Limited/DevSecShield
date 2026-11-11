@@ -196,7 +196,8 @@ def latest_jobs(session: Any, team_id: int, *, limit: int = 2_000) -> list[Any]:
     for job in session.exec(select(CbomCollectionJob).where(
             CbomCollectionJob.team_id == team_id, CbomCollectionJob.kind == "collect",
             CbomCollectionJob.status == "success", CbomCollectionJob.run_id.is_not(None))  # type: ignore[union-attr]
-            .order_by(CbomCollectionJob.finished_at.desc(), CbomCollectionJob.id.desc())  # type: ignore[union-attr]
+            .order_by(CbomCollectionJob.finished_at.desc().nulls_last(),  # type: ignore[union-attr]
+                      CbomCollectionJob.id.desc())  # type: ignore[union-attr]
             .limit(limit)).all():
         latest.setdefault(ID.job_source_ref(job, sources.get(job.source_id or 0)), job)
     return list(latest.values())
