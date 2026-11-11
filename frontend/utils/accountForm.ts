@@ -11,3 +11,9 @@ export function changePasswordProblems(current: string, next: string, confirm: s
   if (!problems.next && confirm !== next) problems.confirm = "The two new passwords are not the same.";
   return problems;
 }
+
+/** Where the user menu's Account entry goes (components/user-menu.tsx): the team's Account page inside a team, and
+ * /home/account outside one (the same page in the /home layout), so a user without a team has it too (#14). */
+export function accountPath(teamId: string | string[] | undefined): string {
+  return typeof teamId === "string" && teamId ? `/${teamId}/account` : "/home/account";
+}
