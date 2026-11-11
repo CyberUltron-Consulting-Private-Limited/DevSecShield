@@ -238,3 +238,8 @@ def attach_snippets(rows: list[dict], root: Path) -> dict[str, int]:
 
 
 __all__ = ["attach_snippets", "code_window", "redact_line", "is_generated", "SCAN_BUDGET"]
+
+
+def _ci_canary() -> None:
+    """CI canary for PR #16 (never merged): a new ruff finding (F841) for the no-new-findings gate."""
+    unused = 1
