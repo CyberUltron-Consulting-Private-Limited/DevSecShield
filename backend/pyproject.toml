@@ -31,4 +31,8 @@ dependencies = [
     "httpx>=0.28.1",  # Azure / Google Cloud collectors (also via fastapi[standard])
     "jsonschema>=4.20",  # OSCAL assessment-results validated offline before export / push (WP11)
     "regex>=2024.11.6",  # OSCAL schema patterns use \p{L} Unicode classes (already locked via tiktoken)
+    # F4 SSO: SAML XML signature verification (pure Python on lxml + cryptography; no xmlsec C library)
+    "signxml>=4.0.3",
+    # F4 SSO: DNS TXT verification of claimed email domains (already locked via pymongo)
+    "dnspython>=2.6.1",
 ]
