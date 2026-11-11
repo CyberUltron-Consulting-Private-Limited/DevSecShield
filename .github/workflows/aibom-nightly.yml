@@ -1,4 +1,4 @@
-name: AI-BOM Nightly Benchmark (full 10 repos, live)
+name: AI-BOM Weekly Benchmark (full 10 repos, live)
 
 # The FULL live benchmark: installs both OSS oracles (Trusera + Cisco) and runs
 # them + ours on all 10 real repos + the synthetic fixture, then diffs (P7 gate).
@@ -6,9 +6,12 @@ name: AI-BOM Nightly Benchmark (full 10 repos, live)
 # per-PR (the per-PR aibom-gates.yml covers synthetic + 2 representative repos
 # hermetically/pinned). Requires AWS_* repo secrets for Bedrock.
 
+# Weekly, not nightly (PR #16, architecture review): from 1-10 Nov the AI-BOM run averaged 86 minutes a night
+# (8 of 10 cancelled at the 90-minute timeout) on July code, because schedules run from the default branch.
+# Make `dev` the default branch so the schedule runs current code; run by hand via workflow_dispatch.
 on:
   schedule:
-    - cron: "0 7 * * *"   # 07:00 UTC nightly
+    - cron: "0 7 * * 1"   # Mondays 07:00 UTC (was nightly)
   workflow_dispatch: {}
 
 permissions:

@@ -2,7 +2,10 @@ name: CBOM code scan
 description: >
   Air-gapped CBOM scan of a repository. Fails the job when a high finding is
   present. Installs nothing on the scanned hosts and does not call the network
-  during the scan.
+  during the scan. Usable from any repository
+  (uses: AnshSinghal-CyberUltron/devsecshield/.github/actions/cbom-scan@<ref>):
+  the scanner runs from the action's own copy of this repository, and `path`
+  is resolved in the caller's workspace.
 inputs:
   path:
     description: Directory to scan, relative to the repository root.
@@ -28,16 +31,16 @@ runs:
       with:
         version: "0.13.6"
         python-version: "3.12"
-        working-directory: aibom
+        working-directory: ${{ github.action_path }}/../../../aibom
         enable-cache: true
     - name: Install the scanner
       shell: bash
-      working-directory: aibom
+      working-directory: ${{ github.action_path }}/../../../aibom
       run: uv sync --frozen
     - name: Scan the repository
       id: scan
       shell: bash
-      working-directory: aibom
+      working-directory: ${{ github.action_path }}/../../../aibom
       env:
         SCAN_PATH: ${{ inputs.path }}
         NO_FAIL: ${{ inputs.no-fail }}

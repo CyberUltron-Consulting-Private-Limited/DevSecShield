@@ -1,5 +1,6 @@
 # Dependabot: weekly, grouped dependency updates, opened against `dev` (the integration branch) so they follow the
-# normal flow dev -> staging -> main and run the full CI. Minor and patch updates of one ecosystem arrive as one
+# normal flow dev -> staging -> main and run the full CI. Security updates ignore `target-branch` and always open
+# against the DEFAULT branch: make `dev` the default branch (planned after PR #16), or keep security updates off. Minor and patch updates of one ecosystem arrive as one
 # grouped PR; major updates come one PR each, because they need a person to read the changelog.
 # Titles start with "chore(deps)" so the pr-hygiene title check passes; bots are exempt from the
 # acceptance-criteria table. A 7-day cooldown skips releases younger than a week (supply-chain hygiene).
@@ -15,6 +16,7 @@ updates:
       - /aibom
       - /RabbitMQ/worker
       - /RabbitMQ/dast_worker
+      - /RabbitMQ/guardrail_worker
     schedule:
       interval: weekly
       day: monday
@@ -57,6 +59,7 @@ updates:
       - /scan_node
       - /RabbitMQ/worker
       - /RabbitMQ/dast_worker
+      - /RabbitMQ/guardrail_worker
     schedule:
       interval: weekly
       day: monday
@@ -72,6 +75,7 @@ updates:
     groups:
       base-images:
         patterns: ["*"]
+        update-types: [minor, patch]
 
   - package-ecosystem: github-actions
     directories:
@@ -92,3 +96,4 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+        update-types: [minor, patch]

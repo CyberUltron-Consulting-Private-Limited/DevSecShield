@@ -8,7 +8,7 @@ tone_instructions: >-
   [blocker], [major], [minor] or [nit] the way the team's reviewers do.
 
 reviews:
-  profile: assertive
+  profile: chill
   request_changes_workflow: false
   high_level_summary: true
   review_status: true
@@ -20,7 +20,9 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    base_branches: ["dev", "staging", "main"]
+    # Feature PRs into dev only: promotion PRs (dev -> staging -> main) carry already-reviewed changes.
+    base_branches: ["dev"]
+    ignore_usernames: ["dependabot[bot]"]
   security_risk_instructions: >-
     DevSecShield is a security product that scans customers' code, cloud accounts and networks, so treat these as
     blockers: secrets or credentials in code, config, fixtures or logs (rotate, do not just delete); authentication
@@ -73,33 +75,35 @@ reviews:
       instructions: >-
         Deployment config: no secrets in files (use .env.example placeholders), containers not privileged, images
         pinned, health checks present, and the change reflected in deploy/staging/README.md when operators must act.
+  # Only tools CI does not already run (ci-gate runs ruff, ESLint, ShellCheck, Hadolint, actionlint, gitleaks,
+  # Checkov, Semgrep, OSV-Scanner and Trivy), so nothing is reported twice.
   tools:
-    ruff:
-      enabled: true
-    eslint:
-      enabled: true
-    shellcheck:
-      enabled: true
-    hadolint:
-      enabled: true
-    actionlint:
-      enabled: true
     zizmor:
-      enabled: true
-    gitleaks:
-      enabled: true
-    checkov:
-      enabled: true
-    semgrep:
-      enabled: true
-    osvScanner:
-      enabled: true
-    trivy:
       enabled: true
     yamllint:
       enabled: true
     markdownlint:
       enabled: true
+    ruff:
+      enabled: false
+    eslint:
+      enabled: false
+    shellcheck:
+      enabled: false
+    hadolint:
+      enabled: false
+    actionlint:
+      enabled: false
+    gitleaks:
+      enabled: false
+    checkov:
+      enabled: false
+    semgrep:
+      enabled: false
+    osvScanner:
+      enabled: false
+    trivy:
+      enabled: false
 
 chat:
   auto_reply: true

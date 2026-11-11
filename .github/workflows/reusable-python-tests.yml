@@ -14,7 +14,8 @@
 #         postgres: true
 #
 # What it does, in order: checkout -> uv + Python -> optional `uv lock --check` -> install -> blocking lint ->
-# "no new findings" lint (PRs only fail on findings the PR adds) -> tests -> artifacts -> job summary.
+# "no new findings" lint (PRs only fail on findings the PR adds; a linter that did not run always fails) -> tests
+# (minus a tracked deselect list, if given) -> artifacts -> job summary.
 #
 # PostgreSQL: with `postgres: true` a throwaway PostgreSQL service starts and every database named in
 # `postgres-databases` is created. For each database NAME the job exports PG_URL_<NAME> (upper-case,
@@ -55,20 +56,43 @@ on:
         default: ""
       lint-diff-command:
         description: >-
-          Optional command whose output lists findings as `path:line[:col]: message` (for example
-          `uv run --frozen --no-sync ruff check --output-format concise src` or `uv run --frozen --no-sync mypy src`).
-          On pull requests it also runs on the base commit and the job fails only on findings the PR adds
-          (line numbers are ignored, so moved code is not "new"). On other events it only reports.
+          Optional linters whose output lists findings as `path:line[:col]: message`, ONE COMMAND PER LINE (for
+          example `uv run --frozen --no-sync ruff check --output-format concise src`, then
+          `uv run --frozen --no-sync mypy src`). Each line runs on its own and must exit 0 (clean) or 1 (findings):
+          any other exit code means the tool did not run, and the step fails. On pull requests each line also runs
+          on the base commit, and the step fails only on findings the PR adds (line numbers, ruff's "(130 > 88)"
+          and file renames are ignored, so moved, shortened or renamed code is not "new"). If the base commit
+          cannot be checked out, the step fails; if a linter fails on the base commit, every finding in a file the
+          PR adds or modifies counts as new. On other events it reports only.
         type: string
         default: ""
       test-command:
         description: Shell command that runs the tests.
         type: string
         default: uv run --frozen pytest -q
+      deselect-file:
+        description: >-
+          Optional repository-relative file of pytest node ids to deselect, one per line (`#` comments). Each one
+          is a test that fails today for a reason tracked elsewhere; the list is printed in the job summary. Keep
+          it under .github/ so changing it needs the security-config-reviewed label.
+        type: string
+        default: ""
       env:
         description: Extra non-secret environment, one KEY=VALUE per line, set before install and tests.
         type: string
         default: ""
+      uv-cache:
+        description: Cache uv's downloads in the Actions cache (turn off for multi-GB dependency sets).
+        type: boolean
+        default: true
+      free-disk-space:
+        description: Delete the runner's preinstalled Android SDK, .NET, GHC and CodeQL first (about 25 GB).
+        type: boolean
+        default: false
+      pg-url-scheme:
+        description: URL scheme of PG_URL_* / DATABASE_URL (postgresql+psycopg2 for SQLAlchemy; postgresql for others).
+        type: string
+        default: postgresql+psycopg2
       apt-packages:
         description: Space-separated Ubuntu packages the tests need (for example poppler-utils for pdftotext).
         type: string
@@ -149,13 +173,22 @@ jobs:
           fetch-depth: ${{ inputs.fetch-depth }}
           persist-credentials: false
 
+      - name: Free disk space
+        if: inputs.free-disk-space
+        working-directory: .
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost /usr/share/swift
+          df -h / | tail -1
+
       - name: Set up uv and Python ${{ inputs.python-version }}
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: ${{ inputs.uv-version }}
           python-version: ${{ inputs.python-version }}
           working-directory: ${{ inputs.working-directory }}
-          enable-cache: true
+          enable-cache: ${{ inputs.uv-cache }}
 
       - name: Environment
         env:
@@ -201,13 +234,14 @@ jobs:
         env:
           DBS: ${{ inputs.postgres-databases }}
           PG_CONTAINER: ${{ job.services.postgres.id }}
+          SCHEME: ${{ inputs.pg-url-scheme }}
         run: |
           set -euo pipefail
           first=""
           for db in $DBS; do
             [[ "$db" =~ ^[a-z_][a-z0-9_]*$ ]] || { echo "::error::bad database name: $db"; exit 1; }
             docker exec "$PG_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 -qc "CREATE DATABASE \"$db\""
-            url="postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/$db"
+            url="$SCHEME://postgres:postgres@127.0.0.1:5432/$db"
             echo "PG_URL_${db^^}=$url" >> "$GITHUB_ENV"
             [ -z "$first" ] && first=$url
           done
@@ -231,11 +265,17 @@ jobs:
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
+          # Also the files the PR adds or modifies, and its renames, for the comparison.
           if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch -q --no-tags --depth=1 origin "$BASE_SHA" \
-             && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null; then
+             && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null \
+             && git -c core.quotePath=false diff --no-ext-diff -M --name-only --diff-filter=AMR "$BASE_SHA" HEAD > "$RUNNER_TEMP/changed.txt" \
+             && git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv"; then
             echo "dir=$RUNNER_TEMP/base" >> "$GITHUB_OUTPUT"
+            echo "status=ok" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::could not check out the base commit $BASE_SHA; lint findings will be reported, not gated"
+            # Not fatal here (the tests still run); the lint step fails, because without the base it cannot gate.
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "::error::could not check out the base commit $BASE_SHA for the lint diff"
           fi
 
       - name: Install
@@ -258,70 +298,131 @@ jobs:
         env:
           LINT_CMD: ${{ inputs.lint-diff-command }}
           WD: ${{ inputs.working-directory }}
-          BASE_DIR: ${{ steps.base.outputs.dir }}
           SUITE: ${{ inputs.suite-name }}
+          IS_PR: ${{ github.event.pull_request.number != '' }}
+          BASE_STATUS: ${{ steps.base.outputs.status }}
+          BASE_DIR: ${{ steps.base.outputs.dir }}
+        # Every decision (a linter that did not run, a base that could not be checked out or linted, renames) is in
+        # this script, so .github/tests/test_diff_gates.py tests exactly what CI runs.
         run: |
-          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
-          out="$RUNNER_TEMP/lintdiff"; mkdir -p "$out"
-          bash -c "$LINT_CMD" > "$out/head.txt" 2>&1
-          echo "head run exit $?; $(wc -l < "$out/head.txt") output lines"
-          if [ -n "$BASE_DIR" ]; then
-            # The base commit's files, linted with this run's tool versions (same venv).
-            if [ -d "$BASE_DIR/$WD" ]; then
-              (cd "$BASE_DIR/$WD" && UV_PROJECT_ENVIRONMENT="$GITHUB_WORKSPACE/$WD/.venv" bash -c "$LINT_CMD") > "$out/base.txt" 2>&1
-              echo "base run exit $?; $(wc -l < "$out/base.txt") output lines"
-            else
-              : > "$out/base.txt"
-            fi
-            mode=gate
-          else
-            mode=report
-          fi
-          python3 - "$out/head.txt" "$out/base.txt" "$mode" "$SUITE lint" "$PWD" "${BASE_DIR:-$RUNNER_TEMP/base}/$WD" <<'PY'
-          import collections, os, re, sys
-          head, base, mode, label, head_root, base_root = sys.argv[1:7]
+          python3 - <<'PY'
+          import collections, os, re, subprocess, sys
+          env = os.environ
+          label, wd, tmp = f"{env['SUITE']} lint", env.get("WD") or ".", env.get("RUNNER_TEMP", "/tmp")
+          cmds = [c.strip() for c in env["LINT_CMD"].splitlines() if c.strip() and not c.strip().startswith("#")]
+          head_root, base_dir = os.getcwd(), env.get("BASE_DIR", "")
+          base_root = os.path.normpath(os.path.join(base_dir, wd)) if base_dir else ""
+          pre = "" if wd in (".", "./") else wd.strip("/") + "/"
           pat = re.compile(r"^(?P<path>[^\s:][^:]*?):(?P<line>\d+)(?::\d+)?:\s*(?P<rest>.+)$")
           ROOTS = [r.rstrip("/") + "/" for r in (head_root, base_root) if r]
+
           def norm(msg):
-              # what identifies a finding: no checkout root, no "line 123" (ruff F811, mypy notes), one line
+              # What identifies a finding: no checkout root, no "line 123" (ruff F811, mypy notes), no measurement
+              # such as ruff E501's "(130 > 88)" (shortening a line that stays too long is not new), one spacing.
               for r in ROOTS:
                   msg = msg.replace(r, "")
-              return " ".join(re.sub(r"\bline \d+", "line N", msg).split())
-          def load(path, root):
-              found = collections.Counter(); where = {}
-              if not os.path.exists(path):
-                  return found, where
-              for raw in open(path, encoding="utf-8", errors="replace"):
-                  m = pat.match(raw.rstrip("\n"))
-                  if not m:
-                      continue
-                  p = m["path"]
-                  for r in (root.rstrip("/") + "/", "./"):
-                      if p.startswith(r):
-                          p = p[len(r):]
-                  key = (p, norm(m["rest"]))
-                  found[key] += 1
-                  where.setdefault(key, m["line"])
-              return found, where
-          h, where = load(head, head_root)
-          b, _ = load(base, base_root)
-          new = h - b if mode == "gate" else collections.Counter()
+              msg = re.sub(r"\(\d+ > \d+\)", "(N > M)", re.sub(r"\bline \d+", "line N", msg))
+              return " ".join(msg.split())
+
+          def lint(root, extra=None):
+              """Runs every command in `root`. A tool that exits > 1, or exits 1 without a readable finding, did
+              not run: that is a problem, never "0 findings"."""
+              found, where, problems = collections.Counter(), {}, []
+              for cmd in cmds:
+                  p = subprocess.run(["bash", "-o", "pipefail", "-c", cmd], cwd=root, env={**env, **(extra or {})},
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+                  n = 0
+                  for raw in p.stdout.splitlines():
+                      m = pat.match(raw)
+                      if not m:
+                          continue
+                      path = m["path"]
+                      for r in (root.rstrip("/") + "/", "./"):
+                          if path.startswith(r):
+                              path = path[len(r):]
+                      key = (path, norm(m["rest"]))
+                      found[key] += 1; n += 1
+                      where.setdefault(key, m["line"])
+                  print(f"  {cmd[:100]}: exit {p.returncode}, {n} finding(s)")
+                  if p.returncode not in (0, 1):
+                      tail = " | ".join(p.stdout.strip().splitlines()[-3:])[:400]
+                      problems.append(f"`{cmd[:120]}` did not run (exit {p.returncode}): {tail}")
+                  elif p.returncode == 1 and n == 0:
+                      problems.append(f"`{cmd[:120]}` exited 1 but printed no `path:line: message` finding the gate can read")
+              return found, where, problems
+
+          def repo_paths(name):
+              path = os.path.join(tmp, name)
+              return [l.rstrip("\n").split("\t") for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
+
+          print(f"{label} on this change:")
+          h, where, problems = lint(head_root)
+          b, mode, note = collections.Counter(), "report", "report only: not a pull request"
+          if not problems and env.get("IS_PR") == "true":
+              if env.get("BASE_STATUS") != "ok" or not base_dir:
+                  problems.append("the base commit could not be checked out, so new findings cannot be told from existing ones (see the step 'Base commit for the lint diff')")
+              elif not os.path.isdir(base_root):
+                  mode, note = "diff", "the project is new in this change"
+              else:
+                  print(f"{label} on the base commit:")
+                  base, _, base_problems = lint(base_root, {"UV_PROJECT_ENVIRONMENT": os.path.join(head_root, ".venv")})
+                  if base_problems:
+                      mode = "changed-files"
+                      note = "the lint failed on the base commit, so every finding in a file this change adds or modifies counts as new"
+                      print("::warning title=" + label + "::" + note + ": " + "; ".join(base_problems)[:500])
+                  else:
+                      # findings in a file the change renamed are compared under the new name
+                      renamed = {r[1][len(pre):]: r[2][len(pre):] for r in repo_paths("renames.tsv")
+                                 if len(r) == 3 and r[0].startswith("R") and r[1].startswith(pre) and r[2].startswith(pre)}
+                      for (path, msg), n in base.items():
+                          b[(renamed.get(path, path), msg)] += n
+                      mode, note = "diff", ""
+          if mode == "diff":
+              new = h - b
+          elif mode == "changed-files":
+              changed = {r[0][len(pre):] for r in repo_paths("changed.txt") if r and r[0].startswith(pre)}
+              new = collections.Counter({k: n for k, n in h.items() if k[0] in changed})
+          else:
+              new = collections.Counter()
           total, n_new = sum(h.values()), sum(new.values())
-          for (p, rest), n in list(new.items())[:50]:
-              print(f"::error file={p},line={where[(p, rest)]}::{label}: {rest}" + (f" (x{n})" if n > 1 else ""))
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
-              s.write(f"### {label}\n\n| findings now | on base | new in this PR |\n|---:|---:|---:|\n")
-              s.write(f"| {total} | {sum(b.values()) if mode == 'gate' else 'n/a'} | {n_new if mode == 'gate' else 'n/a (not a PR)'} |\n\n")
-          print(f"{label}: {total} findings, {n_new} new" + ("" if mode == "gate" else " (report only: not a pull request)"))
-          sys.exit(1 if n_new else 0)
+          for p in problems:
+              print(f"::error title={label}::{p}")
+          for (path, rest), n in list(new.items())[:50]:
+              print(f"::error file={pre}{path},line={where[(path, rest)]}::{label}: {rest}" + (f" (x{n})" if n > 1 else ""))
+          gated = mode != "report"
+          result = "FAIL (lint did not run)" if problems else ("FAIL" if n_new else "pass") if gated else "report only"
+          with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
+              s.write(f"### {label}\n\n| findings now | on base | new in this change | result |\n|---:|---:|---:|---|\n")
+              s.write(f"| {total} | {sum(b.values()) if mode == 'diff' else 'n/a'} | {n_new if gated else 'n/a'} | {result} |\n\n")
+              if note:
+                  s.write(f"{note}.\n\n")
+          print(f"{label}: {total} findings, {n_new} new" + (f" ({note})" if note else "") + (" -> did not run" if problems else ""))
+          sys.exit(1 if problems or n_new else 0)
           PY
 
       - name: Tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           CMD: ${{ inputs.test-command }}
+          DESELECT_FILE: ${{ inputs.deselect-file }}
         # The command comes from the calling workflow; it is passed through env, not pasted into the script.
-        run: bash -eo pipefail -c "$CMD"
+        run: |
+          set -euo pipefail
+          if [ -n "$DESELECT_FILE" ]; then
+            f="$GITHUB_WORKSPACE/$DESELECT_FILE"
+            [ -f "$f" ] || { echo "::error::deselect-file $DESELECT_FILE does not exist"; exit 1; }
+            # PYTEST_ADDOPTS is split like a shell command line, so each node id is quoted.
+            ids=$(grep -vE '^[[:space:]]*(#|$)' "$f" | sed -E 's/[[:space:]]+#.*$//') || true
+            if [ -n "$ids" ]; then
+              PYTEST_ADDOPTS="${PYTEST_ADDOPTS:-} $(while IFS= read -r id; do printf -- '--deselect=%q ' "$id"; done <<< "$ids")"
+              export PYTEST_ADDOPTS
+              n=$(grep -c . <<< "$ids")
+              echo "::warning::$n test(s) deselected by $DESELECT_FILE"
+              # shellcheck disable=SC2016 # the backticks are Markdown, not command substitution
+              { echo "### Deselected tests ($n, tracked in \`$DESELECT_FILE\`)"; echo; sed 's/^/- `/; s/$/`/' <<< "$ids"; echo; } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          bash -eo pipefail -c "$CMD"
 
       - name: Upload artifacts
         if: ${{ always() && inputs.artifact-paths != '' }}
@@ -342,5 +443,5 @@ jobs:
           {
             echo "### ${SUITE}: ${STATUS}"
             echo
-            echo "Python ${PY}, uv $(uv --version | cut -d' ' -f2), directory \`${PWD#"$GITHUB_WORKSPACE"/}\`."
+            echo "Python ${PY}, uv $(uv --version 2>/dev/null | cut -d' ' -f2 || true), directory \`${PWD#"$GITHUB_WORKSPACE"/}\`."
           } >> "$GITHUB_STEP_SUMMARY"

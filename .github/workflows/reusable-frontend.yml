@@ -33,7 +33,10 @@ on:
         type: string
         default: npx tsc --noEmit
       eslint-mode:
-        description: diff, blocking or off.
+        description: >-
+          diff (pull requests fail only on errors the PR adds; a base commit that cannot be checked out fails, and
+          if ESLint fails on the base, every error in a file the PR adds or modifies counts as new; other events
+          report), blocking (any error fails) or off. ESLint exiting > 1 always fails.
         type: string
         default: diff
       eslint-args:
@@ -61,6 +64,10 @@ on:
       timeout-minutes:
         type: number
         default: 30
+      runs-on:
+        description: Runner label.
+        type: string
+        default: ubuntu-latest
 
 permissions:
   contents: read
@@ -68,7 +75,7 @@ permissions:
 jobs:
   frontend:
     name: ${{ inputs.suite-name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -110,11 +117,17 @@ jobs:
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
+          # Also the files the PR adds or modifies, and its renames, for the comparison.
           if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch -q --no-tags --depth=1 origin "$BASE_SHA" \
-             && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null; then
+             && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null \
+             && git -c core.quotePath=false diff --no-ext-diff -M --name-only --diff-filter=AMR "$BASE_SHA" HEAD > "$RUNNER_TEMP/changed.txt" \
+             && git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv"; then
             echo "dir=$RUNNER_TEMP/base" >> "$GITHUB_OUTPUT"
+            echo "status=ok" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::could not check out the base commit $BASE_SHA; ESLint errors will be reported, not gated"
+            # Not fatal here (tests and build still run); the ESLint step fails, because without the base it cannot gate.
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+            echo "::error::could not check out the base commit $BASE_SHA for the ESLint diff"
           fi
 
       - name: Install
@@ -137,8 +150,9 @@ jobs:
           MODE: ${{ inputs.eslint-mode }}
           ESLINT_ARGS: ${{ inputs.eslint-args }}
           WD: ${{ inputs.working-directory }}
-          BASE_DIR: ${{ steps.base.outputs.dir }}
           IS_PR: ${{ github.event.pull_request.number != '' }}
+          BASE_STATUS: ${{ steps.base.outputs.status }}
+          BASE_DIR: ${{ steps.base.outputs.dir }}
         run: |
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           out="$RUNNER_TEMP/eslint"; mkdir -p "$out"
@@ -149,30 +163,26 @@ jobs:
           fi
           # shellcheck disable=SC2086
           npx eslint -f json -o "$out/head.json" $ESLINT_ARGS
-          rc=$?
-          [ "$rc" -le 1 ] || { echo "::error::eslint did not run (exit $rc)"; exit "$rc"; }
-          gate="report"
-          if [ "$IS_PR" = true ]; then
-            if [ -z "$BASE_DIR" ]; then
-              echo "::warning::no base checkout; ESLint errors are reported, not gated"
-            elif [ ! -d "$BASE_DIR/$WD" ]; then
-              echo '[]' > "$out/base.json"; gate="diff"   # the project is new in this PR: every error is new
-            else
-              # The base commit's files, linted with this run's dependencies and the base's own config.
-              ln -s "$PWD/node_modules" "$BASE_DIR/$WD/node_modules"
-              # shellcheck disable=SC2086
-              (cd "$BASE_DIR/$WD" && npx eslint -f json -o "$out/base.json" $ESLINT_ARGS)
-              if [ $? -le 1 ] && [ -s "$out/base.json" ]; then
-                gate="diff"
-              else
-                echo "::warning::ESLint failed on the base commit; errors are reported, not gated"
-              fi
-            fi
+          head_rc=$?
+          base_rc=none
+          if [ "$IS_PR" = true ] && [ "$BASE_STATUS" = ok ] && [ -d "$BASE_DIR/$WD" ]; then
+            # The base commit's files, linted with this run's dependencies and the base's own config.
+            ln -s "$PWD/node_modules" "$BASE_DIR/$WD/node_modules"
+            # shellcheck disable=SC2086
+            (cd "$BASE_DIR/$WD" && npx eslint -f json -o "$out/base.json" $ESLINT_ARGS)
+            base_rc=$?
           fi
-          python3 - "$out/head.json" "$out/base.json" "$gate" "$PWD" "${BASE_DIR:-$RUNNER_TEMP/base}/$WD" <<'PY'
+          # Every decision is in this script, so .github/tests/test_diff_gates.py tests exactly what CI runs.
+          python3 - "$out" "$head_rc" "$base_rc" <<'PY'
           import collections, json, os, re, sys
-          head, base, gate, head_root, base_root = sys.argv[1:6]
+          out, head_rc, base_rc = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+          env = os.environ
+          wd, tmp = env["WD"], env.get("RUNNER_TEMP", "/tmp")
+          head_root, base_dir = os.getcwd(), env.get("BASE_DIR", "")
+          base_root = os.path.normpath(os.path.join(base_dir, wd)) if base_dir else ""
+          pre = "" if wd in (".", "./") else wd.strip("/") + "/"
           ROOTS = [r.rstrip("/") + "/" for r in (head_root, base_root) if r]
+
           def norm(msg):
               # First line only: React Compiler rules (react-hooks/*) append a code frame with the absolute path and
               # line numbers, which differ between the head and base checkouts. Also drop roots and "line 123".
@@ -181,11 +191,15 @@ jobs:
               for r in ROOTS:
                   msg = msg.replace(r, "")
               return " ".join(re.sub(r"\bline \d+", "line N", msg).split())
+
           def load(path, root):
+              """(errors, first line) per (file, rule, message); None when the report is missing or unreadable."""
+              try:
+                  report = json.load(open(path, encoding="utf-8"))
+              except (OSError, ValueError):
+                  return None
               c, where = collections.Counter(), {}
-              if not os.path.exists(path):
-                  return c, where
-              for f in json.load(open(path, encoding="utf-8")):
+              for f in report:
                   rel = os.path.relpath(f["filePath"], root)
                   for m in f.get("messages", []):
                       if m.get("severity") != 2:  # errors only; warnings never block
@@ -194,17 +208,57 @@ jobs:
                       c[k] += 1
                       where.setdefault(k, m.get("line", 1))
               return c, where
-          h, where = load(head, head_root)
-          b, _ = load(base, base_root)
-          new = h - b if gate == "diff" else collections.Counter()
+
+          def repo_paths(name):
+              path = os.path.join(tmp, name)
+              return [l.rstrip("\n").split("\t") for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
+
+          problems, mode, note = [], "report", "report only: not a pull request"
+          head = load(os.path.join(out, "head.json"), head_root)
+          h, where = head or (collections.Counter(), {})
+          if head_rc not in (0, 1) or head is None:
+              problems.append(f"eslint did not run on this change (exit {head_rc}); see the log above")
+          elif head_rc == 1 and not h:
+              problems.append("eslint exited 1 but its report holds no error")
+          b = collections.Counter()
+          if not problems and env.get("IS_PR") == "true":
+              if env.get("BASE_STATUS") != "ok" or not base_dir:
+                  problems.append("the base commit could not be checked out, so new errors cannot be told from existing ones (see the step 'Base commit for the ESLint diff')")
+              elif not os.path.isdir(base_root):
+                  mode, note = "diff", "the project is new in this change"
+              else:
+                  base = load(os.path.join(out, "base.json"), base_root) if base_rc in ("0", "1") else None
+                  if base is None:
+                      # e.g. an ESLint, plugin or config upgrade the base's config cannot load
+                      mode = "changed-files"
+                      note = f"ESLint failed on the base commit (exit {base_rc}), so every error in a file this change adds or modifies counts as new"
+                      print(f"::warning title=ESLint::{note}")
+                  else:
+                      renamed = {r[1][len(pre):]: r[2][len(pre):] for r in repo_paths("renames.tsv")
+                                 if len(r) == 3 and r[0].startswith("R") and r[1].startswith(pre) and r[2].startswith(pre)}
+                      for (rel, rule, msg), n in base[0].items():
+                          b[(renamed.get(rel, rel), rule, msg)] += n
+                      mode, note = "diff", ""
+          if mode == "diff":
+              new = h - b
+          elif mode == "changed-files":
+              changed = {r[0][len(pre):] for r in repo_paths("changed.txt") if r and r[0].startswith(pre)}
+              new = collections.Counter({k: n for k, n in h.items() if k[0] in changed})
+          else:
+              new = collections.Counter()
+          for p in problems:
+              print(f"::error title=ESLint::{p}")
           for (rel, rule, msg), n in list(new.items())[:50]:
-              print(f"::error file={os.environ['WD']}/{rel},line={where[(rel, rule, msg)]}::eslint {rule}: {msg}" + (f" (x{n})" if n > 1 else ""))
-          total, n_new = sum(h.values()), sum(new.values())
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
-              s.write(f"### ESLint\n\n| errors now | on base | new in this PR |\n|---:|---:|---:|\n")
-              s.write(f"| {total} | {sum(b.values()) if gate == 'diff' else 'n/a'} | {n_new if gate == 'diff' else 'n/a (not a PR)'} |\n\n")
-          print(f"eslint: {total} error(s); new: {n_new if gate == 'diff' else 'n/a (report only)'}")
-          sys.exit(1 if n_new else 0)
+              print(f"::error file={pre}{rel},line={where[(rel, rule, msg)]}::eslint {rule}: {msg}" + (f" (x{n})" if n > 1 else ""))
+          total, n_new, gated = sum(h.values()), sum(new.values()), mode != "report"
+          result = "FAIL (eslint did not run)" if problems else ("FAIL" if n_new else "pass") if gated else "report only"
+          with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
+              s.write("### ESLint\n\n| errors now | on base | new in this change | result |\n|---:|---:|---:|---|\n")
+              s.write(f"| {total} | {sum(b.values()) if mode == 'diff' else 'n/a'} | {n_new if gated else 'n/a'} | {result} |\n\n")
+              if note:
+                  s.write(f"{note}.\n\n")
+          print(f"eslint: {total} error(s); new: {n_new if gated else 'n/a'}" + (f" ({note})" if note else "") + (" -> did not run" if problems else ""))
+          sys.exit(1 if problems or n_new else 0)
           PY
 
       - name: Unit tests (${{ inputs.test-pattern }})

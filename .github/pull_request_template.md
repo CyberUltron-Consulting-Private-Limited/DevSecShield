@@ -2,7 +2,9 @@
 Title format (checked by CI "pr-hygiene"): type(scope): summary
   type: feat | fix | docs | ci | build | chore | refactor | perf | test | security | release | revert
   e.g.  feat(cbom): add scan-node heartbeat     fix(backend): scope the scan list by team
-Branch flow (checked by CI "branch-flow"): feature/* or fix/* -> dev;  dev -> staging;  staging -> main.
+Branch flow (checked by CI "branch-flow"): feature/* or fix/* -> dev;  dev -> staging;  staging -> main;
+  hotfix/* -> main (then back-merge main -> dev). Promotion PRs (into staging or main) use the promotion template:
+  add ?template=promotion.md to the compare URL.
 -->
 
 ## Summary
@@ -14,7 +16,7 @@ Branch flow (checked by CI "branch-flow"): feature/* or fix/* -> dev;  dev -> st
 <!--
 One row per acceptance criterion from the spec. Evidence is something a reviewer can open: a test name, a CI run
 or job link, a log excerpt, a screenshot, a curl transcript. CI fails while any row still has an _italic
-placeholder_ or an empty cell.
+placeholder_, an empty cell, or evidence that starts with "pending", "TBD", "TODO", "WIP" or "N/A".
 -->
 
 | # | Acceptance criterion | Evidence |

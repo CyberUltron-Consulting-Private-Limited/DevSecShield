@@ -6,8 +6,9 @@
 #       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-pr-checks.yml@<ref>
 #       permissions: { contents: read, pull-requests: read }
 #
-# branch-flow   promotion order: a PR into `staging` must come from `dev`, a PR into `main` from `staging`
-#               (configurable through `flows`); feature PRs into any other base are allowed.
+# branch-flow   promotion order: a PR into `staging` must come from `dev`; a PR into `main` from `staging`, or from
+#               a `hotfix/*` branch (urgent production fix, back-merged main -> dev afterwards). Configurable through
+#               `flows`; feature PRs into any other base are allowed.
 # pr-hygiene    title format; the template's "Acceptance criteria" table filled in (bots exempt); no secret-bearing
 #               file (.env, keys, keystores, credential files; case-insensitive) added or modified (deleting one is
 #               allowed); and changes to the security gates themselves (.github/**, scanner configs, ignore files)
@@ -19,21 +20,27 @@ on:
   workflow_call:
     inputs:
       flows:
-        description: Space-separated base:required-head pairs.
+        description: >-
+          Space-separated base:allowed-heads pairs; allowed-heads is a |-separated list of branch names or globs.
         type: string
-        default: staging:dev main:staging
+        default: staging:dev main:staging|hotfix/*
       title-regex:
-        description: Regex the PR title must match.
+        description: >-
+          Regex the PR title must match. The default also accepts the title of GitHub's Revert button
+          (`Revert "<original title>"`).
         type: string
-        default: '^(feat|fix|docs|ci|build|chore|refactor|perf|test|security|release|revert)(\([a-z0-9._/-]+\))?!?: \S.{3,}$'
+        default: '^((feat|fix|docs|ci|build|chore|refactor|perf|test|security|release|revert)(\([a-z0-9._/-]+\))?!?: \S.{3,}|Revert ".+")$'
       title-max-length:
+        description: Maximum title length (a `Revert "..."` title may exceed it by the 9 characters the button adds).
         type: number
         default: 100
       require-acceptance-criteria:
         type: boolean
         default: true
       acceptance-heading-regex:
-        description: Regex (case-insensitive) of the heading that starts the acceptance-criteria section.
+        description: >-
+          Regex (case-insensitive) of the heading that starts the acceptance-criteria section. Promotion PRs
+          (dev -> staging, staging -> main) use .github/PULL_REQUEST_TEMPLATE/promotion.md, which has the same heading.
         type: string
         default: '^#{2,3}\s*acceptance criteria'
       forbidden-files-regex:
@@ -83,16 +90,20 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$BASE" ]; then echo "::notice::not a pull request; nothing to check"; exit 0; fi
+          set -f # the allowed heads are glob patterns: no file-name expansion
           for pair in $FLOWS; do
             base=${pair%%:*}; want=${pair#*:}
-            if [ "$BASE" = "$base" ]; then
-              if [ "$HEAD" != "$want" ] || [ "$HEAD_REPO" != "$REPO" ]; then
-                echo "::error title=Branch flow::A pull request into '$BASE' must come from '$want' in $REPO (this one comes from '$HEAD_REPO:$HEAD'). Merge your branch into '$want' first, then promote '$want' -> '$BASE'."
-                exit 1
+            [ "$BASE" = "$base" ] || continue
+            IFS='|' read -r -a heads <<< "$want"
+            for pattern in "${heads[@]}"; do
+              # shellcheck disable=SC2053 # the right side is a glob on purpose
+              if [[ $HEAD == $pattern ]] && [ "$HEAD_REPO" = "$REPO" ]; then
+                echo "ok: $HEAD -> $BASE (allowed: ${want//|/, })"
+                exit 0
               fi
-              echo "ok: $want -> $BASE is the promotion order"
-              exit 0
-            fi
+            done
+            echo "::error title=Branch flow::A pull request into '$BASE' must come from ${want//|/ or } in $REPO (this one comes from '$HEAD_REPO:$HEAD'). Merge your branch into the branch before '$BASE' in the promotion order first. A production hotfix branches from main as hotfix/<name> and is back-merged main -> dev afterwards."
+            exit 1
           done
           echo "ok: '$BASE' is not a promotion branch; '$HEAD' -> '$BASE' is allowed"
 
@@ -135,13 +146,18 @@ jobs:
           title = pr.get("title") or ""
           if not re.search(env["TITLE_RE"], title):
               problems.append(f"Title {title!r} does not match the required format, e.g. 'feat(cbom): add scan-node heartbeat' (regex: {env['TITLE_RE']}).")
-          if len(title) > int(env["TITLE_MAX"]):
-              problems.append(f"Title is {len(title)} characters; keep it under {env['TITLE_MAX']}.")
+          limit = int(env["TITLE_MAX"]) + (9 if title.startswith('Revert "') else 0)
+          if len(title) > limit:
+              problems.append(f"Title is {len(title)} characters; keep it under {limit}.")
+          promotion = (pr.get("base") or {}).get("ref") in ("staging", "main")
+          template = ("the promotion template: add ?template=promotion.md to the compare URL, or copy "
+                      ".github/PULL_REQUEST_TEMPLATE/promotion.md") if promotion else ".github/pull_request_template.md"
+
           if env.get("NEED_AC") == "true" and (pr.get("user") or {}).get("type") != "Bot":
               lines = (pr.get("body") or "").replace("\r\n", "\n").split("\n")
               start = next((i for i, l in enumerate(lines) if re.search(env["AC_RE"], l.strip(), re.I)), None)
               if start is None:
-                  problems.append("The description has no 'Acceptance criteria' section (use .github/pull_request_template.md).")
+                  problems.append(f"The description has no 'Acceptance criteria' section (use {template}).")
               else:
                   section = []
                   for l in lines[start + 1:]:
@@ -149,8 +165,10 @@ jobs:
                           break
                       section.append(l)
                   def placeholder(c):
-                      c = c.strip()
-                      return (not c) or re.fullmatch(r"_.*_", c) is not None or c.upper() in {"TODO", "TBD", "N/A", "-", "..."}
+                      # empty, an _italic template placeholder_, or evidence still to come ("pending", "TBD: run")
+                      c = c.strip().strip("*").strip()
+                      return ((not c) or re.fullmatch(r"_.*_", c) is not None or c in {"-", "...", "…"}
+                              or re.match(r"(pending|tbd|todo|wip|n/?a)\b", c, re.I) is not None)
                   rows = []
                   for l in section:
                       l = l.strip()
@@ -162,7 +180,7 @@ jobs:
                   if not filled:
                       problems.append("The 'Acceptance criteria' table has no filled-in row: every criterion needs its evidence (test, log, run link or screenshot).")
                   elif len(filled) < len(data):
-                      print(f"::warning::{len(data) - len(filled)} acceptance-criteria row(s) still have placeholder or empty cells.")
+                      problems.append(f"{len(data) - len(filled)} acceptance-criteria row(s) still have an _italic placeholder_, an empty cell, or evidence that starts with pending / TBD / TODO / WIP / N/A.")
           # Secret-bearing files (case-insensitive). Fabricated keys under a fixture directory pass only with the label.
           forbid, allow = re.compile(env["FORBID_RE"], re.I), re.compile(env["ALLOW_RE"], re.I)
           fixture = re.compile(env["FIXTURE_RE"], re.I)

@@ -55,6 +55,10 @@ on:
           (frees about 25 GB of the hosted runner's ~14 GB free). Large images (the scan worker pulls torch through
           garak) otherwise fail with "No space left on device".
         type: boolean
+        default: false
+      cache-write:
+        description: Also write the layer cache (else read only). ci.yml writes it from dev only.
+        type: boolean
         default: true
       timeout-minutes:
         type: number
@@ -106,7 +110,7 @@ jobs:
           persist-credentials: false
 
       - name: Free disk space
-        if: inputs.free-disk-space
+        if: inputs.free-disk-space || matrix.image.free-disk-space
         run: |
           df -h / | tail -1
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
@@ -131,7 +135,7 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: ${{ inputs.cache && format('type=gha,scope=img-{0}', matrix.image.name) || '' }}
-          cache-to: ${{ inputs.cache && format('type=gha,scope=img-{0},mode=min', matrix.image.name) || '' }}
+          cache-to: ${{ inputs.cache && inputs.cache-write && format('type=gha,scope=img-{0},mode=min', matrix.image.name) || '' }}
 
       - name: Image size
         run: docker image inspect "$IMAGE_REF" --format 'size={{.Size}} bytes' | tee -a "$GITHUB_STEP_SUMMARY"
@@ -148,11 +152,16 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bin" && tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP/bin" trivy
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
+      - name: Day (Trivy DB cache key)
+        id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - name: Cache the Trivy database
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/trivy-cache
-          key: trivy-db-${{ inputs.trivy-version }}-${{ github.run_id }}
+          # one entry a day (about 100 MB), not one per run
+          key: trivy-db-${{ inputs.trivy-version }}-${{ steps.day.outputs.day }}
           restore-keys: trivy-db-${{ inputs.trivy-version }}-
 
       - name: Trivy image scan

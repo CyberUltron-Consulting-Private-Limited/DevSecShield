@@ -58,6 +58,12 @@ on:
           every pull request and push.
         type: boolean
         default: false
+      trusted-heads:
+        description: >-
+          Space-separated head branches whose gitleaks config and .gitleaksignore are trusted on a PR (promotion PRs:
+          that content already passed review on its way in). For every other PR they come from the base commit.
+        type: string
+        default: dev staging
       secret-fixture-label:
         description: >-
           Pull-request label that lets diff-mode gitleaks findings pass when EVERY one of them is in a file matching
@@ -224,6 +230,9 @@ jobs:
           FIXTURE_LABEL: ${{ inputs.secret-fixture-label }}
           FIXTURE_RE: ${{ inputs.secret-fixture-regex }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          TRUSTED_HEADS: ${{ inputs.trusted-heads }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
@@ -237,14 +246,21 @@ jobs:
           args=(git --redact --no-banner --report-format sarif --report-path security-reports/gitleaks.sarif --exit-code 0
                 --ignore-gitleaks-allow --gitleaks-ignore-path "$RUNNER_TEMP/gl-ignore")
           if [ "$MODE" = diff ]; then
-            if git cat-file -e "${BASE_SHA}:${CONFIG}" 2>/dev/null; then
-              git show "${BASE_SHA}:${CONFIG}" > "$RUNNER_TEMP/gitleaks-base.toml"
-              args+=(--config "$RUNNER_TEMP/gitleaks-base.toml")
-              cfg="$CONFIG from the base commit"
-            else
-              cfg="gitleaks' built-in rules (no $CONFIG on the base commit)"
+            # Promotion PRs (dev -> staging -> main) re-scan every commit since the last release; their head's
+            # config and ignore list were reviewed on the way into dev, so they are trusted. Any other change
+            # gets the base commit's.
+            src=$BASE_SHA; from="the base commit"
+            if [ -n "$PR_NUMBER" ] && [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] && [[ " $TRUSTED_HEADS " == *" $HEAD_REF "* ]]; then
+              src=$HEAD_SHA; from="the promotion head ($HEAD_REF)"
             fi
-            git show "${BASE_SHA}:.gitleaksignore" > "$RUNNER_TEMP/gl-ignore/.gitleaksignore" 2>/dev/null || : > "$RUNNER_TEMP/gl-ignore/.gitleaksignore"
+            if git cat-file -e "${src}:${CONFIG}" 2>/dev/null; then
+              git show "${src}:${CONFIG}" > "$RUNNER_TEMP/gitleaks-base.toml"
+              args+=(--config "$RUNNER_TEMP/gitleaks-base.toml")
+              cfg="$CONFIG from $from"
+            else
+              cfg="gitleaks' built-in rules (no $CONFIG on $from)"
+            fi
+            git show "${src}:.gitleaksignore" > "$RUNNER_TEMP/gl-ignore/.gitleaksignore" 2>/dev/null || : > "$RUNNER_TEMP/gl-ignore/.gitleaksignore"
             args+=("--log-opts=--text --diff-merges=remerge ${BASE_SHA}..${HEAD_SHA}")
             scope="commits ${BASE_SHA:0:12}..${HEAD_SHA:0:12} ($(git rev-list --count "${BASE_SHA}..${HEAD_SHA}") commits)"
           else
@@ -350,6 +366,10 @@ jobs:
           if [ "$mode" = diff ]; then
             if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = 0000000000000000000000000000000000000000 ] \
                || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+              if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+                # A pull request always has a base; without it nothing could be gated, so this is not a pass.
+                echo "::error::the pull request's base commit ${BASE_SHA:-?} is not in the checkout; cannot gate"; exit 1
+              fi
               echo "::notice::No usable base commit (event ${GITHUB_EVENT_NAME}); scanning in full mode (report only)."
               mode="full"
             fi
@@ -357,6 +377,9 @@ jobs:
           if [ "$mode" = diff ]; then
             git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
             echo "BASE_DIR=$RUNNER_TEMP/base" >> "$GITHUB_ENV"
+            # Renamed files: their base findings are compared under the new name (findings.py).
+            git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv"
+            echo "RENAMES=$RUNNER_TEMP/renames.tsv" >> "$GITHUB_ENV"
           fi
           echo "MODE=$mode" >> "$GITHUB_ENV"
           mkdir -p "$R" "$R/base" "$RUNNER_TEMP/bin"
@@ -383,6 +406,12 @@ jobs:
           a = p.parse_args()
           exclude = re.compile(os.environ.get("EXCLUDE_RE") or r"(?!x)x")
           roots = [r for r in (os.environ.get("GITHUB_WORKSPACE", ""), os.environ.get("BASE_DIR", "")) if r]
+          renamed = {}  # base path -> head path, from `git diff -M --name-status` (the Scope step)
+          if os.environ.get("RENAMES") and os.path.exists(os.environ["RENAMES"]):
+              for line in open(os.environ["RENAMES"], encoding="utf-8"):
+                  f = line.rstrip("\n").split("\t")
+                  if len(f) == 3 and f[0].startswith("R"):
+                      renamed[f[1]] = f[2]
 
           def norm(msg):
               # what identifies a finding: one line, no checkout root, no "line 123", single spaces
@@ -390,6 +419,9 @@ jobs:
               msg = msg[0]
               for r in roots:
                   msg = msg.replace(r.rstrip("/") + "/", "")
+              if a.tool == "osv-scanner":
+                  # "Package 'pillow@12.1.0' is vulnerable to 'CVE-..'": a bump that leaves the CVE open is not new
+                  msg = re.sub(r"'(@?[^'@\s]+)@[^'\s]+'", r"'\1'", msg)
               return " ".join(re.sub(r"\bline \d+", "line N", msg).split())
 
           def rel(uri):
@@ -436,7 +468,7 @@ jobs:
           if a.gate == "diff" and a.all_new:
               new, base_n = hc, "n/a"
           elif a.gate == "diff":
-              bc = collections.Counter(key(f) for f in load(a.base))
+              bc = collections.Counter((f[0], renamed.get(f[1], f[1]), f[2]) for f in load(a.base))
               new, base_n = hc - bc, sum(bc.values())
           else:
               new, base_n = collections.Counter(), "n/a"
@@ -500,11 +532,16 @@ jobs:
           python-version: "3.12"
           enable-cache: false
 
+      - name: Day (Trivy DB cache key)
+        id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - name: Cache the Trivy database
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/trivy-cache
-          key: trivy-db-${{ inputs.trivy-version }}-${{ github.run_id }}
+          # one entry a day (about 100 MB), not one per run
+          key: trivy-db-${{ inputs.trivy-version }}-${{ steps.day.outputs.day }}
           restore-keys: trivy-db-${{ inputs.trivy-version }}-
 
       - name: Semgrep
@@ -604,22 +641,23 @@ jobs:
             charts+=("$line"); read -r -a parts <<< "$line"
             skip="${skip}|(^|/)${parts[0]%/}/"   # the raw templates are not valid manifests; scan the rendered output
           done <<< "$HELM_CHARTS"
+          # Rendered manifests go to a directory whose name does not start with "." (Checkov skips those).
           scan() { # <checkout dir> <report dir>
             local dir=$1 out=$2 n=0 line parts
-            mkdir -p "$out"; rm -rf "$dir/.ci-rendered"; mkdir -p "$dir/.ci-rendered"
+            mkdir -p "$out"; rm -rf "$dir/ci-rendered-charts"; mkdir -p "$dir/ci-rendered-charts"
             for line in "${charts[@]}"; do
               read -r -a parts <<< "$line"
               n=$((n + 1))
               if [ ! -d "$dir/${parts[0]}" ]; then echo "chart ${parts[0]} is not in $dir (new or removed in this change)"; continue; fi
-              if ! (cd "$dir" && helm template ci "${parts[@]}") > "$dir/.ci-rendered/chart-$n.yaml" 2> "$out/helm-$n.log"; then
+              if ! (cd "$dir" && helm template ci "${parts[@]}") > "$dir/ci-rendered-charts/chart-$n.yaml" 2> "$out/helm-$n.log"; then
                 cat "$out/helm-$n.log"; echo "::error::helm template failed for ${parts[0]} in $dir"; return 1
               fi
             done
             # shellcheck disable=SC2086 # FRAMEWORKS is a space-separated list
             (cd "$dir" && checkov -d . --framework $FRAMEWORKS --skip-path "$skip" --soft-fail --quiet --compact \
-              -o cli -o sarif --output-file-path "$out") > "$out/checkov.log" 2>&1
+              -o cli -o json -o sarif --output-file-path "$out") > "$out/checkov.log" 2>&1
             local rc=$?
-            rm -rf "$dir/.ci-rendered"
+            rm -rf "$dir/ci-rendered-charts"
             if [ "$rc" -ne 0 ] || [ ! -f "$out/results_sarif.sarif" ]; then
               tail -20 "$out/checkov.log"; echo "::error::checkov failed (exit $rc) in $dir"; return 1
             fi
@@ -628,7 +666,8 @@ jobs:
               grep -iE 'Failed processing|Failed to (parse|render)' "$out/checkov.log" | head -5
               echo "::error::checkov could not process some input in $dir (see checkov.log in the artifact)"; return 1
             fi
-            local counted; counted=$(grep -hoE 'Passed checks: [0-9]+, Failed checks: [0-9]+' "$out"/results_cli.txt "$out/checkov.log" 2>/dev/null | sort -u | awk -F'[ ,]+' '{p+=$3; f+=$6} END {print p+f+0}')
+            # passed + failed checks over every framework's summary (one object, or a list of them)
+            local counted; counted=$(jq '[if type == "array" then .[] else . end | (.summary // {}) | (.passed // 0) + (.failed // 0)] | add // 0' "$out/results_json.json" 2>/dev/null)
             echo "checkov in ${dir##*/}: ${#charts[@]} chart(s) rendered, ${counted:-0} check result(s)"
             if [ "${#charts[@]}" -gt 0 ] && [ "${counted:-0}" -eq 0 ]; then
               echo "::error::checkov evaluated no checks although ${#charts[@]} chart(s) were rendered"; return 1
@@ -759,6 +798,7 @@ jobs:
     if: ${{ inputs.upload-sarif && !cancelled() }}
     needs: [secrets, scanners]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
