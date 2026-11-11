@@ -137,6 +137,64 @@ SCOPE_OF_METHOD = (
 )
 DISCLAIMER_PARAGRAPHS = (CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER, SCOPE_OF_METHOD)
 
+# CBOM Sources collections in scope (M1x): the method statements may only deny what did not happen.
+_CLOUD_KINDS = frozenset({"aws_account", "azure_subscription", "gcp_project"})
+_KEY_CUSTODY_KINDS = _CLOUD_KINDS | {"key_manager"}
+
+
+def collections_in_scope(view: object) -> tuple:
+    """The view's CBOM Sources collections (``TeamCbomView.collections``), () for a hand-made view."""
+    found = getattr(view, "collections", ()) or ()
+    return tuple(found) if isinstance(found, (tuple, list)) else ()
+
+
+def endpoints_probed(view: object) -> int:
+    return sum(int(getattr(c, "endpoints_probed", 0) or 0) for c in collections_in_scope(view))
+
+
+def sources_sentence(view: object) -> str:
+    """One sentence on what the CBOM Sources collections in scope did ("" when there are none)."""
+    found = collections_in_scope(view)
+    if not found:
+        return ""
+    names = ", ".join(str(getattr(c, "label", "")) for c in found[:5])
+    more = f" and {len(found) - 5} more" if len(found) > 5 else ""
+    cloud = any(getattr(c, "source_kind", "") in _CLOUD_KINDS for c in found)
+    probed = endpoints_probed(view)
+    noun = "collection" if len(found) == 1 else "collections"
+    reader = "the team's scan nodes and the ZeroShield cloud worker" if cloud else "the team's scan nodes"
+    probes = (f" {probed} endpoint{'' if probed == 1 else 's'} {'was' if probed == 1 else 'were'} probed with live "
+              "TLS or SSH handshakes." if probed else " No endpoint was probed.")
+    return f"CBOM Sources: {len(found)} {noun} ({names}{more}) read by {reader}.{probes}"
+
+
+def _join_negatives(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " or " + items[-1]
+
+
+def scope_of_method(view: object) -> str:
+    """``SCOPE_OF_METHOD``, or its CBOM Sources variant: it never says live discovery is excluded when a Sources
+    collection probed an endpoint."""
+    found = collections_in_scope(view)
+    if not found:
+        return SCOPE_OF_METHOD
+    kinds = {getattr(c, "source_kind", "") for c in found}
+    negatives = []
+    if not endpoints_probed(view):
+        negatives.append("live-network discovery")
+    if not kinds & _KEY_CUSTODY_KINDS:
+        negatives.append("inspection of HSM or KMS custody")
+    negatives.append("inspection of stored data")
+    return (
+        "Method: static analysis of repositories and uploaded artefacts, including declared infrastructure and "
+        "server configuration (documents #5, #6 and #9), offline import of TLS result files, and collection from the "
+        f"team's own systems. {sources_sentence(view)} It does not include {_join_negatives(negatives)}."
+    )
+
+
+def disclaimer_paragraphs(view: object) -> tuple[str, ...]:
+    return (CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER, scope_of_method(view))
+
 # ---------------------------------------------------------------------------------------------
 # Compliance framework labels (#16 regulatory exposure, #10 ledger)
 # ---------------------------------------------------------------------------------------------
@@ -627,7 +685,7 @@ CBOM_SCANNERS = (
         "posture_tls_import",
         34,
         "Offline import of TLS result files the customer's own tools produced.",
-        "One endpoint fact per imported result. The platform does not probe the endpoint.",
+        "One endpoint fact per imported result. Importing a result does not probe the endpoint.",
     ),
     ScannerSpec(
         "crypto_policy",
@@ -702,7 +760,7 @@ POSTURE_LANES_NOTE = (
     "named_groups.json, tls_policies.json, verification_patterns.json, "
     "tls_import_formats.json and datastore_images.json. A configuration file is "
     "capped at 5 MiB, a TLS result file at 20 MiB and a scan at 50,000 facts. "
-    "Result files are imported offline. The platform does not probe any endpoint."
+    "Result files are imported offline; importing a file does not probe any endpoint."
 )
 
 METHOD_PURPOSE = (

@@ -1,7 +1,8 @@
 """Network, TLS and crypto protocol assessment (#6, CBOM-D06).
 
-Static declarations and imported result files only. The document states that the
-platform did not probe any endpoint.
+Static declarations, imported result files and the endpoints the team's CBOM Sources collections
+probed (posture evidence ``probed:CBOM Sources``, ``cbom_team_rollup.merge_collections``). The
+document says the platform did not probe any endpoint only when no collection in scope probed one.
 """
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ def _kpi(view: object, width: float) -> Flowable:
     assessed, total, _missing, _partial = common.coverage_numbers(view)
     tool_text = ", ".join(f"{tool}" for tool in tools) if tools else "none"
     cards = [
-        ("Endpoints", common.kpi_text(view, len(endpoints)), "Static and imported"),
+        ("Endpoints", common.kpi_text(view, len(endpoints)), "Static, imported and probed"),
         ("Legacy protocol", common.kpi_text(view, legacy), "SSLv3, TLS 1.0 or TLS 1.1 offered"),
         ("Weak suites", common.kpi_text(view, weak), "Endpoints with a weak suite"),
         ("Certificates", common.kpi_text(view, certs), "Seen on endpoints"),
@@ -405,7 +406,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
         signoff_block(_SIGNOFF, title="Sign-off", width=width),
         common.gap(),
         *section_heading("Limits", styles, min_space=70),
-        common.note(text.ENDPOINT_LIMIT, styles),
+        common.note(text.endpoint_limit(view), styles),
     ]
 
 
@@ -419,7 +420,7 @@ def build_pdf(view: TeamCbomView) -> bytes:
         landscape=True,
         body=lambda styles, width: build_story(view, styles, width),
         basis_extra=common.basis_lines(view),
-        disclaimer_paragraphs=text.DISCLAIMER_PARAGRAPHS,
+        disclaimer_paragraphs=text.disclaimer_paragraphs(view),
         extra_banners=common.banner_pairs(view),
     )
 

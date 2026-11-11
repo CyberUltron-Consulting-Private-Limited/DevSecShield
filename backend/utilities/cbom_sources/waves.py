@@ -256,29 +256,23 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
     """What the PQC roadmap needs beyond the code-scan roll-up: the plan of every current roll-up asset
     (``code_plans``, keyed by ``cbom_team_rollup.plan_key``: assigned fields and the suggested wave), and the
     quantum-vulnerable assets of each source's latest complete collection (scan nodes and the cloud worker)."""
-    from backend.utilities.cbom_sources.drift import job_comparable
     from backend.utilities.dashboard.cbom_team_rollup import plan_key
 
     assignments = {a.asset_key: public_assignment(a) for a in session.exec(select(CbomRemediationAssignment).where(
         CbomRemediationAssignment.team_id == team_id).limit(50_000)).all()}
     code_plans: dict[str, Any] = {}
     for asset in (getattr(view, "assets", None) or ())[:50_000]:
-        if not asset.current:
+        if not asset.current or asset.source_key.startswith("sources:"):  # Sources assets: node_rows below
             continue
         code_plans[plan_key(asset)] = {
             "assigned": assignments.get(code_asset_key(asset)) or {},
             "suggested": suggested_wave(asset.impact, asset.finding_codes, asset.quantum_vulnerable)}
-    latest: dict[str, CbomCollectionJob] = {}
-    for job in session.exec(select(CbomCollectionJob).where(
-            CbomCollectionJob.team_id == team_id, CbomCollectionJob.kind == "collect",
-            CbomCollectionJob.status == "success").order_by(CbomCollectionJob.id.desc()).limit(2_000)).all():  # type: ignore[union-attr]
-        if not job_comparable(job)[0]:
-            continue
-        ref = ID.job_source_ref(job, session.get(CbomCollectionSource, job.source_id) if job.source_id else None)
-        latest.setdefault(ref, job)
+    # the same collections every CBOM view counts: each source's latest completed collection (collections_view)
+    from backend.utilities.cbom_sources.collections_view import latest_jobs
+
     node_rows: list[dict[str, Any]] = []
     runs: dict[int, CbomCollectionRun] = {}
-    for ref, job in latest.items():
+    for job in latest_jobs(session, team_id):
         if job.run_id is None or len(node_rows) >= ROADMAP_NODE_CAP:
             continue
         run = runs.get(job.run_id) or session.get(CbomCollectionRun, job.run_id)

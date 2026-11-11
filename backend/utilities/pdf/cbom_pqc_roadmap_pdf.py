@@ -242,9 +242,14 @@ def _is_algorithm(asset: AssetAgg) -> bool:
     return asset.asset_type == ASSET_ALGORITHM
 
 
+def _from_sources(asset: AssetAgg) -> bool:
+    """A CBOM Sources asset: the collected-infrastructure section lists it with its plan (``node_rows``)."""
+    return asset.source_key.startswith("sources:")
+
+
 def _roadmap_assets(view: TeamCbomView) -> list[AssetAgg]:
-    """Current quantum-vulnerable algorithm occurrences (the roadmap rows)."""
-    return [a for a in view.assets if a.current and _is_algorithm(a) and a.quantum_vulnerable]
+    """Current quantum-vulnerable algorithm occurrences of code scans (the roadmap rows)."""
+    return [a for a in view.assets if a.current and _is_algorithm(a) and a.quantum_vulnerable and not _from_sources(a)]
 
 
 def _previous_assets(view: TeamCbomView) -> list[AssetAgg]:

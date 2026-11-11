@@ -373,7 +373,7 @@ def build_pdf(view: TeamCbomView) -> bytes:
         landscape=True,
         body=lambda styles, width: build_story(view, styles, width),
         basis_extra=common.basis_lines(view),
-        disclaimer_paragraphs=text.DISCLAIMER_PARAGRAPHS,
+        disclaimer_paragraphs=text.disclaimer_paragraphs(view),
         extra_banners=common.banner_pairs(view),
     )
 

@@ -97,11 +97,24 @@ async def list_scans(
                 console.print(f"Background task added to update statuses of scans: {scans_list_to_update}" ,style="bold green")
             
             
-            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans,scan_type=type)  # ✅ done for sast , iac , sbom_sca , mcp , llm 
-            return {
+            sources = None
+            if type == "cbom":  # a completed CBOM Sources collection is a CBOM result too (collections_view)
+                from backend.utilities.cbom_sources.collections_view import load_sources_result
+
+                sources = load_sources_result(session, team_id)
+            dashboard_data = generate_dashboard_data_for_scan_list(scans=scans,scan_type=type, sources=sources)  # ✅ done for sast , iac , sbom_sca , mcp , llm
+            body = {
                 "scans_list_data": scans_list_data,
                 "dashboard_data": dashboard_data, #dashboard data will look different for different scan types
             }
+            if sources is not None:
+                body["sources_runs"] = [
+                    {"run_id": c.run_id, "job_id": c.job_id, "source_name": c.source_name, "source_kind": c.source_kind,
+                     "finished_at": c.observed_at.strftime("%Y-%m-%dT%H:%M:%SZ"), "asset_count": c.asset_count,
+                     "endpoints_probed": c.endpoints_probed}
+                    for c in sources.collections
+                ]
+            return body
 
     except HTTPException as e:
         raise e

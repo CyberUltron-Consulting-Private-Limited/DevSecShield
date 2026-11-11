@@ -1,3 +1,5 @@
+from typing import Any
+
 from backend.new_models import Scan, scan_types
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
@@ -109,7 +111,7 @@ def _display_lang(meta: dict | None) -> str:
     return LANG_DISPLAY.get(app_lang, app_lang.capitalize() if app_lang else "Unknown")
 
 
-def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_types) -> dict:
+def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_types, sources: Any = None) -> dict:
     """
     Generate dashboard data for a list of SAST scans.
     Arguments :
@@ -131,7 +133,7 @@ def generate_dashboard_data_for_scan_list(scans: list[Scan], scan_type: scan_typ
         elif scan_type == "dast":
             return generate_dast_dashboard_data(scans=scans)
         elif scan_type == "cbom":
-            return generate_cbom_dashboard_data(scans=scans)
+            return generate_cbom_dashboard_data(scans=scans, sources=sources)
         elif scan_type == "ai_bom":
             return generate_ai_bom_dashboard_data(scans=scans)
     except Exception as e:
@@ -1696,20 +1698,40 @@ def _cbom_results(scan: Scan) -> list:
     return scan.scan_data.get("results", []) or []
 
 
-def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
-    """Aggregate CBOM dashboard data across all scans for the scan-list page (same rules as one scan: cbom_metrics)."""
-    from backend.utilities.cbom_sources.cbom_metrics import CodeRowSummary
+def generate_cbom_dashboard_data(scans: list[Scan], sources: Any = None) -> dict:
+    """Aggregate CBOM dashboard data across all scans for the scan-list page (same rules as one scan: cbom_metrics).
 
+    ``sources`` (``collections_view.SourcesResult``) adds each CBOM Sources source's latest completed collection: its
+    rows are counted by the same rules, and an asset seen by both a code scan and a Sources collection is counted
+    once, from the latest observation (``collections_view.resolve``)."""
+    from backend.utilities.cbom_sources.cbom_metrics import CodeRowSummary
+    from backend.utilities.cbom_sources.collections_view import (
+        ORIGIN_CODE, REMEDIATION_BUCKET, SourcesResult, code_cert_identities, code_row_identity, resolve)
+
+    sources = sources if isinstance(sources, SourcesResult) else SourcesResult()
     summary = CodeRowSummary()
     compliance_controls_metrics: dict[str, int] = defaultdict(int)
+
+    cert_ids: dict[int, dict[str, str]] = {}
+    code_observations = []
+    for scan in scans:
+        if scan.scan_status != "success":
+            continue
+        cert_ids[scan.id] = code_cert_identities(scan.scan_data)
+        for row in _cbom_results(scan):
+            ident = code_row_identity(row, cert_ids[scan.id])
+            if ident:
+                code_observations.append((scan.id, scan.created_at, ident))
+    resolution = resolve(code_observations, sources.rows)
 
     for scan in scans:
         if scan.scan_status != "success":
             continue
-        results = _cbom_results(scan)
+        results = [row for row in _cbom_results(scan)
+                   if resolution.code_kept(scan.id, code_row_identity(row, cert_ids.get(scan.id, {})))]
         if not results:
             continue
-        summary.add_rows(results)
+        summary.add_rows(results, origin={"kind": ORIGIN_CODE, "scan_id": scan.id, "scan_title": scan.title})
 
         # Framework FAIL counts from cbom_compliance (mirrors single-scan CBOM dashboard)
         _cbom_compliance = (
@@ -1726,6 +1748,7 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
                     _label = _fw.get("title") or _fw_key
                     compliance_controls_metrics[_label] += int(_fail)
 
+    summary.add_rows([item.row for item in resolution.sources_rows])
     for label, count in summary.compliance.items():
         compliance_controls_metrics[label] += count
     readiness = summary.readiness_pct
@@ -1746,8 +1769,24 @@ def generate_cbom_dashboard_data(scans: list[Scan]) -> dict:
         total_in_progress += metrics.get("in_progress", 0)
         total_not_started += metrics.get("not_started", 0)
         total_ignored += metrics.get("ignored", 0)
+    # Sources findings: their status is the remediation plan's (Sources pages, waves); open counts as not started.
+    # A Sources finding on an asset a code scan also found is that code finding (counted once, with its status).
+    sources_findings = 0
+    for item in resolution.new_findings():
+        sources_findings += 1
+        bucket = REMEDIATION_BUCKET.get(str(item.row.get("remediation_status") or "open"), "not_started")
+        total_fixed += bucket == "fixed"
+        total_in_progress += bucket == "in_progress"
+        total_not_started += bucket == "not_started"
+        total_ignored += bucket == "ignored"
+    all_findings_count += sources_findings
 
     return {
+        "sources": {
+            "collections": len(sources.collections),
+            "assets": len(resolution.sources_rows),
+            "deduplicated": len(sources.rows) - len(resolution.sources_rows) + len(resolution.dropped_code),
+        },
         "card_data": {
             "total_crypto_assets": summary.crypto_assets,
             "total_crypto_vulnerabilities": summary.findings,

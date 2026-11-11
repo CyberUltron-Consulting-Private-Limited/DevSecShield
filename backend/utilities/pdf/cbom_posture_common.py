@@ -264,7 +264,7 @@ def _source_has_zero_facts(source: Mapping[str, Any]) -> bool:
 def evidence_kind(fact: Mapping[str, Any]) -> str:
     net = net_of(fact)
     evidence = str(net.get("evidence") or fact.get("evidence") or "")
-    if evidence.startswith("imported") or evidence == "static server":
+    if evidence.startswith(("imported", "probed")) or evidence == "static server":
         return evidence
     native = str(fact.get("native_type") or "")
     fmt = str(fact.get("format") or "")
