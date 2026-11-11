@@ -4,7 +4,7 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import {
   ScanIcon,
@@ -316,6 +316,10 @@ export function SCASBOMOptionsSidebar({
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="pb-5 pt-0">
+                  <p className="text-xs text-zinc-500 mb-3 flex items-center gap-1">
+                    Builds the SBOM from your code, then checks every package for known vulnerabilities.
+                    <InfoTip id="sbom.cfg.repository" />
+                  </p>
                   <RepositoryCard
                     uploadedFile={uploaded_file}
                     setUploadedFile={onZipChange}
@@ -344,8 +348,9 @@ export function SCASBOMOptionsSidebar({
                   <p className="text-xs text-zinc-500 mb-3">
                     Upload an existing SBOM file (e.g. JSON). This will clear any repository or zip selection.
                   </p>
-                  <Label className="text-zinc-300 text-sm">SBOM file</Label>
+                  <FieldLabel htmlFor="sbom-file-upload" infoId="sbom.cfg.sbom_file" labelClassName="text-zinc-300 text-sm">SBOM file</FieldLabel>
                   <Input
+                    id="sbom-file-upload"
                     type="file"
                     accept=".json,application/json"
                     className="bg-zinc-800 h-fit p-2 border-zinc-700 text-white file:mr-2 file:rounded file:border-0 file:bg-blue-600 file:cursor-pointer file:px-3 file:py-1 file:text-sm file:text-white mt-1"
@@ -362,7 +367,7 @@ export function SCASBOMOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="sbom.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -394,7 +399,7 @@ export function SCASBOMOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button
