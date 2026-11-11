@@ -14,6 +14,8 @@ or with pytest where the worker's dependencies are installed.
 from types import SimpleNamespace
 
 import helpers.agent.main as agent_main
+from helpers.net.address_rule import parse_allowlist
+from helpers.net.egress import ScanEgress
 from helpers.schema import FinalVulnResponse
 
 URLS = ["http://shop.test/", "http://shop.test/login"]
@@ -68,11 +70,13 @@ def _context():
 def _patch(xss=_Failing, sqli=_Failing, page=_Failing):
     saved = {n: getattr(agent_main, n) for n in ("Crawler", "SecurityHeadersCheck", "XSSAgent", "SQLiAgent",
                                                  "PageAnalysisCheck", "fetch_authenticated_page",
-                                                 "get_auth_login_template", "reap_orphan_browsers")}
+                                                 "get_auth_login_template", "reap_orphan_browsers", "ScanEgress")}
     agent_main.Crawler = _Crawler
     agent_main.SecurityHeadersCheck = _Headers
     agent_main.XSSAgent, agent_main.SQLiAgent, agent_main.PageAnalysisCheck = xss, sqli, page
-    agent_main.fetch_authenticated_page = lambda url, auth, timeout_seconds=None: ("<html></html>", [])
+    agent_main.fetch_authenticated_page = lambda url, auth, timeout_seconds=None, **kw: ("<html></html>", [])
+    # shop.test does not resolve here: pin the scan's hosts to a public address (the egress tests cover the rule)
+    agent_main.ScanEgress = lambda urls: ScanEgress(urls, rules=parse_allowlist(""), resolve=lambda _h: ["93.184.216.34"])
     agent_main.get_auth_login_template = lambda url, auth: ""
     agent_main.reap_orphan_browsers = lambda: None
     return saved

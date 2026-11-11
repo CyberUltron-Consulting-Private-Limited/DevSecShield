@@ -50,6 +50,7 @@ class OverallState(TypedDict):
     validation_retries_left : int = 2 
     template_validation_reason : str | None = None 
     nuclei_timeout_seconds : int 
+    egress_proxy : str | None  # the scan's SOCKS5 egress guard (helpers/net/egress.py); nuclei never runs without it
 
     vulnerabilities : Annotated[list[DASTVulnerability],add] = []
 
@@ -179,6 +180,7 @@ def execute_template(state : OverallState) -> OverallState:
             template_path=template_path.name,
             url=state["target_url"],
             timeout_seconds=int(state.get("nuclei_timeout_seconds") or 90),
+            egress_proxy=state.get("egress_proxy"),
         )
 
         if not result_documents:

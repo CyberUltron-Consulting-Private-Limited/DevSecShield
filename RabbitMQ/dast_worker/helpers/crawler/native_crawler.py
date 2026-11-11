@@ -12,6 +12,8 @@ import urllib.parse
 import urllib.error
 from collections import deque
 
+from helpers.net.egress import EgressRefused, ScanEgress
+
 
 def normalize_url(base: str, href: str) -> str | None:
     """Resolve a href against base and normalize it."""
@@ -42,8 +44,8 @@ def extract_urls(html: str, base_url: str) -> list[str]:
     return urls
 
 
-def fetch(url: str, timeout: int = 10) -> str | None:
-    """Fetch a URL and return its text content."""
+def fetch(url: str, egress: ScanEgress, timeout: int = 10) -> str | None:
+    """Fetch a URL through the scan's egress (pinned to checked addresses, redirects included)."""
     try:
         req = urllib.request.Request(
             url,
@@ -53,7 +55,7 @@ def fetch(url: str, timeout: int = 10) -> str | None:
                 )
             },
         )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with egress.urlopen(req, timeout=timeout) as resp:
             content_type = resp.headers.get("Content-Type", "")
             if "html" not in content_type.lower():
                 return None
@@ -67,8 +69,10 @@ def fetch(url: str, timeout: int = 10) -> str | None:
         return None
 
 
-def crawl(start_url: str, max_urls: int) -> list[str]:
-    """BFS crawl starting from start_url, stay on same domain."""
+def crawl(start_url: str, max_urls: int, egress: ScanEgress | None = None) -> list[str]:
+    """BFS crawl starting from start_url, stay on same domain. Every fetch goes through ``egress``."""
+    if egress is None:
+        raise EgressRefused(f"crawl of {start_url} not started: the scan's egress guard is missing")
     parsed_start = urllib.parse.urlparse(start_url)
     base_domain = parsed_start.netloc
 
@@ -90,7 +94,7 @@ def crawl(start_url: str, max_urls: int) -> list[str]:
         print(f"[+] ({len(visited)}/{max_urls}) Crawling: {url}")
         found.append(url)
 
-        html = fetch(url)
+        html = fetch(url, egress)
         if not html:
             continue
 
@@ -126,7 +130,7 @@ def main():
     if not start_url.startswith(("http://", "https://")):
         start_url = "https://" + start_url
 
-    results = crawl(start_url, max_urls)
+    results = crawl(start_url, max_urls, ScanEgress([start_url]))
 
     print(f"\n{'='*60}")
     print(f"[*] Crawl complete. {len(results)} URL(s) found:\n")

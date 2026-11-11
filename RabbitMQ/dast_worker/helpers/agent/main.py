@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 import threading
 from rich.console import Console
 from helpers.checks.security_headers import SecurityHeadersCheck
@@ -15,6 +16,7 @@ from helpers.agent.base_vuln import parse_vuln_list
 from helpers.agent.scan_config import ScanRuntime
 from helpers.agent.utils import fetch_authenticated_page, get_auth_login_template
 from helpers.checks.nuclei.run_nuclei import reap_orphan_browsers, set_nuclei_concurrency
+from helpers.net.egress import EgressProxy, ScanEgress
 console = Console(markup=False)
 
 # Checks whose failure is recorded per URL. A check that could not run is not "no findings": when one of them failed
@@ -61,6 +63,10 @@ class DASTAgent():
         self.state_update_writer = state_update_writer
         # check -> {url: first error message}; written from the URL worker threads
         self.check_errors: dict[str, dict[str, str]] = {name: {} for name in CHECK_LABELS}
+        # The scan's network scope, checked again here with the backend's rule and pinned (helpers/net/egress.py):
+        # set by run()/estimate_credits(); no scan connection is made without it.
+        self.egress: ScanEgress | None = None
+        self.egress_proxy: str | None = None
         self._errors_lock = threading.Lock()
 
         if not self.auth_requirements.username or not self.auth_requirements.password or not self.auth_requirements.xpath_of_username_field or not self.auth_requirements.xpath_of_password_field or not self.auth_requirements.xpath_of_submit_button:
@@ -81,6 +87,7 @@ class DASTAgent():
                 url=url,
                 vulnerability_model=FinalVulnResponse,
                 timeout=self.runtime.http_timeout_seconds,
+                egress=self.egress,
             )
             security_headers_output : type[FinalVulnResponse] = security_headers_check.run()
             parsed = parse_vuln_list(security_headers_output.vulnerabilities)
@@ -98,6 +105,7 @@ class DASTAgent():
                 url,
                 self.auth_requirements,
                 timeout_seconds=self.runtime.nuclei_timeout_seconds,
+                egress_proxy=self.egress_proxy,
             )
         except Exception as e:
             console.print(f"Error fetching page content for {url}: {e}",style="dim red")
@@ -109,6 +117,7 @@ class DASTAgent():
             vulnerabilities : list[DASTVulnerability] = page_analysis_check.run(
                 documents=documents,
                 timeout_seconds=self.runtime.nuclei_timeout_seconds,
+                egress_proxy=self.egress_proxy,
             )
             parsed = parse_vuln_list(vulnerabilities or [])
             console.print(f"Page analysis check completed for {url}",style="bold green")
@@ -130,6 +139,7 @@ class DASTAgent():
                 exploit_retries=self.runtime.exploit_retries,
                 validation_retries=self.runtime.validation_retries,
                 nuclei_timeout_seconds=self.runtime.nuclei_timeout_seconds,
+                egress_proxy=self.egress_proxy,
             )
             vulnerabilities : list[DASTVulnerability] = xss_agent.run_xss_agent_graph()
             parsed = parse_vuln_list(vulnerabilities)
@@ -152,6 +162,7 @@ class DASTAgent():
                 exploit_retries=self.runtime.exploit_retries,
                 validation_retries=self.runtime.validation_retries,
                 nuclei_timeout_seconds=self.runtime.nuclei_timeout_seconds,
+                egress_proxy=self.egress_proxy,
             )
             vulnerabilities : list[DASTVulnerability] = sqli_agent.run_sqli_agent_graph()
             parsed = parse_vuln_list(vulnerabilities)
@@ -240,85 +251,116 @@ class DASTAgent():
         3. return the vulns list with metadata 
         """
         try :
-            # STEP [ 1 ] : ----------------------- Run Crawler ----------------------------------------
-            if self.state_update_writer:
-                self.state_update_writer.write_progress_percentage(10)
-
-            crawler = Crawler(
-                url=self.url,
-                max_urls=self.max_urls,
-                additional_urls_to_scan=self.additional_urls_to_scan,
-                include_url_patterns=self.include_url_patterns,
-                exclude_url_patterns=self.exclude_url_patterns,
-            )
-            urls = list(dict.fromkeys(crawler.crawl()))
-            metadata = crawler.metadata
-            console.print(f"Scanning {len(urls)} unique URLs", style="bold yellow1")
-            console.print(
-                f"Scan runtime speed workers={self.runtime.url_workers} "
-                f"checks={self.runtime.check_workers} nuclei_slots={self.runtime.nuclei_concurrency} "
-                f"interval={self.runtime.interval_between_requests}s "
-                f"nuclei_timeout={self.runtime.nuclei_timeout_seconds}s "
-                f"all_stages=headers,nuclei,page,xss,sqli",
-                style="bold yellow1",
-            )
-            if not len(urls)>0 : 
-                raise Exception("No Urls to crawl") 
-
-            self.metadata = metadata
-            self.urls = urls
-
-            if self.state_update_writer:
-                self.state_update_writer.write_progress_percentage(30)
-
-            
-            # STEP [ 3 ] : ----------------------- Cycle through each url and run the checks ----------------------------------------
-
-            workers = max(1, min(self.runtime.url_workers, len(self.urls)))
-            completed = 0
-            if workers == 1:
-                for url in self.urls:
-                    self.vulnerabilities.extend(self._scan_url(url))
-                    completed += 1
-                    self._report_progress(completed, len(self.urls))
-            else:
-                with ThreadPoolExecutor(max_workers=workers) as pool:
-                    futures = {pool.submit(self._scan_url, url): url for url in self.urls}
-                    for future in as_completed(futures):
-                        url = futures[future]
-                        try:
-                            self.vulnerabilities.extend(future.result())
-                        except Exception as e:
-                            console.print(f"Error scanning {url}: {e}", style="dim red")
-                        completed += 1
-                        self._report_progress(completed, len(self.urls))
-
-            
-            # STEP [ 4 ] : ----------------------- Return the Vulnerabilities ----------------------------------------
-            self._judge_checks()
-            if self.state_update_writer:
-                self.state_update_writer.write_progress_percentage(100)
-
-            
-            return self.vulnerabilities , self.metadata
-            
+            # STEP [ 0 ] : the scan's checked, pinned network scope (raises before any connection when a host fails)
+            with self._egress_scope():
+                return self._run()
         except Exception as e:
             console.print(f"Error in running DAST agent: {e}",style="dim red")
             raise e
         finally:
-            reap_orphan_browsers() 
-    
+            reap_orphan_browsers()
+
+    def scan_urls(self) -> list[str]:
+        """Every URL the scan opens itself; their hosts are the scan's network scope."""
+        return [u for u in [self.url, self.auth_requirements.login_url, *(self.additional_urls_to_scan or [])]
+                if u and str(u).strip()]
+
+    @contextmanager
+    def _egress_scope(self):
+        """The scan's network scope: in-scope hosts checked with the backend's rule and pinned, and the SOCKS5 guard
+        nuclei and Chromium connect through. Raises (DastSsrfError) before any connection when a host fails."""
+        self.egress = ScanEgress(self.scan_urls())
+        proxy = EgressProxy(self.egress)
+        self.egress_proxy = proxy.url
+        try:
+            yield self.egress
+        finally:
+            proxy.close()
+            self.egress_proxy = None
+
+    def _record_egress(self) -> None:
+        refused = self.egress.metadata() if self.egress else {}
+        if refused:
+            self.metadata["egress"] = refused
+
+    def _run(self):
+        # STEP [ 1 ] : ----------------------- Run Crawler ----------------------------------------
+        if self.state_update_writer:
+            self.state_update_writer.write_progress_percentage(10)
+
+        crawler = Crawler(
+            url=self.url,
+            max_urls=self.max_urls,
+            additional_urls_to_scan=self.additional_urls_to_scan,
+            include_url_patterns=self.include_url_patterns,
+            exclude_url_patterns=self.exclude_url_patterns,
+            egress=self.egress,
+        )
+        urls = list(dict.fromkeys(crawler.crawl()))
+        metadata = crawler.metadata
+        console.print(f"Scanning {len(urls)} unique URLs", style="bold yellow1")
+        console.print(
+            f"Scan runtime speed workers={self.runtime.url_workers} "
+            f"checks={self.runtime.check_workers} nuclei_slots={self.runtime.nuclei_concurrency} "
+            f"interval={self.runtime.interval_between_requests}s "
+            f"nuclei_timeout={self.runtime.nuclei_timeout_seconds}s "
+            f"all_stages=headers,nuclei,page,xss,sqli",
+            style="bold yellow1",
+        )
+        if not len(urls)>0 : 
+            raise Exception("No Urls to crawl") 
+
+        self.metadata = metadata
+        self.urls = urls
+
+        if self.state_update_writer:
+            self.state_update_writer.write_progress_percentage(30)
+
+        
+        # STEP [ 3 ] : ----------------------- Cycle through each url and run the checks ----------------------------------------
+
+        workers = max(1, min(self.runtime.url_workers, len(self.urls)))
+        completed = 0
+        if workers == 1:
+            for url in self.urls:
+                self.vulnerabilities.extend(self._scan_url(url))
+                completed += 1
+                self._report_progress(completed, len(self.urls))
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(self._scan_url, url): url for url in self.urls}
+                for future in as_completed(futures):
+                    url = futures[future]
+                    try:
+                        self.vulnerabilities.extend(future.result())
+                    except Exception as e:
+                        console.print(f"Error scanning {url}: {e}", style="dim red")
+                    completed += 1
+                    self._report_progress(completed, len(self.urls))
+
+        
+        # STEP [ 4 ] : ----------------------- Return the Vulnerabilities ----------------------------------------
+        self._record_egress()
+        self._judge_checks()
+        if self.state_update_writer:
+            self.state_update_writer.write_progress_percentage(100)
+
+        
+        return self.vulnerabilities , self.metadata
+
 
     def estimate_credits(self):
         try:
-            crawler = Crawler(
-                    url=self.url,
-                    max_urls=self.max_urls,
-                    additional_urls_to_scan=self.additional_urls_to_scan,
-                    include_url_patterns=self.include_url_patterns,
-                    exclude_url_patterns=self.exclude_url_patterns,
-            )
-            urls = crawler.crawl()
+            with self._egress_scope():
+                crawler = Crawler(
+                        url=self.url,
+                        max_urls=self.max_urls,
+                        additional_urls_to_scan=self.additional_urls_to_scan,
+                        include_url_patterns=self.include_url_patterns,
+                        exclude_url_patterns=self.exclude_url_patterns,
+                        egress=self.egress,
+                )
+                urls = crawler.crawl()
 
             if not len(urls)>0 : 
                 raise Exception("No Urls to crawl") 

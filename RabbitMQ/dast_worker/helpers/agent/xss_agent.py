@@ -16,6 +16,7 @@ class XSSAgent(BaseUtilities):
         exploit_retries : int = 2,
         validation_retries : int = 2,
         nuclei_timeout_seconds : int = 90,
+        egress_proxy : str | None = None,
         ):
 
 
@@ -24,6 +25,7 @@ class XSSAgent(BaseUtilities):
         self.exploit_retries = exploit_retries
         self.validation_retries = validation_retries
         self.nuclei_timeout_seconds = nuclei_timeout_seconds
+        self.egress_proxy = egress_proxy
         self.strategy_generation_system_prompt = """
         You are a cybersecurity expert who is tasked with testing a Web application for XSS vulnerabilities.
         You will be given the HTML page source of the website and you must generate a strategy for generating a **headless** nuclei template to test for XSS vulnerabilities in the web application .
@@ -91,6 +93,7 @@ class XSSAgent(BaseUtilities):
                 "template_validation_reason" : None,
                 "vulnerabilities" : [],
                 "nuclei_timeout_seconds" : self.nuclei_timeout_seconds,
+                "egress_proxy" : self.egress_proxy,
             }
             overall_state : OverallState = graph.invoke(initial_overall_state)
 
