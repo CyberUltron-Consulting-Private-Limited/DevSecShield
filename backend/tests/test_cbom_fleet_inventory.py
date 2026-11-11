@@ -158,7 +158,7 @@ def test_permissions_and_tenancy(api, world):
     tid = api("GET", f"{INV}/targets").json()["targets"][0]["id"]
     assert api("GET", f"/2/cbom/sources/fleet/inventory/targets/{tid}", "carol").status_code == 404
     assert api("GET", f"{INV}/targets/{tid}", "carol").status_code == 403  # not a member of team 1
-    assert api("GET", f"/2/cbom/sources/fleet/inventory/targets", "carol").json()["total"] == 0
+    assert api("GET", "/2/cbom/sources/fleet/inventory/targets", "carol").json()["total"] == 0
     assert api("DELETE", f"{INV}/targets/{tid}", "bob").status_code == 400
     gone = api("DELETE", f"{INV}/targets/{tid}")
     assert gone.status_code == 200

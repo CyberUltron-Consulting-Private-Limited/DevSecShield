@@ -25,6 +25,8 @@ from backend.utilities.cbom_sources.fleet.http import FLEET, Member, permission
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, read_limiter
 
 # F1.2 imports
+from backend.routers.cbom_fleet_inventory import router as inventory_router
+from backend.routers.cbom_fleet_policies import router as policies_router
 # F1.3 imports
 # F1.4 imports
 
@@ -39,11 +41,8 @@ async def fleet_status(team_id: TeamId, ctx: Member):
 
 
 # F1.2 routers
-from backend.routers.cbom_fleet_inventory import router as _inventory_router  # noqa: E402
-from backend.routers.cbom_fleet_policies import router as _policies_router  # noqa: E402
-
-router.include_router(_inventory_router)  # /fleet/inventory/* (CBOM_FLEET_INVENTORY)
-router.include_router(_policies_router)  # /fleet/policies*, /fleet/credentials*, /fleet/reconcile (CBOM_FLEET_POLICIES)
+router.include_router(inventory_router)  # /fleet/inventory/* (CBOM_FLEET_INVENTORY)
+router.include_router(policies_router)  # /fleet/policies*, /fleet/credentials*, /fleet/reconcile (CBOM_FLEET_POLICIES)
 
 # F1.3 routers
 

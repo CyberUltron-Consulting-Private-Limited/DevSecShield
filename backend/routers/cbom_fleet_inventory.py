@@ -6,9 +6,9 @@ admin (400, never 403).  Every write is audited (field names only).
 """
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -21,7 +21,7 @@ from backend.utilities.cbom_sources.fleet import flags as FLAGS
 from backend.utilities.cbom_sources.fleet import store
 from backend.utilities.cbom_sources.fleet import sync as SYNC
 from backend.utilities.cbom_sources.fleet.aws_inventory import AwsInventoryConfig
-from backend.utilities.cbom_sources.fleet.http import FLEET, permission
+from backend.utilities.cbom_sources.fleet.http import FLEET, Member, permission
 from backend.utilities.cbom_sources.fleet.inventory_sources import (
     MAX_IMPORT_BYTES, InventoryError, Parsed, _collect, parse_csv, parse_json)
 from backend.utilities.cbom_sources.fleet.models import (
@@ -31,12 +31,11 @@ from backend.utilities.cbom_sources.fleet.refs import build_refs
 from backend.utilities.cbom_sources.fleet.schemas import (
     ApiTargetsBody, ImportBody, InventorySourceCreate, InventorySourceUpdate, public_inventory_source, public_target)
 from backend.utilities.cbom_sources.http import (
-    PRIVATE, ObjectId, TeamId, authorize, bad_request, bump_version, check_version, read_capped_json, read_limiter,
+    PRIVATE, ObjectId, TeamId, bad_request, bump_version, check_version, read_capped_json, read_limiter,
     require_admin, server_error, write_limiter)
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 router = APIRouter(tags=["cbom-fleet"], route_class=FLAGS.route_class("inventory"))
-AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
 INV = FLEET + "/inventory"
@@ -182,14 +181,13 @@ def _list_targets(engine, team_id: int, kind: str | None, tag: str | None, q: st
 
 @router.get(INV + "/targets", dependencies=READ, openapi_extra=permission("cbom.fleet.read"),
             summary="Inventory targets with the policy decision of each (page with cursor)")
-async def list_targets(team_id: TeamId, kind: str | None = Query(default=None, max_length=24),
+async def list_targets(team_id: TeamId, ctx: Member, kind: str | None = Query(default=None, max_length=24),
                        tag: str | None = Query(default=None, max_length=400), q: str | None = Query(default=None, max_length=200),
                        missing: str | None = Query(default=None, pattern="^(yes|no|all)$"),
                        source_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                        decision: str | None = Query(default=None, pattern="^(collect|never_scan|unmanaged)$"),
-                       cursor: int = Query(default=0, ge=0, le=2_147_483_647), limit: int = Query(default=100, ge=1, le=500),
-                       Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+                       cursor: int = Query(default=0, ge=0, le=2_147_483_647), limit: int = Query(default=100, ge=1, le=500)):
+    engine, _user = ctx
     if kind is not None and kind not in TARGET_KINDS:
         raise HTTPException(status_code=400, detail=f"kind must be one of {', '.join(TARGET_KINDS)}")
     return _ok(await _run("list targets", team_id, _list_targets, engine, team_id, kind, tag, q, missing, source_id,
@@ -215,8 +213,8 @@ def _get_target(engine, team_id: int, target_id: int) -> dict:
 
 @router.get(INV + "/targets/{target_id}", dependencies=READ, openapi_extra=permission("cbom.fleet.read"),
             summary="One target, its live decision and every policy that matches it (the winner first)")
-async def get_target(team_id: TeamId, target_id: ObjectId, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def get_target(team_id: TeamId, target_id: ObjectId, ctx: Member):
+    engine, _user = ctx
     return _ok(await _run("get target", team_id, _get_target, engine, team_id, target_id))
 
 
@@ -249,8 +247,8 @@ def _import(engine, team_id: int, user_id: int, body: ImportBody) -> dict:
 
 @router.post(INV + "/import", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
              summary="Import targets from CSV or JSON (≤ 10 MB, ≤ 10,000 rows; upsert on external_id; dry_run)")
-async def import_targets(team_id: TeamId, request: Request, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def import_targets(team_id: TeamId, ctx: Member, request: Request):
+    engine, user = ctx
     raw = await read_capped_json(request, IMPORT_BODY_LIMIT)
     try:
         body = ImportBody.model_validate(raw)
@@ -276,8 +274,8 @@ def _put_targets(engine, team_id: int, user_id: int, body: ApiTargetsBody) -> di
 
 @router.put(INV + "/targets", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
             summary="Add or update up to 1,000 targets through the API (an API inventory source, by name)")
-async def put_targets(team_id: TeamId, request: Request, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def put_targets(team_id: TeamId, ctx: Member, request: Request):
+    engine, user = ctx
     raw = await read_capped_json(request, API_BODY_LIMIT)
     try:
         body = ApiTargetsBody.model_validate(raw)
@@ -304,8 +302,8 @@ def _delete_target(engine, team_id: int, user_id: int, target_id: int) -> dict:
 
 @router.delete(INV + "/targets/{target_id}", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
                summary="Mark a target missing and take it out of its managed source (soft delete)")
-async def delete_target(team_id: TeamId, target_id: ObjectId, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def delete_target(team_id: TeamId, target_id: ObjectId, ctx: Member):
+    engine, user = ctx
     return _ok(await _run("delete target", team_id, _delete_target, engine, team_id, user.id, target_id))
 
 
@@ -331,8 +329,8 @@ def _list_sources(engine, team_id: int) -> dict:
 
 @router.get(INV + "/sources", dependencies=READ, openapi_extra=permission("cbom.fleet.read"),
             summary="Inventory sources (AWS, CSV, JSON, API) with their last sync")
-async def list_sources(team_id: TeamId, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def list_sources(team_id: TeamId, ctx: Member):
+    engine, _user = ctx
     return _ok(await _run("list inventory sources", team_id, _list_sources, engine, team_id))
 
 
@@ -371,8 +369,8 @@ def _create_source(engine, team_id: int, user_id: int, body: InventorySourceCrea
 
 @router.post(INV + "/sources", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
              summary="Add an inventory source (AWS: an AWS account of the team, regions and services)")
-async def create_source(team_id: TeamId, body: InventorySourceCreate, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def create_source(team_id: TeamId, ctx: Member, body: InventorySourceCreate):
+    engine, user = ctx
     return _ok(await _run("create inventory source", team_id, _create_source, engine, team_id, user.id, body), 201)
 
 
@@ -402,8 +400,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Inv
 
 @router.patch(INV + "/sources/{source_id}", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
               summary="Edit, pause or resume an inventory source")
-async def update_source(team_id: TeamId, source_id: ObjectId, body: InventorySourceUpdate, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def update_source(team_id: TeamId, source_id: ObjectId, ctx: Member, body: InventorySourceUpdate):
+    engine, user = ctx
     return _ok(await _run("update inventory source", team_id, _update_source, engine, team_id, user.id, source_id, body))
 
 
@@ -427,8 +425,8 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
 
 @router.delete(INV + "/sources/{source_id}", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
                summary="Delete an inventory source (its targets are marked missing)")
-async def delete_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def delete_source(team_id: TeamId, source_id: ObjectId, ctx: Member):
+    engine, user = ctx
     return _ok(await _run("delete inventory source", team_id, _delete_source, engine, team_id, user.id, source_id))
 
 
@@ -452,6 +450,6 @@ def _sync_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
 
 @router.post(INV + "/sources/{source_id}/sync", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
              summary="Sync an AWS inventory source now (runs on the inventory thread)")
-async def sync_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def sync_source(team_id: TeamId, source_id: ObjectId, ctx: Member):
+    engine, user = ctx
     return _ok(await _run("sync inventory source", team_id, _sync_source, engine, team_id, user.id, source_id), 202)

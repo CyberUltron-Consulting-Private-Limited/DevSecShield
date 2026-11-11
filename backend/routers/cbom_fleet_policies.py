@@ -6,9 +6,9 @@ admin (400, never 403).  A policy or credential change re-evaluates the team's t
 """
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -22,20 +22,19 @@ from backend.utilities.cbom_sources.fleet import flags as FLAGS
 from backend.utilities.cbom_sources.fleet import store
 from backend.utilities.cbom_sources.fleet.credentials import (
     CredentialCreate, CredentialUpdate, check_config, public_credential, required_secrets)
-from backend.utilities.cbom_sources.fleet.http import FLEET, permission
+from backend.utilities.cbom_sources.fleet.http import FLEET, Member, permission
 from backend.utilities.cbom_sources.fleet.materialize import ReconcileResult, reconcile
 from backend.utilities.cbom_sources.fleet.models import CbomCredential, CbomFleetPolicy
 from backend.utilities.cbom_sources.fleet.policy import PolicyEngine
 from backend.utilities.cbom_sources.fleet.refs import build_refs
 from backend.utilities.cbom_sources.fleet.schemas import PolicyCreate, PolicyUpdate, PreviewBody, public_policy, public_target
 from backend.utilities.cbom_sources.http import (
-    PRIVATE, ObjectId, TeamId, authorize, bad_request, bump_version, check_version, read_limiter, require_admin,
+    PRIVATE, ObjectId, TeamId, bad_request, bump_version, check_version, read_limiter, require_admin,
     server_error, write_limiter)
 from backend.utilities.cbom_sources.kinds import validate_secret_value
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 router = APIRouter(tags=["cbom-fleet"], route_class=FLAGS.route_class("policies"))
-AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
 MAX_POLICIES = 200
@@ -118,8 +117,8 @@ def _list_policies(engine, team_id: int) -> dict:
 
 @router.get(FLEET + "/policies", dependencies=READ, openapi_extra=permission("cbom.fleet.read"),
             summary="Policies in the order they are applied, with how many targets each matches and wins")
-async def list_policies(team_id: TeamId, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def list_policies(team_id: TeamId, ctx: Member):
+    engine, _user = ctx
     return _ok(await _run("list policies", team_id, _list_policies, engine, team_id))
 
 
@@ -148,8 +147,8 @@ def _create_policy(engine, team_id: int, user_id: int, body: PolicyCreate) -> di
 
 @router.post(FLEET + "/policies", dependencies=WRITE, openapi_extra=permission("cbom.policies.write"),
              summary="Add a policy: a selector over tags and fields, and what to do with what it matches")
-async def create_policy(team_id: TeamId, body: PolicyCreate, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def create_policy(team_id: TeamId, ctx: Member, body: PolicyCreate):
+    engine, user = ctx
     return _ok(await _run("create policy", team_id, _create_policy, engine, team_id, user.id, body), 201)
 
 
@@ -179,8 +178,8 @@ def _update_policy(engine, team_id: int, user_id: int, policy_id: int, body: Pol
 
 @router.patch(FLEET + "/policies/{policy_id}", dependencies=WRITE, openapi_extra=permission("cbom.policies.write"),
               summary="Edit, enable or disable a policy (expected_version: 409 when it changed meanwhile)")
-async def update_policy(team_id: TeamId, policy_id: ObjectId, body: PolicyUpdate, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def update_policy(team_id: TeamId, policy_id: ObjectId, ctx: Member, body: PolicyUpdate):
+    engine, user = ctx
     return _ok(await _run("update policy", team_id, _update_policy, engine, team_id, user.id, policy_id, body))
 
 
@@ -202,8 +201,8 @@ def _delete_policy(engine, team_id: int, user_id: int, policy_id: int) -> dict:
 
 @router.delete(FLEET + "/policies/{policy_id}", dependencies=WRITE, openapi_extra=permission("cbom.policies.write"),
                summary="Delete a policy (its managed sources go at the next reconcile)")
-async def delete_policy(team_id: TeamId, policy_id: ObjectId, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def delete_policy(team_id: TeamId, policy_id: ObjectId, ctx: Member):
+    engine, user = ctx
     return _ok(await _run("delete policy", team_id, _delete_policy, engine, team_id, user.id, policy_id))
 
 
@@ -250,8 +249,8 @@ def _preview(engine, team_id: int, body: PreviewBody) -> dict:
 
 @router.post(FLEET + "/policies/preview", dependencies=WRITE, openapi_extra=permission("cbom.fleet.read"),
              summary="What a draft or saved policy would match, collect and skip, and which policies it overlaps")
-async def preview_policy(team_id: TeamId, body: PreviewBody, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def preview_policy(team_id: TeamId, ctx: Member, body: PreviewBody):
+    engine, _user = ctx
     return _ok(await _run("preview policy", team_id, _preview, engine, team_id, body))
 
 
@@ -273,8 +272,8 @@ def _reconcile(engine, team_id: int, user_id: int) -> dict:
 
 @router.post(FLEET + "/reconcile", dependencies=WRITE, openapi_extra=permission("cbom.policies.write"),
              summary="Apply the policies: managed sources, batches and schedules (CBOM_FLEET_MATERIALIZE)")
-async def reconcile_route(team_id: TeamId, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def reconcile_route(team_id: TeamId, ctx: Member):
+    engine, user = ctx
     return _ok(await _run("reconcile", team_id, _reconcile, engine, team_id, user.id))
 
 
@@ -324,8 +323,8 @@ def _list_credentials(engine, team_id: int) -> dict:
 
 @router.get(FLEET + "/credentials", dependencies=READ, openapi_extra=permission("cbom.fleet.read"),
             summary="Typed credentials (secrets are never returned)")
-async def list_credentials(team_id: TeamId, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def list_credentials(team_id: TeamId, ctx: Member):
+    engine, _user = ctx
     return _ok(await _run("list credentials", team_id, _list_credentials, engine, team_id))
 
 
@@ -353,8 +352,8 @@ def _create_credential(engine, team_id: int, user_id: int, body: CredentialCreat
 
 @router.post(FLEET + "/credentials", dependencies=WRITE, openapi_extra=permission("cbom.credentials.write"),
              summary="Add a typed credential (node key, password, SSH certificate, vault, SSH CA)")
-async def create_credential(team_id: TeamId, body: CredentialCreate, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def create_credential(team_id: TeamId, ctx: Member, body: CredentialCreate):
+    engine, user = ctx
     return _ok(await _run("create credential", team_id, _create_credential, engine, team_id, user.id, body), 201)
 
 
@@ -395,9 +394,8 @@ def _update_credential(engine, team_id: int, user_id: int, credential_id: int, b
 @router.patch(FLEET + "/credentials/{credential_id}", dependencies=WRITE,
               openapi_extra=permission("cbom.credentials.write"),
               summary="Edit a credential (blank secrets keep the stored ones unless the login target changed)")
-async def update_credential(team_id: TeamId, credential_id: ObjectId, body: CredentialUpdate,
-                            Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def update_credential(team_id: TeamId, credential_id: ObjectId, ctx: Member, body: CredentialUpdate):
+    engine, user = ctx
     return _ok(await _run("update credential", team_id, _update_credential, engine, team_id, user.id, credential_id,
                           body))
 
@@ -421,6 +419,6 @@ def _delete_credential(engine, team_id: int, user_id: int, credential_id: int) -
 @router.delete(FLEET + "/credentials/{credential_id}", dependencies=WRITE,
                openapi_extra=permission("cbom.credentials.write"),
                summary="Delete a credential (its secrets are erased; policies that use it stop collecting)")
-async def delete_credential(team_id: TeamId, credential_id: ObjectId, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def delete_credential(team_id: TeamId, credential_id: ObjectId, ctx: Member):
+    engine, user = ctx
     return _ok(await _run("delete credential", team_id, _delete_credential, engine, team_id, user.id, credential_id))
