@@ -23,7 +23,9 @@ for entry in \
   "09-tf-bedrock https://github.com/aws-ia/terraform-aws-bedrock 4b74b7d ."; do
   read -r id url sha subdir <<<"$entry"
   dir="$HERE/repos/$id"
-  if [ ! -d "$dir/$subdir" ]; then              # reuse a local clone, else fetch the pinned SHA
+  # reuse a local clone, else fetch the pinned SHA; an EMPTY directory (a leftover of the old committed gitlinks)
+  # is not a clone
+  if [ ! -d "$dir/$subdir" ] || [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
     echo "[$id] fetching $url @ $sha"
     rm -rf "$dir"; mkdir -p "$dir"
     git -C "$dir" init -q

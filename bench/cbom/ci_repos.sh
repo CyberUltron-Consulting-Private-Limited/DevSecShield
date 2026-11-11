@@ -26,9 +26,9 @@ for entry in \
   # only gate a repo whose frozen oracle snapshot is committed
   [ -f "$HERE/ci_baseline/$id.cbomkit.cdx.json" ] || { echo "[$id] no frozen oracle — skipped"; continue; }
   dir="$HERE/repos/$id"
-  # repos/01-pyjwt and repos/02-pyopenssl are committed as bare gitlinks (no .gitmodules), so a fresh checkout has
-  # them as EMPTY directories. "Exists" is not "cloned": an empty directory scanned as the repo gave 0 crypto
-  # assets, i.e. a false "true miss" on every CI run. Clone when the directory is missing or empty.
+  # "Exists" is not "cloned". repos/01-pyjwt and repos/02-pyopenssl used to be committed as bare gitlinks, so a
+  # checkout had them as EMPTY directories. Scanning an empty directory gave 0 crypto assets, i.e. a false "true
+  # miss" on every run. The gitlinks are gone, but an empty leftover directory must still trigger a clone.
   if [ ! -d "$dir/$subdir" ] || [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
     echo "[$id] cloning $url"
     rm -rf "$dir"

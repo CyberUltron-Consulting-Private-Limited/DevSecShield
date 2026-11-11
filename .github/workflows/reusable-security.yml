@@ -168,6 +168,7 @@ jobs:
           persist-credentials: false
 
       - name: Scope
+        id: scope
         run: |
           set -euo pipefail
           mode=$REQUESTED_MODE
@@ -227,14 +228,14 @@ jobs:
           fi
 
       - name: Set up uv (for ggshield)
-        if: ${{ !cancelled() && env.HAS_GG_KEY == 'true' && env.MODE == 'diff' }}
+        if: ${{ !cancelled() && steps.scope.outcome == 'success' && env.HAS_GG_KEY == 'true' && env.MODE == 'diff' }}
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: ${{ inputs.uv-version }}
           enable-cache: false
 
       - name: GitGuardian ggshield
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.scope.outcome == 'success' }}
         env:
           GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
           GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
@@ -392,6 +393,7 @@ jobs:
           printf '| tool | findings now | on base | new | result |\n|---|---:|---:|---:|---|\n' > "$RUNNER_TEMP/rows.md"
 
       - name: Install scanners
+        id: install
         env:
           OSV_V: ${{ inputs.osv-version }}
           OSV_SHA: ${{ inputs.osv-sha256 }}
@@ -438,7 +440,7 @@ jobs:
           restore-keys: trivy-db-${{ inputs.trivy-version }}-
 
       - name: Semgrep
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           V: ${{ inputs.semgrep-version }}
           CONFIGS: ${{ inputs.semgrep-configs }}
@@ -462,7 +464,7 @@ jobs:
           fi
 
       - name: OSV-Scanner (lockfiles)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
           set -uo pipefail
           lockfiles() { # in the current directory: lockfile arguments for osv-scanner
@@ -492,7 +494,7 @@ jobs:
           fi
 
       - name: Trivy filesystem
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           SCANNERS: ${{ inputs.trivy-scanners }}
           SEVERITY: ${{ inputs.trivy-severity }}
@@ -513,7 +515,7 @@ jobs:
           fi
 
       - name: Checkov (Helm, Kubernetes, Terraform)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           V: ${{ inputs.checkov-version }}
           FRAMEWORKS: ${{ inputs.checkov-frameworks }}
@@ -539,7 +541,7 @@ jobs:
           fi
 
       - name: Hadolint (Dockerfiles)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           MIN: ${{ inputs.hadolint-min-level }}
         run: |
@@ -558,7 +560,7 @@ jobs:
           fi
 
       - name: ShellCheck (shell scripts)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           SEVERITY: ${{ inputs.shellcheck-severity }}
         run: |
@@ -580,7 +582,7 @@ jobs:
           fi
 
       - name: actionlint (workflows)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
           set -uo pipefail
           # shellcheck disable=SC2016 # a Go template for actionlint (it turns \n into a newline), not a shell expansion
