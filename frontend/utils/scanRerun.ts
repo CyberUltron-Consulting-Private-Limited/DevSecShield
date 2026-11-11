@@ -73,9 +73,9 @@ export function rerunPrefill(type: CodeScanType, scan: unknown): RerunPrefill | 
 export function rerunNotes(p: RerunPrefill): string[] {
   if (p.upload) {
     const what = { archive: "archive", cbom_file: "CBOM file", sbom_file: "SBOM file", ai_bom_file: "AI BOM file" }[p.upload];
-    return [`Settings copied from the failed scan. Choose the ${what} again: uploaded files are deleted after every scan.`];
+    return [`Settings copied from the earlier scan. Choose the ${what} again: uploaded files are deleted after every scan.`];
   }
-  return ["Settings copied from the failed scan. If the repository is private, enter its access token again: tokens " +
+  return ["Settings copied from the earlier scan. If the repository is private, enter its access token again: tokens " +
     "are not stored."];
 }
 

@@ -37,7 +37,7 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_reachability,
 )
 from backend.utilities.scan.start_scan import start_scan_and_update_db
-from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan
+from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan, refunded_credits
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
@@ -412,6 +412,8 @@ async def get_scan(
                 "integration_settings": scan.integration_settings or {},
                 "info": SCAN_INFO,
                 "data": scan_result,
+                # what a cancel would refund (the "Cancel scan" confirmation states it)
+                "credit_charged": refunded_credits(scan) if scan is not None else None,
             }
 
         

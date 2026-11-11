@@ -43,6 +43,7 @@ import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
+import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 
 export type Mode = RepoMode | "unknown";
 
@@ -96,7 +97,7 @@ export function IACOptionsSidebar({
     setBranch(branch);
   }, [mode, repo_url, PAT, branch]);
 
-  const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done">("ready");
+  const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done" | "cancelled">("ready");
   const [error_message, setErrorMessage] = useState<string | null>(null);
   const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
   const [estimationProcessDone, setEstimationProcessDone] = useState(false);
@@ -253,6 +254,10 @@ export function IACOptionsSidebar({
     }
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setOptionsSidebarState("scanning");
+      setErrorMessage(null);
+    }
+    if (query.data?.scan_status === "cancelled") {
+      setOptionsSidebarState("cancelled");
       setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
@@ -530,6 +535,9 @@ export function IACOptionsSidebar({
           <p className="text-zinc-300 text-center">
             Scan has started, this might take a while
           </p>
+          <div className="w-full mt-4">
+            <CancelScanButton type="iac" teamId={team_id} scanId={scan_id} scan={query.data} />
+          </div>
         </div>
       )}
 
@@ -559,6 +567,10 @@ export function IACOptionsSidebar({
             </Button>
           </div>
         </div>
+      )}
+
+      {optionsSidebarState === "cancelled" && (
+        <CancelledScanPanel type="iac" teamId={team_id} scan={query.data} />
       )}
 
       {optionsSidebarState === "error" && (

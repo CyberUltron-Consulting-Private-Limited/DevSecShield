@@ -46,6 +46,7 @@ import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
+import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 import { importHeadline, importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
 import type { CbomImportReport } from "@/utils/api/cbom_outputs";
 import { estimateChangedOf } from "@/utils/estimateChanged";
@@ -84,7 +85,7 @@ export function CBOMOptionsSidebar({
     setBranch(branch);
   }, [mode, repo_url, PAT, branch]);
 
-  const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done">("ready");
+  const [optionsSidebarState, setOptionsSidebarState] = useState<"ready" | "scanning" | "error" | "done" | "cancelled">("ready");
   const [error_message, setErrorMessage] = useState<string | null>(null);
   const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
   // the least a code scan costs (1 credit for a repository or zip, decision D3); 0 for an uploaded CBOM file
@@ -304,6 +305,10 @@ export function CBOMOptionsSidebar({
     }
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setOptionsSidebarState("scanning");
+      setErrorMessage(null);
+    }
+    if (query.data?.scan_status === "cancelled") {
+      setOptionsSidebarState("cancelled");
       setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
@@ -602,6 +607,9 @@ export function CBOMOptionsSidebar({
         <div className="p-6 flex flex-col items-center justify-center min-h-[400px]">
           <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-4" />
           <p className="text-zinc-300 text-center">Scan has started, this might take a while</p>
+          <div className="w-full mt-4">
+            <CancelScanButton type="cbom" teamId={team_id} scanId={scan_id} scan={query.data} />
+          </div>
           <div className="w-full">
             <LinkedSourcesRun teamId={team_id} scanId={scan_id} />
           </div>
@@ -646,6 +654,10 @@ export function CBOMOptionsSidebar({
             </div>
           </div>
         </div>
+      )}
+
+      {optionsSidebarState === "cancelled" && (
+        <CancelledScanPanel type="cbom" teamId={team_id} scan={query.data} />
       )}
 
       {optionsSidebarState === "error" && (

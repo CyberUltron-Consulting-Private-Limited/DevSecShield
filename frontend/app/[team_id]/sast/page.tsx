@@ -77,7 +77,7 @@ import {
   YAxis,
 } from "recharts";
 
-type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started";
+type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
 /** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
 type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
@@ -1119,9 +1119,10 @@ export default function SASTPage() {
       retry: { variant: "secondary" as const, className: "bg-yellow-500 hover:bg-yellow-600 text-white" },
       failure: { variant: "destructive" as const, className: "" },
       success: { variant: "default" as const, className: "bg-green-500 hover:bg-green-600 text-white" },
+      cancelled: { variant: "outline" as const, className: "text-amber-600 dark:text-amber-400" },
     };
     const config = variants[status];
-    const labels = { not_started: "Not Started", pending: "Pending", started: "Started", retry: "Retry", failure: "Failure", success: "Success" };
+    const labels = { not_started: "Not Started", pending: "Pending", started: "Started", retry: "Retry", failure: "Failure", success: "Success", cancelled: "Cancelled" };
     return <Badge variant={config.variant} className={config.className}>{labels[status]}</Badge>;
   };
 
@@ -1261,6 +1262,7 @@ export default function SASTPage() {
                         <SelectItem value="retry">Retry</SelectItem>
                         <SelectItem value="success">Success</SelectItem>
                         <SelectItem value="failure">Failure</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>
 
