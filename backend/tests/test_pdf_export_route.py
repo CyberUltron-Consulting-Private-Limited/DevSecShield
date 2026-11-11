@@ -44,6 +44,8 @@ def api(monkeypatch: pytest.MonkeyPatch, tmp_path):
     SQLModel.metadata.create_all(eng)
     monkeypatch.setattr("backend.routers.scans.get_db", lambda: eng)
     monkeypatch.setattr("backend.routers.scans.check_if_user_is_in_team", lambda *_a, **_k: None)
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch)  # the route policy (F4): auth is not what these tests are about
 
     with Session(eng) as session:
         team = Team(name="pdf-export", credit_balance=10.0)

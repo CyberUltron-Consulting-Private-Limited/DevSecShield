@@ -60,6 +60,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from backend.utilities.rbac.policy import ACCESS_CHECK_FAILED, TeamPermission  # noqa: E402
 from backend.main import app  # noqa: E402
 from backend.new_models import Scan, Team, TeamMembership, User  # noqa: E402
 from backend.routers import cbom_deliverables as routes  # noqa: E402
@@ -758,7 +759,10 @@ def test_changing_the_scheme_case_does_not_buy_a_second_budget(api, monkeypatch)
 def test_the_limiter_is_a_decorator_level_dependency_not_a_parameter_default():
     for path in (MANIFEST_PATH, PDF_PATH):
         route = next(r for r in app.routes if getattr(r, "path", None) == path)
-        assert [d.dependency for d in route.dependencies] == [routes.limiter]
+        # the limiter, then the route's access policy (F4); the app adds its x-zs-permission enforcer in front
+        declared = [d.dependency for d in route.dependencies]
+        assert declared[-2] is routes.limiter and isinstance(declared[-1], TeamPermission)
+        assert declared[-1].permission.name == "cbom.read"
         assert routes.limiter in [d.call for d in route.dependant.dependencies]
         assert "dependencies" not in {p.name for p in route.dependant.query_params}
 
@@ -848,7 +852,8 @@ def test_an_unreachable_database_gives_the_same_generic_500(api, monkeypatch):
 
     monkeypatch.setattr(routes, "get_db", boom)
     response = api.get(manifest_url(TEAM_ONE))
-    assert response.status_code == 500 and response.json() == GENERIC_500
+    # the route's access policy (F4) reads the database first and answers its own generic 500
+    assert response.status_code == 500 and response.json() in (GENERIC_500, {"detail": ACCESS_CHECK_FAILED})
     assert "10.0.0.5" not in response.text
 
 

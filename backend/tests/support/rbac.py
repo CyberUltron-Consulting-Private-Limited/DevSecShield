@@ -44,3 +44,38 @@ def join(session: Session, team_id: int, user_id: int, role: str) -> None:
 
 def bearer(email: str, version: int = 0) -> dict:
     return {"Authorization": f"Bearer {create_access_token(email, version=version)}"}
+
+
+def stand_in_principal(monkeypatch, *, engine=None, user_for_token=None, role: str = "owner",
+                       user_id: int = 1, email: str = "test-user@example.test") -> None:
+    """For tests written before F4 that sign requests with a placeholder token ("Bearer t", "Bearer 3") and stub the
+    handler's own auth helpers, because auth is not what they test.  The route policy (utilities/rbac) still runs,
+    with this stand-in for the token check only:
+
+    * ``engine`` and ``user_for_token(token) -> user id``: the role is that user's real membership of the path's team
+      in ``engine`` (no membership: refused as a non-member, exactly like the real policy);
+    * otherwise every request is ``user_id`` holding ``role`` in whatever team the path names.
+
+    The role check, the 403s and the audit trail are the real ones."""
+    from fastapi import HTTPException
+
+    from backend.utilities.rbac import policy
+
+    async def resolve(request, engine_, team_id=None, allow_inactive=False):
+        token = policy.bearer_token(request)  # 401 without a header, as before
+        if engine is not None and user_for_token is not None:
+            try:
+                uid = user_for_token(token)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=401, detail="Could not validate credentials") from None
+            with Session(engine) as session:
+                user = session.get(User, uid)
+                if user is None:
+                    raise HTTPException(status_code=401, detail="Could not validate credentials")
+                member = session.get(TeamMembership, (team_id, uid)) if team_id is not None else None
+                return policy.Principal(user_id=uid, email=user.email, is_superuser=bool(user.is_superuser),
+                                        team_id=team_id, role=member.role if member else None)
+        return policy.Principal(user_id=user_id, email=email, is_superuser=False, team_id=team_id,
+                                role=role if team_id is not None else None)
+
+    monkeypatch.setattr(policy, "resolve_principal", resolve)

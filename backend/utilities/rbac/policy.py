@@ -31,7 +31,6 @@ from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
 from backend.new_models import TeamMembership, User
-from backend.utilities.auth.auth_utils import access_token_claims
 from backend.utilities.rbac.permissions import Permission, ROLE_LABELS, get_permission, role_has
 
 log = logging.getLogger("backend.rbac")
@@ -115,12 +114,31 @@ def _load_principal(engine: Engine, claims: dict, team_id: Optional[int], allow_
                          team_id=team_id, role=role), None
 
 
+ACCESS_CHECK_FAILED = "Could not check your access, please try again later"
+
+
+def _engine(getter: EngineGetter) -> Engine:
+    try:
+        return getter()
+    except Exception as exc:  # an unreachable database: a generic 500, never the driver's text (host, port)
+        log.error("access check: database unavailable (%s)", type(exc).__name__)
+        raise HTTPException(status_code=500, detail=ACCESS_CHECK_FAILED) from None
+
+
 async def resolve_principal(request: Request, engine: Engine, team_id: Optional[int] = None,
                             allow_inactive: bool = False) -> Principal:
-    claims = access_token_claims(bearer_token(request))
+    from backend.utilities.auth import auth_utils  # at call time: tests may stand a stub module in for it
+
+    claims = auth_utils.access_token_claims(bearer_token(request))
     if claims is None:
         raise _unauthorized()
-    principal, problem = await run_in_threadpool(_load_principal, engine, claims, team_id, allow_inactive)
+    try:
+        principal, problem = await run_in_threadpool(_load_principal, engine, claims, team_id, allow_inactive)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("access check failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=500, detail=ACCESS_CHECK_FAILED) from None
     if problem == "session":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SESSION_NOT_ACTIVE)
     if problem is not None or principal is None:
@@ -189,7 +207,7 @@ class Authenticated(AccessPolicy):
         return "any signed-in account" + (" (also a closed session)" if self.allow_inactive_session else "")
 
     async def __call__(self, request: Request) -> Principal:
-        principal = await resolve_principal(request, self.engine_getter(),
+        principal = await resolve_principal(request, _engine(self.engine_getter),
                                             allow_inactive=self.allow_inactive_session)
         self._context(request, engine_getter=self.engine_getter, principal=principal)
         return principal
@@ -206,7 +224,7 @@ class PlatformAdmin(AccessPolicy):
         return "superuser (admin console)"
 
     async def __call__(self, request: Request) -> Principal:
-        engine = self.engine_getter()
+        engine = _engine(self.engine_getter)
         principal = await resolve_principal(request, engine)
         ctx = self._context(request, engine_getter=self.engine_getter, principal=principal)
         if not principal.is_superuser:
@@ -230,7 +248,7 @@ class TeamPermission(AccessPolicy):
 
     async def __call__(self, request: Request) -> Principal:
         team_id = team_id_from_path(request)
-        engine = self.engine_getter()
+        engine = _engine(self.engine_getter)
         principal = await resolve_principal(request, engine, team_id=team_id)
         ctx = self._context(request, engine_getter=self.engine_getter, principal=principal, team_id=team_id)
         if principal.role is None:

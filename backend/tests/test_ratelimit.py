@@ -406,7 +406,12 @@ def test_every_route_has_its_limiter_in_the_decorator():
                 problems.append(f"{path.name}:{node.name} takes a `dependencies` parameter")
             deps = [k.value for k in decorator.keywords if k.arg == "dependencies"]
             deps = [lists.get(d.id, d) if isinstance(d, ast.Name) else d for d in deps]
-            names ={getattr(c.args[0], "id", None) for d in deps if isinstance(d, ast.List) for c in d.elts
+            # [*READ, access.team("cbom.read")] (F4 route policies): READ's own elements count, as in dependencies=READ
+            elements = [e for d in deps if isinstance(d, ast.List) for e in d.elts]
+            elements = [x for e in elements for x in (
+                lists[e.value.id].elts if isinstance(e, ast.Starred) and isinstance(e.value, ast.Name)
+                and e.value.id in lists else [e])]
+            names = {getattr(c.args[0], "id", None) for c in elements
                      if isinstance(c, ast.Call) and getattr(c.func, "id", None) == "Depends" and c.args}
             if not names & (limiters | imported):
                 problems.append(f"{path.name}:{node.name} has no rate limiter in its decorator")

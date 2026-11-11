@@ -210,6 +210,7 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
             "backend.utilities.auth.auth_utils",
             "backend.utilities.ratelimit",
             "backend.utilities.team",
+            "backend.utilities.rbac",  # F4: the route's access policy (token, membership, role; no AI)
         )
     return roots, backend
 
