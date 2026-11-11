@@ -371,6 +371,7 @@ class Sim:
         conn.autocommit = True
         progress = []
         status = None
+        jobs_done_s = None  # every job ended (whatever the run row says: dev can leave it "running", P6)
         deadline = time.monotonic() + self.args.run_timeout
         try:
             while time.monotonic() < deadline:
@@ -380,15 +381,21 @@ class Sim:
                     cur.execute("SELECT status, count(*) FROM cbomcollectionjob WHERE run_id = %s GROUP BY status",
                                 (run_id,))
                     counts = dict(cur.fetchall())
-                progress.append({"t": round(time.monotonic() - t0, 1), "run": status, **counts})
+                now = round(time.monotonic() - t0, 1)
+                progress.append({"t": now, "run": status, **counts})
+                if jobs_done_s is None and counts and not (counts.get("pending") or counts.get("claimed")):
+                    jobs_done_s = now
                 if status in ("done", "partial", "failed", "cancelled"):
                     break
+                if jobs_done_s is not None and now - jobs_done_s > 60:
+                    break  # every job ended a minute ago and the run is still open: it is stuck
                 await asyncio.sleep(1)
         finally:
             conn.close()
-        return {"status": status, "seconds_to_finish": round(time.monotonic() - t0, 1)
-                if status in ("done", "partial", "failed", "cancelled") else None, "progress": progress[-1:],
-                "timeline": progress[:: max(1, len(progress) // 40)]}
+        final = status in ("done", "partial", "failed", "cancelled")
+        return {"status": status, "seconds_to_finish": round(time.monotonic() - t0, 1) if final else None,
+                "jobs_done_s": jobs_done_s, "run_stuck_open": bool(jobs_done_s is not None and not final),
+                "progress": progress[-1:], "timeline": progress[:: max(1, len(progress) // 40)]}
 
     async def main(self) -> dict:
         timeout = aiohttp.ClientTimeout(total=30)
