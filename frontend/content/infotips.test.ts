@@ -40,6 +40,9 @@ export const COVERED: string[] = [
   // AI BOM
   "app/[team_id]/ai_bom/page.tsx",
   "components/ai-bom-options-sidebar.tsx",
+  // MCP
+  "app/[team_id]/mcp/page.tsx",
+  "components/mcp-options-sidebar.tsx",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>([]);

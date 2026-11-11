@@ -1016,6 +1016,190 @@ export const INFO_TIPS = {
     what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10.",
     example: "1 High and 1 Low: (3+1)/2 = 2, so 5.0.",
   },
+
+  // ────────────────────────────────────────────────────────────── MCP: scan configuration (components/mcp-options-sidebar.tsx)
+  // src: backend/utilities/db/schemas.py:159-169, RabbitMQ/worker/helpers/tools/mcp_agent/context.py:5-9 — the MCP server endpoint the worker connects to
+  "mcp.cfg.server_url": {
+    label: "MCP server URL",
+    what: "The address of the MCP (Model Context Protocol) server to test. The scan connects to it, lists its tools, prompts and resources, and checks each one for risks such as prompt injection or dangerous capabilities.",
+    example: "https://mcp.example.com/mcp.",
+  },
+  // src: backend/utilities/db/schemas.py:161, RabbitMQ/worker/helpers/tools/mcp_agent/context.py:7 — httpstreamable or sse
+  "mcp.cfg.server_mode": {
+    label: "Server mode",
+    what: "The transport the server speaks: Streamable HTTP (the current MCP standard) or SSE (Server-Sent Events, the older one). Pick what the server documents.",
+    example: "Streamable HTTP for a server whose endpoint ends in /mcp.",
+  },
+  // src: backend/utilities/db/schemas.py:163, backend/utilities/dashboard/scan_list.py:1326-1329 — a label used by the Environment Risk Analysis chart
+  "mcp.cfg.environment": {
+    label: "Environment",
+    what: "Which environment the server belongs to: Development, Staging or Production. A label for the dashboard's Environment Risk Analysis; it does not change the tests.",
+    example: "Production for the server your agents use live.",
+  },
+  // src: backend/utilities/db/schemas.py:162, RabbitMQ/worker/helpers/tools/mcp_agent/context.py:8-9 — JSON object of HTTP headers sent with every request
+  "mcp.cfg.headers": {
+    label: "Headers (JSON)",
+    what: "Extra HTTP headers sent with every request to the server, as a JSON object, typically for authentication.",
+    example: "{\"Authorization\": \"Bearer <token>\"}.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/mcp_agent/main.py:253-285, backend/utilities/scan/estimate_scan.py:210 — connects now; 0.005 credits per tool, prompt and resource
+  "mcp.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "Connects to the server now, lists its tools, prompts and resources, and prices each at 0.005 credits, rounded to 0.01. Nothing is charged until you start the scan.",
+    example: "40 tools, 4 prompts, 6 resources: 0.25 credits.",
+  },
+
+  // ────────────────────────────────────────────────────────────── MCP: list page (app/[team_id]/mcp/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:1371 — every MCP scan in any status
+  "mcp.kpi.total_scans": {
+    label: "Total Scans",
+    what: "All MCP scans of this team, in any status.",
+    example: "8 scans: 6 succeeded, 1 running, 1 failed.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1320-1325, backend/utilities/dashboard/scan_list.py:1372 — critical findings of all scans
+  "mcp.kpi.critical": {
+    label: "Critical Issues",
+    what: "Findings rated Critical across the tools, prompts and resources of all MCP scans.",
+    example: "A tool that runs shell commands from model input.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1346-1349, backend/utilities/dashboard/scan_list.py:1368 — each finding weight/4*10, averaged
+  "mcp.kpi.avg_risk": {
+    label: "Avg Risk Score",
+    what: "Average over all MCP findings, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5.",
+    example: "One Critical and one Medium: 7.5.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1293-1294, backend/utilities/dashboard/scan_list.py:1369 — status started
+  "mcp.kpi.active": {
+    label: "Active Scans",
+    what: "MCP scans a worker is running now.",
+    example: "2 while two servers are being tested.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1243-1248, backend/utilities/dashboard/scan_list.py:1375 — findings marked fixed in the last 7 x 24 h
+  "mcp.kpi.resolved": {
+    label: "Resolved (7d)",
+    what: "MCP findings marked Fixed in the last 7 days (the last 168 hours). Ignored findings are not counted.",
+    example: "5 findings fixed this week.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1291-1300 — started / success / failure; everything else (incl. pending) counts as not started
+  "mcp.chart.status": {
+    label: "Scan Status Distribution",
+    what: "MCP scans by status: Started, Success, Failure, and Not started (which also counts queued and cancelled scans).",
+    example: "6 Success, 1 Started, 1 Failure.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1348-1351, backend/routers/scans.py:88 — per server: average of weight/4*10; scans come newest first, so the earliest scan's value is kept
+  "mcp.chart.risk_trend": {
+    label: "Risk Score Trend",
+    what: "For each MCP server, the average risk score (0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5) of its scan's findings. A server scanned several times shows one value, from its earliest scan (the list is read newest first and later rows overwrite).",
+    example: "mcp.example.com 6.3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1352-1356 — findings by severity on the scan's creation date (UTC)
+  "mcp.chart.risks_over_time": {
+    label: "Risks Over Time",
+    what: "MCP findings by severity, on the day (UTC) each scan was created.",
+    example: "A scan created on 9 Nov with 3 High findings adds 3 to High on 9 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1307-1325 — totals per impact
+  "mcp.chart.severity": {
+    label: "Severity Distribution",
+    what: "All MCP findings by severity: Critical, High, Medium, Low.",
+    example: "Critical 1, High 5, Medium 9, Low 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1326-1329 — findings counted by the scan's environment label
+  "mcp.chart.environment": {
+    label: "Environment Risk Analysis",
+    what: "How many findings come from servers labelled Development, Staging or Production (the environment chosen when each scan was configured).",
+    example: "Production 7 means seven findings on production servers.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1330-1345 — compliance-control references per standard
+  "mcp.chart.compliance": {
+    label: "Compliance Framework Distribution",
+    what: "How many compliance-control references the MCP findings have per standard.",
+    example: "ISO 27001 9, PCI DSS 3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1378, backend/utilities/dashboard/finding_metrics.py:18-40 — stored findings by status
+  "mcp.chart.remediation": {
+    label: "Remediation Status",
+    what: "MCP findings by the status your team set: Not started, In progress, Fixed, Ignored.",
+    example: "Fixed 5, Not started 12.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1256-1259, backend/utilities/dashboard/scan_list.py:1286-1289, backend/utilities/dashboard/scan_list.py:1346-1347 — by the resource category of each finding
+  "mcp.chart.asset_category": {
+    label: "Asset Category Vulnerabilities",
+    what: "Findings by what the affected tool, prompt or resource gives access to: web, file system, code execution, database, search, vector store, document store.",
+    example: "Code execution 3: three findings on tools that can run code.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1357-1359, RabbitMQ/worker/scan_worker.py:157-164 — duration_of_scan per server
+  "mcp.chart.duration": {
+    label: "Scan Duration Trends",
+    what: "How long each server's MCP scan took, in seconds, from the worker starting to results. A server scanned several times shows its earliest scan.",
+    example: "mcp.example.com 95.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1261-1264, backend/utilities/dashboard/scan_list.py:1348-1349, backend/utilities/dashboard/scan_list.py:1363-1366 — average weight/4*10 per category
+  "mcp.chart.posture": {
+    label: "Security Posture Overview",
+    what: "The average risk score (0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5) of the findings in each asset category; 0 where there are none.",
+    example: "File system 8.8: its findings are mostly Critical or High.",
+  },
+  // src: backend/utilities/dashboard/finding_metrics.py:89-125, backend/utilities/dashboard/scan_list.py:1379-1380 — per resolution date
+  "mcp.chart.mttr": {
+    label: "Mean Time to Remediate per Day",
+    what: "For each day (UTC), the average time between a finding being recorded and being marked Fixed or Ignored, for the findings resolved that day.",
+    example: "Two findings fixed on 8 Nov after 1 and 3 days: 2 days on 8 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1389-1400 — per scan date: findings and those marked ignored
+  "mcp.chart.effectiveness": {
+    label: "Scan Effectiveness Trend",
+    what: "Per scan date, the findings the scans produced and how many of them your team marked Ignored (treated as false positives).",
+    example: "10 findings on 5 Nov, 2 ignored.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1382-1388 — 100 minus the framework's share of that day's references
+  "mcp.chart.compliance_trend": {
+    label: "Compliance Framework Score Trend",
+    what: "Per scan date and standard: 100 minus that standard's share of the day's compliance-control references. A relative measure, not an audit score.",
+    example: "PCI DSS has 3 of 10 references on 5 Nov: 70.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1401-1420 — resolved findings by days from creation to fixed/ignored, 30-day buckets
+  "mcp.chart.age": {
+    label: "Vulnerability Age Distribution",
+    what: "Resolved findings (Fixed or Ignored) grouped by how many days they stayed open, in 30-day buckets up to 210 days. Open findings are not shown.",
+    example: "A finding fixed after 45 days counts in 30-60 days.",
+  },
+  // src: frontend/app/[team_id]/mcp/page.tsx:711-715 — sorts the loaded rows by created_at
+  "scan.filter.sort_created": {
+    label: "Sort",
+    what: "Orders the table by creation date, newest or oldest first.",
+    example: "Newest puts the scan you created last on top.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:277 — host part of the server URL
+  "mcp.table.server": {
+    label: "Server",
+    what: "A short name for the MCP server, taken from its URL's host.",
+    example: "example for https://mcp.example.com.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:259-261, frontend/app/[team_id]/mcp/page.tsx:1004-1005 — weighted average on a 1-4 scale (issue #35)
+  "mcp.table.risk": {
+    label: "Risk Score",
+    what: "This scan's average severity weight, from 1 to 4: Critical 4, High 3, Medium 2, Low 1, averaged over its findings.",
+    example: "1 Critical and 1 Low finding: 2.5.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:199-210, backend/utilities/db/scan_list_item.py:279-284 — tools, prompts and resources the server exposed
+  "mcp.table.discovery": {
+    label: "Discovery",
+    what: "What the scan found on the server: T tools, P prompts, R resources.",
+    example: "T: 40 P: 4 R: 6.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:244-256 — tools/prompts/resources rated high or critical
+  "mcp.table.risky": {
+    label: "Risky assets",
+    what: "Tools, prompts and resources the scan rated High or Critical risk.",
+    example: "3: two tools and one resource.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:212-240 — counts per impact of a successful scan
+  "mcp.table.vulns": {
+    label: "Vulnerabilities",
+    what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
+    example: "1 red, 2 orange, 0 amber, 4 blue.",
+  },
 } as const satisfies Record<string, InfoTipEntry>;
 
 export type InfoTipId = keyof typeof INFO_TIPS;

@@ -26,7 +26,7 @@ export interface Gap {
 export const CONTROL_WINDOW_LINES = 25;
 
 /** Table headers whose meaning is the word itself; everything else gets a tip. */
-export const SELF_EXPLANATORY_HEADERS = new Set(["Actions", "Title", "Name", "#"]);
+export const SELF_EXPLANATORY_HEADERS = new Set(["Actions", "Title", "Name", "#", "View scan metadata"]);
 
 const CONTROL = /<(Input|Textarea|SelectTrigger|Switch|Checkbox|input|select|textarea|PathArraysInput|NodeSelect|DropdownMenuTrigger)\b/g;
 const MARKER = /infoId\s*[=:]|<InfoTip\b|__INFOTIP_SHARED__/g;
