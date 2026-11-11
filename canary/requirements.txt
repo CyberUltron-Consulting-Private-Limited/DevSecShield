@@ -1,0 +1,2 @@
+# CI canary (PR #16): a pin with known advisories (CVE-2019-10906), for the OSV-Scanner / Trivy gates.
+jinja2==2.10
