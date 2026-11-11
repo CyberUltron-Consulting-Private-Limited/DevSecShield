@@ -1,0 +1,114 @@
+# Reusable CodeQL analysis (one matrix job per language, no build step needed for the defaults).
+#
+#   jobs:
+#     codeql:
+#       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-codeql.yml@<ref>
+#       permissions: { contents: read, actions: read, security-events: write }   # security-events only with upload
+#       with:
+#         enabled: true
+#
+# Licensing: CodeQL may be used on public repositories, and on private repositories only when they are owned by an
+# organisation with GitHub Code Security. A user-owned private repository (such as this one today) can neither run
+# it under GitHub's terms nor receive code-scanning uploads, so callers pass `enabled: false` there and the job
+# only prints a notice. Semgrep in reusable-security.yml covers SAST meanwhile.
+#
+# With `upload: false` (default) results are not sent to code scanning; the SARIF is kept as an artifact.
+name: reusable / codeql
+
+on:
+  workflow_call:
+    inputs:
+      enabled:
+        description: Run the analysis (see the licensing note above).
+        type: boolean
+        default: true
+      languages:
+        description: JSON array of CodeQL languages.
+        type: string
+        default: '["python","javascript-typescript"]'
+      queries:
+        description: Query suite (default, security-extended or security-and-quality).
+        type: string
+        default: security-extended
+      paths-ignore:
+        description: Newline-separated paths CodeQL does not analyse.
+        type: string
+        default: |
+          **/tests/fixtures/**
+          **/node_modules/**
+          **/bench/repos/**
+          **/examples/**
+      upload:
+        description: Upload results to GitHub code scanning (needs code scanning and security-events write).
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  notice:
+    name: codeql (disabled)
+    if: ${{ !inputs.enabled }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: CodeQL is disabled for this repository
+        run: |
+          msg="CodeQL skipped: not enabled for this repository. A private repo needs to be organisation-owned with GitHub Code Security (or public). See docs/ci/README.md; Semgrep covers SAST meanwhile."
+          echo "::notice::$msg"
+          printf '### CodeQL\n\n%s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
+
+  analyze:
+    name: codeql (${{ matrix.language }})
+    if: ${{ inputs.enabled }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(inputs.languages) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: CodeQL config
+        env:
+          IGNORE: ${{ inputs.paths-ignore }}
+        run: |
+          {
+            echo "name: ci"
+            echo "paths-ignore:"
+            while IFS= read -r p; do [ -n "$p" ] && printf '  - "%s"\n' "$p"; done <<< "$IGNORE"
+          } > "$RUNNER_TEMP/codeql-config.yml"
+          cat "$RUNNER_TEMP/codeql-config.yml"
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: ${{ inputs.queries }}
+          config-file: ${{ runner.temp }}/codeql-config.yml
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:${{ matrix.language }}
+          upload: ${{ inputs.upload && 'always' || 'never' }}
+          output: ${{ runner.temp }}/codeql-sarif
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-${{ matrix.language }}
+          path: ${{ runner.temp }}/codeql-sarif
+          if-no-files-found: ignore
+          retention-days: 14

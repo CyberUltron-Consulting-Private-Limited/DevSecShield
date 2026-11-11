@@ -1,0 +1,152 @@
+# Reusable pull-request policy checks. Call it on `pull_request` events only.
+#
+#   jobs:
+#     pr:
+#       if: github.event_name == 'pull_request'
+#       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-pr-checks.yml@<ref>
+#       permissions: { contents: read, pull-requests: read }
+#
+# branch-flow   promotion order: a PR into `staging` must come from `dev`, a PR into `main` from `staging`
+#               (configurable through `flows`); feature PRs into any other base are allowed.
+# pr-hygiene    title format, the template's "Acceptance criteria" table filled in (bots exempt), and no .env /
+#               private-key file added or modified by the PR (deleting one is allowed and encouraged).
+name: reusable / pr checks
+
+on:
+  workflow_call:
+    inputs:
+      flows:
+        description: Space-separated base:required-head pairs.
+        type: string
+        default: staging:dev main:staging
+      title-regex:
+        description: Regex the PR title must match.
+        type: string
+        default: '^(feat|fix|docs|ci|build|chore|refactor|perf|test|security|release|revert)(\([a-z0-9._/-]+\))?!?: \S.{3,}$'
+      title-max-length:
+        type: number
+        default: 100
+      require-acceptance-criteria:
+        type: boolean
+        default: true
+      acceptance-heading-regex:
+        description: Regex (case-insensitive) of the heading that starts the acceptance-criteria section.
+        type: string
+        default: '^#{2,3}\s*acceptance criteria'
+      forbidden-files-regex:
+        description: Files a PR may not add or modify.
+        type: string
+        default: '(^|/)\.env(\.[^/]*)?$|\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx)$|(^|/)id_(rsa|dsa|ecdsa|ed25519)$|(^|/)\.?(aws/)?credentials(\.json)?$'
+      allowed-files-regex:
+        description: Exceptions to forbidden-files-regex (templates and fabricated test fixtures).
+        type: string
+        default: '(^|/)\.env\.(example|sample|template|dist)$|(^|/)tests?/fixtures/'
+
+permissions:
+  contents: read
+
+jobs:
+  branch-flow:
+    name: branch-flow
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Promotion order
+        env:
+          FLOWS: ${{ inputs.flows }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ]; then echo "::notice::not a pull request; nothing to check"; exit 0; fi
+          for pair in $FLOWS; do
+            base=${pair%%:*}; want=${pair#*:}
+            if [ "$BASE" = "$base" ]; then
+              if [ "$HEAD" != "$want" ] || [ "$HEAD_REPO" != "$REPO" ]; then
+                echo "::error title=Branch flow::A pull request into '$BASE' must come from '$want' in $REPO (this one comes from '$HEAD_REPO:$HEAD'). Merge your branch into '$want' first, then promote '$want' -> '$BASE'."
+                exit 1
+              fi
+              echo "ok: $want -> $BASE is the promotion order"
+              exit 0
+            fi
+          done
+          echo "ok: '$BASE' is not a promotion branch; '$HEAD' -> '$BASE' is allowed"
+
+  pr-hygiene:
+    name: pr-hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Title, acceptance criteria, forbidden files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          TITLE_RE: ${{ inputs.title-regex }}
+          TITLE_MAX: ${{ inputs.title-max-length }}
+          NEED_AC: ${{ inputs.require-acceptance-criteria }}
+          AC_RE: ${{ inputs.acceptance-heading-regex }}
+          FORBID_RE: ${{ inputs.forbidden-files-regex }}
+          ALLOW_RE: ${{ inputs.allowed-files-regex }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PR" ]; then echo "::notice::not a pull request; nothing to check"; exit 0; fi
+          # Files the PR adds, modifies, renames or copies (not removals), from the REST API (no checkout needed).
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | select(.status != "removed") | .filename' > "$RUNNER_TEMP/files.txt"
+          python3 - "$RUNNER_TEMP/files.txt" <<'PY'
+          import os, re, sys
+          env = os.environ
+          problems = []
+          title = env.get("TITLE", "")
+          if not re.search(env["TITLE_RE"], title):
+              problems.append(f"Title {title!r} does not match the required format, e.g. 'feat(cbom): add scan-node heartbeat' (regex: {env['TITLE_RE']}).")
+          if len(title) > int(env["TITLE_MAX"]):
+              problems.append(f"Title is {len(title)} characters; keep it under {env['TITLE_MAX']}.")
+          if env.get("NEED_AC") == "true" and env.get("AUTHOR_TYPE") != "Bot":
+              body = (env.get("BODY") or "").replace("\r\n", "\n")
+              lines = body.split("\n")
+              start = next((i for i, l in enumerate(lines) if re.search(env["AC_RE"], l.strip(), re.I)), None)
+              if start is None:
+                  problems.append("The description has no 'Acceptance criteria' section (use .github/pull_request_template.md).")
+              else:
+                  section = []
+                  for l in lines[start + 1:]:
+                      if re.match(r"^#{1,3}\s", l):
+                          break
+                      section.append(l)
+                  def placeholder(c):
+                      c = c.strip()
+                      return (not c) or re.fullmatch(r"_.*_", c) is not None or c.upper() in {"TODO", "TBD", "N/A", "-", "..."}
+                  rows = []
+                  for l in section:
+                      l = l.strip()
+                      if not l.startswith("|") or re.fullmatch(r"\|[\s:|-]+\|?", l):
+                          continue
+                      cells = [c for c in l.strip("|").split("|")]
+                      rows.append(cells)
+                  data = rows[1:]  # first table row is the header
+                  filled = [r for r in data if len(r) >= 2 and not any(placeholder(c) for c in r)]
+                  if not filled:
+                      problems.append("The 'Acceptance criteria' table has no filled-in row: every criterion needs its evidence (test, log, run link or screenshot).")
+                  elif len(filled) < len(data):
+                      print(f"::warning::{len(data) - len(filled)} acceptance-criteria row(s) still have placeholder or empty cells.")
+          forbid, allow = re.compile(env["FORBID_RE"]), re.compile(env["ALLOW_RE"])
+          bad = [f for f in open(sys.argv[1]).read().split() if forbid.search(f) and not allow.search(f)]
+          for f in bad:
+              print(f"::error file={f}::{f}: secret-bearing files (.env, private keys, keystores) must not be committed. Use .env.example with placeholders.")
+          if bad:
+              problems.append(f"{len(bad)} forbidden file(s) added or modified: {', '.join(bad[:10])}")
+          with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
+              s.write("### PR hygiene\n\n" + ("All checks passed.\n" if not problems else "\n".join(f"- {p}" for p in problems) + "\n"))
+          for p in problems:
+              print(f"::error title=PR hygiene::{p}")
+          sys.exit(1 if problems else 0)
+          PY

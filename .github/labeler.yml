@@ -1,0 +1,43 @@
+# Area labels applied by .github/workflows/pr-labels.yml (actions/labeler v7 syntax).
+# A label is added when ANY changed file matches ANY of its globs. Size labels (size/XS .. size/XL) are added by
+# the same workflow from the PR's line count.
+
+area/backend:
+  - changed-files:
+      - any-glob-to-any-file: ["backend/**", "prod_database_migrations/**"]
+
+area/frontend:
+  - changed-files:
+      - any-glob-to-any-file: ["frontend/**"]
+
+area/aibom-cbom:
+  - changed-files:
+      - any-glob-to-any-file: ["aibom/**", "bench/**"]
+
+area/scan-node:
+  - changed-files:
+      - any-glob-to-any-file: ["scan_node/**", "deploy/helm/**", "deploy/node-images/**"]
+
+area/workers:
+  - changed-files:
+      - any-glob-to-any-file: ["RabbitMQ/**"]
+
+area/deploy:
+  - changed-files:
+      - any-glob-to-any-file: ["deploy/**", "scripts/deploy/**", "scripts/release/**", "compose/**", "**/Dockerfile*"]
+
+area/ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/**", ".gitleaks.toml", ".coderabbit.yaml", "docs/ci/**"]
+
+area/docs:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "**/*.md"]
+
+area/tests:
+  - changed-files:
+      - any-glob-to-any-file: ["**/tests/**", "**/*.test.ts", "e2e/**"]
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ["**/uv.lock", "**/package-lock.json", "**/requirements*.txt", "**/requirements*.lock", "**/pyproject.toml", "**/package.json"]

@@ -1,0 +1,205 @@
+# Reusable frontend job for a Node / TypeScript / Next.js project.
+#
+#   jobs:
+#     frontend:
+#       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-frontend.yml@<ref>
+#       with:
+#         working-directory: frontend
+#
+# Steps: npm ci -> tsc --noEmit -> eslint -> every *.test.ts run with tsx -> next build. Once the install succeeds,
+# each check runs even when an earlier one failed, so one run shows every problem.
+#
+# ESLint modes: `blocking` (any error fails), `diff` (default; on pull requests the base commit is linted too and
+# only errors the PR adds fail; on other events errors are reported), or `off`.
+name: reusable / frontend
+
+on:
+  workflow_call:
+    inputs:
+      suite-name:
+        type: string
+        default: frontend
+      working-directory:
+        type: string
+        default: frontend
+      node-version:
+        type: string
+        default: "20"
+      install-command:
+        type: string
+        default: npm ci --no-audit --no-fund
+      typecheck-command:
+        description: Empty skips the type check.
+        type: string
+        default: npx tsc --noEmit
+      eslint-mode:
+        description: diff, blocking or off.
+        type: string
+        default: diff
+      eslint-args:
+        description: Arguments after `npx eslint` (files / directories / flags).
+        type: string
+        default: "."
+      test-pattern:
+        description: File name pattern for the tests (find -name), searched outside node_modules and .next.
+        type: string
+        default: "*.test.ts"
+      test-runner:
+        description: Command each test file is passed to.
+        type: string
+        default: npx --yes tsx@4.23.15
+      build-command:
+        description: Empty skips the build.
+        type: string
+        default: npx next build
+      build-env:
+        description: Non-secret environment for the build, one KEY=VALUE per line.
+        type: string
+        default: |
+          NEXT_TELEMETRY_DISABLED=1
+          NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+      timeout-minutes:
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: ${{ inputs.suite-name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node ${{ inputs.node-version }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Next.js build cache
+        if: inputs.build-command != ''
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ inputs.working-directory }}/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}-${{ github.sha }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}-
+
+      - name: Install
+        id: install
+        run: ${{ inputs.install-command }}
+
+      - name: Type check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.typecheck-command != '' }}
+        run: ${{ inputs.typecheck-command }}
+
+      - name: ESLint (${{ inputs.eslint-mode }})
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.eslint-mode != 'off' }}
+        env:
+          MODE: ${{ inputs.eslint-mode }}
+          ESLINT_ARGS: ${{ inputs.eslint-args }}
+          WD: ${{ inputs.working-directory }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/eslint"; mkdir -p "$out"
+          if [ "$MODE" = blocking ]; then
+            # shellcheck disable=SC2086 # ESLINT_ARGS is a word list
+            npx eslint $ESLINT_ARGS
+            exit $?
+          fi
+          # shellcheck disable=SC2086
+          npx eslint -f json -o "$out/head.json" $ESLINT_ARGS
+          rc=$?
+          [ "$rc" -le 1 ] || { echo "::error::eslint did not run (exit $rc)"; exit "$rc"; }
+          gate="report"
+          if [ -n "$BASE_SHA" ]; then
+            git -C "$GITHUB_WORKSPACE" fetch --no-tags --depth=1 origin "$BASE_SHA"
+            git -C "$GITHUB_WORKSPACE" worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
+            if [ -d "$RUNNER_TEMP/base/$WD" ]; then
+              # The base commit's files, linted with this run's dependencies and the base's own config.
+              ln -s "$PWD/node_modules" "$RUNNER_TEMP/base/$WD/node_modules"
+              # shellcheck disable=SC2086
+              (cd "$RUNNER_TEMP/base/$WD" && npx eslint -f json -o "$out/base.json" $ESLINT_ARGS)
+              [ $? -le 1 ] || echo "::warning::eslint failed on the base commit; every current error counts as new"
+            fi
+            gate="diff"
+          fi
+          python3 - "$out/head.json" "$out/base.json" "$gate" "$PWD" "$RUNNER_TEMP/base/$WD" <<'PY'
+          import collections, json, os, sys
+          head, base, gate, head_root, base_root = sys.argv[1:6]
+          def load(path, root):
+              c, where = collections.Counter(), {}
+              if not os.path.exists(path):
+                  return c, where
+              for f in json.load(open(path, encoding="utf-8")):
+                  rel = os.path.relpath(f["filePath"], root)
+                  for m in f.get("messages", []):
+                      if m.get("severity") != 2:  # errors only; warnings never block
+                          continue
+                      k = (rel, m.get("ruleId") or "parse", " ".join(m.get("message", "").split()))
+                      c[k] += 1
+                      where.setdefault(k, m.get("line", 1))
+              return c, where
+          h, where = load(head, head_root)
+          b, _ = load(base, base_root)
+          new = h - b if gate == "diff" else collections.Counter()
+          for (rel, rule, msg), n in list(new.items())[:50]:
+              print(f"::error file={os.environ['WD']}/{rel},line={where[(rel, rule, msg)]}::eslint {rule}: {msg}" + (f" (x{n})" if n > 1 else ""))
+          total, n_new = sum(h.values()), sum(new.values())
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
+              s.write(f"### ESLint\n\n| errors now | on base | new in this PR |\n|---:|---:|---:|\n")
+              s.write(f"| {total} | {sum(b.values()) if gate == 'diff' else 'n/a'} | {n_new if gate == 'diff' else 'n/a (not a PR)'} |\n\n")
+          print(f"eslint: {total} error(s); new: {n_new if gate == 'diff' else 'n/a (report only)'}")
+          sys.exit(1 if n_new else 0)
+          PY
+
+      - name: Unit tests (${{ inputs.test-pattern }})
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          PATTERN: ${{ inputs.test-pattern }}
+          RUNNER: ${{ inputs.test-runner }}
+        run: |
+          set -uo pipefail
+          mapfile -t tests < <(find . -name "$PATTERN" -not -path './node_modules/*' -not -path './.next/*' | sort)
+          if [ "${#tests[@]}" -eq 0 ]; then echo "::notice::no $PATTERN files"; exit 0; fi
+          failed=()
+          for t in "${tests[@]}"; do
+            echo "::group::$t"
+            # shellcheck disable=SC2086 # RUNNER is a command line
+            if ! $RUNNER "$t"; then failed+=("$t"); echo "::error file=${t#./}::test file failed: $t"; fi
+            echo "::endgroup::"
+          done
+          {
+            echo "### Unit tests"
+            echo
+            echo "${#tests[@]} file(s), ${#failed[@]} failed."
+            for f in "${failed[@]}"; do echo "- \`$f\`"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "${#failed[@]}" -eq 0 ]
+
+      - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && inputs.build-command != '' }}
+        env:
+          BUILD_ENV: ${{ inputs.build-env }}
+          BUILD: ${{ inputs.build-command }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r line || [ -n "$line" ]; do
+            [ -z "${line//[[:space:]]/}" ] && continue
+            [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || { echo "::error::build-env line is not KEY=VALUE"; exit 1; }
+            export "${line?}"
+          done <<< "$BUILD_ENV"
+          bash -c "$BUILD"
