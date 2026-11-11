@@ -1,4 +1,4 @@
-from helpers.tools.mcp_agent.mcp_client import MCPClient
+from helpers.tools.mcp_agent.mcp_client import MCPClient, mcp_connection_failure
 from helpers.context.base_agent import BaseAgent
 from helpers.tools.mcp_agent.context import MCPContext, MCPReconContext, MCPTool, MCPResource , MCPPrompt
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -214,7 +214,13 @@ class MCPAgent(BaseAgent):
                 server_mode=self.mcp_context.server_mode,
                 headers=self.mcp_context.headers,
             )
-            recon_context = asyncio.run(mcp_client.connect_and_get_recon_context())
+            try:
+                recon_context = asyncio.run(mcp_client.connect_and_get_recon_context())
+            except Exception as exc:
+                # one plain, serialisable sentence (HTTP status / timeout / unreachable / not MCP) instead of an
+                # ExceptionGroup Celery cannot carry: the API turns it into a 400 that says why (X1, Nov 11)
+                console.print(f"Error in running recon: {exc!r}", style="bold red")
+                raise RuntimeError(mcp_connection_failure(exc)) from None
             self.recon_context = recon_context # SET recon context in self.recon_context ⭐
             return self.recon_context
         except Exception as e:

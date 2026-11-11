@@ -7,6 +7,37 @@ from typing import Literal
 from helpers.tools.mcp_agent.context import MCPPrompt, MCPReconContext, MCPResource, MCPTool
 console = Console()
 
+MCP_FAILURE_PREFIX = "MCP connection failed: "
+
+
+def _leaves(exc: BaseException):
+    """The real errors inside an anyio TaskGroup's ExceptionGroup (nested groups included)."""
+    if isinstance(exc, BaseExceptionGroup):
+        for inner in exc.exceptions:
+            yield from _leaves(inner)
+    else:
+        yield exc
+
+
+def mcp_connection_failure(exc: BaseException) -> str:
+    """Why the MCP server could not be listed, in one fixed sentence (X1, Nov 11).
+
+    The MCP client raises an ExceptionGroup ("unhandled errors in a TaskGroup (1 sub-exception)") that Celery cannot
+    serialise, so the API only saw an opaque failure and answered 500 "Credit estimation failed, please try again
+    later" although the server had answered 404. The reason is one of: an HTTP status from the server, a timeout, an
+    unreachable server, or an answer that is not MCP. No response body or header is included."""
+    import httpx  # the MCP client's transport
+
+    leaves = list(_leaves(exc))
+    for leaf in leaves:
+        if isinstance(leaf, httpx.HTTPStatusError):
+            return f"{MCP_FAILURE_PREFIX}the MCP server answered HTTP {leaf.response.status_code}"
+    if any(isinstance(leaf, (httpx.TimeoutException, TimeoutError)) for leaf in leaves):
+        return f"{MCP_FAILURE_PREFIX}timeout"
+    if any(isinstance(leaf, (httpx.NetworkError, httpx.UnsupportedProtocol, ConnectionError, OSError)) for leaf in leaves):
+        return f"{MCP_FAILURE_PREFIX}unreachable"
+    return f"{MCP_FAILURE_PREFIX}not an MCP endpoint"
+
 
 class MCPClient:
 
@@ -58,8 +89,10 @@ class MCPClient:
         """
         List the tools, prompts, and resources available in the MCP Server
         """
+        # A server that does not complete the MCP handshake is not an MCP endpoint: say so (mcp_connection_failure)
+        # instead of estimating 0 credits for an empty listing.
+        await self.session.initialize()
         try:
-            await self.session.initialize()
 
             try:
                 console.print(f"Listing tools... 🔧",style="bold yellow")

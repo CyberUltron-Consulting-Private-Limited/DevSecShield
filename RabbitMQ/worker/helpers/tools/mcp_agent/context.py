@@ -5,7 +5,8 @@ from typing import Literal, Optional
 class MCPContext(BaseModel):
     server_url: str
     server_mode: Literal["httpstreamable","sse"]
-    headers: Optional[dict] = None
+    # may hold an Authorization header: never in a printed or logged model (the tasks print the context)
+    headers: Optional[dict] = Field(default=None, repr=False)
 
 class MCPTool(BaseModel):
     name: Optional[str] = None

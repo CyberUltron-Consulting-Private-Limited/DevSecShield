@@ -58,10 +58,45 @@ def _clone_failure(text: str) -> HTTPException | None:
                          detail="The repository could not be cloned. Check the URL, the branch and the access token.")
 
 
-def _estimation_failure(task_result) -> HTTPException:
+_MCP_HTTP_STATUS = re.compile(r"(?:answered HTTP|error '|HTTP/1\.[01]\" ?)\s*([1-5]\d\d)\b")
+_MCP_CHECK = " Check the server URL and the transport (SSE or streamable HTTP)."
+
+
+def _mcp_failure(text: str) -> HTTPException:
+    """Why an MCP server could not be listed, as a 400 the customer can act on (X1, Nov 11: a server URL answering 404
+    gave 500 "Credit estimation failed, please try again later"). The worker says "MCP connection failed: <reason>"
+    (helpers/tools/mcp_agent/mcp_client.py); an older worker's ExceptionGroup text is read for the same facts. Only
+    fixed sentences and the status code are returned, never the server's answer."""
+    lowered = text.lower()
+    code = _MCP_HTTP_STATUS.search(text)
+    if code:
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail=f"The MCP server answered HTTP {code.group(1)}, so it could not be listed."
+                                    + _MCP_CHECK)
+    if any(t in lowered for t in ("timeout", "timed out")):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail="The MCP server did not answer in time (timeout). Check that it is running and "
+                                    "reachable from the internet, then try again.")
+    if any(t in lowered for t in ("unreachable", "connecterror", "connection refused", "name or service not known",
+                                  "nodename nor servname", "temporary failure in name resolution",
+                                  "unsupportedprotocol", "network is unreachable")):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail="The MCP server could not be reached. Check the server URL and that the server "
+                                    "is reachable from the internet.")
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                         detail="The URL answered, but not as an MCP server (the MCP handshake failed)." + _MCP_CHECK)
+
+
+def _estimation_failure(task_result, scan_type: str | None = None) -> HTTPException:
     """Zip-safety rejects are bad input. Everything else stays a credit-estimation failure."""
     err = task_result.result
     text = str(err or "")
+    if scan_type == "mcp":
+        both = f"{text} {err!r}"
+        # the new worker's sentence, or an older worker's TaskGroup of httpx errors; anything else stays a 500
+        if any(t in both.lower() for t in ("mcp connection failed", "unhandled errors in a taskgroup",
+                                           "httpstatuserror", "connecttimeout", "connecterror", "readtimeout")):
+            return _mcp_failure(both)
     lowered = text.lower()
     if any(
         token in lowered
@@ -93,12 +128,13 @@ def _estimation_failure(task_result) -> HTTPException:
 async def poll_for_estimated_credits ( 
     task_id: str,
     simple_app: Celery,
+    scan_type: str | None = None,
 ) -> float :
     try:
         for _attempt in range(ESTIMATION_POLL_MAX_ATTEMPTS):
             task_result = simple_app.AsyncResult(task_id)
             if task_result.state == "FAILURE":
-                raise _estimation_failure(task_result)
+                raise _estimation_failure(task_result, scan_type)
             if task_result.state == "SUCCESS":
                 result = task_result.result
                 if result is None or result < 0:
@@ -112,7 +148,7 @@ async def poll_for_estimated_credits (
             if result is not None and result >= 0:
                 return result
         if task_result.state == "FAILURE":
-            raise _estimation_failure(task_result)
+            raise _estimation_failure(task_result, scan_type)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Credit estimation timed out, please try again later")
     except HTTPException:
         raise
@@ -170,7 +206,7 @@ async def estimate_credits(
         
         
         # STEP [ 3 ] : =========== poll for results and return esitmated credit consumption for the scan ======================
-        credits_consumed : float = await poll_for_estimated_credits(task_id=task_result.id, simple_app=simple_app)
+        credits_consumed : float = await poll_for_estimated_credits(task_id=task_result.id, simple_app=simple_app, scan_type=scan_type)
         credits_consumed = round(credits_consumed, 2)
         return credits_consumed
     except Exception as e:
