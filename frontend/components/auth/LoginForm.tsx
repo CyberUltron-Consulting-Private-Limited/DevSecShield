@@ -46,6 +46,11 @@ export default function LoginPage({
   const countdown = useResendCountdown(delay)
   const [sendingCode, setSendingCode] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // set when sign-in answers "password_change_required": the next step is choosing a new password
+  const [changeToken, setChangeToken] = useState<string | null>(null)
+  const [changeMessage, setChangeMessage] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [newPasswordAgain, setNewPasswordAgain] = useState("")
 
   // get query params for redirect url after auth ( and redirect to that url after auth if this query param is present)
   const searchParams = useSearchParams()
@@ -155,6 +160,14 @@ export default function LoginPage({
             verification_code: userData?.verification_code
         }
         const response = await api.post("/login",data)
+        if(response.status === 200 && response.data?.password_change_required){
+            // the account's password was mailed to it by somebody else (old team invitations): choose a new one
+            // before any session is issued (backend POST /change_password)
+            setChangeToken(response.data.change_token)
+            setChangeMessage(response.data.message ?? "Choose a new password to continue.")
+            setUserData({ ...emptyLoginUserData, email: userData?.email ?? "" })
+            return
+        }
         if(response.status === 200){
             toast.success("Logged in successfully")
             localStorage.setItem("access_token", response.data.access_token)
@@ -180,6 +193,70 @@ export default function LoginPage({
     }
   }
   
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const problem = newPasswordProblem(newPassword)
+    if (problem) {
+      toast.error(problem)
+      return
+    }
+    if (newPassword !== newPasswordAgain) {
+      toast.error("The two passwords do not match.")
+      return
+    }
+    setSubmitting(true)
+    try {
+      const response = await api.post("/change_password", { change_token: changeToken, password: newPassword })
+      localStorage.setItem("access_token", response.data.access_token)
+      localStorage.setItem("refresh_token", response.data.refresh_token)
+      toast.success("Password changed")
+      router.push(redirectUrl || "/home")
+    } catch (error: any) {
+      const apiError = showErrorToast(error, "Error while changing the password")
+      if (apiError.status === 400 && /sign in again/i.test(apiError.message)) {
+        setChangeToken(null) // expired or used: back to the sign-in form
+      }
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (method === "login" && changeToken) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background px-4">
+        <Card className="mx-auto max-w-sm w-full">
+          <CardHeader className="space-y-1 text-center">
+            <CardTitle className="text-2xl font-bold">Choose a new password</CardTitle>
+            <CardDescription data-testid="change-password-reason">{changeMessage}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleChangePassword} className="space-y-4" data-testid="change-password-form">
+              <input type="email" autoComplete="username" value={userData?.email} readOnly hidden />
+              <div className="space-y-2">
+                <Label htmlFor="new_password">New password</Label>
+                <Input id="new_password" type="password" autoComplete="new-password" aria-describedby="new-password-rules"
+                  value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+                <p id="new-password-rules" className="text-xs text-muted-foreground">{NEW_PASSWORD_HINT}, not the one you were sent</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new_password_again">Repeat the new password</Label>
+                <Input id="new_password_again" type="password" autoComplete="new-password"
+                  value={newPasswordAgain} onChange={(e) => setNewPasswordAgain(e.target.value)} required />
+              </div>
+              <Button type="submit" className="w-full cursor-pointer" disabled={submitting}>
+                {submitting ? "Saving..." : "Save and continue"}
+              </Button>
+              <button type="button" className="w-full text-sm text-muted-foreground hover:underline cursor-pointer"
+                onClick={() => setChangeToken(null)}>
+                Cancel
+              </button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background">

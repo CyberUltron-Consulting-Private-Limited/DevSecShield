@@ -9,7 +9,10 @@ import {
   updateTeam,
   removeOrAddTeamMembers,
   deleteTeam,
-  type TeamDetails,
+  listTeamInvitations,
+  resendTeamInvitation,
+  revokeTeamInvitation,
+  type TeamInvitationItem,
   type UpdateTeamData,
   type TicketingIntegrationSettingsData,
 } from "@/utils/backend_api";
@@ -38,7 +41,8 @@ import { Loader2, Trash2, UserPlus, UserMinus, Pencil, PenLine, Coins, Users, In
 import { Skeleton } from "@/components/ui/skeleton";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { toast } from "sonner";
-import { jiraToSave } from "@/utils/jiraSettings";
+import { JIRA_ADMIN_ONLY, JIRA_TOKEN_KEPT_HINT, jiraFormFrom, jiraToSave } from "@/utils/jiraSettings";
+import { formatDateIst } from "@/utils/datetime";
 
 
 export default function TeamSettingsPage() {
@@ -58,6 +62,9 @@ export default function TeamSettingsPage() {
   const [jiraEmail, setJiraEmail] = useState("");
   const [jiraUrl, setJiraUrl] = useState("");
   const [jiraApiToken, setJiraApiToken] = useState("");
+  // the API says only whether a token is stored; the field starts empty and an empty field keeps it
+  const [jiraTokenSet, setJiraTokenSet] = useState(false);
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [addMemberEmail, setAddMemberEmail] = useState("");
   const [pendingMemberAction, setPendingMemberAction] = useState<"add" | "remove" | null>(null);
@@ -70,12 +77,26 @@ export default function TeamSettingsPage() {
     if (team) {
       setName(team.team_name ?? "");
       setDescription(team.team_description ?? "");
-      const jira = (team.team_integration_settings as TicketingIntegrationSettingsData | null)?.jira ?? undefined;
-      setJiraEmail(jira?.email ?? "");
-      setJiraUrl(jira?.url ?? "");
-      setJiraApiToken(jira?.api_token ?? "");
+      const jira = jiraFormFrom(team.team_integration_settings);
+      setJiraEmail(jira.email);
+      setJiraUrl(jira.url);
+      setJiraApiToken(jira.apiToken);
+      setJiraTokenSet(jira.tokenSet);
     }
   }, [team]);
+
+  const isAdmin = team?.is_team_admin ?? false;
+  const { data: invitations } = useQuery({
+    queryKey: ["team-invitations", team_id],
+    queryFn: () => listTeamInvitations(Number(team_id)),
+    enabled: !!team_id && isAdmin,
+  });
+
+  const invitationMutation = useMutation({
+    mutationFn: ({ action, id }: { action: "resend" | "revoke"; id: number }) =>
+      action === "resend" ? resendTeamInvitation(Number(team_id), id) : revokeTeamInvitation(Number(team_id), id),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["team-invitations", team_id] }),
+  });
 
   const updateTeamMutation = useMutation({
     mutationFn: (data: UpdateTeamData) => updateTeam(Number(team_id), data),
@@ -95,8 +116,10 @@ export default function TeamSettingsPage() {
       removeOrAddTeamMembers(Number(team_id), data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team-details", team_id] });
+      queryClient.invalidateQueries({ queryKey: ["team-invitations", team_id] });
       setSelectedEmails(new Set());
       setAddMemberEmail("");
+      setRemoveDialogOpen(false);
     },
     onError: (error) => showErrorToast(error),
     onSettled: () => setPendingMemberAction(null),
@@ -113,16 +136,16 @@ export default function TeamSettingsPage() {
 
   const handleSaveNameDescription = (fromEditDialog?: boolean) => {
     if (fromEditDialog) saveFromEditDialogRef.current = true;
+    // only the name and description: integration settings (and their write-only token) are left as stored
     updateTeamMutation.mutate({
       name: name.trim() || undefined,
       description: description.trim() || undefined,
-      integration_settings: team?.team_integration_settings ?? undefined,
     });
   };
 
   const handleSaveJira = () => {
     // a partly filled form used to save jira: null and still say "Team updated successfully"
-    const decision = jiraToSave(jiraEmail, jiraUrl, jiraApiToken);
+    const decision = jiraToSave(jiraEmail, jiraUrl, jiraApiToken, jiraTokenSet);
     if (!decision.ok) {
       toast.error(decision.message);
       return;
@@ -150,6 +173,11 @@ export default function TeamSettingsPage() {
   };
 
   const handleRemoveSelected = () => {
+    if (selectedEmails.size === 0) return;
+    setRemoveDialogOpen(true);
+  };
+
+  const confirmRemoveSelected = () => {
     if (selectedEmails.size === 0) return;
     setPendingMemberAction("remove");
     membersMutation.mutate({ intent: "remove", email_ids: Array.from(selectedEmails) });
@@ -247,7 +275,7 @@ export default function TeamSettingsPage() {
           </h2>
           <p className="text-sm text-muted-foreground mb-4 mt-1">
             {is_team_admin
-              ? "Add or remove members by email. Only admins can manage members."
+              ? "Invite people by email: they get a link and join when they accept it. Only admins can manage members."
               : "List of members in this team."}
           </p>
           <div className="space-y-4">
@@ -287,7 +315,7 @@ export default function TeamSettingsPage() {
             {is_team_admin && (
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-2 flex-1 min-w-[200px]">
-                  <Label htmlFor="add-email">Add member by email</Label>
+                  <Label htmlFor="add-email">Invite by email</Label>
                   <Input
                     id="add-email"
                     type="email"
@@ -306,7 +334,7 @@ export default function TeamSettingsPage() {
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   )}
                   <UserPlus className="h-4 w-4 mr-2" />
-                  Add
+                  Invite
                 </Button>
                 <Button
                   variant="outline"
@@ -322,6 +350,46 @@ export default function TeamSettingsPage() {
                 </Button>
               </div>
             )}
+            {is_team_admin && (
+              <div className="space-y-2" data-testid="pending-invitations">
+                <h3 className="text-sm font-medium">Pending invitations</h3>
+                {(invitations ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No open invitations.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Expires</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(invitations ?? []).map((inv: TeamInvitationItem) => (
+                          <TableRow key={inv.id}>
+                            <TableCell className="break-all">{inv.email}</TableCell>
+                            <TableCell className="capitalize">{inv.status}</TableCell>
+                            <TableCell>{inv.status === "declined" ? "-" : formatDateIst(inv.expires_at)}</TableCell>
+                            <TableCell className="text-right whitespace-nowrap">
+                              <Button variant="ghost" size="sm" className="cursor-pointer" disabled={invitationMutation.isPending}
+                                onClick={() => invitationMutation.mutate({ action: "resend", id: inv.id })}>
+                                Resend
+                              </Button>
+                              <Button variant="ghost" size="sm" className="cursor-pointer text-red-400" disabled={invitationMutation.isPending}
+                                onClick={() => invitationMutation.mutate({ action: "revoke", id: inv.id })}>
+                                Revoke
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
 
@@ -334,6 +402,9 @@ export default function TeamSettingsPage() {
             Jira integration
           </h2>
           <p className="text-sm text-muted-foreground mb-4 mt-1">Configure Jira (and other integrations later) for this team. Use an email that has access to the Jira project.</p>
+          {!is_team_admin && (
+            <p className="text-sm text-muted-foreground mb-4" data-testid="jira-admin-only">{JIRA_ADMIN_ONLY}</p>
+          )}
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="jira-email">Email (Jira account with project access)</Label>
@@ -341,6 +412,7 @@ export default function TeamSettingsPage() {
                 id="jira-email"
                 type="email"
                 value={jiraEmail}
+                readOnly={!is_team_admin}
                 onChange={(e) => setJiraEmail(e.target.value)}
                 placeholder="you@example.com"
               />
@@ -351,6 +423,7 @@ export default function TeamSettingsPage() {
                 id="jira-url"
                 type="url"
                 value={jiraUrl}
+                readOnly={!is_team_admin}
                 onChange={(e) => setJiraUrl(e.target.value)}
                 placeholder="https://your-domain.atlassian.net"
               />
@@ -360,10 +433,18 @@ export default function TeamSettingsPage() {
               <Input
                 id="jira-token"
                 type="password"
+                autoComplete="off"
                 value={jiraApiToken}
+                readOnly={!is_team_admin}
                 onChange={(e) => setJiraApiToken(e.target.value)}
-                placeholder="••••••••"
+                placeholder={jiraTokenSet ? "Saved (hidden)" : "Jira API token"}
+                aria-describedby="jira-token-state"
               />
+              <p id="jira-token-state" className="text-xs text-muted-foreground" data-testid="jira-token-state">
+                {jiraTokenSet
+                  ? (is_team_admin ? JIRA_TOKEN_KEPT_HINT : "A token is saved.")
+                  : "No token is saved."}
+              </p>
             </div>
             {is_team_admin && (
               <Button
@@ -448,6 +529,34 @@ export default function TeamSettingsPage() {
             >
               {updateTeamMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove members?</DialogTitle>
+            <DialogDescription>
+              These people lose access to &quot;{team.team_name}&quot; and its scans. You can invite them again later.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="text-sm list-disc pl-5 break-all" data-testid="remove-list">
+            {Array.from(selectedEmails).map((email) => <li key={email}>{email}</li>)}
+          </ul>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveDialogOpen(false)} className="cursor-pointer">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmRemoveSelected}
+              disabled={membersMutation.isPending}
+              className="cursor-pointer"
+            >
+              {membersMutation.isPending && pendingMemberAction === "remove" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Remove
             </Button>
           </DialogFooter>
         </DialogContent>

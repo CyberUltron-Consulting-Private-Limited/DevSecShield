@@ -1181,10 +1181,13 @@ export interface TeamMember {
     role: string
 }
 
-/** Jira settings for team ticketing integration (matches backend JiraTeamSettingsData) */
+/** Jira settings for team ticketing integration (matches backend JiraTeamSettingsData).
+ * GET /team never returns the token: only `api_token_set`. A save sends `api_token` only when one was typed
+ * (empty keeps the stored token while the URL and email stay the same). */
 export interface JiraTeamSettingsData {
     email: string
-    api_token: string
+    api_token?: string
+    api_token_set?: boolean
     url: string
 }
 
@@ -1390,10 +1393,51 @@ const updateTeam = async (team_id: number, data: UpdateTeamData) => {
 const removeOrAddTeamMembers = async (team_id: number, data: RemoveOrAddMembersToTeamData) => {
     try {
         const response = await api.patch(`/team/${team_id}`, data)
-        toast.success(`Members ${data.intent === "add" ? "added" : "removed"} successfully`)
+        // "add" invites: nobody joins until they accept the mailed link
+        toast.success(data.intent === "add"
+            ? (response.data?.message ?? "Invitation sent")
+            : "Members removed successfully")
         return response.data
     } catch (error) {
-        showErrorToast(error, `Error ${data.intent === "add" ? "adding" : "removing"} members`)
+        showErrorToast(error, data.intent === "add" ? "Error sending the invitation" : "Error removing members")
+        throw error
+    }
+}
+
+/** An open invitation to the team, as its admins see it (backend utilities/team/invitations.py). */
+export interface TeamInvitationItem {
+    id: number
+    email: string
+    status: "pending" | "expired" | "declined"
+    invited_by: string
+    created_at: string | null
+    expires_at: string | null
+    responded_at: string | null
+}
+
+const listTeamInvitations = async (team_id: number): Promise<TeamInvitationItem[]> => {
+    const response = await api.get(`/team/${team_id}/invitations`)
+    return (response.data?.invitations ?? []) as TeamInvitationItem[]
+}
+
+const resendTeamInvitation = async (team_id: number, invitation_id: number) => {
+    try {
+        const response = await api.post(`/team/${team_id}/invitations/${invitation_id}/resend`)
+        toast.success("A new invitation link was sent; the previous link no longer works")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error resending the invitation")
+        throw error
+    }
+}
+
+const revokeTeamInvitation = async (team_id: number, invitation_id: number) => {
+    try {
+        const response = await api.delete(`/team/${team_id}/invitations/${invitation_id}`)
+        toast.success("Invitation revoked")
+        return response.data
+    } catch (error) {
+        showErrorToast(error, "Error revoking the invitation")
         throw error
     }
 }
@@ -1418,7 +1462,10 @@ export {
     getTeamsDashboard,
     updateTeam,
     removeOrAddTeamMembers,
-    deleteTeam
+    deleteTeam,
+    listTeamInvitations,
+    resendTeamInvitation,
+    revokeTeamInvitation,
 }
 
 // -------------------------------------------------------------- Admin API Routes --------------------------------------------------------------
