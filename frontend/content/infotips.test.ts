@@ -50,9 +50,11 @@ export const COVERED: string[] = [
   "app/[team_id]/cbom/page.tsx",
   "components/cbom-options-sidebar.tsx",
   "components/cbom-ci-scan-settings-form.tsx",
+  // team dashboard
+  "app/[team_id]/page.tsx",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
-export const DASHBOARDS = new Set<string>([]);
+export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
 
 function expand(entry: string): string[] {
   const abs = path.join(frontend, entry);
