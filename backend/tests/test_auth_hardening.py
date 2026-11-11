@@ -742,10 +742,10 @@ def test_admin_created_users_follow_the_new_password_rules(client, world, monkey
     add_user(engine, "root@example.test", auth_utils.get_hashed_password(PASSWORD), superuser=True)
     mails = []
 
-    async def fake_send(email, subject, html_body=None, body=None):
+    async def fake_send(email, link, expires_on):
         mails.append(email)
 
-    monkeypatch.setattr(admin_router, "send_email", fake_send)
+    monkeypatch.setattr(admin_router.account_mail, "send_account_created_email", fake_send)
     token = auth_utils.create_access_token("root@example.test")
     headers = {"Authorization": f"Bearer {token}"}
     body = {"email": " Ops@Example.test ", "first_name": "O", "last_name": "P"}

@@ -105,12 +105,16 @@ def _verified_claims(token: str, secret: str, typ: str) -> Optional[dict]:
 
 
 PASSWORD_CHANGE_TOKEN_MINUTES = 10
+SET_PASSWORD_LINK_TTL = timedelta(days=7)
 
 
-def create_password_change_token(subject: str, version: int) -> str:
-    """Issued by sign-in instead of a session when the account must choose a new password (its current one was
-    mailed to it by somebody else).  It only works on POST /change_password, once (that bumps the token version)."""
-    return _encode(subject, "pwchange", version, timedelta(minutes=PASSWORD_CHANGE_TOKEN_MINUTES), JWT_SECRET_KEY)
+def create_password_change_token(subject: str, version: int, expires: Optional[timedelta] = None) -> str:
+    """For an account that must choose a new password (somebody else chose or mailed its current one): issued by
+    sign-in instead of a session (10 minutes), or mailed as the "choose your password" link of an account an
+    administrator created (``SET_PASSWORD_LINK_TTL``).  It only works on POST /change_password, and once: that
+    bumps the token version, which also kills every other such token of the account."""
+    ttl = expires if expires is not None else timedelta(minutes=PASSWORD_CHANGE_TOKEN_MINUTES)
+    return _encode(subject, "pwchange", version, ttl, JWT_SECRET_KEY)
 
 
 def password_change_claims(token: str) -> Optional[dict]:

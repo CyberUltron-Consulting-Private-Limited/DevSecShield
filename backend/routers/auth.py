@@ -133,8 +133,8 @@ async def create_user(data: UserSignup, request: Request):
         raise _db_error(e, "create user") from None
 
 
-PASSWORD_CHANGE_MESSAGE = ("Choose a new password to continue: the password you signed in with was mailed to you "
-                           "when you were added to a team.")
+PASSWORD_CHANGE_MESSAGE = ("Choose a new password to continue: the password you signed in with was chosen or "
+                           "mailed by somebody else.")
 
 
 @router.post('/login', summary="Create access and refresh tokens for user",
@@ -349,7 +349,7 @@ async def change_password(data: ChangePassword):
                                 detail="This password change was already used. Sign in again.")
         if await run_in_threadpool(verify_password, data.password, user.password):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                detail="Choose a password different from the one you were sent")
+                                detail="Choose a password different from the one you were given")
         hashed_pwd = await run_in_threadpool(get_hashed_password, data.password)
         with Session(engine) as session:
             # compare-and-swap on the token version: one change per token, even when two arrive together
