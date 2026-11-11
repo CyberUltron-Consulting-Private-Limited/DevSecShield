@@ -559,6 +559,7 @@ function IACResultsAgentView({
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute =
                   isCicdContext && integrationId
@@ -1273,7 +1274,7 @@ function IACResultsAgentView({
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" aria-label="Finding actions">
                                 <MoreVertical className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -1552,6 +1553,7 @@ export default function IACResults({ data, conversationId, dashboard, findings, 
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Back"
                 onClick={() => {
                   const backRoute =
                     isCicdContext && integrationId

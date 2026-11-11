@@ -866,6 +866,7 @@ function SASTResultsAgentView({
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute = isCicdContext && integrationId
                   ? `/home/ci_cd/${integrationId}`
@@ -1488,6 +1489,7 @@ export default function SASTResults({ conversationId, dashboard, findings, teamI
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Back"
                 onClick={() => {
                   const backRoute = isCicdContext && integrationId
                     ? `/home/ci_cd/${integrationId}`

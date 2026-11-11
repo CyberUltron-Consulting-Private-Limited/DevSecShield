@@ -632,6 +632,7 @@ export function DASTOptionsSidebar({
                           variant="ghost"
                           size="sm"
                           onClick={() => removeAdditionalUrl(index)}
+                          aria-label={`Remove ${url}`}
                           className="text-red-400 hover:text-red-300 cursor-pointer shrink-0 w-6 h-6 p-0"
                         >
                           ×
@@ -651,6 +652,7 @@ export function DASTOptionsSidebar({
                         variant="ghost"
                         size="sm"
                         className="h-5 w-5 p-0 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 cursor-pointer"
+                        aria-label="About URL patterns"
                       >
                         <Info className="h-4 w-4" />
                       </Button>
@@ -733,6 +735,7 @@ export function DASTOptionsSidebar({
                               variant="ghost"
                               size="sm"
                               onClick={() => removeUrlPattern(index)}
+                              aria-label={`Remove pattern ${pattern}`}
                               className="text-red-400 hover:text-red-300 cursor-pointer shrink-0 w-6 h-6 p-0"
                             >
                               ×

@@ -452,6 +452,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Back"
                 onClick={() => {
                   const backRoute = origin === "list"
                     ? (teamId ? `/${teamId}/llm` : "/home/llm")
@@ -493,6 +494,7 @@ export default function LLMResults({ data, dashboard, findings, scanMetadata, co
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute = origin === "list"
                   ? (teamId ? `/${teamId}/llm` : "/home/llm")

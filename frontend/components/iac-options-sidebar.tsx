@@ -435,6 +435,7 @@ export function IACOptionsSidebar({
                             size="icon"
                             className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-950/30 cursor-pointer"
                             onClick={() => removeContext(ctx.id)}
+                            aria-label="Remove this IaC context"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

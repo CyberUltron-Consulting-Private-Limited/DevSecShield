@@ -1160,6 +1160,7 @@ export default function CbomResults({
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute = backHref
                   ? backHref

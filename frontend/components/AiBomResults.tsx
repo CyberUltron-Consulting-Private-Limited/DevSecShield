@@ -671,6 +671,7 @@ export default function AiBomResults({
             <Button
               variant="outline"
               size="icon"
+              aria-label="Back"
               onClick={() => router.back()}
               className="cursor-pointer"
             >

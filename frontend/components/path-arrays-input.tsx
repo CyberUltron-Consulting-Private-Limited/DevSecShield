@@ -97,6 +97,7 @@ export function PathArraysInput({
                 size="icon"
                 className="h-7 w-7 text-zinc-400 hover:text-red-400 cursor-pointer"
                 onClick={() => removePath(pathIndex)}
+                aria-label="Remove this path"
                 disabled={paths.length <= 1}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -118,6 +119,7 @@ export function PathArraysInput({
                     size="icon"
                     className="h-7 w-7 shrink-0 text-zinc-400 hover:text-red-400 cursor-pointer"
                     onClick={() => removeSegment(pathIndex, segmentIndex)}
+                    aria-label="Remove this folder"
                     disabled={(path.length || 1) <= 1}
                   >
                     <Trash2 className="h-3 w-3" />

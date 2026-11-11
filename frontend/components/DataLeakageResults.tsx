@@ -163,6 +163,7 @@ export default function DataLeakageResults({ data, conversationId }: DataLeakage
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute = origin === "list" 
                   ? `/home/leakage` 

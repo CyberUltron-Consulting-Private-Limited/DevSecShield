@@ -931,6 +931,7 @@ function SbomResultsView({
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute =
                   origin === "chat" && teamId && conversationId != null
@@ -1698,6 +1699,7 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Back"
                 onClick={() => {
                   const backRoute =
                     origin === "chat" && teamId && conversationId != null

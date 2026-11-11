@@ -166,6 +166,7 @@ export function DastScheduleFields({
                     variant="ghost"
                     className="h-8 w-8 cursor-pointer"
                     onClick={() => patch({ times: value.times.filter((_, i) => i !== idx) })}
+                    aria-label="Remove this time"
                   >
                     <X className="h-3 w-3" />
                   </Button>

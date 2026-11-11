@@ -576,7 +576,8 @@ export default function CicdSastResults({ data, dashboard, integrationId }: Cicd
     return (
       <div className="container mx-auto p-6 space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => router.push(backRoute)} className="cursor-pointer">
+          <Button variant="outline" size="icon"
+                aria-label="Back" onClick={() => router.push(backRoute)} className="cursor-pointer">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -596,7 +597,8 @@ export default function CicdSastResults({ data, dashboard, integrationId }: Cicd
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" onClick={() => router.push(backRoute)} className="cursor-pointer">
+        <Button variant="outline" size="icon"
+                aria-label="Back" onClick={() => router.push(backRoute)} className="cursor-pointer">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
