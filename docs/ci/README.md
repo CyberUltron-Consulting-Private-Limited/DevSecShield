@@ -217,7 +217,9 @@ Each workflow reads only the caller's checkout. Repo-specific files are optional
 
 **reusable-image-build.yml**: `images` (required; a JSON array of `{name, context, dockerfile, build-args?,
 build-contexts?}`), `pre-build-command`, `trivy-severity` (`HIGH,CRITICAL`), `trivy-fail-on` (empty, which means
-report only), `cache` (`true`; the final image layers go to the Actions cache, so re-runs reuse them).
+report only), `cache` (`true`; the final image layers go to the Actions cache, so re-runs reuse them),
+`free-disk-space` (`true`; deletes the runner's preinstalled Android, .NET, GHC and CodeQL. Without it the scan-worker
+image, which pulls torch through garak, fails with "No space left on device").
 
 **reusable-pr-checks.yml**: `flows` (`staging:dev main:staging`), `title-regex`, `title-max-length` (100),
 `require-acceptance-criteria` (`true`; bots are exempt), `acceptance-heading-regex`, `forbidden-files-regex`
