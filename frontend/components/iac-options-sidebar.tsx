@@ -41,6 +41,7 @@ import {
 import { toast } from "@/utils/toast";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
@@ -215,6 +216,10 @@ export function IACOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
+    },
+    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 

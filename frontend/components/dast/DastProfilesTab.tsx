@@ -25,6 +25,7 @@ import {
   type DastScanProfile,
   type DastScheduleKind,
 } from "@/utils/backend_api";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { formatDateIst } from "@/utils/datetime";
 import { DastScheduleFields, type DastScheduleState } from "@/components/dast/DastScheduleFields";
 
@@ -177,6 +178,10 @@ export function DastProfilesTab() {
       if (data?.scan_id) {
         router.refresh();
       }
+    },
+    // running a profile starts a DAST scan, which charges credits: the balance in the app sidebar shows it (#13)
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 

@@ -40,6 +40,7 @@ import {
 import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
 import { DAST_RERUN_NOTE, readDastRerun } from "@/utils/dastRerun";
@@ -238,6 +239,10 @@ export function DASTOptionsSidebar({
       // The scan was refused before it started: back to the filled-in form with the reason, as for the estimate.
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
+    },
+    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 

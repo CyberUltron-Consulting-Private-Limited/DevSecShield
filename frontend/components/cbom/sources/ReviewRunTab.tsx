@@ -24,6 +24,7 @@ import {
   type CbomSourceGroup,
   type CbomSourcesOverview,
 } from "@/utils/backend_api";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 
 import { CompareDialog, RunChanges } from "./ChangesPanel";
 import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
@@ -215,7 +216,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     onSettled: () => {
       invalidate();
       // A refund changes the credit balance shown in the app sidebar.
-      queryClient.invalidateQueries({ queryKey: ["teams"] });
+      refreshCreditBalance(queryClient);
     },
   });
 
@@ -594,7 +595,6 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
           ? `Run #${data.run.id} was already started from this estimate; nothing was charged again.`
           : `Run #${data.run.id} queued: ${credits(data.run.credits.charged)} credits charged. Follow it under Runs below.`,
       });
-      queryClient.invalidateQueries({ queryKey: ["teams"] });
     },
     onError: (err) => {
       // the server's reason (credits, rate limit, validation, estimate changed, already queued) stays on the card
@@ -602,7 +602,11 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
       if (refusal.clearEstimate) setSnapshot(null);
       setNotice({ tone: refusal.tone, text: refusal.text });
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      // the run charges credits: the balance in the app sidebar shows it without a reload
+      refreshCreditBalance(queryClient);
+    },
   });
 
   const toggle = (key: CbomIncludeKey, value: boolean) => {

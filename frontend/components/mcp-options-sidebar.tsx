@@ -34,6 +34,7 @@ import {
   type MCPConversationResponse,
 } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { parseMcpHeaders } from "@/utils/mcpHeaders";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { stateAfterError } from "@/utils/scanErrorRecovery";
@@ -162,6 +163,10 @@ export function MCPOptionsSidebar({
       // refused before it started: back to the filled-in form with the reason
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
+    },
+    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 

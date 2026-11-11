@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cancelScan } from "@/utils/backend_api";
+import { isCreditBalanceQuery, refreshCreditBalance } from "@/utils/creditBalance";
 import { showErrorToast } from "@/utils/error-handler";
 import { cancelConfirmText, cancelledSummary, canCancel, isAlreadyCancelled } from "@/utils/scanCancel";
 import type { CodeScanType } from "@/utils/scanRerun";
@@ -38,8 +39,13 @@ export function CancelScanButton({ type, teamId, scanId, scan }: {
       setOpen(false);
       if (!isAlreadyCancelled(err)) showErrorToast(err, "Could not cancel the scan");
     },
-    // every scan query of this page (sidebar, results, lists) reads the new status
-    onSettled: () => queryClient.invalidateQueries(),
+    onSettled: () => {
+      // the refund changes the credit balance in the app sidebar (#13)
+      refreshCreditBalance(queryClient);
+      // every other query of this page (sidebar, results, lists) reads the new status; the balance is left out
+      // here, or GET /teams would be sent twice
+      queryClient.invalidateQueries({ predicate: (query) => !isCreditBalanceQuery(query) });
+    },
   });
   if (!canCancel(status)) return null;
   return (

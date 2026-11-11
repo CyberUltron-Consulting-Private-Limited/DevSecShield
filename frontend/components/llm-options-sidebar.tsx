@@ -25,6 +25,7 @@ import {
   reinitializeLLMScan,
 } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { readFormRerun } from "@/utils/formRerun";
 import { NewScanRunAgainButton } from "@/components/scan-run-again";
@@ -224,6 +225,10 @@ export function LLMOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("ready");
+    },
+    // the start charges credits: the balance in the app sidebar shows it without a reload (#13)
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
     },
   });
 
