@@ -34,6 +34,11 @@ async def fleet_status(team_id: TeamId, Authorization: AuthHeader = None):
 
 
 # F1.2 routers
+from backend.routers.cbom_fleet_inventory import router as _inventory_router  # noqa: E402
+from backend.routers.cbom_fleet_policies import router as _policies_router  # noqa: E402
+
+router.include_router(_inventory_router)  # /fleet/inventory/* (CBOM_FLEET_INVENTORY)
+router.include_router(_policies_router)  # /fleet/policies*, /fleet/credentials*, /fleet/reconcile (CBOM_FLEET_POLICIES)
 
 # F1.3 routers
 

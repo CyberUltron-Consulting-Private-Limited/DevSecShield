@@ -93,6 +93,9 @@ def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings
         "row_version": source.row_version,
         "created_at": iso_z(source.created_at),
         "last_updated": iso_z(source.last_updated),
+        # F1.2 fleet: set when a policy manages this source (edit it through the policy), and its typed credential
+        "managed_by_policy_id": source.managed_by_policy_id,
+        "credential_id": source.credential_id,
     }
 
 

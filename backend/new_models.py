@@ -384,6 +384,11 @@ class CbomCollectionSource(SQLModel, table=True):
     # stable identity that survives deletion: snapshotted on every collect job, so diffs, drift events and remediation
     # assignments keep pointing at "the same source" after a rename, and a re-created source is a new one
     source_uid: str | None = Field(default_factory=lambda: uuid.uuid4().hex, max_length=32, index=True)
+    # F1.2 fleet: the policy whose materializer manages this source (None: made by hand), the typed credential it uses,
+    # and its sticky batch key (policy, transport, credential, node or segment, kind); plain ints, no foreign keys
+    managed_by_policy_id: int | None = Field(default=None, index=True)
+    credential_id: int | None = Field(default=None)
+    batch_key: str | None = Field(default=None, max_length=64)
 
 
 class CbomCollectionRun(SQLModel, table=True):
@@ -586,6 +591,7 @@ class CbomCollectionSchedule(SQLModel, table=True):
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    policy_id: int | None = Field(default=None, index=True)  # F1.2: the fleet policy that manages this schedule
 
 
 class CbomDriftEvent(SQLModel, table=True):

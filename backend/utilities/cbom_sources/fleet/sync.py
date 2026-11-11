@@ -1,0 +1,146 @@
+"""Inventory source sync: queue (from the API), claim (one process wins, with a lease), discover without holding a
+database session, then upsert in one transaction.  The thread in ``backend/workers/cbom_inventory_sync.py`` runs it.
+
+Only AWS sources sync; CSV, JSON and API sources are written when their data is imported or PUT.
+"""
+from __future__ import annotations
+
+import datetime as _dt
+from typing import Any, Callable
+
+from sqlalchemy import or_, update
+from sqlmodel import Session, select
+
+from backend.new_models import CbomCollectionSource
+from backend.utilities.cbom_sources.common import iso_z, log, new_ref, utcnow
+from backend.utilities.cbom_sources.fleet import flags as FLAGS
+from backend.utilities.cbom_sources.fleet import store
+from backend.utilities.cbom_sources.fleet.aws_inventory import AwsInventoryConfig, AwsInventorySource, Discovery
+from backend.utilities.cbom_sources.fleet.inventory_sources import InventoryError
+from backend.utilities.cbom_sources.fleet.models import CbomFleetPolicy, CbomInventorySource
+from backend.utilities.cbom_sources.fleet.policy import PolicyEngine
+from backend.utilities.cbom_sources.fleet.refs import build_refs
+from backend.utilities.cbom_sources.settings import get_or_create_settings
+
+LEASE = _dt.timedelta(minutes=30)
+MIN_EVERY_MIN = 15
+
+
+def request_sync(session: Session, source: CbomInventorySource, now: _dt.datetime) -> str:
+    sync_id = new_ref()
+    source.last_sync_status = "queued"
+    source.last_sync_summary = {**(source.last_sync_summary or {}), "sync_id": sync_id, "requested_at": iso_z(now)}
+    source.last_updated = now
+    session.add(source)
+    return sync_id
+
+
+def due_ids(session: Session, now: _dt.datetime, limit: int = 20) -> list[int]:
+    s = CbomInventorySource
+    rows = session.exec(select(s).where(s.kind == "aws", s.enabled == True, s.deleted_at.is_(None),  # type: ignore[union-attr]  # noqa: E712
+                                        or_(s.lease_until.is_(None), s.lease_until < now))  # type: ignore[union-attr]
+                        .order_by(s.id)).all()
+    due = []
+    for row in rows:
+        every = _dt.timedelta(minutes=max(MIN_EVERY_MIN, int(row.sync_every_min or 60)))
+        if row.last_sync_status == "queued" or row.last_sync_at is None or row.last_sync_at + every <= now:
+            due.append(row.id)
+        if len(due) >= limit:
+            break
+    return due
+
+
+def claim(session: Session, source_id: int, now: _dt.datetime) -> bool:
+    s = CbomInventorySource
+    won = session.exec(update(s).where(s.id == source_id, s.deleted_at.is_(None),  # type: ignore[call-overload, union-attr]
+                                       or_(s.lease_until.is_(None), s.lease_until < now))  # type: ignore[union-attr]
+                       .values(lease_until=now + LEASE, last_sync_status="running", last_updated=now)).rowcount
+    session.commit()
+    return won == 1
+
+
+def _in_scope(coverage: dict[str, dict[str, str]]) -> Callable[[Any], bool]:
+    def check(row: Any) -> bool:  # row = (id, external_id, region, attributes)
+        service = (row[3] or {}).get("service") if isinstance(row[3], dict) else None
+        return bool(service) and (coverage.get(row[2] or "") or {}).get(service) == "ok"
+
+    return check
+
+
+def run_sync(engine, source_id: int, *, now_fn: Callable[[], _dt.datetime] = utcnow,
+             discover: Callable[[AwsInventorySource], Discovery] | None = None) -> dict[str, Any]:
+    """Claim and sync one AWS inventory source.  Returns the summary (also stored on the source)."""
+    now = now_fn()
+    with Session(engine) as session:
+        if not claim(session, source_id, now):
+            return {"status": "busy"}
+        src = session.get(CbomInventorySource, source_id)
+        team_id = src.team_id
+        sync_id = (src.last_sync_summary or {}).get("sync_id") or new_ref()
+        try:
+            cfg = AwsInventoryConfig.model_validate(src.config or {})
+            account = session.get(CbomCollectionSource, cfg.aws_account_source_id)
+            if account is None or account.team_id != team_id or account.kind != "aws_account":
+                raise InventoryError("no_account", "The AWS account source was not found in this team")
+            if account.last_test_status != "passed":
+                raise InventoryError("not_validated", "Validate the AWS account first; only a role that passed "
+                                                      "validation is read")
+            role_arn = str((account.config or {}).get("role_arn") or "")
+            external_id = get_or_create_settings(session, team_id).aws_external_id
+            session.commit()
+        except (InventoryError, ValueError) as exc:
+            return _finish(engine, source_id, now_fn(), "failed", {"sync_id": sync_id, "error": str(exc)[:300]}, {})
+    lister = AwsInventorySource(team_id, role_arn, external_id, cfg.regions, cfg.services)
+    try:
+        if discover is not None:
+            result = discover(lister)
+        else:
+            lister.discover()
+            result = lister.result  # type: ignore[assignment]
+    except InventoryError as exc:
+        return _finish(engine, source_id, now_fn(), "failed", {"sync_id": sync_id, "error": str(exc)[:300]}, {})
+    except Exception as exc:
+        ref = new_ref()
+        log("inventory sync FAILED", ref=ref, team=team_id, source=source_id, error=type(exc).__name__)
+        return _finish(engine, source_id, now_fn(), "failed",
+                       {"sync_id": sync_id, "error": f"Something went wrong while listing the account (ref {ref})"}, {})
+    return save_discovery(engine, source_id, result, now_fn(), sync_id=sync_id)
+
+
+def save_discovery(engine, source_id: int, result: Discovery, now: _dt.datetime, *, sync_id: str) -> dict[str, Any]:
+    """Upsert what a discovery found (snapshot: what disappeared from a completely read scope is marked missing)."""
+    with Session(engine) as session:
+        src = session.get(CbomInventorySource, source_id)
+        team_id = src.team_id
+        policies = session.exec(select(CbomFleetPolicy).where(CbomFleetPolicy.team_id == team_id)).all()
+        engine_ = PolicyEngine(policies, get_or_create_settings(session, team_id),
+                               refs=build_refs(session, team_id, policies), now=now)
+        counts = store.upsert(session, team_id, src, result.targets, now, engine=engine_, snapshot=True,
+                              in_scope=_in_scope(result.coverage))
+        session.commit()
+    status = "ok" if result.complete and not result.errors else "partial"
+    summary = {"sync_id": sync_id, **counts.public(), "errors": result.errors[:100], "targets": len(result.targets),
+               "account_id": result.account_id}
+    out = _finish(engine, source_id, now, status, summary, result.coverage)
+    if FLAGS.materialize_enabled() and FLAGS.policies_enabled():
+        from backend.utilities.cbom_sources.fleet.materialize import reconcile
+
+        with Session(engine) as session:
+            reconcile(session, team_id, now, actor_id=None)
+            session.commit()
+    return out
+
+
+def _finish(engine, source_id: int, now: _dt.datetime, status: str, summary: dict[str, Any],
+            coverage: dict[str, Any]) -> dict[str, Any]:
+    with Session(engine) as session:
+        src = session.get(CbomInventorySource, source_id)
+        src.last_sync_status, src.last_sync_at, src.lease_until = status, now, None
+        src.last_sync_summary = {**summary, "finished_at": iso_z(now)}
+        src.coverage = coverage
+        src.last_updated = now
+        session.add(src)
+        session.commit()
+        log("inventory synced", team=src.team_id, source=source_id, status=status,
+            created=summary.get("created"), updated=summary.get("updated"), missing=summary.get("missing"))
+    return {"status": status, **summary}
