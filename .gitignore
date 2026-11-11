@@ -54,3 +54,8 @@ dist/scan-node/
 
 # Cursor debug-mode traces (they recorded credential fragments once)
 .cursor/debug-*.log
+
+# Local git worktrees. Three were once committed as gitlinks (mode 160000) with no .gitmodules, which made every
+# actions/checkout fail with "No url found for submodule path". The benchmark clone directories had the same problem;
+# they were already ignored by bench/.gitignore and bench/cbom/.gitignore, and the bench scripts clone on demand.
+/.worktrees/

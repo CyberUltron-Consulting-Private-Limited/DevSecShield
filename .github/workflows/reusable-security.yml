@@ -1,0 +1,895 @@
+# Reusable security scanning: secrets, SAST, dependency vulnerabilities, IaC and lint of Dockerfiles, shell
+# scripts and workflows.
+#
+#   jobs:
+#     security:
+#       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-security.yml@<ref>
+#       secrets:
+#         GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}   # optional
+#
+# Two jobs:
+#   secrets   gitleaks (commits of the PR / push; whole history in full mode) and GitGuardian ggshield (only when
+#             the GITGUARDIAN_API_KEY secret is passed; otherwise it is skipped with a notice).
+#   scanners  Semgrep OSS, OSV-Scanner, Trivy filesystem, Checkov (Helm / Kubernetes / Terraform), Hadolint,
+#             ShellCheck and actionlint.
+#
+# Gating ("diff" mode, the default for pull requests and pushes): a tool fails the job only on findings the change
+# ADDS. Each scanner also runs on the base commit and the two result sets are compared, ignoring line numbers, so
+# existing debt is reported but does not block unrelated work. Semgrep uses its own --baseline-commit. gitleaks
+# scans only the new commits, and blocks on anything it finds there.
+# "full" mode (schedule, workflow_dispatch, or a push with no usable base) scans everything and only reports,
+# except gitleaks, which fails on any finding in the whole history when `gitleaks-fail-full` is true.
+#
+# Every tool writes SARIF (ShellCheck and actionlint write JSON / text). All reports are uploaded as the
+# `security-reports` artifact. Set `upload-sarif: true` to also send SARIF to GitHub code scanning; that needs
+# code scanning on the repository (public repo, or GitHub Code Security on an organisation repo) and the caller
+# must grant `security-events: write`.
+#
+# Tool binaries are downloaded from their GitHub releases and checked against the SHA-256 pinned below. If you
+# change a version, change its sha256 input too (or pass an empty sha256 to skip the check, which is not advised).
+name: reusable / security
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: auto (PR / push -> diff, otherwise full), diff, or full.
+        type: string
+        default: auto
+      exclude-regex:
+        description: Paths (regex on repo-relative paths) whose findings are ignored by every scanner except gitleaks.
+        type: string
+        default: '(^|/)(node_modules|\.venv|venv|\.next|dist)/'
+      gitleaks-version:
+        type: string
+        default: "8.30.1"
+      gitleaks-sha256:
+        description: SHA-256 of gitleaks_<version>_linux_x64.tar.gz
+        type: string
+        default: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      gitleaks-config:
+        description: gitleaks config file, used when it exists.
+        type: string
+        default: .gitleaks.toml
+      gitleaks-fail-full:
+        description: >-
+          In full mode, fail when gitleaks finds anything in the history. Off by default: until the history is
+          cleaned, a full scan that is always red gets ignored; new secrets are blocked by the diff-mode scans of
+          every pull request and push.
+        type: boolean
+        default: false
+      trusted-heads:
+        description: >-
+          Space-separated head branches whose gitleaks config and .gitleaksignore are trusted on a PR (promotion PRs:
+          that content already passed review on its way in), but only while the branch is PROTECTED (the API's
+          `protected` flag) and the PR comes from this repository. Otherwise they come from the base commit, because
+          an unprotected branch can take a direct push that allowlists its own secret.
+        type: string
+        default: dev staging
+      secret-fixture-label:
+        description: >-
+          Pull-request label that lets diff-mode gitleaks findings pass when EVERY one of them is in a file matching
+          secret-fixture-regex (fabricated values for detector tests). Findings anywhere else always fail.
+        type: string
+        default: secret-fixtures-reviewed
+      secret-fixture-regex:
+        description: Paths where a reviewed, labelled pull request may add fabricated secrets.
+        type: string
+        default: '(^|/)tests?/fixtures/'
+      ggshield-version:
+        type: string
+        default: "1.56.1"
+      semgrep-version:
+        type: string
+        default: "1.181.1"
+      semgrep-configs:
+        description: Space-separated Semgrep registry rulesets or local rule files.
+        type: string
+        default: p/ci p/python p/typescript p/secrets p/dockerfile
+      semgrep-exclude:
+        description: Space-separated --exclude globs for Semgrep.
+        type: string
+        default: node_modules .venv
+      semgrep-min-level:
+        description: Lowest SARIF level that blocks (note, warning, error).
+        type: string
+        default: warning
+      osv-version:
+        type: string
+        default: "2.7.0"
+      osv-sha256:
+        description: SHA-256 of osv-scanner_linux_amd64
+        type: string
+        default: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+      trivy-version:
+        type: string
+        default: "0.76.1"
+      trivy-sha256:
+        description: SHA-256 of trivy_<version>_Linux-64bit.tar.gz
+        type: string
+        default: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+      trivy-scanners:
+        description: Trivy scanners (secrets are left to gitleaks / ggshield).
+        type: string
+        default: vuln,misconfig
+      trivy-severity:
+        type: string
+        default: HIGH,CRITICAL
+      trivy-skip-dirs:
+        description: Comma-separated globs Trivy does not walk.
+        type: string
+        default: "**/node_modules,**/.venv"
+      checkov-version:
+        type: string
+        default: "3.3.30"
+      checkov-frameworks:
+        description: Checkov frameworks for the tree (Helm charts go through helm-charts, rendered, as kubernetes).
+        type: string
+        default: kubernetes terraform
+      helm-charts:
+        description: >-
+          One chart per line: `<chart dir> [helm template args]`, e.g. `deploy/helm/app --set apiUrl=https://ci.invalid`.
+          Each is rendered for the head and the base commit and scanned as Kubernetes manifests; a chart that fails to
+          render fails the step.
+        type: string
+        default: ""
+      hadolint-version:
+        type: string
+        default: "2.15.1"
+      hadolint-sha256:
+        description: SHA-256 of hadolint-linux-x86_64
+        type: string
+        default: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+      hadolint-min-level:
+        type: string
+        default: warning
+      shellcheck-version:
+        type: string
+        default: "0.11.0"
+      shellcheck-sha256:
+        description: SHA-256 of shellcheck-v<version>.linux.x86_64.tar.xz
+        type: string
+        default: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+      shellcheck-severity:
+        type: string
+        default: warning
+      actionlint-version:
+        type: string
+        default: "1.7.12"
+      actionlint-sha256:
+        description: SHA-256 of actionlint_<version>_linux_amd64.tar.gz
+        type: string
+        default: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      uv-version:
+        type: string
+        default: "0.13.6"
+      upload-sarif:
+        description: Also upload SARIF to GitHub code scanning (needs code scanning and security-events write).
+        type: boolean
+        default: false
+    secrets:
+      GITGUARDIAN_API_KEY:
+        description: GitGuardian API key. Without it the ggshield step is skipped with a notice.
+        required: false
+
+# No workflow-level permissions: every job sets its own, and upload-sarif inherits what the caller grants.
+
+env:
+  # PR: the base branch commit. Push: the commit before the push. Empty otherwise.
+  BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event_name == 'push' && github.event.before || '') }}
+  HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  REQUESTED_MODE: ${{ inputs.mode }}
+
+jobs:
+  secrets:
+    name: secrets (gitleaks, ggshield)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read # the secret-fixture label, read live (a re-run sees a label added after the push)
+    env:
+      HAS_GG_KEY: ${{ secrets.GITGUARDIAN_API_KEY != '' }}
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scope
+        id: scope
+        run: |
+          set -euo pipefail
+          mode=$REQUESTED_MODE
+          if [ "$mode" = auto ]; then mode="diff"; fi
+          if [ "$mode" = diff ]; then
+            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = 0000000000000000000000000000000000000000 ] \
+               || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+              echo "::notice::No usable base commit (event ${GITHUB_EVENT_NAME}); scanning in full mode."
+              mode="full"
+            fi
+          fi
+          echo "MODE=$mode" >> "$GITHUB_ENV"
+          echo "mode=$mode base=${BASE_SHA:-none} head=$HEAD_SHA"
+
+      - name: Install gitleaks ${{ inputs.gitleaks-version }}
+        env:
+          V: ${{ inputs.gitleaks-version }}
+          SHA: ${{ inputs.gitleaks-sha256 }}
+        run: |
+          set -euo pipefail
+          f="gitleaks_${V}_linux_x64.tar.gz"
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/$f" "https://github.com/gitleaks/gitleaks/releases/download/v${V}/${f}"
+          if [ -n "$SHA" ]; then echo "$SHA  $RUNNER_TEMP/$f" | sha256sum -c -; fi
+          mkdir -p "$RUNNER_TEMP/bin" && tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP/bin" gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: gitleaks
+        env:
+          CONFIG: ${{ inputs.gitleaks-config }}
+          FAIL_FULL: ${{ inputs.gitleaks-fail-full }}
+          FIXTURE_LABEL: ${{ inputs.secret-fixture-label }}
+          FIXTURE_RE: ${{ inputs.secret-fixture-regex }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          TRUSTED_HEADS: ${{ inputs.trusted-heads }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          mkdir -p security-reports "$RUNNER_TEMP/gl-ignore"
+          # A change must not be able to exempt its own secret, so:
+          #  - inline `gitleaks:allow` comments are ignored;
+          #  - every file is diffed as text (a `.gitattributes` "-diff" would hide it as "Binary files differ");
+          #  - merge commits are diffed against their automatic merge (`--diff-merges=remerge`), so a secret added
+          #    while resolving a merge is seen, and content merged in from elsewhere is not reported twice;
+          #  - in diff mode the config and the .gitleaksignore come from the BASE commit, never from the change.
+          args=(git --redact --no-banner --report-format sarif --report-path security-reports/gitleaks.sarif --exit-code 0
+                --ignore-gitleaks-allow --gitleaks-ignore-path "$RUNNER_TEMP/gl-ignore")
+          if [ "$MODE" = diff ]; then
+            # Promotion PRs (dev -> staging -> main) re-scan every commit since the last release. Their head's
+            # config and ignore list are trusted only if that branch is protected (so nothing reached it without a
+            # reviewed PR), the PR comes from this repository and the branch is in trusted-heads. Any other change
+            # gets the base commit's.
+            protected=false
+            if [ -n "$PR_NUMBER" ] && [ -n "$HEAD_REF" ]; then
+              protected=$(gh api "repos/$GITHUB_REPOSITORY/branches/$(jq -rn --arg b "$HEAD_REF" '$b | @uri')" --jq .protected 2>/dev/null || echo false)
+            fi
+            trust=$(PROTECTED="$protected" python3 - <<'PY'
+          import os
+          e = os.environ
+          # the gitleaks config source for a diff scan: "head" only for a protected, same-repository, listed head
+          ok = (bool(e.get("PR_NUMBER")) and e.get("HEAD_REPO") == e.get("GITHUB_REPOSITORY")
+                and e.get("HEAD_REF", "") in e.get("TRUSTED_HEADS", "").split() and e.get("PROTECTED") == "true")
+          print("head" if ok else "base")
+          PY
+            )
+            src=$BASE_SHA; from="the base commit"
+            if [ "$trust" = head ]; then
+              src=$HEAD_SHA; from="the protected promotion head ($HEAD_REF)"
+            elif [[ " $TRUSTED_HEADS " == *" $HEAD_REF "* ]] && [ -n "$PR_NUMBER" ]; then
+              echo "::notice::'$HEAD_REF' is a trusted head but not a protected branch (or the PR is from a fork), so the base commit's gitleaks config and .gitleaksignore are used. See docs/ci/README.md, Branch protection."
+            fi
+            if git cat-file -e "${src}:${CONFIG}" 2>/dev/null; then
+              git show "${src}:${CONFIG}" > "$RUNNER_TEMP/gitleaks-base.toml"
+              args+=(--config "$RUNNER_TEMP/gitleaks-base.toml")
+              cfg="$CONFIG from $from"
+            else
+              cfg="gitleaks' built-in rules (no $CONFIG on $from)"
+            fi
+            git show "${src}:.gitleaksignore" > "$RUNNER_TEMP/gl-ignore/.gitleaksignore" 2>/dev/null || : > "$RUNNER_TEMP/gl-ignore/.gitleaksignore"
+            args+=("--log-opts=--text --diff-merges=remerge ${BASE_SHA}..${HEAD_SHA}")
+            scope="commits ${BASE_SHA:0:12}..${HEAD_SHA:0:12} ($(git rev-list --count "${BASE_SHA}..${HEAD_SHA}") commits)"
+          else
+            if [ -f "$CONFIG" ]; then args+=(--config "$CONFIG"); cfg="$CONFIG"; else cfg="gitleaks' built-in rules"; fi
+            cp .gitleaksignore "$RUNNER_TEMP/gl-ignore/.gitleaksignore" 2>/dev/null || : > "$RUNNER_TEMP/gl-ignore/.gitleaksignore"
+            args+=("--log-opts=--full-history --all --text --diff-merges=remerge")
+            scope="the whole history ($(git rev-list --count --all) commits on all fetched refs)"
+          fi
+          # Only 4-field fingerprints (commit:file:rule:line) may stay: a 3-field line (file:rule:line) matches that
+          # line in EVERY commit, so it would silence a future secret there.
+          python3 - "$RUNNER_TEMP/gl-ignore/.gitleaksignore" <<'PY'
+          import re, sys
+          path = sys.argv[1]
+          keep, dropped = [], []
+          for line in open(path, encoding="utf-8", errors="replace"):
+              s = line.strip()
+              if not s or s.startswith("#") or re.match(r"[0-9a-f]{40}:", s):
+                  keep.append(line)
+              else:
+                  dropped.append(s)
+          for d in dropped[:20]:
+              print(f"::warning file=.gitleaksignore::ignored entry without a commit SHA (it would apply to every commit): {d[:120]}")
+          open(path, "w", encoding="utf-8").writelines(keep)
+          print(f"gitleaksignore: {len(keep)} line(s) kept, {len(dropped)} without a commit SHA dropped")
+          PY
+          # gitleaks also reads ./.gitleaksignore from the scanned directory; only the copy chosen above may count.
+          rm -f .gitleaksignore
+          gitleaks "${args[@]}" .
+          rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::gitleaks did not run (exit $rc)"; exit "$rc"; }
+          n=$(jq '[.runs[].results[]] | length' security-reports/gitleaks.sarif)
+          ignored=$(grep -cvE '^\s*(#|$)' "$RUNNER_TEMP/gl-ignore/.gitleaksignore")
+          # File and rule only; the values are redacted in the report and never printed.
+          jq -r '.runs[].results[] | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine // 1)::gitleaks \(.ruleId) (commit \((.partialFingerprints.commitSha // "")[0:12]))"' \
+            security-reports/gitleaks.sarif | head -50
+          {
+            echo "### gitleaks"
+            echo
+            echo "Scanned $scope with $cfg and $ignored fingerprint(s) in .gitleaksignore: **$n finding(s)**."
+            echo "Values are redacted; see the \`security-reports-secrets\` artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$n" -gt 0 ] && [ "$MODE" = diff ] && [ -n "$PR_NUMBER" ]; then
+            outside=$(jq -r --arg re "$FIXTURE_RE" '[.runs[].results[] | select(.locations[0].physicalLocation.artifactLocation.uri | test($re) | not)] | length' security-reports/gitleaks.sarif)
+            labelled=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" --jq "[.[].name] | index(\"$FIXTURE_LABEL\") != null" 2>/dev/null || echo false)
+            if [ "$outside" -eq 0 ] && [ "$labelled" = true ]; then
+              echo "::warning::gitleaks: all $n finding(s) are in test fixtures and the PR has the '$FIXTURE_LABEL' label; passing. Reviewers: confirm every value is fabricated."
+              echo "Passed on the \`$FIXTURE_LABEL\` label: all $n finding(s) are under test fixtures." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            [ "$outside" -eq 0 ] && echo "::notice::All findings are under test fixtures. If every value is fabricated, a reviewer can add the '$FIXTURE_LABEL' label and re-run this job."
+          fi
+          if [ "$n" -gt 0 ] && { [ "$MODE" = diff ] || [ "$FAIL_FULL" = true ]; }; then
+            echo "::error::gitleaks found $n secret(s) in $scope. Remove them and rotate the credential."
+            exit 1
+          fi
+
+      - name: Set up uv (for ggshield)
+        if: ${{ !cancelled() && steps.scope.outcome == 'success' && env.HAS_GG_KEY == 'true' && env.MODE == 'diff' }}
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ inputs.uv-version }}
+          enable-cache: false
+
+      - name: GitGuardian ggshield
+        if: ${{ !cancelled() && steps.scope.outcome == 'success' }}
+        env:
+          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+          GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
+          GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          V: ${{ inputs.ggshield-version }}
+        run: |
+          set -euo pipefail
+          if [ "$HAS_GG_KEY" != true ]; then
+            echo "::notice::GitGuardian skipped: the GITGUARDIAN_API_KEY secret is not set (see docs/ci/README.md)."
+            printf '### GitGuardian\n\nSkipped: no GITGUARDIAN_API_KEY secret.\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$MODE" != diff ]; then
+            echo "::notice::GitGuardian runs on pull requests and pushes only (full-history scans use API quota)."
+            exit 0
+          fi
+          # Only the base commit's GitGuardian config counts: a change must not exempt its own secret.
+          rm -f .gitguardian.yaml .gitguardian.yml
+          git show "${BASE_SHA}:.gitguardian.yaml" > .gitguardian.yaml 2>/dev/null || rm -f .gitguardian.yaml
+          uvx --from "ggshield==${V}" ggshield secret scan ci
+          printf '### GitGuardian\n\nggshield %s: no secret in the new commits.\n' "$V" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-reports-secrets
+          path: security-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  scanners:
+    name: scanners (semgrep, osv, trivy, checkov, hadolint, shellcheck, actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      EXCLUDE_RE: ${{ inputs.exclude-regex }}
+      R: security-reports
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scope and base checkout
+        run: |
+          set -euo pipefail
+          mode=$REQUESTED_MODE
+          if [ "$mode" = auto ]; then mode="diff"; fi
+          if [ "$mode" = diff ]; then
+            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = 0000000000000000000000000000000000000000 ] \
+               || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+              if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+                # A pull request always has a base; without it nothing could be gated, so this is not a pass.
+                echo "::error::the pull request's base commit ${BASE_SHA:-?} is not in the checkout; cannot gate"; exit 1
+              fi
+              echo "::notice::No usable base commit (event ${GITHUB_EVENT_NAME}); scanning in full mode (report only)."
+              mode="full"
+            fi
+          fi
+          if [ "$mode" = diff ]; then
+            git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
+            echo "BASE_DIR=$RUNNER_TEMP/base" >> "$GITHUB_ENV"
+            # Renamed files: their base findings are compared under the new name (findings.py).
+            git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv"
+            git -c core.quotePath=false diff --no-ext-diff -M -U0 "$BASE_SHA" HEAD > "$RUNNER_TEMP/diff.txt"
+            echo "RENAMES=$RUNNER_TEMP/renames.tsv" >> "$GITHUB_ENV"
+          fi
+          echo "MODE=$mode" >> "$GITHUB_ENV"
+          mkdir -p "$R" "$R/base" "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "mode=$mode base=${BASE_SHA:-none} head=$HEAD_SHA"
+
+      - name: Findings helper
+        run: |
+          # findings.py: reads a head and (optionally) a base result file, drops excluded paths and findings below
+          # the minimum level, prints annotations for findings the change adds, appends a summary row, and exits 1
+          # when gating and something is new. Findings are compared on (rule, file, message) with line numbers
+          # ignored, so code that only moved is not "new".
+          cat > "$RUNNER_TEMP/findings.py" <<'PY'
+          import argparse, collections, json, os, re, sys
+          LEVELS = {"none": 0, "note": 1, "info": 1, "style": 1, "warning": 2, "error": 3}
+          p = argparse.ArgumentParser()
+          p.add_argument("--tool", required=True)
+          p.add_argument("--format", choices=["sarif", "shellcheck", "lines"], default="sarif")
+          p.add_argument("--head", required=True)
+          p.add_argument("--base", default="")
+          p.add_argument("--all-new", action="store_true", help="every head finding is new (tool did its own diff)")
+          p.add_argument("--min-level", default="note")
+          p.add_argument("--gate", default="report", choices=["diff", "report"])
+          a = p.parse_args()
+          exclude = re.compile(os.environ.get("EXCLUDE_RE") or r"(?!x)x")
+          roots = [r for r in (os.environ.get("GITHUB_WORKSPACE", ""), os.environ.get("BASE_DIR", "")) if r]
+          renamed = {}  # base path -> head path, from `git diff -M --name-status` (the Scope step)
+          if os.environ.get("RENAMES") and os.path.exists(os.environ["RENAMES"]):
+              for line in open(os.environ["RENAMES"], encoding="utf-8"):
+                  f = line.rstrip("\n").split("\t")
+                  if len(f) == 3 and f[0].startswith("R"):
+                      renamed[f[1]] = f[2]
+
+          def added_lines():
+              """file -> line numbers this change added, from `git diff -U0` (the base step); {} when absent."""
+              out, cur = {}, None
+              path = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "diff.txt")
+              if not os.path.exists(path):
+                  return out
+              for line in open(path, encoding="utf-8", errors="replace"):
+                  if line.startswith("+++ "):
+                      p = line[4:].rstrip("\n")
+                      cur = p[2:] if p.startswith("b/") else None
+                  elif line.startswith("@@") and cur:
+                      m = re.match(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@", line)
+                      if m:
+                          start, count = int(m[1]), int(m[2] if m[2] is not None else 1)
+                          out.setdefault(cur, set()).update(range(start, start + count))
+              return out
+
+          def placed(occurrences, file, n):
+              """Up to n of a key's head occurrences, those on added lines first (several findings share a key)."""
+              on_added = [o for o in occurrences if int(o[0]) in ADDED_LINES.get(file, ())]
+              return (on_added or occurrences)[:n]
+
+          ADDED_LINES = added_lines()
+
+          def norm(msg):
+              # what identifies a finding: one line, no checkout root, no "line 123", single spaces
+              msg = (msg or "").strip().splitlines()[:1] or [""]
+              msg = msg[0]
+              for r in roots:
+                  msg = msg.replace(r.rstrip("/") + "/", "")
+              if a.tool == "osv-scanner":
+                  # "Package 'pillow@12.1.0' is vulnerable to 'CVE-..'": a bump that leaves the CVE open is not new
+                  msg = re.sub(r"'(@?[^'@\s]+)@[^'\s]+'", r"'\1'", msg)
+              return " ".join(re.sub(r"\bline \d+", "line N", msg).split())
+
+          def rel(uri):
+              u = uri[7:] if uri.startswith("file://") else uri
+              for r in roots:
+                  if u.startswith(r.rstrip("/") + "/"):
+                      u = u[len(r.rstrip("/")) + 1:]
+              while u.startswith("./"):
+                  u = u[2:]
+              return u.lstrip("/")
+
+          def load(path):
+              out = []
+              if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
+                  return out
+              if a.format == "sarif":
+                  doc = json.load(open(path, encoding="utf-8"))
+                  seen = set()
+                  for run in doc.get("runs", []):
+                      rules = {r.get("id"): r for r in (run.get("tool", {}).get("driver", {}).get("rules") or [])}
+                      for res in run.get("results") or []:
+                          rid = res.get("ruleId") or "?"
+                          lvl = res.get("level") or ((rules.get(rid) or {}).get("defaultConfiguration") or {}).get("level") or "warning"
+                          loc = ((res.get("locations") or [{}])[0]).get("physicalLocation", {})
+                          uri = rel((loc.get("artifactLocation") or {}).get("uri", ""))
+                          line = (loc.get("region") or {}).get("startLine") or 1
+                          text = (res.get("message") or {}).get("text") or ""
+                          # OSV-Scanner writes many results twice, identical down to the fingerprint: count them once
+                          ident = (rid, uri, line, text, json.dumps(res.get("partialFingerprints") or {}, sort_keys=True))
+                          if ident in seen:
+                              continue
+                          seen.add(ident)
+                          out.append((rid, uri, norm(text), lvl, line))
+              elif a.format == "shellcheck":
+                  doc = json.load(open(path, encoding="utf-8"))
+                  for c in doc.get("comments", []):
+                      out.append((f"SC{c['code']}", rel(c["file"]), norm(c["message"]), c["level"], c["line"]))
+              else:
+                  pat = re.compile(r"^(?P<path>[^\s:][^:]*?):(?P<line>\d+)(?::\d+)?:\s*(?P<rest>.+)$")
+                  for raw in open(path, encoding="utf-8", errors="replace"):
+                      m = pat.match(raw.rstrip("\n"))
+                      if m:
+                          out.append(("", rel(m["path"]), norm(m["rest"]), "error", int(m["line"])))
+              keep = LEVELS.get(a.min_level, 1)
+              return [f for f in out if LEVELS.get(f[3], 2) >= keep and not exclude.search(f[1])]
+
+          head = load(a.head)
+          key = lambda f: (f[0], f[1], f[2])
+          hc = collections.Counter(key(f) for f in head)
+          if a.gate == "diff" and a.all_new:
+              new, base_n = hc, "n/a"
+          elif a.gate == "diff":
+              bc = collections.Counter((f[0], renamed.get(f[1], f[1]), f[2]) for f in load(a.base))
+              new, base_n = hc - bc, sum(bc.values())
+          else:
+              new, base_n = collections.Counter(), "n/a"
+          occ = {}
+          for f in head:
+              occ.setdefault(key(f), []).append((f[4], f))
+          shown = 0
+          for k, n in sorted(new.items(), key=lambda kv: -LEVELS.get(occ[kv[0]][0][1][3], 2)):
+              if shown >= 30:
+                  print(f"::warning::{a.tool}: {sum(new.values()) - shown} more new finding(s) in the {a.tool} report")
+                  break
+              at = placed(occ[k], k[1], n)
+              for line, (rid, uri, msg, lvl, _) in at:
+                  print(f"::error file={uri},line={line}::{a.tool} {rid}: {msg[:300]}" + (f" (x{n})" if len(at) < n and n > 1 else ""))
+              shown += 1
+          total, n_new = sum(hc.values()), sum(new.values())
+          status = ("FAIL" if n_new else "pass") if a.gate == "diff" else "report only"
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "rows.md"), "a", encoding="utf-8") as s:
+              s.write(f"| {a.tool} | {total} | {base_n} | {n_new if a.gate == 'diff' else 'n/a'} | {status} |\n")
+          print(f"{a.tool}: {total} finding(s) at >= {a.min_level}; new in this change: {n_new if a.gate == 'diff' else 'n/a'} -> {status}")
+          sys.exit(1 if (a.gate == "diff" and n_new) else 0)
+          PY
+          printf '| tool | findings now | on base | new | result |\n|---|---:|---:|---:|---|\n' > "$RUNNER_TEMP/rows.md"
+
+      - name: Install scanners
+        id: install
+        env:
+          OSV_V: ${{ inputs.osv-version }}
+          OSV_SHA: ${{ inputs.osv-sha256 }}
+          TRIVY_V: ${{ inputs.trivy-version }}
+          TRIVY_SHA: ${{ inputs.trivy-sha256 }}
+          HADOLINT_V: ${{ inputs.hadolint-version }}
+          HADOLINT_SHA: ${{ inputs.hadolint-sha256 }}
+          SC_V: ${{ inputs.shellcheck-version }}
+          SC_SHA: ${{ inputs.shellcheck-sha256 }}
+          AL_V: ${{ inputs.actionlint-version }}
+          AL_SHA: ${{ inputs.actionlint-sha256 }}
+        run: |
+          set -euo pipefail
+          B="$RUNNER_TEMP/bin"; T="$RUNNER_TEMP/dl"; mkdir -p "$T"
+          get() { # <url> <file> <sha256>
+            curl -sSfL --retry 3 -o "$T/$2" "$1"
+            if [ -n "$3" ]; then echo "$3  $T/$2" | sha256sum -c - >/dev/null || { echo "::error::checksum mismatch for $2"; exit 1; }; fi
+          }
+          G=https://github.com
+          get "$G/google/osv-scanner/releases/download/v${OSV_V}/osv-scanner_linux_amd64" osv-scanner "$OSV_SHA"
+          install -m 755 "$T/osv-scanner" "$B/osv-scanner"
+          get "$G/aquasecurity/trivy/releases/download/v${TRIVY_V}/trivy_${TRIVY_V}_Linux-64bit.tar.gz" trivy.tgz "$TRIVY_SHA"
+          tar -xzf "$T/trivy.tgz" -C "$B" trivy
+          get "$G/hadolint/hadolint/releases/download/v${HADOLINT_V}/hadolint-linux-x86_64" hadolint "$HADOLINT_SHA"
+          install -m 755 "$T/hadolint" "$B/hadolint"
+          get "$G/koalaman/shellcheck/releases/download/v${SC_V}/shellcheck-v${SC_V}.linux.x86_64.tar.xz" sc.txz "$SC_SHA"
+          tar -xJf "$T/sc.txz" -C "$T" && install -m 755 "$T/shellcheck-v${SC_V}/shellcheck" "$B/shellcheck"
+          get "$G/rhysd/actionlint/releases/download/v${AL_V}/actionlint_${AL_V}_linux_amd64.tar.gz" al.tgz "$AL_SHA"
+          tar -xzf "$T/al.tgz" -C "$B" actionlint
+          for t in osv-scanner trivy hadolint shellcheck actionlint; do echo "$t: $("$B/$t" --version 2>&1 | grep -m1 -iE 'version|[0-9]+\.[0-9]+')"; done
+
+      - name: Set up uv (Semgrep, Checkov)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ inputs.uv-version }}
+          python-version: "3.12"
+          enable-cache: false
+
+      - name: Day (Trivy DB cache key)
+        id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the Trivy database
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/trivy-cache
+          # one entry a day (about 100 MB), not one per run
+          key: trivy-db-${{ inputs.trivy-version }}-${{ steps.day.outputs.day }}
+          restore-keys: trivy-db-${{ inputs.trivy-version }}-
+
+      - name: Semgrep
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          V: ${{ inputs.semgrep-version }}
+          CONFIGS: ${{ inputs.semgrep-configs }}
+          EXCLUDES: ${{ inputs.semgrep-exclude }}
+          MIN: ${{ inputs.semgrep-min-level }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          # --disable-nosem: a `# nosemgrep` comment the change adds must not hide its own finding (findings already
+          # suppressed on the base commit are on both sides, so they stay "not new").
+          args=(scan --metrics=off --disable-version-check --quiet --disable-nosem --sarif-output="$R/semgrep.sarif")
+          for c in $CONFIGS; do args+=(--config "$c"); done
+          for e in $EXCLUDES; do args+=(--exclude "$e"); done
+          if [ "$MODE" = diff ]; then args+=(--baseline-commit "$BASE_SHA"); fi
+          # stdout is Semgrep's text report, which prints each matched source line (a p/secrets match is the secret
+          # itself), so it is discarded; stderr (errors) is kept.
+          uvx --from "semgrep==${V}" semgrep "${args[@]}" > /dev/null 2> "$R/semgrep.log"
+          rc=$?
+          tail -5 "$R/semgrep.log"
+          [ "$rc" -eq 0 ] || { echo "::error::semgrep did not run (exit $rc); see $R/semgrep.log in the artifact"; exit "$rc"; }
+          if [ "$MODE" = diff ]; then
+            # --baseline-commit already removed findings that exist on the base commit.
+            python3 "$RUNNER_TEMP/findings.py" --tool semgrep --head "$R/semgrep.sarif" --all-new --min-level "$MIN" --gate diff
+          else
+            python3 "$RUNNER_TEMP/findings.py" --tool semgrep --head "$R/semgrep.sarif" --min-level "$MIN" --gate report
+          fi
+
+      - name: OSV-Scanner (lockfiles)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          lockfiles() { # in the current directory: lockfile arguments for osv-scanner
+            git ls-files | grep -E '(^|/)(uv\.lock|poetry\.lock|Pipfile\.lock|requirements[^/]*\.(txt|lock)|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|Cargo\.lock|Gemfile\.lock|composer\.lock)$' \
+              | grep -Ev "$EXCLUDE_RE" | while IFS= read -r f; do
+                  case "$(basename "$f")" in
+                    *requirements*.lock) printf -- '-L\nrequirements.txt:%s\n' "$f" ;;
+                    *) printf -- '-L\n%s\n' "$f" ;;
+                  esac
+                done
+          }
+          scan() { # <dir> <out.sarif>
+            local args; mapfile -t args < <(cd "$1" && lockfiles)
+            if [ "${#args[@]}" -eq 0 ]; then echo '{"runs":[]}' > "$2"; return 0; fi
+            (cd "$1" && osv-scanner scan source "${args[@]}" --format sarif --output "$2") > "$2.log" 2>&1
+            local rc=$?
+            # 0 = clean, 1 = vulnerabilities found; anything else means the scan did not run.
+            if [ "$rc" -gt 1 ]; then tail -20 "$2.log"; echo "::error::osv-scanner failed (exit $rc) in $1"; return 1; fi
+            grep -E '^Scanned ' "$2.log" | sed "s#$1/##" || true
+          }
+          scan "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$R/osv.sarif" || exit 1
+          if [ "$MODE" = diff ]; then
+            scan "$BASE_DIR" "$GITHUB_WORKSPACE/$R/base/osv.sarif" || exit 1
+            python3 "$RUNNER_TEMP/findings.py" --tool osv-scanner --head "$R/osv.sarif" --base "$R/base/osv.sarif" --gate diff
+          else
+            python3 "$RUNNER_TEMP/findings.py" --tool osv-scanner --head "$R/osv.sarif" --gate report
+          fi
+
+      - name: Trivy filesystem
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          SCANNERS: ${{ inputs.trivy-scanners }}
+          SEVERITY: ${{ inputs.trivy-severity }}
+          SKIP_DIRS: ${{ inputs.trivy-skip-dirs }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          export TRIVY_CACHE_DIR="$RUNNER_TEMP/trivy-cache" TRIVY_DISABLE_TELEMETRY=true
+          scan() { # <dir> <out.sarif> [--skip-db-update]
+            (cd "$1" && trivy fs --quiet --scanners "$SCANNERS" --severity "$SEVERITY" --skip-dirs "$SKIP_DIRS" \
+              --format sarif --output "$2" --exit-code 0 "${@:3}" .)
+          }
+          scan "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$R/trivy.sarif" || { echo "::error::trivy failed"; exit 1; }
+          if [ "$MODE" = diff ]; then
+            scan "$BASE_DIR" "$GITHUB_WORKSPACE/$R/base/trivy.sarif" --skip-db-update || { echo "::error::trivy (base) failed"; exit 1; }
+            python3 "$RUNNER_TEMP/findings.py" --tool trivy --head "$R/trivy.sarif" --base "$R/base/trivy.sarif" --gate diff
+          else
+            python3 "$RUNNER_TEMP/findings.py" --tool trivy --head "$R/trivy.sarif" --gate report
+          fi
+
+      - name: Checkov (Kubernetes, Terraform, rendered Helm charts)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          V: ${{ inputs.checkov-version }}
+          FRAMEWORKS: ${{ inputs.checkov-frameworks }}
+          HELM_CHARTS: ${{ inputs.helm-charts }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          uv tool install --quiet "checkov==${V}" >/dev/null
+          # Helm charts are rendered with `helm template` and the values given in `helm-charts`, then scanned as
+          # Kubernetes manifests. Checkov's own helm runner renders with default values only, and a chart with a
+          # `required` value fails to render there while the step still "passes" with nothing scanned.
+          # Checkov matches --skip-path against paths that may start with "/", so a leading ^ also accepts "/".
+          charts=(); skip="$EXCLUDE_RE"
+          if [ "${skip:0:2}" = "^(" ]; then skip="(^|/)(${skip:2}"; fi
+          while IFS= read -r line; do
+            [ -z "${line//[[:space:]]/}" ] && continue
+            charts+=("$line"); read -r -a parts <<< "$line"
+            skip="${skip}|(^|/)${parts[0]%/}/"   # the raw templates are not valid manifests; scan the rendered output
+          done <<< "$HELM_CHARTS"
+          # Rendered manifests go to a directory whose name does not start with "." (Checkov skips those).
+          scan() { # <checkout dir> <report dir>
+            local dir=$1 out=$2 n=0 line parts
+            mkdir -p "$out"; rm -rf "$dir/ci-rendered-charts"; mkdir -p "$dir/ci-rendered-charts"
+            for line in "${charts[@]}"; do
+              read -r -a parts <<< "$line"
+              n=$((n + 1))
+              if [ ! -d "$dir/${parts[0]}" ]; then echo "chart ${parts[0]} is not in $dir (new or removed in this change)"; continue; fi
+              if ! (cd "$dir" && helm template ci "${parts[@]}") > "$dir/ci-rendered-charts/chart-$n.yaml" 2> "$out/helm-$n.log"; then
+                cat "$out/helm-$n.log"; echo "::error::helm template failed for ${parts[0]} in $dir"; return 1
+              fi
+            done
+            # shellcheck disable=SC2086 # FRAMEWORKS is a space-separated list
+            (cd "$dir" && checkov -d . --framework $FRAMEWORKS --skip-path "$skip" --soft-fail --quiet --compact \
+              -o cli -o json -o sarif --output-file-path "$out") > "$out/checkov.log" 2>&1
+            local rc=$?
+            rm -rf "$dir/ci-rendered-charts"
+            if [ "$rc" -ne 0 ] || [ ! -f "$out/results_sarif.sarif" ]; then
+              tail -20 "$out/checkov.log"; echo "::error::checkov failed (exit $rc) in $dir"; return 1
+            fi
+            # A scan that could not read its input must not count as a pass.
+            if grep -qiE 'Failed processing|Failed to (parse|render)' "$out/checkov.log"; then
+              grep -iE 'Failed processing|Failed to (parse|render)' "$out/checkov.log" | head -5
+              echo "::error::checkov could not process some input in $dir (see checkov.log in the artifact)"; return 1
+            fi
+            # passed + failed checks over every framework's summary (one object, or a list of them)
+            local counted; counted=$(jq '[if type == "array" then .[] else . end | (.summary // {}) | (.passed // 0) + (.failed // 0)] | add // 0' "$out/results_json.json" 2>/dev/null)
+            echo "checkov in ${dir##*/}: ${#charts[@]} chart(s) rendered, ${counted:-0} check result(s)"
+            if [ "${#charts[@]}" -gt 0 ] && [ "${counted:-0}" -eq 0 ]; then
+              echo "::error::checkov evaluated no checks although ${#charts[@]} chart(s) were rendered"; return 1
+            fi
+          }
+          scan "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$R/checkov" || exit 1
+          if [ "$MODE" = diff ]; then
+            scan "$BASE_DIR" "$GITHUB_WORKSPACE/$R/base/checkov" || exit 1
+            python3 "$RUNNER_TEMP/findings.py" --tool checkov --head "$R/checkov/results_sarif.sarif" --base "$R/base/checkov/results_sarif.sarif" --gate diff
+          else
+            python3 "$RUNNER_TEMP/findings.py" --tool checkov --head "$R/checkov/results_sarif.sarif" --gate report
+          fi
+
+      - name: Hadolint (Dockerfiles)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          MIN: ${{ inputs.hadolint-min-level }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          scan() { # <dir> <out.sarif>
+            local files; mapfile -t files < <(cd "$1" && git ls-files | grep -E '(^|/)([^/]*\.)?Dockerfile(\.[^/]*)?$|\.[Dd]ockerfile$' | grep -Ev '\.dockerignore$' | grep -Ev "$EXCLUDE_RE")
+            if [ "${#files[@]}" -eq 0 ]; then echo '{"runs":[]}' > "$2"; return 0; fi
+            (cd "$1" && hadolint --no-fail -f sarif "${files[@]}") > "$2"
+          }
+          scan "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$R/hadolint.sarif" || { echo "::error::hadolint failed"; exit 1; }
+          if [ "$MODE" = diff ]; then
+            scan "$BASE_DIR" "$GITHUB_WORKSPACE/$R/base/hadolint.sarif" || { echo "::error::hadolint (base) failed"; exit 1; }
+            python3 "$RUNNER_TEMP/findings.py" --tool hadolint --head "$R/hadolint.sarif" --base "$R/base/hadolint.sarif" --min-level "$MIN" --gate diff
+          else
+            python3 "$RUNNER_TEMP/findings.py" --tool hadolint --head "$R/hadolint.sarif" --min-level "$MIN" --gate report
+          fi
+
+      - name: ShellCheck (shell scripts)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          SEVERITY: ${{ inputs.shellcheck-severity }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          scan() { # <dir> <out.json>
+            local files; mapfile -t files < <(cd "$1" && git ls-files '*.sh' '*.bash' | grep -Ev "$EXCLUDE_RE")
+            if [ "${#files[@]}" -eq 0 ]; then echo '{"comments":[]}' > "$2"; return 0; fi
+            (cd "$1" && shellcheck -f json1 -S "$SEVERITY" "${files[@]}") > "$2"
+            local rc=$?
+            # 0 = clean, 1 = findings; 2+ = shellcheck itself failed.
+            [ "$rc" -le 1 ] || { echo "::error::shellcheck failed (exit $rc) in $1"; return 1; }
+          }
+          scan "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$R/shellcheck.json" || exit 1
+          if [ "$MODE" = diff ]; then
+            scan "$BASE_DIR" "$GITHUB_WORKSPACE/$R/base/shellcheck.json" || exit 1
+            python3 "$RUNNER_TEMP/findings.py" --tool shellcheck --format shellcheck --head "$R/shellcheck.json" --base "$R/base/shellcheck.json" --gate diff
+          else
+            python3 "$RUNNER_TEMP/findings.py" --tool shellcheck --format shellcheck --head "$R/shellcheck.json" --gate report
+          fi
+
+      - name: actionlint (workflows)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
+          # shellcheck disable=SC2016 # a Go template for actionlint (it turns \n into a newline), not a shell expansion
+          fmt='{{range $err := .}}{{$err.Filepath}}:{{$err.Line}}:{{$err.Column}}: {{$err.Message}} [{{$err.Kind}}]\n{{end}}'
+          scan() { # <dir> <out.txt>
+            if [ ! -d "$1/.github/workflows" ]; then : > "$2"; return 0; fi
+            (cd "$1" && actionlint -no-color -format "$fmt") > "$2" 2> "$2.err"
+            local rc=$?
+            # 0 = clean, 1 = findings; 2+ = actionlint itself failed.
+            [ "$rc" -le 1 ] || { cat "$2.err"; echo "::error::actionlint failed (exit $rc) in $1"; return 1; }
+          }
+          scan "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$R/actionlint.txt" || exit 1
+          if [ "$MODE" = diff ]; then
+            scan "$BASE_DIR" "$GITHUB_WORKSPACE/$R/base/actionlint.txt" || exit 1
+            python3 "$RUNNER_TEMP/findings.py" --tool actionlint --format lines --head "$R/actionlint.txt" --base "$R/base/actionlint.txt" --gate diff
+          else
+            python3 "$RUNNER_TEMP/findings.py" --tool actionlint --format lines --head "$R/actionlint.txt" --gate report
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Security scanners (${MODE:-?} mode)"
+            echo
+            if [ "${MODE:-}" = diff ]; then
+              echo "A tool fails only on findings this change adds (compared with ${BASE_SHA:0:12}, line numbers ignored)."
+            else
+              echo "Full scan: findings are reported, nothing is gated."
+            fi
+            echo
+            cat "$RUNNER_TEMP/rows.md" 2>/dev/null
+            echo
+            echo "Reports: the \`security-reports-scanners\` artifact (SARIF / JSON / text)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Strip source snippets from the reports
+        # SARIF can carry the matched source line (Semgrep's region.snippet holds the secret for a p/secrets match).
+        # Reports keep rule, file, line and message only, before anything is uploaded.
+        if: always()
+        run: |
+          shopt -s globstar nullglob
+          for f in "$R"/**/*.sarif; do
+            jq 'del(.runs[]?.results[]?.locations[]?.physicalLocation.region.snippet,
+                    .runs[]?.results[]?.locations[]?.physicalLocation.contextRegion,
+                    .runs[]?.results[]?.relatedLocations[]?.physicalLocation.region.snippet,
+                    .runs[]?.results[]?.relatedLocations[]?.physicalLocation.contextRegion,
+                    .runs[]?.results[]?.codeFlows, .runs[]?.results[]?.fixes)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+          for f in "$R"/**/shellcheck.json; do jq 'del(.comments[]?.fix)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
+          left=0
+          for f in "$R"/**/*.sarif; do
+            n=$(jq '[.runs[]?.results[]? | .. | objects | select(has("snippet"))] | length' "$f")
+            [ "$n" -eq 0 ] || { echo "::error::$f still holds $n snippet(s)"; left=1; }
+          done
+          exit "$left"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-reports-scanners
+          path: security-reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  upload-sarif:
+    # Only when asked: GitHub code scanning must be available, and the caller must grant security-events: write.
+    # No permissions block here on purpose: declaring security-events: write would make every caller that does not
+    # grant it fail at startup, even with upload-sarif false.
+    name: upload SARIF to code scanning
+    if: ${{ inputs.upload-sarif && !cancelled() }}
+    needs: [secrets, scanners]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        report:
+          - { artifact: security-reports-secrets, file: gitleaks.sarif, category: gitleaks }
+          - { artifact: security-reports-scanners, file: semgrep.sarif, category: semgrep }
+          - { artifact: security-reports-scanners, file: osv.sarif, category: osv-scanner }
+          - { artifact: security-reports-scanners, file: trivy.sarif, category: trivy-fs }
+          - { artifact: security-reports-scanners, file: checkov/results_sarif.sarif, category: checkov }
+          - { artifact: security-reports-scanners, file: hadolint.sarif, category: hadolint }
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ matrix.report.artifact }}
+          path: reports
+      - name: Check the report exists
+        id: has
+        env:
+          FILE: reports/${{ matrix.report.file }}
+        run: if [ -s "$FILE" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::notice::no $FILE"; fi
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: steps.has.outputs.ok == 'true'
+        with:
+          sarif_file: reports/${{ matrix.report.file }}
+          category: ${{ matrix.report.category }}

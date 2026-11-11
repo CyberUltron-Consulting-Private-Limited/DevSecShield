@@ -1,0 +1,573 @@
+# DevSecShield CI: the one workflow every pull request and every push to dev / staging / main runs.
+#
+# It decides what changed (dorny/paths-filter), runs only the affected suites through the reusable workflows in this
+# directory, and ends in ONE job, `ci-gate`, which is the only check branch protection needs to require. A suite
+# that path filtering skipped counts as passed; a failed or cancelled one fails the gate, and so does a suite that
+# was skipped although its paths changed.
+#
+#   changes      what changed -> which suites run, and the image list
+#   pr-checks    branch-flow (staging <- dev, main <- staging | hotfix/*), review-labels (drop outdated review labels),
+#                pr-hygiene (title, acceptance criteria, no secret files, gate changes and suppressions need a label)
+#   backend      backend/ pytest on Python 3.12 with PostgreSQL 15, ruff "no new findings"
+#   aibom        aibom/ pytest (AI-BOM + CBOM gates), ruff + mypy "no new findings", representative-repo gates
+#   cbom-action  .github/actions/cbom-scan: a clean tree passes, a vulnerable tree is blocked (exit 1, not 127)
+#   scan-node    scan_node/ pytest from the hash-pinned lock
+#   worker       RabbitMQ/worker pytest (tests/, helpers/tests/test_*, the sca_sbom_agent tests)
+#   dast-worker  RabbitMQ/dast_worker pytest (helpers/tests/test_*)
+#   worker-locks uv lock --check for the guardrail worker
+#   frontend     npm ci, tsc, eslint "no new errors", *.test.ts with tsx, next build
+#   security     gitleaks, ggshield, Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint
+#   codeql       python + javascript-typescript (only where CodeQL is licensed; see reusable-codeql.yml)
+#   images       docker build (no push) + Trivy image scan for each changed image
+#   ci-gate      summary of all of the above; the required status check
+#
+# Docs: docs/ci/README.md
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, staging, main]
+  push:
+    branches: [dev, staging, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # A new push to a PR cancels the older run. On dev / staging / main a running run is not cancelled, but GitHub
+  # keeps only one PENDING run per group: with several quick merges, the middle commits can end up with no result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.decide.outputs.backend }}
+      aibom: ${{ steps.decide.outputs.aibom }}
+      cbom-action: ${{ steps.decide.outputs.cbom-action }}
+      scan-node: ${{ steps.decide.outputs.scan-node }}
+      worker: ${{ steps.decide.outputs.worker }}
+      dast-worker: ${{ steps.decide.outputs.dast-worker }}
+      worker-locks: ${{ steps.decide.outputs.worker-locks }}
+      frontend: ${{ steps.decide.outputs.frontend }}
+      code: ${{ steps.decide.outputs.code }}
+      pipeline: ${{ steps.decide.outputs.pipeline }}
+      images: ${{ steps.decide.outputs.images }}
+    steps:
+      # Pull requests: the file list comes from the API. Pushes: from git, against the commit before the push (`base`
+      # = the pushed branch; without it the action diffs against the default branch). workflow_dispatch: everything.
+      - name: Checkout
+        if: github.event_name == 'push'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Each suite runs when a file ITS TESTS READ changes, not only its own directory: the backend tests read
+      # deploy/, scripts/, e2e/, compose/, RabbitMQ/, scan_node/, aibom/, migrations and frontend sources; aibom's
+      # read every .py in backend/, RabbitMQ/, bench/, e2e/ and some docs ledgers; scan-node's read backend and
+      # aibom files. .github/tests/test_ci.py keeps this map honest.
+      - name: Paths changed
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          base: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          # A change to the pipeline itself runs every suite, so a CI change is tested end to end.
+          filters: |
+            pipeline: &pipeline
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/reusable-*.yml'
+            backend:
+              - *pipeline
+              # the rest of the backend rule is `backend-broad` below; these are the frontend files its tests read
+              # (test_certin_* search app/, components/ and utils/ for a banned word; others pin single files)
+              - 'frontend/app/**'
+              - 'frontend/components/**'
+              - 'frontend/utils/**'
+            aibom:
+              - *pipeline
+              - 'aibom/**'
+              - 'bench/**'
+              - 'backend/**/*.py'      # test_only_cbom_code_imports_posture reads every .py file in these trees
+              - 'RabbitMQ/**/*.py'
+              - 'e2e/**/*.py'
+              - 'backend/utilities/cbom_sources/data/crypto_kb.json'
+              - 'docs/cbom-posture/**'
+              - 'docs/cbom-research/LEDGER.md'
+              - 'docs/certin/LEDGER.md'
+              - 'docs/sebi/LEDGER.md'
+            cbom-action:
+              - *pipeline
+              - '.github/actions/cbom-scan/**'
+              - 'aibom/src/aibom/cli.py'
+              - 'aibom/src/aibom/cbom/**'
+              - 'aibom/tests/fixtures/code-supply/**'
+              - 'aibom/pyproject.toml'
+              - 'aibom/uv.lock'
+            scan-node:
+              - *pipeline
+              - 'scan_node/**'
+              - 'backend/utilities/cbom_sources/node_auth.py'
+              - 'backend/utilities/cbom_sources/templates.py'
+              - 'aibom/src/aibom/cbom/pkgdb.py'
+              - 'deploy/node-images/**'
+              - 'frontend/components/cbom/sources/logic.ts'
+            worker:
+              - *pipeline
+              - '.github/ci/pytest-deselect-worker.txt'
+              - 'RabbitMQ/worker/**'
+              - 'aibom/src/**'         # the sca_sbom_agent tests import aibom from source
+            dast-worker:
+              - *pipeline
+              - '.github/ci/pytest-deselect-dast-worker.txt'
+              - 'RabbitMQ/dast_worker/**'
+              - 'compose/worker-compose/docker-compose.yml'
+            worker-locks:
+              - *pipeline
+              - 'RabbitMQ/guardrail_worker/**'
+            frontend:
+              - *pipeline
+              - 'frontend/**'
+            code:
+              - *pipeline
+              - '**/*.py'
+              - '**/*.ts'
+              - '**/*.tsx'
+              - '**/*.js'
+              - '**/*.mjs'
+            selftest:
+              - '.github/workflows/**'
+              - '.github/tests/**'
+              - '.github/PULL_REQUEST_TEMPLATE/**'
+              - '.github/pull_request_template.md'
+              - 'docs/ci/README.md'      # test_docs.py: every reusable input is documented
+            img-all:
+              - *pipeline
+              - 'scripts/deploy/**'
+            img-backend:
+              - 'backend/**'
+              - 'prod_database_migrations/**'
+            img-frontend:
+              - 'frontend/**'
+            img-scan-node:
+              - 'scan_node/**'
+            img-scan-worker:
+              - 'RabbitMQ/worker/**'
+            img-scan-worker-aibom:
+              - 'aibom/**'
+            img-dast-worker:
+              - 'RabbitMQ/dast_worker/**'
+
+      # The backend rule is inverted: its tests read files all over the repository (deploy/, scripts/, e2e/,
+      # compose/, RabbitMQ/, scan_node/, aibom/, bench/, prod_database_migrations/), so it runs on ANY change except
+      # documentation, frontend-only files (the ones it reads are listed above) and CI configuration. Negations need
+      # every pattern to match, hence a second filter step.
+      - name: Paths changed (backend, inverted)
+        id: broad
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          base: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          predicate-quantifier: every
+          filters: |
+            backend-broad:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!frontend/**'
+              - '!.github/**'
+              - '!.coderabbit.yaml'
+              - '!.gitleaks.toml'
+              - '!.gitleaksignore'
+              - '!.gitignore'
+              - '!LICENSE*'
+
+      # What runs:
+      #   pull requests and pushes to dev  the suites whose paths changed
+      #   pushes to staging and main      security and the changed images only: those commits arrive through a PR
+      #                                   whose run already tested the merged tree ("Require branches to be up to
+      #                                   date" in branch protection), so the suites are not run a second time
+      #   workflow_dispatch               everything
+      # The scan-worker image (torch through garak, about 20 minutes) is built on a PR only when RabbitMQ/worker/
+      # changes; on a push to dev also when aibom/ (copied into the image) changes. Its layer cache is written on
+      # pushes to dev only, and PRs read it.
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref_name }}
+          F: ${{ toJSON(steps.filter.outputs) }}
+          BROAD: ${{ steps.broad.outputs.backend-broad }}
+        run: |
+          set -euo pipefail
+          all=false; suites=true
+          [ "$EVENT" = workflow_dispatch ] && all=true
+          if [ "$EVENT" = push ] && [ "$REF" != dev ]; then suites=false; fi
+          [ "$BROAD" = true ] && F=$(jq -c '.backend = "true"' <<< "$F")
+          f() { [ "$all" = true ] || [ "$(jq -r --arg k "$1" '.[$k] // "false"' <<< "$F")" = true ]; }
+          for s in backend aibom cbom-action scan-node worker dast-worker worker-locks frontend code; do
+            if [ "$suites" = true ] && f "$s"; then v=true; else v=false; fi
+            echo "$s=$v" >> "$GITHUB_OUTPUT"; echo "$s=$v"
+          done
+          if f selftest; then echo "pipeline=true" >> "$GITHUB_OUTPUT"; else echo "pipeline=false" >> "$GITHUB_OUTPUT"; fi
+          images='[]'
+          add() { images=$(jq -c --argjson i "$1" '. + [$i]' <<< "$images"); }
+          # Same contexts and build arguments as scripts/deploy/build_images.sh and scripts/release/scan_node_image.sh.
+          if f img-all || f img-backend; then
+            add '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","build-contexts":"migrations=prod_database_migrations"}'
+          fi
+          if f img-all || f img-frontend; then
+            add '{"name":"frontend","context":"frontend","dockerfile":"frontend/Dockerfile","build-args":"NEXT_PUBLIC_BACKEND_URL=http://localhost:8000"}'
+          fi
+          if f img-all || f img-scan-node; then
+            add '{"name":"scan-node","context":"scan_node","dockerfile":"scan_node/Dockerfile"}'
+          fi
+          if f img-scan-worker || [ "$all" = true ] || { [ "$EVENT" = push ] && f img-scan-worker-aibom; }; then
+            add '{"name":"scan-worker","context":".","dockerfile":"RabbitMQ/worker/Dockerfile","free-disk-space":true}'
+          fi
+          if f img-all || f img-dast-worker; then
+            add '{"name":"dast-worker","context":"RabbitMQ/dast_worker","dockerfile":"RabbitMQ/dast_worker/Dockerfile"}'
+          fi
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "images: $(jq -r 'map(.name) | join(", ")' <<< "$images")"
+
+  ci-selftest:
+    name: ci-selftest
+    needs: changes
+    if: needs.changes.outputs.pipeline == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Unit tests of the no-new-findings comparators (.github/tests)
+        run: python3 -m unittest discover -s .github/tests -v
+
+  pr-checks:
+    name: pr-checks
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write # review-labels removes review labels that new commits outdate; it checks out nothing
+    uses: ./.github/workflows/reusable-pr-checks.yml
+
+  backend:
+    name: backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: backend
+      working-directory: backend
+      python-version: "3.12" # the production image (backend/Dockerfile) runs 3.12; backend/.python-version says 3.10
+      postgres: true
+      # as in compose/ and deploy/staging/, pinned by digest (Dependabot does not update workflow service images;
+      # bump it by hand with `docker buildx imagetools inspect postgres:15-alpine`)
+      postgres-image: postgres:15-alpine@sha256:aae6554de426ae1990f1a939ff183a0299146cf7142a6f4c379c3357af9cc2d8
+      postgres-databases: c1 auth cbom p1
+      # test_cbom_sources_as_results reads the generated PDFs with pdftotext (poppler-utils).
+      apt-packages: poppler-utils
+      # test_ratelimit runs `nginx -t` on the staging site, which binds :80 / :443. The runner user is not root
+      # (a developer machine usually is), so allow unprivileged binds to low ports for this throwaway VM.
+      setup-command: sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0
+      # The posture-PDF tests call aibom/.venv/bin/python, so the aibom venv is installed too.
+      install-command: uv sync --frozen && (cd ../aibom && uv sync --frozen --all-extras --dev)
+      lint-diff-command: uvx ruff@0.15.18 check --output-format concise --exclude .venv .
+      env: |
+        PYTHONPATH=${{ github.workspace }}
+        JWT_SECRET_KEY=ci-only-not-a-secret
+        JWT_REFRESH_SECRET_KEY=ci-only-not-a-secret
+        AWS_ACCESS_KEY_ID=ci-only-dummy
+        AWS_SECRET_ACCESS_KEY=ci-only-dummy
+        AWS_DEFAULT_REGION=us-east-1
+        RABBIT_ADMIN_USERNAME=ci
+        RABBIT_ADMIN_PASSWORD=ci-only-dummy
+      test-command: >-
+        CANCEL_RACE_PG_URL="$PG_URL_C1" AUTH_TEST_PG_URL="$PG_URL_AUTH" CBOM_TEST_PG_URL="$PG_URL_CBOM"
+        P1_PG_URL="$PG_URL_P1"
+        uv run --frozen --with pytest==9.2.0 --with moto==5.2.5 python -m pytest tests -q -p no:cacheprovider
+        -o addopts="" --durations=15 --junitxml="$GITHUB_WORKSPACE/test-reports/backend-junit.xml"
+      artifact-paths: test-reports/
+      timeout-minutes: 35
+
+  aibom:
+    name: aibom
+    needs: changes
+    if: needs.changes.outputs.aibom == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: aibom
+      working-directory: aibom
+      python-version: "3.12"
+      install-command: uv sync --frozen --all-extras --dev
+      # The CBOM lane's ruff + mypy gate used to fail on 1,640 pre-existing E501s (pyproject says 88 columns, the code
+      # is written to ~120) and 68 mypy errors; it now blocks only on findings a change adds.
+      # One linter per line: each one's exit code is checked on its own.
+      lint-diff-command: |
+        uv run --frozen --no-sync ruff check --output-format concise src tests
+        uv run --frozen --no-sync mypy src/aibom/cbom src/aibom/emit/cyclonedx.py
+      # Everything the old aibom-gates / cbom-gates / cbom-posture-gates ran: the whole suite (gates A-E and the
+      # posture tests are subsets of it) plus the two representative-repo true-miss gates. No -q here: pyproject's
+      # addopts already has one, and -qq drops pytest's "N passed" line.
+      test-command: |
+        rc=0
+        uv run --frozen --no-sync python -m pytest tests -p no:cacheprovider --durations=10 \
+          --junitxml="$GITHUB_WORKSPACE/test-reports/aibom-junit.xml" || rc=1
+        echo "::group::AI-BOM true-miss gate (pinned real repos)"; bash bench/ci_repos.sh || rc=1; echo "::endgroup::"
+        echo "::group::CBOM true-miss gate (pyjwt, pyopenssl)"; bash ../bench/cbom/ci_repos.sh || rc=1; echo "::endgroup::"
+        exit "$rc"
+      artifact-paths: test-reports/
+      timeout-minutes: 30
+
+  cbom-action:
+    name: cbom-action
+    needs: changes
+    if: needs.changes.outputs.cbom-action == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Clean tree is allowed
+        uses: ./.github/actions/cbom-scan
+        with:
+          path: aibom/tests/fixtures/code-supply/clean
+      - name: Vulnerable tree is scanned
+        id: gate
+        continue-on-error: true
+        uses: ./.github/actions/cbom-scan
+        with:
+          path: aibom/tests/fixtures/code-supply/vulnerable
+      - name: The gate blocked the vulnerable tree with exit code 1
+        env:
+          CODE: ${{ steps.gate.outputs.exit-code }}
+        run: |
+          # exit 1 = high findings. 127 ("command not found") or anything else means the scan never ran, which the
+          # old workflow mistook for a block.
+          if [ "$CODE" != 1 ]; then echo "::error::expected the scan to block with exit 1, got '${CODE:-none}'"; exit 1; fi
+          echo "blocked the vulnerable tree (exit 1)"
+
+  scan-node:
+    name: scan-node
+    needs: changes
+    if: needs.changes.outputs.scan-node == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: scan-node
+      working-directory: scan_node
+      python-version: "3.12" # scan_node/Dockerfile: python:3.12-slim
+      lock-check: false # pip-style hash-pinned requirements.lock, not uv.lock
+      install-command: >-
+        uv venv .venv &&
+        uv pip install --python .venv --require-hashes --no-deps -r requirements.lock &&
+        uv pip install --python .venv pytest==8.3.5
+      test-command: >-
+        .venv/bin/python -m pytest -q -p no:cacheprovider tests
+        --junitxml="$GITHUB_WORKSPACE/test-reports/scan-node-junit.xml"
+      artifact-paths: test-reports/
+      timeout-minutes: 20
+
+  worker:
+    name: worker
+    needs: changes
+    if: needs.changes.outputs.worker == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: worker
+      working-directory: RabbitMQ/worker
+      python-version: "3.12" # RabbitMQ/worker/pyproject.toml: >=3.12,<3.13
+      # garak pulls torch with the CUDA wheels (several GB): make room, and do not push them into the 10 GB Actions cache.
+      free-disk-space: true
+      uv-cache: false
+      install-command: uv sync --frozen
+      # Every pytest-style test file: tests/, helpers/tests/test_*.py, helpers/tools/sca_sbom_agent/test_*.py. The
+      # older helpers/tests/*_test.py scripts call live LLMs and services and are not part of the suite. pytest is
+      # not a dependency of the worker project, hence --with.
+      test-command: >-
+        uv run --frozen --with pytest==9.2.0 python -m pytest -q -p no:cacheprovider -o addopts=""
+        tests helpers/tests/test_*.py helpers/tools/sca_sbom_agent/test_*.py
+        --junitxml="$GITHUB_WORKSPACE/test-reports/worker-junit.xml"
+      deselect-file: .github/ci/pytest-deselect-worker.txt
+      artifact-paths: test-reports/
+      timeout-minutes: 30
+
+  dast-worker:
+    name: dast-worker
+    needs: changes
+    if: needs.changes.outputs.dast-worker == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: dast-worker
+      working-directory: RabbitMQ/dast_worker
+      python-version: "3.12" # RabbitMQ/dast_worker/Dockerfile: uv on python3.12-bookworm-slim
+      install-command: uv sync --frozen
+      # The pytest-style tests (helpers/tests/test_*.py); the *_test.py scripts call live scan targets.
+      test-command: >-
+        uv run --frozen --with pytest==9.2.0 python -m pytest -q -p no:cacheprovider -o addopts=""
+        helpers/tests/test_*.py --junitxml="$GITHUB_WORKSPACE/test-reports/dast-worker-junit.xml"
+      deselect-file: .github/ci/pytest-deselect-dast-worker.txt
+      artifact-paths: test-reports/
+      timeout-minutes: 20
+
+  worker-locks:
+    name: worker-locks
+    needs: changes
+    if: needs.changes.outputs.worker-locks == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.6"
+          enable-cache: false
+      # The guardrail worker has no pytest suite (worker_test.py is a manual script); its lock is still checked.
+      - name: uv.lock matches pyproject.toml (guardrail_worker)
+        working-directory: RabbitMQ/guardrail_worker
+        run: uv lock --check
+
+  frontend:
+    name: frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-frontend.yml
+    with:
+      working-directory: frontend
+      node-version: "20" # frontend/Dockerfile: node:20-alpine
+
+  security:
+    name: security
+    permissions:
+      contents: read
+      pull-requests: read # gitleaks reads the PR's secret-fixtures-reviewed label
+    uses: ./.github/workflows/reusable-security.yml
+    with:
+      # Deliberately vulnerable detector fixtures and benchmark clones, anchored to their real roots (a future
+      # product directory named "fixtures" or "examples" elsewhere is still scanned). gitleaks ignores this list.
+      exclude-regex: >-
+        ^(aibom/tests/fixtures|scan_node/tests/fixtures|backend/tests/fixtures|e2e/fixtures|bench/repos|aibom/bench/repos|aibom/examples)/|(^|/)(node_modules|\.venv|venv|\.next|dist)/
+      semgrep-exclude: >-
+        aibom/tests/fixtures scan_node/tests/fixtures backend/tests/fixtures e2e/fixtures bench/repos aibom/bench/repos
+        aibom/examples node_modules .venv
+      trivy-skip-dirs: >-
+        aibom/tests/fixtures,scan_node/tests/fixtures,backend/tests/fixtures,e2e/fixtures,bench/repos,aibom/bench/repos,aibom/examples,**/node_modules,**/.venv
+      # The customer-side scan-node chart, rendered with CI placeholder values (apiUrl is `required`) and with the
+      # host-agent DaemonSet switched on, so Checkov sees every manifest the chart can produce.
+      helm-charts: >-
+        deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
+        --set agent.enabled=true --set agent.poolToken=ci-placeholder
+    secrets:
+      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+
+  codeql:
+    name: codeql
+    needs: changes
+    # Licensed for public repos and for organisation repos with GitHub Code Security; set the repository variable
+    # CODEQL_ENABLED=true once one of those holds. Until then the job is skipped (no runner started).
+    if: needs.changes.outputs.code == 'true' && (vars.CODEQL_ENABLED == 'true' || !github.event.repository.private)
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-codeql.yml
+    with:
+      enabled: true
+
+  images:
+    name: images
+    needs: changes
+    if: needs.changes.outputs.images != '[]' && needs.changes.outputs.images != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-image-build.yml
+    with:
+      images: ${{ needs.changes.outputs.images }}
+      pre-build-command: scripts/deploy/check_image_contexts.sh
+      # Layers are written to the Actions cache from dev only; PR runs read them (GitHub lets a PR read its base
+      # branch's cache). Per-PR caches of the multi-GB worker image would churn the 10 GB repository cache.
+      cache-write: ${{ github.event_name == 'push' && github.ref_name == 'dev' }}
+
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs: [changes, ci-selftest, pr-checks, backend, aibom, cbom-action, scan-node, worker, dast-worker, worker-locks,
+            frontend, security, codeql, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: All required jobs passed or were not needed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+          CODEQL_ON: ${{ vars.CODEQL_ENABLED == 'true' || !github.event.repository.private }}
+        # A skip passes only when the `changes` job said the suite was not affected. A suite skipped although its
+        # paths changed (a broken `if:`, a renamed output) fails. Tested by .github/tests/test_ci.py.
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          out = (needs.get("changes") or {}).get("outputs") or {}
+          on = lambda k: out.get(k) == "true"
+          expected = {  # job -> was it supposed to run?
+              "changes": True, "security": True,
+              "pr-checks": os.environ.get("EVENT") == "pull_request",
+              "ci-selftest": on("pipeline"),
+              "codeql": on("code") and os.environ.get("CODEQL_ON") == "true",
+              "images": out.get("images", "[]") not in ("", "[]"),
+          }
+          output_of = {"ci-selftest": "pipeline", "codeql": "code", "images": "images"}  # default: the job's name
+          icon = {"success": "pass", "skipped": "skipped (not affected)", "failure": "FAIL", "cancelled": "CANCELLED"}
+          rows, bad = [], []
+          for job, info in needs.items():
+              r = info.get("result", "unknown")
+              if job not in ("changes", "security", "pr-checks") and output_of.get(job, job) not in out \
+                      and (needs.get("changes") or {}).get("result") == "success":
+                  rows.append(f"| {job} | {r}, but `changes` did not report `{output_of.get(job, job)}` |")
+                  bad.append(f"{job}: the changes job did not report its output {output_of.get(job, job)!r}")
+                  continue
+              want = expected.get(job, on(job))
+              if r == "skipped" and want:
+                  rows.append(f"| {job} | SKIPPED although affected |")
+                  bad.append(f"{job}: skipped although the changes job selected it")
+                  continue
+              rows.append(f"| {job} | {icon.get(r, r)} |")
+              if r not in ("success", "skipped"):
+                  bad.append(f"{job}: {r}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
+              s.write("### ci-gate\n\n| job | result |\n|---|---|\n" + "\n".join(rows) + "\n\n")
+              s.write(("**Gate: FAIL** (" + ", ".join(bad) + ")\n") if bad else "**Gate: pass**\n")
+          print("\n".join(rows))
+          if bad:
+              print("::error title=ci-gate::" + "; ".join(bad))
+              sys.exit(1)
+          PY
