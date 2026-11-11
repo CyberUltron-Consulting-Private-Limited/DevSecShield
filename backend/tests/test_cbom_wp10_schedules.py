@@ -91,7 +91,7 @@ def test_schedule_api_validation_and_permissions(api, world):
     sched = r.json()["schedule"]
     assert sched["next_run_at"].endswith("Z") and sched["soc_ack"] is False
     for bad, msg in (({"time_of_day": "25:00"}, "time_of_day"), ({"frequency": "weekly"}, "weekday"),
-                     ({"frequency": "monthly", "monthday": 31}, "monthday"), ({"include": {}}, "include"),
+                     ({"frequency": "monthly", "monthday": 31}, "Day of month"), ({"include": {}}, "include"),
                      ({"include": {"network": True}}, "soc_ack"), ({"source_ids": [999]}, "source_ids"),
                      ({"name": "<b>"}, "name")):
         bad_r = api("POST", "/1/cbom/sources/schedules", json={**base, **bad})

@@ -39,6 +39,7 @@ _FIELD_LABELS = {
     "cidrs": "Network ranges", "ca_pem": "CA certificate", "proxy_url": "Proxy URL", "proxy_ca_pem": "Proxy CA certificate",
     "api_key": "API key", "hec_token": "HEC token", "sni": "SNI", "tls": "TLS", "aws_source_id": "AWS account",
     "cloud_source_id": "Cloud account", "node_id": "Scan node", "kubeconfig": "Kubeconfig",
+    "monthday": "Day of month", "time_of_day": "Time of day", "source_ids": "Sources",
 }
 
 
