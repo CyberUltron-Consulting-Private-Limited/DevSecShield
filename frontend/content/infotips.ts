@@ -486,13 +486,13 @@ export const INFO_TIPS = {
     what: "This scan's average severity weight, from 1 to 4: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. Empty when it found nothing.",
     example: "1 Critical and 1 Low finding: (4+1)/2 = 2.5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135, frontend/app/[team_id]/dast/page.tsx:120-127, frontend/app/[team_id]/ai_bom/page.tsx:114-121, frontend/app/[team_id]/llm/page.tsx:123-130 — tiers on the score shown in the Risk score column
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135, frontend/app/[team_id]/dast/page.tsx:120-127, frontend/app/[team_id]/ai_bom/page.tsx:114-121, frontend/app/[team_id]/llm/page.tsx:123-130, frontend/app/[team_id]/cbom/page.tsx:120-127 — tiers on the score shown in the Risk score column
   "scan.filter.risk": {
     label: "Risk score filter",
     what: "Shows only scans whose Risk score column value is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Scans without findings are hidden by any tier.",
     example: "Low keeps every scan with a score under 5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581 — sorts the loaded rows; missing values count as -1
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581, frontend/app/[team_id]/cbom/page.tsx:668-681 — sorts the loaded rows; missing values count as -1
   "scan.filter.sort": {
     label: "Sort",
     what: "Orders the table by creation date, risk score or credits, high or low first. Scans with no value for the chosen column go last when sorting high first.",
@@ -1377,6 +1377,148 @@ export const INFO_TIPS = {
     label: "Risk score",
     what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10.",
     example: "1 Critical and 1 Medium: (4+2)/2 = 3, so 7.5.",
+  },
+
+  // ────────────────────────────────────────────────────────────── CBOM: scan configuration (components/cbom-options-sidebar.tsx, cbom-ci-scan-settings-form.tsx)
+  // src: RabbitMQ/worker/helpers/tools/cbom_agent/main.py:186-196 — deterministic engine, no language model
+  "cbom.cfg.repository": {
+    label: "Analyze Repository",
+    what: "Inventories the cryptography in your code: algorithms, key sizes, certificates, keys, protocols and crypto libraries, graded for strength and quantum safety, into a CycloneDX CBOM. The engine is rule-based; no AI model reads your code.",
+    example: "Finds RSA-1024 in a Java KeyPairGenerator call and flags it weak and quantum-vulnerable.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/cbom_agent/main.py:186-196, backend/utilities/scan/credit_estimate.py:14-24 — an uploaded CBOM is analysed for a flat 0.01
+  "cbom.cfg.file": {
+    label: "CBOM file",
+    what: "A CycloneDX CBOM you already have, as a JSON file, graded by the same rules. Analysing a file costs a flat 0.01 credits. Choosing a file clears the repository or zip.",
+    example: "cbom.json produced by another scanner.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/cbom_agent/main.py:155-162, aibom/src/aibom/cbom/posture/safeio.py:22 — vendored and build directories are skipped unless asked
+  "cbom.cfg.vendored": {
+    label: "Scan vendored and build directories",
+    what: "Also reads vendor/, dist/, build/ and node_modules/: third-party code and build output, skipped by default. Turn it on to see crypto your dependencies ship; it makes the scan larger and dearer.",
+    example: "A Go service with a vendor/ folder of crypto libraries.",
+  },
+  // src: RabbitMQ/worker/helpers/context/scan_context.py:22-28, RabbitMQ/worker/helpers/context/scan_context.py:44-47 — up to 1,000 commits, blobs over 2 MB not downloaded
+  "cbom.cfg.history": {
+    label: "Scan git history for keys",
+    what: "Clones up to 1,000 commits of the branch (files over 2 MB are skipped) and reports key and certificate files that were committed and later deleted: they stay readable in the history.",
+    example: "A server.key added in 2023 and removed a week later is still reported.",
+  },
+  // src: backend/utilities/scan/credit_estimate.py:25-27, RabbitMQ/worker/helpers/tools/cbom_agent/main.py:186-196 — 1 credit per 5 MB of binaries/images/firmware
+  "cbom.cfg.binaries": {
+    label: "Scan binaries, container images and firmware",
+    what: "Also reads compiled binaries, docker save / OCI image archives and firmware: linked crypto libraries, crypto constants, embedded keys and the packages inside images. Adds 1 credit per 5 MB of such content.",
+    example: "A 50 MB image archive in the zip adds 10 credits.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/cbom_agent/main.py:186-196, backend/utilities/scan/credit_estimate.py:14-24, backend/utilities/scan/estimate_scan.py:210 — 1 credit per 0.5 MB source + binaries/5 MB, minimum 1; file 0.01
+  "cbom.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "A repository or zip costs 2 credits per MB of source files (plus 1 per 5 MB of binaries when that option is on), at least 1 credit; an uploaded CBOM file 0.01. Nothing is charged until you start the scan.",
+    example: "300 KB of source: 1 credit (the minimum).",
+  },
+
+  // ────────────────────────────────────────────────────────────── CBOM: list page (app/[team_id]/cbom/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:1701-1755, backend/utilities/cbom_sources/cbom_metrics.py:160-167 — inventory rows of code scans + latest Sources collections, each asset once
+  "cbom.kpi.assets": {
+    label: "Crypto Assets",
+    what: "Cryptographic assets found: algorithms, keys, certificates, protocols and libraries, from successful code scans and the latest CBOM Sources collections. An asset seen by both is counted once, from its latest observation.",
+    example: "A TLS certificate found in the repository and on the live server counts 1.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:118-124, aibom/src/aibom/cbom/weakness.py:93-108 — rows graded weak (broken digests, asymmetric keys under 2048 bits, ...)
+  "cbom.kpi.weak": {
+    label: "Weak Algorithms",
+    what: "Assets graded weak: cryptography that is broken or too short today, for example MD5 or SHA-1 in signatures, or RSA, DSA and DH keys under 2048 bits.",
+    example: "A password hash using MD5.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:125-131, backend/utilities/cbom_sources/cbom_metrics.py:28-40 — verdict quantum-vulnerable
+  "cbom.kpi.quantum_vulnerable": {
+    label: "Quantum Vulnerable",
+    what: "Assets a large quantum computer would break: public-key cryptography such as RSA, ECDSA, ECDH and DH, which need moving to post-quantum algorithms.",
+    example: "An ECDHE key exchange without a post-quantum hybrid.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:132-133 — algorithm_type certificate
+  "cbom.kpi.certificates": {
+    label: "Certificates",
+    what: "X.509 certificates found in code, files or on live endpoints.",
+    example: "The certificate served on api.example.com:443.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:134-135 — algorithm_type key or secret
+  "cbom.kpi.keys": {
+    label: "Keys",
+    what: "Keys and secrets found: private keys, symmetric keys and other key material.",
+    example: "A PEM private key committed in config/.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:28-46, backend/utilities/cbom_sources/cbom_metrics.py:170-174 — judged assets not vulnerable / judged; none judged shows no value
+  "cbom.kpi.readiness": {
+    label: "Quantum Readiness",
+    what: "Share of assets with a quantum verdict that are safe: post-quantum, hybrid, or symmetric with enough margin (AES-128 counts as ready). Assets broken today count as not ready. Assets without a verdict (hashes, settings) are left out.",
+    example: "10 judged assets, 3 quantum-vulnerable: 70%.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:20-21, backend/utilities/cbom_sources/cbom_metrics.py:78-85 — 0-10 over findings: critical 9, high 7, medium 5, low 2
+  "cbom.kpi.avg_risk": {
+    label: "Avg Risk Score",
+    what: "Average risk of the crypto findings, 0 to 10: Critical counts 9, High 7, Medium 5, Low 2. Clean inventory rows are not findings and are left out.",
+    example: "One High and one Low finding: (7 + 2) / 2 = 4.5.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1757-1783 — code-scan findings by your status; Sources findings by their remediation plan status
+  "cbom.chart.remediation": {
+    label: "Remediation Actions Required",
+    what: "Crypto findings by status: code-scan findings by the status your team set, CBOM Sources findings by their remediation plan status (open counts as Not started).",
+    example: "30 findings: 5 Fixed, 3 In progress, 22 Not started.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:1-15, backend/utilities/dashboard/scan_list.py:1803 — findings by severity, inventory separately
+  "cbom.chart.severity": {
+    label: "Severity Distribution",
+    what: "Crypto findings by severity (Critical, High, Medium, Low) and the clean inventory rows as Informational.",
+    example: "High 4, Medium 9, Informational 120.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:112-117, backend/utilities/dashboard/scan_list.py:1804 — algorithm_type of every row
+  "cbom.chart.algorithm_type": {
+    label: "Algorithm Type Distribution",
+    what: "All crypto assets by the type the engine gave them (for example certificate, key or secret); assets without a type count as other.",
+    example: "certificate 6, key 3, other 12.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:95, backend/utilities/cbom_sources/cbom_metrics.py:118-124 — weak / moderate / strong / quantum-safe
+  "cbom.chart.strength": {
+    label: "Crypto Strength Distribution",
+    what: "All crypto assets by strength grade: weak (replace now), moderate, strong, quantum-safe. Assets without a grade are not shown.",
+    example: "weak 5, moderate 12, strong 60, quantum_safe 2.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:97, backend/utilities/cbom_sources/cbom_metrics.py:125-131 — quantum_safe / quantum_vulnerable / broken_today
+  "cbom.chart.quantum": {
+    label: "Quantum Readiness",
+    what: "Assets with a quantum verdict: quantum-safe, quantum-vulnerable (breakable by a future quantum computer), and broken today (already insecure without one).",
+    example: "Safe 30, Vulnerable 12, Broken today 2.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:1-15, backend/utilities/dashboard/scan_list.py:1808 — the 10 riskiest findings
+  "cbom.chart.top_risks": {
+    label: "Top Cryptographic Risks",
+    what: "The 10 riskiest crypto findings, with algorithm, type, strength, quantum safety, impact and where each was found (a code scan or a CBOM Sources collection).",
+    example: "RSA-1024 · asymmetric · weak · not quantum safe · High · payments-api.",
+  },
+  // src: backend/routers/cbom_deliverables.py:1-20 — PDFs built in memory from every completed CBOM scan; no language model; no credits charged by the route
+  "cbom.deliverables": {
+    label: "Deliverables",
+    what: "Team-wide regulatory PDFs (for example a certificate register or a post-quantum roadmap) built from every completed CBOM scan of the team. They are generated in-house, with no AI model, and download straight away.",
+    example: "Download the PQC roadmap for the board pack.",
+  },
+  // src: backend/routers/scans.py:100-118, backend/utilities/dashboard/scan_list.py:1786-1790 — the latest completed collection of each Sources source
+  "cbom.sources_runs": {
+    label: "CBOM Sources results",
+    what: "Completed CBOM Sources runs whose assets are counted on this page: when each finished, how many assets it found and how many network endpoints it probed.",
+    example: "Sources run #12 · 3 sources · 140 assets · 25 endpoints probed.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:445-453, backend/utilities/cbom_sources/cbom_metrics.py:1-15 — findings by severity plus inventory
+  "cbom.table.risks": {
+    label: "Risks",
+    what: "This scan's crypto findings by severity: Critical (red), High (orange), Medium (amber), Low (blue), plus clean inventory rows (Informational).",
+    example: "0 red, 2 orange, 5 amber, 1 blue, 80 informational.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:452-453, backend/utilities/cbom_sources/cbom_metrics.py:20-21 — 0-10: critical 9, high 7, medium 5, low 2
+  "cbom.table.risk": {
+    label: "Risk score",
+    what: "This scan's average finding risk, 0 to 10: Critical 9, High 7, Medium 5, Low 2. Inventory rows are left out.",
+    example: "Two Medium findings: 5.0.",
   },
 } as const satisfies Record<string, InfoTipEntry>;
 

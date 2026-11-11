@@ -46,6 +46,10 @@ export const COVERED: string[] = [
   // LLM red teaming
   "app/[team_id]/llm/page.tsx",
   "components/llm-options-sidebar.tsx",
+  // CBOM code scans (CBOM Sources and Nodes are listed below)
+  "app/[team_id]/cbom/page.tsx",
+  "components/cbom-options-sidebar.tsx",
+  "components/cbom-ci-scan-settings-form.tsx",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>([]);

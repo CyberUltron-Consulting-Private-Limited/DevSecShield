@@ -4,7 +4,7 @@ import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Input } from "@/components/ui/input";
 import {
   ScanIcon,
@@ -422,6 +422,10 @@ export function CBOMOptionsSidebar({
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="pb-5 pt-0">
+                  <p className="text-xs text-zinc-500 mb-3 flex items-center gap-1">
+                    Inventories the cryptography in your code (rule-based, no AI model).
+                    <InfoTip id="cbom.cfg.repository" />
+                  </p>
                   <RepositoryCard
                     uploadedFile={uploaded_file}
                     setUploadedFile={onZipChange}
@@ -458,8 +462,9 @@ export function CBOMOptionsSidebar({
                   <p className="text-xs text-zinc-500 mb-3">
                     Upload an existing CycloneDX CBOM JSON file. This will clear any repository or zip selection.
                   </p>
-                  <Label className="text-zinc-300 text-sm">CBOM file</Label>
+                  <FieldLabel htmlFor="cbom-file-upload" infoId="cbom.cfg.file" labelClassName="text-zinc-300 text-sm">CBOM file</FieldLabel>
                   <Input
+                    id="cbom-file-upload"
                     type="file"
                     accept=".json,application/json"
                     className="bg-zinc-800 h-fit p-2 border-zinc-700 text-white file:mr-2 file:rounded file:border-0 file:bg-blue-600 file:cursor-pointer file:px-3 file:py-1 file:text-sm file:text-white mt-1"
@@ -472,7 +477,8 @@ export function CBOMOptionsSidebar({
               </AccordionItem>
             </Accordion>
             {!cbom_file_used && (
-              <label className="flex items-start gap-2 mt-4 text-sm text-zinc-300 cursor-pointer">
+              <div className="flex items-start gap-1 mt-4">
+              <label className="flex items-start gap-2 text-sm text-zinc-300 cursor-pointer">
                 <input
                   type="checkbox"
                   className="mt-0.5 h-4 w-4 accent-blue-600"
@@ -486,9 +492,12 @@ export function CBOMOptionsSidebar({
                   </span>
                 </span>
               </label>
+              <InfoTip id="cbom.cfg.vendored" />
+              </div>
             )}
             {!zip_file_used && !cbom_file_used && (
-              <label className="flex items-start gap-2 mt-3 text-sm text-zinc-300 cursor-pointer">
+              <div className="flex items-start gap-1 mt-3">
+              <label className="flex items-start gap-2 text-sm text-zinc-300 cursor-pointer">
                 <input
                   type="checkbox"
                   className="mt-0.5 h-4 w-4 accent-blue-600"
@@ -502,9 +511,12 @@ export function CBOMOptionsSidebar({
                   </span>
                 </span>
               </label>
+              <InfoTip id="cbom.cfg.history" />
+              </div>
             )}
             {!cbom_file_used && (
-              <label className="flex items-start gap-2 mt-3 text-sm text-zinc-300 cursor-pointer">
+              <div className="flex items-start gap-1 mt-3">
+              <label className="flex items-start gap-2 text-sm text-zinc-300 cursor-pointer">
                 <input
                   type="checkbox"
                   className="mt-0.5 h-4 w-4 accent-blue-600"
@@ -521,13 +533,15 @@ export function CBOMOptionsSidebar({
                   </span>
                 </span>
               </label>
+              <InfoTip id="cbom.cfg.binaries" />
+              </div>
             )}
           </div>
 
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Estimate scan credits</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Estimate scan credits <InfoTip id="cbom.cfg.estimate" /></h3>
             <Button
               variant="ghost"
               size="sm"
@@ -571,7 +585,7 @@ export function CBOMOptionsSidebar({
           <Separator className="bg-zinc-800" />
 
           <div className="p-6">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-2">Run scan</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-2 flex items-center gap-1">Run scan <InfoTip id="scan.cfg.run" /></h3>
             {canRunScan ? (
               <div className="space-y-2">
                 <Button

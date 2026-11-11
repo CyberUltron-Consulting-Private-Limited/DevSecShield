@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Plus, MoreVertical, Pencil, Trash2, RefreshCcw, Loader2, Eye, Clock, CheckCircle, CalendarPlus, CalendarCheck, Search, X, GitBranch, FileArchive, MinusCircle, Shield, AlertTriangle, Activity, ChevronDown, ArrowUpDown, Check, Filter, DollarSign, TrendingUp, TrendingDown, Lock, ShieldAlert, ShieldCheck, Key, Download, FileText, Network } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { singleFlight } from "@/utils/single_flight";
@@ -220,7 +221,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                 <Lock className="h-4 w-4 text-blue-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Crypto Assets</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Crypto Assets <InfoTip id="cbom.kpi.assets" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_crypto_assets}</p>
               </div>
             </div>
@@ -233,7 +234,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                 <ShieldAlert className="h-4 w-4 text-red-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Weak Algorithms</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Weak Algorithms <InfoTip id="cbom.kpi.weak" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_weak_algorithms}</p>
               </div>
             </div>
@@ -246,7 +247,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Quantum Vulnerable</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Quantum Vulnerable <InfoTip id="cbom.kpi.quantum_vulnerable" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_quantum_vulnerable}</p>
               </div>
             </div>
@@ -259,7 +260,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                 <ShieldCheck className="h-4 w-4 text-green-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Certificates</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Certificates <InfoTip id="cbom.kpi.certificates" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_certificates}</p>
               </div>
             </div>
@@ -272,7 +273,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                 <Key className="h-4 w-4 text-violet-500" />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Keys</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Keys <InfoTip id="cbom.kpi.keys" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.total_keys}</p>
               </div>
             </div>
@@ -285,7 +286,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                 <Shield className={`h-4 w-4 ${READINESS_ICON[readinessTone(card)]}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Quantum Readiness</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Quantum Readiness <InfoTip id="cbom.kpi.readiness" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white" title={readinessTone(card) === "none" ? "No asset has a quantum verdict yet (hashes, certificates and protocols are not graded)" : undefined}>{readinessText(card)}</p>
               </div>
             </div>
@@ -298,7 +299,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                 <Activity className={`h-4 w-4 ${card.average_risk_score >= 7 ? "text-red-500" : card.average_risk_score >= 5 ? "text-amber-500" : "text-green-500"}`} />
               </div>
               <div>
-                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Avg Risk Score</p>
+                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center gap-1">Avg Risk Score <InfoTip id="cbom.kpi.avg_risk" /></p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-white">{card.average_risk_score?.toFixed(1) ?? "N/A"}</p>
               </div>
             </div>
@@ -309,7 +310,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
       {/* Remediation Actions Required */}
       <Card className="border-zinc-200 dark:border-zinc-800">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Remediation Actions Required</CardTitle>
+          <CardTitle className="text-base flex items-center gap-1">Remediation Actions Required <InfoTip id="cbom.chart.remediation" /></CardTitle>
           <CardDescription>Finding status breakdown (total: {remediation.total_findings})</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -348,7 +349,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="items-center pb-2">
-            <CardTitle className="text-base">Severity Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Severity Distribution <InfoTip id="cbom.chart.severity" /></CardTitle>
             <CardDescription>Critical / High / Medium / Low</CardDescription>
           </CardHeader>
           <CardContent>
@@ -369,7 +370,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
 
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Algorithm Type Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Algorithm Type Distribution <InfoTip id="cbom.chart.algorithm_type" /></CardTitle>
             <CardDescription>Crypto assets by algorithm type</CardDescription>
           </CardHeader>
           <CardContent>
@@ -395,7 +396,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
 
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Crypto Strength Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Crypto Strength Distribution <InfoTip id="cbom.chart.strength" /></CardTitle>
             <CardDescription>Assets by cryptographic strength</CardDescription>
           </CardHeader>
           <CardContent>
@@ -424,7 +425,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Quantum Readiness</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Quantum Readiness <InfoTip id="cbom.chart.quantum" /></CardTitle>
             <CardDescription>Assets by quantum safety</CardDescription>
           </CardHeader>
           <CardContent>
@@ -450,7 +451,7 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
 
         <Card className="border-zinc-200 dark:border-zinc-800 flex flex-col lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Top Cryptographic Risks</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Top Cryptographic Risks <InfoTip id="cbom.chart.top_risks" /></CardTitle>
             <CardDescription>Sorted by impact</CardDescription>
           </CardHeader>
           <CardContent className="flex-1 min-h-0">
@@ -461,12 +462,12 @@ function CBOMScanListDashboard({ dashboardData }: { dashboardData: CBOMDashboard
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Algorithm</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Strength</TableHead>
-                      <TableHead>Quantum Safe</TableHead>
-                      <TableHead>Impact</TableHead>
-                      <TableHead>Source</TableHead>
+                      <TableHead>Algorithm{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                      <TableHead>Type{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                      <TableHead>Strength{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                      <TableHead>Quantum Safe{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                      <TableHead>Impact{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                      <TableHead>Source{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -718,6 +719,7 @@ export default function CBOMPage() {
                     <ChevronDown className="h-4 w-4 ml-1.5 opacity-70" />
                   </Button>
                 </DropdownMenuTrigger>
+                <InfoTip id="cbom.deliverables" />
                 <DropdownMenuContent align="end" className="w-[30rem] max-w-[calc(100vw-2rem)]">
                   <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Team-wide regulatory deliverables (PDF)</DropdownMenuLabel>
                   <DropdownMenuSeparator />
@@ -778,7 +780,7 @@ export default function CBOMPage() {
                 {sourcesRunRows.length > 0 && (
                   <div className="mb-6" data-testid="cbom-sources-runs">
                     <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">CBOM Sources runs</h3>
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-white flex items-center gap-1">CBOM Sources runs <InfoTip id="cbom.sources_runs" /></h3>
                       <Link href={sourcesRunsHref(team_id)} className="text-sm text-blue-600 hover:underline cursor-pointer">Open CBOM Sources</Link>
                     </div>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">The latest completed collection of each source. Its assets are counted on the Dashboard next to the code scans.</p>
@@ -787,11 +789,11 @@ export default function CBOMPage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Run</TableHead>
-                              <TableHead>Sources</TableHead>
-                              <TableHead>Finished</TableHead>
-                              <TableHead>Assets</TableHead>
-                              <TableHead>Endpoints probed</TableHead>
+                              <TableHead>Run{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                              <TableHead>Sources{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                              <TableHead>Finished{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                              <TableHead>Assets{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
+                              <TableHead>Endpoints probed{/* infotip-shared: the section title's tip explains the columns */}</TableHead>
                               <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -822,6 +824,7 @@ export default function CBOMPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                       <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
+                    <InfoTip id="scan.filter.search" className="-ml-2" />
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
                       <SelectContent>
@@ -835,6 +838,7 @@ export default function CBOMPage() {
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
                     </Select>
+                    <InfoTip id="scan.status" className="-ml-2" />
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -858,6 +862,7 @@ export default function CBOMPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.risk" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -900,6 +905,7 @@ export default function CBOMPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
+                      <InfoTip id="scan.filter.sort" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[200px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -965,15 +971,15 @@ export default function CBOMPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
-                            <TableHead>Created at</TableHead>
-                            <TableHead>Last updated</TableHead>
-                            <TableHead>Scan status</TableHead>
-                            <TableHead className="w-[200px]">Risks</TableHead>
-                            <TableHead className="w-[90px]">Risk score</TableHead>
-                            <TableHead className="w-[160px]">Repo / Source</TableHead>
-                            <TableHead className="w-[100px]">Branch</TableHead>
-                            <TableHead className="w-[90px]">Credits</TableHead>
-                            <TableHead>Owner</TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Created at <InfoTip id="scan.table.created" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
+                            <TableHead className="w-[200px]"><span className="inline-flex items-center gap-1">Risks <InfoTip id="cbom.table.risks" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="cbom.table.risk" /></span></TableHead>
+                            <TableHead className="w-[160px]"><span className="inline-flex items-center gap-1">Repo / Source <InfoTip id="scan.table.source" /></span></TableHead>
+                            <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Branch <InfoTip id="scan.table.branch" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Credits <InfoTip id="scan.table.credits" /></span></TableHead>
+                            <TableHead><span className="inline-flex items-center gap-1">Owner <InfoTip id="scan.table.owner" /></span></TableHead>
                             <TableHead className="text-right w-[80px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1133,8 +1139,9 @@ export default function CBOMPage() {
             <DialogTitle>Rename scan</DialogTitle>
             <DialogDescription>Enter a new name for this scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" maxLength={256} onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="rename-scan-title" infoId="scan.rename.title">Scan name</FieldLabel>
+            <Input id="rename-scan-title" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Scan name" maxLength={256} onKeyDown={(e) => { if (e.key === "Enter") confirmRename(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setRenameDialogOpen(false); setNewName(""); }}>Cancel</Button>
@@ -1188,8 +1195,9 @@ export default function CBOMPage() {
             <DialogTitle>Create New Scan</DialogTitle>
             <DialogDescription>Enter a title for your new CBOM scan.</DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" maxLength={256} onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
+          <div className="py-4 space-y-2">
+            <FieldLabel htmlFor="new-scan-title" infoId="scan.new.title">Scan title</FieldLabel>
+            <Input id="new-scan-title" value={newScanTitle} onChange={(e) => setNewScanTitle(e.target.value)} placeholder="Scan title" maxLength={256} onKeyDown={(e) => { if (e.key === "Enter") confirmCreate(); }} />
           </div>
           <DialogFooter>
             <Button variant="outline" className="cursor-pointer" onClick={() => { setCreateDialogOpen(false); setNewScanTitle(""); }}>Cancel</Button>
