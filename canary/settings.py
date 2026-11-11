@@ -5,3 +5,5 @@ must ignore. This branch is deleted after the run.
 """
 
 GITHUB_TOKEN = "ghp_Bq2MDK3Gj2ad9jHh1Cjp8fM8VFkfswiJqEod"  # gitleaks:allow
+# A second fabricated token, without any bypass: the plain case.
+GITHUB_TOKEN_PLAIN = "ghp_NnTKvuRKKTuZudkbcTr3NIHHTSBnkMNxOSFP"
