@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit AI review configuration. It takes effect only after the repository owner installs the CodeRabbit
+# GitHub App on this repository (docs/ci/README.md, "CodeRabbit"). CodeRabbit comments; it never blocks a merge
+# here (the required check is CI's ci-gate) and it does not replace the human / agent reviewers in the PR process.
+language: en-US
+tone_instructions: >-
+  Direct and specific. Lead with the risk, cite file and line, propose the fix. Mark each comment
+  [blocker], [major], [minor] or [nit] the way the team's reviewers do.
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  collapse_walkthrough: false
+  sequence_diagrams: false
+  poem: false
+  in_progress_fortune: false
+  suggested_labels: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches: ["dev", "staging", "main"]
+  security_risk_instructions: >-
+    DevSecShield is a security product that scans customers' code, cloud accounts and networks, so treat these as
+    blockers: secrets or credentials in code, config, fixtures or logs (rotate, do not just delete); authentication
+    or team-authorisation checks missing on a FastAPI route; SQL built from strings; shell commands built from user
+    input (subprocess with shell=True, os.system); path traversal when reading uploaded archives or cloned repos;
+    SSRF in URL fetchers and scanners; disabled TLS verification; deserialisation of untrusted data (pickle, yaml.load);
+    weakened crypto (MD5/SHA1 for security, ECB, static IVs); LLM prompt-injection paths that can reach tools or
+    secrets; anything that sends customer scan data to a third party.
+  path_filters:
+    - "!**/uv.lock"
+    - "!**/package-lock.json"
+    - "!**/requirements*.lock"
+    - "!**/*.min.js"
+    - "!**/tests/fixtures/**"
+    - "!bench/repos/**"
+    - "!aibom/bench/repos/**"
+    - "!docs/**/*.pdf"
+    - "!**/*.sarif"
+  path_instructions:
+    - path: "backend/**/*.py"
+      instructions: >-
+        FastAPI + SQLModel backend. Every route that reads or changes team data must check the caller's team
+        membership and role; flag any query that is not scoped by team_id. Check that new settings come from the
+        environment, never from literals. Database changes need an Alembic migration in prod_database_migrations/.
+        Long-running work belongs in the RabbitMQ/Celery workers, not in a request handler.
+    - path: "aibom/**/*.py"
+      instructions: >-
+        AI-BOM / CBOM scanner library. Emitted CycloneDX / SPDX / SARIF must stay schema-valid and deterministic
+        (no network or wall-clock in serialisers). Compliance checks read graph facts, never flags. Scanners must
+        bound file sizes and recursion on hostile inputs. Golden files change only deliberately.
+    - path: "RabbitMQ/**/*.py"
+      instructions: >-
+        Scan workers run third-party tools on customer repositories. Check subprocess calls for argument
+        injection, timeouts on every external call, temporary directories cleaned up, and that a failed tool is
+        reported as a failure with its reason, never as "no findings".
+    - path: "scan_node/**"
+      instructions: >-
+        Customer-side scan node: read-only and least privilege. Flag anything that writes to scanned hosts, widens
+        sudo rules, logs secrets, or adds a dependency without updating the hash-pinned requirements.lock.
+    - path: "frontend/**/*.{ts,tsx}"
+      instructions: >-
+        Next.js frontend. Never render untrusted HTML without sanitising; no tokens in localStorage logs or URLs;
+        every API error must reach the user as a readable message; keep loading and empty states.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Every action pinned to a full commit SHA with a version comment; least-privilege permissions per job;
+        no ${{ }} expressions from PR titles, bodies or branch names inside run scripts (pass them through env);
+        no pull_request_target with a checkout of the PR head; path filters and concurrency to save minutes.
+    - path: "{deploy,compose,scripts/deploy}/**"
+      instructions: >-
+        Deployment config: no secrets in files (use .env.example placeholders), containers not privileged, images
+        pinned, health checks present, and the change reflected in deploy/staging/README.md when operators must act.
+  tools:
+    ruff:
+      enabled: true
+    eslint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    hadolint:
+      enabled: true
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    gitleaks:
+      enabled: true
+    checkov:
+      enabled: true
+    semgrep:
+      enabled: true
+    osvScanner:
+      enabled: true
+    trivy:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+
+chat:
+  auto_reply: true

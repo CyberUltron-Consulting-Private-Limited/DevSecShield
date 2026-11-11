@@ -210,15 +210,25 @@ jobs:
           WD: ${{ inputs.working-directory }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SUITE: ${{ inputs.suite-name }}
+          FETCH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           out="$RUNNER_TEMP/lintdiff"; mkdir -p "$out"
           bash -c "$LINT_CMD" > "$out/head.txt" 2>&1
           echo "head run exit $?; $(wc -l < "$out/head.txt") output lines"
+          fetch_base() { # the checkout keeps no credentials, so pass the job token for this one fetch only
+            local auth; auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
+            echo "::add-mask::$auth"
+            git -C "$GITHUB_WORKSPACE" -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+              fetch --no-tags --depth=1 origin "$BASE_SHA" \
+              && git -C "$GITHUB_WORKSPACE" worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
+          }
+          if [ -n "$BASE_SHA" ] && ! fetch_base; then
+            echo "::warning::could not check out the base commit; lint findings are reported, not gated"
+            BASE_SHA=""
+          fi
           if [ -n "$BASE_SHA" ]; then
             # The base commit's files, linted with this run's tool versions (same venv).
-            git -C "$GITHUB_WORKSPACE" fetch --no-tags --depth=1 origin "$BASE_SHA"
-            git -C "$GITHUB_WORKSPACE" worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
             if [ -d "$RUNNER_TEMP/base/$WD" ]; then
               (cd "$RUNNER_TEMP/base/$WD" && UV_PROJECT_ENVIRONMENT="$GITHUB_WORKSPACE/$WD/.venv" bash -c "$LINT_CMD") > "$out/base.txt" 2>&1
               echo "base run exit $?; $(wc -l < "$out/base.txt") output lines"

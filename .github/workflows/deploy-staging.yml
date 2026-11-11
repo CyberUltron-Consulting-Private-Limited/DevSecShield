@@ -35,8 +35,7 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Image tag
         id: tag
         run: echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
@@ -55,7 +54,7 @@ jobs:
           DSS_TAG: ${{ steps.tag.outputs.tag }}
         run: scripts/deploy/staging.sh save
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dss-staging-${{ steps.tag.outputs.tag }}
           path: |
@@ -72,9 +71,8 @@ jobs:
     timeout-minutes: 45
     environment: staging
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dss-staging-${{ needs.build.outputs.tag }}
           path: deploy/staging/images

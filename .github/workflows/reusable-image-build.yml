@@ -24,7 +24,9 @@ on:
         type: string
         required: true
       pre-build-command:
-        description: Optional command run before building (for example a check that no secret file is in a context).
+        description: >-
+          Optional command run once, in its own job, before the matrix builds (for example a check that no secret
+          file can enter a build context). The builds only start when it passes.
         type: string
         default: ""
       trivy-version:
@@ -53,8 +55,28 @@ permissions:
   contents: read
 
 jobs:
+  pre-build:
+    name: pre-build check
+    if: inputs.pre-build-command != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Run the check
+        run: ${{ inputs.pre-build-command }}
+
   build:
     name: image (${{ matrix.image.name }})
+    needs: pre-build
+    # Build when the pre-build check passed or was not configured.
+    if: ${{ !cancelled() && (needs.pre-build.result == 'success' || needs.pre-build.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
@@ -70,10 +92,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Pre-build check
-        if: inputs.pre-build-command != ''
-        run: ${{ inputs.pre-build-command }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

@@ -1,0 +1,340 @@
+# DevSecShield CI: the one workflow every pull request and every push to dev / staging / main runs.
+#
+# It decides what changed (dorny/paths-filter), runs only the affected suites through the reusable workflows in this
+# directory, and ends in ONE job, `ci-gate`, which is the only check branch protection needs to require. A suite
+# that path filtering skipped counts as passed; a failed or cancelled one fails the gate.
+#
+#   changes      what changed -> which suites run, and the image list
+#   pr-checks    branch-flow (staging <- dev, main <- staging) + pr-hygiene (title, acceptance criteria, no secrets)
+#   backend      backend/ pytest on Python 3.12 with PostgreSQL 15, ruff "no new findings"
+#   aibom        aibom/ pytest (AI-BOM + CBOM gates), ruff + mypy "no new findings", representative-repo gates
+#   cbom-action  .github/actions/cbom-scan: a clean tree passes, a vulnerable tree is blocked (exit 1, not 127)
+#   scan-node    scan_node/ pytest from the hash-pinned lock
+#   frontend     npm ci, tsc, eslint "no new errors", *.test.ts with tsx, next build
+#   security     gitleaks, ggshield, Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint
+#   codeql       python + javascript-typescript (only where CodeQL is licensed; see reusable-codeql.yml)
+#   images       docker build (no push) + Trivy image scan for each changed image
+#   ci-gate      summary of all of the above; the required status check
+#
+# Docs: docs/ci/README.md
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, staging, main]
+  push:
+    branches: [dev, staging, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # A new push to a PR cancels the older run. Runs on dev / staging / main are never cancelled, so every commit
+  # that lands on a protected branch has a complete result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }}
+      aibom: ${{ steps.filter.outputs.aibom == 'true' || github.event_name == 'workflow_dispatch' }}
+      cbom-action: ${{ steps.filter.outputs.cbom-action == 'true' || github.event_name == 'workflow_dispatch' }}
+      scan-node: ${{ steps.filter.outputs.scan-node == 'true' || github.event_name == 'workflow_dispatch' }}
+      frontend: ${{ steps.filter.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch' }}
+      code: ${{ steps.filter.outputs.code == 'true' || github.event_name == 'workflow_dispatch' }}
+      images: ${{ steps.images.outputs.images }}
+    steps:
+      # Pull requests: the file list comes from the API. Pushes: from git, comparing with the commit before the push.
+      # workflow_dispatch: no filtering, every suite runs.
+      - name: Checkout
+        if: github.event_name == 'push'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Paths changed
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          # A change to the pipeline itself runs every suite, so a CI change is tested end to end.
+          filters: |
+            pipeline: &pipeline
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/reusable-*.yml'
+            backend:
+              - *pipeline
+              - 'backend/**'
+              - 'prod_database_migrations/**'
+              - 'aibom/**'            # backend posture-PDF tests run the aibom scanner (aibom/.venv)
+            aibom:
+              - *pipeline
+              - 'aibom/**'
+              - 'bench/**'
+              - 'RabbitMQ/worker/scan_worker.py'
+              - 'backend/utilities/dashboard/scan.py'
+            cbom-action:
+              - *pipeline
+              - '.github/actions/cbom-scan/**'
+              - 'aibom/src/aibom/cli.py'
+              - 'aibom/src/aibom/cbom/**'
+              - 'aibom/tests/fixtures/code-supply/**'
+              - 'aibom/pyproject.toml'
+              - 'aibom/uv.lock'
+            scan-node:
+              - *pipeline
+              - 'scan_node/**'
+            frontend:
+              - *pipeline
+              - 'frontend/**'
+            code:
+              - *pipeline
+              - '**/*.py'
+              - '**/*.ts'
+              - '**/*.tsx'
+              - '**/*.js'
+              - '**/*.mjs'
+            img-all:
+              - *pipeline
+              - 'scripts/deploy/**'
+            img-backend:
+              - 'backend/**'
+              - 'prod_database_migrations/**'
+            img-frontend:
+              - 'frontend/**'
+            img-scan-node:
+              - 'scan_node/**'
+            img-scan-worker:
+              - 'RabbitMQ/worker/**'
+              - 'aibom/**'
+            img-dast-worker:
+              - 'RabbitMQ/dast_worker/**'
+
+      - name: Images to build
+        id: images
+        env:
+          ALL: ${{ steps.filter.outputs.img-all == 'true' || github.event_name == 'workflow_dispatch' }}
+          BACKEND: ${{ steps.filter.outputs.img-backend }}
+          FRONTEND: ${{ steps.filter.outputs.img-frontend }}
+          SCAN_NODE: ${{ steps.filter.outputs.img-scan-node }}
+          SCAN_WORKER: ${{ steps.filter.outputs.img-scan-worker }}
+          DAST_WORKER: ${{ steps.filter.outputs.img-dast-worker }}
+        run: |
+          set -euo pipefail
+          images='[]'
+          add() { if [ "$ALL" = true ] || [ "$1" = true ]; then images=$(jq -c --argjson i "$2" '. + [$i]' <<< "$images"); fi; }
+          # Same contexts and build arguments as scripts/deploy/build_images.sh and scripts/release/scan_node_image.sh.
+          add "$BACKEND"     '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","build-contexts":"migrations=prod_database_migrations"}'
+          add "$FRONTEND"    '{"name":"frontend","context":"frontend","dockerfile":"frontend/Dockerfile","build-args":"NEXT_PUBLIC_BACKEND_URL=http://localhost:8000"}'
+          add "$SCAN_NODE"   '{"name":"scan-node","context":"scan_node","dockerfile":"scan_node/Dockerfile"}'
+          add "$SCAN_WORKER" '{"name":"scan-worker","context":".","dockerfile":"RabbitMQ/worker/Dockerfile"}'
+          add "$DAST_WORKER" '{"name":"dast-worker","context":"RabbitMQ/dast_worker","dockerfile":"RabbitMQ/dast_worker/Dockerfile"}'
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "images: $(jq -r 'map(.name) | join(", ")' <<< "$images")"
+
+  pr-checks:
+    name: pr-checks
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/reusable-pr-checks.yml
+
+  backend:
+    name: backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: backend
+      working-directory: backend
+      python-version: "3.12" # the production image (backend/Dockerfile) runs 3.12; backend/.python-version says 3.10
+      postgres: true
+      postgres-image: postgres:15-alpine # as in compose/ and deploy/staging/
+      postgres-databases: c1 auth cbom p1
+      # The posture-PDF tests call aibom/.venv/bin/python, so the aibom venv is installed too.
+      install-command: uv sync --frozen && (cd ../aibom && uv sync --frozen --all-extras --dev)
+      lint-diff-command: uvx ruff@0.15.18 check --output-format concise --exclude .venv .
+      env: |
+        PYTHONPATH=${{ github.workspace }}
+        JWT_SECRET_KEY=ci-only-not-a-secret
+        JWT_REFRESH_SECRET_KEY=ci-only-not-a-secret
+        AWS_ACCESS_KEY_ID=ci-only-dummy
+        AWS_SECRET_ACCESS_KEY=ci-only-dummy
+        AWS_DEFAULT_REGION=us-east-1
+        RABBIT_ADMIN_USERNAME=ci
+        RABBIT_ADMIN_PASSWORD=ci-only-dummy
+      test-command: >-
+        CANCEL_RACE_PG_URL="$PG_URL_C1" AUTH_TEST_PG_URL="$PG_URL_AUTH" CBOM_TEST_PG_URL="$PG_URL_CBOM"
+        P1_PG_URL="$PG_URL_P1"
+        uv run --frozen --with pytest==9.2.0 --with moto==5.2.5 python -m pytest tests -q -p no:cacheprovider
+        -o addopts="" --durations=15 --junitxml="$GITHUB_WORKSPACE/test-reports/backend-junit.xml"
+      artifact-paths: test-reports/
+      timeout-minutes: 35
+
+  aibom:
+    name: aibom
+    needs: changes
+    if: needs.changes.outputs.aibom == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: aibom
+      working-directory: aibom
+      python-version: "3.12"
+      install-command: uv sync --frozen --all-extras --dev
+      # The CBOM lane's ruff + mypy gate used to fail on 1,640 pre-existing E501s (pyproject says 88 columns, the code
+      # is written to ~120) and 68 mypy errors; it now blocks only on findings a change adds.
+      lint-diff-command: >-
+        uv run --frozen --no-sync ruff check --output-format concise src tests;
+        uv run --frozen --no-sync mypy src/aibom/cbom src/aibom/emit/cyclonedx.py
+      # Everything the old aibom-gates / cbom-gates / cbom-posture-gates ran: the whole suite (gates A-E and the
+      # posture tests are subsets of it) plus the two representative-repo true-miss gates.
+      test-command: |
+        rc=0
+        uv run --frozen --no-sync python -m pytest tests -q -p no:cacheprovider --durations=10 \
+          --junitxml="$GITHUB_WORKSPACE/test-reports/aibom-junit.xml" || rc=1
+        echo "::group::AI-BOM true-miss gate (pinned real repos)"; bash bench/ci_repos.sh || rc=1; echo "::endgroup::"
+        echo "::group::CBOM true-miss gate (pyjwt, pyopenssl)"; bash ../bench/cbom/ci_repos.sh || rc=1; echo "::endgroup::"
+        exit "$rc"
+      artifact-paths: test-reports/
+      timeout-minutes: 30
+
+  cbom-action:
+    name: cbom-action
+    needs: changes
+    if: needs.changes.outputs.cbom-action == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Clean tree is allowed
+        uses: ./.github/actions/cbom-scan
+        with:
+          path: aibom/tests/fixtures/code-supply/clean
+      - name: Vulnerable tree is scanned
+        id: gate
+        continue-on-error: true
+        uses: ./.github/actions/cbom-scan
+        with:
+          path: aibom/tests/fixtures/code-supply/vulnerable
+      - name: The gate blocked the vulnerable tree with exit code 1
+        env:
+          CODE: ${{ steps.gate.outputs.exit-code }}
+        run: |
+          # exit 1 = high findings. 127 ("command not found") or anything else means the scan never ran, which the
+          # old workflow mistook for a block.
+          if [ "$CODE" != 1 ]; then echo "::error::expected the scan to block with exit 1, got '${CODE:-none}'"; exit 1; fi
+          echo "blocked the vulnerable tree (exit 1)"
+
+  scan-node:
+    name: scan-node
+    needs: changes
+    if: needs.changes.outputs.scan-node == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-python-tests.yml
+    with:
+      suite-name: scan-node
+      working-directory: scan_node
+      python-version: "3.12" # scan_node/Dockerfile: python:3.12-slim
+      lock-check: false # pip-style hash-pinned requirements.lock, not uv.lock
+      install-command: >-
+        uv venv .venv &&
+        uv pip install --python .venv --require-hashes --no-deps -r requirements.lock &&
+        uv pip install --python .venv pytest==8.3.5
+      test-command: >-
+        .venv/bin/python -m pytest -q -p no:cacheprovider tests
+        --junitxml="$GITHUB_WORKSPACE/test-reports/scan-node-junit.xml"
+      artifact-paths: test-reports/
+      timeout-minutes: 20
+
+  frontend:
+    name: frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-frontend.yml
+    with:
+      working-directory: frontend
+      node-version: "20" # frontend/Dockerfile: node:20-alpine
+
+  security:
+    name: security
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-security.yml
+    secrets:
+      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
+
+  codeql:
+    name: codeql
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-codeql.yml
+    with:
+      # Licensed for public repos and for organisation repos with GitHub Code Security; set the repository
+      # variable CODEQL_ENABLED=true once one of those holds.
+      enabled: ${{ vars.CODEQL_ENABLED == 'true' || !github.event.repository.private }}
+
+  images:
+    name: images
+    needs: changes
+    if: needs.changes.outputs.images != '[]' && needs.changes.outputs.images != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-image-build.yml
+    with:
+      images: ${{ needs.changes.outputs.images }}
+      pre-build-command: scripts/deploy/check_image_contexts.sh
+
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs: [changes, pr-checks, backend, aibom, cbom-action, scan-node, frontend, security, codeql, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: All required jobs passed or were not needed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          icon = {"success": "pass", "skipped": "skipped (not affected)", "failure": "FAIL", "cancelled": "CANCELLED"}
+          rows, bad = [], []
+          for job, info in needs.items():
+              r = info.get("result", "unknown")
+              rows.append(f"| {job} | {icon.get(r, r)} |")
+              if r not in ("success", "skipped"):
+                  bad.append(f"{job}: {r}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
+              s.write("### ci-gate\n\n| job | result |\n|---|---|\n" + "\n".join(rows) + "\n\n")
+              s.write(("**Gate: FAIL** (" + ", ".join(bad) + ")\n") if bad else "**Gate: pass**\n")
+          print("\n".join(rows))
+          if bad:
+              print("::error title=ci-gate::" + "; ".join(bad))
+              sys.exit(1)
+          PY

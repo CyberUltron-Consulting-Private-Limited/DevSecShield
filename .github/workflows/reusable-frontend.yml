@@ -112,6 +112,7 @@ jobs:
           ESLINT_ARGS: ${{ inputs.eslint-args }}
           WD: ${{ inputs.working-directory }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          FETCH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           out="$RUNNER_TEMP/eslint"; mkdir -p "$out"
@@ -125,17 +126,29 @@ jobs:
           rc=$?
           [ "$rc" -le 1 ] || { echo "::error::eslint did not run (exit $rc)"; exit "$rc"; }
           gate="report"
+          fetch_base() { # the checkout keeps no credentials, so pass the job token for this one fetch only
+            local auth; auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
+            echo "::add-mask::$auth"
+            git -C "$GITHUB_WORKSPACE" -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+              fetch --no-tags --depth=1 origin "$BASE_SHA" \
+              && git -C "$GITHUB_WORKSPACE" worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
+          }
           if [ -n "$BASE_SHA" ]; then
-            git -C "$GITHUB_WORKSPACE" fetch --no-tags --depth=1 origin "$BASE_SHA"
-            git -C "$GITHUB_WORKSPACE" worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
-            if [ -d "$RUNNER_TEMP/base/$WD" ]; then
+            if ! fetch_base; then
+              echo "::warning::could not check out the base commit; ESLint errors are reported, not gated"
+            elif [ ! -d "$RUNNER_TEMP/base/$WD" ]; then
+              echo '[]' > "$out/base.json"; gate="diff"   # the project is new in this PR: every error is new
+            else
               # The base commit's files, linted with this run's dependencies and the base's own config.
               ln -s "$PWD/node_modules" "$RUNNER_TEMP/base/$WD/node_modules"
               # shellcheck disable=SC2086
               (cd "$RUNNER_TEMP/base/$WD" && npx eslint -f json -o "$out/base.json" $ESLINT_ARGS)
-              [ $? -le 1 ] || echo "::warning::eslint failed on the base commit; every current error counts as new"
+              if [ $? -le 1 ] && [ -s "$out/base.json" ]; then
+                gate="diff"
+              else
+                echo "::warning::ESLint failed on the base commit; errors are reported, not gated"
+              fi
             fi
-            gate="diff"
           fi
           python3 - "$out/head.json" "$out/base.json" "$gate" "$PWD" "$RUNNER_TEMP/base/$WD" <<'PY'
           import collections, json, os, sys

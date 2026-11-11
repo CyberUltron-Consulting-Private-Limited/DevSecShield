@@ -1,0 +1,94 @@
+# Dependabot: weekly, grouped dependency updates, opened against `dev` (the integration branch) so they follow the
+# normal flow dev -> staging -> main and run the full CI. Minor and patch updates of one ecosystem arrive as one
+# grouped PR; major updates come one PR each, because they need a person to read the changelog.
+# Titles start with "chore(deps)" so the pr-hygiene title check passes; bots are exempt from the
+# acceptance-criteria table. A 7-day cooldown skips releases younger than a week (supply-chain hygiene).
+#
+# Not covered on purpose: scan_node/requirements.lock is a hash-pinned lock generated from requirements.txt by
+# scripts/release/scan_node_image.sh; update it with that script, not with Dependabot.
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directories:
+      - /backend
+      - /aibom
+      - /RabbitMQ/worker
+      - /RabbitMQ/dast_worker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: Asia/Kolkata
+    target-branch: dev
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies]   # area labels come from the PR labeler
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directories:
+      - /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: Asia/Kolkata
+    target-branch: dev
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies]   # area labels come from the PR labeler
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+      - /scan_node
+      - /RabbitMQ/worker
+      - /RabbitMQ/dast_worker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: Asia/Kolkata
+    target-branch: dev
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies]   # area labels come from the PR labeler
+    groups:
+      base-images:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/cbom-scan
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:30"
+      timezone: Asia/Kolkata
+    target-branch: dev
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+    labels: [dependencies]   # area labels come from the PR labeler
+    groups:
+      actions:
+        patterns: ["*"]

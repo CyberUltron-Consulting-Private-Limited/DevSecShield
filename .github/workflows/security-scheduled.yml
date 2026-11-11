@@ -1,0 +1,28 @@
+# Weekly full security scan: gitleaks over the WHOLE git history (fails while any secret is in it), and every other
+# scanner over the whole tree in report mode (SARIF in the artifacts, counts in the run summary).
+# GitHub runs schedules only from the default branch, so this starts firing once it is promoted to `main`; until
+# then run it by hand (Actions -> Security (scheduled) -> Run workflow).
+name: Security (scheduled)
+
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scheduled
+  cancel-in-progress: false
+
+jobs:
+  security:
+    name: security
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-security.yml
+    with:
+      mode: full
+    secrets:
+      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}

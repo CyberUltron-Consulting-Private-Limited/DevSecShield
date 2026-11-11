@@ -143,8 +143,7 @@ on:
         description: GitGuardian API key. Without it the ggshield step is skipped with a notice.
         required: false
 
-permissions:
-  contents: read
+# No workflow-level permissions: every job sets its own, and upload-sarif inherits what the caller grants.
 
 env:
   # PR: the base branch commit. Push: the commit before the push. Empty otherwise.

@@ -43,8 +43,8 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: read
+# No workflow-level permissions: `analyze` inherits what the caller grants (contents: read and actions: read;
+# add security-events: write only together with upload: true).
 
 jobs:
   notice:
@@ -65,9 +65,6 @@ jobs:
     if: ${{ inputs.enabled }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    permissions:
-      contents: read
-      actions: read
     strategy:
       fail-fast: false
       matrix:
