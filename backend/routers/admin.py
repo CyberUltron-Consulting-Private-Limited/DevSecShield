@@ -5,11 +5,16 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 from pydantic import BaseModel, field_validator
 from backend.utilities.auth.auth_schema import NoEchoValidationRoute, clean_email, clean_new_password
-from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception, get_hashed_password , send_email, user_by_email
+import datetime
+from backend.utilities.auth.auth_utils import (
+    SET_PASSWORD_LINK_TTL, create_password_change_token, get_user_from_header_or_raise_exception, get_hashed_password,
+    user_by_email,
+)
 from backend.utilities.ratelimit import RateLimiter
 from backend.new_models import Team, TeamMembership, User
 from backend.utilities.auth.plans import plans
-from backend.utilities.auth.html_email import create_user_password_email_html
+from backend.utilities.auth import email as account_mail
+from backend.utilities.auth.email import set_password_link
 import psycopg2
 from backend.get_db import get_db , get_mongo_client_db
 from backend.utilities.db.admin import delete_team_associated_data
@@ -211,6 +216,8 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
         
         
         # Check if user already exists
+        # The administrator's password is only a temporary one: the account must choose its own at the first
+        # sign-in, and the mail carries a single-use "choose your password" link, never a password.
         hashed_password = await run_in_threadpool(get_hashed_password, data.password)
         with Session(engine) as session:
             existing_user = user_by_email(session, data.email)
@@ -226,9 +233,8 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
                 description=f"Default team for {data.first_name}",
             )
             session.add(new_team)
-            session.commit()
-            session.refresh(new_team)
-            
+            session.flush()
+
             # Create new user
             new_user = User(
                 email=data.email,
@@ -237,18 +243,27 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
                 last_name=data.last_name,
                 is_superuser=True,  # New users are not superusers by default
                 default_team_id=new_team.id,
+                must_change_password=True,
                 teams =  [ new_team ],
             )
 
             team_membership = TeamMembership( team=new_team, user=new_user, role="admin" )
-            
+
             session.add(team_membership)
+            session.flush()
+
+            # the account exists only once its "choose your password" link went out (a failed mail keeps nothing)
+            link_token = create_password_change_token(new_user.email, new_user.token_version or 0,
+                                                      expires=SET_PASSWORD_LINK_TTL)
+            expires_on = (datetime.datetime.now(datetime.timezone.utc) + SET_PASSWORD_LINK_TTL).strftime("%d %b %Y %H:%M UTC")
+            try:
+                await account_mail.send_account_created_email(new_user.email, set_password_link(link_token), expires_on)
+            except Exception:
+                session.rollback()
+                raise
             session.commit()
             session.refresh(new_user)
 
-            # send email to user
-            await send_email(new_user.email, "User Created", html_body=create_user_password_email_html(data.password, new_user.email))
-            
             return {
                 "message": "Admin user created successfully",
                 "user": {

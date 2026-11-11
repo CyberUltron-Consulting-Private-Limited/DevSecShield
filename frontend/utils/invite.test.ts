@@ -70,4 +70,9 @@ assert.ok(layout.includes('referrer: "no-referrer"') && layout.includes("index: 
 const login = fs.readFileSync(path.join(root, "components", "auth", "LoginForm.tsx"), "utf8")
 assert.ok(login.includes("password_change_required") && login.includes('"/change_password"'), "forced change at sign-in")
 
+// admin-created accounts: the mailed /set_password#<token> link (token only in the fragment, plain fetch)
+const setPw = fs.readFileSync(path.join(root, "app", "set_password", "page.tsx"), "utf8")
+assert.ok(setPw.includes("window.location.hash") && setPw.includes("/change_password") && !setPw.includes("import api"))
+assert.ok(setPw.includes("history.replaceState"), "the token leaves the address bar once read")
+
 console.log("invite tests passed")

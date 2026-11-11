@@ -39,6 +39,7 @@ from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
 
 from backend.main import app  # noqa: E402
 from backend.new_models import Team, TeamInvitation, TeamMembership, User  # noqa: E402
+from backend.routers import admin as admin_router  # noqa: E402
 from backend.routers import auth as auth_router  # noqa: E402
 from backend.routers import invitations as invitations_router  # noqa: E402
 from backend.routers import team as team_router  # noqa: E402
@@ -87,7 +88,7 @@ def _user(s: Session, email: str, password: str = PASSWORD, **extra) -> User:
 def world(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{tmp_path / 'inv.db'}", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
-    for module in (team_router, invitations_router, auth_router):
+    for module in (team_router, invitations_router, auth_router, admin_router):
         monkeypatch.setattr(module, "get_db", lambda: engine)
     box = Mailbox()
 
@@ -520,3 +521,67 @@ def test_an_empty_token_field_keeps_the_token_only_for_the_same_site(client, wor
     with Session(engine) as s:
         assert s.get(Team, ids["team"]).integration_settings["jira"]["url"] == "https://acme.atlassian.net"
     assert _set_jira(client, ids["team"], token="new-token", url="https://acme2.atlassian.net").status_code == 200
+
+
+# ---------------------------------------------------------------------------------------------- admin-created accounts
+
+ADMIN_TEMP = "Admin-Chosen-Temp-77"
+
+
+def _superuser(engine) -> dict:
+    with Session(engine) as s:
+        _user(s, "root@acme.test", is_superuser=True)
+    return auth("root@acme.test")
+
+
+def test_an_admin_created_account_gets_a_link_never_a_password(client, world):
+    """Follow-up to S2: POST /admin/create_admin_user mailed "Your password is: <the admin's choice>"."""
+    engine, ids, box, codes = world
+    r = client.post("/admin/create_admin_user", headers=_superuser(engine),
+                    json={"email": " New.Admin@Acme.test ", "password": ADMIN_TEMP, "first_name": "N", "last_name": "A"})
+    assert r.status_code == 200, r.text
+    mail = box.last("new.admin@acme.test")
+    assert ADMIN_TEMP not in mail["html"] and ADMIN_TEMP not in mail["subject"]
+    assert "Your password is" not in mail["html"] and "credential" not in mail["html"].lower()
+    year = dt.datetime.now(dt.timezone.utc).year
+    assert f"&copy; {year} Cyberultron Consulting Pvt Ltd" in mail["html"]
+    link = re.search(r'href="(https://devsec\.example\.test/set_password#[^"]+)"', mail["html"]).group(1)
+    token = link.split("#", 1)[1]
+    with Session(engine) as s:
+        user = s.exec(select(User).where(User.email == "new.admin@acme.test")).one()
+        assert user.must_change_password is True
+    # the link sets the account's own password once and signs it in
+    ok = client.post("/change_password", json={"change_token": token, "password": NEW_PASSWORD})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["access_token"] and ok.json()["refresh_token"]
+    assert client.post("/change_password", json={"change_token": token, "password": "Another-One-77"}).status_code == 400
+    assert _login(client, codes, "new.admin@acme.test", ADMIN_TEMP).status_code == 400  # temporary one is gone
+    assert _login(client, codes, "new.admin@acme.test", NEW_PASSWORD).json().get("access_token")
+
+
+def test_an_admin_created_account_must_change_the_temporary_password_at_first_sign_in(client, world):
+    engine, ids, box, codes = world
+    client.post("/admin/create_admin_user", headers=_superuser(engine),
+                json={"email": "ops2@acme.test", "password": ADMIN_TEMP, "first_name": "O", "last_name": "P"})
+    first = _login(client, codes, "ops2@acme.test", ADMIN_TEMP)
+    assert first.status_code == 200 and first.json()["password_change_required"] is True
+    assert "access_token" not in first.json()
+    ok = client.post("/change_password", json={"change_token": first.json()["change_token"], "password": NEW_PASSWORD})
+    assert ok.status_code == 200
+    mailed = box.last("ops2@acme.test")["html"].split("set_password#", 1)[1].split('"', 1)[0]
+    assert client.post("/change_password", json={"change_token": mailed, "password": "Third-Choice-99"}).status_code == 400
+
+
+def test_a_failed_account_mail_keeps_no_account(client, world):
+    engine, ids, box, codes = world
+    r = client.post("/admin/create_admin_user", headers=_superuser(engine),
+                    json={"email": "x@relay-down.test", "password": ADMIN_TEMP, "first_name": "X", "last_name": "Y"})
+    assert r.status_code == 500
+    assert "x@relay-down.test" not in all_users(engine)
+
+
+def test_no_template_left_that_puts_a_password_in_a_mail():
+    from backend.utilities.auth import html_email
+
+    assert not hasattr(html_email, "create_user_password_email_html")
+    assert not hasattr(html_email, "create_user_password_email_html_for_team_membership")

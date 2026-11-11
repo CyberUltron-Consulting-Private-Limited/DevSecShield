@@ -32,36 +32,8 @@ from starlette.responses import JSONResponse
 
 console = Console()
 
-# SECURITY: Log filter to redact sensitive credentials
-class CredentialRedactionFilter(logging.Filter):
-    """Filter to redact sensitive information from logs."""
-    PATTERNS = [
-        (re.compile(r'(mongodb://|amqp://|redis://|postgres://)[^\s]+', re.I), r'\1[REDACTED]'),
-        (re.compile(r'(api[_-]?key.*?[:=]\s*["\']?)([a-zA-Z0-9]{16,})', re.I), r'\1[REDACTED]'),
-        (re.compile(r'(Bearer\s+)([a-zA-Z0-9._-]+)', re.I), r'\1[REDACTED]'),
-        (re.compile(r'(password.*?[:=]\s*["\']?)([^\s"\']+)', re.I), r'\1[REDACTED]'),
-        (re.compile(r'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'), '[JWT_REDACTED]'),
-        (re.compile(r'(secret.*?[:=]\s*["\']?)([^\s"\']{8,})', re.I), r'\1[REDACTED]'),
-    ]
-    
-    def filter(self, record: logging.LogRecord) -> bool:
-        if hasattr(record, 'msg') and isinstance(record.msg, str):
-            for pattern, replacement in self.PATTERNS:
-                record.msg = pattern.sub(replacement, record.msg)
-        if hasattr(record, 'args') and record.args:
-            try:
-                record.args = tuple(
-                    self._redact(arg) if isinstance(arg, str) else arg
-                    for arg in record.args
-                )
-            except (TypeError, AttributeError):
-                pass
-        return True
-    
-    def _redact(self, text: str) -> str:
-        for pattern, replacement in self.PATTERNS:
-            text = pattern.sub(replacement, text)
-        return text
+# SECURITY: Log filter to redact sensitive credentials (formats first, then redacts; never raises)
+from backend.utilities.log_redaction import CredentialRedactionFilter  # noqa: E402
 
 # Apply filter to root logger
 logging.getLogger().addFilter(CredentialRedactionFilter())

@@ -82,32 +82,57 @@ def create_verification_email_html(verification_code):
     return html_string
 
 
-def create_user_password_email_html(password, email):
-    """
-    Generates the HTML string for an email that sends the user their password and email to login.
-    """
+def create_account_created_email_html(email, link, expires_on):
+    """An administrator created an account for ``email``: a single-use link to choose its own password.  It never
+    carries a password (the administrator's temporary one, if any, must be changed at the first sign-in)."""
+    email, link, expires_on = (html.escape(str(v), quote=True) for v in (email, link, expires_on))
     html_string = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="X-UA-Compatible" content="ie=edge">
-        <title>User Password and Email</title>
-    </head>
-    <body>
-        <h1>User Password</h1>
-        <p>Your password is: <strong>{password}</strong></p>
-        <p>Your email is: {email}</p>
-        <p>You can use this password to login to your account.</p>
-        <p>Please keep this password secure and do not share it with anyone.</p>
-        <p>If you have any questions, please contact us at <a href="mailto:support@cyberultron.com">support@cyberultron.com</a>.</p>
-        <p>Thank you for using our service.</p>
-        <p>Best regards,</p>
-        <p>Cyberultron Consulting Pvt Ltd</p>
-    </body>
-    </html>
-    """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Your DevSecShield account</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f4; font-family: Arial, sans-serif;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+            <td style="padding: 20px 0;">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="main-table" style="margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden;">
+                    <tr>
+                        <td style="padding: 40px; text-align: center;">
+                            <h1 style="color: #333333; font-size: 28px; font-weight: bold; margin: 0 0 20px 0;">Cyberultron Consulting Pvt Ltd</h1>
+                            <p style="color: #666666; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;">
+                                An administrator created a DevSecShield account for <strong>{email}</strong>.
+                            </p>
+                            <p style="margin: 0 0 24px 0;">
+                                <a href="{link}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; font-size: 16px; padding: 12px 24px; border-radius: 6px;">Choose your password</a>
+                            </p>
+                            <p style="color: #666666; font-size: 14px; line-height: 1.5; margin: 0 0 12px 0; word-break: break-all;">
+                                Or open this link: {link}
+                            </p>
+                            <p style="color: #666666; font-size: 14px; line-height: 1.5; margin: 20px 0 0 0;">
+                                The link works once and expires on {expires_on}. After that, use "Forgot Password?" on the sign-in page.
+                                <br>
+                                If you did not expect this email, you can ignore it.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">
+                            <p style="color: #999999; font-size: 12px; margin: 0;">
+                                &copy; {footer_year()} Cyberultron Consulting Pvt Ltd. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
     return html_string
 
 
