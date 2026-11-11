@@ -368,10 +368,21 @@ def _file_cmd(template: str, path: str) -> str:
 
 
 def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -> tuple[str, str | None, int]:
-    tier = int(config.get("tier") or 1)
     t_deadline = time.monotonic() + min(float(config.get("timeout_s") or 300), max(ctx.time_left(), 1))
     sess = open_session(ctx, target, config, creds)
-    loc = target.label
+    return collect_on_session(ctx, sess, target.label, config, t_deadline)
+
+
+def collect_on_session(ctx: JobContext, sess: Any, label: str, config: dict,
+                       t_deadline: float | None = None) -> tuple[str, str | None, int]:
+    """Collect one host through an open session and close it.  ``sess`` is an SSH ``Session`` or zs-collect's
+    ``LocalSession`` (the same ``run()`` contract and ``host_key``), so both paths run exactly the same commands and
+    build exactly the same assets; ``label`` becomes every asset's target."""
+    tier = int(config.get("tier") or 1)
+    if t_deadline is None:
+        t_deadline = time.monotonic() + min(float(config.get("timeout_s") or 300), max(ctx.time_left(), 1))
+    loc = label
+    own_pids = frozenset(getattr(sess, "exclude_pids", ()) or ())  # zs-collect's own processes: never reported
     emitted = 0
 
     def emit(*args, **kwargs):
@@ -447,6 +458,8 @@ def collect_target(ctx: JobContext, target: Target, config: dict, creds: dict) -
                 ports_by_pid.setdefault(proc["pid"], []).append(sock_["port"])
         grouped: dict[tuple[str, str], dict[str, Any]] = {}
         for pid, libs in maps.items():
+            if pid in own_pids:
+                continue
             exe = exes.get(pid) or ""
             for lib, deleted in libs.items():
                 g = grouped.setdefault((exe, lib), {"exe": exe, "lib": lib, "pids": [], "deleted": False, "ports": [],
