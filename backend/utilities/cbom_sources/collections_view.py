@@ -140,12 +140,20 @@ def _algorithm_type(node_type: str, cdx_type: str) -> str:
 
 
 def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dict[str, Any]:
-    """A stored ``CbomCollectedAsset`` (judged today: ``view`` is ``classify.shown``) as a code-scan results[] row."""
+    """A stored ``CbomCollectedAsset`` (judged today: ``view`` is ``classify.shown``) as a code-scan results[] row.
+
+    The collector's verdict is kept exactly, so ``cbom_metrics`` counts the same Critical / High / Medium / Low as the
+    run page (``posture.run_posture`` counts ``impact``): an asset classify gave an impact is a finding with that
+    impact and its codes; an asset classify left without an impact is INFORMATIONAL inventory, even when it carries a
+    code such as QUANTUM_VULNERABLE (an RSA host key). Its codes stay on the row as ``collector_codes`` and its
+    quantum verdict in ``quantum_safe`` (readiness), but not in ``finding_codes`` / ``weak`` / ``quantum_vulnerable``,
+    which ``cbom_rows.is_finding`` would read as a (Low) finding."""
     facts = asset.facts if isinstance(asset.facts, dict) else {}
     codes = [c for c in (view.get("finding_codes") or []) if isinstance(c, str) and c]
     impact = view.get("impact") if view.get("impact") in ("Critical", "High", "Medium", "Low") else None
     qv = asset.quantum_vulnerable
-    weak = bool(impact) and any(c not in _NOT_WEAK for c in codes)
+    # a finding is weak unless its only codes are quantum verdicts; an impact without any code is a weakness too
+    weak = bool(impact) and (not codes or any(c not in _NOT_WEAK for c in codes))
     name = asset.name or asset.algorithm or asset.asset_type
     leaf = facts.get("leaf") if isinstance(facts.get("leaf"), dict) else {}
     return {
@@ -156,9 +164,9 @@ def node_row(asset: Any, collection: Collection, view: Mapping[str, Any]) -> dic
         "crypto_strength": "weak" if weak else ("strong" if qv is not None else "not-applicable"),
         "weak": weak,
         "quantum_safe": None if qv is None else (not qv),
-        "quantum_vulnerable": qv is True,
         "impact": impact,
-        "finding_codes": codes,
+        "finding_codes": codes if impact else [],
+        "collector_codes": codes,
         "description": view.get("finding") or "",
         "location": asset.location,
         "key_size": None if asset.key_size is None else str(asset.key_size),
