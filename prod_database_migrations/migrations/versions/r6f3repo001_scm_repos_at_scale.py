@@ -1,7 +1,7 @@
 """code repositories at scale (F3): SCM connections, repository inventory, scan policies, runs, the fair queue and
 the cross-repository finding roll-up
 
-Revision ID: f3a0scm001
+Revision ID: r6f3repo001
 Revises: rv6p1nodename001
 Create Date: 2026-11-11 13:00:00.000000
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 import sqlmodel
 
 
-revision: str = 'f3a0scm001'
+revision: str = 'r6f3repo001'
 down_revision: Union[str, Sequence[str], None] = 'rv6p1nodename001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -57,7 +57,7 @@ def upgrade() -> None:
     sa.Column('row_version', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('last_updated', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('team_id', 'name_lower', name='uq_scmconnection_team_name')
     )
@@ -93,8 +93,10 @@ def upgrade() -> None:
     sa.Column('last_scan_at', sa.DateTime(), nullable=True),
     sa.Column('last_scan_summary', sa.JSON(), nullable=True),
     sa.Column('row_version', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('last_updated', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['connection_id'], ['scmconnection.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('connection_id', 'external_id', name='uq_scmrepository_connection_external')
     )
@@ -126,7 +128,7 @@ def upgrade() -> None:
     sa.Column('row_version', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('last_updated', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('team_id', 'name_lower', name='uq_scmscanpolicy_team_name')
     )
@@ -145,8 +147,9 @@ def upgrade() -> None:
     sa.Column('credits_c', sa.Integer(), nullable=False),
     sa.Column('refunded_c', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('last_updated', sa.DateTime(), nullable=True),
     sa.Column('finished_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('team_id', 'client_request_id', name='uq_scmscanrun_team_request')
     )
@@ -177,7 +180,7 @@ def upgrade() -> None:
     sa.Column('finished_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['repo_id'], ['scmrepository.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['run_id'], ['scmscanrun.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('team_id', 'dedupe_key', name='uq_scmscanrequest_team_dedupe')
     )
@@ -201,7 +204,7 @@ def upgrade() -> None:
     sa.Column('first_seen_at', sa.DateTime(), nullable=True),
     sa.Column('last_seen_at', sa.DateTime(), nullable=True),
     sa.Column('resolved_at', sa.DateTime(), nullable=True),
-    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('team_id', 'product', 'fingerprint', name='uq_scmfinding_team_product_fp')
     )
@@ -219,7 +222,7 @@ def upgrade() -> None:
     sa.Column('last_seen_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['finding_id'], ['scmfinding.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['repo_id'], ['scmrepository.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ),
+    sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('finding_id', 'repo_id', name='uq_scmfindingoccurrence_finding_repo')
     )

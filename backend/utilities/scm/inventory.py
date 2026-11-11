@@ -20,7 +20,7 @@ from sqlalchemy import or_, update
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
-from backend.new_models import ScmConnection, ScmRepository
+from backend.utilities.scm.models import ScmConnection, ScmRepository
 from backend.utilities.cbom_sources.common import utcnow
 from backend.utilities.scm import filters as F
 from backend.utilities.scm.common import log

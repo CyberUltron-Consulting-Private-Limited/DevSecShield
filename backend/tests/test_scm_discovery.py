@@ -26,7 +26,7 @@ os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 from sqlalchemy import event  # noqa: E402
 from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
 
-from backend.new_models import ScmConnection, ScmRepository, Team, TeamMembership, User  # noqa: E402
+from backend.new_models import Team, TeamMembership, User  # noqa: E402
 from backend.tests.support.fake_scm import (  # noqa: E402
     FakeScmServer,
     FakeScmState,
@@ -40,6 +40,7 @@ from backend.utilities.db.encryption import _get_fernet  # noqa: E402
 from backend.utilities.scm import filters as F  # noqa: E402
 from backend.utilities.scm import hosts as H  # noqa: E402
 from backend.utilities.scm import inventory as INV  # noqa: E402
+from backend.utilities.scm.models import ScmConnection, ScmRepository  # noqa: E402
 from backend.utilities.scm.providers import ScmError, build_provider  # noqa: E402
 
 TOKEN = "fake-pat-0001"
