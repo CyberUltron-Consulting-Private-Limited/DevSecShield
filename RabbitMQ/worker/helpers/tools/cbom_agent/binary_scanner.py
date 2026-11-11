@@ -7,6 +7,8 @@ and config detection.
 import json
 import os
 import subprocess
+
+from helpers.context.cancellation import run_tool
 import shutil
 from rich.console import Console
 
@@ -34,7 +36,7 @@ def _run_via_binary(directory: str) -> subprocess.CompletedProcess:
     """Run cbomkit-theia Go binary directly."""
     cmd = ["cbomkit-theia", "dir", directory]
     console.print(f"Running cbomkit-theia (binary): {' '.join(cmd)}", style="dim cyan")
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    return run_tool(cmd, capture_output=True, text=True, timeout=600)
 
 
 def _run_via_docker(directory: str) -> subprocess.CompletedProcess:
@@ -47,7 +49,7 @@ def _run_via_docker(directory: str) -> subprocess.CompletedProcess:
         "dir", "/scan",
     ]
     console.print(f"Running cbomkit-theia (Docker): {' '.join(cmd)}", style="dim cyan")
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    return run_tool(cmd, capture_output=True, text=True, timeout=900)
 
 
 def run_cbomkit_theia(directory: str) -> dict | None:

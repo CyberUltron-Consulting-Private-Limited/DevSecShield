@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+
+from helpers.context.cancellation import run_tool
 import tempfile
 from pathlib import Path
 
@@ -28,7 +30,7 @@ def run_syft(directory: Path | str) -> Path | None:
             f"cyclonedx-json={out}",
             "-q",
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = run_tool(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0 or not out.is_file() or out.stat().st_size == 0:
             console.print(
                 f"Syft failed: {result.stderr[:400] if result.stderr else 'empty output'}",

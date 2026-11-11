@@ -1,6 +1,7 @@
 
 from celery.result import AsyncResult
 from fastapi import HTTPException, status, UploadFile
+from sqlalchemy import or_, update
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 from backend.utilities.celery.celery_connection import get_celery_app
@@ -64,17 +65,26 @@ async def start_scan_and_update_db(
             scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id)).first()
             if scan==None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
-            scan.task_id = task_result.id
 
             # getting the status of the task and adding it to the conversation in main db
             async_result : AsyncResult = simple_app.AsyncResult(task_result.id)
             SCAN_STATUS = str(async_result.state).lower()
-            scan.scan_status = SCAN_STATUS
-            
-            # get scan metadata for type 
+
+            # get scan metadata for type
             scan_metadata = get_scan_metadata_for_type(scan_type=scan_type,start_scan_payload=start_scan_payload)
-            scan.scan_metadata = scan_metadata
+            # conditional: a scan cancelled meanwhile (a reinitialize racing a cancel) stays cancelled, and the task
+            # just sent is withdrawn (utilities/scan/cancel_scan.py)
+            stored = session.exec(
+                update(Scan)
+                .where(Scan.id == scan_id, Scan.team_id == team_id,
+                       or_(Scan.scan_status.is_(None), Scan.scan_status != "cancelled"))
+                .values(task_id=task_result.id, scan_status=SCAN_STATUS, scan_metadata=scan_metadata)
+            ).rowcount == 1
             session.commit()
+            if not stored:
+                from backend.utilities.scan.cancel_scan import tell_workers
+                tell_workers(task_result.id)
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This scan was cancelled.")
     
     
     except HTTPException as e:

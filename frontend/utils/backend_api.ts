@@ -477,6 +477,17 @@ const reinitializeSastScan = async (params: {
     return response.data
 }
 
+/** Cancel a pending or running code scan; its charge is refunded in full. POST /{team_id}/{type}/scan/{scan_id}/cancel.
+ * A finished, failed or already-cancelled scan answers 409 { detail, code } (utils/scanCancel.ts). */
+export const cancelScan = async (
+    team_id: number,
+    type: "sast" | "iac" | "sbom_sca" | "cbom" | "ai_bom",
+    scan_id: number,
+): Promise<{ scan_status: "cancelled"; refunded_credits: number; message: string }> => {
+    const response = await api.post(`/${team_id}/${type}/scan/${scan_id}/cancel`)
+    return response.data
+}
+
 /** Send a message to a scan. POST /{team_id}/{type}/scan/{scan_id}/message */
 const sendMessageToScan = async (
     team_id: number,

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 import subprocess
+
+from helpers.context.cancellation import run_tool
 import tempfile
 import shutil
 from git import Repo, GitCommandError
@@ -50,7 +52,7 @@ def run_sbom_scan(
             "--file",
             json_temp.name,
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        result = run_tool(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0:
             # Prefer SBOM target; if it fails and we have a directory, retry dir:.
             if target.startswith("sbom:") and directory:
@@ -67,7 +69,7 @@ def run_sbom_scan(
                     "--file",
                     json_temp.name,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                result = run_tool(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode != 0:
                 # the cause, not grype's first (harmless) warning line: the scan's failure reason keeps one line
                 raise RuntimeError(f"SBOM scan failed: {grype_failure_reason(result.stderr)}")

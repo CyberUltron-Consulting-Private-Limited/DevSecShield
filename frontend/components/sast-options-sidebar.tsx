@@ -41,6 +41,7 @@ import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
+import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
 
 
 
@@ -93,7 +94,7 @@ export function SASTOptionsSidebar({
     setBranch(branch);
   }, [app_lang, mode, repo_url, PAT, branch]);
 
-  const [ optionsSidebarState , setOptionsSidebarState ] = useState<"ready" | "scanning" | "error" | "done" >("ready");
+  const [ optionsSidebarState , setOptionsSidebarState ] = useState<"ready" | "scanning" | "error" | "done" | "cancelled">("ready");
   const [ error_message, setErrorMessage ] = useState<string | null>(null);
   const [ estimatedCredits, setEstimatedCredits ] = useState<number | null>(null);
   /** True only after estimation has been run successfully this session; ensures user must re-estimate when they come back. */
@@ -236,6 +237,10 @@ export function SASTOptionsSidebar({
     }
     if (query.data?.scan_status === "pending" || query.data?.scan_status === "started") {
       setOptionsSidebarState("scanning");
+      setErrorMessage(null);
+    }
+    if (query.data?.scan_status === "cancelled") {
+      setOptionsSidebarState("cancelled");
       setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
@@ -481,6 +486,9 @@ export function SASTOptionsSidebar({
           <p className="text-zinc-300 text-center">
             Scan has started, this might take a while
           </p>
+          <div className="w-full mt-4">
+            <CancelScanButton type="sast" teamId={team_id} scanId={scan_id} scan={query.data} />
+          </div>
         </div>
       )}
 
@@ -514,6 +522,10 @@ export function SASTOptionsSidebar({
             </Button>
           </div>
         </div>
+      )}
+
+      {optionsSidebarState === "cancelled" && (
+        <CancelledScanPanel type="sast" teamId={team_id} scan={query.data} />
       )}
 
       {optionsSidebarState === "error" && (

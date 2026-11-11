@@ -6,6 +6,8 @@ import json
 import os
 import shutil
 import subprocess
+
+from helpers.context.cancellation import run_tool
 import tempfile
 from pathlib import Path
 
@@ -35,7 +37,7 @@ def run_cdxgen(directory: Path | str) -> Path | None:
             str(directory),
         ]
         env = {**os.environ, "FETCH_LICENSE": "false"}
-        result = subprocess.run(
+        result = run_tool(
             cmd, capture_output=True, text=True, timeout=600, env=env
         )
         if result.returncode != 0 or not out.is_file() or out.stat().st_size == 0:

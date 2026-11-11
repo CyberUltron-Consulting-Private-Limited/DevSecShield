@@ -37,6 +37,7 @@ from backend.utilities.dashboard.sbom_license import (
     resolve_sbom_reachability,
 )
 from backend.utilities.scan.start_scan import start_scan_and_update_db
+from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan, refunded_credits
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
@@ -325,7 +326,7 @@ async def get_scan(
 
         # STEP [ 2 ] : =================== Get the scan status from the celery worker if scan is not completed yet ======================
         console.print(f"SCAN_STATUS: {SCAN_STATUS} TASK_ID: {TASK_ID}",style="dim yellow")
-        if (SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {} or SCAN_STATUS == "started") and (TASK_ID != None) and (TASK_ID != ""):
+        if (SCAN_STATUS == "pending" or SCAN_STATUS == "NOT_STARTED" or SCAN_DATA == {} or SCAN_STATUS == "started") and (TASK_ID != None) and (TASK_ID != "") and SCAN_STATUS != "cancelled":
             FETCHED_SCAN_STATUS , FETCHED_SCAN_DATA , scan = get_status_and_update_db(
                 scan_id=scan_id,
                 task_id=TASK_ID,
@@ -411,6 +412,8 @@ async def get_scan(
                 "integration_settings": scan.integration_settings or {},
                 "info": SCAN_INFO,
                 "data": scan_result,
+                # what a cancel would refund (the "Cancel scan" confirmation states it)
+                "credit_charged": refunded_credits(scan) if scan is not None else None,
             }
 
         
@@ -674,6 +677,35 @@ async def start_scan(
         if isinstance(e,HTTPException):
             raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in starting scan , please try again later")
+
+
+@router.post("/{team_id}/{type}/scan/{scan_id}/cancel", summary="Cancel a pending or running code scan",
+             dependencies=[Depends(write_limiter)])
+async def cancel_scan_route(
+    type: scan_types,
+    scan_id: int,
+    team_id: int,
+    Authorization: Annotated[str | None, Header()] = None):
+    """
+    Cancel a pending or running code scan (any member of the scan's team). The charge is refunded in full and no
+    results are delivered. A finished, failed or already-cancelled scan answers 409 with the reason
+    (utilities/scan/cancel_scan.py).
+    """
+    try:
+        engine = get_db()
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        check_if_user_is_in_team(user.id, team_id, engine)
+        return cancel_scan(engine, scan_id=scan_id, team_id=team_id, scan_type=type, user_id=user.id)
+    except CancelRefused as refused:
+        body = {"detail": refused.detail, "code": refused.code}
+        if refused.refunded is not None:
+            body["refunded_credits"] = refused.refunded
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content=body)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        console.print(f"Error in cancelling {type} scan {scan_id}: {e}", style="bold red")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error in cancelling the scan, please try again later")
 
 
 
