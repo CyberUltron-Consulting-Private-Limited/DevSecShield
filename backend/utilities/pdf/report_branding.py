@@ -265,8 +265,8 @@ REPORT_META: Dict[str, Dict[str, str]] = {
         "footer_label": "CBOM Network TLS Assessment",
         "kicker": "Regulatory Deliverable",
         "intro": (
-            "Declared listeners and imported TLS result files across the team's "
-            "completed CBOM scans. The platform does not probe any endpoint."
+            "Declared listeners, imported TLS result files and the endpoints the team's "
+            "CBOM Sources runs probed, across the team's completed CBOM results."
         ),
         "how_to_read": (
             "Read the endpoint register and the protocol matrix first, then complete "

@@ -933,7 +933,11 @@ def _front_matter(
         gap,
         _basis_box(view, styles, width, basis_extra),
         gap,
-        _disclaimer_box(styles, width, disclaimer_paragraphs),
+        _disclaimer_box(
+            styles,
+            width,
+            authored.disclaimer_paragraphs(view) if disclaimer_paragraphs is None else disclaimer_paragraphs,
+        ),
         Spacer(1, 4),
         Paragraph(pdf_text(authored.MANUAL_LEGEND, limit=400), styles["muted"]),
         Spacer(1, 8),

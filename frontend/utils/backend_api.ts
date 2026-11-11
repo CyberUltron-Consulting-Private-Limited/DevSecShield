@@ -1,4 +1,5 @@
 import api from "@/utils/interceptors"
+import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
 import { showErrorToast } from "./error-handler"
 import { toast } from "sonner"
 
@@ -2364,7 +2365,11 @@ export interface CBOMDashboardData {
     crypto_strength: string
     quantum_safe: boolean
     impact: string
+    /** where the row came from: a code scan or a CBOM Sources run (absent on older responses) */
+    origin?: CbomResultOrigin | null
   }>
+  /** CBOM Sources collections counted next to the code scans (latest completed collection per source) */
+  sources?: { collections: number; assets: number; deduplicated: number }
   card_data: {
     total_crypto_assets: number
     total_weak_algorithms: number
@@ -2381,6 +2386,8 @@ export interface CBOMDashboardData {
 export interface CBOMListResponse {
   scans_list_data: CBOMConversation[]
   dashboard_data: CBOMDashboardData
+  /** each CBOM Sources source's latest completed collection (one entry per source) */
+  sources_runs?: CbomSourcesRun[]
 }
 
 export interface CBOMConversationResponse {

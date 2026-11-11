@@ -102,7 +102,8 @@ class CodeRowSummary:
         self.compliance: dict[str, int] = defaultdict(int)
         self.top_risks: list[dict[str, Any]] = []
 
-    def add_rows(self, rows: Iterable[Any]) -> "CodeRowSummary":
+    def add_rows(self, rows: Iterable[Any], origin: dict[str, Any] | None = None) -> "CodeRowSummary":
+        """``origin`` says where rows without their own ``origin`` came from (a code scan); each top risk carries it."""
         from backend.utilities.dashboard.bom_risk_score import cbom_finding_risk_score
 
         for raw in rows:
@@ -148,6 +149,7 @@ class CodeRowSummary:
                 "quantum_safe": row.get("quantum_safe", False),
                 "impact": row.get("impact") or severity.capitalize(),
                 "risk_score": cbom_finding_risk_score(row),
+                "origin": row.get("origin") or origin,
             })
         return self
 

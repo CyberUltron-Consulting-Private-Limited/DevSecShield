@@ -9,6 +9,11 @@ from backend.utilities.db.findings import get_findings_for_scan_id
 console = Console()
 
 
+# a CBOM Sources run's status -> the scan status bucket (a run that ended partial still completed: it has results)
+SOURCES_RUN_BUCKET = {"queued": "not_started", "running": "running", "done": "completed", "partial": "completed",
+                      "failed": "failed"}
+
+
 def _to_date_key(d) -> str | None:
     """Get YYYY-MM-DD from datetime or date. Returns None if not available."""
     if d is None:
@@ -89,6 +94,14 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         # STEP [ 1.3 ] : ==================== Get all Cicd Integration records for this team =================================
         cicd_integrations = session.exec(select(CicdIntegration).where(CicdIntegration.team_id == team_id)).all()
 
+        # STEP [ 1.3b ] : CBOM Sources runs are CBOM results too (collections_view): their statuses count as scans and
+        # each source's latest completed collection counts towards the CBOM findings, once per asset
+        from backend.new_models import CbomCollectionRun
+        from backend.utilities.cbom_sources.collections_view import load_sources_result
+
+        sources_runs = session.exec(select(CbomCollectionRun).where(CbomCollectionRun.team_id == team_id)).all()
+        sources_result = load_sources_result(session, team_id)
+
         ## STEP [ 1.4 ] : ==================== Get all Scan Findings records for this team =================================
         findings_list = [] # use this to calculate the additonal metrics mentioned above 
         for scan in scans:
@@ -114,6 +127,10 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
             scan_status_distribution["completed"] += 1
         elif status == "FAILURE":
             scan_status_distribution["failed"] += 1
+    for run in sources_runs:  # queued | running | done | partial | failed | cancelled (jobs.recompute_run)
+        bucket = SOURCES_RUN_BUCKET.get((run.status or "").strip().lower())
+        if bucket:
+            scan_status_distribution[bucket] += 1
 
     # STEP [ 1.6 ] : ==================== Findings-based metrics (remediations, findings/fixes/FP per day) ==========================================
     findings_per_day: dict[str, int] = defaultdict(int)
@@ -158,6 +175,19 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
         1 for f in findings_list
         if (f.get("finding_status") or "").strip().lower() == "fixed" or f.get("fixed_at") is not None
     )
+    # CBOM Sources findings (latest collection per source), once per asset: as on the CBOM dashboard
+    from backend.utilities.cbom_sources.collections_view import code_cert_identities, code_row_identity, resolve
+
+    cbom_done = [s for s in scans if s.scan_type == "cbom" and (s.scan_status or "").lower() == "success"
+                 and isinstance(s.scan_data, dict)]
+    all_cert_ids = {s.id: code_cert_identities(s.scan_data) for s in cbom_done}
+    team_resolution = resolve(
+        [(s.id, s.created_at, ident) for s in cbom_done for row in (s.scan_data.get("results") or [])
+         if (ident := code_row_identity(row, all_cert_ids[s.id]))],
+        sources_result.rows)
+    sources_findings = team_resolution.new_findings()
+    total_findings += len(sources_findings)
+    total_fixed_findings += sum(1 for item in sources_findings if item.row.get("remediation_status") == "done")
     remediation_percentage = (
         round((total_fixed_findings / total_findings * 100.0), 1) if total_findings else 0.0
     )
@@ -202,15 +232,29 @@ def generate_team_dashboard_data(team_id: int, engine: Engine) -> dict:
             scans_in_past_month.append(scan)
     for scan in scans_in_past_month:
         scan_type_count[scan.scan_type] += 1
-    
+    month_start = datetime.now().date() - timedelta(days=30)
+    scan_type_count["cbom"] += sum(1 for run in sources_runs if run.created_at and run.created_at.date() >= month_start)
+
     # STEP [ 6 ] : ========================== Detected high and critical vulnerabilities in the past month ================================================
-    
+    from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
+    from backend.utilities.cbom_sources.collections_view import code_cert_identities, code_row_identity, resolve
+
+    cbom_month = [s for s in scans_in_past_month if s.scan_type == "cbom" and isinstance(s.scan_data, dict)
+                  and "results" in s.scan_data]
+    cbom_cert_ids = {s.id: code_cert_identities(s.scan_data) for s in cbom_month}
+    resolution = resolve(
+        [(s.id, s.created_at, ident) for s in cbom_month for row in (s.scan_data["results"] or [])
+         if (ident := code_row_identity(row, cbom_cert_ids[s.id]))],
+        [item for item in sources_result.rows if item.collection.observed_at.date() >= month_start])
     high_and_critical_vuln_in_past_month : dict[str,int] = { "low" : 0 , "medium" : 0 , "high" : 0 , "critical" : 0 }
+    sources_severity = summarize_code_rows([item.row for item in resolution.sources_rows]).severity
+    high_and_critical_vuln_in_past_month["high"] += sources_severity["high"]
+    high_and_critical_vuln_in_past_month["critical"] += sources_severity["critical"]
     for scan in scans_in_past_month:
         if scan.scan_type == "cbom" and isinstance(scan.scan_data, dict) and "results" in scan.scan_data:
-            from backend.utilities.cbom_sources.cbom_metrics import summarize_code_rows
-
-            severity = summarize_code_rows(scan.scan_data["results"] or []).severity  # findings only
+            kept = [row for row in (scan.scan_data["results"] or [])
+                    if resolution.code_kept(scan.id, code_row_identity(row, cbom_cert_ids[scan.id]))]
+            severity = summarize_code_rows(kept).severity  # findings only, one count per asset
             high_and_critical_vuln_in_past_month["high"] += severity["high"]
             high_and_critical_vuln_in_past_month["critical"] += severity["critical"]
         elif (scan.scan_type == "iac" or scan.scan_type == "sbom_sca") and "results" in scan.scan_data:

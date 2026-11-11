@@ -200,6 +200,8 @@ def _policy(path: Path) -> tuple[set[str], tuple[str, ...]]:
         backend += ("backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics")
         # the remediation plan (waves, owners, target dates; scan-node assets) read by the loader: database only, no AI
         backend += ("backend.utilities.cbom_sources.waves",)
+    # CBOM Sources collections as CBOM results (M1x): stored assets and the latest-observation rule; database only
+    backend += ("backend.utilities.cbom_sources.collections_view",)
     if path.parent == _ROUTERS:
         roots |= {"fastapi", "starlette", "sqlmodel", "sqlalchemy", "rich"}
         backend += (

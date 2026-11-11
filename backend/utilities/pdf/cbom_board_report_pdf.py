@@ -950,9 +950,9 @@ def _scans_appendix(view: TeamCbomView, styles: Styles):
     return story
 
 
-def _disclaimers_appendix(styles: Styles):
+def _disclaimers_appendix(styles: Styles, view: TeamCbomView | None = None):
     story: list[Flowable] = [*section_heading(H_APP_DISCLAIMERS, styles)]
-    for paragraph in (*authored.DISCLAIMER_PARAGRAPHS, authored.GRADE_DISCLAIMER):
+    for paragraph in (*authored.disclaimer_paragraphs(view), authored.GRADE_DISCLAIMER):
         story += [_para(paragraph, styles), _gap(3)]
     story.append(_para(authored.PQC_TIMELINE_FOOTNOTE, styles))
     story.append(_gap(6))
@@ -976,7 +976,7 @@ def _body(view: TeamCbomView, styles: Styles, width: float) -> list[Flowable]:
     story += _signoff_section(styles, width)
     story += _grade_appendix(view, posture, styles)
     story += _scans_appendix(view, styles)
-    story += _disclaimers_appendix(styles)
+    story += _disclaimers_appendix(styles, view)
     return story
 
 

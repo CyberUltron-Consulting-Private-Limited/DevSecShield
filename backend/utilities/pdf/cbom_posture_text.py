@@ -186,6 +186,48 @@ ENDPOINT_LIMIT = (
     "The platform did not probe any endpoint. Imported results reflect the time the "
     "customer's tool ran."
 )
+ENDPOINT_LIMIT_PROBED = (
+    "Probed endpoints reflect the time of their CBOM Sources collection; imported results reflect the time the "
+    "customer's tool ran. Endpoints outside the configured Sources were not probed."
+)
+
+
+def posture_scope_of_method(view: object) -> str:
+    """``POSTURE_SCOPE_OF_METHOD``, or its CBOM Sources variant (never denies a probe that happened)."""
+    from backend.utilities.pdf import cbom_deliverable_text as authored
+
+    found = authored.collections_in_scope(view)
+    if not found:
+        return POSTURE_SCOPE_OF_METHOD
+    kinds = {getattr(c, "source_kind", "") for c in found}
+    negatives = []
+    if not authored.endpoints_probed(view):
+        negatives.append("probe any endpoint")
+    if not kinds & authored._CLOUD_KINDS:
+        negatives.append("call any cloud API")
+    if not kinds & authored._KEY_CUSTODY_KINDS:
+        negatives.append("inspect a KMS or HSM")
+    negatives.append("inspect stored data")
+    return (
+        "Method: analysis of declared configuration in repositories and uploaded artefacts "
+        "(infrastructure-as-code, container and cluster definitions, server and database "
+        "configuration), offline import of result files that the customer's own tools "
+        f"produced, and collection from the team's own systems. {authored.sources_sentence(view)} "
+        f"The platform does not {authored._join_negatives(negatives)}. A declared setting is not proof that it is "
+        "in operation."
+    )
+
+
+def endpoint_limit(view: object) -> str:
+    from backend.utilities.pdf import cbom_deliverable_text as authored
+
+    return ENDPOINT_LIMIT_PROBED if authored.endpoints_probed(view) else ENDPOINT_LIMIT
+
+
+def disclaimer_paragraphs(view: object) -> tuple[str, ...]:
+    return (CERTIN_DISCLAIMER, RBI_BOM_DISCLAIMER, posture_scope_of_method(view))
+
+
 STORED_DATA_LIMIT = "stored data was not inspected"
 STORED_DATA_STATEMENT = "The platform does not inspect stored data."
 

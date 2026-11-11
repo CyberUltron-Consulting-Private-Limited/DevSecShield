@@ -2225,7 +2225,10 @@ def test_module_level_imports_are_standard_library_only():
 
 # The one finding rule and the one quantum-readiness definition every CBOM view shares: pure modules whose own
 # imports are stdlib only (the isolated import test below proves the closure stays clean).
-SHARED_PURE_RULES = {"backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics"}
+# collections_view: the cross-scope identity and "latest observation wins" rule (stdlib-only at import; its DB loader
+# imports sqlmodel lazily and is called from load_team_cbom_view only)
+SHARED_PURE_RULES = {"backend.utilities.cbom_sources.cbom_rows", "backend.utilities.cbom_sources.cbom_metrics",
+                     "backend.utilities.cbom_sources.collections_view"}
 
 
 def test_only_the_db_loader_imports_non_stdlib_modules_and_only_lazily():
@@ -2335,7 +2338,8 @@ FROZEN_FIELDS = {
         "scans sources assets certs libs frameworks requirements asset_occurrences "
         "assets_by_type assets_by_impact issue_by_impact finding_counts pqc_vulnerable pqc_safe "
         "pqc_hybrid pqc_broken_today pqc_ungraded readiness_pct compliance_sources_pooled "
-        "compliance_legacy_excluded warnings posture remediation"  # remediation: WP10 (loader only, not compared)
+        # remediation: WP10 (loader only, not compared); collections: M1x (CBOM Sources results, merge_collections)
+        "compliance_legacy_excluded warnings posture collections remediation"
     ),
 }
 

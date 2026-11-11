@@ -101,6 +101,14 @@ def _aware(moment: datetime | None) -> datetime:
     return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
 
 
+def _count_collections(engine: Any, team_id: int) -> int:
+    """CBOM Sources sources with a completed collection: CBOM results like completed code scans (jobs only)."""
+    from backend.utilities.cbom_sources.collections_view import latest_jobs
+
+    with Session(engine) as session:
+        return len(latest_jobs(session, team_id))
+
+
 def _load_heads(engine: Any, team_id: int) -> list[ScanHead]:
     """Pass 1 of the roll-up for the manifest: every column except ``scan_data``."""
     with Session(engine) as session:
@@ -171,7 +179,9 @@ async def list_cbom_deliverables(
     try:
         engine = await _authorize(team_id, Authorization)
         heads = await run_in_threadpool(_load_heads, engine, team_id)
-        manifest = build_manifest(team_id, _utcnow(), summarize_heads(heads, team_id=team_id))
+        collections = await run_in_threadpool(_count_collections, engine, team_id)
+        summary = summarize_heads(heads, team_id=team_id, collections=collections)
+        manifest = build_manifest(team_id, _utcnow(), summary)
     except HTTPException:
         raise
     except Exception as exc:

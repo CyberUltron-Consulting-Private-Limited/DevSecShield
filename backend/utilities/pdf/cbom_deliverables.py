@@ -47,7 +47,9 @@ from backend.utilities.pdf import (
 from backend.utilities.pdf.report_branding import REPORT_META
 
 # Shown as the tooltip of a disabled menu item (documents that are empty without scans).
-REASON_NO_SCANS = "No completed CBOM scans yet. Run a CBOM scan to populate this document."
+REASON_NO_SCANS = (
+    "No completed CBOM scans or CBOM Sources runs yet. Run a CBOM scan or a Sources run to populate this document."
+)
 
 
 @dataclass(frozen=True)
@@ -127,15 +129,19 @@ class HeadsSummary:
     sources: int  # distinct sources among the eligible scans (an upper bound, see below)
     failure: int  # status == failure
     not_completed: int  # pending / started / retry / NOT_STARTED / anything unknown
+    # CBOM Sources sources with a completed collection (collections_view.latest_jobs): each is a CBOM result and
+    # its own source, so the manifest adds it to ``eligible`` and ``sources``
+    collections: int = 0
 
 
-def summarize_heads(heads: Iterable[ScanHead], *, team_id: int) -> HeadsSummary:
+def summarize_heads(heads: Iterable[ScanHead], *, team_id: int, collections: int = 0) -> HeadsSummary:
     """Count a team's CBOM scans by status and its eligible scans by source.
 
     Mirrors the selection rules of ``fold_scans`` (plan 4.1) as far as heads allow: another
     team's or another type's head is ignored and a repeated scan id counts once.  A successful
     scan whose ``scan_data`` turns out to be empty is only discovered when the blob is read, so
-    ``eligible`` and ``sources`` are upper bounds of what the documents will fold.
+    ``eligible`` and ``sources`` are upper bounds of what the documents will fold.  ``collections``
+    is the number of CBOM Sources sources with a completed collection (``collections_view``).
     """
     seen: set[Any] = set()
     sources: set[str] = set()
@@ -172,6 +178,7 @@ def summarize_heads(heads: Iterable[ScanHead], *, team_id: int) -> HeadsSummary:
         sources=len(sources),
         failure=failure,
         not_completed=not_completed,
+        collections=max(0, int(collections or 0)),
     )
 
 
@@ -181,8 +188,12 @@ def _utc_stamp(moment: datetime) -> str:
 
 
 def build_manifest(team_id: int, generated_at: datetime, summary: HeadsSummary) -> dict[str, Any]:
-    """The JSON body of ``GET /{team_id}/cbom/deliverables`` (shape pinned by T-CON-1)."""
-    empty = summary.eligible == 0
+    """The JSON body of ``GET /{team_id}/cbom/deliverables`` (shape pinned by T-CON-1).
+
+    A completed CBOM Sources collection is a CBOM result like a completed code scan: it counts as eligible and as a
+    source, so the data documents are available with Sources results alone."""
+    eligible = summary.eligible + summary.collections
+    empty = eligible == 0
     items = []
     for spec in DELIVERABLES.values():
         unavailable = spec.data_dependent and empty
@@ -201,9 +212,9 @@ def build_manifest(team_id: int, generated_at: datetime, summary: HeadsSummary) 
         "team_id": int(team_id),
         "generated_at": _utc_stamp(generated_at),
         "basis": {
-            "eligible": summary.eligible,
-            "included_hint": summary.eligible,
-            "sources": summary.sources,
+            "eligible": eligible,
+            "included_hint": eligible,
+            "sources": summary.sources + summary.collections,
             "excluded": {"failure": summary.failure, "not_completed": summary.not_completed},
         },
         "deliverables": items,

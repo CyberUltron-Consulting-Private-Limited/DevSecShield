@@ -628,6 +628,21 @@ class PostureView:
         )
 
 
+@dataclass(frozen=True)
+class CollectionAgg:
+    """One CBOM Sources source's latest completed collection (``collections_view.Collection``), as documents name it."""
+
+    key: str  # "sources:<source uid>" (the SourceAgg / AssetAgg source_key)
+    label: str  # "Sources run #8 · range-10.0.0.0-24"
+    source_name: str
+    source_kind: str  # CbomCollectionSource.kind ("network", "servers", "aws" ...), "" for a deleted source
+    run_id: int
+    job_id: int
+    observed_at: datetime  # job finished_at, tz-aware UTC
+    asset_count: int = 0  # assets of the collection, before cross-scope de-duplication
+    endpoints_probed: int = 0  # TLS / SSH endpoints the scan node connected to
+
+
 # ---------------------------------------------------------------------------------------------
 # The view
 # ---------------------------------------------------------------------------------------------
@@ -695,6 +710,9 @@ class TeamCbomView:
     compliance_legacy_excluded: int = 0  # current reduced-fidelity sources left out (Appendix B: 1)
     warnings: tuple[str, ...] = ()  # skipped / coerced inputs; capped (renderers may print count)
     posture: PostureView = field(default_factory=PostureView.empty)
+    # each CBOM Sources source's latest completed collection folded in by ``merge_collections`` (M1x); they also
+    # count in scans_total / eligible / included / fidelity_full, so "completed CBOM results" agree with the manifest
+    collections: tuple[CollectionAgg, ...] = ()
     # the team's remediation plan (``cbom_sources.waves.roadmap_extras``: assignments by stable key and the
     # quantum-vulnerable assets of each collection source's latest complete run); None = not loaded (hand-made views)
     # Not part of the fold: excluded from equality and repr (a DB-loaded view equals the in-memory fold of its scans).
@@ -2731,11 +2749,9 @@ def fold_scans(
     ASCII JSON, sorted and joined with ``","`` (addendum A-2).  A scan set without attestation
     records keeps the previous text and therefore the previous value.  The same scan set and the
     same records give the same fingerprint whatever the order of ``heads`` or ``batch_size``.
-    Every date derives from ``now``.
+    Every date derives from ``now``.  Headline counts: ``_headline`` (one quantum-readiness definition for every
+    CBOM view, ``cbom_metrics.quantum_readiness_pct``).
     """
-    # one quantum-readiness definition for every CBOM view (a pure, stdlib-only module)
-    from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
-
     moment = _utc(now) or _EPOCH
     hard = _bounded(hard_max, HARD_MAX_SCANS, 0)
     batch = _bounded(batch_size, BATCH_SIZE, 1)
@@ -2875,16 +2891,8 @@ def fold_scans(
         )
     source_rows.sort(key=lambda source: (source.label.casefold(), source.key))
 
-    # 4. headline counts: CURRENT state only, computed once so every document agrees.  Readiness is
-    # cbom_metrics.quantum_readiness_pct over every asset with a verdict (the scan page's rule): the current engine
-    # grades algorithms only, a legacy worker row also graded its certificates and keys.
-    vulnerable = sum(1 for asset in live if asset.quantum_vulnerable is True)
-    broken = sum(1 for asset in live if asset.quantum_vulnerable is False and asset.broken_today)
-    safe = sum(1 for asset in live if asset.quantum_vulnerable is False and not asset.broken_today)
-    hybrid = sum(1 for a in live if a.quantum_vulnerable is False and not a.broken_today and a.hybrid is True)
-    ungraded_algorithms = sum(1 for a in live if a.asset_type == ASSET_ALGORITHM and a.quantum_vulnerable is None)
-    codes = Counter(code for asset in live for code in asset.finding_codes)
-
+    # 4. headline counts (``_headline`` below, in the TeamCbomView call): CURRENT state only, computed once so every
+    # document agrees; the current engine grades algorithms only, a legacy worker row also graded certificates and keys.
     posture_view = _finish_posture(posture_accs, sources, attempt, moment)
     pair_endpoints(posture_view)
     posture_view = replace(posture_view, warnings=_posture_warnings(folded))
@@ -2944,23 +2952,222 @@ def fold_scans(
         libs=tuple(lib_rows),
         frameworks=framework_rows,
         requirements=requirement_rows,
-        asset_occurrences=len(live),
-        assets_by_type=_ordered_counts(Counter(a.asset_type for a in live), ASSET_TYPES),
-        assets_by_impact=_ordered_counts(Counter(a.impact for a in live), IMPACT_LEVELS),
-        # a finding is impact != INFO (cbom_rows.is_finding): a legacy row has no finding codes and is still one
-        issue_by_impact=_ordered_counts(Counter(a.impact for a in live if a.impact != INFO), IMPACT_LEVELS),
-        finding_counts=dict(sorted(codes.items())),
-        pqc_vulnerable=vulnerable,
-        pqc_safe=safe,
-        pqc_hybrid=hybrid,
-        pqc_broken_today=broken,
-        pqc_ungraded=ungraded_algorithms,
-        readiness_pct=quantum_readiness_pct(vulnerable + broken, safe + vulnerable + broken),
+        **_headline(live),
         compliance_sources_pooled=len(full),
         compliance_legacy_excluded=legacy_excluded,
         warnings=tuple(warning_text),
         posture=posture_view,
     )
+
+
+def _headline(live: Sequence[AssetAgg]) -> dict[str, Any]:
+    """The headline counts of the CURRENT assets, computed once so every document agrees.  Readiness is
+    cbom_metrics.quantum_readiness_pct over every asset with a verdict (the scan page's rule)."""
+    from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
+
+    vulnerable = sum(1 for asset in live if asset.quantum_vulnerable is True)
+    broken = sum(1 for asset in live if asset.quantum_vulnerable is False and asset.broken_today)
+    safe = sum(1 for asset in live if asset.quantum_vulnerable is False and not asset.broken_today)
+    hybrid = sum(1 for a in live if a.quantum_vulnerable is False and not a.broken_today and a.hybrid is True)
+    ungraded_algorithms = sum(1 for a in live if a.asset_type == ASSET_ALGORITHM and a.quantum_vulnerable is None)
+    codes = Counter(code for asset in live for code in asset.finding_codes)
+    return {
+        "asset_occurrences": len(live),
+        "assets_by_type": _ordered_counts(Counter(a.asset_type for a in live), ASSET_TYPES),
+        "assets_by_impact": _ordered_counts(Counter(a.impact for a in live), IMPACT_LEVELS),
+        # a finding is impact != INFO (cbom_rows.is_finding): a legacy row has no finding codes and is still one
+        "issue_by_impact": _ordered_counts(Counter(a.impact for a in live if a.impact != INFO), IMPACT_LEVELS),
+        "finding_counts": dict(sorted(codes.items())),
+        "pqc_vulnerable": vulnerable,
+        "pqc_safe": safe,
+        "pqc_hybrid": hybrid,
+        "pqc_broken_today": broken,
+        "pqc_ungraded": ungraded_algorithms,
+        "readiness_pct": quantum_readiness_pct(vulnerable + broken, safe + vulnerable + broken),
+    }
+
+
+# ---------------------------------------------------------------------------------------------
+# CBOM Sources collections (M1x): a completed collection is a CBOM result like a completed scan
+# ---------------------------------------------------------------------------------------------
+SOURCE_SOURCES = "sources"  # SourceAgg.kind of a CBOM Sources source
+PROBED_EVIDENCE = "probed:CBOM Sources"  # posture evidence of an endpoint a scan node connected to
+_TLS_VERSION_KEYS = (("SSLv3", "SSLv3"), ("TLSv1.0", "1.0"), ("TLSv1.1", "1.1"), ("TLSv1.2", "1.2"),
+                     ("TLSv1.3", "1.3"))
+
+
+def _probed_tls_fact(item: Any, collection: CollectionAgg, asset: AssetAgg) -> dict[str, Any]:
+    """A TLS endpoint a scan node probed, as a posture fact the Network TLS document reads (``net`` block)."""
+    facts = item.facts if isinstance(item.facts, Mapping) else {}
+    versions = facts.get("versions") if isinstance(facts.get("versions"), Mapping) else {}
+    protocols = {}
+    for name, key in _TLS_VERSION_KEYS:
+        value = versions.get(name)
+        protocols[key] = "offered" if value is True else ("not_offered" if value is False else "unknown")
+    offered = [key for _name, key in _TLS_VERSION_KEYS if protocols[key] == "offered"]
+    accepted = facts.get("weak_ciphers_accepted") if isinstance(facts.get("weak_ciphers_accepted"), Mapping) else {}
+    weak = [{"suite": str(suite), "reasons": [str(reason)]}
+            for reason, suites in sorted(accepted.items()) if isinstance(suites, (list, tuple))
+            for suite in suites]
+    leaf = facts.get("leaf") if isinstance(facts.get("leaf"), Mapping) else {}
+    scsv = facts.get("fallback_scsv")
+    downgrade = "" if scsv is None else ("TLS_FALLBACK_SCSV supported" if scsv else "TLS_FALLBACK_SCSV not supported")
+    if facts.get("downgrade_exposed") is True:
+        downgrade = "downgrade exposed"
+    where = str(asset.location or item.target or "")
+    net: dict[str, Any] = {
+        "endpoint": where,
+        "evidence": PROBED_EVIDENCE,
+        "protocols": protocols,
+        "min": ("TLS " + offered[0] if offered and offered[0] != "SSLv3" else (offered[0] if offered else "")),
+        "max": ("TLS " + offered[-1] if offered and offered[-1] != "SSLv3" else (offered[-1] if offered else "")),
+        "weak_suites": weak,
+        "kx": {"curves": [str(facts["negotiated_group"])] if facts.get("negotiated_group") else []},
+        "fs": "RSA key exchange accepted" if accepted.get("static_rsa") else "",
+        "downgrade": downgrade,
+    }
+    if leaf:
+        net["certificate"] = {
+            "subject": leaf.get("subject") or "", "issuer": leaf.get("issuer") or "",
+            "not_before": leaf.get("not_before") or "", "not_after": leaf.get("not_after") or "",
+            "signature_algorithm": leaf.get("sig_alg") or "", "key_size": leaf.get("key_size") or "",
+            "chain": f"{facts.get('chain_length')} certificate(s) presented" if facts.get("chain_length") else "",
+        }
+    return {
+        "id": f"sources:{collection.job_id}:{asset.ident}",
+        "kind": "tls_endpoint",
+        "address": where,
+        "name": asset.title,
+        "evidence": PROBED_EVIDENCE,
+        "net": net,
+        "finding_codes": list(asset.finding_codes),
+        "impact": asset.impact,
+        "location": collection.label,
+    }
+
+
+def merge_collections(view: TeamCbomView, rows: Sequence[Any], collections: Sequence[Any]) -> TeamCbomView:
+    """Fold each CBOM Sources source's latest completed collection into a code-scan view.  PURE.
+
+    ``rows`` / ``collections`` are ``collections_view.SourcesRow`` / ``Collection`` (rows in the results[]
+    vocabulary, judged as the run page judges them).  The rule of ``collections_view`` applies: a certificate
+    observed by a code scan and by a Sources collection is ONE asset and the latest observation is counted (the
+    other is left out of every count); every other Sources asset is its own asset of its own source
+    ("sources:<uid>", labelled "Sources run #<run> · <name>").  Headline counts are recomputed by ``_headline`` over
+    the merged current assets, so every document agrees with the CBOM dashboard.  TLS endpoints a scan node probed
+    become posture facts with evidence ``probed:CBOM Sources`` (the Network TLS document lists them)."""
+    from backend.utilities.cbom_sources.collections_view import cert_identity, resolve
+
+    if not collections:
+        return view
+    aggs = {c.key: CollectionAgg(key=c.key, label=c.label, source_name=c.source_name, source_kind=c.source_kind,
+                                 run_id=int(c.run_id), job_id=int(c.job_id), observed_at=_utc(c.observed_at) or _EPOCH,
+                                 asset_count=int(c.asset_count), endpoints_probed=int(c.endpoints_probed))
+            for c in collections}
+    # 1. code certificates with a cross-scope identity; latest observation wins
+    code_ident: dict[str, str] = {}
+    for cert in view.certs:
+        ident = cert_identity(cert.subject_cn, cert.issuer_cn, cert.not_before, cert.not_after)
+        if cert.current and ident:
+            code_ident[cert.key] = ident
+    by_key = {cert.key: cert for cert in view.certs}
+    resolution = resolve([(by_key[k].latest_scan_id or 0, by_key[k].last_seen or _EPOCH, ident)
+                          for k, ident in code_ident.items()], rows)
+    replaced = resolution.replaced_identities
+    dropped_certs = [by_key[k] for k, ident in code_ident.items() if ident in replaced]
+
+    def superseded(asset: AssetAgg) -> bool:  # the code row of a certificate now counted from Sources
+        for cert in dropped_certs:
+            if asset.current and asset.asset_type == ASSET_CERTIFICATE and asset.source_key in cert.current_source_keys \
+                    and (asset.location in {p for _l, p in cert.locations} or asset.title in cert.file_names):
+                return True
+        return False
+
+    assets = [a for a in view.assets if not superseded(a)]
+    certs = [c for c in view.certs if c not in dropped_certs]
+    # 2. Sources assets (and their certificates and probed endpoints)
+    facts_of: dict[str, list[dict[str, Any]]] = {}
+    for item in resolution.sources_rows:
+        agg = aggs[item.collection.key]
+        shell = ScanFacts(scan_id=agg.run_id, title=agg.label, status=STATUS_SUCCESS, created_at=agg.observed_at,
+                          last_updated=agg.observed_at, source_key=agg.key, source_label=agg.label,
+                          source_kind=SOURCE_SOURCES, tier=TIER_A, fidelity=FIDELITY_FULL)
+        asset = replace(_asset_from_row(item.row, shell), current=True, tier=TIER_A, latest_scan_id=None,
+                        scan_ids=())
+        assets.append(asset)
+        if asset.asset_type == ASSET_CERTIFICATE:
+            f = item.facts if isinstance(item.facts, Mapping) else {}
+            earlier = [c for c in dropped_certs if code_ident.get(c.key) == item.identity]
+            places = [(agg.label, asset.location)] + [p for c in earlier for p in c.locations]
+            certs.append(CertAgg(
+                key="src:" + hashlib.sha256(item.identity.encode("utf-8", "replace")).hexdigest()[:16],
+                identity_strong=item.identity.startswith("cert|"), name=_text(f.get("subject")) or asset.title,
+                file_names=tuple(dict.fromkeys([asset.location] + [n for c in earlier for n in c.file_names])),
+                subject_cn=_text(f.get("subject")), issuer_cn=_text(f.get("issuer")),
+                not_before=_text(f.get("not_before")), not_after=_text(f.get("not_after")),
+                public_key_algorithm=_text(f.get("key_alg")), key_size=_text(f.get("key_size")),
+                curve=_text(f.get("curve")), signature_algorithm=_text(f.get("sig_alg")),
+                self_signed=_tri(f.get("self_signed")), is_ca=_tri(f.get("is_ca")),
+                expiry=classify_expiry(_text(f.get("not_after")), view.as_of),
+                impact=asset.impact, finding_codes=asset.finding_codes, tier=TIER_A,
+                source_keys=tuple(dict.fromkeys([agg.key] + [k for c in earlier for k in c.source_keys])),
+                current_source_keys=(agg.key,), locations=tuple(places[:MAX_LOCATIONS]),
+                locations_total=len(places), current=True, first_seen=min([agg.observed_at] + [
+                    c.first_seen for c in earlier if c.first_seen]), last_seen=agg.observed_at,
+                scan_count=1 + sum(c.scan_count for c in earlier), scan_ids=(), latest_scan_id=None))
+        if item.node_type == "tls_endpoint":
+            facts_of.setdefault(agg.key, []).append(_probed_tls_fact(item, agg, asset))
+    assets.sort(key=lambda a: (a.source_key, a.asset_type, a.ident))
+    certs.sort(key=lambda c: c.key)
+    live = [a for a in assets if a.current]
+    # 3. sources: code sources recounted (a superseded certificate row left them), one per collection
+    types_by: dict[str, Counter[str]] = {}
+    impacts_by: dict[str, Counter[str]] = {}
+    for a in live:
+        types_by.setdefault(a.source_key, Counter())[a.asset_type] += 1
+        impacts_by.setdefault(a.source_key, Counter())[a.impact] += 1
+    source_rows = [replace(s, asset_counts=_ordered_counts(types_by.get(s.key, Counter()), ASSET_TYPES),
+                           impact_counts=_ordered_counts(impacts_by.get(s.key, Counter()), IMPACT_LEVELS))
+                   for s in view.sources]
+    for agg in aggs.values():
+        source_rows.append(SourceAgg(
+            key=agg.key, label=agg.label, kind=SOURCE_SOURCES, repo_url=None, branch=None, scan_ids=(agg.run_id,),
+            scan_count=1, first_scanned=agg.observed_at, last_scanned=agg.observed_at, current_scan_id=agg.run_id,
+            current_tier=TIER_A, current_fidelity=FIDELITY_FULL, last_attempt_scan_id=agg.run_id,
+            last_attempt_status=STATUS_SUCCESS, last_attempt_at=agg.observed_at,
+            asset_counts=_ordered_counts(types_by.get(agg.key, Counter()), ASSET_TYPES),
+            impact_counts=_ordered_counts(impacts_by.get(agg.key, Counter()), IMPACT_LEVELS)))
+    source_rows.sort(key=lambda source: (source.label.casefold(), source.key))
+    # 4. posture: probed endpoints are assessed network evidence of their collection
+    posture = view.posture
+    if facts_of:
+        new_facts = [PostureFactAgg(source_key=key, fact_id=str(fact["id"]), current=True,
+                                    first_seen=aggs[key].observed_at, last_seen=aggs[key].observed_at, scan_count=1,
+                                    last_scan_id=aggs[key].run_id, fact=fact)
+                     for key, items in facts_of.items() for fact in items]
+        new_rows = [PostureSourceAgg(key=key, label=aggs[key].label, state="assessed", reason=None,
+                                     current_scan_id=aggs[key].run_id, last_scanned=aggs[key].observed_at,
+                                     zero_facts=False, truncated=False, dropped=0, lanes=("sources_network",),
+                                     failed_lanes=()) for key in facts_of]
+        rows_all = sorted([*posture.sources, *new_rows], key=lambda row: (row.label.casefold(), row.key))
+        ok = [row.state in ("assessed", "partial") for row in rows_all]
+        state = "assessed" if all(ok) else ("mixed" if any(ok) else "not_assessed")
+        posture = replace(posture, state=state, sources=tuple(rows_all),
+                          facts=tuple(sorted([*posture.facts, *new_facts], key=lambda f: (f.source_key, f.fact_id))))
+    # 5. basis and fingerprint: a collection is a completed CBOM result
+    count = len(aggs)
+    stamps = ",".join(f"{a.job_id}:{a.observed_at.isoformat()}" for a in sorted(aggs.values(), key=lambda a: a.job_id))
+    digest = hashlib.sha256(f"{view.fingerprint}|sources|{stamps}".encode("utf-8", "replace")).hexdigest()[:12]
+    seen = [a.observed_at for a in aggs.values()]
+    merged = replace(
+        view, scans_total=view.scans_total + count, eligible=view.eligible + count, included=view.included + count,
+        fidelity_full=view.fidelity_full + count,
+        window_start=min([*seen, *([view.window_start] if view.window_start else [])]),
+        window_end=max([*seen, *([view.window_end] if view.window_end else [])]),
+        fingerprint=digest, sources=tuple(source_rows), assets=tuple(assets), certs=tuple(certs), posture=posture,
+        collections=tuple(sorted(aggs.values(), key=lambda a: (a.label.casefold(), a.key))), **_headline(live))
+    merged.remediation = view.remediation
+    return merged
 
 
 def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = None) -> TeamCbomView:
@@ -3017,6 +3224,11 @@ def load_team_cbom_view(engine: Any, team_id: int, *, now: datetime | None = Non
             team_name=team_name or f"Team {team_id}",
             now=moment,
         )
+        # CBOM Sources: each source's latest completed collection is a CBOM result too (collections_view, M1x)
+        from backend.utilities.cbom_sources.collections_view import load_sources_result
+
+        found = load_sources_result(session, team_id, moment)
+        view = merge_collections(view, found.rows, found.collections)
         try:  # remediation waves and scan-node assets for the roadmap; a failure leaves the manual columns blank
             from backend.utilities.cbom_sources.waves import roadmap_extras
 
@@ -3073,8 +3285,10 @@ __all__ = [
     "VERDICT_PASS",
     "VERDICT_PASS_WITH_EVIDENCE",
     "VERDICT_PRECEDENCE",
+    "SOURCE_SOURCES",
     "AssetAgg",
     "CertAgg",
+    "CollectionAgg",
     "ExpiryBand",
     "FrameworkPool",
     "LibAgg",
@@ -3088,6 +3302,7 @@ __all__ = [
     "extract_scan_facts",
     "fold_scans",
     "load_team_cbom_view",
+    "merge_collections",
     "sanitize_repo_url",
     "source_key_for",
 ]

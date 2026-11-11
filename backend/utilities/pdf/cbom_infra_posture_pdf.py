@@ -473,7 +473,7 @@ def build_story(view: TeamCbomView, styles: Styles, width: float) -> list[Flowab
         common.gap(),
         *section_heading("Limits", styles, min_space=70),
         common.note(text.INFRA_LIMIT, styles),
-        common.note(text.POSTURE_SCOPE_OF_METHOD, styles, limit=800),
+        common.note(text.posture_scope_of_method(view), styles, limit=900),
     ]
 
 
@@ -487,7 +487,7 @@ def build_pdf(view: TeamCbomView) -> bytes:
         landscape=True,
         body=lambda styles, width: build_story(view, styles, width),
         basis_extra=common.basis_lines(view),
-        disclaimer_paragraphs=text.DISCLAIMER_PARAGRAPHS,
+        disclaimer_paragraphs=text.disclaimer_paragraphs(view),
         extra_banners=common.banner_pairs(view),
     )
 

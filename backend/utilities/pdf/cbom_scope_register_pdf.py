@@ -172,6 +172,7 @@ _KIND_LABELS = {
     SOURCE_ZIP: "Zip upload",
     SOURCE_FILE: "CBOM file upload",
     SOURCE_SCAN: "Scan",
+    "sources": "CBOM Sources collection",  # cbom_team_rollup.SOURCE_SOURCES (merge_collections)
 }
 _TYPE_LABELS = {
     ASSET_ALGORITHM: "Algorithms",
