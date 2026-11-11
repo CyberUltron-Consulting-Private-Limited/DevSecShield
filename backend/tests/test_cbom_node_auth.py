@@ -173,7 +173,10 @@ def test_signed_node_full_round_trip(api, world):
     node = api("GET", f"/1/cbom/sources/nodes/{node_id}").json()["node"]
     assert node["signing"] == "required"
     with Session(engine) as s:
-        assert len(s.exec(select(CbomNodeNonce).where(CbomNodeNonce.node_id == node_id)).all()) >= 4
+        # every request was replay-checked: the node client signs with protocol-2 sequence nonces (F1.1), which advance
+        # the node's replay window instead of storing nonce rows (protocol-1 nonces: test_cbom_f1_node_api)
+        assert s.get(CbomScanNode, node_id).replay_hwm == node_api._SEQ[0]
+        assert not s.exec(select(CbomNodeNonce).where(CbomNodeNonce.node_id == node_id)).all()
     assert src["id"]
 
 
@@ -277,7 +280,7 @@ def test_expired_nonces_are_swept(api, world):
     client.heartbeat({})
     with Session(engine) as s:
         nonces = s.exec(select(CbomNodeNonce.nonce).where(CbomNodeNonce.node_id == node_id)).all()
-    assert "old" + "x" * 20 not in nonces and len(nonces) >= 2
+    assert "old" + "x" * 20 not in nonces  # swept; the protocol-2 client itself stores no nonce rows (F1.1)
 
 
 def test_deleting_a_node_deletes_its_nonces(api, world):
