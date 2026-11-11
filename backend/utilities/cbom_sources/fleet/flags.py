@@ -8,6 +8,11 @@ errors are the usual readable 400.
 
 Other parts guard their routes the same way with their own variable, e.g.
 ``APIRouter(route_class=flagged_route("CBOM_FLEET_TRANSPORTS"))``.
+
+Flags are deployment-wide.  ``matches()`` runs before authentication, with no user or team, so an anonymous caller
+can tell an off flag (404) from an on one (401); that is acceptable only because the flag is one process-wide setting.
+Per-team enablement belongs in the handler after ``authorize()`` (``ctx: Member``), never in ``matches()``: reading a
+team id from the path there would tell anonymous callers which teams have a feature.
 """
 from __future__ import annotations
 

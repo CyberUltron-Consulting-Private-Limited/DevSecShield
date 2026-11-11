@@ -4,21 +4,31 @@
   environment on every call (default: all off), so the frontend can hide the Fleet tab and its sections;
 * a fleet route behind a flag that is off answers exactly like a route that does not exist (404 ``Not Found``), before
   authentication and before the body is read;
-* every fleet route declares its permission for F4's route-coverage test (``openapi_extra["x-zs-permission"]``);
-* the aggregator keeps the insertion markers F1.3 and F1.4 add their routers under.
+* every route of the aggregator (checked with every flag on) is a ``CbomRoute`` behind a flag, rate limited, declares
+  its permission for F4's route-coverage test, and authenticates through the ``ctx: Member`` dependency after the
+  limiter: anonymous -> 401, another team's member -> 403 (security review 5858172203).  A negative control proves the
+  guard reports each mistake;
+* the aggregator keeps the import and router markers F1.3 and F1.4 insert under.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
-from fastapi import APIRouter, FastAPI, Header
+from fastapi import APIRouter, Depends, FastAPI, Header
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from test_cbom_sources_api import api, world
 from backend.main import app
 from backend.routers import cbom_fleet
+from backend.utilities.cbom_sources import http as cbom_http
 from backend.utilities.cbom_sources.fleet import flags as FLAGS
+from backend.utilities.cbom_sources.fleet import http as fleet_http
+from backend.utilities.cbom_sources.fleet.http import FLEET, Member, permission, require_member
+from backend.utilities.cbom_sources.http import CbomRoute, TeamId, read_limiter
+from backend.utilities.ratelimit import RateLimiter
 
 FLAG_ENV = ("CBOM_FLEET_INVENTORY", "CBOM_FLEET_POLICIES", "CBOM_FLEET_MATERIALIZE", "CBOM_FLEET_TRANSPORTS",
             "CBOM_SSH_CA")
@@ -98,6 +108,7 @@ def test_another_parts_flag_can_guard_its_own_routes(monkeypatch):
     route = FLAGS.flagged_route("CBOM_FLEET_TRANSPORTS")
     assert route is FLAGS.flagged_route("CBOM_FLEET_TRANSPORTS")  # one class per flag
     assert FLAGS.route_class("inventory") is FLAGS.flagged_route("CBOM_FLEET_INVENTORY")
+    assert route.flag_env == "CBOM_FLEET_TRANSPORTS"
     monkeypatch.setenv("CBOM_FLEET_TRANSPORTS", "1")
     assert FLAGS.env_flag("CBOM_FLEET_TRANSPORTS") is True
 
@@ -109,19 +120,125 @@ def test_an_unknown_flag_name_is_a_programming_error():
         FLAGS.flagged_route("PATH")  # only CBOM_* names
 
 
+# ----------------------------------------------------------------------------- the route guard (fail closed)
 def _fleet_routes():
-    return [r for r in app.routes if getattr(r, "path", "").startswith("/{team_id}/cbom/sources/fleet")]
+    return [r for r in app.routes if getattr(r, "path", "").startswith(FLEET)]
 
 
 def test_the_aggregator_is_registered_and_every_fleet_route_declares_its_permission():
     routes = _fleet_routes()
-    assert any(r.path == "/{team_id}/cbom/sources/fleet/status" for r in routes)
+    assert any(r.path == FLEET + "/status" for r in routes)
+    assert {r.path for r in routes} >= {r.path for r in cbom_fleet.router.routes if r.path.startswith(FLEET)}
     for route in routes:
         extra = getattr(route, "openapi_extra", None) or {}
         assert str(extra.get("x-zs-permission", "")).startswith("cbom."), route.path
 
 
+def route_problems(routes) -> list[str]:
+    """The rules every route of the aggregator follows (``cbom_fleet.py`` and ``fleet/http.py`` docstrings)."""
+    problems = []
+    for route in routes:
+        if not isinstance(route, APIRoute):
+            continue
+        name = f"{sorted(route.methods)} {route.path}"
+        if not isinstance(route, CbomRoute):
+            problems.append(f"{name}: not a CbomRoute (a bad body would be a 422 that echoes the input)")
+        if not (route.path.endswith("/fleet/status") or str(getattr(route, "flag_env", "")).startswith("CBOM_")):
+            problems.append(f"{name}: not behind a flag (flagged_route)")
+        if not str((route.openapi_extra or {}).get("x-zs-permission", "")).startswith("cbom."):
+            problems.append(f"{name}: no x-zs-permission")
+        calls = [d.call for d in route.dependant.dependencies]
+        limiters = [i for i, call in enumerate(calls) if isinstance(call, RateLimiter)]
+        if not limiters:
+            problems.append(f"{name}: no rate limiter")
+        if route.path.startswith(FLEET):
+            if require_member not in calls:
+                problems.append(f"{name}: no ctx: Member (authentication is not a dependency)")
+            elif limiters and calls.index(require_member) < limiters[0]:
+                problems.append(f"{name}: authentication runs before the rate limiter")
+    return problems
+
+
+def _concrete(path: str) -> str:
+    return re.sub(r"\{[a-z_]+\}", "1", path)
+
+
+def test_every_aggregator_route_is_authenticated_limited_flagged_and_a_cbom_route(api, monkeypatch):
+    """Fail closed: every route F1.2, F1.3 and F1.4 add through the aggregator, checked statically and live."""
+    for name in FLAG_ENV:
+        monkeypatch.setenv(name, "1")
+    routes = [r for r in cbom_fleet.router.routes if isinstance(r, APIRoute)]
+    assert routes and route_problems(routes) == []
+    for route in routes:
+        for method in sorted(route.methods):
+            url = _concrete(route.path)
+            anonymous = api(method, url, None, content=b"")
+            assert anonymous.status_code == 401, (method, route.path, anonymous.text)
+            if route.path.startswith(FLEET):
+                other_team = api(method, url, "carol", content=b"")  # carol is a member of team 2 only
+                assert other_team.status_code == 403, (method, route.path, other_team.text)
+            else:  # F1.4's node route: a scan node signs in with X-ZS-Node-Token, which was not sent
+                assert "x-zs-node-token" not in {k.lower() for k in anonymous.request.headers}
+
+
+def test_the_route_guard_reports_each_mistake():
+    """Negative control: a router built wrongly in each way the guard checks is reported."""
+    plain = APIRouter()  # plain APIRoute, no flag
+    flagged = APIRouter(route_class=FLAGS.flagged_route("CBOM_FLEET_TRANSPORTS"))
+    limit = [Depends(read_limiter)]
+    read = permission("cbom.fleet.read")
+
+    @plain.get(FLEET + "/plain", dependencies=limit, openapi_extra=read)
+    async def plain_route(team_id: TeamId, ctx: Member):  # pragma: no cover - never called
+        return {}
+
+    @flagged.get(FLEET + "/no-auth", dependencies=limit, openapi_extra=read)
+    async def no_auth(team_id: TeamId):  # pragma: no cover - never called (the reviewer's open route)
+        return {"open": True}
+
+    @flagged.get(FLEET + "/no-limit", openapi_extra=read)
+    async def no_limit(team_id: TeamId, ctx: Member):  # pragma: no cover - never called
+        return {}
+
+    @flagged.get(FLEET + "/auth-first", dependencies=[Depends(require_member), Depends(read_limiter)], openapi_extra=read)
+    async def auth_first(team_id: TeamId):  # pragma: no cover - never called
+        return {}
+
+    @flagged.get(FLEET + "/no-permission", dependencies=limit)
+    async def no_permission(team_id: TeamId, ctx: Member):  # pragma: no cover - never called
+        return {}
+
+    aggregator = APIRouter(route_class=CbomRoute)  # include_router keeps each route's own class
+    aggregator.include_router(plain)
+    aggregator.include_router(flagged)
+    problems = "\n".join(route_problems(aggregator.routes))
+    assert "/plain: not a CbomRoute" in problems and "/plain: not behind a flag" in problems
+    assert "/no-auth: no ctx: Member" in problems
+    assert "/no-limit: no rate limiter" in problems
+    assert "/auth-first: authentication runs before the rate limiter" in problems
+    assert "/no-permission: no x-zs-permission" in problems
+    assert len(problems.splitlines()) == 6
+
+
+def test_requests_over_the_limit_never_reach_authentication(api, monkeypatch):
+    """Limiter, then authentication: an over-budget request costs no user SELECT and no last_active UPDATE."""
+    calls = []
+    real = fleet_http.authorize
+
+    async def counting(team_id, authorization):
+        calls.append(team_id)
+        return await real(team_id, authorization)
+
+    monkeypatch.setattr(fleet_http, "authorize", counting)
+    monkeypatch.setattr(cbom_http.read_limiter, "times", 2)
+    codes = [api("GET", STATUS, "bob").status_code for _ in range(4)]
+    assert codes == [200, 200, 429, 429] and len(calls) == 2
+
+
 def test_the_aggregator_keeps_the_markers_other_parts_insert_under():
     text = Path(cbom_fleet.__file__).read_text()
-    assert "# F1.3 routers" in text and "# F1.4 routers" in text
-    assert text.index("# F1.3 routers") < text.index("# F1.4 routers")
+    imports = [text.index(f"# F1.{n} imports\n") for n in (2, 3, 4)]
+    routers = [text.index(f"# F1.{n} routers\n") for n in (2, 3, 4)]
+    assert imports == sorted(imports) and routers == sorted(routers)
+    # imports stay in the top import block (no E402); routers are included after the router exists
+    assert imports[-1] < text.index("router = APIRouter(") < routers[0]
