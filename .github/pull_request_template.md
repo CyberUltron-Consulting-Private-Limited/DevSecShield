@@ -16,7 +16,7 @@ Branch flow (checked by CI "branch-flow"): feature/* or fix/* -> dev;  dev -> st
 <!--
 One row per acceptance criterion from the spec. Evidence is something a reviewer can open: a test name, a CI run
 or job link, a log excerpt, a screenshot, a curl transcript. CI fails while any row still has an _italic
-placeholder_, an empty cell, or evidence that starts with "pending", "TBD", "TODO", "WIP" or "N/A".
+placeholder_, an empty cell, evidence that says "pending", "TBD", "TODO" or "WIP", or starts with "N/A".
 -->
 
 | # | Acceptance criterion | Evidence |

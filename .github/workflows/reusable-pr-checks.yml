@@ -165,10 +165,12 @@ jobs:
                           break
                       section.append(l)
                   def placeholder(c):
-                      # empty, an _italic template placeholder_, or evidence still to come ("pending", "TBD: run")
+                      # empty, an _italic template placeholder_, or evidence still to come: the word pending,
+                      # TBD, TODO or WIP anywhere in the cell ("Run link: pending"), or N/A as its first word
                       c = c.strip().strip("*").strip()
                       return ((not c) or re.fullmatch(r"_.*_", c) is not None or c in {"-", "...", "…"}
-                              or re.match(r"(pending|tbd|todo|wip|n/?a)\b", c, re.I) is not None)
+                              or re.search(r"\b(pending|tbd|todo|wip)\b", c, re.I) is not None
+                              or re.match(r"n/?a\b", c, re.I) is not None)
                   rows = []
                   for l in section:
                       l = l.strip()
@@ -180,7 +182,7 @@ jobs:
                   if not filled:
                       problems.append("The 'Acceptance criteria' table has no filled-in row: every criterion needs its evidence (test, log, run link or screenshot).")
                   elif len(filled) < len(data):
-                      problems.append(f"{len(data) - len(filled)} acceptance-criteria row(s) still have an _italic placeholder_, an empty cell, or evidence that starts with pending / TBD / TODO / WIP / N/A.")
+                      problems.append(f"{len(data) - len(filled)} acceptance-criteria row(s) still have an _italic placeholder_, an empty cell, or evidence that says pending / TBD / TODO / WIP (or starts with N/A).")
           # Secret-bearing files (case-insensitive). Fabricated keys under a fixture directory pass only with the label.
           forbid, allow = re.compile(env["FORBID_RE"], re.I), re.compile(env["ALLOW_RE"], re.I)
           fixture = re.compile(env["FIXTURE_RE"], re.I)

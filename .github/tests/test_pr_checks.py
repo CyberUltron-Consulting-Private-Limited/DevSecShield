@@ -124,11 +124,14 @@ class Hygiene(unittest.TestCase):
         return f"## Summary\n\nx\n\n## Acceptance criteria → evidence\n\n| # | Criterion | Evidence |\n|---|---|---|\n{rows}\n## Risk\n"
 
     def test_filled_table_passes(self):
-        out = self.check("feat(cbom): add a thing", self.body("test_x passes", "run https://example.invalid/1"))
+        out = self.check("feat(cbom): add a thing", self.body("test_x passes", "run https://example.invalid/1",
+                                                                 "test_pending_invites_are_listed passes"))
         self.assertEqual(out.returncode, 0, out.stdout)
 
     def test_pending_tbd_placeholder_or_empty_rows_fail(self):
-        for bad in ("pending", "Pending: run link after CI", "TBD", "wip", "N/A", "_test name_", " ", "**pending**"):
+        for bad in ("pending", "Pending: run link after CI", "TBD", "wip", "N/A", "_test name_", " ", "**pending**",
+                    "Run on this PR: pending first run (link added below when complete)", "Throwaway draft PR: pending",
+                    "screenshot TODO"):
             with self.subTest(bad):
                 out = self.check("feat(cbom): add a thing", self.body("test_x passes", bad))
                 self.assertEqual(out.returncode, 1, out.stdout)

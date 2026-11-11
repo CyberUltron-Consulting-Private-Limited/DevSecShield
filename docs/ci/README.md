@@ -178,7 +178,7 @@ baseline.
   release, revert), or is the `Revert "<title>"` that GitHub's Revert button writes (which may be 9 characters
   over the limit). A revert still needs the table: one row, "the reverted behaviour is back", with the ci-gate run.
 - The template's *Acceptance criteria → evidence* table has filled rows only: any row with an *italic
-  placeholder*, an empty cell, or evidence that starts with `pending`, `TBD`, `TODO`, `WIP` or `N/A` fails. Bots
+  placeholder*, an empty cell, evidence that says `pending`, `TBD`, `TODO` or `WIP`, or starts with `N/A`, fails. Bots
   (Dependabot) are exempt.
 - **Promotion PRs** (into `staging` or `main`) use the promotion template: add `?template=promotion.md` to the
   compare URL (`.github/PULL_REQUEST_TEMPLATE/promotion.md`). Its table asks for the promotion's own evidence: every

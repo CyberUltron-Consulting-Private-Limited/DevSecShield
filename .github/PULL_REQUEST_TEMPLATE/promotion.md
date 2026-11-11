@@ -3,8 +3,8 @@ Promotion PR: dev -> staging, or staging -> main (open it with ?template=promoti
 Title (checked by CI "pr-hygiene"): release: promote dev to staging (YYYY-MM-DD)   /   release: promote staging to main (YYYY-MM-DD)
 Branch flow (checked by CI "branch-flow"): staging <- dev only; main <- staging, or hotfix/* (then back-merge main -> dev).
 The feature PRs in this promotion already carried their own acceptance evidence. This table records that the
-promotion itself is ready. CI fails while any row has an _italic placeholder_, an empty cell, or evidence that
-starts with "pending", "TBD", "TODO", "WIP" or "N/A".
+promotion itself is ready. CI fails while any row has an _italic placeholder_, an empty cell, evidence that
+says "pending", "TBD", "TODO" or "WIP", or starts with "N/A".
 -->
 
 ## Summary
