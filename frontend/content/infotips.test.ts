@@ -33,6 +33,10 @@ export const COVERED: string[] = [
   // IaC
   "app/[team_id]/iac/page.tsx",
   "components/iac-options-sidebar.tsx",
+  // DAST (manual scans, automatic profiles and their schedules)
+  "app/[team_id]/dast/page.tsx",
+  "components/dast-options-sidebar.tsx",
+  "components/dast",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>([]);
