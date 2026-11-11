@@ -52,6 +52,11 @@ export const COVERED: string[] = [
   "components/cbom-ci-scan-settings-form.tsx",
   // team dashboard
   "app/[team_id]/page.tsx",
+  // Settings (team, members, Jira), per-scan ticketing, Account, Admin
+  "app/[team_id]/settings/page.tsx",
+  "components/ticketing-integrations-settings.tsx",
+  "app/[team_id]/account/page.tsx",
+  "app/admin/page.tsx",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
