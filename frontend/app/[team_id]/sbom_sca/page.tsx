@@ -78,6 +78,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { IfAllowed } from "@/components/rbac/team-access";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
@@ -731,9 +732,11 @@ export default function SBOMSCAPage() {
               <p className="text-zinc-600 dark:text-zinc-400">Manage and view all your SCA + SBOM scans.</p>
             </div>
             <div className="flex flex-row items-center gap-2">
+              <IfAllowed permission="scan.create">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />New Scan
               </Button>
+              </IfAllowed>
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversations", team_id] })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />Refresh
               </Button>
@@ -898,9 +901,11 @@ export default function SBOMSCAPage() {
                 {conversations.length === 0 ? (
                   <div className="text-center py-12">
                     <p className="text-zinc-600 dark:text-zinc-400 mb-4">No scans yet. Create your first SCA + SBOM scan to get started.</p>
+                    <IfAllowed permission="scan.create">
                     <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="h-4 w-4 mr-2" />Create New Scan
                     </Button>
+                    </IfAllowed>
                   </div>
                 ) : filteredConversations.length === 0 ? (
                   <div className="text-center py-12">
@@ -1041,12 +1046,16 @@ export default function SBOMSCAPage() {
                                     <DropdownMenuItem className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
                                       <Eye className="h-4 w-4 mr-2" />View metadata
                                     </DropdownMenuItem>
+                                    <IfAllowed permission="scan.update">
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
                                       <Pencil className="h-4 w-4 mr-2" />Rename scan
                                     </DropdownMenuItem>
+                                    </IfAllowed>
+                                    <IfAllowed permission="scan.update">
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
                                       <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                     </DropdownMenuItem>
+                                    </IfAllowed>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>

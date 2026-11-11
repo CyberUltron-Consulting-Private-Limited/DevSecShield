@@ -43,6 +43,9 @@ import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { toast } from "sonner";
 import { JIRA_ADMIN_ONLY, JIRA_TOKEN_KEPT_HINT, jiraFormFrom, jiraToSave } from "@/utils/jiraSettings";
 import { formatDateIst } from "@/utils/datetime";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ROLE_HELP, ROLE_LABELS, accessFrom, can, canManageMember, lastOwnerProblem, roleChoices, roleLabel, type TeamRole } from "@/utils/rbac";
+import { changeMemberRole, claimTeamOwnership, inviteMembers } from "@/utils/api/rbac";
 
 
 export default function TeamSettingsPage() {
@@ -67,6 +70,7 @@ export default function TeamSettingsPage() {
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [addMemberEmail, setAddMemberEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<TeamRole>("member");
   const [pendingMemberAction, setPendingMemberAction] = useState<"add" | "remove" | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -86,6 +90,8 @@ export default function TeamSettingsPage() {
   }, [team]);
 
   const isAdmin = team?.is_team_admin ?? false;
+  // F4 RBAC: what this person may do here (GET /team says; the API refuses the rest with 403)
+  const access = accessFrom(team);
   const { data: invitations } = useQuery({
     queryKey: ["team-invitations", team_id],
     queryFn: () => listTeamInvitations(Number(team_id)),
@@ -112,8 +118,10 @@ export default function TeamSettingsPage() {
   });
 
   const membersMutation = useMutation({
-    mutationFn: (data: { intent: "remove" | "add"; email_ids: string[] }) =>
-      removeOrAddTeamMembers(Number(team_id), data),
+    mutationFn: (data: { intent: "remove" | "add"; email_ids: string[]; role?: TeamRole }) =>
+      data.intent === "add" && data.role
+        ? inviteMembers(Number(team_id), data.email_ids, data.role).then((r) => { toast.success(r.message); return r; })
+        : removeOrAddTeamMembers(Number(team_id), data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["team-details", team_id] });
       queryClient.invalidateQueries({ queryKey: ["team-invitations", team_id] });
@@ -124,6 +132,34 @@ export default function TeamSettingsPage() {
     onError: (error) => showErrorToast(error),
     onSettled: () => setPendingMemberAction(null),
   });
+
+  const roleMutation = useMutation({
+    mutationFn: ({ email, role }: { email: string; role: TeamRole }) => changeMemberRole(Number(team_id), email, role),
+    onSuccess: (_data, vars) => {
+      toast.success(`${vars.email} is now ${ROLE_LABELS[vars.role].toLowerCase()}`);
+      queryClient.invalidateQueries({ queryKey: ["team-details", team_id] });
+    },
+    onError: (error) => showErrorToast(error),
+  });
+
+  const claimMutation = useMutation({
+    mutationFn: () => claimTeamOwnership(Number(team_id)),
+    onSuccess: () => {
+      toast.success("You are now the owner of this team");
+      queryClient.invalidateQueries({ queryKey: ["team-details", team_id] });
+    },
+    onError: (error) => showErrorToast(error),
+  });
+
+  const handleRoleChange = (email: string, currentRole: string, role: TeamRole) => {
+    if (role === currentRole) return;
+    const problem = lastOwnerProblem(team?.team_members ?? [], currentRole, role);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    roleMutation.mutate({ email, role });
+  };
 
   const deleteTeamMutation = useMutation({
     mutationFn: () => deleteTeam(Number(team_id)),
@@ -187,7 +223,7 @@ export default function TeamSettingsPage() {
     const email = addMemberEmail.trim();
     if (!email) return;
     setPendingMemberAction("add");
-    membersMutation.mutate({ intent: "add", email_ids: [email] });
+    membersMutation.mutate({ intent: "add", email_ids: [email], role: inviteRole });
   };
 
   const handleDeleteTeam = () => {
@@ -275,9 +311,18 @@ export default function TeamSettingsPage() {
           </h2>
           <p className="text-sm text-muted-foreground mb-4 mt-1">
             {is_team_admin
-              ? "Invite people by email: they get a link and join when they accept it. Only admins can manage members."
-              : "List of members in this team."}
+              ? "Invite people by email with a role: they get a link and join when they accept it. Admins manage members and viewers; owners also manage admins and owners."
+              : `List of members in this team. Your role: ${roleLabel(access.role)}.`}
           </p>
+          {!access.has_owner && can(access, "team.ownership.claim") && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm" data-testid="claim-ownership">
+              <span className="flex-1 min-w-[200px]">This team has no owner yet (it was created before team roles existed). An owner manages admins and can delete the team.</span>
+              <Button variant="outline" size="sm" className="cursor-pointer" disabled={claimMutation.isPending} onClick={() => claimMutation.mutate()}>
+                {claimMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Become the owner
+              </Button>
+            </div>
+          )}
           <div className="space-y-4">
             <Table>
               <TableHeader>
@@ -294,20 +339,42 @@ export default function TeamSettingsPage() {
                   <TableRow key={member.email}>
                     {is_team_admin && (
                       <TableCell>
-                        {member.role === "admin" ? (
-                          <span className="text-muted-foreground text-xs" title="Admin cannot be removed">
+                        {!canManageMember(access, member.role) ? (
+                          <span className="text-muted-foreground text-xs" title={`Only an owner can remove ${roleLabel(member.role).toLowerCase()}s`}>
                             —
                           </span>
                         ) : (
                           <Checkbox
                             checked={selectedEmails.has(member.email)}
                             onCheckedChange={() => toggleMemberSelection(member.email)}
+                            aria-label={`Select ${member.email}`}
                           />
                         )}
                       </TableCell>
                     )}
                     <TableCell>{member.email}</TableCell>
-                    <TableCell className="capitalize">{member.role}</TableCell>
+                    <TableCell>
+                      {roleChoices(access, member.role).length > 1 ? (
+                        <Select
+                          value={member.role}
+                          onValueChange={(value) => handleRoleChange(member.email, member.role, value as TeamRole)}
+                          disabled={roleMutation.isPending}
+                        >
+                          <SelectTrigger className="h-8 w-32" aria-label={`Role of ${member.email}`} data-testid={`role-select-${member.email}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {roleChoices(access, member.role).map((role) => (
+                              <SelectItem key={role} value={role} title={ROLE_HELP[role]}>
+                                {ROLE_LABELS[role]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span data-testid={`role-${member.email}`}>{roleLabel(member.role)}</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -323,6 +390,21 @@ export default function TeamSettingsPage() {
                     onChange={(e) => setAddMemberEmail(e.target.value)}
                     placeholder="email@example.com"
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invite-role">Role</Label>
+                  <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as TeamRole)}>
+                    <SelectTrigger id="invite-role" className="w-36" data-testid="invite-role">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(access.invitable_roles.length ? access.invitable_roles : (["member"] as TeamRole[])).map((role) => (
+                        <SelectItem key={role} value={role} title={ROLE_HELP[role]}>
+                          {ROLE_LABELS[role]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <Button
                   variant="outline"
@@ -361,6 +443,7 @@ export default function TeamSettingsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Expires</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
@@ -370,6 +453,7 @@ export default function TeamSettingsPage() {
                         {(invitations ?? []).map((inv: TeamInvitationItem) => (
                           <TableRow key={inv.id}>
                             <TableCell className="break-all">{inv.email}</TableCell>
+                            <TableCell>{roleLabel((inv as { role?: string }).role ?? "member")}</TableCell>
                             <TableCell className="capitalize">{inv.status}</TableCell>
                             <TableCell>{inv.status === "declined" ? "-" : formatDateIst(inv.expires_at)}</TableCell>
                             <TableCell className="text-right whitespace-nowrap">
@@ -470,8 +554,20 @@ export default function TeamSettingsPage() {
           </Link>
         </section>
 
-        {/* 4. Delete team (bottom, destructive) */}
-        {is_team_admin && (
+        {can(access, "team.audit.read") && (
+          <section className="pb-6 mb-6 border-b border-border">
+            <h2 className="text-lg font-medium">Audit log</h2>
+            <p className="text-sm text-muted-foreground mb-4 mt-1">
+              Who changed what in this team, from which address and when: roles, members, invitations, settings, scans and refused attempts.
+            </p>
+            <Link href={`/${team_id}/settings/audit`} className="inline-flex items-center rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white" data-testid="settings-audit-link">
+              Open audit log
+            </Link>
+          </section>
+        )}
+
+        {/* 4. Delete team (bottom, destructive): owners only */}
+        {can(access, "team.delete") && (
           <section className="w-full pb-6">
             <h2 className="text-lg font-medium text-destructive ">Danger zone</h2>
             <p className="text-sm text-muted-foreground mb-4">

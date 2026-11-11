@@ -17,6 +17,7 @@ import NetworkTab from "@/components/cbom/sources/NetworkTab";
 import EvidenceTab from "@/components/cbom/sources/EvidenceTab";
 import ReviewRunTab from "@/components/cbom/sources/ReviewRunTab";
 import CmdbImportDialog from "@/components/cbom/sources/CmdbImportDialog";
+import { IfAllowed, ReadOnlyGate } from "@/components/rbac/team-access";
 
 const TABS = [
   { value: "scan-nodes", label: "Scan nodes" },
@@ -72,7 +73,9 @@ function SourcesPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <CmdbImportDialog teamId={teamId} />
+              <IfAllowed permission="team.integrations.manage">
+                <CmdbImportDialog teamId={teamId} />
+              </IfAllowed>
               <Button
                 className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 onClick={() => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) })}
@@ -99,25 +102,39 @@ function SourcesPage() {
             </div>
             {/* Scan nodes, Network and Evidence stay mounted: one-time tokens, links, unsaved scope edits and discovery jobs survive a tab switch. */}
             <TabsContent value="scan-nodes" forceMount className="data-[state=inactive]:hidden">
-              <ScanNodesTab teamId={teamId} onNavigate={goTo} />
+              <ReadOnlyGate permission="cbom.write" className="contents">
+                <ScanNodesTab teamId={teamId} onNavigate={goTo} />
+              </ReadOnlyGate>
             </TabsContent>
             <TabsContent value="servers">
-              <ServersTab teamId={teamId} onNavigate={goTo} />
+              <ReadOnlyGate permission="cbom.write" className="contents">
+                <ServersTab teamId={teamId} onNavigate={goTo} />
+              </ReadOnlyGate>
             </TabsContent>
             <TabsContent value="k8s-db">
-              <ClustersDatabasesTab teamId={teamId} onNavigate={goTo} />
+              <ReadOnlyGate permission="cbom.write" className="contents">
+                <ClustersDatabasesTab teamId={teamId} onNavigate={goTo} />
+              </ReadOnlyGate>
             </TabsContent>
             <TabsContent value="cloud">
-              <CloudIdentityTab teamId={teamId} onNavigate={goTo} />
+              <ReadOnlyGate permission="cbom.write" className="contents">
+                <CloudIdentityTab teamId={teamId} onNavigate={goTo} />
+              </ReadOnlyGate>
             </TabsContent>
             <TabsContent value="network" forceMount className="data-[state=inactive]:hidden">
-              <NetworkTab teamId={teamId} onNavigate={goTo} />
+              <ReadOnlyGate permission="cbom.write" className="contents">
+                <NetworkTab teamId={teamId} onNavigate={goTo} />
+              </ReadOnlyGate>
             </TabsContent>
             <TabsContent value="evidence" forceMount className="data-[state=inactive]:hidden">
-              <EvidenceTab teamId={teamId} onNavigate={goTo} />
+              <ReadOnlyGate permission="cbom.write" className="contents">
+                <EvidenceTab teamId={teamId} onNavigate={goTo} />
+              </ReadOnlyGate>
             </TabsContent>
             <TabsContent value="review">
-              <ReviewRunTab teamId={teamId} onNavigate={goTo} />
+              <ReadOnlyGate permission="cbom.write" className="contents">
+                <ReviewRunTab teamId={teamId} onNavigate={goTo} />
+              </ReadOnlyGate>
             </TabsContent>
           </Tabs>
         </div>

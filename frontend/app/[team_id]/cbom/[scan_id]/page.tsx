@@ -11,6 +11,7 @@ import { getCBOMScanData } from "@/utils/backend_api";
 import { useParams } from "next/navigation";
 import { toast } from "@/utils/toast";
 import { Mode } from "@/app/[team_id]/sast/[scan_id]/page";
+import { ReadOnlyGate } from "@/components/rbac/team-access";
 
 export default function CBOMScanPage() {
   const [mode, setMode] = useState<Mode>("unknown");
@@ -88,6 +89,7 @@ export default function CBOMScanPage() {
           />
         </div>
       </div>
+      <ReadOnlyGate permission="scan.run" className="contents">
       <CBOMOptionsSidebar
         query={query}
         mode={mode}
@@ -101,6 +103,7 @@ export default function CBOMScanPage() {
         scan_binaries={scan_binaries}
         setScanBinaries={setScanBinaries}
       />
+      </ReadOnlyGate>
     </div>
   );
 }
