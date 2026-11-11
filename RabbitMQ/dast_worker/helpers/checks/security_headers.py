@@ -1,10 +1,11 @@
 from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from rich.console import Console
 from helpers.agent.BaseTest import BaseTest
 from helpers.agent.BaseUtilities import BaseUtilities
 from pydantic import BaseModel
+from helpers.net.egress import EgressRefused, ScanEgress
 
 console = Console(markup=False)
 
@@ -45,16 +46,19 @@ def findings_from_headers(headers: dict) -> list[str]:
     return findings
 
 
-def fetch_http_headers(url: str, timeout: int = 15) -> dict:
+def fetch_http_headers(url: str, timeout: int = 15, egress: ScanEgress | None = None) -> dict:
+    """GET through the scan's egress (pinned to checked addresses, redirects included); never without it."""
+    if egress is None:
+        raise EgressRefused(f"security headers not fetched for {url}: the scan's egress guard is missing")
     request = Request(url, headers=_REQUEST_HEADERS, method="GET")
-    with urlopen(request, timeout=timeout) as response:
+    with egress.urlopen(request, timeout=timeout) as response:
         return dict(response.headers.items())
 
 
-def security_headers_check(url: str, timeout: int = 15) -> list[str]:
+def security_headers_check(url: str, timeout: int = 15, egress: ScanEgress | None = None) -> list[str]:
     try:
         console.print(f"Security Headers Test for URL: {url}", style="bold yellow")
-        return findings_from_headers(fetch_http_headers(url, timeout=timeout))
+        return findings_from_headers(fetch_http_headers(url, timeout=timeout, egress=egress))
     except (URLError, TimeoutError, OSError) as exc:
         console.print(f"Error while testing security headers: {exc}", style="bold red")
         raise
@@ -62,7 +66,8 @@ def security_headers_check(url: str, timeout: int = 15) -> list[str]:
 
 class SecurityHeadersCheck(BaseTest, BaseUtilities):
 
-    def __init__(self, url: str, vulnerability_model: type[BaseModel], timeout: int = 15):
+    def __init__(self, url: str, vulnerability_model: type[BaseModel], timeout: int = 15,
+                 egress: ScanEgress | None = None):
         if not url:
             raise ValueError("URL is required")
         if not url.startswith("http"):
@@ -70,9 +75,10 @@ class SecurityHeadersCheck(BaseTest, BaseUtilities):
         self.url = url
         self.vulnerability_model = vulnerability_model
         self.timeout = timeout
+        self.egress = egress
 
     def run(self) -> type[BaseModel]:
-        findings = security_headers_check(self.url, timeout=self.timeout)
+        findings = security_headers_check(self.url, timeout=self.timeout, egress=self.egress)
         output = self.generate_structured_response(
             prompt=f"Analyze the following findings and generate a vulnerability report: {findings}",
             system_prompt="You are a security expert and you are tasked with analyzing the security headers of a target URL and generating a vulnerability report.",

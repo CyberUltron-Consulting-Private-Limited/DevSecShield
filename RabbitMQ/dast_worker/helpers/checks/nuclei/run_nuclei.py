@@ -29,11 +29,38 @@ def get_nuclei_concurrency() -> int:
     return _nuclei_limiter_n
 
 
+class NucleiWithoutEgressGuard(RuntimeError):
+    """nuclei is only run through the scan's egress guard (helpers/net/egress.py); without it, it does not run."""
+
+
+def egress_guard_options(egress_proxy: str) -> list[str]:
+    """nuclei and its Chromium reach the network only through the scan's SOCKS5 egress guard, which connects to the
+    scan's checked, pinned addresses and refuses everything else (DNS rebinding, redirects to private addresses,
+    out-of-scope hosts, IP literals)."""
+    return [
+        # Only protocols whose connections go through -proxy (an LLM-written template could use tcp/js/dns/...).
+        "-pt", "headless,http",
+        "-duc",                     # no update/template download at run time
+        "-proxy", egress_proxy,     # nuclei's own (Go) HTTP client
+        "-pi",                      # ... and its internal requests
+        # Chromium: every request through the guard (SOCKS5: the guard, not Chromium, picks the address), loopback too
+        # (without <-loopback> Chromium went straight to 127.0.0.1/localhost, proven live); no WebRTC UDP outside the
+        # proxy. No --host-resolver-rules "MAP * ~NOTFOUND": passed through -ho it also cut Chromium off from the
+        # guard itself (net::ERR_PROXY_CONNECTION_FAILED), and with every connection proxied it adds nothing.
+        "-ho", f"proxy-server={egress_proxy}",
+        "-ho", "proxy-bypass-list=<-loopback>",
+        "-ho", "force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+        # Chromium's own background calls (clients2.google.com, www.google.com) also reach the guard and are refused
+        # as out of scope; they are counted in the scan's egress metadata.
+    ]
+
+
 def build_nuclei_command(
     url: str,
     template_path: str,
     timeout_seconds: int = 90,
     output_dir: str | None = None,
+    egress_proxy: str | None = None,
 ) -> list[str]:
     template_timeout = max(5, min(int(timeout_seconds), 180))
     command = [
@@ -56,6 +83,8 @@ def build_nuclei_command(
     ]
     if output_dir:
         command.extend(["-me", output_dir])
+    if egress_proxy:
+        command.extend(egress_guard_options(egress_proxy))
     return command
 
 
@@ -166,7 +195,9 @@ def reap_orphan_browsers(*, enabled=None, iter_procs=None, kill_fn=None) -> int:
     return reaped
 
 
-def run_nuclei(url: str, template_path: str, timeout_seconds: int = 90):
+def run_nuclei(url: str, template_path: str, timeout_seconds: int = 90, egress_proxy: str | None = None):
+    if not egress_proxy:
+        raise NucleiWithoutEgressGuard(f"nuclei not run for {url}: the scan's egress guard is missing")
     temp_dir = None
     proc = None
     limiter = _nuclei_limiter
@@ -178,6 +209,7 @@ def run_nuclei(url: str, template_path: str, timeout_seconds: int = 90):
             template_path=template_path,
             timeout_seconds=timeout_seconds,
             output_dir=temp_dir,
+            egress_proxy=egress_proxy,
         )
         console.print(f"Running nuclei for {url} (timeout={timeout_seconds}s)", style="bold green")
         proc = subprocess.Popen(

@@ -16,6 +16,7 @@ from helpers.checks.nuclei import run_nuclei as nuclei_mod
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+GUARD = "socks5://127.0.0.1:9"  # run_nuclei needs the scan's egress guard (Popen is faked here)
 DAST_DOCKERFILE = Path(__file__).resolve().parents[2] / "Dockerfile"
 WORKER_COMPOSE = REPO_ROOT / "compose" / "worker-compose" / "docker-compose.yml"
 
@@ -71,7 +72,7 @@ def test_run_nuclei_kills_process_group_on_success(monkeypatch, tmp_path):
         nuclei_mod, "_kill_process_group", lambda proc: killed.append(proc.pid)
     )
     monkeypatch.setattr(nuclei_mod, "_reap_new_browser_pids", lambda _before: 0)
-    nuclei_mod.run_nuclei("https://example.com", _template(tmp_path), timeout_seconds=5)
+    nuclei_mod.run_nuclei("https://example.com", _template(tmp_path), timeout_seconds=5, egress_proxy=GUARD)
     assert killed == [4242]
 
 
@@ -84,7 +85,7 @@ def test_run_nuclei_kills_process_group_on_nonzero_exit(monkeypatch, tmp_path):
         nuclei_mod, "_kill_process_group", lambda proc: killed.append(proc.pid)
     )
     monkeypatch.setattr(nuclei_mod, "_reap_new_browser_pids", lambda _before: 0)
-    nuclei_mod.run_nuclei("https://example.com", _template(tmp_path), timeout_seconds=5)
+    nuclei_mod.run_nuclei("https://example.com", _template(tmp_path), timeout_seconds=5, egress_proxy=GUARD)
     assert killed == [4242]
 
 
@@ -102,7 +103,7 @@ def test_run_nuclei_kills_process_group_on_exception(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(nuclei_mod, "_reap_new_browser_pids", lambda _before: 0)
     result = nuclei_mod.run_nuclei(
-        "https://example.com", _template(tmp_path), timeout_seconds=5
+        "https://example.com", _template(tmp_path), timeout_seconds=5, egress_proxy=GUARD
     )
     assert result == []
     assert killed == [4242]
@@ -124,7 +125,7 @@ def test_run_nuclei_kills_process_group_on_timeout(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(nuclei_mod, "_reap_new_browser_pids", lambda _before: 0)
     result = nuclei_mod.run_nuclei(
-        "https://example.com", _template(tmp_path), timeout_seconds=5
+        "https://example.com", _template(tmp_path), timeout_seconds=5, egress_proxy=GUARD
     )
     assert result == []
     assert killed == [4242]

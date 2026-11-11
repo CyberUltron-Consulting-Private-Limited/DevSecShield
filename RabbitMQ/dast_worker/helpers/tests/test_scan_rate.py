@@ -357,7 +357,8 @@ def test_nuclei_semaphore_caps_parallel_chromes(monkeypatch, tmp_path):
     template.write_text("id: t\ninfo:\n  name: t\nheadless: []\n")
 
     def one(_):
-        nuclei_mod.run_nuclei("https://example.com", str(template), timeout_seconds=5)
+        nuclei_mod.run_nuclei("https://example.com", str(template), timeout_seconds=5,
+                              egress_proxy="socks5://127.0.0.1:9")
 
     with ThreadPoolExecutor(max_workers=6) as pool:
         list(pool.map(one, range(6)))

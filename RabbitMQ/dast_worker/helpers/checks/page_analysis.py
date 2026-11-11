@@ -28,7 +28,7 @@ class PageAnalysisCheck(BaseTest,BaseUtilities):
         self.xpath_of_submit_button = auth.xpath_of_submit_button
 
 
-    def run(self, documents: list[Document] | None = None, timeout_seconds: int = 90)->list[DASTVulnerability]:
+    def run(self, documents: list[Document] | None = None, timeout_seconds: int = 90, egress_proxy: str | None = None)->list[DASTVulnerability]:
         """
         Run the page analysis check
         """
@@ -45,6 +45,7 @@ class PageAnalysisCheck(BaseTest,BaseUtilities):
                     template_path=temp_yaml_file.name,
                     url=self.url,
                     timeout_seconds=timeout_seconds,
+                    egress_proxy=egress_proxy,
                 )
 
             if not result:

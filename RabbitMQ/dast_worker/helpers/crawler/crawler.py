@@ -15,6 +15,7 @@ class Crawler():
         additional_urls_to_scan: list[str] | None = None,
         include_url_patterns : list[str] = [],
         exclude_url_patterns : list[str] = [],
+        egress=None,
         ):
 
         # STEP [ 1 ] ----------------> Validate the input data --------------------------
@@ -34,6 +35,7 @@ class Crawler():
         self.include_url_patterns = include_url_patterns
         self.exclude_url_patterns = exclude_url_patterns
         self.final_urls_to_scan = []
+        self.egress = egress  # helpers.net.egress.ScanEgress: every crawl request is pinned through it
 
         self.metadata = {
             "urls_included": [],
@@ -45,7 +47,7 @@ class Crawler():
     def crawl(self):
         try:
 
-            discovered_urls = get_child_urls(start_url=self.url, max_urls=self.max_urls)
+            discovered_urls = get_child_urls(start_url=self.url, max_urls=self.max_urls, egress=self.egress)
             console.print(f"Discovered {len(discovered_urls)} URLs", style="bold yellow1")
 
             if self.include_url_patterns:

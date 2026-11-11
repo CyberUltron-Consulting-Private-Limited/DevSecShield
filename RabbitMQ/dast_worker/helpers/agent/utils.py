@@ -19,6 +19,7 @@ def fetch_authenticated_page(
     url: str,
     auth: AuthRequirements,
     timeout_seconds: int = 90,
+    egress_proxy: str | None = None,
 ) -> tuple[str, list[Document]]:
     new_login_template = construct_login_template(auth)
     new_navigate_template = construct_navigate_template(url)
@@ -30,16 +31,17 @@ def fetch_authenticated_page(
         template_path=temp_yaml_file.name,
         url=url,
         timeout_seconds=timeout_seconds,
+        egress_proxy=egress_proxy,
     )
     page_content = documents_to_text(documents)
     console.print(f"HTML Page content length: {len(page_content)} characters", style="bold green")
     return page_content, documents
 
 
-def get_page_content(url: str, auth: AuthRequirements, timeout_seconds: int = 90) -> str:
+def get_page_content(url: str, auth: AuthRequirements, timeout_seconds: int = 90, egress_proxy: str | None = None) -> str:
     try:
         page_content, _documents = fetch_authenticated_page(
-            url, auth, timeout_seconds=timeout_seconds
+            url, auth, timeout_seconds=timeout_seconds, egress_proxy=egress_proxy
         )
         return page_content
     except Exception as e:
