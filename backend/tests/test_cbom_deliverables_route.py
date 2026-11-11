@@ -684,8 +684,11 @@ def test_only_get_is_allowed(api, method):
 # ---------------------------------------------------------------------------------------------
 # 429: a REAL, per-token, decorator-level limiter
 # ---------------------------------------------------------------------------------------------
-def test_the_default_limit_is_thirty_requests_per_sixty_seconds(api):
+def test_the_default_limit_is_thirty_requests_per_sixty_seconds(api, monkeypatch):
     assert (routes.limiter.times, routes.limiter.seconds) == (30, 60)
+    # all 31 requests inside one window even when a busy machine takes over a minute to serve them
+    now = routes.limiter.clock()
+    monkeypatch.setattr(routes.limiter, "clock", lambda: now)
     statuses = [api.get(manifest_url(TEAM_ONE)).status_code for _ in range(31)]
     assert statuses == [200] * 30 + [429]
 

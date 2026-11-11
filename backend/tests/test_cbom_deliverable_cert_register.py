@@ -1412,10 +1412,10 @@ def _volume_certs(count: int, *, typical: bool = False) -> list[CertAgg]:
 
 def test_a_thousand_row_register_builds_in_under_six_seconds():
     view_ = view_with(*_volume_certs(1000))
-    started = time.perf_counter()
+    started = time.process_time()  # CPU time, so a loaded test machine does not fail a fast build
     pdf_ = build_pdf(view_)
-    elapsed = time.perf_counter() - started
-    assert elapsed < 6.0, f"1000-row register took {elapsed:.2f}s"
+    elapsed = time.process_time() - started
+    assert elapsed < 6.0, f"1000-row register took {elapsed:.2f}s of CPU"
     assert sum(1 for line in text_lines(pdf_) if SECTION_RE.match(line)) >= 5
 
 

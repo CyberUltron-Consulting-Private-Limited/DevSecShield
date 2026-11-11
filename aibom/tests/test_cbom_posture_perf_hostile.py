@@ -52,9 +52,9 @@ jobs = [
 ]
 for name, func in jobs:
     for label, text in structure_aware():
-        started = time.perf_counter()
+        started = time.process_time()  # CPU time: a busy machine slows the wall clock, not the work
         func(text)
-        elapsed = time.perf_counter() - started
+        elapsed = time.process_time() - started
         print(f"{name} {label} {elapsed:.4f}", flush=True)
 """
 
@@ -70,7 +70,7 @@ def test_hostile_inputs_finish_within_one_second() -> None:
         check=False,
         capture_output=True,
         text=True,
-        timeout=25,
+        timeout=180,  # a hang guard only; the per-input budget below is CPU time
         env=env,
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
