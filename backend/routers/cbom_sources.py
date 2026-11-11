@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.new_models import (
+    SCAN_NODE_NAME_INDEX,
     CbomCollectedAsset,
     CbomCollectionAuditEvent,
     CbomCollectionJob,
@@ -252,6 +253,12 @@ async def list_nodes(team_id: TeamId, Authorization: AuthHeader = None):
     return _ok(await _run("list nodes", team_id, _list_nodes, engine, team_id))
 
 
+def _raise_if_name_taken(exc: IntegrityError, name: str) -> None:
+    """409 when the unique (team, lower(name)) index refused the row (new_models.SCAN_NODE_NAME_INDEX)."""
+    if SCAN_NODE_NAME_INDEX in str(exc.orig) or "cbomscannode.team_id, lower(name)" in str(exc.orig).lower():
+        raise HTTPException(status_code=409, detail=f"A scan node named {name} already exists") from None
+
+
 def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
     now = utcnow()
     with Session(engine) as session:
@@ -269,11 +276,16 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
             registration_token_hash=sha256_hex(token), registration_issued_at=now,
             registration_expires_at=now + REGISTRATION_TTL, created_at=now, last_updated=now,
         )
-        session.add(node)
-        session.flush()
-        audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="node.create",
-              object_type="node", object_id=node.id, changed_fields=body.model_fields_set)
-        session.commit()
+        try:
+            session.add(node)
+            session.flush()
+            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="node.create",
+                  object_type="node", object_id=node.id, changed_fields=body.model_fields_set)
+            session.commit()
+        except IntegrityError as exc:  # a concurrent create with the same name won (the check above is not atomic)
+            session.rollback()
+            _raise_if_name_taken(exc, body.name)
+            raise
         session.refresh(node)
         log("node created", team=team_id, node=node.id, by=user_id)
         return {"node": public_node(node, now), "registration_token": token}
@@ -322,7 +334,12 @@ def _update_node(engine, team_id: int, user_id: int, node_id: int, body: NodeUpd
         session.add(node)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="node.update",
               object_type="node", object_id=node.id, changed_fields=changes.keys())
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError as exc:  # a concurrent create or rename took the name
+            session.rollback()
+            _raise_if_name_taken(exc, changes.get("name") or node.name)
+            raise
         session.refresh(node)
         log("node updated", team=team_id, node=node.id, by=user_id)
         return {"node": public_node(node, now)}
