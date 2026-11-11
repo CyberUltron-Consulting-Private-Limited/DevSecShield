@@ -34,8 +34,8 @@ from backend.new_models import Team, TeamMembership, User  # noqa: E402
 from backend.routers import team as team_router  # noqa: E402
 from backend.utilities import ratelimit  # noqa: E402
 from backend.utilities.auth.auth_utils import create_access_token  # noqa: E402
-from backend.utilities.db.encryption import SECRET_PLACEHOLDER  # noqa: E402
-from backend.utilities.team import membership  # noqa: E402
+from backend.new_models import TeamInvitation  # noqa: E402
+from backend.utilities.auth import email as invite_mail  # noqa: E402
 
 ADMIN = "alice@acme.test"
 
@@ -47,12 +47,12 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(team_router, "get_db", lambda: engine)
     mailed: list[str] = []
 
-    async def fake_mail(email, password, team_name):
+    async def fake_mail(email, team_name, inviter, link, expires_on):
         if email.endswith("@relay-down.test"):
             raise HTTPException(status_code=500, detail="Could not send the email through the configured mail relay")
         mailed.append(email)
 
-    monkeypatch.setattr(membership, "send_email_with_credentials", fake_mail)
+    monkeypatch.setattr(invite_mail, "send_team_invitation_email", fake_mail)
     ratelimit.reset_all()
     with Session(engine) as s:
         team = Team(name="Acme Security")
@@ -115,16 +115,20 @@ def test_a_mail_relay_failure_leaves_no_account_behind(client, world):
     r = client.patch(f"/team/{team_id}", headers=auth(), json={"intent": "add", "email_ids": ["carol@relay-down.test"]})
     assert r.status_code == 500
     assert users(engine) == before_users and team_names(engine) == before_teams
+    with Session(engine) as s:
+        assert s.exec(select(TeamInvitation)).all() == []  # no invitation whose link never went out
 
 
-def test_a_valid_new_address_is_invited_and_added(client, world):
+def test_a_valid_new_address_is_invited_not_added(client, world):
+    """S2 (round 5): adding an address mails an invitation; no account, no membership until the invitee accepts."""
     engine, team_id, mailed = world
+    before_users, before_teams = users(engine), team_names(engine)
     r = client.patch(f"/team/{team_id}", headers=auth(), json={"intent": "add", "email_ids": ["  Bob@Acme.TEST "]})
     assert r.status_code == 200, r.text
-    assert mailed == ["bob@acme.test"]
+    assert mailed == ["bob@acme.test"] and r.json()["invited"] == ["bob@acme.test"]
     members = client.get(f"/team/{team_id}", headers=auth()).json()["team_members"]
-    assert {"email": "bob@acme.test", "role": None} in members or any(m["email"] == "bob@acme.test" for m in members)
-    assert "bob's Default Team" in team_names(engine)
+    assert all(m["email"] != "bob@acme.test" for m in members)
+    assert users(engine) == before_users and team_names(engine) == before_teams
 
 
 def _put(client, team_id, jira):
@@ -137,7 +141,7 @@ def test_emptying_the_jira_fields_removes_the_integration(client, world):
     jira = {"email": ADMIN, "url": "https://acme.atlassian.net", "api_token": "tok-123"}
     assert _put(client, team_id, jira).status_code == 200
     shown = client.get(f"/team/{team_id}", headers=auth()).json()["team_integration_settings"]["jira"]
-    assert shown["url"] == jira["url"] and shown["api_token"] == SECRET_PLACEHOLDER
+    assert shown == {"email": ADMIN, "url": jira["url"], "api_token_set": True}  # never the token
 
     # the settings page saves {"jira": null} when the three fields are empty
     assert _put(client, team_id, None).status_code == 200
@@ -156,7 +160,7 @@ def test_saving_the_name_keeps_jira(client, world):
     assert r.status_code == 200
     with Session(engine) as s:
         stored = s.get(Team, team_id).integration_settings["jira"]
-    assert stored["url"] == "https://acme.atlassian.net" and stored["api_token"] not in (None, "", SECRET_PLACEHOLDER)
+    assert stored["url"] == "https://acme.atlassian.net" and stored["api_token"] not in (None, "", "••••••••")
 
 
 def test_settings_without_a_jira_key_leave_jira_alone(client, world):

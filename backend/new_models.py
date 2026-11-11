@@ -76,6 +76,9 @@ class User(SQLModel,table=True):
     default_team_id : int | None = Field(default=None,foreign_key="team.id")
     # tokens carry the version they were issued at ("ver"); bumping it revokes every older token
     token_version : int = Field(default=0, sa_column_kwargs={"server_default": "0"})
+    # set for accounts whose password somebody else chose and mailed (the old team-invitation flow): sign-in
+    # then asks for a new password before any token is issued (routers/auth.py)
+    must_change_password : bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
 
     # many-to-many relationship between user and team
     team_memberships : list[TeamMembership] = Relationship(back_populates="user")
@@ -90,7 +93,25 @@ class User(SQLModel,table=True):
     scans : list["Scan"] = Relationship(back_populates="owner_user")
 
     dast_profiles : list["DastScanProfile"] = Relationship(back_populates="owner_user")
-    
+
+
+class TeamInvitation(SQLModel, table=True):
+    """An offer to join a team, mailed as a link to /invite/<token>; nobody joins until the invitee accepts.
+
+    The token is stored only as its SHA-256 (``token_hash``) and works once: accepting, declining, revoking or
+    resending clears or replaces it.  One row per (team, address): inviting the address again reuses it.
+    Times are naive UTC.  The inviter is a plain int so deleting that user is never blocked."""
+    __table_args__ = (UniqueConstraint("team_id", "email", name="uq_teaminvitation_team_email"),)
+    id : int | None = Field(default=None, primary_key=True)
+    team_id : int = Field(foreign_key="team.id", index=True, ondelete="CASCADE")
+    email : str = Field(max_length=254)  # lower-cased, as on sign-up
+    token_hash : str | None = Field(default=None, max_length=64, unique=True, index=True)
+    status : str = Field(default="pending", max_length=16)  # pending | accepted | declined | revoked
+    invited_by_user_id : int | None = Field(default=None)
+    created_at : datetime.datetime = Field(sa_type=DateTime)
+    expires_at : datetime.datetime = Field(sa_type=DateTime)
+    responded_at : datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
 
 # only the user who created the scan can run the scan or update the scan  or send messages to the scan 
 class Scan(SQLModel,table=True):

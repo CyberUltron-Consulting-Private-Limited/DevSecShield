@@ -24,6 +24,7 @@ from backend.routers.dast_profiles import router as dast_profiles_router
 from backend.routers.guardrails_public import router as guardrails_public_router
 from backend.routers.admin import router as admin_router
 from backend.routers.team import router as team_router
+from backend.routers.invitations import router as invitations_router
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 import json
@@ -167,6 +168,7 @@ app.include_router(guardrails_router)
 app.include_router(guardrails_public_router)
 app.include_router(admin_router)
 app.include_router(team_router)
+app.include_router(invitations_router)  # /invite/<token>: the invitee accepts or declines
 
 # Health check endpoint for container orchestration
 @app.get("/health", tags=["health"])

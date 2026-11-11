@@ -10,10 +10,11 @@ from backend.get_db import get_db , get_mongo_client_db
 from sqlmodel import Session, select
 from backend.new_models import Team, TeamMembership , User , Scan , CicdIntegration , GuardrailsIntegration
 from backend.utilities.team.membership import add_emails_to_team , remove_emails_from_team
+from backend.utilities.team import invitations
+from backend.new_models import TeamInvitation
 from sqlalchemy import or_
 from backend.utilities.dashboard.team import generate_team_dashboard_data , generate_team_list_dashboard_data
-from backend.utilities.db.encryption import prepare_secret_for_storage, SECRET_PLACEHOLDER
-import copy
+from backend.utilities.db.encryption import prepare_secret_for_storage, is_secret_placeholder
 
 router = APIRouter( tags=["team"] )   
 console = Console()
@@ -21,6 +22,22 @@ console = Console()
 read_limiter = RateLimiter("team.read", times=120, seconds=60)
 write_limiter = RateLimiter("team.write", times=20, seconds=60)
 MAX_TEAMS_PER_USER = 5 # maximum number of teams a user can create
+
+
+def public_integration_settings(stored: dict | None) -> dict | None:
+    """What GET /team shows of the team's integration settings, to every member: the Jira email and URL and
+    ``api_token_set`` (true / false).  The token itself never leaves the server, nor does any other stored key."""
+    if not isinstance(stored, dict):
+        return None
+    out: dict = {}
+    if "jira" in stored:
+        jira = stored.get("jira")
+        out["jira"] = None if not isinstance(jira, dict) else {
+            "email": jira.get("email"),
+            "url": jira.get("url"),
+            "api_token_set": bool(jira.get("api_token")),
+        }
+    return out
 
 
 # new ✅
@@ -58,15 +75,9 @@ async def get_team(
 
 
             # STEP [ 3 ] : =========== return the team details ======================
-            # SECURITY: Mask sensitive credentials in response
-            safe_integration_settings = None
-            if team.integration_settings:
-                safe_integration_settings = copy.deepcopy(team.integration_settings)
-                if "jira" in safe_integration_settings and safe_integration_settings["jira"]:
-                    if "api_token" in safe_integration_settings["jira"] and safe_integration_settings["jira"]["api_token"]:
-                        # Mask the token - show only that it's configured
-                        safe_integration_settings["jira"]["api_token"] = SECRET_PLACEHOLDER if safe_integration_settings["jira"]["api_token"] else None
-            
+            # Secrets are write-only: only whether the Jira token is set, never the token (nor a stand-in for it).
+            safe_integration_settings = public_integration_settings(team.integration_settings)
+
             return {
                 "team_id": team.id,
                 "team_name": team.name,
@@ -218,7 +229,18 @@ async def update_team(
                     # Encrypt the token; if the UI echoed the masked placeholder, keep the stored ciphertext.
                     jira_settings = specific_settings_dict["jira"]
                     if jira_settings:
-                        existing_token = (settings_dict.get("jira") or {}).get("api_token")
+                        existing = settings_dict.get("jira") or {}
+                        existing_token = existing.get("api_token")
+                        if is_secret_placeholder(jira_settings.get("api_token")):
+                            # an empty token field keeps the stored token, but only for the Jira site and account
+                            # it was entered for: it is never sent to a URL or account somebody changed later
+                            if not existing_token:
+                                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                                    detail="Enter the Jira API token")
+                            if (jira_settings.get("url") or "") != (existing.get("url") or "") or \
+                                    (jira_settings.get("email") or "") != (existing.get("email") or ""):
+                                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                                    detail="Re-enter the Jira API token: the Jira URL or email changed")
                         jira_settings["api_token"] = prepare_secret_for_storage(
                             jira_settings.get("api_token"),
                             existing_token,
@@ -257,11 +279,11 @@ async def remove_or_add_members_to_team(
         if data.intent == "remove":
             await remove_emails_from_team(data.email_ids, team_id, engine)
         elif data.intent == "add":
-            await add_emails_to_team(data.email_ids, team_id, engine)
-        
+            invited = await add_emails_to_team(data.email_ids, team_id, engine, invited_by_user_id=user.id)
+            return {"message": f"Invitation sent to {', '.join(invited)}", "invited": invited}
 
         return {
-            "message": f"Members {data.intent}ed to the team",
+            "message": "Members removed from the team",
         }
                 
     except HTTPException as e:
@@ -361,6 +383,8 @@ async def delete_team(
 
         # STEP [ 2 ] ------------------ Delete team -----------------------------
         with Session(engine) as session:        
+            for invitation in session.exec(select(TeamInvitation).where(TeamInvitation.team_id == team_id)).all():
+                session.delete(invitation)
             team_memberships = session.exec(select(TeamMembership).where(TeamMembership.team_id == team_id)).all()
             for team_membership in team_memberships:
                 session.delete(team_membership)
@@ -436,3 +460,32 @@ async def get_teams_dashboard(
     except Exception as e:
         console.print(f"Error in getting teams dashboard: {e}", style="red")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error in getting teams dashboard: {e}")
+
+# ------------------------------------------------------------------------------------- invitations (team admins)
+
+@router.get("/team/{team_id}/invitations", summary="Open invitations of the team (admin)", dependencies=[Depends(read_limiter)])
+async def list_team_invitations(team_id: int, Authorization: Annotated[str | None, Header()] = None):
+    engine = get_db()
+    user = await get_user_from_header_or_raise_exception(engine, Authorization)
+    check_if_user_is_admin_of_team(user.id, team_id, engine)
+    return {"invitations": invitations.list_invitations(team_id, engine)}
+
+
+@router.post("/team/{team_id}/invitations/{invitation_id}/resend",
+             summary="Mail a new invitation link; the previous link stops working (admin)", dependencies=[Depends(write_limiter)])
+async def resend_team_invitation(team_id: int, invitation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    engine = get_db()
+    user = await get_user_from_header_or_raise_exception(engine, Authorization)
+    check_if_user_is_admin_of_team(user.id, team_id, engine)
+    await invitations.resend_invitation(team_id, invitation_id, user.id, engine)
+    return {"message": "A new invitation link was sent"}
+
+
+@router.delete("/team/{team_id}/invitations/{invitation_id}", summary="Revoke an invitation (admin)",
+               dependencies=[Depends(write_limiter)])
+async def revoke_team_invitation(team_id: int, invitation_id: int, Authorization: Annotated[str | None, Header()] = None):
+    engine = get_db()
+    user = await get_user_from_header_or_raise_exception(engine, Authorization)
+    check_if_user_is_admin_of_team(user.id, team_id, engine)
+    invitations.revoke_invitation(team_id, invitation_id, engine)
+    return {"message": "Invitation revoked"}
