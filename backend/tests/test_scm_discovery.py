@@ -100,6 +100,32 @@ def test_filters_are_deterministic_over_many_repositories():
     assert {reason for _ok, reason in first} >= {"matched", "archived", "fork", "language", "excluded_topic"}
 
 
+# ----------------------------------------------------------------------------- recorded GitHub responses
+def test_recorded_github_repository_response_normalises():
+    """A repository response recorded from api.github.com on 2026-11-11 (identifiers replaced) goes through the same
+    normaliser discovery uses, and the fake API's repositories use a subset of GitHub's real keys."""
+    import json
+
+    from backend.utilities.scm.providers import github as G
+    from backend.utilities.scm.providers.base import next_link
+
+    recorded = json.loads((Path(__file__).parent / "fixtures" / "scm" / "github_repository_recorded.json").read_text())
+    repo = G.normalise(recorded)
+    assert (repo.external_id, repo.full_name, repo.owner, repo.default_branch) == \
+        ("424242", "acme-bank/payments-api", "acme-bank", "main")
+    assert (repo.visibility, repo.archived, repo.fork, repo.language, repo.size_kb) == \
+        ("private", False, False, "Python", 2048)
+    assert repo.web_url == "https://github.com/acme-bank/payments-api" and repo.pushed_at is not None
+    assert F.evaluate(repo.as_filter_input(), F.RepoFilters(topics_any=["pci"])) == (True, "matched")
+    fake_keys = set(make_repos("acme", 1)[0]) - {"owner"}
+    assert fake_keys <= set(recorded), fake_keys - set(recorded)
+    # GitHub's Link header as recorded live: canonical /repositories/{id}/ next and last links
+    link = ('<https://api.github.com/repositories/424242/branches?per_page=2&page=2>; rel="next", '
+            '<https://api.github.com/repositories/424242/branches?per_page=2&page=14>; rel="last"')
+    assert next_link(link) == "https://api.github.com/repositories/424242/branches?per_page=2&page=2"
+    assert next_link('<https://x/y?page=14>; rel="last"') is None
+
+
 # ----------------------------------------------------------------------------- API base allow-list (SSRF)
 def test_api_base_defaults_and_self_hosted_needs_the_clone_allow_list(monkeypatch):
     monkeypatch.delenv("GIT_ALLOWED_HOSTS", raising=False)
