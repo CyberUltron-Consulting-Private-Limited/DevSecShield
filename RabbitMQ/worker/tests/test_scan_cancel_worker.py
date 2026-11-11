@@ -168,6 +168,37 @@ def test_a_cancel_kills_the_running_tool_and_its_children_and_stops_the_scan():
     assert not _alive(tool_pid)
 
 
+def test_two_scans_in_one_worker_process_cancel_independently():
+    """The scan worker runs ``-P threads``: cancelling one scan must not stop another running beside it."""
+    marks = {"a": Mark(), "b": Mark()}
+    done, stopped = [], []
+
+    def make(key):
+        @cancellable(lookup_factory=marks[key].factory)
+        def scan(self):
+            writer = StateUpdateWriter(self)
+            for stage in range(8):
+                writer.write_progress_percentage(stage)
+                time.sleep(0.1)
+            done.append(key)
+        return scan
+
+    def run(key):
+        try:
+            make(key)(FakeTask())
+        except Ignore:
+            stopped.append(key)
+
+    threads = [threading.Thread(target=run, args=(k,)) for k in ("a", "b")]
+    for t in threads:
+        t.start()
+    time.sleep(0.25)
+    marks["a"].cancelled = True
+    for t in threads:
+        t.join(10)
+    assert stopped == ["a"] and done == ["b"]
+
+
 def test_a_scan_that_is_not_cancelled_returns_its_result():
     mark = Mark()
 

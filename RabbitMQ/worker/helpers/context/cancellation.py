@@ -120,17 +120,19 @@ class CancelWatch:
             self._thread.join(timeout=self._interval + 1)
 
 
-# One scan runs at a time in a prefork worker process: the watch of the running scan, for run_tool and the writer.
-_current: CancelWatch | None = None
+# The scan worker runs with ``-P threads`` (several scans in one process, one thread each): the watch of the scan
+# running in this thread, for run_tool and the progress writer.
+_local = threading.local()
 
 
 def current_watch() -> CancelWatch | None:
-    return _current
+    return getattr(_local, "watch", None)
 
 
 def check_cancelled() -> None:
-    if _current is not None:
-        _current.check()
+    watch = current_watch()
+    if watch is not None:
+        watch.check()
 
 
 def run_tool(cmd, *, timeout: float | None = None, check: bool = False, input=None, capture_output: bool = False,
@@ -142,7 +144,7 @@ def run_tool(cmd, *, timeout: float | None = None, check: bool = False, input=No
         popen_kwargs["stderr"] = subprocess.PIPE
     if input is not None:
         popen_kwargs["stdin"] = subprocess.PIPE
-    watch = _current
+    watch = current_watch()
     if watch is not None:
         watch.check()
     with subprocess.Popen(cmd, start_new_session=True, **popen_kwargs) as proc:
@@ -187,7 +189,6 @@ def cancellable(fn=None, *, lookup_factory: Callable = mongo_cancel_lookup, on_s
     def wrap(func):
         @functools.wraps(func)
         def run(self, *args, **kwargs):
-            global _current
             from celery.exceptions import Ignore
 
             lookup = lookup_factory(self)
@@ -197,7 +198,7 @@ def cancellable(fn=None, *, lookup_factory: Callable = mongo_cancel_lookup, on_s
                     on_skip(kwargs)
                 _mark_revoked(self)
                 raise Ignore()
-            _current = watch.start()
+            _local.watch = watch.start()
             try:
                 return func(self, *args, **kwargs)
             except ScanCancelled:
@@ -206,7 +207,7 @@ def cancellable(fn=None, *, lookup_factory: Callable = mongo_cancel_lookup, on_s
                 raise Ignore()
             finally:
                 watch.stop()
-                _current = None
+                _local.watch = None
 
         return run
 
