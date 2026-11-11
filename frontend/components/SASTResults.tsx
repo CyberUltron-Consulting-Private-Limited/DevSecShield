@@ -78,7 +78,7 @@ import {
   YAxis,
 } from "recharts";
 import { PieChart, BarChart3, TrendingUp, ChevronDown, MoreVertical, Search, Filter, Check, X, Shield } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { Progress } from "@/components/ui/progress";
@@ -866,6 +866,7 @@ function SASTResultsAgentView({
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute = isCicdContext && integrationId
                   ? `/home/ci_cd/${integrationId}`
@@ -1488,6 +1489,7 @@ export default function SASTResults({ conversationId, dashboard, findings, teamI
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Back"
                 onClick={() => {
                   const backRoute = isCicdContext && integrationId
                     ? `/home/ci_cd/${integrationId}`

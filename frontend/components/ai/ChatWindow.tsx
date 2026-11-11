@@ -34,7 +34,7 @@ import { nanoid } from 'nanoid';
 import { type FormEventHandler, useCallback, useEffect, useState, useMemo } from 'react';
 import streamChatbotResponse from '@/hooks/use-sse';
 import { usePathname, useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from "@/utils/toast";
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DASTConversationResponse, DASTScanResponse, getSastConversationMessages, IACConversationResponse, LLMConversationResponse, SCASBOMConversationResponse, CBOMConversationResponse, AIBOMConversationResponse, sendMessageToScan } from '@/utils/backend_api';
 import { showErrorToast } from '@/utils/error-handler';

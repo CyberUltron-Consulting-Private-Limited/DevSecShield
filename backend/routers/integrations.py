@@ -35,6 +35,7 @@ from backend.utilities.cbom_sources.http import (
     TeamId,
     authorize,
     bad_request,
+    field_label,
     check_version,
     read_limiter,
     require_admin,
@@ -172,7 +173,7 @@ def _refuse_unusable_destination(cfg: Any) -> None:
             port = getattr(cfg, "port", None) or (6514 if transport == "tls" else 514)
             outbound.resolve(cfg.host, port, kind=socket.SOCK_DGRAM if transport == "udp" else socket.SOCK_STREAM)
     except outbound.Refused as exc:
-        raise HTTPException(status_code=400, detail=f"config.{field}: {exc}") from None
+        raise HTTPException(status_code=400, detail=f"{field_label(field)}: {exc}") from None
     except outbound.TransportError:
         pass
 
@@ -183,7 +184,6 @@ def _save(engine, team_id: int, user_id: int, kind: str, body: IntegrationSave) 
         cfg = validate_config(kind, body.config)
     except (ValidationError, ValueError) as exc:
         err = bad_request(exc)
-        err.detail = f"config.{err.detail}" if not str(err.detail).startswith("config") else err.detail
         raise err from None
     if body.enabled:
         _refuse_unusable_destination(cfg)

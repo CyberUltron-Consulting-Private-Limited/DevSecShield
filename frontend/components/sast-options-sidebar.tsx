@@ -36,9 +36,11 @@ import {
   type SastAppLang,
   type RepoMode,
 } from "@/utils/backend_api";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { stateAfterError } from "@/utils/scanErrorRecovery";
+import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
@@ -175,12 +177,11 @@ export function SASTOptionsSidebar({
       if (data.credits_required !== -1) {
         toast.success(`This scan will use ${data.credits_required} credits`);
       } else {
-        toast.error("Invalid Input from user");
+        toast.error("These settings cannot be scanned. Check them and estimate again.");
       }
     },
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
     },
   });
 
@@ -194,7 +195,7 @@ export function SASTOptionsSidebar({
     },
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
+      setOptionsSidebarState("ready");
     },
   });
 
@@ -222,6 +223,7 @@ export function SASTOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
+    setErrorMessage(null);
   }, [app_lang, mode, repo_url, PAT, branch, uploaded_file]);
 
   /** Run scan allowed only after estimation process has been run this session (credits from estimate response only). */
@@ -435,11 +437,12 @@ export function SASTOptionsSidebar({
                 <>Estimate credits required</>
               )}
             </Button>
+            {optionsSidebarState === "ready" && <ScanRequestError message={error_message} />}
             <ScanInputHint validation={validateScanInputs()} />
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
-                  <span className="font-semibold text-amber-400">Invalid Input from user</span>
+                  <span className="font-semibold text-amber-400">These settings cannot be scanned. Check them and estimate again.</span>
                 ) : (
                   <>Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span></>
                 )}
@@ -531,7 +534,7 @@ export function SASTOptionsSidebar({
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
           <p className="text-red-400 text-center">
-            {error_message ?? "An error occurred during the scan. Please try again."}
+            {query.data?.scan_status === "failure" ? scanFailureMessage(query.data) : (error_message ?? "The request failed. Try again.")}
           </p>
           {query.data?.scan_status === "failure" ? (
             <RunAgainButton type="sast" teamId={team_id} scan={query.data} />
@@ -539,13 +542,16 @@ export function SASTOptionsSidebar({
             <Button 
               variant="ghost" 
               size="sm"
+              data-testid="scan-try-again"
               onClick={() => {
-                // refresh the entire page to reset the state
-                window.location.reload();
+                // back to the view that matches the scan, with the form still filled in (no reload)
+                setErrorMessage(null);
+                setOptionsSidebarState(stateAfterError(query.data?.scan_status, true));
+                void query.refetch();
               }}
               className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
             >
-              <span>Try Again</span>
+              <span>Try again</span>
             </Button>
           )}
         </div>

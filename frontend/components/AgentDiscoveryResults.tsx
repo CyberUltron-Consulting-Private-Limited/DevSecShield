@@ -202,6 +202,7 @@ export default function AgentDiscoveryResults({ data, conversationId }: AgentDis
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute = origin === "list" 
                   ? `/home/agent_discovery` 

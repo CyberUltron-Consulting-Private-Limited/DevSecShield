@@ -1,7 +1,7 @@
 
 import api, { retryAfterSeconds } from "@/utils/interceptors";
 import { AxiosError } from "axios";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 export interface ApiError {
   message: string;

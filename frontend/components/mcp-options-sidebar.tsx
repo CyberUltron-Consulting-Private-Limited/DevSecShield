@@ -24,7 +24,7 @@ import {
   ScanLine,
 } from "lucide-react";
 import { useMutation, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import {
   estimateCreditsForScan,
@@ -34,6 +34,12 @@ import {
   type MCPConversationResponse,
 } from "@/utils/backend_api";
 import { handleApiError } from "@/utils/error-handler";
+import { parseMcpHeaders } from "@/utils/mcpHeaders";
+import { scanFailureMessage } from "@/utils/scanFailure";
+import { stateAfterError } from "@/utils/scanErrorRecovery";
+import { ScanRequestError } from "@/components/scan-request-error";
+import { NewScanRunAgainButton } from "@/components/scan-run-again";
+import { readFormRerun } from "@/utils/formRerun";
 
 type ServerMode = "httpstreamable" | "sse";
 
@@ -51,15 +57,13 @@ function buildPayloadString(
   headersJson: string,
   environment: MCPEnvironment
 ): string {
-  const headers =
-    headersJson.trim() === ""
-      ? undefined
-      : (JSON.parse(headersJson) as Record<string, string>);
+  const { headers, error } = parseMcpHeaders(headersJson);
+  if (error) throw new Error(error); // never sent as null: the field error disables the estimate
   return JSON.stringify({
     mcp: {
       server_url: serverUrl.trim(),
       server_mode: serverMode,
-      headers: headers ?? null,
+      headers,
       environment,
     },
   });
@@ -85,23 +89,26 @@ export function MCPOptionsSidebar({
   const [serverMode, setServerMode] = useState<ServerMode>("sse");
   const [environment, setEnvironment] = useState<MCPEnvironment>("development");
   const [headersJson, setHeadersJson] = useState("");
-  const [headersError, setHeadersError] = useState<string | null>(null);
+  // derived from the text, so a prefilled value is checked too (never sent as null when it is not an object)
+  const headersError = parseMcpHeaders(headersJson).error;
 
   const queryClient = useQueryClient();
   const router = useRouter();
 
+  // a scan opened by "Run again" on a failed MCP scan: its URL, transport and environment (headers are typed again)
+  useEffect(() => {
+    const p = Number.isFinite(scan_id) ? readFormRerun("mcp", scan_id) : null;
+    if (!p) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one read of sessionStorage after mount (none during SSR)
+    if (typeof p.server_url === "string") setServerUrl(p.server_url);
+    if (p.server_mode === "sse" || p.server_mode === "httpstreamable") setServerMode(p.server_mode);
+    if (p.environment === "development" || p.environment === "staging" || p.environment === "production") {
+      setEnvironment(p.environment);
+    }
+  }, [scan_id]);
+
   const validateHeadersJson = (value: string) => {
     setHeadersJson(value);
-    if (!value.trim()) {
-      setHeadersError(null);
-      return;
-    }
-    try {
-      JSON.parse(value);
-      setHeadersError(null);
-    } catch {
-      setHeadersError("Invalid JSON format");
-    }
   };
 
   const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
@@ -134,12 +141,12 @@ export function MCPOptionsSidebar({
       if (data.credits_required !== -1) {
         toast.success(`This scan will use ${data.credits_required} credits`);
       } else {
-        toast.error("Invalid input from user");
+        toast.error("These settings cannot be scanned. Check them and estimate again.");
       }
     },
     onError: (err) => {
+      // a refused estimate (HTTP 404 from the MCP server, timeout, ...) is said under the button; the form is kept
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
     },
   });
 
@@ -152,8 +159,9 @@ export function MCPOptionsSidebar({
       queryClient.invalidateQueries({ queryKey: ["mcp-conversation-data", team_id, scan_id] });
     },
     onError: (err) => {
+      // refused before it started: back to the filled-in form with the reason
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
+      setOptionsSidebarState("ready");
     },
   });
 
@@ -183,6 +191,7 @@ export function MCPOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
+    setErrorMessage(null);
   }, [serverUrl, serverMode, environment, headersJson]);
 
   useEffect(() => {
@@ -195,10 +204,7 @@ export function MCPOptionsSidebar({
       setErrorMessage(null);
     }
     if (query.data?.scan_status === "failure") {
-      setErrorMessage(
-        (query.data as { scan_metadata?: { error_message?: string } })?.scan_metadata
-          ?.error_message ?? "The scan failed."
-      );
+      setErrorMessage(scanFailureMessage(query.data)); // the worker's reason (scan.info.error)
       setOptionsSidebarState("error");
     }
     if (
@@ -413,10 +419,11 @@ export function MCPOptionsSidebar({
                 <>Estimate credits required</>
               )}
             </Button>
+            {optionsSidebarState === "ready" && <ScanRequestError message={errorMessage} />}
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
-                  <span className="font-semibold text-amber-400">Invalid input from user</span>
+                  <span className="font-semibold text-amber-400">These settings cannot be scanned. Check them and estimate again.</span>
                 ) : (
                   <>
                     Credits required:{" "}
@@ -505,17 +512,27 @@ export function MCPOptionsSidebar({
 
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
-          <p className="text-red-400 text-center">
-            {errorMessage ?? "An error occurred during the scan. Please try again."}
+          <p role="alert" data-testid="scan-error-message" className="text-red-400 text-center">
+            {query.data?.scan_status === "failure" ? scanFailureMessage(query.data) : (errorMessage ?? "The request failed. Try again.")}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
-          >
-            <span>Try Again</span>
-          </Button>
+          {query.data?.scan_status === "failure" ? (
+            <NewScanRunAgainButton type="mcp" teamId={team_id} scan={query.data}
+              settings={{ server_url: serverUrl, server_mode: serverMode, environment }} />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="scan-try-again"
+              onClick={() => {
+                setErrorMessage(null);
+                setOptionsSidebarState(stateAfterError(query.data?.scan_status));
+                void query.refetch();
+              }}
+              className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
+            >
+              <span>Try again</span>
+            </Button>
+          )}
         </div>
       )}
 

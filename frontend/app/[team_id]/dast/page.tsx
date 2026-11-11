@@ -41,7 +41,7 @@ import {
   type DASTListDashboardData,
 } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -537,7 +537,7 @@ export default function DASTPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteDASTScan(team_id, scan_id),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["dast-scans", variables.team_id.toString()] });
-      toast.success("DAST scan deleted successfully");
+      toast.success("DAST scan deleted");
     },
     onError: (error) => showErrorToast(error),
   });
@@ -546,7 +546,7 @@ export default function DASTPage() {
     mutationFn: renameDASTScan,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["dast-scans", variables.team_id.toString()] });
-      toast.success("DAST scan renamed successfully");
+      toast.success("DAST scan renamed");
     },
     onError: (error) => showErrorToast(error),
   });
@@ -978,7 +978,7 @@ export default function DASTPage() {
                               <TableCell className="text-right">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" aria-label={`Actions for ${scan.title || `scan #${scan.id}`}`} onClick={(e) => e.stopPropagation()}>
                                       <MoreVertical className="h-4 w-4" />
                                     </Button>
                                   </DropdownMenuTrigger>

@@ -35,7 +35,7 @@ import { singleFlight } from "@/utils/single_flight";
 import { IACConversation, deleteIACConversation, getIACConversations, renameIACConversation, createIACConversation } from "@/utils/backend_api";
 import type { IACListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -632,7 +632,7 @@ export default function IACPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteIACConversation(team_id, scan_id),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["iac-conversations", variables.team_id.toString()] });
-      toast.success("IAC scan deleted successfully");
+      toast.success("IAC scan deleted");
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -641,7 +641,7 @@ export default function IACPage() {
     mutationFn: renameIACConversation,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["iac-conversations", variables.team_id.toString()] });
-      toast.success("IAC scan renamed successfully");
+      toast.success("IAC scan renamed");
     },
     onError: (error) => { showErrorToast(error); },
   });

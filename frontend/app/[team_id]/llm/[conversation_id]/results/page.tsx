@@ -3,7 +3,7 @@
 import { useParams, usePathname } from "next/navigation";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import LLMResults from "@/components/LLMResults";
 import { getLLMConversationMessages, getLLMExportResults, type LLMDashboardData } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";

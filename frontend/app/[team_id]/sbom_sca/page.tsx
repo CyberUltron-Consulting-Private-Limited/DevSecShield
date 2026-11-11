@@ -41,7 +41,7 @@ import {
 import type { SCASBOMConversation } from "@/utils/backend_api";
 import type { SBOMSCADashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -617,7 +617,7 @@ export default function SBOMSCAPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteSBOMSCAScan(team_id, scan_id),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversations", variables.team_id.toString()] });
-      toast.success("SCA + SBOM scan deleted successfully");
+      toast.success("SCA + SBOM scan deleted");
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -626,7 +626,7 @@ export default function SBOMSCAPage() {
     mutationFn: renameSBOMSCAScan,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["sbom_sca-conversations", variables.team_id.toString()] });
-      toast.success("SCA + SBOM scan renamed successfully");
+      toast.success("SCA + SBOM scan renamed");
     },
     onError: (error) => { showErrorToast(error); },
   });

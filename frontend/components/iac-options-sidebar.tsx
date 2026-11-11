@@ -38,9 +38,11 @@ import {
   type IACContextSchema,
   type IACEnvironment,
 } from "@/utils/backend_api";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useParams, useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { stateAfterError } from "@/utils/scanErrorRecovery";
+import { ScanRequestError } from "@/components/scan-request-error";
 import { scanFailureMessage } from "@/utils/scanFailure";
 import { RerunNotice, RunAgainButton, useRerunPrefill } from "@/components/scan-run-again";
 import { CancelledScanPanel, CancelScanButton } from "@/components/scan-cancel";
@@ -198,7 +200,6 @@ export function IACOptionsSidebar({
     },
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
     },
   });
 
@@ -213,7 +214,7 @@ export function IACOptionsSidebar({
     },
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
-      setOptionsSidebarState("error");
+      setOptionsSidebarState("ready");
     },
   });
 
@@ -240,6 +241,7 @@ export function IACOptionsSidebar({
   useEffect(() => {
     setEstimationProcessDone(false);
     setEstimatedCredits(null);
+    setErrorMessage(null);
   }, [mode, repo_url, PAT, uploaded_file, iac_contexts, environment]);
 
   const displayCredits = estimatedCredits;
@@ -433,6 +435,7 @@ export function IACOptionsSidebar({
                             size="icon"
                             className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-950/30 cursor-pointer"
                             onClick={() => removeContext(ctx.id)}
+                            aria-label="Remove this IaC context"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -486,10 +489,11 @@ export function IACOptionsSidebar({
                 <>Estimate credits required</>
               )}
             </Button>
+            {optionsSidebarState === "ready" && <ScanRequestError message={error_message} />}
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
-                  <span className="font-semibold text-amber-400">Invalid Input from user</span>
+                  <span className="font-semibold text-amber-400">These settings cannot be scanned. Check them and estimate again.</span>
                 ) : (
                   <>Credits required: <span className="font-semibold text-blue-400">{displayCredits}</span></>
                 )}
@@ -576,7 +580,7 @@ export function IACOptionsSidebar({
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
           <p className="text-red-400 text-center">
-            {error_message ?? "An error occurred during the scan. Please try again."}
+            {query.data?.scan_status === "failure" ? scanFailureMessage(query.data) : (error_message ?? "The request failed. Try again.")}
           </p>
           {query.data?.scan_status === "failure" ? (
             <RunAgainButton type="iac" teamId={team_id} scan={query.data} />
@@ -584,10 +588,16 @@ export function IACOptionsSidebar({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => window.location.reload()}
+              data-testid="scan-try-again"
+              onClick={() => {
+                // back to the view that matches the scan, with the form still filled in (no reload)
+                setErrorMessage(null);
+                setOptionsSidebarState(stateAfterError(query.data?.scan_status, true));
+                void query.refetch();
+              }}
               className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
             >
-              <span>Try Again</span>
+              <span>Try again</span>
             </Button>
           )}
         </div>

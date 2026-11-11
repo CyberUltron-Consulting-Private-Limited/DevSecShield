@@ -39,7 +39,7 @@ import type { LLMListDashboardData } from "@/utils/backend_api";
 
 const OWASP_LLM_KEYS = Object.values(OWASP_LLM_KEY_TO_LABEL);
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -593,7 +593,7 @@ export default function LLMPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteLLMConversation(team_id, scan_id),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['llm-conversations', String(variables.team_id)] });
-      toast.success('LLM scan deleted successfully');
+      toast.success('LLM scan deleted');
     },
     onError: (error) => {
       showErrorToast(error);
@@ -604,7 +604,7 @@ export default function LLMPage() {
     mutationFn: renameLLMConversation,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['llm-conversations', String(variables.team_id)] });
-      toast.success('LLM scan renamed successfully');
+      toast.success('LLM scan renamed');
     },
     onError: (error) => {
       showErrorToast(error);

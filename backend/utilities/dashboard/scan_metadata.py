@@ -14,6 +14,8 @@ _RERUN_OPTIONS: dict[str, tuple[str, ...]] = {
     "cbom": ("repo_type", "include_vendored", "scan_history"),
     "ai_bom": ("repo_type",),
 }
+_DAST_AUTH_KEYS = ("login_url", "xpath_of_username_field", "xpath_of_password_field", "username",
+                   "xpath_of_submit_button")
 _SECRET_WORDS = frozenset({"pat", "token", "tokens", "password", "passwd", "passphrase", "secret", "secrets",
                            "authorization", "credential", "credentials", "cookie", "apikey", "headers"})
 
@@ -192,7 +194,9 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
         target_url = _meta.get("target_url") if _meta.get("target_url") else None
         auth = _meta.get("auth") if _meta.get("auth") else None
         if isinstance(auth, dict):
-            auth = {k: v for k, v in auth.items() if k != "password"}
+            # Allow-listed: the login form's address and XPaths and the user name.  The password is never stored
+            # (utilities/db/metadata.py) and never returned, whatever an older row holds; "Run again" asks for it.
+            auth = {k: auth[k] for k in _DAST_AUTH_KEYS if isinstance(auth.get(k), str)}
         scan_speed = _meta.get("scan_speed") if _meta.get("scan_speed") else None
         urls_included = _scan_data.get("metadata",{}).get("urls_included",[])
         urls_excluded = _scan_data.get("metadata",{}).get("urls_excluded",[])
@@ -203,6 +207,11 @@ def get_scan_metadata(scan_type: scan_types, scan: Scan):
             "scan_speed": scan_speed,
             "urls_included": urls_included,
             "urls_excluded": urls_excluded,
+            # the start options, for "Run again" on a failed DAST scan (frontend utils/dastRerun.ts, X1 M2)
+            "max_urls": _meta.get("max_urls"),
+            "additional_urls_to_scan": _meta.get("additional_urls_to_scan"),
+            "include_url_patterns": _meta.get("include_url_patterns"),
+            "exclude_url_patterns": _meta.get("exclude_url_patterns"),
             "profile_id": _meta.get("profile_id"),
             "trigger": _meta.get("trigger"),
         }

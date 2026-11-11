@@ -97,7 +97,7 @@ def test_test_button_goes_through_the_ssrf_guard(api, monkeypatch):
         # Round 5, L1: saving it enabled is refused with Test's own message (it was saved, then every Test failed)
         refused = api("PUT", "/1/integrations/webhook", json={**HOOK, "config": {"url": url}})
         assert refused.status_code == 400 and words in refused.json()["detail"], (url, refused.text)
-        assert refused.json()["detail"].startswith("config.url: ")
+        assert refused.json()["detail"].startswith("URL: ")
         # saved disabled it is kept (turning an integration off is never blocked), and Test still refuses it
         assert api("PUT", "/1/integrations/webhook",
                    json={**HOOK, "enabled": False, "config": {"url": url}}).status_code == 200
@@ -105,7 +105,7 @@ def test_test_button_goes_through_the_ssrf_guard(api, monkeypatch):
         assert r.status_code == 200 and r.json()["ok"] is False and words in r.json()["message"], (url, r.text)
     syslog = api("PUT", "/1/integrations/syslog", json={"enabled": True, "config": {"host": "169.254.169.254",
                                                                                    "transport": "udp"}})
-    assert syslog.status_code == 400 and syslog.json()["detail"].startswith("config.host: ")
+    assert syslog.status_code == 400 and syslog.json()["detail"].startswith("Host: ")
     assert "never allowed" in syslog.json()["detail"]
     syslog = api("PUT", "/1/integrations/syslog", json={"enabled": False, "config": {"host": "169.254.169.254",
                                                                                     "transport": "udp"}})

@@ -139,12 +139,15 @@ export const PromptInputSubmit = ({
   } else if (status === 'error') {
     Icon = <XIcon className="size-4" />;
   }
+  // icon-only by default: give it a name screen readers can say (X1, Nov 11: "button" with no name)
+  const label = status === 'submitted' ? 'Sending' : status === 'streaming' ? 'Stop' : 'Send message';
   return (
     <Button
       className={cn('gap-1.5 rounded-lg', className)}
       size={size}
       type="submit"
       variant={variant}
+      aria-label={children ? undefined : label}
       {...(props as any)}
     >
       {children ?? Icon}

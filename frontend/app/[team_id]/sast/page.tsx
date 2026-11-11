@@ -36,7 +36,7 @@ import { singleFlight } from "@/utils/single_flight";
 import { SastConversation, deleteSastConversation, getSastConversations, renameSastConversation, createSastConversation } from "@/utils/backend_api";
 import type { ScanListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -1076,7 +1076,7 @@ export default function SASTPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteSastConversation(team_id, scan_id),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
-      toast.success('SAST scan deleted successfully');
+      toast.success('SAST scan deleted');
     },
     onError: (error) => { showErrorToast(error); },
   });
@@ -1085,7 +1085,7 @@ export default function SASTPage() {
     mutationFn: renameSastConversation,
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['sast-conversations', variables.team_id.toString()] });
-      toast.success('SAST scan renamed successfully');
+      toast.success('SAST scan renamed');
     },
     onError: (error) => { showErrorToast(error); },
   });

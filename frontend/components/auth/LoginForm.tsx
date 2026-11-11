@@ -14,7 +14,7 @@ import { Mail, Lock, Shield, ArrowRightFromLineIcon, ArrowUpRight } from "lucide
 import { FcGoogle } from "react-icons/fc"
 import { FaApple } from "react-icons/fa"
 import { FaXTwitter } from "react-icons/fa6" // Keeping this. If this still fails, confirm react-icons version/install.
-import { toast } from "sonner"
+import { toast } from "@/utils/toast";
 import router, { useSearchParams } from "next/navigation"
 import api, { retryAfterSeconds } from "@//utils/interceptors"
 import { resendLabel, useResendCountdown, waitAfterFailedSend } from "@/utils/resend_countdown"
@@ -79,7 +79,7 @@ export default function LoginPage({
         countdown.start()
         const response = await api.post("/send_code",{email: userData?.email.trim()})
         if(response.status === 200){
-            toast.success("Verification code sent successfully")
+            toast.success("Verification code sent")
 
         }else{
             countdown.stop()
@@ -169,7 +169,7 @@ export default function LoginPage({
             return
         }
         if(response.status === 200){
-            toast.success("Logged in successfully")
+            toast.success("Signed in")
             localStorage.setItem("access_token", response.data.access_token)
             localStorage.setItem("refresh_token", response.data.refresh_token)
             router.push(redirectUrl || "/home")

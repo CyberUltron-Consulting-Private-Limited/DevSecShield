@@ -82,7 +82,7 @@ import {
   YAxis,
 } from "recharts";
 import { BarChart3, TrendingUp, Search, Filter, Check, X, ChevronDown } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import TicketingIntegrationsSettings from "@/components/ticketing-integrations-settings";
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { ComplianceCoverage, type Compliance } from "@/components/ai-bom/AiBomVisualizations";
@@ -931,6 +931,7 @@ function SbomResultsView({
             <Button
               variant="outline"
               size="icon"
+                aria-label="Back"
               onClick={() => {
                 const backRoute =
                   origin === "chat" && teamId && conversationId != null
@@ -1698,6 +1699,7 @@ export default function SbomResults({ data, conversationId, teamId, dashboard, f
               <Button
                 variant="outline"
                 size="icon"
+                aria-label="Back"
                 onClick={() => {
                   const backRoute =
                     origin === "chat" && teamId && conversationId != null

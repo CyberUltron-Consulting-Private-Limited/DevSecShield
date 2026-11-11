@@ -13,6 +13,7 @@ import {
   Home,
   Loader2,
   LogOut,
+  UserCog,
   ChevronDown,
   Database,
   Box,
@@ -43,7 +44,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import {
   useQuery,
   useMutation,
@@ -166,6 +167,7 @@ const workflowItems = [
 function UserFooter() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const teamId = useParams()?.team_id;
 
   const { data: userProfile, isLoading } = useQuery({
     queryKey: ['user-profile'],
@@ -233,12 +235,21 @@ function UserFooter() {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56 bg-zinc-800">
+          {/* change password, sign out everywhere (app/[team_id]/account) */}
+          <DropdownMenuItem
+            onClick={() => router.push(`/${teamId}/account`)}
+            className="cursor-pointer bg-zinc-800"
+            data-testid="user-menu-account"
+          >
+            <UserCog className="h-4 w-4" />
+            <span>Account</span>
+          </DropdownMenuItem>
           <DropdownMenuItem
             onClick={handleLogout}
             className="text-red-400 focus:text-red-300 focus:bg-red-500/10 cursor-pointer bg-zinc-800"
           >
             <LogOut className="h-4 w-4" />
-            <span>Logout</span>
+            <span>Sign out</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

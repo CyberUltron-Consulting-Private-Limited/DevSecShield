@@ -6,7 +6,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Check, Copy, Loader2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

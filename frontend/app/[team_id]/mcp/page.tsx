@@ -35,7 +35,7 @@ import { singleFlight } from "@/utils/single_flight";
 import { MCPConversation, deleteMCPConversation, getMCPConversations, renameMCPConversation, createMCPConversation } from "@/utils/backend_api";
 import type { MCPListDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatChartDateIst } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -721,7 +721,7 @@ export default function MCPPage() {
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteMCPConversation(team_id, scan_id),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['mcp-conversations', String(variables.team_id)] });
-      toast.success('MCP scan deleted successfully');
+      toast.success('MCP scan deleted');
     },
     onError: (error) => {
       showErrorToast(error);
@@ -732,7 +732,7 @@ export default function MCPPage() {
     mutationFn: renameMCPConversation,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['mcp-conversations', String(variables.team_id)] });
-      toast.success('MCP scan renamed successfully');
+      toast.success('MCP scan renamed');
     },
     onError: (error) => {
       showErrorToast(error);

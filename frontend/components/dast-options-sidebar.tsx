@@ -37,9 +37,13 @@ import {
   StartDASTScanData,
   AuthRequirements,
 } from "@/utils/backend_api";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import { useRouter } from "next/navigation";
 import { handleApiError } from "@/utils/error-handler";
+import { scanFailureMessage } from "@/utils/scanFailure";
+import { stateAfterError } from "@/utils/scanErrorRecovery";
+import { DAST_RERUN_NOTE, readDastRerun } from "@/utils/dastRerun";
+import { DastRunAgainButton } from "@/components/scan-run-again";
 import {
   Dialog,
   DialogContent,
@@ -145,6 +149,26 @@ export function DASTOptionsSidebar({
   const [estimatedCredits, setEstimatedCredits] = useState<number | null>(null);
   const [estimationProcessDone, setEstimationProcessDone] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+  const [rerunPrefilled, setRerunPrefilled] = useState(false);
+
+  // A scan opened by "Run again" on a failed DAST scan: its settings, except the login password (never stored).
+  useEffect(() => {
+    const p = Number.isFinite(scan_id) ? readDastRerun(scan_id) : null;
+    if (!p) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one read of sessionStorage after mount (none during SSR)
+    if (p.target_url) setTargetUrl(p.target_url);
+    if (p.scan_speed) setScanSpeed(p.scan_speed);
+    if (p.max_urls) setMaxUrls(p.max_urls);
+    setAdditionalUrls(p.additional_urls ?? []);
+    setUrlPatternMode(p.pattern_mode ?? "none");
+    setUrlPatterns(p.patterns ?? []);
+    setLoginUrl(p.login_url ?? "");
+    setXpathUsername(p.xpath_username ?? "");
+    setXpathPassword(p.xpath_password ?? "");
+    setAuthUsername(p.username ?? "");
+    setXpathSubmit(p.xpath_submit ?? "");
+    setRerunPrefilled(true);
+  }, [scan_id]);
 
   /** Validate required inputs before estimate/start. Target URL and all auth fields are required. */
   const validateScanInputs = (): { valid: true } | { valid: false; message: string } => {
@@ -174,7 +198,7 @@ export function DASTOptionsSidebar({
       if (data.credits_required !== -1) {
         toast.success(`This scan will use ${data.credits_required} credits`);
       } else {
-        toast.error("Invalid input from user");
+        toast.error("These settings cannot be scanned. Check them and estimate again.");
       }
     },
     onError: (err) => {
@@ -270,7 +294,8 @@ export function DASTOptionsSidebar({
       a.click();
       setOptionsSidebarState("done");
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
   });
@@ -296,10 +321,14 @@ export function DASTOptionsSidebar({
         queryKey: ["dast-scan", team_id, scan_id],
       });
     },
-    onError: () => {
+    onError: (err) => {
+      setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
   });
+
+  // Why a failed scan failed, in the worker's words (scan.info.error); before, only "An error occurred during the scan".
+  const failureMessage = query.data?.scan_status === "failure" ? scanFailureMessage(query.data) : null;
 
   const addAdditionalUrl = () => {
     if (additionalUrlInput.trim()) {
@@ -379,6 +408,11 @@ export function DASTOptionsSidebar({
             }}
           >
             <div className="mb-6 w-full space-y-4">
+              {rerunPrefilled && (
+                <div className="rounded-md border border-blue-500/40 bg-blue-500/10 p-3 text-xs text-blue-200" role="status" data-testid="scan-rerun-notice">
+                  <p>{DAST_RERUN_NOTE}</p>
+                </div>
+              )}
               <div className="space-y-2 w-full">
                 <Label htmlFor="target-url" className="text-zinc-300">
                   Target URL <span className="text-red-500">*</span>
@@ -599,6 +633,7 @@ export function DASTOptionsSidebar({
                           variant="ghost"
                           size="sm"
                           onClick={() => removeAdditionalUrl(index)}
+                          aria-label={`Remove ${url}`}
                           className="text-red-400 hover:text-red-300 cursor-pointer shrink-0 w-6 h-6 p-0"
                         >
                           ×
@@ -618,6 +653,7 @@ export function DASTOptionsSidebar({
                         variant="ghost"
                         size="sm"
                         className="h-5 w-5 p-0 text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800 cursor-pointer"
+                        aria-label="About URL patterns"
                       >
                         <Info className="h-4 w-4" />
                       </Button>
@@ -700,6 +736,7 @@ export function DASTOptionsSidebar({
                               variant="ghost"
                               size="sm"
                               onClick={() => removeUrlPattern(index)}
+                              aria-label={`Remove pattern ${pattern}`}
                               className="text-red-400 hover:text-red-300 cursor-pointer shrink-0 w-6 h-6 p-0"
                             >
                               ×
@@ -744,7 +781,7 @@ export function DASTOptionsSidebar({
             {displayCredits != null && (
               <p className="text-sm text-zinc-300 mt-3">
                 {creditsInvalid ? (
-                  <span className="font-semibold text-amber-400">Invalid input from user</span>
+                  <span className="font-semibold text-amber-400">These settings cannot be scanned. Check them and estimate again.</span>
                 ) : (
                   <>
                     Credits required:{" "}
@@ -843,17 +880,27 @@ export function DASTOptionsSidebar({
 
       {optionsSidebarState === "error" && (
         <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-4">
-          <p className="text-red-400 text-center">
-            {errorMessage ?? "An error occurred during the scan. Please try again."}
+          <p role="alert" data-testid="scan-error-message" className="text-red-400 text-center">
+            {failureMessage ?? errorMessage ?? "The request failed. Try again."}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => window.location.reload()}
-            className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
-          >
-            <span>Try Again</span>
-          </Button>
+          {query.data?.scan_status === "failure" ? (
+            <DastRunAgainButton teamId={team_id} scan={query.data} />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="scan-try-again"
+              onClick={() => {
+                // back to the view that matches the scan, with every field still filled in (no page reload)
+                setErrorMessage(null);
+                setOptionsSidebarState(stateAfterError(query.data?.scan_status));
+                void query.refetch();
+              }}
+              className="w-full h-8 px-2 bg-zinc-700 hover:bg-zinc-600 text-white cursor-pointer hover:text-white"
+            >
+              <span>Try again</span>
+            </Button>
+          )}
         </div>
       )}
 

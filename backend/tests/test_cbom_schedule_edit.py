@@ -54,9 +54,9 @@ def test_an_edit_is_checked_like_a_new_schedule(api, world, monkeypatch):
     _schedule_world(api, world, monkeypatch, dt.datetime(2026, 12, 1, 1, 0), "UTC")
     sched = api("POST", SCHED, json=_form()).json()["schedule"]
     for bad, msg in (({"time_of_day": "25:00"}, "time_of_day"), ({"frequency": "weekly"}, "weekday"),
-                     ({"frequency": "monthly", "monthday": 31}, "monthday"), ({"frequency": "monthly"}, "monthday"),
+                     ({"frequency": "monthly", "monthday": 31}, "Day of month"), ({"frequency": "monthly"}, "monthday"),
                      ({"include": {"servers": False}}, "include"), ({"include": {"network": True}}, "soc_ack"),
-                     ({"name": "<b>"}, "name"), ({"name": ""}, "name")):
+                     ({"name": "<b>"}, "name"), ({"name": ""}, "Name")):
         r = api("PATCH", f"{SCHED}/{sched['id']}", json=_form(**bad, expected_version=sched["row_version"]))
         assert r.status_code == 400 and msg in r.json()["detail"], (bad, r.text)
     # nothing above was saved

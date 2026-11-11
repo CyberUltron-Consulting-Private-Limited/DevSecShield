@@ -3,6 +3,7 @@ import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
 from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import Index as _SaIndex, func as _sa_func
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
 
@@ -309,6 +310,13 @@ class CbomScanNode(SQLModel, table=True):
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+# One name per team, whatever its case (X1 B1, Nov 11): the create route checked for a clash and then inserted, so two
+# concurrent requests both passed the check and the team had two nodes with the same name. The database refuses the
+# second (routers/cbom_sources.py answers 409); migration rv6p1nodename001 renames older duplicates first.
+SCAN_NODE_NAME_INDEX = "uq_cbomscannode_team_lower_name"
+_SaIndex(SCAN_NODE_NAME_INDEX, CbomScanNode.team_id, _sa_func.lower(CbomScanNode.name), unique=True)
 
 
 class CbomNodePool(SQLModel, table=True):

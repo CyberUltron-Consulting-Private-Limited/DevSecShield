@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backend.new_models import (
+    SCAN_NODE_NAME_INDEX,
     CbomCollectedAsset,
     CbomCollectionAuditEvent,
     CbomCollectionJob,
@@ -252,6 +253,12 @@ async def list_nodes(team_id: TeamId, Authorization: AuthHeader = None):
     return _ok(await _run("list nodes", team_id, _list_nodes, engine, team_id))
 
 
+def _raise_if_name_taken(exc: IntegrityError, name: str) -> None:
+    """409 when the unique (team, lower(name)) index refused the row (new_models.SCAN_NODE_NAME_INDEX)."""
+    if SCAN_NODE_NAME_INDEX in str(exc.orig) or "cbomscannode.team_id, lower(name)" in str(exc.orig).lower():
+        raise HTTPException(status_code=409, detail=f"A scan node named {name} already exists") from None
+
+
 def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
     now = utcnow()
     with Session(engine) as session:
@@ -269,11 +276,16 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
             registration_token_hash=sha256_hex(token), registration_issued_at=now,
             registration_expires_at=now + REGISTRATION_TTL, created_at=now, last_updated=now,
         )
-        session.add(node)
-        session.flush()
-        audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="node.create",
-              object_type="node", object_id=node.id, changed_fields=body.model_fields_set)
-        session.commit()
+        try:
+            session.add(node)
+            session.flush()
+            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="node.create",
+                  object_type="node", object_id=node.id, changed_fields=body.model_fields_set)
+            session.commit()
+        except IntegrityError as exc:  # a concurrent create with the same name won (the check above is not atomic)
+            session.rollback()
+            _raise_if_name_taken(exc, body.name)
+            raise
         session.refresh(node)
         log("node created", team=team_id, node=node.id, by=user_id)
         return {"node": public_node(node, now), "registration_token": token}
@@ -322,7 +334,12 @@ def _update_node(engine, team_id: int, user_id: int, node_id: int, body: NodeUpd
         session.add(node)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="node.update",
               object_type="node", object_id=node.id, changed_fields=changes.keys())
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError as exc:  # a concurrent create or rename took the name
+            session.rollback()
+            _raise_if_name_taken(exc, changes.get("name") or node.name)
+            raise
         session.refresh(node)
         log("node updated", team=team_id, node=node.id, by=user_id)
         return {"node": public_node(node, now)}
@@ -436,7 +453,6 @@ def _validate_config(kind: str, config: dict[str, Any]):
         return spec.model.model_validate(config)
     except ValidationError as exc:
         err = bad_request(exc)
-        err.detail = f"config.{err.detail}" if not str(err.detail).startswith("config") else err.detail
         raise err from None
     except ValueError as exc:
         raise bad_request(exc) from None
@@ -449,7 +465,7 @@ def _check_refs(session: Session, team_id: int, kind: str, cfg: Any) -> None:
     target = session.get(CbomCollectionSource, ref)
     wanted = ("aws_account", "azure_subscription", "gcp_project") if kind == "kubernetes" else ("aws_account",)
     if target is None or target.team_id != team_id or target.kind not in wanted:
-        raise HTTPException(status_code=400, detail="config: the linked cloud account was not found in this team")
+        raise HTTPException(status_code=400, detail="The linked cloud account was not found in this team")
 
 
 def _merge_secrets(kind: str, cfg: Any, current: dict[str, str], provided: dict[str, str], *,
@@ -602,7 +618,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
             incoming = {**{f: getattr(old_cfg, f, None) for f in METADATA_FIELDS if f not in incoming}, **incoming}
         cfg = _validate_config(source.kind, incoming) if incoming is not None else old_cfg
         if cfg is None:
-            raise HTTPException(status_code=400, detail="config: required")
+            raise HTTPException(status_code=400, detail="The source settings are required")
         changed: set[str] = set()
         new_node_id = source.node_id
         if body.clear_node:

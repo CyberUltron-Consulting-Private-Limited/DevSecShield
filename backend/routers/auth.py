@@ -18,6 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from backend.get_db import get_db
 from backend.new_models import Team, TeamMembership, User
 from backend.utilities.auth.auth_schema import (
+    AccountPasswordChange,
     ChangePassword,
     CodeSend,
     NoEchoValidationRoute,
@@ -59,6 +60,7 @@ credentials_ip_limiter = RateLimiter("auth.credentials_ip", times=10, seconds=60
 send_code_ip_limiter = RateLimiter("auth.send_code_ip", times=5, seconds=120, key_func=ip_key)
 refresh_limiter = RateLimiter("auth.refresh_ip", times=20, seconds=30, key_func=ip_key)
 session_limiter = RateLimiter("auth.session", times=20, seconds=30, key_func=user_key)  # get_user, logout
+change_password_limiter = RateLimiter("auth.change_password", times=5, seconds=600, key_func=user_key)
 # charged by hand with the (normalised) email from the body
 email_limiter = RateLimiter("auth.credentials_email", times=10, seconds=600, key_func=ip_key)
 
@@ -368,6 +370,49 @@ async def change_password(data: ChangePassword):
         return _tokens(user)
     except Exception as e:
         raise _db_error(e, "change password") from None
+
+
+@router.post("/account/password", summary="Change the password; every other session is signed out",
+             dependencies=[Depends(session_limiter), Depends(change_password_limiter)])
+async def change_account_password(data: AccountPasswordChange, Authorization: Annotated[str | None, Header()] = None):
+    """
+    Request Fields:
+    - current_password: str
+    - new_password: str (8 to 128 characters, as at sign-up)
+
+    The Account page (X1, Nov 11: there was no way to change a password while signed in). Every token issued so far
+    stops working (token_version is bumped, as at a reset or logout); the answer carries new tokens for this session.
+    """
+    try:
+        engine = get_db()
+        user = await get_user_from_header_or_raise_exception(engine, Authorization)
+        old_hash = user.password
+        is_valid, _upgrade = await run_in_threadpool(verify_and_update_password, data.current_password, old_hash)
+        if not is_valid:
+            log.info("credential change refused: current credential does not match user_id=%s", user.id)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The current password is not correct")
+        if data.new_password == data.current_password:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="The new password must be different from the current one")
+        hashed = await run_in_threadpool(get_hashed_password, data.new_password)
+        with Session(engine) as session:
+            # compare-and-swap: a reset or another change that already replaced the hash wins
+            changed = session.exec(
+                update(User).where(User.id == user.id, User.password == old_hash)
+                .values(password=hashed, token_version=User.token_version + 1)
+            ).rowcount
+            if not changed:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                    detail="The password was changed in the meantime. Sign in again.")
+            session.commit()
+            user = session.exec(select(User).where(User.id == user.id)).first()
+        log.info("credential changed, earlier tokens revoked user_id=%s", user.id)  # no "password ... =": main.py redacts it
+        return {"message": "Password changed. Every other session was signed out.", **_tokens(user)}
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        log.error("credential change failed: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Could not change the password, please try again later") from None
 
 
 @router.get("/logout", summary="Logout user", dependencies=[Depends(session_limiter)])

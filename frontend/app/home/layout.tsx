@@ -46,7 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import {
   useQuery,
   useMutation,

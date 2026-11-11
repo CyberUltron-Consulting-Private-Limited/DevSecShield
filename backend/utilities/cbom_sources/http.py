@@ -33,14 +33,31 @@ ObjectId = Annotated[int, Path(ge=1, le=MAX_TEAM_ID)]
 PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 
+# What the forms call a field, for the few names a plain "word word" spelling would get wrong.
+_FIELD_LABELS = {
+    "url": "URL", "uri": "URI", "ip": "IP address", "ips": "IP addresses", "cidr": "Network range",
+    "cidrs": "Network ranges", "ca_pem": "CA certificate", "proxy_url": "Proxy URL", "proxy_ca_pem": "Proxy CA certificate",
+    "api_key": "API key", "hec_token": "HEC token", "sni": "SNI", "tls": "TLS", "aws_source_id": "AWS account",
+    "cloud_source_id": "Cloud account", "node_id": "Scan node", "kubeconfig": "Kubeconfig",
+    "monthday": "Day of month", "time_of_day": "Time of day", "source_ids": "Sources",
+}
+
+
+def field_label(name: str) -> str:
+    """A field as the customer sees it ("ssh_port" -> "Ssh port", "url" -> "URL"), never a path like "config.url"
+    (X1, Nov 11: source and integration errors said "config.hosts: ..." and "config.Line 1: ...")."""
+    return _FIELD_LABELS.get(name) or name.replace("_", " ").strip().capitalize()
+
+
 def format_errors(errors: list[dict[str, Any]]) -> str:
     first = errors[0] if errors else {}
-    loc = [str(p) for p in first.get("loc", ()) if p not in ("body", "query", "path")]
+    loc = [p for p in first.get("loc", ()) if p not in ("body", "query", "path", "config")]
     message = str(first.get("msg", "Invalid input"))
     for prefix in ("Value error, ", "Assertion failed, "):
         if message.startswith(prefix):
             message = message[len(prefix):]
-    field = ".".join(loc[-2:]) if loc else ""
+    names = [p for p in loc if isinstance(p, str) and not p.startswith("function-")]
+    field = field_label(names[-1]) if names else ""
     return f"{field}: {message}" if field and not message.startswith(field) else message
 
 

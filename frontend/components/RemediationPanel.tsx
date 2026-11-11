@@ -17,7 +17,7 @@ import {
   Zap,
   CheckCircle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/utils/toast";
 import KbFindingDetails from "@/components/cbom/KbFindingDetails";
 
 interface RemediationPanelProps {
@@ -322,7 +322,7 @@ function AiRemediationPanel({
         queryClient.invalidateQueries({ queryKey: ["teams"] });
         queryClient.invalidateQueries({ queryKey: ["teams-dashboard"] });
         queryClient.invalidateQueries({ queryKey: ["team-dashboard"] });
-        toast.success("AI remediation generated successfully");
+        toast.success("AI remediation generated");
       } else {
         toast.error("Remediation generation failed: " + (data.error || "Unknown error"));
       }
