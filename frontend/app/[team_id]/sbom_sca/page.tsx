@@ -815,7 +815,7 @@ export default function SBOMSCAPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <InfoTip id="sbom.filter.risk" className="-ml-2" />
+                      <InfoTip id="scan.filter.risk" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[180px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -858,7 +858,7 @@ export default function SBOMSCAPage() {
                           <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <InfoTip id="sbom.filter.sort" className="-ml-2" />
+                      <InfoTip id="scan.filter.sort" className="-ml-2" />
                       <DropdownMenuContent align="start" className="min-w-[200px]">
                         <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Sort by</DropdownMenuLabel>
                         <DropdownMenuSeparator />
@@ -924,7 +924,7 @@ export default function SBOMSCAPage() {
                             <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
                             <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
                             <TableHead className="w-[180px]"><span className="inline-flex items-center gap-1">Vulnerabilities <InfoTip id="sbom.table.vulns" /></span></TableHead>
-                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="sbom.table.risk" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="scan.table.risk4" /></span></TableHead>
                             <TableHead className="w-[160px]"><span className="inline-flex items-center gap-1">Repo / Source <InfoTip id="sbom.table.source" /></span></TableHead>
                             <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Branch <InfoTip id="scan.table.branch" /></span></TableHead>
                             <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Credits <InfoTip id="scan.table.credits" /></span></TableHead>

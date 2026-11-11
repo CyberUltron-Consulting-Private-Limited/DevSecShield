@@ -30,6 +30,9 @@ export const COVERED: string[] = [
   // SCA + SBOM
   "app/[team_id]/sbom_sca/page.tsx",
   "components/sca-sbom-options-sidebar.tsx",
+  // IaC
+  "app/[team_id]/iac/page.tsx",
+  "components/iac-options-sidebar.tsx",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
 export const DASHBOARDS = new Set<string>([]);

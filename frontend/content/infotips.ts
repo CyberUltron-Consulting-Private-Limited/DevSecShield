@@ -480,20 +480,20 @@ export const INFO_TIPS = {
     what: "This scan's vulnerable dependencies by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
     example: "0 red, 3 orange, 6 amber, 1 blue.",
   },
-  // src: backend/utilities/db/scan_list_item.py:171-173, frontend/app/[team_id]/sbom_sca/page.tsx:113-116 — weighted average on a 1-4 scale
-  "sbom.table.risk": {
+  // src: backend/utilities/db/scan_list_item.py:171-173, backend/utilities/db/scan_list_item.py:112, frontend/app/[team_id]/sbom_sca/page.tsx:113-116, frontend/app/[team_id]/iac/page.tsx:123-126 — weighted average on a 1-4 scale (SCA + SBOM, IaC; issue #35)
+  "scan.table.risk4": {
     label: "Risk score",
     what: "This scan's average severity weight, from 1 to 4: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. Empty when it found nothing.",
     example: "1 Critical and 1 Low finding: (4+1)/2 = 2.5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125 — tiers on the score shown in the Risk score column
-  "sbom.filter.risk": {
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135 — tiers on the score shown in the Risk score column
+  "scan.filter.risk": {
     label: "Risk score filter",
     what: "Shows only scans whose Risk score column value is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Scans without findings are hidden by any tier.",
     example: "Low keeps every scan with a score under 5.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712 — sorts the loaded rows; missing values count as -1
-  "sbom.filter.sort": {
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732 — sorts the loaded rows; missing values count as -1
+  "scan.filter.sort": {
     label: "Sort",
     what: "Orders the table by creation date, risk score or credits, high or low first. Scans with no value for the chosen column go last when sorting high first.",
     example: "Credits (high first) puts the most expensive scan on top.",
@@ -503,6 +503,154 @@ export const INFO_TIPS = {
     label: "Repository",
     what: "The repository that was scanned (hover for the full URL), or Zip file for an uploaded archive. Empty for an uploaded SBOM file.",
     example: "payments-api.",
+  },
+
+  // ────────────────────────────────────────────────────────────── IaC: scan configuration (components/iac-options-sidebar.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:541-557, backend/utilities/db/scan_list_item.py:143 — stored as a label; the worker does not read it
+  "iac.cfg.environment": {
+    label: "Environment",
+    what: "Which environment this infrastructure code is for: Development, Staging or Production. It is a label for your dashboards (the environment filter and heatmap); it does not change what the scan checks.",
+    example: "Production for the Terraform that deploys your live VPC.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-82 — one mode per context; each mode reads its file types
+  "iac.cfg.contexts": {
+    label: "IaC contexts",
+    what: "The kinds of infrastructure code in the repository, one context each. Each kind reads its own files: Terraform .tf/.tfvars/.tfstate/.tf.json, Kubernetes and Helm .yaml/.yml, Ansible .yml/.yaml/.ini, CloudFormation .yaml/.yml/.json, Pulumi and CDK their program files.",
+    example: "A repository with Terraform and Helm charts: add both contexts.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:60-80 — terraform finds its files by extension; the others also need include patterns
+  "iac.cfg.context_type": {
+    label: "Context type",
+    what: "The infrastructure format of this context. Terraform files are found anywhere by their extension; for the other formats only files matching the include patterns below are read.",
+    example: "Kubernetes, with the include pattern \"k8s\".",
+  },
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:207-227, backend/utilities/scan/estimate_scan.py:210 — 1 credit per 0.5 MB of matched files, rounded to 0.01
+  "iac.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "Measures the infrastructure files the contexts match and prices the scan at 2 credits per MB, rounded to 0.01. Nothing is charged until you start the scan.",
+    example: "400 KB of Terraform: about 0.78 credits.",
+  },
+
+  // ────────────────────────────────────────────────────────────── IaC: list page (app/[team_id]/iac/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:575 — successful IaC scans
+  "iac.kpi.total_scans": {
+    label: "Total scans",
+    what: "IaC scans of this team that finished successfully.",
+    example: "12 scans run, 2 failed: 10.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:456-480, backend/utilities/dashboard/scan_list.py:576 — findings of successful scans
+  "iac.kpi.total_issues": {
+    label: "Total issues",
+    what: "Misconfigurations found by all successful IaC scans, added up.",
+    example: "An S3 bucket without encryption is one issue.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:466-478, backend/utilities/dashboard/scan_list.py:577 — impact critical
+  "iac.kpi.critical": {
+    label: "Total critical",
+    what: "Of those, the issues rated Critical.",
+    example: "A security group open to 0.0.0.0/0 on SSH.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:564-569, backend/utilities/dashboard/remediation_metrics.py:43-80 — mean of fixed/ignored time minus creation, in days
+  "iac.kpi.mttr": {
+    label: "Avg MTTR (days)",
+    what: "Mean time to remediate: the average time, in days, from when an issue was recorded to when it was marked Fixed or Ignored.",
+    example: "One issue fixed after 1 day and one after 3 days: 2.0.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:509-518, backend/utilities/dashboard/scan_list.py:570 — per scan included / (included + excluded) files, averaged
+  "iac.kpi.coverage": {
+    label: "Coverage %",
+    what: "For each successful scan, the share of candidate files that were analysed (analysed divided by analysed plus excluded), averaged over the scans.",
+    example: "Two scans with 100% and 80%: 90.0%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:493-507, backend/utilities/dashboard/scan_list.py:580 — compliance-control references with a standard
+  "iac.kpi.policy": {
+    label: "Policy violations",
+    what: "How many compliance-control references (PCI DSS, ISO 27001 and others) the issues map to, added up.",
+    example: "One issue mapped to 2 controls: 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:520-526, backend/utilities/dashboard/scan_list.py:571 — 0-10, weights 4/3/2/1, averaged over issues
+  "iac.kpi.avg_risk": {
+    label: "Avg risk score",
+    what: "Severity-weighted average of all issues of successful scans, from 0 to 10: Critical 4, High 3, Medium 2, Low 1, the average weight divided by 4 and multiplied by 10.",
+    example: "Half Critical, half Low: (4+1)/2 = 2.5, so 6.3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:466-478, backend/utilities/dashboard/scan_list.py:584-589 — totals per impact
+  "iac.chart.severity": {
+    label: "Severity Distribution",
+    what: "Issues of successful IaC scans by severity: Critical, High, Medium and Low.",
+    example: "Critical 1, High 6, Medium 10, Low 3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:464, backend/utilities/dashboard/scan_list.py:482-486 — per creation date (UTC)
+  "iac.chart.over_time": {
+    label: "Issues Over Time",
+    what: "Issues of successful scans by severity, on the day (UTC) each scan was created.",
+    example: "A scan created on 4 Nov with 3 High issues adds 3 to High on 4 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:488-491, backend/utilities/dashboard/scan_list.py:593-606 — issues per category; the six categories always shown
+  "iac.chart.posture": {
+    label: "Security Posture Overview",
+    what: "Issues per security category: Network Security, Data Protection, Access Control, Logging and Monitoring, Secret Management, Audit and Compliance (and any other category found).",
+    example: "Network Security 7 means seven issues about firewalls, ports or routing.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:615-622, backend/utilities/dashboard/finding_metrics.py:18-40 — stored findings by status
+  "iac.chart.pipeline": {
+    label: "Remediation Pipeline",
+    what: "Issues by the status your team set on them: Fixed, In progress, Not started, Ignored, each as a share of all issues found.",
+    example: "20 issues, 5 marked Fixed: Fixed 25%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:493-507, backend/utilities/dashboard/scan_list.py:609, frontend/app/[team_id]/iac/page.tsx:478 — references per standard, share of all references
+  "iac.chart.compliance": {
+    label: "Compliance Framework Violations",
+    what: "How many compliance-control references the issues have per standard, and that standard's share of all references. It is not a pass rate.",
+    example: "PCI DSS 6 of 10 references: 60.0%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:541-562 — successful scans with results counted per (environment, IaC type)
+  "iac.chart.heatmap": {
+    label: "Environment × Cloud Resource Heatmap",
+    what: "How many successful scans covered each IaC type (rows) in each environment (columns). The environment is the one chosen when the scan was configured.",
+    example: "Kubernetes × production = 3: three production scans had a Kubernetes context.",
+  },
+  // src: backend/utilities/dashboard/finding_metrics.py:89-125, backend/utilities/dashboard/scan_list.py:624-625 — per resolution date, average time to fix or ignore
+  "iac.chart.mttr_per_day": {
+    label: "MTTR Per Day",
+    what: "For each day (UTC), the average time to remediate of the issues marked Fixed or Ignored that day, in days.",
+    example: "Two issues fixed on 6 Nov after 1 and 2 days: 1.5 on 6 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:528-539 — one count per scan and IaC type, not per resource
+  "iac.chart.providers": {
+    label: "Resources by Provider",
+    what: "How many successful scans included each IaC type (Terraform, Kubernetes, Helm, …). It counts scans per type, not individual cloud resources.",
+    example: "Terraform 8, Kubernetes 3.",
+  },
+  // src: frontend/app/[team_id]/iac/page.tsx:714-717, backend/utilities/db/scan_list_item.py:143 — matches the scan's environment label
+  "iac.filter.environment": {
+    label: "Environment filter",
+    what: "Shows only scans configured for one environment: Development, Staging or Production.",
+    example: "Production lists only scans labelled Production.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:137-138 — repo_url, or zip upload (IaC; the same fields for CBOM and AI BOM)
+  "scan.table.source": {
+    label: "Repository",
+    what: "The repository that was scanned (its last path segment; hover for the full URL), or Zip file for an uploaded archive.",
+    example: "infra-live for https://github.com/acme/infra-live.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:140 — the IaC context types of the scan
+  "iac.table.provider": {
+    label: "Cloud provider",
+    what: "The IaC types this scan read (its contexts), such as Terraform or Kubernetes.",
+    example: "terraform, helm.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:143 — environment label from the scan's settings
+  "iac.table.environment": {
+    label: "Environment",
+    what: "The environment chosen when the scan was configured. It is a label only.",
+    example: "staging.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:89-104 — counts per impact of a successful scan
+  "iac.table.vulns": {
+    label: "Vulnerabilities",
+    what: "This scan's issues by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
+    example: "1 red, 2 orange, 4 amber, 0 blue.",
   },
 } as const satisfies Record<string, InfoTipEntry>;
 
