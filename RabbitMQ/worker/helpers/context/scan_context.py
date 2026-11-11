@@ -104,7 +104,12 @@ class GithubContext(BaseModel):
             )
             pat = ""
         try:
-            self.repo_url = git_hosts.clone_url(self.repo_url, "github.com", "GitHub", user=pat or None)
+            if pat.startswith("ghs_"):
+                # a GitHub App installation token (F3 org connections): GitHub documents x-access-token:<token>
+                self.repo_url = git_hosts.clone_url(self.repo_url, "github.com", "GitHub", user="x-access-token",
+                                                    secret=pat)
+            else:
+                self.repo_url = git_hosts.clone_url(self.repo_url, "github.com", "GitHub", user=pat or None)
         except ValueError as e:
             raise ValueError(f"Invalid GitHub URL: {e}") from None
         return self

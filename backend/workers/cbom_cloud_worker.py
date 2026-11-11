@@ -198,6 +198,10 @@ def main() -> None:
     from backend.workers.cbom_scheduler import start_thread
 
     scheduler_stop = start_thread(engine)
+    # F3: repository discovery syncs, policy schedules and the fair repository-scan queue (REPO_SCHEDULER=0: off)
+    from backend.workers.repo_scheduler import start_thread as start_repo_scheduler
+
+    start_repo_scheduler(engine)
     # integrations forward events on their own thread too: a slow destination must not delay a schedule
     from backend.workers.integration_dispatcher import start_thread as start_dispatcher
 

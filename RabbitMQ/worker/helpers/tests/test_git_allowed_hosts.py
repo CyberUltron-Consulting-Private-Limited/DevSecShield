@@ -23,6 +23,19 @@ def test_public_github_with_and_without_token(monkeypatch):
     assert sc.GithubContext(repo_url=ctx.repo_url, PAT="tok").repo_url == "https://tok@github.com/a/b"
 
 
+def test_github_app_installation_token_clones_as_x_access_token(monkeypatch):
+    """F3: repository scans of a GitHub App connection carry a 1-hour installation token (ghs_...); GitHub documents
+    https://x-access-token:<token>@github.com/... for it. Personal tokens keep the token-as-user form."""
+    monkeypatch.setenv("GIT_ALLOWED_HOSTS", "ghe.corp.example")
+    ctx = sc.GithubContext(repo_url="https://github.com/acme/app", PAT="ghs_AbC123")
+    assert ctx.repo_url == "https://x-access-token:ghs_AbC123@github.com/acme/app"
+    assert sc.GithubContext(repo_url=ctx.repo_url, PAT="ghs_AbC123").repo_url == ctx.repo_url  # re-validated: same
+    assert sc.GithubContext(repo_url="https://ghe.corp.example/o/r", PAT="ghs_z").repo_url == \
+        "https://x-access-token:ghs_z@ghe.corp.example/o/r"
+    assert sc.GithubContext(repo_url="https://github.com/acme/app", PAT="github_pat_x").repo_url == \
+        "https://github_pat_x@github.com/acme/app"
+
+
 def test_plain_http_and_unlisted_hosts_are_refused(monkeypatch):
     monkeypatch.delenv("GIT_ALLOWED_HOSTS", raising=False)
     for ctx_cls, url in ((sc.GithubContext, "http://github.com/a/b"),

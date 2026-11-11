@@ -46,10 +46,9 @@ from sqlmodel import Session, select
 from backend.new_models import Scan, Team
 from backend.utilities.scm import pricing, rollup
 from backend.utilities.scm.common import log
-from backend.utilities.scm.filters import RepoFilters
 from backend.utilities.scm.inventory import filter_input
 from backend.utilities.scm.models import ScmConnection, ScmRepository, ScmScanPolicy, ScmScanRequest, ScmScanRun
-from backend.utilities.scm.policies import PolicyView, team_policies, winning_policy
+from backend.utilities.scm.policies import team_policies, winning_policy
 
 PRIORITY = {"push": 0, "manual": 1, "schedule": 2}
 ACTIVE = ("queued", "dispatching", "dispatched")

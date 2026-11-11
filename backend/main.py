@@ -163,3 +163,10 @@ async def health_check():
 if __name__=="__main__":
 
     Console().print("Ran main.py ✔️",style="bold green")
+
+
+# ========================================= F3: code repositories at scale =========================================
+# Org-level SCM connections, the repository inventory, scan policies, bulk runs, the fair queue, the roll-up and the
+# signed inbound webhooks (/{team_id}/scm/... and /scm/webhooks/...).
+from backend.routers.scm import router as scm_router  # noqa: E402
+app.include_router(scm_router)
