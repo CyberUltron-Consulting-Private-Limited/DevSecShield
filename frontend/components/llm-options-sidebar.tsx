@@ -93,6 +93,7 @@ export function LLMOptionsSidebar({
   useEffect(() => {
     const p = Number.isFinite(scan_id) ? readFormRerun("llm", scan_id) : null;
     if (!p) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one read of sessionStorage after mount (none during SSR)
     setCreationData((prev) => ({
       ...prev,
       ...(typeof p.model_type === "string" ? { model_type: p.model_type } : {}),
@@ -106,7 +107,7 @@ export function LLMOptionsSidebar({
   }, [scan_id]);
 
   // Helper function to update creation data
-  const updateCreationData =(field: keyof LLMScanCreateData, value: any) => {
+  const updateCreationData = (field: keyof LLMScanCreateData, value: any) => {
       setCreationData(prev => ({
           ...prev,
           [field]: value

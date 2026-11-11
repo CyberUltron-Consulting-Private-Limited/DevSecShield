@@ -155,6 +155,7 @@ export function DASTOptionsSidebar({
   useEffect(() => {
     const p = Number.isFinite(scan_id) ? readDastRerun(scan_id) : null;
     if (!p) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one read of sessionStorage after mount (none during SSR)
     if (p.target_url) setTargetUrl(p.target_url);
     if (p.scan_speed) setScanSpeed(p.scan_speed);
     if (p.max_urls) setMaxUrls(p.max_urls);

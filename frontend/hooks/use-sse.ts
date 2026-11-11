@@ -2,7 +2,6 @@ import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { Dispatch, SetStateAction, useEffect, useRef } from 'react';
 import { apiBaseURL, getAccessToken } from '@/utils/interceptors';
 import type { ChatMessage } from '@/components/ai/ChatWindow';
-import { toast } from "@/utils/toast";
 import { showErrorToast } from '@/utils/error-handler';
 import { usePathname } from 'next/navigation';
 

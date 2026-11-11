@@ -99,6 +99,7 @@ export function MCPOptionsSidebar({
   useEffect(() => {
     const p = Number.isFinite(scan_id) ? readFormRerun("mcp", scan_id) : null;
     if (!p) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one read of sessionStorage after mount (none during SSR)
     if (typeof p.server_url === "string") setServerUrl(p.server_url);
     if (p.server_mode === "sse" || p.server_mode === "httpstreamable") setServerMode(p.server_mode);
     if (p.environment === "development" || p.environment === "staging" || p.environment === "production") {
