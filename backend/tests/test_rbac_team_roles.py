@@ -145,7 +145,7 @@ def test_a_legacy_team_is_claimed_by_one_admin_once(world, client):
     assert again.status_code == 409 and "already has an owner" in again.json()["detail"]
     assert roles(engine, legacy)[ADMIN2] == "admin"
     claim_events = events(engine, "team.ownership.claim")
-    assert len(claim_events) == 1 and claim_events[0].actor_user_id == ids[ADMIN] and claim_events[0].outcome == "success"
+    assert [(e.actor_user_id, e.outcome) for e in claim_events] == [(ids[MEMBER], "denied"), (ids[ADMIN], "success")]
     # an owned team cannot be claimed either
     assert client.post(f"/team/{ids['team']}/ownership/claim", headers=bearer(ADMIN)).status_code == 409
 
@@ -227,7 +227,8 @@ def test_owners_move_anybody_but_a_team_keeps_one_owner(world, client):
     assert set_role(client, team, OWNER, OWNER, "admin").status_code == 200  # another owner remains
     assert roles(engine, team)[OWNER] == "admin" and roles(engine, team)[ADMIN2] == "owner"
     change = events(engine, "team.members.role")[-1]
-    assert change.details == {"email": OWNER, "from": "owner", "to": "admin"} and change.actor_user_id == ids[OWNER]
+    assert change.details == {"email": OWNER, "from": "owner", "to": "admin", "method": "PATCH"}
+    assert change.actor_user_id == ids[OWNER]
     assert change.object_type == "member" and change.object_id == str(ids[OWNER]) and change.ip == "testclient"
 
 

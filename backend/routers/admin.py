@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import Depends, FastAPI, HTTPException, Header, status, APIRouter
+from fastapi import Depends, FastAPI, HTTPException, Header, Query, Request, status, APIRouter
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
@@ -11,6 +11,8 @@ from backend.utilities.auth.auth_utils import (
     user_by_email,
 )
 from backend.utilities.ratelimit import RateLimiter
+from backend.utilities.rbac import audit
+from backend.utilities.rbac.policy import Access
 from backend.new_models import Team, TeamMembership, User
 from backend.utilities.auth.plans import plans
 from backend.utilities.auth import email as account_mail
@@ -55,12 +57,15 @@ router = APIRouter(tags=["Admin"], route_class=NoEchoValidationRoute)  # 422s ne
 
 # Per verified user, per worker (backend/utilities/ratelimit.py).
 admin_limiter = RateLimiter("admin", times=60, seconds=60)
+access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db
+READ = [Depends(admin_limiter), access.platform_admin()]
+WRITE = [Depends(admin_limiter), access.platform_admin(audited=True)]  # every change is in the audit log
 
 
 
 
 
-@router.get('/admin/check_superuser', summary="Check if current user is a superuser", dependencies=[Depends(admin_limiter)])
+@router.get('/admin/check_superuser', summary="Check if current user is a superuser", dependencies=READ)
 async def check_superuser(Authorization: Annotated[str | None, Header()] = None):
     """
     Check if the current authenticated user is a superuser/admin.
@@ -94,7 +99,7 @@ async def check_superuser(Authorization: Annotated[str | None, Header()] = None)
             detail="Internal server error"
         )
 
-@router.get('/admin/teams', summary="Get all teams (admin only)", dependencies=[Depends(admin_limiter)])
+@router.get('/admin/teams', summary="Get all teams (admin only)", dependencies=READ)
 async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
     """
     Get a list of all teams in the system.
@@ -150,7 +155,7 @@ async def get_all_teams(Authorization: Annotated[str | None, Header()] = None):
             detail="Internal server error"
         )
 
-@router.get('/admin/users', summary="Get all users (admin only)", dependencies=[Depends(admin_limiter)])
+@router.get('/admin/users', summary="Get all users (admin only)", dependencies=READ)
 async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
     """
     Get a list of all users in the system.
@@ -197,8 +202,8 @@ async def get_all_users(Authorization: Annotated[str | None, Header()] = None):
         )
 
 
-@router.post('/admin/create_admin_user', summary="Create a new admin user (admin only)", dependencies=[Depends(admin_limiter)])
-async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[str | None, Header()] = None):
+@router.post('/admin/create_admin_user', summary="Create a new admin user (admin only)", dependencies=WRITE)
+async def create_admin_user(data: CreateAdminUserData, request: Request, Authorization: Annotated[str | None, Header()] = None):
 
     try:
         engine = get_db()
@@ -247,7 +252,7 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
                 teams =  [ new_team ],
             )
 
-            team_membership = TeamMembership( team=new_team, user=new_user, role="admin" )
+            team_membership = TeamMembership( team=new_team, user=new_user, role="owner" )  # their own default team
 
             session.add(team_membership)
             session.flush()
@@ -263,6 +268,7 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
                 raise
             session.commit()
             session.refresh(new_user)
+            audit.note_object(request, "user", new_user.id, email=new_user.email, is_superuser=True)
 
             return {
                 "message": "Admin user created successfully",
@@ -288,9 +294,10 @@ async def create_admin_user(data: CreateAdminUserData, Authorization: Annotated[
         )
 
 
-@router.post("/admin/update", summary="Update team credit balance (admin only)", dependencies=[Depends(admin_limiter)])
+@router.post("/admin/update", summary="Update team credit balance (admin only)", dependencies=WRITE)
 async def update_team_credit_balance(
     data: UpdateTeamCreditBalanceData,
+    request: Request,
     Authorization: Annotated[str | None, Header()] = None
 ):
     """
@@ -326,6 +333,8 @@ async def update_team_credit_balance(
                     detail="Credit balance cannot be negative"
                 )
             
+            audit.note_object(request, "team", team.id, credit_balance_from=team.credit_balance,
+                              credit_balance_to=data.credit_balance)
             team.credit_balance = data.credit_balance
             session.add(team)
             session.commit()
@@ -352,9 +361,10 @@ async def update_team_credit_balance(
 
 
 
-@router.post('/admin/toggle_admin_access', summary="Toggle admin access for a user (admin only)", dependencies=[Depends(admin_limiter)])
+@router.post('/admin/toggle_admin_access', summary="Toggle admin access for a user (admin only)", dependencies=WRITE)
 async def toggle_admin_access(
     data: ToggleAdminAccessData,
+    request: Request,
     Authorization: Annotated[str | None, Header()] = None
 ):
     """
@@ -396,6 +406,7 @@ async def toggle_admin_access(
             
             # Toggle the is_superuser status
             user.is_superuser = not user.is_superuser
+            audit.note_object(request, "user", user.id, email=user.email, is_superuser=user.is_superuser)
             session.add(user)
             session.commit()
             session.refresh(user)
@@ -422,9 +433,10 @@ async def toggle_admin_access(
         )
 
 
-@router.delete('/admin/delete_user', summary="Delete a user (admin only)", dependencies=[Depends(admin_limiter)])
+@router.delete('/admin/delete_user', summary="Delete a user (admin only)", dependencies=WRITE)
 async def delete_user(
     data: DeleteUserData,
+    request: Request,
     Authorization: Annotated[str | None, Header()] = None
 ):
     """
@@ -452,6 +464,7 @@ async def delete_user(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found"
                 )
+            audit.note_object(request, "user", user.id, email=user.email)
             for membership in user.team_memberships:
                 console.print(f"Membership: {membership}", style="bold green")
                 if membership.team_id != user.default_team_id:
@@ -487,3 +500,18 @@ async def delete_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
+
+@router.get('/admin/audit', summary="The platform-wide audit log, newest first (superusers)", dependencies=READ)
+async def platform_audit_log(limit: Annotated[int, Query(ge=1, le=200)] = 50,
+                             before_id: Annotated[int | None, Query(ge=1)] = None,
+                             team_id: Annotated[int | None, Query(ge=1)] = None,
+                             action: Annotated[str | None, Query(max_length=64)] = None,
+                             actor_email: Annotated[str | None, Query(max_length=254)] = None,
+                             outcome: Annotated[str | None, Query(pattern="^(success|denied)$")] = None):
+    return await run_in_threadpool(audit.list_events, get_db(), team_id=team_id, limit=limit, before_id=before_id,
+                                   action=action, actor_email=actor_email, outcome=outcome, platform=True)
+
+
+@router.get('/admin/audit/verify', summary="Check the audit log's hash chain (superusers)", dependencies=READ)
+async def verify_audit_log():
+    return await run_in_threadpool(audit.verify_chain, get_db())

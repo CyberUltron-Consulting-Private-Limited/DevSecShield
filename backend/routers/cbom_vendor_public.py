@@ -14,6 +14,7 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.get_db import get_db
+from backend.utilities.rbac.policy import public
 from backend.new_models import CbomEvidenceVendor, Team
 from backend.utilities.cbom_sources.common import audit, iso_z, log, sha256_hex, utcnow
 from backend.utilities.cbom_sources.evidence import AREAS, clean_answers
@@ -45,7 +46,7 @@ def _show(token: str) -> dict:
                 "questions": area["questions"], "expires_at": iso_z(row.link_expires_at)}
 
 
-@router.get("/cbom/vendor-questionnaire/{token}", dependencies=[Depends(vendor_limiter)],
+@router.get("/cbom/vendor-questionnaire/{token}", dependencies=[Depends(vendor_limiter), public("the single-use vendor questionnaire link is the credential")],
             summary="Questions behind a single-use vendor link")
 async def show_questionnaire(token: str):
     try:
@@ -85,7 +86,7 @@ def _answer(token: str, body: VendorAnswer) -> dict:
         return {"received": True, "confidence": confidence}
 
 
-@router.post("/cbom/vendor-questionnaire/{token}", dependencies=[Depends(vendor_limiter)],
+@router.post("/cbom/vendor-questionnaire/{token}", dependencies=[Depends(vendor_limiter), public("the single-use vendor questionnaire link is the credential")],
              summary="Submit answers; the link stops working afterwards")
 async def answer_questionnaire(token: str, request: Request):
     data = await read_capped_json(request, MAX_BODY)

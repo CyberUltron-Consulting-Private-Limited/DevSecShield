@@ -9,6 +9,7 @@ from datetime import datetime , timezone
 from bson import ObjectId
 from celery.result import AsyncResult
 from backend.utilities.celery.celery_connection import get_celery_app
+from backend.utilities.rbac.policy import machine
 from fastapi import FastAPI, Depends, APIRouter, HTTPException, status
 from sqlalchemy.engine import Engine
 from pymongo.database import Database
@@ -34,7 +35,7 @@ router = APIRouter(tags=["Guardrails Public API (deprecated)"])
 limiter = RateLimiter("guardrails_public", times=2, seconds=10, key_func=ip_key)
 
 
-@router.post("/public/guardrails/start_scan", summary="Start a new guardrails scan", dependencies=[Depends(limiter)])
+@router.post("/public/guardrails/start_scan", summary="Start a new guardrails scan", dependencies=[Depends(limiter), machine("guardrails API key", "the API key is checked by get_user_and_integration_id")])
 async def start_scan(data: StartScanData, user_and_integration: dict = Depends(get_user_and_integration_id)):
     """
     developer notes : 
@@ -136,7 +137,7 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
 
 
 
-@router.get("/public/guardrails/{scan_id}", summary="Get the status of a guardrails scan", dependencies=[Depends(limiter)])
+@router.get("/public/guardrails/{scan_id}", summary="Get the status of a guardrails scan", dependencies=[Depends(limiter), machine("guardrails API key", "the API key is checked by get_user_and_integration_id")])
 async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get_user_and_integration_id)):
     """
     developer notes : 

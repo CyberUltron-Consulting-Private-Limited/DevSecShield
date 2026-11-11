@@ -32,7 +32,7 @@ def check_if_user_is_admin_of_team(user_id: int, team_id: int, engine: Engine) -
             team_member = session.exec(select(TeamMembership).where(TeamMembership.user_id == user_id, TeamMembership.team_id == team_id)).first()
             if team_member is None:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not in team")
-            if team_member.role != "admin":
+            if team_member.role not in ("admin", "owner"):  # owners hold every admin right (utilities/rbac)
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not admin of team")
     except HTTPException as e:
         raise e

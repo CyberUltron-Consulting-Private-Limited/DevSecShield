@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from backend.utilities.ratelimit import RateLimiter
+from backend.utilities.rbac.policy import Access
 from rich.console import Console
 from sqlmodel import Session, select
 
@@ -22,6 +23,7 @@ from backend.utilities.team import check_if_user_is_admin_of_team, check_if_user
 
 console = Console()
 router = APIRouter(tags=["dast-profiles"])
+access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db (tests replace it)
 # Per verified user, per worker (backend/utilities/ratelimit.py).
 read_limiter = RateLimiter("dast_profiles.read", times=120, seconds=60)
 write_limiter = RateLimiter("dast_profiles.write", times=30, seconds=60)
@@ -94,7 +96,7 @@ def _default_hosts(target_url: str, allowed_hosts: list[str] | None) -> list[str
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.get("/{team_id}/dast/profiles", summary="List DAST profiles for a team", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/dast/profiles", summary="List DAST profiles for a team", dependencies=[Depends(read_limiter), access.team("dast.read")])
 async def list_dast_profiles(
     team_id: int,
     Authorization: Annotated[str | None, Header()] = None,
@@ -109,7 +111,7 @@ async def list_dast_profiles(
         return {"profiles": [public_profile(row) for row in rows]}
 
 
-@router.post("/{team_id}/dast/profiles", summary="Create a DAST profile", dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/dast/profiles", summary="Create a DAST profile", dependencies=[Depends(write_limiter), access.team("dast.manage")])
 async def create_dast_profile(
     team_id: int,
     body: DastProfileCreate,
@@ -153,7 +155,7 @@ async def create_dast_profile(
         return public_profile(profile)
 
 
-@router.get("/{team_id}/dast/profiles/{profile_id}", summary="Get a DAST profile", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/dast/profiles/{profile_id}", summary="Get a DAST profile", dependencies=[Depends(read_limiter), access.team("dast.read")])
 async def get_dast_profile(
     team_id: int,
     profile_id: int,
@@ -174,7 +176,7 @@ async def get_dast_profile(
         return public_profile(profile)
 
 
-@router.put("/{team_id}/dast/profiles/{profile_id}", summary="Update a DAST profile", dependencies=[Depends(write_limiter)])
+@router.put("/{team_id}/dast/profiles/{profile_id}", summary="Update a DAST profile", dependencies=[Depends(write_limiter), access.team("dast.manage")])
 async def update_dast_profile(
     team_id: int,
     profile_id: int,
@@ -226,7 +228,7 @@ async def update_dast_profile(
         return public_profile(profile)
 
 
-@router.delete("/{team_id}/dast/profiles/{profile_id}", summary="Delete a DAST profile", dependencies=[Depends(write_limiter)])
+@router.delete("/{team_id}/dast/profiles/{profile_id}", summary="Delete a DAST profile", dependencies=[Depends(write_limiter), access.team("dast.manage")])
 async def delete_dast_profile(
     team_id: int,
     profile_id: int,
@@ -250,7 +252,7 @@ async def delete_dast_profile(
     return {"ok": True, "deleted_id": profile_id}
 
 
-@router.post("/{team_id}/dast/profiles/{profile_id}/run", summary="Run a DAST profile now", dependencies=[Depends(start_limiter)])
+@router.post("/{team_id}/dast/profiles/{profile_id}/run", summary="Run a DAST profile now", dependencies=[Depends(start_limiter), access.team("dast.run")])
 async def run_dast_profile_now(
     team_id: int,
     profile_id: int,

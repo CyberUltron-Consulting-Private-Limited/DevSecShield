@@ -28,6 +28,7 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.get_db import get_db
+from backend.utilities.rbac.policy import machine
 from backend.new_models import CbomCollectionJob, CbomNodePool, CbomScanNode
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
@@ -290,7 +291,7 @@ def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
                 "deployment_id": NA.deployment_id(engine), "signing": signing, "mode": mode}
 
 
-@router.post("/cbom/node/enroll", dependencies=[Depends(enroll_limiter)],
+@router.post("/cbom/node/enroll", dependencies=[Depends(enroll_limiter), machine("scan-node registration token", "the one-time registration token in the body")],
              summary="Exchange a single-use registration token for a node token")
 async def enroll(request: Request):
     raw = await read_capped_body(request, SMALL_BODY)
@@ -350,7 +351,7 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
                 "heartbeat_interval_s": BUSY_HEARTBEAT_SECONDS if busy else HEARTBEAT_SECONDS}
 
 
-@router.post("/cbom/node/heartbeat", dependencies=[Depends(node_limiter)], summary="Report that the node is alive")
+@router.post("/cbom/node/heartbeat", dependencies=[Depends(node_limiter), machine("scan-node token", "X-ZS-Node-Token and the request signature (node_auth)")], summary="Report that the node is alive")
 async def heartbeat(request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
     raw = await read_capped_body(request, SMALL_BODY)
     return JSONResponse(await _guard("heartbeat", _heartbeat, token, NA.NodeRequest.of(request), raw, client_ip(request)),
@@ -374,7 +375,7 @@ def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict 
         return payload
 
 
-@router.post("/cbom/node/jobs/claim", dependencies=[Depends(node_limiter)],
+@router.post("/cbom/node/jobs/claim", dependencies=[Depends(node_limiter), machine("scan-node token", "X-ZS-Node-Token and the request signature (node_auth)")],
              summary="Claim the next job (204 when there is nothing to do)")
 async def claim(request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
     raw = await read_capped_body(request, SMALL_BODY)
@@ -405,7 +406,7 @@ def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> 
         return out
 
 
-@router.post("/cbom/node/jobs/{job_id}/assets", dependencies=[Depends(node_limiter)],
+@router.post("/cbom/node/jobs/{job_id}/assets", dependencies=[Depends(node_limiter), machine("scan-node token", "X-ZS-Node-Token and the request signature (node_auth)")],
              summary="Report a batch of collected assets for a leased job")
 async def assets(job_id: int, request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
     if job_id < 1 or job_id > 2_147_483_647:
@@ -425,7 +426,7 @@ def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> 
         return {"job_id": job.id, "status": job.status, "server_time": iso_z(now)}
 
 
-@router.post("/cbom/node/jobs/{job_id}/result", dependencies=[Depends(node_limiter)],
+@router.post("/cbom/node/jobs/{job_id}/result", dependencies=[Depends(node_limiter), machine("scan-node token", "X-ZS-Node-Token and the request signature (node_auth)")],
              summary="Report a job's result (must echo the lease id from the claim)")
 async def result(job_id: int, request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
     if job_id < 1 or job_id > 2_147_483_647:

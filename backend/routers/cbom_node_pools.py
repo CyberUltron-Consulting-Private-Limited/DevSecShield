@@ -23,6 +23,8 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.new_models import CbomNodePool, CbomScanNode
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.http import (
@@ -40,6 +42,7 @@ from backend.utilities.cbom_sources.schemas import PoolCreate
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 router = APIRouter(tags=["cbom-sources"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 BASE = "/{team_id}/cbom/sources/node-pools"
 
@@ -71,7 +74,7 @@ def _list(engine, team_id: int) -> dict:
         return {"server_time": iso_z(now), "pools": [AG.public_pool(p, now, nodes.get(p.id or 0)) for p in pools]}
 
 
-@router.get(BASE, dependencies=[Depends(read_limiter)], summary="Agent pool tokens (never the token itself)")
+@router.get(BASE, dependencies=[Depends(read_limiter), access.team("cbom.read")], summary="Agent pool tokens (never the token itself)")
 async def list_pools(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return JSONResponse(await _run("list", team_id, _list, engine, team_id), headers=PRIVATE)
@@ -103,7 +106,7 @@ def _create(engine, team_id: int, user_id: int, body: PoolCreate) -> dict:
         return {"pool": AG.public_pool(pool, now), "registration_token": token}
 
 
-@router.post(BASE, dependencies=[Depends(write_limiter)],
+@router.post(BASE, dependencies=[Depends(write_limiter), access.team("cbom.write")],
              summary="Create an agent pool token (shown once) for a DaemonSet of agent-mode scan nodes")
 async def create_pool(team_id: TeamId, body: PoolCreate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -128,7 +131,7 @@ def _revoke(engine, team_id: int, user_id: int, pool_id: int) -> dict:
         return {"pool": AG.public_pool(pool, now, _nodes_by_pool(session, team_id).get(pool.id or 0))}
 
 
-@router.post(BASE + "/{pool_id}/revoke", dependencies=[Depends(write_limiter)],
+@router.post(BASE + "/{pool_id}/revoke", dependencies=[Depends(write_limiter), access.team("cbom.write")],
              summary="Revoke an agent pool token (no enrollment with it any more; enrolled nodes keep working)")
 async def revoke_pool(team_id: TeamId, pool_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)

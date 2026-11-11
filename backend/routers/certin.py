@@ -27,6 +27,7 @@ from fastapi import (
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from backend.utilities.ratelimit import RateLimiter
+from backend.utilities.rbac.policy import Access
 from sqlmodel import Session, select
 
 from backend.get_db import get_db
@@ -45,6 +46,7 @@ from backend.utilities.team import check_if_user_is_in_team
 from rich.console import Console
 
 router = APIRouter(tags=["certin"])
+access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db (tests replace it)
 console = Console()
 # Per verified user, per worker (backend/utilities/ratelimit.py).
 read_limiter = RateLimiter("certin.read", times=120, seconds=60)
@@ -174,7 +176,7 @@ def _hmac_secret() -> bytes:
     return raw.encode("utf-8")
 
 
-@router.get("/{team_id}/{type}/scan/{scan_id}/attestations", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/{type}/scan/{scan_id}/attestations", dependencies=[Depends(read_limiter), access.team("scan.read")])
 async def list_attestations(
     team_id: int,
     type: scan_types,
@@ -190,7 +192,7 @@ async def list_attestations(
     return {"attestations": data.get("attestations") or {}}
 
 
-@router.post("/{team_id}/{type}/scan/{scan_id}/attestations", dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/{type}/scan/{scan_id}/attestations", dependencies=[Depends(write_limiter), access.team("certin.write")])
 async def upload_attestation(
     team_id: int,
     type: scan_types,
@@ -241,7 +243,7 @@ async def upload_attestation(
     }
 
 
-@router.delete("/{team_id}/{type}/scan/{scan_id}/attestations/{framework}/{requirement_id}", dependencies=[Depends(write_limiter)])
+@router.delete("/{team_id}/{type}/scan/{scan_id}/attestations/{framework}/{requirement_id}", dependencies=[Depends(write_limiter), access.team("certin.write")])
 async def remove_attestation(
     team_id: int,
     type: scan_types,
@@ -272,7 +274,7 @@ async def remove_attestation(
     }
 
 
-@router.post("/{team_id}/{type}/scan/{scan_id}/sign", dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/{type}/scan/{scan_id}/sign", dependencies=[Depends(write_limiter), access.team("certin.write")])
 async def sign_scan_bom(
     team_id: int,
     type: scan_types,
@@ -300,7 +302,7 @@ async def sign_scan_bom(
     return {"bom_signature": signature}
 
 
-@router.get("/{team_id}/{type}/scan/{scan_id}/vex", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/{type}/scan/{scan_id}/vex", dependencies=[Depends(read_limiter), access.team("scan.read")])
 async def get_scan_vex(
     team_id: int,
     type: scan_types,
@@ -331,7 +333,7 @@ async def get_scan_vex(
     return JSONResponse(vex)
 
 
-@router.get("/{team_id}/{type}/scan/{scan_id}/bom", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/{type}/scan/{scan_id}/bom", dependencies=[Depends(read_limiter), access.team("scan.read")])
 async def download_scan_bom(
     team_id: int,
     type: scan_types,
@@ -363,7 +365,7 @@ async def download_scan_bom(
         "X-ZS-Signature-Scope": cdx_xml.SIGNATURE_SCOPE})
 
 
-@router.get("/{team_id}/{type}/scan/{scan_id}/evidence-pack", dependencies=[Depends(write_limiter)])
+@router.get("/{team_id}/{type}/scan/{scan_id}/evidence-pack", dependencies=[Depends(write_limiter), access.team("scan.read")])
 async def download_evidence_pack(
     team_id: int,
     type: scan_types,

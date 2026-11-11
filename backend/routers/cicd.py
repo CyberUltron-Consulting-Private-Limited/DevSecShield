@@ -6,6 +6,7 @@ from bson import ObjectId
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, UploadFile, status
 from backend.utilities.ratelimit import RateLimiter
+from backend.utilities.rbac.policy import Access, machine
 from backend.utilities.cicd.auth import ci_key
 from rich.console import Console
 from sqlmodel import Session, select
@@ -49,6 +50,7 @@ from backend.utilities.team.credits import deduct_credits_from_team
 console = Console()
 
 router = APIRouter(tags=["CICD"])
+access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db (tests replace it)
 
 # Per worker (backend/utilities/ratelimit.py).  CI calls are charged to the VERIFIED integration (an unknown
 # key is charged to the client address); the UI routes to the verified user.  Jenkins polls DAST every 20 s.
@@ -61,7 +63,7 @@ app_langs = ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift"
 # Register /cicd/dast/scan BEFORE /cicd/{type}/scan so "dast" is not swallowed by the zip poller.
 
 
-@router.post("/cicd/dast/scan", summary="Start an asynchronous DAST scan from a saved profile", status_code=202, dependencies=[Depends(ci_limiter)])
+@router.post("/cicd/dast/scan", summary="Start an asynchronous DAST scan from a saved profile", status_code=202, dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id")])
 async def run_cicd_dast_scan(
     body: CicdDastScanRequest,
     user_and_integration: dict = Depends(get_user_and_integration_id),
@@ -128,7 +130,7 @@ async def run_cicd_dast_scan(
     }
 
 
-@router.get("/cicd/dast/scan/{scan_id}", summary="DAST CI status for Jenkins wait-and-gate", dependencies=[Depends(ci_limiter)])
+@router.get("/cicd/dast/scan/{scan_id}", summary="DAST CI status for Jenkins wait-and-gate", dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id")])
 async def get_cicd_dast_scan(
     scan_id: int,
     user_and_integration: dict = Depends(get_user_and_integration_id),
@@ -176,7 +178,7 @@ async def get_cicd_dast_scan(
     }
 
 
-@router.post("/cicd/{type}/scan",summary="Run a new cicd scan", dependencies=[Depends(ci_limiter)])
+@router.post("/cicd/{type}/scan",summary="Run a new cicd scan", dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id")])
 async def run_cicd_scan(
     type: scan_types, 
     zip_file: UploadFile  , 
@@ -362,7 +364,7 @@ async def run_cicd_scan(
 
 # ==================================== INTERNAL API ROUTES =============================================================
 # revamped ✅
-@router.get("/{team_id}/cicd/integrations",summary="List all cicd integrations", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/cicd/integrations",summary="List all cicd integrations", dependencies=[Depends(read_limiter), access.team("cicd.read")])
 async def list_cicd_integrations(
     team_id: int, 
     Authorization: Annotated[str | None, Header()] = None ):
@@ -413,7 +415,7 @@ async def list_cicd_integrations(
 
 
 # revamped ✅
-@router.post("/{team_id}/cicd/integration",summary="Create a new cicd integration", dependencies=[Depends(write_limiter)])
+@router.post("/{team_id}/cicd/integration",summary="Create a new cicd integration", dependencies=[Depends(write_limiter), access.team("cicd.manage")])
 async def create_cicd_integration(
     team_id: int, 
     data: CreateCicdIntegrationData, 
@@ -475,7 +477,7 @@ async def create_cicd_integration(
 
 
 # revamped ✅
-@router.delete("/{team_id}/cicd/integration/{integration_id}",summary="Delete a cicd integration", dependencies=[Depends(write_limiter)])
+@router.delete("/{team_id}/cicd/integration/{integration_id}",summary="Delete a cicd integration", dependencies=[Depends(write_limiter), access.team("cicd.manage")])
 async def delete_cicd_integration(
     team_id: int, 
     integration_id: int, 
@@ -521,7 +523,7 @@ async def delete_cicd_integration(
 
 
 # revamped ✅
-@router.put("/{team_id}/cicd/integration/{integration_id}",summary="Update a cicd integration", dependencies=[Depends(write_limiter)])
+@router.put("/{team_id}/cicd/integration/{integration_id}",summary="Update a cicd integration", dependencies=[Depends(write_limiter), access.team("cicd.manage")])
 async def update_cicd_integration(
     team_id: int, 
     integration_id: int, 
@@ -616,7 +618,7 @@ async def update_cicd_integration(
 
 
 # revamped ✅
-@router.get("/{team_id}/cicd/integration/{integration_id}",summary="Get a cicd integration", dependencies=[Depends(read_limiter)])
+@router.get("/{team_id}/cicd/integration/{integration_id}",summary="Get a cicd integration", dependencies=[Depends(read_limiter), access.team("cicd.read")])
 async def get_cicd_integration(
     team_id: int, 
     integration_id: int, 

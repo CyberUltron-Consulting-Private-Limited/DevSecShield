@@ -31,7 +31,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
 
 from backend.main import app  # noqa: E402
-from backend.new_models import AuditEvent, Team  # noqa: E402
+from backend.access_models import AuditEvent  # noqa: E402
+from backend.new_models import Team  # noqa: E402
 from backend.routers import auth as auth_router  # noqa: E402
 from backend.utilities import ratelimit  # noqa: E402
 from backend.utilities.auth.auth_utils import get_hashed_password  # noqa: E402
@@ -254,8 +255,8 @@ def _migrate(engine, direction: str):
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
 
-    path = _REPO_ROOT / "prod_database_migrations" / "migrations" / "versions" / "rv6f4rbac001_rbac_roles_audit_log.py"
-    spec = importlib.util.spec_from_file_location("rv6f4rbac001", path)
+    path = _REPO_ROOT / "prod_database_migrations" / "migrations" / "versions" / "r6f4rbac001_rbac_roles_audit_log.py"
+    spec = importlib.util.spec_from_file_location("r6f4rbac001", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     with engine.begin() as conn:

@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
-from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Text, UniqueConstraint
 from sqlalchemy import Index as _SaIndex, func as _sa_func
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
@@ -30,11 +30,16 @@ class AuthCounter(SQLModel,table=True):
 
 
 
+TEAM_ROLES = ("owner", "admin", "member", "viewer")  # the order and rules: backend/utilities/rbac/permissions.py
+
+
 # every user is a member of the "default-team" by default when a user is created ⭐
 class TeamMembership(SQLModel,table=True): # many-to-many relationship between team and user
+    __table_args__ = (CheckConstraint("role IN ('owner', 'admin', 'member', 'viewer')", name="ck_teammembership_role"),)
     team_id : int | None = Field(default=None,foreign_key="team.id",primary_key=True)
     user_id : int | None = Field(default=None,foreign_key="user.id",primary_key=True)
-    role : Literal["admin" , "member"] = Field(default="member",sa_type=String)
+    # owner > admin > member > viewer (F4 RBAC); what each may do: backend/utilities/rbac/permissions.py
+    role : Literal["owner", "admin", "member", "viewer"] = Field(default="member",sa_type=String)
 
     team : "Team" = Relationship(back_populates="team_memberships")
     user : "User" = Relationship(back_populates="team_memberships")
@@ -102,12 +107,15 @@ class TeamInvitation(SQLModel, table=True):
     The token is stored only as its SHA-256 (``token_hash``) and works once: accepting, declining, revoking or
     resending clears or replaces it.  One row per (team, address): inviting the address again reuses it.
     Times are naive UTC.  The inviter is a plain int so deleting that user is never blocked."""
-    __table_args__ = (UniqueConstraint("team_id", "email", name="uq_teaminvitation_team_email"),)
+    __table_args__ = (UniqueConstraint("team_id", "email", name="uq_teaminvitation_team_email"),
+                      CheckConstraint("role IN ('admin', 'member', 'viewer')", name="ck_teaminvitation_role"))
     id : int | None = Field(default=None, primary_key=True)
     team_id : int = Field(foreign_key="team.id", index=True, ondelete="CASCADE")
     email : str = Field(max_length=254)  # lower-cased, as on sign-up
     token_hash : str | None = Field(default=None, max_length=64, unique=True, index=True)
     status : str = Field(default="pending", max_length=16)  # pending | accepted | declined | revoked
+    # the role the invitee joins with (admin invites member / viewer; an owner may also invite an admin)
+    role : str = Field(default="member", max_length=16, sa_column_kwargs={"server_default": "member"})
     invited_by_user_id : int | None = Field(default=None)
     created_at : datetime.datetime = Field(sa_type=DateTime)
     expires_at : datetime.datetime = Field(sa_type=DateTime)
@@ -684,3 +692,8 @@ class IntegrationDelivery(SQLModel, table=True):
     last_result: str | None = Field(default=None, max_length=255)  # status code and a short reason, never a body
     external_ref: str | None = Field(default=None, max_length=64)  # e.g. the ServiceNow record number
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime, index=True)
+
+
+
+# ========================================= F4 access management: its tables live in backend/access_models.py
+from backend.access_models import *  # noqa: E402,F401,F403  (registers them on SQLModel.metadata with the rest)

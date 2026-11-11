@@ -37,7 +37,8 @@ from backend.utilities.auth.auth_utils import create_access_token, create_refres
 from backend.utilities.rbac import coverage  # noqa: E402
 from backend.utilities.rbac.permissions import role_has  # noqa: E402
 from backend.utilities.rbac.policy import (  # noqa: E402
-    NOT_IN_TEAM, SESSION_NOT_ACTIVE, SUPERUSER_REQUIRED, Access, AccessPolicy, TeamPermission, public,
+    NOT_IN_TEAM, SESSION_NOT_ACTIVE, SUPERUSER_REQUIRED, Access, AccessPolicy, PermissionMarker, TeamPermission,
+    marker_of, public,
 )
 
 TEAM = 1
@@ -119,6 +120,8 @@ def world(tmp_path, monkeypatch):
         if (name.startswith("backend.routers.") or name == "backend.utilities.cbom_sources.http") \
                 and hasattr(module, "get_db"):
             monkeypatch.setattr(module, "get_db", lambda: engine)
+    import backend.get_db as get_db_module
+    monkeypatch.setattr(get_db_module, "get_db", lambda: engine)  # PermissionMarker's last resort
     users = {}
     with Session(engine) as s:
         s.add(Team(id=TEAM, name="Acme"))
@@ -161,12 +164,16 @@ def _sentinel_app():
                 return {"reached": i}
             return sentinel
         probe.router.routes.append(APIRoute(route.path, make(index), methods=list(route.methods),
-                                            dependencies=list(route.dependencies)))
+                                            dependencies=list(route.dependencies),
+                                            openapi_extra=route.openapi_extra))
     return probe, routes
 
 
 def _policy(route) -> AccessPolicy:
-    return next(d.call for d in route.dependant.dependencies if isinstance(d.call, AccessPolicy))
+    declared = [d.call for d in route.dependant.dependencies if isinstance(d.call, AccessPolicy)]
+    if declared:
+        return declared[0]
+    return TeamPermission(marker_of(route), lambda: None)  # an x-zs-permission route (PermissionMarker enforces it)
 
 
 def _call(client, method, url, headers):
@@ -310,3 +317,68 @@ def test_policy_objects_are_reachable_from_the_route_table():
     route = _team_read_route()
     assert isinstance(_policy(route), TeamPermission)
     assert any(isinstance(d, type(Depends(lambda: None))) for d in route.dependencies)
+
+
+# ------------------------------------------------------------------------------------------------ markers (F1, F3)
+
+def test_x_zs_permission_markers_are_accepted_and_enforced(world):
+    """Parallel tracks declare ``openapi_extra={"x-zs-permission": name}`` without importing F4 code; the app-level
+    PermissionMarker enforces it like ``access.team(name)``, and the coverage check accepts it."""
+    engine, users = world
+    router = APIRouter()
+
+    @router.get("/{team_id}/cbom/sources/fleet/inventory", openapi_extra={"x-zs-permission": "cbom.fleet.read"})
+    async def fleet_inventory(team_id: int):
+        return {"reached": "read"}
+
+    @router.post("/{team_id}/cbom/sources/fleet/inventory", openapi_extra={"x-zs-permission": "cbom.inventory.write"})
+    async def fleet_import(team_id: int):
+        return {"reached": "write"}
+
+    probe = FastAPI(dependencies=[Depends(PermissionMarker())])
+    probe.include_router(router)
+    assert coverage.violations(probe) == []
+    client = TestClient(probe)
+    for actor in ("viewer", "member", "admin", "owner"):
+        assert _call(client, "GET", f"/{TEAM}/cbom/sources/fleet/inventory", token(actor)).json() == {"reached": "read"}
+    for actor, allowed in (("viewer", False), ("member", False), ("admin", True), ("owner", True)):
+        response = _call(client, "POST", f"/{TEAM}/cbom/sources/fleet/inventory", token(actor))
+        assert (response.status_code == 200) is allowed, (actor, response.text)
+        if not allowed:
+            assert response.status_code == 403 and response.json()["detail"].startswith(f"Your role ({actor}) cannot")
+    assert _call(client, "GET", f"/{TEAM}/cbom/sources/fleet/inventory", token("outsider")).json()["detail"] == NOT_IN_TEAM
+    assert _call(client, "GET", f"/{TEAM}/cbom/sources/fleet/inventory", {}).status_code == 401
+
+
+def test_marker_mistakes_are_violations():
+    router = APIRouter()
+
+    @router.get("/{team_id}/a", openapi_extra={"x-zs-permission": "cbom.fleet.everything"})
+    async def unknown(team_id: int):
+        return {}
+
+    @router.get("/b", openapi_extra={"x-zs-permission": "cbom.fleet.read"})
+    async def no_team():
+        return {}
+
+    @router.get("/{team_id}/c", openapi_extra={"x-zs-permission": "cbom.fleet.read"},
+                dependencies=[Access(_engine_getter).team("cbom.write")])
+    async def disagree(team_id: int):
+        return {}
+
+    enforced = FastAPI(dependencies=[Depends(PermissionMarker())])
+    enforced.include_router(router)
+    problems = "\n".join(coverage.violations(enforced))
+    assert "GET /{team_id}/a: x-zs-permission names an unknown permission" in problems
+    assert "GET /b: x-zs-permission is a team permission and needs {team_id}" in problems
+    assert "GET /{team_id}/c: x-zs-permission 'cbom.fleet.read' disagrees with its policy" in problems
+
+    fine = APIRouter()
+
+    @fine.get("/{team_id}/d", openapi_extra={"x-zs-permission": "cbom.fleet.read"})
+    async def unenforced(team_id: int):
+        return {}
+
+    bare = FastAPI()  # no PermissionMarker: the marker would be decoration only
+    bare.include_router(fine)
+    assert "is not enforced" in "\n".join(coverage.violations(bare))
