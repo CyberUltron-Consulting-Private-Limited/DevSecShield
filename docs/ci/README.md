@@ -95,11 +95,15 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
 
 The comparators are Python embedded in the workflows, so callers in other repositories need no extra files. All
 their decisions (tool exit codes, missing base, renames) are inside that Python. `.github/tests/` extracts it from
-the YAML and tests it: 56 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
+the YAML and tests it: 60 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
 They check that the same findings from two checkouts at different paths give 0 new, that an added finding is new,
 that each failure mode above fails, that ci-gate, the path map and pr-hygiene behave as documented, and that every
-reusable-workflow input is documented here. Known limit: a change that fixes one occurrence of a rule in a file and
-adds another nets to zero (#19).
+reusable-workflow input is documented here.
+
+Each new finding is annotated on a line the change added (`git diff -U0`), with the tool's own message, because
+several findings of one rule in one file share a key: a new long line in a file that already has some is shown on
+the new line, "(102 > 88)", not on the file's first long line. Known limit: a change that fixes one occurrence of a
+rule in a file and adds another nets to zero (#19).
 
 Every run's summary page shows a table per tool: findings now, on the base commit, new, and the result.
 
@@ -532,7 +536,7 @@ Measured on `dev` 8314739. These findings do not block a PR (only new ones do), 
 | Area | Count | Notes |
 |---|---:|---|
 | **Secrets** (gitleaks) | 829 in the history of all branches (396 fingerprints, baselined in `.gitleaksignore`); 81 in today's tree across 42 tracked files | 12 of the tracked files are `.env` files. The secrets include OpenAI, AWS, GitHub classic and fine-grained PATs, Atlassian, Azure AD and GCP keys, and `cu-devsecshield-key.pem` at the root. Main places: `backend/.env`, `backend/utilities/ai/` (`.env`, `llm.py`, `chatbot.py`, `testing.py`), `RabbitMQ/.env`, `RabbitMQ/{worker,dast_worker,guardrail_worker}/.env`, `RabbitMQ/worker/helpers/context/.env`, `RabbitMQ/worker/helpers/tests/*`, `RabbitMQ/worker/celery_test.py`, `RabbitMQ/worker/Dockerfile`, `RabbitMQ/dast_worker/Dockerfile`, `RabbitMQ/guardrail_worker/ticketing/jira.py`, `docs/Docs.md`, `.playwright-mcp/scan367_api.json`, `backend/*.db`. **Rotate every credential first.** Then remove the files (#18), and decide whether to rewrite history. |
-| Dependency vulnerabilities (OSV-Scanner) | 2,608 | Across 12 lockfiles (benchmark fixtures excluded) |
+| Dependency vulnerabilities (OSV-Scanner) | 1,547 | Distinct (advisory, lockfile, package) findings across 12 lockfiles, benchmark fixtures excluded. OSV-Scanner writes many results twice; the gate counts each once (it reported 2,608 before) |
 | ESLint errors (frontend) | 208 | 113 `no-explicit-any`, 77 react-hooks |
 | ruff (aibom `src` + `tests`) | about 2,690 | Mostly E501 at 88 columns. Either set line-length to 120 or reformat |
 | mypy (aibom CBOM lane) | 68 | |

@@ -269,7 +269,8 @@ jobs:
           if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch -q --no-tags --depth=1 origin "$BASE_SHA" \
              && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null \
              && git -c core.quotePath=false diff --no-ext-diff -M --name-only --diff-filter=AMR "$BASE_SHA" HEAD > "$RUNNER_TEMP/changed.txt" \
-             && git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv"; then
+             && git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv" \
+             && git -c core.quotePath=false diff --no-ext-diff -M -U0 "$BASE_SHA" HEAD > "$RUNNER_TEMP/diff.txt"; then
             echo "dir=$RUNNER_TEMP/base" >> "$GITHUB_OUTPUT"
             echo "status=ok" >> "$GITHUB_OUTPUT"
           else
@@ -342,7 +343,7 @@ jobs:
                               path = path[len(r):]
                       key = (path, norm(m["rest"]))
                       found[key] += 1; n += 1
-                      where.setdefault(key, m["line"])
+                      where.setdefault(key, []).append((m["line"], m["rest"]))
                   print(f"  {cmd[:100]}: exit {p.returncode}, {n} finding(s)")
                   if p.returncode not in (0, 1):
                       tail = " | ".join(p.stdout.strip().splitlines()[-3:])[:400]
@@ -351,10 +352,33 @@ jobs:
                       problems.append(f"`{cmd[:120]}` exited 1 but printed no `path:line: message` finding the gate can read")
               return found, where, problems
 
+          def added_lines():
+              """file -> line numbers this change added, from `git diff -U0` (the base step); {} when absent."""
+              out, cur = {}, None
+              path = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "diff.txt")
+              if not os.path.exists(path):
+                  return out
+              for line in open(path, encoding="utf-8", errors="replace"):
+                  if line.startswith("+++ "):
+                      p = line[4:].rstrip("\n")
+                      cur = p[2:] if p.startswith("b/") else None
+                  elif line.startswith("@@") and cur:
+                      m = re.match(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@", line)
+                      if m:
+                          start, count = int(m[1]), int(m[2] if m[2] is not None else 1)
+                          out.setdefault(cur, set()).update(range(start, start + count))
+              return out
+
+          def placed(occurrences, file, n):
+              """Up to n of a key's head occurrences, those on added lines first (several findings share a key)."""
+              on_added = [o for o in occurrences if int(o[0]) in ADDED_LINES.get(file, ())]
+              return (on_added or occurrences)[:n]
+
           def repo_paths(name):
               path = os.path.join(tmp, name)
               return [l.rstrip("\n").split("\t") for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
 
+          ADDED_LINES = {k[len(pre):]: v for k, v in added_lines().items() if k.startswith(pre)}
           print(f"{label} on this change:")
           h, where, problems = lint(head_root)
           b, mode, note = collections.Counter(), "report", "report only: not a pull request"
@@ -388,7 +412,10 @@ jobs:
           for p in problems:
               print(f"::error title={label}::{p}")
           for (path, rest), n in list(new.items())[:50]:
-              print(f"::error file={pre}{path},line={where[(path, rest)]}::{label}: {rest}" + (f" (x{n})" if n > 1 else ""))
+              shown = placed(where[(path, rest)], path, n)
+              for line, raw in shown:
+                  msg = " ".join(raw.replace(head_root.rstrip("/") + "/", "").split())
+                  print(f"::error file={pre}{path},line={line}::{label}: {msg}" + (f" (x{n})" if len(shown) < n and n > 1 else ""))
           gated = mode != "report"
           result = "FAIL (lint did not run)" if problems else ("FAIL" if n_new else "pass") if gated else "report only"
           with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:

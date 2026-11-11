@@ -175,6 +175,22 @@ class LintDiff(_Run, unittest.TestCase):
     def test_a_project_new_in_this_change_has_every_finding_new(self):
         self.ok(self.gate([(self.output(self.head), 1)], base_exists=False), 5)
 
+    def test_annotations_point_at_the_added_lines_with_the_tools_message(self):
+        # canary PR #23: a 102-column docstring and an unused variable appended to a file that already has E501s.
+        # All E501s of a file share one key, so the annotation must come from the added lines, not the first one.
+        base = "src/aibom/cbom/redact.py:1:89: E501 Line too long (90 > 88)\n"
+        head = base + ("src/aibom/cbom/redact.py:245:89: E501 Line too long (102 > 88)\n"
+                       "src/aibom/cbom/redact.py:246:5: F841 Local variable `unused` is assigned to but never used\n")
+        (self.dir / "diff.txt").write_text(
+            "diff --git a/aibom/src/aibom/cbom/redact.py b/aibom/src/aibom/cbom/redact.py\n"
+            "--- a/aibom/src/aibom/cbom/redact.py\n+++ b/aibom/src/aibom/cbom/redact.py\n"
+            "@@ -242,0 +243,4 @@ def x():\n+\n+\n+def _ci_canary() -> None:\n+    unused = 1\n")
+        out = self.gate([(head, 1)], [(base, 1)])
+        self.ok(out, 2)
+        self.assertIn("file=aibom/src/aibom/cbom/redact.py,line=245::aibom lint: E501 Line too long (102 > 88)", out.stdout)
+        self.assertIn("line=246::aibom lint: F841", out.stdout)
+        self.assertNotIn("line=1::", out.stdout)
+
 
 # --------------------------------------------------------------------------------------------------------------
 # reusable-frontend.yml, "ESLint (diff)"
@@ -242,6 +258,15 @@ class EslintDiff(_Run, unittest.TestCase):
         out = self.gate(head, self.findings(self.base))
         self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
         self.assertIn("new: 1", out.stdout)
+
+    def test_the_annotation_is_on_the_added_line(self):
+        head = self.findings(self.head)
+        head[1]["messages"].append({"ruleId": "@typescript-eslint/no-explicit-any", "severity": 2, "line": 40,
+                                    "column": 5, "message": "Unexpected any. Specify a different type."})
+        (self.dir / "diff.txt").write_text("+++ b/frontend/utils/backend_api.ts\n@@ -39,0 +40 @@\n")
+        out = self.gate(head, self.findings(self.base))
+        self.assertEqual(out.returncode, 1, out.stdout)
+        self.assertIn("file=frontend/utils/backend_api.ts,line=40::", out.stdout)
 
     def test_warnings_never_block(self):
         head = self.findings(self.head)
@@ -344,10 +369,31 @@ class SecurityFindings(_Run, unittest.TestCase):
         self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
         self.assertIn("jinja2", out.stdout)
 
+    def test_identical_sarif_results_count_once(self):
+        # OSV-Scanner writes many results twice (canary PR #23: every jinja2 advisory showed "(x2)")
+        head = json.loads(self.sarif(self.HEAD))
+        res = {"ruleId": "CVE-2019-10906", "level": "warning", "partialFingerprints": {"primaryLocationLineHash": "e0a0"},
+               "message": {"text": "Package 'jinja2@2.10.0' is vulnerable to 'CVE-2019-10906'"},
+               "locations": [{"physicalLocation": {"artifactLocation": {"uri": "canary/requirements.txt"}}}]}
+        head["runs"][0]["results"] += [res, dict(res)]
+        out = self.gate("sarif", json.dumps(head), self.sarif(self.BASE), tool="osv-scanner")
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("new in this change: 1", out.stdout)
+        self.assertNotIn("(x2)", out.stdout)
+
     def test_a_renamed_file_keeps_its_findings(self):
         out = self.gate("sarif", self.sarif(self.HEAD, lock="backend/core/uv.lock"), self.sarif(self.BASE),
                         renames="R100\tbackend/uv.lock\tbackend/core/uv.lock\n")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+
+    def test_the_annotation_is_on_the_added_line(self):
+        def sc(lines):
+            return json.dumps({"comments": [{"file": "scripts/a.sh", "line": n, "code": 2086, "level": "warning",
+                                             "message": "Double quote to prevent globbing."} for n in lines]})
+        (self.dir / "diff.txt").write_text("+++ b/scripts/a.sh\n@@ -30,0 +31,2 @@\n")
+        out = self.gate("shellcheck", sc([4, 32]), sc([4]))
+        self.assertEqual(out.returncode, 1, out.stdout)
+        self.assertIn("file=scripts/a.sh,line=32::", out.stdout)
 
     def test_shellcheck_json_from_two_roots(self):
         def sc(root, line):

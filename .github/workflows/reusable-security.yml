@@ -379,6 +379,7 @@ jobs:
             echo "BASE_DIR=$RUNNER_TEMP/base" >> "$GITHUB_ENV"
             # Renamed files: their base findings are compared under the new name (findings.py).
             git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv"
+            git -c core.quotePath=false diff --no-ext-diff -M -U0 "$BASE_SHA" HEAD > "$RUNNER_TEMP/diff.txt"
             echo "RENAMES=$RUNNER_TEMP/renames.tsv" >> "$GITHUB_ENV"
           fi
           echo "MODE=$mode" >> "$GITHUB_ENV"
@@ -413,6 +414,30 @@ jobs:
                   if len(f) == 3 and f[0].startswith("R"):
                       renamed[f[1]] = f[2]
 
+          def added_lines():
+              """file -> line numbers this change added, from `git diff -U0` (the base step); {} when absent."""
+              out, cur = {}, None
+              path = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "diff.txt")
+              if not os.path.exists(path):
+                  return out
+              for line in open(path, encoding="utf-8", errors="replace"):
+                  if line.startswith("+++ "):
+                      p = line[4:].rstrip("\n")
+                      cur = p[2:] if p.startswith("b/") else None
+                  elif line.startswith("@@") and cur:
+                      m = re.match(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@", line)
+                      if m:
+                          start, count = int(m[1]), int(m[2] if m[2] is not None else 1)
+                          out.setdefault(cur, set()).update(range(start, start + count))
+              return out
+
+          def placed(occurrences, file, n):
+              """Up to n of a key's head occurrences, those on added lines first (several findings share a key)."""
+              on_added = [o for o in occurrences if int(o[0]) in ADDED_LINES.get(file, ())]
+              return (on_added or occurrences)[:n]
+
+          ADDED_LINES = added_lines()
+
           def norm(msg):
               # what identifies a finding: one line, no checkout root, no "line 123", single spaces
               msg = (msg or "").strip().splitlines()[:1] or [""]
@@ -439,6 +464,7 @@ jobs:
                   return out
               if a.format == "sarif":
                   doc = json.load(open(path, encoding="utf-8"))
+                  seen = set()
                   for run in doc.get("runs", []):
                       rules = {r.get("id"): r for r in (run.get("tool", {}).get("driver", {}).get("rules") or [])}
                       for res in run.get("results") or []:
@@ -447,8 +473,13 @@ jobs:
                           loc = ((res.get("locations") or [{}])[0]).get("physicalLocation", {})
                           uri = rel((loc.get("artifactLocation") or {}).get("uri", ""))
                           line = (loc.get("region") or {}).get("startLine") or 1
-                          msg = norm((res.get("message") or {}).get("text"))
-                          out.append((rid, uri, msg, lvl, line))
+                          text = (res.get("message") or {}).get("text") or ""
+                          # OSV-Scanner writes many results twice, identical down to the fingerprint: count them once
+                          ident = (rid, uri, line, text, json.dumps(res.get("partialFingerprints") or {}, sort_keys=True))
+                          if ident in seen:
+                              continue
+                          seen.add(ident)
+                          out.append((rid, uri, norm(text), lvl, line))
               elif a.format == "shellcheck":
                   doc = json.load(open(path, encoding="utf-8"))
                   for c in doc.get("comments", []):
@@ -472,16 +503,17 @@ jobs:
               new, base_n = hc - bc, sum(bc.values())
           else:
               new, base_n = collections.Counter(), "n/a"
-          first = {}
+          occ = {}
           for f in head:
-              first.setdefault(key(f), f)
+              occ.setdefault(key(f), []).append((f[4], f))
           shown = 0
-          for k, n in sorted(new.items(), key=lambda kv: -LEVELS.get(first[kv[0]][3], 2)):
+          for k, n in sorted(new.items(), key=lambda kv: -LEVELS.get(occ[kv[0]][0][1][3], 2)):
               if shown >= 30:
                   print(f"::warning::{a.tool}: {sum(new.values()) - shown} more new finding(s) in the {a.tool} report")
                   break
-              rid, uri, msg, lvl, line = first[k]
-              print(f"::error file={uri},line={line}::{a.tool} {rid}: {msg[:300]}" + (f" (x{n})" if n > 1 else ""))
+              at = placed(occ[k], k[1], n)
+              for line, (rid, uri, msg, lvl, _) in at:
+                  print(f"::error file={uri},line={line}::{a.tool} {rid}: {msg[:300]}" + (f" (x{n})" if len(at) < n and n > 1 else ""))
               shown += 1
           total, n_new = sum(hc.values()), sum(new.values())
           status = ("FAIL" if n_new else "pass") if a.gate == "diff" else "report only"
