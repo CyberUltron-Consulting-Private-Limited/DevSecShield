@@ -258,6 +258,11 @@ clients (`local`, `local_async`) do not load the master this way; `local_async` 
 `jobs.exit_success` and fetches the returns once, so the account needs the `runner` client and `@jobs`. The same
 guidance is in the header of the `salt-state` artifact (`zeroshield/zs_collect.sls`).
 
+Retries. If a scan node's lease on an AWX or Salt job expires (the node died or lost the network), ZeroShield re-queues
+the job and another node launches the same batch again, possibly while the first AWX job or salt-ssh run is still going
+on the customer's side (salt-ssh cannot be cancelled). The run nonce keeps the two attempts' results apart, but those
+hosts run zs-collect twice; cancel the orphaned AWX job from AWX if that matters.
+
 ## Develop and test
 
 ```sh
