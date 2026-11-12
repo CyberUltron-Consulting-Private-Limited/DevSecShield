@@ -34,6 +34,5 @@ placeholder_, an empty cell, evidence that says "pending", "TBD", "TODO" or "WIP
 ## Checklist
 
 - [ ] Tests added or updated for the change
-- [ ] No secrets, `.env` files or private keys in the diff (use `.env.example` with placeholders)
 - [ ] Database changes have a migration; config changes are documented
 - [ ] Docs / runbooks updated where operators or users must act
