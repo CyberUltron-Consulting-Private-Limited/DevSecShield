@@ -19,6 +19,9 @@ SUPPORTED = {
 }
 SUPPORTED |= {("collect", "appliance"), ("test_connection", "appliance")}
 SUPPORTED |= {("collect", "container_images"), ("test_connection", "container_images")}
+# F1.3: agentless fleets through the customer's AWX/AAP or salt-api (collectors/fleet.py)
+SUPPORTED |= {("collect", "awx_hosts"), ("test_connection", "awx_hosts"), ("collect", "salt_hosts"),
+              ("test_connection", "salt_hosts")}
 # Agent mode (ZS_MODE=agent) runs only these: the node's own host, read from read-only mounts, no credentials.
 AGENT_SUPPORTED = {("collect", "host_agent"), ("test_connection", "host_agent")}
 CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql", "redis", "mongodb", "network_tls",
@@ -26,6 +29,7 @@ CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql",
                 "mssql", "oracle", "pkcs11", "kmip", "vault_pki", "ejbca", "adcs"]
 CAPABILITIES += ["ike", "ike_pq_probe", "opcua", "modbus", "appliance_config", "mesh_istio_linkerd"]
 CAPABILITIES += ["registry_v2"]
+CAPABILITIES += ["transport_awx", "transport_salt", "zs_collect"]
 AGENT_CAPABILITIES = ["host_agent"]
 
 
@@ -102,6 +106,10 @@ def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tup
                 summary = network.test_range(ctx, scope)
             else:
                 summary = network.run_network(ctx, scope)
+        elif source_kind in ("awx_hosts", "salt_hosts"):
+            from zs_scan_node.collectors import fleet
+
+            summary = (fleet.test if kind == "test_connection" else fleet.collect)(ctx, config, secrets, scope)
     except ConfigError as exc:
         return "failure", str(exc), None
     if ctx.cancel.is_set():
