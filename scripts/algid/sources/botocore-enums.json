@@ -1,0 +1,85 @@
+{
+ "botocore": "1.41.5",
+ "enums": {
+  "acm-pca.KeyAlgorithm": [
+   "RSA_2048",
+   "RSA_3072",
+   "RSA_4096",
+   "EC_prime256v1",
+   "EC_secp384r1",
+   "EC_secp521r1",
+   "ML_DSA_44",
+   "ML_DSA_65",
+   "ML_DSA_87",
+   "SM2"
+  ],
+  "acm-pca.SigningAlgorithm": [
+   "SHA256WITHECDSA",
+   "SHA384WITHECDSA",
+   "SHA512WITHECDSA",
+   "SHA256WITHRSA",
+   "SHA384WITHRSA",
+   "SHA512WITHRSA",
+   "SM3WITHSM2",
+   "ML_DSA_44",
+   "ML_DSA_65",
+   "ML_DSA_87"
+  ],
+  "acm.KeyAlgorithm": [
+   "RSA_1024",
+   "RSA_2048",
+   "RSA_3072",
+   "RSA_4096",
+   "EC_prime256v1",
+   "EC_secp384r1",
+   "EC_secp521r1"
+  ],
+  "apigateway.SecurityPolicy": [
+   "TLS_1_0",
+   "TLS_1_2",
+   "SecurityPolicy_TLS13_1_3_2025_09",
+   "SecurityPolicy_TLS13_1_3_FIPS_2025_09",
+   "SecurityPolicy_TLS13_1_2_PFS_PQ_2025_09",
+   "SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09",
+   "SecurityPolicy_TLS13_1_2_PQ_2025_09",
+   "SecurityPolicy_TLS13_1_2_2021_06",
+   "SecurityPolicy_TLS13_2025_EDGE",
+   "SecurityPolicy_TLS12_PFS_2025_EDGE",
+   "SecurityPolicy_TLS12_2018_EDGE"
+  ],
+  "kms.KeySpec": [
+   "RSA_2048",
+   "RSA_3072",
+   "RSA_4096",
+   "ECC_NIST_P256",
+   "ECC_NIST_P384",
+   "ECC_NIST_P521",
+   "ECC_SECG_P256K1",
+   "SYMMETRIC_DEFAULT",
+   "HMAC_224",
+   "HMAC_256",
+   "HMAC_384",
+   "HMAC_512",
+   "SM2",
+   "ML_DSA_44",
+   "ML_DSA_65",
+   "ML_DSA_87",
+   "ECC_NIST_EDWARDS25519"
+  ],
+  "kms.SigningAlgorithmSpec": [
+   "RSASSA_PSS_SHA_256",
+   "RSASSA_PSS_SHA_384",
+   "RSASSA_PSS_SHA_512",
+   "RSASSA_PKCS1_V1_5_SHA_256",
+   "RSASSA_PKCS1_V1_5_SHA_384",
+   "RSASSA_PKCS1_V1_5_SHA_512",
+   "ECDSA_SHA_256",
+   "ECDSA_SHA_384",
+   "ECDSA_SHA_512",
+   "SM2DSA",
+   "ML_DSA_SHAKE_256",
+   "ED25519_SHA_512",
+   "ED25519_PH_SHA_512"
+  ]
+ }
+}

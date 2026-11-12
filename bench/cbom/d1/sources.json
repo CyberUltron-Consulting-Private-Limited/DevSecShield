@@ -1,0 +1,59 @@
+{
+ "schema": "zs-cbom-d1-sources/1",
+ "note": "Pinned public benchmarks. Fetched at run time (never vendored), verified by commit, label sha256, a digest of every scanned file and the label counts below. Counts for CryptoAPI-Bench match CB-02's two openpyxl reads (e2e/cbom/lab/labspec.py BENCH_PINNED, PR #79) and this lane's own reader.",
+ "benches": {
+  "cryptoapi-bench": {
+   "repo": "https://github.com/CryptoGuardOSS/cryptoapi-bench",
+   "commit": "759622ff29c73eba4c47e6a8fe2f505c3fef8526",
+   "license": "MIT",
+   "paper": "Afrose, Rahaman, Yao: CryptoAPI-Bench, IEEE SecDev 2019",
+   "labels": {"path": "CryptoAPI-Bench_details.xlsx",
+              "sha256": "d08d3586d0d71f1000e4c693286fc2eaf7c6c1aae152b391a2f67bc3dce1e2b9"},
+   "fetch_paths": ["/CryptoAPI-Bench_details.xlsx", "/LICENSE", "/README.md", "/build.gradle", "/settings.gradle", "/src/"],
+   "scan_paths": ["build.gradle", "settings.gradle", "src"],
+   "scan_tree_sha256": "a0958469cc4732707f9a819b23c4d57d6d08c4a2718efca83b171dcb15be3867",
+   "source_root": "src/main/java/org/cryptoapi/bench",
+   "categories": {
+    "brokencrypto": "broken_cipher",
+    "brokenhash": "broken_hash",
+    "dummycertvalidation": "cert_validation_off",
+    "dummyhostnameverifier": "hostname_verification_off",
+    "ecbcrypto": "ecb_mode",
+    "http": "plaintext_http",
+    "impropersslsocketfactory": "hostname_verification_off",
+    "insecureasymmetriccrypto": "weak_key_size",
+    "pbeiteration": "weak_kdf_iterations",
+    "predictablecryptographickey": "hardcoded_key",
+    "predictablekeystorepassword": "hardcoded_password",
+    "predictablepbepassword": "hardcoded_password",
+    "predictableseeds": "predictable_seed",
+    "staticinitializationvector": "static_iv",
+    "staticsalts": "static_salt",
+    "untrustedprng": "weak_rng"
+   },
+   "pinned": {"labelled": 171, "vulnerable": 136, "secure": 35, "judged": 170, "judged_vulnerable": 135,
+              "judged_secure": 35, "date_styled_line_cells": 18,
+              "unresolved_files": ["PredictableSeedsABPM2.java", "PredictableSeedsABPMCase2.java"]}
+  },
+  "owasp-benchmark": {
+   "repo": "https://github.com/OWASP-Benchmark/BenchmarkJava",
+   "commit": "db99977cbf6b30236089a691136d718aa7bb6935",
+   "license": "GPL-2.0 (fetched at run time, never committed here)",
+   "labels": {"path": "expectedresults-1.2.csv",
+              "sha256": "1809f6a690c6cf7dd6685df6ebe2eef8fe3ca93d19a7ca0ce45987ca4f5d78e1"},
+   "fetch_paths": ["/expectedresults-1.2.csv", "/LICENSE", "/src/main/resources/benchmark.properties", "@cases"],
+   "scan_paths": ["src/main/resources/benchmark.properties", "@cases"],
+   "scan_tree_sha256": "943e9f8acc812e9d6914e9592964e70c01e9bd01890e3ba368da159759db1a50",
+   "case_path": "src/main/java/org/owasp/benchmark/testcode/{name}.java",
+   "categories": {"crypto": "cwe327_cipher", "hash": "broken_hash", "weakrand": "weak_rng"},
+   "pinned": {"judged": 975, "judged_vulnerable": 477, "judged_secure": 498,
+              "crypto_true": 130, "crypto_false": 116, "hash_true": 129, "hash_false": 107,
+              "weakrand_true": 218, "weakrand_false": 275}
+  }
+ },
+ "corpus": {
+  "path": "e2e/fixtures/cbom-d1-corpus",
+  "labels": "bench/cbom/d1/corpus/labels.json"
+ },
+ "osv": {"url": "https://api.osv.dev/v1/querybatch", "timeout_s": 30}
+}

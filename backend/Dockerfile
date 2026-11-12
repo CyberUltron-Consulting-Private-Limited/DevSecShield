@@ -58,6 +58,14 @@ COPY --from=migrations /alembic.ini /prod_database_migrations/alembic.ini
 COPY --from=migrations /migrations /prod_database_migrations/migrations
 RUN chmod +x /docker-entrypoint.sh
 
+# Build identity (CB-03): the commit this image was built from and its version string, reported by GET /health, the
+# X-ZS-Build header and the CBOM exports (backend/utilities/build_info.py). scripts/deploy/build_images.sh passes both.
+# Declared last, so a new commit with the same source reuses every layer above.
+ARG DSS_BUILD_SHA=""
+ARG DSS_BUILD_VERSION=""
+ENV DSS_BUILD_SHA=${DSS_BUILD_SHA} \
+    DSS_BUILD_VERSION=${DSS_BUILD_VERSION}
+
 EXPOSE 8080
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

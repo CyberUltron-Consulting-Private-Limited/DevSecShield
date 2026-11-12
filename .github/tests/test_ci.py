@@ -25,7 +25,7 @@ def gate_script() -> str:
     return blocks[0]
 
 
-SUITES = ["backend", "aibom", "cbom-action", "scan-node", "worker", "dast-worker", "worker-locks", "frontend"]
+SUITES = ["backend", "aibom", "cbom-action", "cbom-d1", "scan-node", "worker", "dast-worker", "worker-locks", "frontend"]
 
 
 class CiGate(unittest.TestCase):
@@ -176,7 +176,18 @@ class PathFilters(unittest.TestCase):
         "scan_node/zs_scan_node/collectors/kubernetes.py": {"scan-node", "backend"},
         "backend/utilities/cbom_sources/node_auth.py": {"backend", "scan-node", "aibom"},
         "backend/utilities/cbom_sources/data/crypto_kb.json": {"backend", "aibom"},
-        "aibom/src/aibom/cbom/pkgdb.py": {"aibom", "backend", "scan-node", "worker", "cbom-action"},
+        "aibom/src/aibom/cbom/pkgdb.py": {"aibom", "backend", "scan-node", "worker", "cbom-action", "cbom-d1"},
+        # CB-07 D1 lane: the engine, the worker's call, the lane, its corpus (bench/cbom/d1/README.md)
+        "aibom/src/aibom/cbom/misuse.py": {"aibom", "backend", "cbom-action", "cbom-d1"},
+        "aibom/src/aibom/integrations/cbom_devsecshield.py": {"aibom", "backend", "cbom-d1"},
+        # review 5878689101: the engine also loads aibom.model/scan/emit/compliance/score and aibom/config
+        "aibom/src/aibom/model/component.py": {"aibom", "backend", "worker", "cbom-d1"},
+        "aibom/src/aibom/scan/registry.py": {"aibom", "backend", "worker", "cbom-d1"},
+        "aibom/config/crypto-risk-weights.yaml": {"aibom", "backend", "cbom-d1"},
+        "RabbitMQ/worker/helpers/tools/cbom_agent/main.py": {"backend", "worker", "aibom", "cbom-d1"},
+        "bench/cbom/d1/lane/judge.py": {"cbom-d1", "aibom", "backend"},
+        "bench/cbom/d1/floors.json": {"cbom-d1"},
+        "e2e/fixtures/cbom-d1-corpus/go/main.go": {"cbom-d1"},
         "deploy/node-images/scripts/install.sh": {"backend", "scan-node"},
         "prod_database_migrations/migrations/versions/x.py": {"backend"},
         "bench/certin/repos.tsv": {"backend", "aibom"},
