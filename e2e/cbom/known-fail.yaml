@@ -1,6 +1,7 @@
 # Strict known-fail ledger v2 of the CBOM Tier-L gate (DEVILS-ADVOCATE.md §4.1/§4.4; INTERFACES.md §9 and v7 §B).
 # Counts are pinned to the gate run on dev named in the PR that last edited this file (bundle sha256 on that PR;
-# #75: run L-b5e600471d1a-20261112T141626Z re-judged, then the confirming run posted there):
+# #75: run L-b5e600471d1a-20261112T141626Z re-judged, then the confirming run posted there; #102 (CB-05, with run 2 and
+# the Servers/IDN/Database sources): run L-b5e600471d1a-20261112T155342Z re-judged, confirmed by the next run on #102):
 #   * a failing or skipped check no row covers fails the gate;
 #   * expect_failing = FAIL + NOT-JUDGED checks the row matches, expect_not_run = its NOT-RUN checks (with not_run_ok);
 #     a different count in either direction fails the gate (status "moved"; "stale" when every pinned failure passes):
@@ -24,7 +25,7 @@
   gate: [G11]
   match: {kind: oracle, target_id: z09, field: [present, protocol_versions, cipher_suites, cipher_suites/complete,
           groups, groups/complete, algorithm, quantum_vulnerable]}
-  expect_failing: 9
+  expect_failing: 18
   issue: "#73"
   owner: CB-12
   why: "SNI-only server z09 (ssl_reject_handshake on): 'ok' with no versions, suites, groups or certificates read"
@@ -38,14 +39,14 @@
 - row: KF-6
   gate: [G11]
   match: {kind: oracle, target_id: sshd-pq, field: [host_keys, algorithm], reason: wrong-value}
-  expect_failing: 2
+  expect_failing: 4
   issue: "#73"
   owner: CB-13
   why: "PQ-only OpenSSH (mlkem768x25519-sha256 only): the host key is not read (IncompatiblePeer)"
 - row: KF-17
   gate: [G11]
   match: {kind: oracle, target_id: sshd-legacy, field: host_keys, reason: wrong-value}
-  expect_failing: 1
+  expect_failing: 2
   issue: "#73"
   owner: CB-13
   why: "SSH server with RSA-1024 and Ed25519 host keys: only the negotiated Ed25519 key is read, the weak RSA-1024
@@ -53,7 +54,7 @@
 - row: KF-18
   gate: [G11]
   match: {kind: oracle, field: [cipher_suites/complete, groups/complete], reason: sample-not-enumeration}
-  expect_failing: 5
+  expect_failing: 11
   issue: "#100"
   owner: CB-12
   why: "TLS endpoints report the negotiated suite/group plus the weak-suite probes, not the accepted set (z01 suites
@@ -61,7 +62,7 @@
 - row: KF-18-must-report
   gate: [G11]
   match: {kind: oracle, target_id: z02, field: cipher_suites/must_report, reason: must-report-missing}
-  expect_failing: 1
+  expect_failing: 2
   issue: "#100"
   owner: CB-12
   why: "z02 accepts four weak suites and the lab's must_report lists all four; the product reports one AES-128 suite
@@ -69,7 +70,7 @@
 - row: KF-4-5-derived
   gate: [G11]
   match: {kind: derived, field: [closed_world_type, closed_world_quantum]}
-  expect_failing: 2
+  expect_failing: 4
   issue: "#73"
   owner: CB-12
   why: "closed-world counts recomputed from the oracle differ by exactly the KF-4 (z09) and KF-5 (control) assets"
@@ -77,14 +78,14 @@
   gate: [G11]
   match: {kind: join, view: export, reason: export-missing,
           field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id]}
-  expect_failing: 104
+  expect_failing: 295
   issue: "#73"
   owner: CB-06
   why: "the run export lacks key size, curve, signature algorithm, groups, pqc_class and provenance (R4 p1)"
 - row: KF-15
   gate: [G11]
   match: {kind: join, view: export, field: cipher_suites, reason: export-missing}
-  expect_failing: 6
+  expect_failing: 16
   issue: "#89"
   owner: CB-06
   why: "the run export has no cipher suite: inventory reads facts.ciphers/cipher, the node writes negotiated_cipher
@@ -92,7 +93,7 @@
 - row: KF-16
   gate: [G11]
   match: {kind: join, view: export, field: protocol_versions, reason: mismatch}
-  expect_failing: 6
+  expect_failing: 11
   issue: "#89"
   owner: CB-06
   why: "the export's protocol version is the negotiated one (TLS) or the word 'ssh': inventory reads facts.protocols,
@@ -102,7 +103,7 @@
 - row: LAB-not-independent-z05b
   gate: [G11]
   match: {kind: oracle, oracle_id: [z05b/tls, "z05b/cert[0]"], reason: lab-not-independent}
-  expect_failing: 15
+  expect_failing: 30
   issue: "#93"
   owner: CB-02
   why: "every z05b key is in the self-check's unverified_keys (CB-02 v7.1 #5: OpenSSL s_client fallback, which the
@@ -112,7 +113,7 @@
 - row: LAB-not-independent-z05
   gate: [G11]
   match: {kind: oracle, oracle_id: z05/tls, field: [cipher_suites, algorithm], reason: lab-not-independent}
-  expect_failing: 2
+  expect_failing: 4
   issue: "#93"
   owner: CB-02
   why: "z05/tls cipher_suites is unverified (nmap cannot complete an X25519MLKEM768-only TLS 1.3 handshake, CB-02
@@ -164,7 +165,7 @@
   gate: [G11]
   match: {kind: derived, field: posture}
   expect_failing: 0
-  expect_not_run: 1
+  expect_not_run: 2
   not_run_ok: "posture numbers (readiness %, HNDL, Q distribution) wait for the harness implementation of the signed Q-grade formula (OA-10a) and the 'unknown' class (CB-18)"
   issue: "#73"
   owner: CB-18
@@ -207,7 +208,7 @@
 - row: CB05-B2
   gate: [G11]
   match: {kind: join, view: export, field: protocol, asset_type: [ssh_server_config, crypto_config, database_config]}
-  expect_failing: 3
+  expect_failing: 6
   issue: "#73"
   owner: CB-06
   why: "config assets disagree between API and export on `protocol` (sshd_config/nginx.conf none vs ssh/tls; Postgres config 'postgres' vs absent); draft round6/cbom/cb-05/bugs/BUG-CB05-2-config-protocol-export.md"
@@ -249,3 +250,12 @@
   issue: "#73"
   owner: CB-05
   why: "DA G5 'sweep = self-checked ports', G14 'B's node token claims none of A's jobs'"
+- row: LAB-no-expectation
+  gate: [G11]
+  match: {kind: oracle, oracle_id: pg-tls/tls, field: algorithm, reason: no-expectation}
+  expect_failing: 0
+  expect_not_run: 2
+  not_run_ok: "the pg-tls oracle states no key-exchange verdict for its database_tls row and the judge derives none (INTERFACES v7.2 #2)"
+  issue: "#73"
+  owner: CB-02
+  why: "database_tls of the lab Postgres has no algorithm expectation in the oracle (run 1 and run 2)"
