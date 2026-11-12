@@ -147,6 +147,8 @@ def test_ranges_keep_per_address_skipping(dns):
     ("64:ff9b::/96", "64:ff9b::a00:5", "10.0.0.5"),
     ("10.0.0.9-10.0.0.7", "10.0.0.8", "10.0.0.10"),  # a reversed range (the backend refuses it) never fails open
     ("fe80::1", "fe80::1%eth0", "fe80::2%eth0"),  # an answer's zone names the interface, not another host
+    ("[fd00::5]", "fd00::5", "fd00::6"),  # an IPv6 address in brackets (as in a URL) is an address, not a name
+    ("[fd00::1]-[fd00::3]", "fd00::2", "fd00::4"),
 ])
 def test_never_scan_entries_of_every_form_apply_on_the_node(entry, inside, outside):
     never = NeverScan([entry])

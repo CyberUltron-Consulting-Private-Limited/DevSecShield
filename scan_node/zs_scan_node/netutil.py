@@ -58,15 +58,15 @@ def _v4_if_mapped(addr):
 
 
 def _parse_entry(text: str) -> tuple[list, str] | None:
-    """(networks, canonical label) for an address, CIDR or ``a-b`` range entry (IPv4-mapped ones as IPv4); None for
-    anything else, which is a host name entry."""
+    """(networks, canonical label) for an address, CIDR or ``a-b`` range entry (IPv4-mapped ones as IPv4; an IPv6
+    address may be in brackets); None for anything else, which is a host name entry."""
     try:
         if "/" not in text and "-" in text:
-            first, last = (_v4_if_mapped(ipaddress.ip_address(p.strip())) for p in text.split("-", 1))
+            first, last = (_v4_if_mapped(ipaddress.ip_address(p.strip().strip("[]"))) for p in text.split("-", 1))
             if first.version == last.version and last < first:  # the backend refuses these; here, never fail open
                 first, last = last, first
             return list(ipaddress.summarize_address_range(first, last)), f"{first}-{last}"
-        net = ipaddress.ip_network(text, strict=False)
+        net = ipaddress.ip_network(text.strip("[]"), strict=False)
     except (ValueError, TypeError):  # TypeError: the two ends of a range are not the same IP version
         return None
     if net.version == 6 and net.prefixlen >= 96 and net.subnet_of(_MAPPED):
@@ -362,6 +362,8 @@ def requests_adapter(host: str, ip: str, never: NeverScan):
     by_name = not _is_ip(want)
 
     class _Pinned(HTTPAdapter):
+        zs_pinned_to = (want, ip)  # what this adapter connects (for callers that must check a session is pinned)
+
         def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
             host_params, pool_kwargs = self.build_connection_pool_key_attributes(request, verify, cert)
             got = str(host_params.get("host") or "").strip("[]").lower().rstrip(".")

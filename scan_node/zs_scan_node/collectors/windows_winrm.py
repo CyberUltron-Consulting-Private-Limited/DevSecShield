@@ -291,12 +291,15 @@ def _session(ctx: JobContext, target: Target, config: dict, password: str, ca_pa
     transport = sess.protocol.transport
     build = transport.build_session
     host = urlsplit(url).hostname or ""
+    pin = (host.strip("[]").lower().rstrip("."), ip)
 
-    def build_pinned():  # pywinrm closes and rebuilds its requests session after every command
-        fresh = transport.session is None
+    def build_pinned():
+        # pywinrm builds its requests session lazily and again after close_session(); every session it hands out is
+        # checked here, however it was built, so none can connect without the pin (fail closed)
         session = build()
-        if fresh:
+        if getattr(session.get_adapter(url), "zs_pinned_to", None) != pin or session.trust_env:
             session.trust_env = False
+            session.proxies = {}
             adapter = netutil.requests_adapter(host, ip, ctx.never_scan)
             session.mount("https://", adapter)
             session.mount("http://", adapter)

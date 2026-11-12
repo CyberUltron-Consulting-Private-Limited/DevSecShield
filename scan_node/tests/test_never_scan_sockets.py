@@ -160,16 +160,142 @@ def test_winrm_connects_only_to_the_checked_address_and_never_through_a_proxy(li
     assert ctx.outcomes[0].status != "skipped_never_scan"  # it was allowed when checked; the listener then hung up
 
 
-def test_ad_cs_winrm_session_is_pinned_too(lis, dns, monkeypatch):
+def test_ad_cs_winrm_session_is_pinned_too_and_never_uses_a_proxy(lis, dns, monkeypatch):
     from zs_scan_node.collectors import ca as CA
 
-    for var in PROXY_VARS:  # no proxy at all: this test is about the later DNS answer only
-        monkeypatch.delenv(var, raising=False)
-    table, _ = dns
+    table, calls = dns
     table["adcs.internal"] = _rebind
-    with pytest.raises(CA.CaFail):
-        CA.collect_adcs(_ctx(["127.0.0.1"]), {"host": "adcs.internal", "port": lis.port, "login": "u"}, "pw")
+    proxy = Listener(("127.0.0.3",))
+    try:
+        for var in PROXY_VARS:
+            monkeypatch.setenv(var, f"http://127.0.0.3:{proxy.port}")
+        monkeypatch.delenv("NO_PROXY", raising=False)
+        monkeypatch.delenv("no_proxy", raising=False)
+        with pytest.raises(CA.CaFail):
+            CA.collect_adcs(_ctx(["127.0.0.1"]), {"host": "adcs.internal", "port": lis.port, "login": "u"}, "pw")
+    finally:
+        proxy.close()
+    assert proxy.hits == []
     assert lis.hits and set(lis.hits) == {"127.0.0.2"}
+    assert calls == ["adcs.internal", "adcs.internal"]  # the collector + the check before the session; not WinRM
+
+
+def test_every_requests_session_winrm_uses_is_pinned(dns):
+    """pywinrm builds its requests session lazily and again after close_session(); each one must carry the pinned
+    adapter and no proxy, also one a future pywinrm might build before the first request (fail closed)."""
+    import requests
+
+    table, _ = dns
+    table["win.internal"] = ["127.0.0.2"]
+    ctx = _ctx([])
+    [target] = netutil.expand_targets(["win.internal"], ctx.never_scan)[0]
+
+    def pinned(session):
+        adapter = session.get_adapter("https://win.internal:5986/wsman")
+        return getattr(adapter, "zs_pinned_to", None) == ("win.internal", "127.0.0.2") and not session.trust_env
+
+    transport = W._session(ctx, target, {}, "pw").protocol.transport
+    first = transport.build_session()
+    assert pinned(first) and transport.build_session() is first
+    transport.close_session()
+    assert pinned(transport.build_session())
+    transport = W._session(ctx, target, {}, "pw").protocol.transport
+    transport.session = requests.Session()  # built outside the wrapper
+    assert pinned(transport.build_session())
+
+
+def test_winrm_to_an_ipv6_address_connects_only_there(dns, monkeypatch):
+    """This machine's kernel may have IPv6 disabled, so the connection is recorded at urllib3's create_connection
+    (what the pinned pool calls) instead of on the wire: the address, and that nothing resolved the name again."""
+    import urllib3.connection
+
+    table, calls = dns
+    table["win6.internal"] = lambda n: ["fd00::5"] if n <= 2 else ["127.0.0.1"]  # later answers: a listed address
+    attempts = []
+
+    def create_connection(address, *args, **kwargs):
+        attempts.append(address)
+        raise ConnectionRefusedError("recorded, not connected")
+
+    monkeypatch.setattr(urllib3.connection.connection, "create_connection", create_connection)
+    for var in PROXY_VARS:
+        monkeypatch.delenv(var, raising=False)
+    ctx = _ctx(["127.0.0.1"])
+    W.collect(ctx, {"port": 5986}, {"password": "pw"}, {"targets": ["win6.internal"]})
+    assert attempts == [("fd00::5", 5986)]  # the checked IPv6 address, once; never the later answer 127.0.0.1
+    assert calls == ["win6.internal", "win6.internal"]
+    assert ctx.outcomes[0].status not in ("skipped_never_scan", "ok")
+
+
+# ----------------------------------------------------------------------------- dual stack, recorded per socket
+class SocketLog:
+    """Every socket the process creates and every address it connects to or looks up, from Python's audit events,
+    while ``recording``.  The kernel of the machine that runs this may have IPv6 disabled: creating an AF_INET6
+    socket then fails, but the attempt is still recorded, so a test proves that no IPv6 connection was even tried.
+    (libpq, the C client under psycopg, is not seen here; the database case is covered by the listeners.)"""
+
+    events: list = []
+    recording = False
+
+    @classmethod
+    def hook(cls, event, args):
+        if not cls.recording or not event.startswith("socket."):
+            return
+        if event == "socket.__new__":
+            cls.events.append(("socket", args[1]))
+        elif event in ("socket.connect", "socket.getaddrinfo"):
+            cls.events.append((event[7:], args[1] if event == "socket.connect" else args[0]))
+
+
+import sys  # noqa: E402
+
+sys.addaudithook(SocketLog.hook)  # cannot be removed; it does nothing while not recording
+
+
+@pytest.fixture()
+def socket_log():
+    SocketLog.events = []
+    SocketLog.recording = True
+    yield SocketLog.events
+    SocketLog.recording = False
+
+
+@pytest.mark.parametrize("answers, listed", [
+    (["127.0.0.1", "fd00::5"], "127.0.0.1"),  # issue #17: listed by IPv4, the node used to connect over IPv6
+    (["127.0.0.2", "fd00::5"], "fd00::5"),  # listed by IPv6, the node used to connect over IPv4
+    (["fd00::5", "127.0.0.2"], "fd00::5"),  # the same, the resolver answering IPv6 first
+])
+def test_a_dual_stack_name_with_one_listed_address_gets_no_socket_at_all(lis, dns, socket_log, answers, listed):
+    from zs_scan_node.collectors import ca as CA
+
+    table, _ = dns
+    for name in ("srv.internal", "win.internal", "reg.internal", "db.internal", "adcs.internal"):
+        table[name] = answers
+    never = [listed]
+    ssh, win = _ctx(never), _ctx(never)
+    assert L._targets(ssh, {"targets": ["srv.internal"]}) == []
+    W.collect(win, {"port": lis.port}, {"password": "pw"}, {"targets": ["win.internal"]})
+    with pytest.raises(CI.ImageError) as reg:
+        CI.Registry(_ctx(never), CI.parse_ref(f"reg.internal:{lis.port}/app:1"), {}, None).get("/v2/")
+    _t, db_status, _why, _n = D._one(_ctx(never), {"engine": "postgres", "host": "db.internal", "port": lis.port}, {})
+    with pytest.raises(CA.CaFail) as adcs:
+        CA.collect_adcs(_ctx(never), {"host": "adcs.internal", "port": lis.port, "login": "u"}, "pw")
+    statuses = [ssh.outcomes[0].status, win.outcomes[0].status, reg.value.status, db_status, adcs.value.status]
+    assert statuses == ["skipped_never_scan"] * 5
+    assert all(listed in text for text in (ssh.outcomes[0].error, win.outcomes[0].error, reg.value.detail))
+    assert [e for e in socket_log if e[0] != "getaddrinfo"] == []  # no socket was created, IPv4 or IPv6
+    assert not [e for e in socket_log if e[1] in answers]  # and no address of the name was looked up as a literal
+    assert lis.hits == []
+
+
+def test_control_the_socket_log_sees_an_ipv6_attempt(dns, socket_log):
+    table, _ = dns
+    table["v6only.internal"] = ["fd00::5"]
+    ctx = _ctx([])
+    [target] = L._targets(ctx, {"targets": ["v6only.internal"]})
+    with pytest.raises(L.TargetFail):
+        L.open_session(ctx, target, {"port": 9}, {"key": "unused"})
+    assert ("socket", socket.AF_INET6) in socket_log  # attempted (the kernel may refuse it): the log does see it
 
 
 def test_ssh_and_registry_are_pinned_to_the_checked_address(lis, dns):
