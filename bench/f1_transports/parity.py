@@ -209,6 +209,9 @@ def main() -> int:
             doc, secs = docs[name]
             (out / f"zs-collect-{name}.json").write_text(json.dumps(doc, indent=1))
             a, b = normalise(ssh_doc, ip), normalise(doc, ip)
+            # the normalised pair on disk, so `diff -u normalised-ssh-X.json normalised-zs-X.json` can be re-run
+            (out / f"normalised-ssh-{name}.json").write_text(json.dumps(a, indent=1, sort_keys=True) + "\n")
+            (out / f"normalised-zs-{name}.json").write_text(json.dumps(b, indent=1, sort_keys=True) + "\n")
             d = diff(a, b)
             failures += bool(d) or not a["assets"]
             report["targets"].append({"container": name, "address": ip, "ssh_assets": len(a["assets"]),
