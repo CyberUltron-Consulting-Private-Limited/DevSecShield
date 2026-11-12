@@ -867,7 +867,7 @@ export default function DASTPage() {
                             <TableHead><span className="inline-flex items-center gap-1">Last updated <InfoTip id="scan.table.updated" /></span></TableHead>
                             <TableHead><span className="inline-flex items-center gap-1">Scan status <InfoTip id="scan.status" /></span></TableHead>
                             <TableHead className="w-[180px]"><span className="inline-flex items-center gap-1">Vulnerabilities <InfoTip id="dast.table.vulns" /></span></TableHead>
-                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="scan.table.risk4" /></span></TableHead>
+                            <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="scan.table.risk" /></span></TableHead>
                             <TableHead className="w-[140px]"><span className="inline-flex items-center gap-1">Target URL <InfoTip id="dast.table.target" /></span></TableHead>
                             <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">URLs scanned <InfoTip id="dast.table.urls" /></span></TableHead>
                             <TableHead className="w-[90px]"><span className="inline-flex items-center gap-1">Coverage % <InfoTip id="dast.table.coverage" /></span></TableHead>
