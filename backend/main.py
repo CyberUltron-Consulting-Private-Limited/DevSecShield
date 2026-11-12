@@ -17,6 +17,7 @@ from backend.routers.cbom_node import router as cbom_node_router
 from backend.routers.cbom_node_pools import router as cbom_node_pools_router
 from backend.routers.cbom_fleet import router as cbom_fleet_router
 from backend.utilities.cbom_sources.node_auth import NodeDeploymentHeader
+from backend.utilities.build_info import BuildIdentityMiddleware, UtcIsoFormatter, build_sha, build_version
 from backend.routers.cbom_vendor_public import router as cbom_vendor_public_router
 from backend.routers.integrations import router as integrations_router
 from backend.routers.guardrails import router as guardrails_router
@@ -46,7 +47,7 @@ for _security_logger_name in ("backend.auth", "backend.ratelimit"):
     _security_logger = logging.getLogger(_security_logger_name)
     if not _security_logger.handlers:
         _handler = logging.StreamHandler()
-        _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        _handler.setFormatter(UtcIsoFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
         _handler.addFilter(CredentialRedactionFilter())
         _security_logger.addHandler(_handler)
         _security_logger.setLevel(logging.INFO)
@@ -104,7 +105,16 @@ async def lifespan(app: FastAPI):
     console.print("[bold yellow]Shutting down...[/bold yellow]")
 
 
-app = FastAPI(lifespan=lifespan, middleware=[
+class DssApp(FastAPI):
+    """FastAPI whose outermost layer stamps X-ZS-Build and X-ZS-Request-Id (backend/utilities/build_info.py).
+    A ``middleware=[...]`` entry would sit inside Starlette's ServerErrorMiddleware and miss the 500 it sends for an
+    unhandled exception."""
+
+    def build_middleware_stack(self):
+        return BuildIdentityMiddleware(super().build_middleware_stack())
+
+
+app = DssApp(lifespan=lifespan, middleware=[
     Middleware(
         CORSMiddleware,
         allow_origins=CORS_ALLOWED_ORIGINS,
@@ -149,9 +159,10 @@ app.include_router(invitations_router)  # /invite/<token>: the invitee accepts o
 async def health_check():
     """
     Health check endpoint for Docker health checks and load balancer probes.
-    Returns 200 OK if the service is healthy.
+    Returns 200 OK if the service is healthy, with the commit the image was built from (``build``, also the
+    X-ZS-Build header of every response) and its version string; "unknown" for an image built without them.
     """
-    return {"status": "healthy", "service": "devsecshield-backend"}
+    return {"status": "healthy", "service": "devsecshield-backend", "build": build_sha(), "version": build_version()}
 
 # Use this only for debugging purposes ⚠️⚠️⚠️⚠️
 # @app.exception_handler(RequestValidationError)

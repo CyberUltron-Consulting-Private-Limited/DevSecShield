@@ -11,6 +11,7 @@ from rich.console import Console
 from sqlmodel import Session
 
 from backend.new_models import CbomCollectionAuditEvent
+from backend.utilities.build_info import UNKNOWN, build_version, current_request_id, short_build, utc_timestamp
 
 console = Console()
 
@@ -44,19 +45,14 @@ def sha256_hex(value: str) -> str:
 
 
 def engine_version() -> str:
-    """The API build that classifies node facts: ``DSS_BUILD_VERSION`` (set by the deployment, e.g. a git sha), else
-    the backend package version, else "unknown". At most 32 characters."""
-    import os
-
-    value = (os.environ.get("DSS_BUILD_VERSION") or "").strip()
-    if not value:
-        try:
-            from importlib.metadata import version
-
-            value = "devsecshield-" + version("devsecshield")
-        except Exception:
-            value = "unknown"
-    return value[:32]
+    """The API build that classifies node facts, recorded on each run (``engine_version``, 32 characters): the
+    12-character commit the image was built from (``DSS_BUILD_SHA``, backend/utilities/build_info.py), else its
+    version string (``DSS_BUILD_VERSION``), else "unknown"."""
+    short = short_build()
+    if short:
+        return short
+    version = build_version()
+    return version[:32] if version != UNKNOWN else UNKNOWN
 
 
 def new_token(prefix: str, nbytes: int = 32) -> str:
@@ -77,12 +73,17 @@ def clean_text(value: Any, limit: int) -> str | None:
 
 
 def log(action: str, **fields: Any) -> None:
-    """One greppable line per state change.  Only ids, enums and numbers belong in ``fields``."""
-    parts = [f"cbom sources {action}"]
+    """One greppable line per state change.  Only ids, enums and numbers belong in ``fields``.  The line starts with
+    an ISO UTC timestamp and, inside a request, ends with that request's ``request_id`` (the X-ZS-Request-Id the
+    response carries)."""
+    parts = [utc_timestamp(), f"cbom sources {action}"]
     for key, value in fields.items():
         if value is None:
             continue
         parts.append(f"{key}={value}")
+    request_id = current_request_id()
+    if request_id and "request_id" not in fields:
+        parts.append(f"request_id={request_id}")
     try:
         console.print(" ".join(parts), markup=False, highlight=False, soft_wrap=True)
     except Exception:  # logging must never fail a request

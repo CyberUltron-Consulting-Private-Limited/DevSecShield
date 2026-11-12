@@ -18,6 +18,12 @@
 #                                      (optional; UV: backend and both workers, NODE: frontend, GO: the scan
 #                                      worker's cbomkit-theia stage)
 #         DSS_BUILD_ARGS               extra arguments for every `docker buildx build` (optional, word-split)
+#         DSS_BUILD_SHA                the commit baked into the images (default: git HEAD; a full 40-character sha)
+#         DSS_BUILD_VERSION            the version string baked into the backend (default: DSS_TAG)
+#
+# Build identity (CB-03): the backend reports DSS_BUILD_SHA / DSS_BUILD_VERSION (GET /health, X-ZS-Build, the CBOM
+# exports) and the frontend NEXT_PUBLIC_BUILD_SHA (<meta name="zs-build">); every image's
+# org.opencontainers.image.revision label names the same commit.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -35,6 +41,17 @@ default_tag() {
 
 DSS_TAG="${DSS_TAG:-$(default_tag)}"
 DSS_IMAGE_PREFIX="${DSS_IMAGE_PREFIX:-dss-staging}"
+
+if [[ -n "${DSS_BUILD_SHA:-}" ]]; then
+  [[ "${DSS_BUILD_SHA}" =~ ^[0-9a-f]{40}$ ]] || die "DSS_BUILD_SHA must be a full 40-character commit (lowercase hex)"
+  BUILD_SHA="${DSS_BUILD_SHA}"
+else
+  BUILD_SHA="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  [[ "${BUILD_SHA}" =~ ^[0-9a-f]{40}$ ]] || BUILD_SHA=""
+fi
+BUILD_VERSION="${DSS_BUILD_VERSION:-${DSS_TAG}}"
+[[ "${BUILD_VERSION}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$ ]] ||
+  die "DSS_BUILD_VERSION (default DSS_TAG) must be 1-64 letters, digits, dots, plus, dash or underscore: ${BUILD_VERSION}"
 ALL=(backend frontend scan-worker dast-worker)
 ONLY=("${ALL[@]}")
 
@@ -73,7 +90,7 @@ build() { # <component> <dockerfile> <context> [extra args...]
   log "building ${image} (${dockerfile}, context ${ctx})"
   local started=${SECONDS}
   docker buildx build --load --provenance=false \
-    --label "org.opencontainers.image.revision=$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)" \
+    --label "org.opencontainers.image.revision=${BUILD_SHA:-unknown}" \
     --label "org.opencontainers.image.version=${DSS_TAG}" \
     "${extra[@]}" "$@" -t "${image}" -f "${dockerfile}" "${ctx}"
   log "built ${image} in $((SECONDS - started))s"
@@ -123,11 +140,17 @@ go_args=()
 [[ -n "${GO_BASE_IMAGE:-}" ]] && go_args+=(--build-arg "GO_BASE_IMAGE=${GO_BASE_IMAGE}")
 
 log "tag=${DSS_TAG} prefix=${DSS_IMAGE_PREFIX} components=${ONLY[*]}"
+if [[ -n "${BUILD_SHA}" ]]; then
+  log "build ${BUILD_SHA} version ${BUILD_VERSION}"
+else
+  log "WARNING: no git commit (not a git checkout and DSS_BUILD_SHA unset): the images report build \"unknown\""
+fi
 [[ -f prod_database_migrations/alembic.ini ]] || die "prod_database_migrations/alembic.ini is missing"
 
 if wanted backend; then
   build backend backend/Dockerfile backend \
-    --build-context migrations=prod_database_migrations "${base_args[@]}"
+    --build-context migrations=prod_database_migrations "${base_args[@]}" \
+    --build-arg "DSS_BUILD_SHA=${BUILD_SHA}" --build-arg "DSS_BUILD_VERSION=${BUILD_VERSION}"
   assert_no_secrets backend /backend /prod_database_migrations
   docker run --rm --network none --entrypoint test "$(image_name backend)" -f /prod_database_migrations/alembic.ini ||
     die "backend image has no Alembic bundle"
@@ -136,7 +159,7 @@ fi
 if wanted frontend; then
   [[ "${NEXT_PUBLIC_BACKEND_URL:-}" =~ ^https?://. ]] ||
     die "set NEXT_PUBLIC_BACKEND_URL (e.g. https://devsec-staging-api.zeroshield.ai) to build the frontend"
-  fe_args=(--build-arg "NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}")
+  fe_args=(--build-arg "NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}" --build-arg "NEXT_PUBLIC_BUILD_SHA=${BUILD_SHA}")
   [[ -n "${NEXT_PUBLIC_CBOM_NODE_IMAGE:-}" ]] && fe_args+=(--build-arg "NEXT_PUBLIC_CBOM_NODE_IMAGE=${NEXT_PUBLIC_CBOM_NODE_IMAGE}")
   [[ -n "${NODE_BASE_IMAGE:-}" ]] && fe_args+=(--build-arg "NODE_BASE_IMAGE=${NODE_BASE_IMAGE}")
   build frontend frontend/Dockerfile frontend "${fe_args[@]}"

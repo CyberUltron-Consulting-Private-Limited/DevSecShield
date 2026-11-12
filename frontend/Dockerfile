@@ -4,7 +4,8 @@
 #
 # NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so the API URL is required: an image built
 # without it would send every browser to a default host. Optional: NEXT_PUBLIC_CBOM_NODE_IMAGE (the scan-node image
-# shown in the deployment instructions; the UI default is registry.zeroshield.ai/cbom/scan-node:1.0).
+# shown in the deployment instructions; the UI default is registry.zeroshield.ai/cbom/scan-node:1.0) and
+# NEXT_PUBLIC_BUILD_SHA (the git commit, shown as <meta name="zs-build">; build_images.sh passes it).
 # Behind a TLS-intercepting proxy or with a private registry mirror: --build-arg NODE_BASE_IMAGE=<node:20-alpine
 # image that trusts the proxy CA>.
 ARG NODE_BASE_IMAGE=node:20-alpine
@@ -35,8 +36,11 @@ COPY . .
 
 ARG NEXT_PUBLIC_BACKEND_URL
 ARG NEXT_PUBLIC_CBOM_NODE_IMAGE=
+# Build identity (CB-03): the commit this frontend is built from, in every page's <meta name="zs-build">.
+ARG NEXT_PUBLIC_BUILD_SHA=
 ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL \
-    NEXT_PUBLIC_CBOM_NODE_IMAGE=$NEXT_PUBLIC_CBOM_NODE_IMAGE
+    NEXT_PUBLIC_CBOM_NODE_IMAGE=$NEXT_PUBLIC_CBOM_NODE_IMAGE \
+    NEXT_PUBLIC_BUILD_SHA=$NEXT_PUBLIC_BUILD_SHA
 
 # No telemetry call during the build (air-gapped builders have no route to it anyway).
 ENV NEXT_TELEMETRY_DISABLED=1

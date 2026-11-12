@@ -109,6 +109,31 @@ export function nodeInstallNames(nodeName: string): { container: string; volume:
   return { container: `zs-scan-node-${slug}`, volume: `zs-node-${slug}`, release: `zs-scan-node-${slug}` }
 }
 
+/** Why a scan node could not connect with an install command built from this API URL, or null when it can.
+ * The node refuses a ZeroShield API URL that is not https:// (claim answers carry decrypted credentials:
+ * scan_node/zs_scan_node/agent.py), and port 80 is the plain-HTTP port a TLS client cannot talk to. The commands the
+ * wizard shows use this deployment's own API URL, so the customer is told before running one that cannot work. */
+export function insecureApiWarning(apiUrl: string): string | null {
+  const value = (apiUrl || "").trim()
+  if (!value) return null
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return `This ZeroShield deployment's API address (${value}) is not a valid URL, so a scan node cannot connect with the command below. Ask your ZeroShield administrator to serve the API over https://.`
+  }
+  if (url.protocol === "http:") {
+    return `This ZeroShield deployment serves its API over plain HTTP (${value}). The scan node refuses http:// (it would receive your server credentials unencrypted) and will exit with "ZS_API_URL must be the ZeroShield API URL over https://". Ask your ZeroShield administrator to serve the API over https:// before you install a node.`
+  }
+  if (url.protocol === "https:" && url.port === "80") {
+    return `This ZeroShield deployment's API address uses port 80 (${value}), the plain-HTTP port: the scan node connects with TLS only and cannot connect there. Ask your ZeroShield administrator for the https:// address of the API.`
+  }
+  if (url.protocol !== "https:") {
+    return `This ZeroShield deployment's API address (${value}) is not an https:// URL, so a scan node cannot connect with the command below. Ask your ZeroShield administrator to serve the API over https://.`
+  }
+  return null
+}
+
 export function installCommand(
   method: DeployMethod,
   opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string },

@@ -41,13 +41,16 @@ cmd_lock() {
 cmd_build() {
   local version=${1:?usage: scan_node_image.sh build <version>}
   [[ "${version}" =~ ^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$ ]] || die "invalid version: ${version}"
-  local ref="${IMAGE}:${version}" archive="${OUT_DIR}/scan-node-${version}.tar.gz"
+  local ref="${IMAGE}:${version}" archive="${OUT_DIR}/scan-node-${version}.tar.gz" sha
   local -a args=()
   [[ -n "${BASE_IMAGE:-}" ]] && args+=(--build-arg "BASE_IMAGE=${BASE_IMAGE}")
-  log "building ${ref}"
-  docker buildx build --load --provenance=false "${args[@]}" \
+  # Build identity (CB-03): the node reports <version>+<12-character commit> to ZeroShield (ZS_NODE_BUILD).
+  sha="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  [[ "${sha}" =~ ^[0-9a-f]{40}$ ]] || { log "WARNING: no git commit: the image reports no build"; sha=""; }
+  log "building ${ref} (build ${sha:-unknown})"
+  docker buildx build --load --provenance=false "${args[@]}" --build-arg "ZS_NODE_BUILD=${sha}" \
     --label "org.opencontainers.image.version=${version}" \
-    --label "org.opencontainers.image.revision=$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)" \
+    --label "org.opencontainers.image.revision=${sha:-unknown}" \
     -t "${ref}" "${REPO_ROOT}/scan_node"
   # Nothing secret in the image: no env file, key or node state.
   if docker run --rm --network none --entrypoint find "${ref}" /opt/zs-scan-node /var/lib/zs-node \
