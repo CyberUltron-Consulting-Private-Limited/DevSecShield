@@ -712,3 +712,19 @@ def test_usable_ca_seam_for_policies(api, ca_world, monkeypatch):
         assert R.usable_ca(session, 2, ca["id"]) is False  # another team's lineage
         monkeypatch.setenv("CBOM_SSH_CA", "0")
         assert R.usable_ca(session, 1, ca["id"]) is False
+
+
+def test_every_route_is_flagged_rate_limited_authenticated_and_declares_its_permission(api, ca_world):
+    from backend.utilities.cbom_sources.http import CbomRoute, node_limiter, read_limiter, write_limiter
+
+    limiters = {read_limiter, write_limiter, node_limiter}
+    for module in (cbom_sshca, cbom_node_sshca):
+        for route in module.router.routes:
+            assert isinstance(route, CbomRoute) and getattr(route, "flag_env", None) == "CBOM_SSH_CA", route.path
+            assert (route.openapi_extra or {}).get("x-zs-permission"), route.path
+            assert any(d.dependency in limiters for d in route.dependencies), route.path
+            path = route.path.replace("{team_id}", "1").replace("{ca_id}", "1").replace("{cert_id}", "1") \
+                .replace("{job_id}", "1").replace("{name}", "sshd-config")
+            for method in route.methods:
+                r = api(method, path, None, json={})
+                assert r.status_code == 401, (method, path, r.status_code)
