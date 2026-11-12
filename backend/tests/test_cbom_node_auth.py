@@ -238,7 +238,7 @@ def test_legacy_nodes_work_until_the_team_requires_signed_nodes(api, world):
     assert api.client.post("/cbom/node/heartbeat", headers=hdr, json={}).status_code == 200
     assert api("GET", f"/1/cbom/sources/nodes/{node_id}").json()["node"]["signing"] == "legacy"
     # only an admin may require signed nodes; null leaves it as it is
-    assert api("PATCH", "/1/cbom/sources/settings", "bob", json={"require_signed_nodes": True}).status_code == 400
+    assert api("PATCH", "/1/cbom/sources/settings", "bob", json={"require_signed_nodes": True}).status_code == 403  # admins only: the route policy refuses a member (F4 RBAC)
     assert api("PATCH", "/1/cbom/sources/settings", json={"require_signed_nodes": None}).json()["settings"]["require_signed_nodes"] is False
     on = api("PATCH", "/1/cbom/sources/settings", json={"require_signed_nodes": True})
     assert on.status_code == 200 and on.json()["settings"]["require_signed_nodes"] is True

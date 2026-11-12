@@ -10,6 +10,7 @@ import { getIACConversationMessages } from "@/utils/backend_api";
 import { useParams } from "next/navigation";
 import { toast } from "@/utils/toast";
 import { Mode } from "@/app/[team_id]/sast/[scan_id]/page";
+import { ReadOnlyGate } from "@/components/rbac/team-access";
 
 export default function IACPage() {
   const [mode, setMode] = useState<Mode>("unknown");
@@ -76,7 +77,9 @@ export default function IACPage() {
           />
         </div>
       </div>
+      <ReadOnlyGate permission="scan.run" className="contents">
       <IACOptionsSidebar query={query} mode={mode} setMode={setMode} repo_url={repo_url} setRepoUrl={setRepoUrl} PAT={PAT} setPAT={setPAT} branch={branch} setBranch={setBranch} />
+      </ReadOnlyGate>
     </div>
   );
 }

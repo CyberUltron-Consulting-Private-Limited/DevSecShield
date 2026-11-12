@@ -80,6 +80,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { IfAllowed } from "@/components/rbac/team-access";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
@@ -707,9 +708,11 @@ export default function CBOMPage() {
                   <Network className="h-4 w-4 mr-2" />CBOM Sources
                 </Link>
               </Button>
+              <IfAllowed permission="scan.create">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />New Scan
               </Button>
+              </IfAllowed>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" data-testid="cbom-deliverables-trigger">
@@ -949,9 +952,11 @@ export default function CBOMPage() {
                         ? "No code scans yet. The results above come from CBOM Sources runs; create a CBOM scan to add your code."
                         : "No scans yet. Create your first CBOM scan or start a CBOM Sources run to get started."}
                     </p>
+                    <IfAllowed permission="scan.create">
                     <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
                       <Plus className="h-4 w-4 mr-2" />Create New Scan
                     </Button>
+                    </IfAllowed>
                   </div>
                 ) : filteredConversations.length === 0 ? (
                   <div className="text-center py-12">
@@ -1102,12 +1107,16 @@ export default function CBOMPage() {
                                     <DropdownMenuItem className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
                                       <Eye className="h-4 w-4 mr-2" />View metadata
                                     </DropdownMenuItem>
+                                    <IfAllowed permission="scan.update">
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
                                       <Pencil className="h-4 w-4 mr-2" />Rename scan
                                     </DropdownMenuItem>
+                                    </IfAllowed>
+                                    <IfAllowed permission="scan.update">
                                     <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
                                       <Trash2 className="h-4 w-4 mr-2" />Delete scan
                                     </DropdownMenuItem>
+                                    </IfAllowed>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </TableCell>

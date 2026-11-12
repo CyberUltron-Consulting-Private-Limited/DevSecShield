@@ -101,6 +101,9 @@ def http(monkeypatch):
     monkeypatch.setattr(scans_router, "get_db", lambda: engine)
     monkeypatch.setattr(scans_router, "get_user_from_header_or_raise_exception", fake_user)
     monkeypatch.setattr(scans_router, "check_if_user_is_in_team", validation.check_if_user_is_in_team)
+    # the route policy (F4) reads the same "Bearer <user id>" and checks the real membership in this database
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, engine=engine, user_for_token=int)
     monkeypatch.setattr(cc, "get_celery_app", lambda: celery)
     refunds = []
     monkeypatch.setattr(cc, "refund_credits_to_team", lambda team, credits: refunds.append((team, credits)))

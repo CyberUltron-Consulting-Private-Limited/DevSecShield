@@ -106,8 +106,11 @@ def run_migrations_online() -> None:
             # held until this connection closes; a second migrator waits here, then finds the database at head.
             connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": MIGRATION_LOCK_KEY})
             connection.commit()  # end the implicit transaction so Alembic opens (and commits) its own
+        # One transaction per revision: a revision's locks (an ACCESS EXCLUSIVE from ADD CONSTRAINT on a table every
+        # request reads) end with that revision, never span the other pending ones; a failure leaves the database at
+        # the last revision that completed.
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata, transaction_per_migration=True
         )
 
         with context.begin_transaction():

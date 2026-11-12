@@ -24,6 +24,8 @@ from backend.new_models import (
     CbomDriftEvent,
     Scan,
 )
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources import drift as DRIFT
 from backend.utilities.cbom_sources import heatmap as HEAT
 from backend.utilities.cbom_sources import sbom_link as SBOM
@@ -47,6 +49,7 @@ from backend.utilities.cbom_sources.schemas import Include
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 router = APIRouter(tags=["cbom-ops"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
@@ -97,7 +100,7 @@ def _run_diff(engine, team_id: int, run_id: int, against: int | None) -> dict:
         return DRIFT.run_diff(session, newer, older)
 
 
-@router.get(SRC + "/runs/{run_id}/diff", dependencies=READ,
+@router.get(SRC + "/runs/{run_id}/diff", dependencies=[*READ, access.team("cbom.read")],
             summary="Compare two runs: assets added / removed / changed, findings opened / resolved, readiness delta")
 async def run_diff(team_id: TeamId, run_id: ObjectId, against: int | None = Query(default=None, ge=1, le=2_147_483_647),
                    Authorization: AuthHeader = None):
@@ -143,7 +146,7 @@ def _run_changes(engine, team_id: int, run_id: int, limit: int) -> dict:
                 "not_read": not_read[:limit], "not_read_count": len(not_read)}
 
 
-@router.get(SRC + "/runs/{run_id}/changes", dependencies=READ,
+@router.get(SRC + "/runs/{run_id}/changes", dependencies=[*READ, access.team("cbom.read")],
             summary="What changed in this run against each source's previous complete collection (drift events)")
 async def run_changes(team_id: TeamId, run_id: ObjectId, limit: int = Query(default=200, ge=1, le=1000),
                       Authorization: AuthHeader = None):
@@ -157,7 +160,7 @@ def _team_drift(engine, team_id: int, kind: str | None, before_id: int | None, l
         return {"events": events, "next_before_id": events[-1]["id"] if len(events) == limit else None}
 
 
-@router.get(SRC + "/drift", dependencies=READ, summary="Recent drift events of the team (newest first; page with before_id)")
+@router.get(SRC + "/drift", dependencies=[*READ, access.team("cbom.read")], summary="Recent drift events of the team (newest first; page with before_id)")
 async def team_drift(team_id: TeamId, kind: str | None = Query(default=None, max_length=24),
                      before_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                      limit: int = Query(default=100, ge=1, le=500), Authorization: AuthHeader = None):
@@ -183,7 +186,7 @@ def _code_diff(engine, team_id: int, scan_id: int, against: int | None) -> dict:
         return out
 
 
-@router.get(CODE + "/{scan_id}/diff", dependencies=READ,
+@router.get(CODE + "/{scan_id}/diff", dependencies=[*READ, access.team("cbom.read")],
             summary="Compare two CBOM code scans of a repository and branch (line-independent identity)")
 async def code_diff(team_id: TeamId, scan_id: ObjectId, against: int | None = Query(default=None, ge=1, le=2_147_483_647),
                     Authorization: AuthHeader = None):
@@ -198,7 +201,7 @@ def _heatmap(engine, team_id: int, run_id: int, by: str) -> dict:
         return {"run_id": run.id, **HEAT.run_heatmap(session, team_id, run.id, by=by)}
 
 
-@router.get(SRC + "/runs/{run_id}/heatmap", dependencies=READ,
+@router.get(SRC + "/runs/{run_id}/heatmap", dependencies=[*READ, access.team("cbom.read")],
             summary="Algorithm family x source (or asset type) by worst impact, and the certificates with expiry dates")
 async def run_heatmap(team_id: TeamId, run_id: ObjectId, by: str = Query(default="source", pattern="^(source|type)$"),
                       Authorization: AuthHeader = None):
@@ -304,7 +307,7 @@ def _list_schedules(engine, team_id: int) -> dict:
                 "server_time": iso_z(utcnow())}
 
 
-@router.get(SRC + "/schedules", dependencies=READ, summary="Recurring collection runs")
+@router.get(SRC + "/schedules", dependencies=[*READ, access.team("cbom.read")], summary="Recurring collection runs")
 async def list_schedules(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("list schedules", team_id, _list_schedules, engine, team_id))
@@ -334,7 +337,7 @@ def _create_schedule(engine, team_id: int, user_id: int, body: ScheduleCreate) -
         return {"schedule": SCHED.public_schedule(s)}
 
 
-@router.post(SRC + "/schedules", dependencies=WRITE, summary="Add a recurring run (credits are charged when it fires)")
+@router.post(SRC + "/schedules", dependencies=[*WRITE, access.team("cbom.write")], summary="Add a recurring run (credits are charged when it fires)")
 async def create_schedule(team_id: TeamId, body: ScheduleCreate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("create schedule", team_id, _create_schedule, engine, team_id, user.id, body), 201)
@@ -367,7 +370,7 @@ def _update_schedule(engine, team_id: int, user_id: int, schedule_id: int, body:
         return {"schedule": SCHED.public_schedule(s)}
 
 
-@router.patch(SRC + "/schedules/{schedule_id}", dependencies=WRITE, summary="Edit, pause or resume a schedule")
+@router.patch(SRC + "/schedules/{schedule_id}", dependencies=[*WRITE, access.team("cbom.write")], summary="Edit, pause or resume a schedule")
 async def update_schedule(team_id: TeamId, schedule_id: ObjectId, body: ScheduleUpdate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("update schedule", team_id, _update_schedule, engine, team_id, user.id, schedule_id, body))
@@ -385,7 +388,7 @@ def _delete_schedule(engine, team_id: int, user_id: int, schedule_id: int) -> di
         return {"deleted": schedule_id}
 
 
-@router.delete(SRC + "/schedules/{schedule_id}", dependencies=WRITE, summary="Delete a schedule (its runs stay)")
+@router.delete(SRC + "/schedules/{schedule_id}", dependencies=[*WRITE, access.team("cbom.write")], summary="Delete a schedule (its runs stay)")
 async def delete_schedule(team_id: TeamId, schedule_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("delete schedule", team_id, _delete_schedule, engine, team_id, user.id, schedule_id))
@@ -406,7 +409,7 @@ def _run_remediation(engine, team_id: int, run_id: int) -> dict:
         return {"run_id": run.id, "items": items, **_waves_summary(items)}
 
 
-@router.get(SRC + "/runs/{run_id}/remediation", dependencies=READ,
+@router.get(SRC + "/runs/{run_id}/remediation", dependencies=[*READ, access.team("cbom.read")],
             summary="Suggested and assigned remediation wave, owner and target date per asset of a run")
 async def run_remediation(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -420,7 +423,7 @@ def _code_remediation(engine, team_id: int, scan_id: int) -> dict:
         return {"scan_id": scan.id, "items": items, **_waves_summary(items)}
 
 
-@router.get(CODE + "/{scan_id}/remediation", dependencies=READ,
+@router.get(CODE + "/{scan_id}/remediation", dependencies=[*READ, access.team("cbom.read")],
             summary="Suggested and assigned remediation wave, owner and target date per asset of a code scan")
 async def code_remediation(team_id: TeamId, scan_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -440,7 +443,7 @@ def _put_remediation(engine, team_id: int, user_id: int, body: WAVES.AssignmentB
         return out
 
 
-@router.put("/{team_id}/cbom/remediation", dependencies=WRITE,
+@router.put("/{team_id}/cbom/remediation", dependencies=[*WRITE, access.team("cbom.write")],
             summary="Assign wave, owner, target date, status or note to assets (bulk; fields left out are kept)")
 async def put_remediation(team_id: TeamId, body: WAVES.AssignmentBulk, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -462,7 +465,7 @@ def _asset_sbom(engine, team_id: int, asset_id: int) -> dict:
         return {"asset_id": row.id, "purl": purl or None, "matches": matches}
 
 
-@router.get(SRC + "/assets/{asset_id}/sbom", dependencies=READ, summary="SBOM scans of the team that list this library")
+@router.get(SRC + "/assets/{asset_id}/sbom", dependencies=[*READ, access.team("cbom.read")], summary="SBOM scans of the team that list this library")
 async def asset_sbom(team_id: TeamId, asset_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("asset sbom", team_id, _asset_sbom, engine, team_id, asset_id))
@@ -481,7 +484,7 @@ def _code_sbom(engine, team_id: int, scan_id: int) -> dict:
                                    purl=c.get("purl"))} for c in libs]}
 
 
-@router.get(CODE + "/{scan_id}/sbom-links", dependencies=READ,
+@router.get(CODE + "/{scan_id}/sbom-links", dependencies=[*READ, access.team("cbom.read")],
             summary="Library components of a CBOM scan with their purl and the SBOM scans that list them")
 async def code_sbom(team_id: TeamId, scan_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)

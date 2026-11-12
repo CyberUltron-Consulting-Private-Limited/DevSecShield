@@ -37,6 +37,7 @@ from rich.console import Console
 from sqlmodel import Session, select
 
 from backend.get_db import get_db
+from backend.utilities.rbac.policy import Access
 from backend.new_models import Scan
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
 from backend.utilities.dashboard.cbom_team_rollup import ScanHead, load_team_cbom_view
@@ -50,6 +51,7 @@ from backend.utilities.pdf.cbom_deliverables import (
 from backend.utilities.team import check_if_user_is_in_team
 
 router = APIRouter(tags=["cbom-deliverables"])
+access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db (tests replace it)
 console = Console()
 
 GENERIC_ERROR_DETAIL = "Error generating deliverable, please try again later"
@@ -162,7 +164,7 @@ TeamId = Annotated[int, Path(ge=1, le=_MAX_TEAM_ID, description="Team id")]
         "has anything to show. Reads only scan heads (no scan data), so it is cheap. "
         "`available` is a UI hint; the PDF route always answers 200."
     ),
-    dependencies=[Depends(limiter)],
+    dependencies=[Depends(limiter), access.team("cbom.read")],
     response_model=None,
     responses={
         200: {
@@ -208,7 +210,7 @@ def _posture_header(view: Any) -> str:
         "X-Cbom-Sources, X-Cbom-Fidelity (full, mixed, reduced or none), X-Cbom-Fingerprint "
         "and X-Cbom-Posture (assessed, mixed, not_assessed or none) are informational."
     ),
-    dependencies=[Depends(limiter)],
+    dependencies=[Depends(limiter), access.team("cbom.read")],
     response_model=None,
     responses={
         200: {

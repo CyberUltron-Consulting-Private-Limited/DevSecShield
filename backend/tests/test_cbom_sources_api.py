@@ -453,7 +453,7 @@ def test_aws_validation_reports_platform_errors_without_crashing(monkeypatch):
 
 # ----------------------------------------------------------------------------- settings and network
 def test_settings_permissions_and_stop_all(api, world):
-    assert api("PATCH", "/1/cbom/sources/settings", "bob", json={"soc_email": "soc@bank.test"}).status_code == 400
+    assert api("PATCH", "/1/cbom/sources/settings", "bob", json={"soc_email": "soc@bank.test"}).status_code == 403  # admins only: the route policy refuses a member (F4 RBAC)
     ok = api("PATCH", "/1/cbom/sources/settings", json={"soc_email": "soc@bank.test", "network_exclusions": [
         {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": "10.20.99.0/24", "reason": "dup"}]})
     assert ok.status_code == 200 and len(ok.json()["settings"]["network_exclusions"]) == 1

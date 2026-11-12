@@ -39,6 +39,8 @@ from backend.new_models import (
     Scan,
     Team,
 )
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
@@ -99,6 +101,7 @@ from backend.utilities.cbom_sources.templates import (
 import os
 
 router = APIRouter(tags=["cbom-sources"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
@@ -229,7 +232,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
         }
 
 
-@router.get(BASE + "/overview", dependencies=READ, summary="Counts, skipped items and the estimate for every tab")
+@router.get(BASE + "/overview", dependencies=[*READ, access.team("cbom.read")], summary="Counts, skipped items and the estimate for every tab")
 async def get_overview(team_id: TeamId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("overview", team_id, _overview, engine, team_id, user.id))
@@ -247,7 +250,7 @@ def _list_nodes(engine, team_id: int) -> dict:
                         sources=counts.get(n.id, {}).get("sources", 0)) for n in rows]}
 
 
-@router.get(BASE + "/nodes", dependencies=READ, summary="List scan nodes")
+@router.get(BASE + "/nodes", dependencies=[*READ, access.team("cbom.read")], summary="List scan nodes")
 async def list_nodes(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("list nodes", team_id, _list_nodes, engine, team_id))
@@ -291,7 +294,7 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
         return {"node": public_node(node, now), "registration_token": token}
 
 
-@router.post(BASE + "/nodes", dependencies=WRITE, summary="Add a scan node; returns a one-time registration token")
+@router.post(BASE + "/nodes", dependencies=[*WRITE, access.team("cbom.write")], summary="Add a scan node; returns a one-time registration token")
 async def create_node(team_id: TeamId, body: NodeCreate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("create node", team_id, _create_node, engine, team_id, user.id, body), 201)
@@ -307,7 +310,7 @@ def _get_node(engine, team_id: int, node_id: int) -> dict:
                 "server_time": iso_z(now)}
 
 
-@router.get(BASE + "/nodes/{node_id}", dependencies=READ, summary="Get a scan node")
+@router.get(BASE + "/nodes/{node_id}", dependencies=[*READ, access.team("cbom.read")], summary="Get a scan node")
 async def get_node(team_id: TeamId, node_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("get node", team_id, _get_node, engine, team_id, node_id))
@@ -345,7 +348,7 @@ def _update_node(engine, team_id: int, user_id: int, node_id: int, body: NodeUpd
         return {"node": public_node(node, now)}
 
 
-@router.patch(BASE + "/nodes/{node_id}", dependencies=WRITE, summary="Edit a scan node")
+@router.patch(BASE + "/nodes/{node_id}", dependencies=[*WRITE, access.team("cbom.write")], summary="Edit a scan node")
 async def update_node(team_id: TeamId, node_id: ObjectId, body: NodeUpdate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("update node", team_id, _update_node, engine, team_id, user.id, node_id, body))
@@ -395,14 +398,14 @@ def _new_registration(engine, team_id: int, user_id: int, node_id: int, reset: b
         return {"node": public_node(node, now), "registration_token": token}
 
 
-@router.post(BASE + "/nodes/{node_id}/registration-token", dependencies=WRITE,
+@router.post(BASE + "/nodes/{node_id}/registration-token", dependencies=[*WRITE, access.team("cbom.write")],
              summary="Issue a new registration token for a node that has not registered")
 async def regenerate_token(team_id: TeamId, node_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("node token", team_id, _new_registration, engine, team_id, user.id, node_id, False))
 
 
-@router.post(BASE + "/nodes/{node_id}/reset", dependencies=WRITE,
+@router.post(BASE + "/nodes/{node_id}/reset", dependencies=[*WRITE, access.team("cbom.write")],
              summary="Revoke the node's credential and issue a new registration token (none for an agent pool node)")
 async def reset_node(team_id: TeamId, node_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -440,7 +443,7 @@ def _delete_node(engine, team_id: int, user_id: int, node_id: int) -> dict:
         return {"deleted": node_id}
 
 
-@router.delete(BASE + "/nodes/{node_id}", dependencies=WRITE, summary="Delete a scan node with no sources")
+@router.delete(BASE + "/nodes/{node_id}", dependencies=[*WRITE, access.team("cbom.write")], summary="Delete a scan node with no sources")
 async def delete_node(team_id: TeamId, node_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("delete node", team_id, _delete_node, engine, team_id, user.id, node_id))
@@ -551,7 +554,7 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
         return {"source": public_source(source, settings, node, now), "test": test}
 
 
-@router.post(BASE + "/items", dependencies=WRITE, summary="Add a source (secrets are write-only)")
+@router.post(BASE + "/items", dependencies=[*WRITE, access.team("cbom.write")], summary="Add a source (secrets are write-only)")
 async def create_source(team_id: TeamId, body: SourceCreate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     result = await _run("create source", team_id, _create_source, engine, team_id, user.id, body)
@@ -576,7 +579,7 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
                 "sources": [public_source(r, settings, nodes.get(r.node_id), now) for r in rows]}
 
 
-@router.get(BASE + "/items", dependencies=READ, summary="List sources")
+@router.get(BASE + "/items", dependencies=[*READ, access.team("cbom.read")], summary="List sources")
 async def list_sources(team_id: TeamId, kind: str | None = Query(default=None, max_length=32),
                        group: str | None = Query(default=None, max_length=32), Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -594,7 +597,7 @@ def _get_source(engine, team_id: int, source_id: int) -> dict:
         return {"source": public_source(source, settings, node, now), "server_time": iso_z(now)}
 
 
-@router.get(BASE + "/items/{source_id}", dependencies=READ, summary="Get a source")
+@router.get(BASE + "/items/{source_id}", dependencies=[*READ, access.team("cbom.read")], summary="Get a source")
 async def get_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("get source", team_id, _get_source, engine, team_id, source_id))
@@ -701,7 +704,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         return {"source": public_source(source, settings, node, now), "test": test}
 
 
-@router.patch(BASE + "/items/{source_id}", dependencies=WRITE, summary="Edit a source (blank secrets keep the stored ones)")
+@router.patch(BASE + "/items/{source_id}", dependencies=[*WRITE, access.team("cbom.write")], summary="Edit a source (blank secrets keep the stored ones)")
 async def update_source(team_id: TeamId, source_id: ObjectId, body: SourceUpdate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     result = await _run("update source", team_id, _update_source, engine, team_id, user.id, source_id, body)
@@ -740,7 +743,7 @@ def _remove_source(session: Session, source: CbomCollectionSource, team_id: int,
     session.delete(source)
 
 
-@router.delete(BASE + "/items/{source_id}", dependencies=WRITE, summary="Delete a source")
+@router.delete(BASE + "/items/{source_id}", dependencies=[*WRITE, access.team("cbom.write")], summary="Delete a source")
 async def delete_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("delete source", team_id, _delete_source, engine, team_id, user.id, source_id))
@@ -874,7 +877,7 @@ def _test_cloud_http(engine, team_id: int, user_id: int, source_id: int) -> dict
 _LIVE_TESTS = {"aws_account": _test_aws, "azure_subscription": _test_cloud_http, "gcp_project": _test_cloud_http}
 
 
-@router.post(BASE + "/items/{source_id}/test", dependencies=WRITE,
+@router.post(BASE + "/items/{source_id}/test", dependencies=[*WRITE, access.team("cbom.write")],
              summary="Test a source: a job for its scan node, live AWS / Azure / Google Cloud checks, or a read of the IdP's public metadata")
 async def test_source(team_id: TeamId, source_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -898,7 +901,7 @@ def _count_targets(body: dict) -> dict:
             "samples": T.sample_targets(parsed, excl, 5)}
 
 
-@router.post(BASE + "/targets/count", dependencies=READ, summary="Count targets after exclusions (no side effects)")
+@router.post(BASE + "/targets/count", dependencies=[*READ, access.team("cbom.read")], summary="Count targets after exclusions (no side effects)")
 async def count_targets(team_id: TeamId, body: dict, Authorization: AuthHeader = None):
     await authorize(team_id, Authorization)
     if not isinstance(body.get("targets", []), (list, str)) or not isinstance(body.get("exclusions", []), (list, str)):
@@ -919,7 +922,7 @@ def _get_job(engine, team_id: int, job_id: int) -> dict:
         return {"job": public_job(job, node, settings, now, source)}
 
 
-@router.get(BASE + "/jobs/{job_id}", dependencies=READ, summary="Poll a job")
+@router.get(BASE + "/jobs/{job_id}", dependencies=[*READ, access.team("cbom.read")], summary="Poll a job")
 async def get_job(team_id: TeamId, job_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("get job", team_id, _get_job, engine, team_id, job_id))
@@ -932,7 +935,7 @@ def _get_settings(engine, team_id: int) -> dict:
         return {"settings": public_settings(get_or_create_settings(session, team_id), now)}
 
 
-@router.get(BASE + "/settings", dependencies=READ, summary="Network scope, safety, certificate domains, AWS external ID")
+@router.get(BASE + "/settings", dependencies=[*READ, access.team("cbom.read")], summary="Network scope, safety, certificate domains, AWS external ID")
 async def get_settings(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("get settings", team_id, _get_settings, engine, team_id))
@@ -1020,7 +1023,7 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
         return {"settings": public_settings(row, now)}
 
 
-@router.patch(BASE + "/settings", dependencies=WRITE, summary="Update team settings (admin; send only changed sections)")
+@router.patch(BASE + "/settings", dependencies=[*WRITE, access.team("cbom.settings")], summary="Update team settings (admin; send only changed sections)")
 async def update_settings(team_id: TeamId, body: SettingsUpdate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("update settings", team_id, _update_settings, engine, team_id, user.id, body))
@@ -1047,7 +1050,7 @@ def _stop_all(engine, team_id: int, user_id: int, on: bool) -> dict:
         return {"settings": public_settings(row, now)}
 
 
-@router.post(BASE + "/settings/stop-all", dependencies=WRITE,
+@router.post(BASE + "/settings/stop-all", dependencies=[*WRITE, access.team("cbom.write")],
              summary="Stop all network scanning (any member) or resume it (admin)")
 async def stop_all(team_id: TeamId, body: StopAll, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -1063,7 +1066,7 @@ def _aws_template(engine, team_id: int, scope: str, lambda_cmk: bool = False, gl
                                        read_lambda_cmk=lambda_cmk, read_glue=glue)
 
 
-@router.get(BASE + "/aws/template", dependencies=READ, summary="CloudFormation template for the read-only role")
+@router.get(BASE + "/aws/template", dependencies=[*READ, access.team("cbom.read")], summary="CloudFormation template for the read-only role")
 async def aws_template(team_id: TeamId, scope: str = Query(default="account", pattern="^(account|organization)$"),
                        lambda_cmk: bool = Query(default=False, description="Default of DecryptCustomerKeyLambdaEnvironments"),
                        glue: bool = Query(default=False, description="Default of ReadGlueConnections"),
@@ -1074,7 +1077,7 @@ async def aws_template(team_id: TeamId, scope: str = Query(default="account", pa
         **PRIVATE, "Content-Disposition": f'attachment; filename="zeroshield-cbom-reader-{scope}.yaml"'})
 
 
-@router.get(BASE + "/templates/{name}", dependencies=READ, summary="Sudoers file, ClusterRoles and database grants")
+@router.get(BASE + "/templates/{name}", dependencies=[*READ, access.team("cbom.read")], summary="Sudoers file, ClusterRoles and database grants")
 async def get_template(team_id: TeamId, name: str, Authorization: AuthHeader = None):
     await authorize(team_id, Authorization)
     text = template_text(name)
@@ -1103,7 +1106,7 @@ def _discovery(engine, team_id: int, user_id: int) -> dict:
         return {"jobs": [public_job(j, nodes.get(j.node_id), settings, now) for j in jobs]}
 
 
-@router.post(BASE + "/discovery", dependencies=WRITE, summary="Queue a discovery sweep on every node with ranges (admin)")
+@router.post(BASE + "/discovery", dependencies=[*WRITE, access.team("cbom.settings")], summary="Queue a discovery sweep on every node with ranges (admin)")
 async def discovery(team_id: TeamId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("discovery", team_id, _discovery, engine, team_id, user.id))
@@ -1125,7 +1128,7 @@ def _evidence(engine, team_id: int) -> dict:
                 "by_confidence": by_q, "answered": sum(1 for r in rows if r["effective_confidence"] != "Q0")}
 
 
-@router.get(BASE + "/evidence", dependencies=READ, summary="Evidence areas and vendors")
+@router.get(BASE + "/evidence", dependencies=[*READ, access.team("cbom.read")], summary="Evidence areas and vendors")
 async def get_evidence(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("evidence", team_id, _evidence, engine, team_id))
@@ -1171,7 +1174,7 @@ def _update_area(engine, team_id: int, user_id: int, area_key: str, body: AreaUp
         return {"area": public_area(row, _today(now), levels)}
 
 
-@router.patch(BASE + "/evidence/{area_key}", dependencies=WRITE, summary="Answer or update an evidence area")
+@router.patch(BASE + "/evidence/{area_key}", dependencies=[*WRITE, access.team("cbom.write")], summary="Answer or update an evidence area")
 async def update_area(team_id: TeamId, area_key: str, body: AreaUpdate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("update evidence", team_id, _update_area, engine, team_id, user.id, area_key, body))
@@ -1196,7 +1199,7 @@ def _create_vendor(engine, team_id: int, user_id: int, body: VendorCreate) -> di
         return {"vendor": public_vendor(row, now)}
 
 
-@router.post(BASE + "/evidence/vendors", dependencies=WRITE, summary="Add a vendor")
+@router.post(BASE + "/evidence/vendors", dependencies=[*WRITE, access.team("cbom.write")], summary="Add a vendor")
 async def create_vendor(team_id: TeamId, body: VendorCreate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("create vendor", team_id, _create_vendor, engine, team_id, user.id, body), 201)
@@ -1223,7 +1226,7 @@ def _update_vendor(engine, team_id: int, user_id: int, vendor_id: int, body: Ven
         return {"vendor": public_vendor(row, now)}
 
 
-@router.patch(BASE + "/evidence/vendors/{vendor_id}", dependencies=WRITE, summary="Edit a vendor")
+@router.patch(BASE + "/evidence/vendors/{vendor_id}", dependencies=[*WRITE, access.team("cbom.write")], summary="Edit a vendor")
 async def update_vendor(team_id: TeamId, vendor_id: ObjectId, body: VendorUpdate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("update vendor", team_id, _update_vendor, engine, team_id, user.id, vendor_id, body))
@@ -1240,7 +1243,7 @@ def _delete_vendor(engine, team_id: int, user_id: int, vendor_id: int) -> dict:
         return {"deleted": vendor_id}
 
 
-@router.delete(BASE + "/evidence/vendors/{vendor_id}", dependencies=WRITE, summary="Delete a vendor (its link stops working)")
+@router.delete(BASE + "/evidence/vendors/{vendor_id}", dependencies=[*WRITE, access.team("cbom.write")], summary="Delete a vendor (its link stops working)")
 async def delete_vendor(team_id: TeamId, vendor_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("delete vendor", team_id, _delete_vendor, engine, team_id, user.id, vendor_id))
@@ -1269,7 +1272,7 @@ def _vendor_link(engine, team_id: int, user_id: int, vendor_id: int) -> dict:
         return {"vendor": public_vendor(row, now), "url": f"{base}/q/{token}", "path": f"/q/{token}"}
 
 
-@router.post(BASE + "/evidence/vendors/{vendor_id}/link", dependencies=WRITE,
+@router.post(BASE + "/evidence/vendors/{vendor_id}/link", dependencies=[*WRITE, access.team("cbom.write")],
              summary="Create a single-use questionnaire link (replaces any previous link)")
 async def vendor_link(team_id: TeamId, vendor_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -1287,7 +1290,7 @@ def _estimate(engine, team_id: int, body: EstimateBody) -> dict:
                 "server_time": iso_z(now)}
 
 
-@router.post(BASE + "/estimate", dependencies=READ, summary="Credits a run would charge, with skipped sources and reasons")
+@router.post(BASE + "/estimate", dependencies=[*READ, access.team("cbom.read")], summary="Credits a run would charge, with skipped sources and reasons")
 async def estimate(team_id: TeamId, body: EstimateBody, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("estimate", team_id, _estimate, engine, team_id, body))
@@ -1315,7 +1318,7 @@ def _create_run(engine, team_id: int, user_id: int, body: RunCreate) -> tuple[di
         return {"run": _run_detail(session, run, settings, now), "replayed": False}, 201
 
 
-@router.post(BASE + "/runs", dependencies=WRITE, summary="Start a collection run (charges credits; idempotent per client_request_id)")
+@router.post(BASE + "/runs", dependencies=[*WRITE, access.team("cbom.write")], summary="Start a collection run (charges credits; idempotent per client_request_id)")
 async def create_run(team_id: TeamId, body: RunCreate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     payload, code = await _run("create run", team_id, _create_run, engine, team_id, user.id, body)
@@ -1341,7 +1344,7 @@ def _list_runs(engine, team_id: int, scan_id: int | None) -> dict:
         return {"runs": out, "server_time": iso_z(now)}
 
 
-@router.get(BASE + "/runs", dependencies=READ, summary="Recent collection runs")
+@router.get(BASE + "/runs", dependencies=[*READ, access.team("cbom.read")], summary="Recent collection runs")
 async def list_runs(team_id: TeamId, scan_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                     Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -1357,7 +1360,7 @@ def _get_run(engine, team_id: int, run_id: int) -> dict:
         return {"run": _run_detail(session, run, get_or_create_settings(session, team_id), now), "server_time": iso_z(now)}
 
 
-@router.get(BASE + "/runs/{run_id}", dependencies=READ, summary="A run with its jobs")
+@router.get(BASE + "/runs/{run_id}", dependencies=[*READ, access.team("cbom.read")], summary="A run with its jobs")
 async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("get run", team_id, _get_run, engine, team_id, run_id))
@@ -1379,7 +1382,7 @@ def _asset_params(type: str | None, impact: str | None, quantum: bool | None, q:
             "source_id": source_id, "page": page, "page_size": page_size}
 
 
-@router.get(BASE + "/runs/{run_id}/assets", dependencies=READ, summary="What a run collected: paged assets, facets, per-target results")
+@router.get(BASE + "/runs/{run_id}/assets", dependencies=[*READ, access.team("cbom.read")], summary="What a run collected: paged assets, facets, per-target results")
 async def run_assets(team_id: TeamId, run_id: ObjectId,
                      type: str | None = Query(default=None, max_length=32),
                      impact: str | None = Query(default=None, pattern="^(Critical|High|Medium|Low|none)$"),
@@ -1399,7 +1402,7 @@ def _run_cbom(engine, team_id: int, run_id: int) -> dict:
         return INV.cyclonedx(session, run, utcnow())
 
 
-@router.get(BASE + "/runs/{run_id}/cbom", dependencies=READ,
+@router.get(BASE + "/runs/{run_id}/cbom", dependencies=[*READ, access.team("cbom.read")],
             summary="CycloneDX 1.6 CBOM of what a run collected (format=json, or xml valid against the official XSD)")
 async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(default="json", pattern="^(json|xml)$"),
                    Authorization: AuthHeader = None):
@@ -1421,7 +1424,7 @@ def _run_posture(engine, team_id: int, run_id: int) -> dict:
                 "posture": POSTURE.run_posture(session, team_id=team_id, run_id=run.id, risk_model=settings.risk_model)}
 
 
-@router.get(BASE + "/runs/{run_id}/posture", dependencies=READ,
+@router.get(BASE + "/runs/{run_id}/posture", dependencies=[*READ, access.team("cbom.read")],
             summary="Post-quantum readiness, harvest-now-decrypt-later exposure, Mosca verdict, top risks, compliance")
 async def run_posture(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -1442,7 +1445,7 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
                                               node=node)}
 
 
-@router.get(BASE + "/assets/{asset_id}", dependencies=READ,
+@router.get(BASE + "/assets/{asset_id}", dependencies=[*READ, access.team("cbom.read")],
             summary="One collected asset explained: CWE, OWASP, CVEs, remediation and read-only proof commands")
 async def asset_detail(team_id: TeamId, asset_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -1455,7 +1458,7 @@ def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:
         return INV.list_assets(session, team_id=team_id, job_id=job.id, **params)
 
 
-@router.get(BASE + "/jobs/{job_id}/assets", dependencies=READ, summary="What one job collected (e.g. a discovery sweep)")
+@router.get(BASE + "/jobs/{job_id}/assets", dependencies=[*READ, access.team("cbom.read")], summary="What one job collected (e.g. a discovery sweep)")
 async def job_assets(team_id: TeamId, job_id: ObjectId,
                      type: str | None = Query(default=None, max_length=32),
                      page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
@@ -1482,7 +1485,7 @@ def _cancel_run(engine, team_id: int, user_id: int, run_id: int) -> dict:
                 "refunded": credits(refunded)}
 
 
-@router.post(BASE + "/runs/{run_id}/cancel", dependencies=WRITE,
+@router.post(BASE + "/runs/{run_id}/cancel", dependencies=[*WRITE, access.team("cbom.write")],
              summary="Cancel jobs not yet picked up and refund them; jobs already running finish")
 async def cancel_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -1499,7 +1502,7 @@ def _audit_list(engine, team_id: int, limit: int) -> dict:
                             "changed_fields": r.changed_fields or []} for r in rows]}
 
 
-@router.get(BASE + "/audit", dependencies=READ, summary="Recent changes to CBOM Sources (who, what, when)")
+@router.get(BASE + "/audit", dependencies=[*READ, access.team("cbom.read")], summary="Recent changes to CBOM Sources (who, what, when)")
 async def audit_list(team_id: TeamId, limit: int = Query(default=100, ge=1, le=500), Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("audit", team_id, _audit_list, engine, team_id, limit))

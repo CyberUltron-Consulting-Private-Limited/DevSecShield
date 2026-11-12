@@ -369,7 +369,7 @@ def test_deleting_the_team_deletes_its_invitations(client, world):
         s.commit()
         s.refresh(team)
         admin_id = s.exec(select(User).where(User.email == ADMIN)).one().id
-        s.add(TeamMembership(team_id=team.id, user_id=admin_id, role="admin"))
+        s.add(TeamMembership(team_id=team.id, user_id=admin_id, role="owner"))  # F4: only an owner deletes a team
         s.commit()
         temp = team.id
     invite(client, temp, BOB)

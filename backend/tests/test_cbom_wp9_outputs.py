@@ -386,6 +386,8 @@ def http(monkeypatch):
         monkeypatch.setattr(mod, "check_if_user_is_in_team", lambda *_a, **_k: None)
         monkeypatch.setattr(mod, "get_user_from_header_or_raise_exception", fake_user)
     monkeypatch.setattr(credits_mod, "get_db", lambda: engine)
+    from backend.tests.support.rbac import stand_in_principal
+    stand_in_principal(monkeypatch, user_id=1, email="u@example.test")  # the route policy (F4): user 1, team owner
     monkeypatch.setattr(scans_router, "get_mongo_client_db", lambda: FakeMongo())
     monkeypatch.setattr(scans_router, "estimate_credits", fake_estimate)
     monkeypatch.setattr(scans_router, "start_scan_and_update_db", fake_dispatch)

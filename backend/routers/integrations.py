@@ -26,6 +26,8 @@ from sqlalchemy import update
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionRun, IntegrationDelivery, Scan, TeamIntegration
+from backend.utilities.cbom_sources import http as _cbom_http
+from backend.utilities.rbac.policy import Access
 from backend.utilities.cbom_sources.common import audit, iso_z, log, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets
 from backend.utilities.cbom_sources.http import (
@@ -53,6 +55,7 @@ from backend.utilities.integrations.registry import KINDS, SPECS, validate_confi
 from backend.utilities.integrations.webhook import MIN_SECRET, VERIFY_SNIPPET
 
 router = APIRouter(tags=["integrations"], route_class=CbomRoute)
+access = Access(lambda: _cbom_http.get_db())  # route policies (utilities/rbac): the same database as authorize()
 AuthHeader = Annotated[str | None, Header()]
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
@@ -142,7 +145,7 @@ def _list(engine, team_id: int) -> dict:
                                          "configured": bool(outbound.allowlist().networks or outbound.allowlist().hosts)}}
 
 
-@router.get(BASE, dependencies=READ, summary="Integrations of the team (secrets are never returned)")
+@router.get(BASE, dependencies=[*READ, access.team("integrations.read")], summary="Integrations of the team (secrets are never returned)")
 async def list_integrations(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("list", team_id, _list, engine, team_id))
@@ -244,7 +247,7 @@ def _save(engine, team_id: int, user_id: int, kind: str, body: IntegrationSave) 
         return {"integration": public_integration(kind, row, counts)}
 
 
-@router.put(BASE + "/{kind}", dependencies=WRITE, summary="Create or update an integration (admin; secrets are write-only)")
+@router.put(BASE + "/{kind}", dependencies=[*WRITE, access.team("team.integrations.manage")], summary="Create or update an integration (admin; secrets are write-only)")
 async def save_integration(team_id: TeamId, kind: str, body: IntegrationSave, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("save", team_id, _save, engine, team_id, user.id, _kind(kind), body))
@@ -267,7 +270,7 @@ def _delete(engine, team_id: int, user_id: int, kind: str) -> dict:
         return {"deleted": kind}
 
 
-@router.delete(BASE + "/{kind}", dependencies=WRITE, summary="Remove an integration and its delivery log (admin)")
+@router.delete(BASE + "/{kind}", dependencies=[*WRITE, access.team("team.integrations.manage")], summary="Remove an integration and its delivery log (admin)")
 async def delete_integration(team_id: TeamId, kind: str, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("delete", team_id, _delete, engine, team_id, user.id, _kind(kind)))
@@ -316,7 +319,7 @@ def _test(engine, team_id: int, user_id: int, kind: str) -> dict:
             "at": iso_z(now)}
 
 
-@router.post(BASE + "/{kind}/test", dependencies=WRITE,
+@router.post(BASE + "/{kind}/test", dependencies=[*WRITE, access.team("team.integrations.manage")],
              summary="Send a test event (ServiceNow: read one record) and report the status (admin)")
 async def test_integration(team_id: TeamId, kind: str, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -347,7 +350,7 @@ def _deliveries(engine, team_id: int, kind: str | None, status: str | None, befo
         return {"deliveries": items, "next_before_id": items[-1]["id"] if len(items) == limit else None}
 
 
-@router.get(BASE + "/deliveries", dependencies=READ, summary="Delivery log and dead-letter list (newest first)")
+@router.get(BASE + "/deliveries", dependencies=[*READ, access.team("integrations.read")], summary="Delivery log and dead-letter list (newest first)")
 async def list_deliveries(team_id: TeamId, kind: str | None = Query(default=None, max_length=16),
                           status: str | None = Query(default=None, pattern="^(pending|delivered|dead)$"),
                           before_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
@@ -379,7 +382,7 @@ def _retry(engine, team_id: int, user_id: int, body: RetryBody) -> dict:
         return {"requeued": n}
 
 
-@router.post(BASE + "/deliveries/retry", dependencies=WRITE, summary="Queue dead-lettered deliveries again (admin)")
+@router.post(BASE + "/deliveries/retry", dependencies=[*WRITE, access.team("team.integrations.manage")], summary="Queue dead-lettered deliveries again (admin)")
 async def retry_deliveries(team_id: TeamId, body: RetryBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("retry", team_id, _retry, engine, team_id, user.id, body))
@@ -408,7 +411,7 @@ def _run_oscal(engine, team_id: int, run_id: int) -> Response:
     return _oscal_response(doc, f"zeroshield-cbom-run-{run_id}-oscal-assessment-results.json")
 
 
-@router.get(SRC + "/runs/{run_id}/oscal", dependencies=READ,
+@router.get(SRC + "/runs/{run_id}/oscal", dependencies=[*READ, access.team("cbom.read")],
             summary="OSCAL 1.2.3 assessment results of a finished collection run (schema-validated)")
 async def run_oscal(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -426,7 +429,7 @@ def _scan_oscal(engine, team_id: int, scan_id: int) -> Response:
     return _oscal_response(doc, f"zeroshield-cbom-scan-{scan_id}-oscal-assessment-results.json")
 
 
-@router.get(CODE + "/{scan_id}/oscal", dependencies=READ,
+@router.get(CODE + "/{scan_id}/oscal", dependencies=[*READ, access.team("cbom.read")],
             summary="OSCAL 1.2.3 assessment results of a CBOM code scan (schema-validated)")
 async def scan_oscal(team_id: TeamId, scan_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -468,7 +471,7 @@ def _cmdb_preview(engine, team_id: int, user_id: int, body: CmdbBody) -> dict:
     return {"source": body.source, "source_truncated": truncated, "plan": plan.public()}
 
 
-@router.post(SRC + "/cmdb/preview", dependencies=WRITE,
+@router.post(SRC + "/cmdb/preview", dependencies=[*WRITE, access.team("team.integrations.manage")],
              summary="CMDB import preview: which sources would be created or have metadata updated (admin; changes nothing)")
 async def cmdb_preview(team_id: TeamId, body: CmdbBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -494,7 +497,7 @@ def _cmdb_apply(engine, team_id: int, user_id: int, body: CmdbBody) -> dict:
     return {"result": result, "plan": plan.public()}
 
 
-@router.post(SRC + "/cmdb/apply", dependencies=WRITE,
+@router.post(SRC + "/cmdb/apply", dependencies=[*WRITE, access.team("team.integrations.manage")],
              summary="Apply a previewed CMDB import (admin; metadata edits never cancel running jobs)")
 async def cmdb_apply(team_id: TeamId, body: CmdbBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
