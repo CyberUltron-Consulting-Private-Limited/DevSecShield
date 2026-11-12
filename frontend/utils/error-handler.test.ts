@@ -5,7 +5,7 @@
  * Run: npx --yes tsx utils/error-handler.test.ts
  */
 import assert from "node:assert/strict";
-import { AxiosError, AxiosHeaders } from "axios";
+import { AxiosError, AxiosHeaders, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 
 function axios403(detail: unknown): AxiosError {
   const config = { headers: new AxiosHeaders() } as any;
@@ -64,6 +64,43 @@ assert.deepEqual(calls, ["GET /logout", "localStorage.clear"]);
 assert.equal((globalThis as any).window.location.href, "/login");
 
 console.log("error-handler 403 handling: ok");
+
+// 4. #31: a refused request never reaches the browser console. The AxiosError holds config.data, the request body:
+// a wrong current password on the Account page logged {"current_password", "new_password"} in plain text, a refused
+// Create admin user its temporary password.
+const secret = "Curr3nt-SECRET-pass";
+const logged: unknown[][] = [];
+const sink = console as unknown as Record<string, (...args: unknown[]) => void>;
+const original: Record<string, (...args: unknown[]) => void> = {};
+for (const level of ["log", "info", "warn", "error", "debug", "trace", "dir", "table"]) {
+  original[level] = sink[level];
+  sink[level] = (...args: unknown[]) => void logged.push([level, ...args]);
+}
+const { showErrorToast } = await import("./error-handler");
+const { inspect } = await import("node:util");
+const refused = (status: number | undefined) => {
+  const config: InternalAxiosRequestConfig = {
+    headers: new AxiosHeaders(), method: "post", url: "/account/password",
+    data: JSON.stringify({ current_password: secret, new_password: `${secret}-new` }),
+  };
+  const response: AxiosResponse | undefined = status === undefined ? undefined
+    : { status, statusText: "Refused", headers: {}, config, data: { detail: "Incorrect current password" } };
+  return new AxiosError(status ? `Request failed with status code ${status}` : "Network Error",
+    status ? "ERR_BAD_REQUEST" : "ERR_NETWORK", config, { _body: config.data }, response);
+};
+try {
+  for (const status of [400, 401, 403, 404, 409, 422, 429, 500, 502, undefined]) {
+    handleApiError(refused(status));
+    showErrorToast(refused(status), "fallback");
+  }
+  await settle();
+} finally {
+  for (const [level, fn] of Object.entries(original)) sink[level] = fn;
+}
+const leaked = logged.filter((entry) => inspect(entry, { depth: 12 }).includes(secret));
+assert.deepEqual(leaked, [], "a refused request's body reached the console");
+assert.deepEqual(logged.filter(([, first]) => first instanceof AxiosError), [], "the whole AxiosError was logged");
+console.log("error-handler never logs a request: ok");
 }
 
 main().catch((e) => {

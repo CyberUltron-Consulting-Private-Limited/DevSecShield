@@ -61,9 +61,11 @@ function waitText(seconds: number): string {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
+/** What to tell the user about a failed request. It writes nothing to the console: an AxiosError carries the request
+ * body (config.data), and logging it printed passwords and tokens in plain text (#31). The browser's network panel
+ * shows a failed request to whoever needs it. */
 export const handleApiError = (error: unknown): ApiError => {
   if (error instanceof AxiosError) {
-    console.log(error);
     const status = error.response?.status;
     const message = error.response?.data?.message || error.response?.data?.detail || error.message;
 
