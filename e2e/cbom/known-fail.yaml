@@ -1,0 +1,131 @@
+# Strict known-fail ledger of the CBOM Tier-L gate (DEVILS-ADVOCATE.md §4.1, §4.4; INTERFACES.md §9).
+# Base: dev 83b570b. Every row names the checks it covers (match), the track that flips it (owner) and an issue.
+#   * a failing check no row matches fails the gate;
+#   * a row whose checks all pass is STALE and fails the gate: the PR that fixed it deletes the row;
+#   * a row that matches nothing, or only NOT-RUN checks, fails the gate unless it says not_run_ok.
+# Match keys: any check subject key, or id/gate/kind/reason/verdict; a list means "any of"; <key>_prefix matches a
+# string prefix. Run `cd e2e/cbom && python3 -m harness.gate judge <run>` to see which rows a run holds.
+
+# ---------------------------------------------------------------------------- preconditions on L (CB-03)
+- row: PRE-build-identity
+  gate: [G0]
+  match: {check: [build_health, build_header, build_frontend_meta, build_node_label]}
+  issue: "#73"
+  owner: CB-03
+  why: "/health has no build field, no X-ZS-Build header, no zs-build meta, node image without ZS_NODE_BUILD (main.py:148)"
+- row: PRE-node-on-L
+  gate: [G3]
+  match: {check: [allowed_diff, node_image_served]}
+  issue: "#73"
+  owner: CB-03
+  why: "no scan-node image on L (the UI prints registry.zeroshield.ai/cbom/scan-node:1.0), api.dss.test does not
+    resolve inside a container and the lab CA is private: the runner must start the node with more than the allowed diff"
+
+# ---------------------------------------------------------------------------- product rows (DA §4.4)
+- row: KF-8
+  gate: [G10]
+  match: {check: charge_after_runtime_skips}
+  issue: "#73"
+  owner: CB-14
+  why: "targets skipped at run time (window, stop, never-scan) are charged in full (R2 billing.json, R3 test_f4)"
+  not_run_ok: "CB-05 adds the charge check to G10; the row then holds until CB-14"
+- row: KF-9
+  gate: [G11]
+  match: {kind: join, view: export, field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id]}
+  issue: "#73"
+  owner: CB-06
+  why: "the run export lacks key size, curve, signature algorithm, groups, pqc_class and provenance (R4 p1)"
+- row: KF-9-oracle
+  gate: [G11]
+  match: {kind: oracle, field: pqc_class, reason: export-missing}
+  issue: "#73"
+  owner: CB-06
+  why: "pqc_class is judged against the oracle from the export, which does not carry it yet"
+- row: KF-2
+  gate: [G10]
+  match: {check: canary_accepts, never_scan_by: name}
+  issue: "#17"
+  owner: "#32"
+  why: "a never-scan entry given by host name still reaches the canary (DA-P2: 7 connections on dev); #32 fixes it"
+- row: KF-3
+  gate: [G11]
+  match: {kind: oracle, target_id: z05b}
+  issue: "#73"
+  owner: CB-04
+  why: "ML-DSA-65 certificate: key algorithm stored as an OID, quantum verdict missing; false NO_PQ_KEX on z05b"
+- row: KF-4
+  gate: [G11]
+  match: {kind: oracle, target_id: z09}
+  issue: "#73"
+  owner: CB-12
+  why: "an SNI-only server (ssl_reject_handshake on) shows 'ok' and nothing collected"
+- row: KF-5
+  gate: [G11]
+  match: {kind: oracle, target_id: [canary, control], reason: [extra, fabricated]}
+  issue: "#73"
+  owner: CB-12
+  why: "a non-TLS TCP listener is stored as a tls_endpoint asset (DA-P2, R2 L1)"
+- row: KF-6
+  gate: [G11]
+  match: {kind: oracle, target_id: sshd-pq}
+  issue: "#73"
+  owner: CB-13
+  why: "a PQ-only OpenSSH (mlkem768x25519-sha256 only): the host key is not read"
+- row: KF-7
+  gate: [G5b]
+  match: {step: G5b}
+  issue: "#73"
+  owner: CB-09
+  why: "faß.lab is resolved as fass.lab (IDNA 2003); the G5b step itself is CB-05's spec"
+  not_run_ok: "G5b runs once CB-05 lands its spec; the row then holds until CB-09"
+- row: KF-10
+  gate: [G11]
+  match: {kind: derived, field: posture}
+  issue: "#73"
+  owner: CB-18
+  why: "no 'unknown' PQC class (shown as not applicable) and no Q-grade; the posture oracle (OA-10a) is not written yet"
+  not_run_ok: "posture numbers are judged once CB-05 writes the posture oracle; then the row holds until CB-18/CB-19"
+- row: KF-11
+  gate: [G12]
+  match: {check: vex_states}
+  issue: "#73"
+  owner: CB-22
+  why: "every VEX entry is 'exploitable' (R2 M2)"
+  not_run_ok: "VEX states are judged once CB-05 adds the G12 VEX check"
+- row: KF-12
+  gate: [G13b]
+  match: {step: G13b}
+  issue: "#73"
+  owner: CB-11
+  why: "a range with a never-scan entry is never compared (not_compared, collection partial)"
+  not_run_ok: "G13b runs once CB-05 lands the drift steps"
+- row: KF-13
+  gate: [G7]
+  match: {step: G7}
+  issue: "#73"
+  owner: CB-08
+  why: "the Zeek ssl.log option is offered although nothing reads it (R1 X4)"
+  not_run_ok: "G7 runs once CB-05 lands its spec"
+- row: KF-14
+  gate: [G8]
+  match: {step: G8}
+  issue: "#73"
+  owner: CB-18
+  why: "evidence older than 365 days shows 'Q0' instead of E0 + a Q0 gap; the run and export carry no gap snapshot"
+  not_run_ok: "G8 runs once CB-05 lands its spec"
+
+# ---------------------------------------------------------------------------- steps the gate spec (CB-05) adds
+- row: CB05-steps
+  gate: [G4, G6, G13]
+  match: {kind: flow, step: [G4, G6, G13]}
+  issue: "#73"
+  owner: CB-05
+  why: "Servers (G4), Database (G6) and drift (G13) customer steps are CB-05's Playwright specs"
+  not_run_ok: "CB-01 ships the runner and judge; CB-05 adds these specs"
+- row: CB05-g12-schema
+  gate: [G12]
+  match: {check: schema_validation}
+  issue: "#73"
+  owner: CB-05
+  why: "JSON schema + cyclonedx-python-lib strict, XML XSD and OSCAL validation of the downloads"
+  not_run_ok: "CB-05 adds the validators to G12"
