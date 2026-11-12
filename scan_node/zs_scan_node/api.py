@@ -9,8 +9,11 @@
   inside the server's 63-wide replay window) and larger after every restart (a process would have to sign 2,048
   requests per microsecond of its life to reach the next start's range; the value fits 63 bits until 2112).  The server checks it with one UPDATE of the node row instead of storing
   every nonce.  An older server treats it as an ordinary nonce.  A ``replay_window`` refusal (a sequence below the
-  window: the clock went back across a restart) carries ``X-ZS-Seq-Next``; the node re-bases its counter there and
-  re-signs once.
+  window: the clock went back across a restart) or a ``seq_out_of_range`` refusal (a sequence more than 30 days
+  ahead of the server: this host's clock is far ahead) carries ``X-ZS-Seq-Next``; the node re-bases its counter there
+  and re-signs once.  It accepts only a floor at most 30 days ahead of its own clock corrected by the skew it learned
+  from the server (security review S1/S7), so an injected far-future value cannot push it out of range for good; and
+  once it learns a skew, a counter beyond that bound restarts from the corrected time.
 * mTLS: ``ZS_CLIENT_CERT`` + ``ZS_CLIENT_KEY`` (PEM files) present a client certificate to the TLS proxy;
   ``ZS_CA_FILE`` replaces the trusted CAs for the ZeroShield API (for a private CA or a TLS-inspecting proxy).
 * 401 is ``Unauthorized`` (the credential is revoked) only when the ZeroShield this node enrolled with says so
@@ -51,6 +54,7 @@ REFUSED_HEADER = "X-ZS-Refused"
 REVOKED_CODES = frozenset({"node_token_revoked", "registration_token_refused"})
 SEQ_NEXT_HEADER = "X-ZS-Seq-Next"
 SEQ_SHIFT = 11  # counter bits below the process-start microsecond
+SEQ_AHEAD_US = 30 * 86_400 * 1_000_000  # the server refuses sequences further ahead of its clock than this
 # One sequence per process, shared by every Api object (a node process has one; tests create several).
 _SEQ = [(time.time_ns() // 1000) << SEQ_SHIFT]
 _SEQ_LOCK = threading.Lock()
@@ -141,19 +145,29 @@ class Api:
             _SEQ[0] += 1
             return f"s2_{_SEQ[0]:019d}"
 
-    def _rebase(self, r: httpx.Response) -> bool:
-        """After a ``replay_window`` refusal: continue the sequence above the server's window.  False when the
-        answer carries no usable value."""
+    def _seq_bound(self) -> int:
+        """The highest sequence the server accepts now: 30 days of microseconds ahead of skew-corrected time."""
+        return (int((time.time() + self.skew) * 1_000_000) + SEQ_AHEAD_US) << SEQ_SHIFT
+
+    def _rebase(self, r: httpx.Response, lower: bool = False) -> bool:
+        """After a ``replay_window`` (``lower`` False: only ever up) or ``seq_out_of_range`` refusal (``lower`` True:
+        the counter is beyond what the server accepts and moves down to its floor): continue the sequence at the
+        server's ``X-ZS-Seq-Next``.  A floor more than 30 days ahead of this node's skew-corrected clock is refused
+        and logged (an injected value must not lock the node out).  False when there is no usable value."""
         try:
             floor = int(r.headers.get(SEQ_NEXT_HEADER) or "")
         except ValueError:
             return False
         if not 0 < floor < (1 << 63):
             return False
+        if floor > self._seq_bound():
+            log("ignored a sequence floor too far ahead of this node's clock (proxy or forged answer?)",
+                floor=floor, level="warn")
+            return False
         with _SEQ_LOCK:
-            _SEQ[0] = max(_SEQ[0], floor - 1)  # the next nonce is exactly the server's next acceptable sequence
-        log("request sequence re-based above the server's replay window (did this host's clock go back?)",
-            level="warn")
+            # the next nonce is exactly the server's next acceptable sequence
+            _SEQ[0] = (floor - 1) if lower else max(_SEQ[0], floor - 1)
+        log("request sequence re-based to the server's floor (did this host's clock jump?)", level="warn")
         return True
 
     def _sign(self, method: str, path: str, data: bytes) -> dict[str, str]:
@@ -196,7 +210,8 @@ class Api:
                                                    allow_nan=False).encode("utf-8")
         delay = 2.0
         skew_retried = rebased = False
-        for attempt in range(retries + 1):
+        attempt = 0  # real retries; a clock-skew correction and a sequence re-base (each at most once) do not count
+        for _pass in range(retries + 3):
             headers = self._headers(job)
             headers.update(self._sign(method, path, data))
             if body is not None:
@@ -209,6 +224,7 @@ class Api:
                 log("api unreachable, retrying", path=path, error=exc.__class__.__name__, wait_s=int(delay), job=job)
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             deployment = r.headers.get(DEPLOYMENT_HEADER) or None
             refused = r.headers.get(REFUSED_HEADER) or None
@@ -224,12 +240,16 @@ class Api:
                     wait_s=int(delay), level="warn")
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             if r.status_code == 403 and refused == "clock_skew" and not skew_retried:
                 skew_retried = True
                 self._learn_skew(r)
                 continue
             if r.status_code == 403 and refused == "replay_window" and not rebased and self._rebase(r):
+                rebased = True
+                continue
+            if r.status_code == 403 and refused == "seq_out_of_range" and not rebased and self._rebase(r, lower=True):
                 rebased = True
                 continue
             if lease_sensitive and r.status_code in (404, 409):
@@ -247,6 +267,7 @@ class Api:
                 log("api busy, retrying", path=path, status=r.status_code, ref=ref, wait_s=int(wait), job=job)
                 self._wait(min(wait, MAX_BACKOFF) + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             if r.status_code < 400:
                 self._seen(deployment)
@@ -271,6 +292,9 @@ class Api:
         self.skew = server - time.time()
         log("node clock differs from ZeroShield; signing with the server's time (fix NTP on this host)",
             skew_s=int(self.skew), level="warn")
+        with _SEQ_LOCK:
+            if _SEQ[0] > self._seq_bound():  # the counter came from a clock far ahead: restart it from corrected time
+                _SEQ[0] = int((time.time() + self.skew) * 1_000_000) << SEQ_SHIFT
 
     # ------------------------------------------------------------------ endpoints
     def enroll(self, body: dict) -> dict:

@@ -115,8 +115,11 @@ class Agent:
         self.stop_sent = 0.0
         self.never_sent = 0.0
         self.heartbeat_interval = 30
-        # protocol 2: set once a heartbeat answer carried "claim" (the server tells the node when work is waiting)
-        self.server_hints = False
+        # protocol 2: set once a successful answer carried "claim" (the server grants claims); None until the first
+        # successful heartbeat says which kind of server this is (no claim before that: a node whose heartbeats fail
+        # does not fall back to polling a server that may be recovering)
+        self.server_hints: bool | None = None
+        self.grants = 0  # claims the last answer granted (protocol 2)
         self.claim_wanted = threading.Event()
         self.last_error: str | None = None
         self.server_skew_s = 0.0
@@ -195,6 +198,8 @@ class Agent:
             global_scrubber().add(self.state.node_token)
             self.api.token = self.state.node_token
             self.heartbeat_interval = int(data.get("heartbeat_interval_s") or 30)
+            # the enrollment answer says which server this is: protocol 2 grants claims; an older one is polled
+            self.server_hints = "protocol" in data if self.server_hints is None else self.server_hints
             log("enrolled", node=self.state.node_id, team=self.state.team_id, deployment=self.state.deployment_id,
                 signing=data.get("signing") or "legacy")
 
@@ -223,10 +228,7 @@ class Agent:
         data = self.api.heartbeat(body)
         self.last_error = None
         self.heartbeat_interval = int(data.get("heartbeat_interval_s") or self.heartbeat_interval)
-        if "claim" in data:
-            self.server_hints = True
-            if data.get("claim"):
-                self.claim_wanted.set()
+        self.take_grant(data, heartbeat=True)
         self.apply_control(data, sent)
         cancel = set(int(i) for i in data.get("cancel_job_ids") or [] if str(i).isdigit())
         with self.lock:
@@ -236,6 +238,27 @@ class Agent:
                     r.ctx.cancel_reason = "Stopped by ZeroShield (job cancelled, source changed or network stop)"
                     r.ctx.cancel.set()
                     log("cancel requested", job=job_id)
+
+    def take_grant(self, data: dict | None, heartbeat: bool = False) -> None:
+        """Read ``claim`` from a heartbeat, claim or result answer: protocol 2 grants this many claims now (an older
+        protocol-2 server sends true/false: one).  A successful heartbeat answer without ``protocol`` is an older
+        server: the node polls every 5 s as it always did."""
+        if not isinstance(data, dict):
+            return
+        if heartbeat and self.server_hints is None and "claim" not in data and "protocol" not in data:
+            self.server_hints = False
+        if "claim" not in data:
+            return
+        self.server_hints = True
+        value = data.get("claim")
+        try:
+            n = 1 if value is True else int(value or 0)
+        except (TypeError, ValueError):
+            n = 0
+        with self.lock:
+            self.grants = max(0, min(n, 8))
+        if self.grants:
+            self.claim_wanted.set()
 
     def apply_control(self, data: dict, sent: float) -> None:
         """Cache the team's stop-all flag and never-scan list from a heartbeat answer, unless a claim sent after
@@ -318,14 +341,26 @@ class Agent:
                 continue
             with self.lock:
                 busy = len(self.running) >= self.max_jobs
+                granted = self.grants
             if busy:
-                self.shutdown.wait(2)
+                # every slot is taken: wait for one to free (``_done`` wakes this), re-checking at least every 2 s
+                self.claim_wanted.clear()
+                self.claim_wanted.wait(2)
                 continue
-            if self.server_hints and not self.claim_wanted.is_set():
-                # protocol 2: wait for a heartbeat that says work is waiting, or a job slot that frees
+            if self.server_hints is None:
+                # no successful heartbeat yet: do not claim from (or poll) a server we know nothing about
                 self.claim_wanted.wait(POLL_SECONDS)
+                self.claim_wanted.clear()
+                continue
+            if self.server_hints and granted <= 0:
+                # protocol 2: wait for an answer (heartbeat, claim or result) that grants a claim
+                self.claim_wanted.wait(POLL_SECONDS)
+                self.claim_wanted.clear()
                 continue
             self.claim_wanted.clear()
+            if self.server_hints:
+                with self.lock:
+                    self.grants = max(0, self.grants - 1)
             sent = time.monotonic()
             try:
                 # the mode goes with every claim: a node restarted in agent mode is never handed a secret, even
@@ -344,10 +379,13 @@ class Agent:
                 self.shutdown.wait(POLL_SECONDS * 3)
                 continue
             if not payload:
-                if not self.server_hints:
+                if self.server_hints:
+                    with self.lock:
+                        self.grants = 0  # nothing (or no permit) now: wait for the next grant
+                else:
                     self.shutdown.wait(POLL_SECONDS)
                 continue
-            self.claim_wanted.set()  # got one: ask again (drain) once a slot is free
+            self.take_grant(payload)  # the claim answer grants the next claims (drain while granted)
             job = payload.get("job") or {}
             job_id = int(job.get("id") or 0)
             with self.lock:
@@ -435,7 +473,8 @@ class Agent:
         body = {"lease_id": running.lease_id, "status": status, "result": result,
                 "error": ctx.scrubber.text(error)[:3900] if error else None}
         try:
-            self.api.result(running.job_id, ctx.attempt, ctx.scrubber.obj(body))
+            answer = self.api.result(running.job_id, ctx.attempt, ctx.scrubber.obj(body))
+            self.take_grant(answer)  # the result answer grants the next claims
             ctx.log("job finished", status=status, assets=ctx.accepted, ok=result["counts"]["ok"],
                     failed=result["counts"]["failed"], skipped=result["counts"]["skipped"],
                     duration_s=result["duration_s"])
@@ -484,7 +523,9 @@ class Agent:
     def _done(self, running: Running) -> None:
         with self.lock:
             self.running.pop(running.job_id, None)
-        self.claim_wanted.set()  # a slot is free: claim again (an empty claim answer clears this)
+            wake = self.grants > 0 or not self.server_hints
+        if wake:
+            self.claim_wanted.set()  # a slot is free and a claim is granted (or an older server: poll)
 
     # ------------------------------------------------------------------ main
     def run(self) -> None:

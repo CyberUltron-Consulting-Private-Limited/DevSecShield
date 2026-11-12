@@ -55,9 +55,9 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
     total_c = plan.total_c
     if body.expected_credits is not None and round(body.expected_credits * 100) != total_c:
         raise HTTPException(status_code=409, detail=f"The estimate changed to {credits(total_c)} credits. Review it and start again.")
-    if not J.charge_team(session, team_id, total_c):
-        team = session.get(Team, team_id)
-        balance = round(float(team.credit_balance or 0), 2) if team else 0
+    team_row = session.get(Team, team_id)
+    if team_row is None or float(team_row.credit_balance or 0) < total_c / 100 - J._BALANCE_SLACK:
+        balance = round(float(team_row.credit_balance or 0), 2) if team_row else 0
         raise HTTPException(status_code=400, detail=f"Not enough credits: this run needs {credits(total_c)}, the team has {balance}")
     run = CbomCollectionRun(
         team_id=team_id, owner_user_id=user_id, scan_id=body.scan_id, client_request_id=body.client_request_id,
@@ -99,6 +99,14 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
             node_id=None if node_less else source.node_id, node_segment=segment, kind="collect", params=params,
             source_version=source.row_version, weight_c=item.credits_c, created_by_user_id=user_id, created_at=now,
         ))
+    # the jobs are flushed first, the team is charged last (DA C3): the team row is locked from the charge to the
+    # commit only, not for the whole insert of thousands of jobs (a concurrent team UPDATE waited 2.4 s)
+    session.flush()
+    if not J.charge_team(session, team_id, total_c):
+        session.rollback()
+        team = session.get(Team, team_id)
+        balance = round(float(team.credit_balance or 0), 2) if team else 0
+        raise HTTPException(status_code=400, detail=f"Not enough credits: this run needs {credits(total_c)}, the team has {balance}")
     audit(session, team_id=team_id, actor_type="system" if schedule_id else "user", actor_id=user_id,
           action="run.create", object_type="run", object_id=run.id,
           changed_fields=[k for k, v in include.items() if v] + ([f"schedule:{schedule_id}"] if schedule_id else []))

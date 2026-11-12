@@ -52,12 +52,24 @@ def plugins() -> list[ModuleType]:
             out = []
             for name in PLUGINS:
                 try:
-                    out.append(importlib.import_module(name))
+                    module = importlib.import_module(name)
                 except ModuleNotFoundError as exc:
                     if not _missing(exc, name):
                         raise
+                    continue
+                check_plugin(module)
+                out.append(module)
             _loaded = out
     return _loaded
+
+
+def check_plugin(module: ModuleType) -> None:
+    """Fail closed at load (security review S8): a plugin that hands out material (``claim_extras``) must also say
+    which values to scrub from node output (``known_secrets``) and what its jobs depend on (``version_input``)."""
+    if getattr(module, "claim_extras", None) is not None:
+        missing = [fn for fn in ("known_secrets", "version_input") if getattr(module, fn, None) is None]
+        if missing:
+            raise ImportError(f"claim plugin {module.__name__} defines claim_extras but not {', '.join(missing)}")
 
 
 def reset_plugins() -> None:

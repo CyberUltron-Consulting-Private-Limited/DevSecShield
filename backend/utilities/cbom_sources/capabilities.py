@@ -41,3 +41,12 @@ def missing_for(node, kind: str | None, config: dict[str, Any] | None) -> frozen
 
 def can_run(node, kind: str | None, config: dict[str, Any] | None) -> bool:
     return not missing_for(node, kind, config)
+
+
+def excluded_for(node) -> tuple[list[str], list[str]]:
+    """(source kinds, credential types) whose jobs this node cannot run: the claim's and the hint's runnable
+    predicate leaves them out in SQL (DA D1), so such jobs are never locked or counted for this node."""
+    have = node_collectors(node)
+    kinds = sorted(k for k, cap in _BY_KIND.items() if cap not in have)
+    credentials = sorted(c for c, cap in _BY_CREDENTIAL.items() if cap not in have)
+    return kinds, credentials

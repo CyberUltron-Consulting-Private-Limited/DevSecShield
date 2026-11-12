@@ -59,22 +59,30 @@ def new_external_id() -> str:
     return "zs-ext-" + "-".join(groups)
 
 
-def get_or_create_settings(session: Session, team_id: int) -> CbomCollectionSettings:
-    row = session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).first()
+def get_or_create_settings(session: Session, team_id: int, *, commit: bool = True) -> CbomCollectionSettings:
+    """The team's settings row, created on first use with ``INSERT ... ON CONFLICT (team_id) DO NOTHING``: never a
+    rollback of the caller's work (security review S-9: a heartbeat that had just released a job lost the release
+    when a concurrent request created the row first and this rolled back); a concurrent creator's row is read
+    instead.  ``commit`` True (UI and API reads, so the AWS external id they show is stored at once); False (the
+    scan-node paths): the row is committed with the caller's own commit, nothing else is committed early."""
+    query = select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)
+    row = session.exec(query).first()
     if row is not None:
         return row
-    row = CbomCollectionSettings(
-        team_id=team_id,
-        aws_external_id=new_external_id(),
-        ports=list(DEFAULT_PORTS),
-        scan_window=default_window(),
-    )
-    session.add(row)
-    try:
+    fresh = CbomCollectionSettings(team_id=team_id, aws_external_id=new_external_id(), ports=list(DEFAULT_PORTS),
+                                   scan_window=default_window())
+    table = CbomCollectionSettings.__table__
+    values = {c.name: getattr(fresh, c.name) for c in table.columns if c.name != "id"}
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+    session.exec(dialect_insert(table).values(values)  # type: ignore[call-overload]
+                 .on_conflict_do_nothing(index_elements=["team_id"]))
+    if commit:
         session.commit()
-    except IntegrityError:  # another request created it first
-        session.rollback()
-    return session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).one()
+    return session.exec(query.execution_options(populate_existing=True)).one()
 
 
 def ensure_evidence_areas(session: Session, team_id: int) -> list[CbomEvidenceArea]:

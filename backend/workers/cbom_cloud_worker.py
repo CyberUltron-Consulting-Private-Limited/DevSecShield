@@ -25,6 +25,7 @@ from sqlmodel import Session
 
 from backend.get_db import get_db
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import node_auth as NA
 from backend.utilities.cbom_sources.common import log, new_ref, utcnow
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
@@ -179,14 +180,39 @@ def run_once(engine, worker: str) -> bool:
     return True
 
 
+_PASSES = [0]
+SUMMARY_EVERY = 10  # a reaper summary line at least every this many passes (and whenever anything changed)
+
+
+def _queue_facts(session, now) -> dict:
+    """Queue depth for the summary line, read through the partial indexes (pending, claimed, refund-due)."""
+    from sqlalchemy import func
+    from sqlmodel import select
+
+    from backend.new_models import CbomCollectionJob as Job
+
+    pending = session.exec(select(func.count()).select_from(Job).where(Job.status == "pending")).one()
+    claimed = session.exec(select(func.count()).select_from(Job).where(Job.status == "claimed")).one()
+    oldest = session.exec(select(func.min(Job.created_at)).where(Job.status == "pending")).one()
+    return {"pending": int(pending), "claimed": int(claimed),
+            "oldest_pending_s": int((now - oldest).total_seconds()) if oldest else None,
+            "refund_backlog": J.refund_backlog(session)}
+
+
 def reap_all(engine) -> int:
-    """Reap every team's jobs that need it (each pass reads only those jobs, through partial indexes)."""
+    """One reaper pass over every team: lease and age rules (each rule reads only its jobs, through partial indexes,
+    committed every ``REAP_COMMIT_EVERY`` jobs), the run reconcile, refund settlement (one statement per run with a
+    refund due, so credits come back within one pass, about 30 s), and the protocol-1 nonce sweep (moved here from
+    the heartbeat, DA E4).  Logs ``reap pass ...`` when anything changed, and every ``SUMMARY_EVERY`` passes."""
     moved = 0
+    stats: dict[str, int] = {}
+    settled = {"jobs": 0, "centi": 0}
+    swept = 0
     for _ in range(REAP_PASSES):
         with Session(engine) as session:
             now = utcnow()
             try:
-                n = J.reap(session, now)
+                n = J.reap(session, now, commit_every=J.REAP_COMMIT_EVERY, stats=stats)
                 session.commit()
             except Exception as exc:  # a database hiccup: the next tick tries again
                 session.rollback()
@@ -195,6 +221,23 @@ def reap_all(engine) -> int:
         moved += n
         if n < J.REAP_BATCH:
             break
+    with Session(engine) as session:
+        now = utcnow()
+        try:
+            out = J.settle_refunds(session)
+            session.commit()
+            settled = {"jobs": out["jobs"], "centi": out["centi"]}
+            swept = NA.sweep_nonces(session, now, every_s=0)
+            session.commit()
+            _PASSES[0] += 1
+            if moved or settled["jobs"] or _PASSES[0] % SUMMARY_EVERY == 0:
+                log("reap pass", at=int(time.time()), moved=moved, lease_expired=stats.get("lease_expired", 0),
+                    expired=stats.get("expired", 0), max_runtime=stats.get("max_runtime", 0),
+                    cancel_unconfirmed=stats.get("cancel_unconfirmed", 0), refunds_settled=settled["jobs"],
+                    refunded_c=settled["centi"], nonces_swept=swept, **_queue_facts(session, now))
+        except Exception as exc:
+            session.rollback()
+            log("reap settle FAILED", ref=new_ref(), error=type(exc).__name__)
     return moved
 
 

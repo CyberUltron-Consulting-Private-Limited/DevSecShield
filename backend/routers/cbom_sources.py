@@ -377,16 +377,20 @@ def _new_registration(engine, team_id: int, user_id: int, node_id: int, reset: b
                       row_version=node.row_version + 1, updated_by_user_id=user_id, last_updated=now)
         stmt = update(CbomScanNode).where(CbomScanNode.id == node.id, CbomScanNode.team_id == team_id)
         if reset:
-            values.update(node_token_hash=None, enrolled_at=None, last_heartbeat_at=None)
+            # the credential and its replay window go together (S1): the next enrollment starts a fresh window, and
+            # a request signed before the Reset can no longer step it (the window UPDATE requires the old token)
+            values.update(node_token_hash=None, enrolled_at=None, last_heartbeat_at=None, replay_hwm=0, replay_bits=0)
         else:
             stmt = stmt.where(CbomScanNode.enrolled_at.is_(None), CbomScanNode.node_token_hash.is_(None))  # type: ignore[union-attr]
         if session.exec(stmt.values(**values)).rowcount != 1:
             raise HTTPException(status_code=409, detail="This node has already registered. Use Reset to register it again.")
         if reset:
+            # its claimed jobs go back to the queue: a pinned job keeps its node, a segment job goes back to its
+            # segment (any signed node of it may take it; S6)
             session.exec(
                 update(CbomCollectionJob)
                 .where(CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed")
-                .values(status="pending", lease_id=None, lease_expires_at=None)
+                .values(status="pending", lease_id=None, lease_expires_at=None, node_id=J._requeue_node())
             )
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id,
               action="node.reset" if reset else "node.token", object_type="node", object_id=node.id)
@@ -426,11 +430,33 @@ def _delete_node(engine, team_id: int, user_id: int, node_id: int) -> dict:
         if users:
             names = ", ".join(s.name for s in users[:5]) + (" and more" if len(users) > 5 else "")
             raise HTTPException(status_code=400, detail=f"Move or delete the sources that use this node first: {names}")
+        # Open jobs end with guarded UPDATEs (S6 + the S-6 race): a segment job goes back to its segment, a pinned
+        # job is cancelled; a job a result ended meanwhile is left as it ended, and only the rows these UPDATEs
+        # changed are marked refund-due (never a second refund, never a success overwritten).
+        open_ids = list(session.exec(select(CbomCollectionJob.id).where(
+            CbomCollectionJob.node_id == node.id, CbomCollectionJob.status.in_(J.OPEN))).all())  # type: ignore[attr-defined]
+        cancelled: list[int] = []
+        if open_ids:
+            session.exec(
+                update(CbomCollectionJob)
+                .where(CbomCollectionJob.id.in_(open_ids), CbomCollectionJob.status.in_(J.OPEN),  # type: ignore[union-attr]
+                       CbomCollectionJob.node_segment.is_not(None))  # type: ignore[union-attr]
+                .values(status="pending", node_id=None, lease_id=None, lease_expires_at=None)
+                .execution_options(synchronize_session=False))
+            cancelled = [row[0] for row in session.exec(
+                update(CbomCollectionJob)
+                .where(CbomCollectionJob.id.in_(open_ids), CbomCollectionJob.status.in_(J.OPEN),  # type: ignore[union-attr]
+                       CbomCollectionJob.node_segment.is_(None))  # type: ignore[union-attr]
+                .values(status="cancelled", finished_at=now, error="Scan node deleted", lease_id=None,
+                        lease_expires_at=None)
+                .returning(CbomCollectionJob.id).execution_options(synchronize_session=False)).all()]
+        session.expire_all()
         for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.node_id == node.id)).all():
-            if job.status in J.OPEN:
-                job.status, job.finished_at, job.error = "cancelled", now, "Scan node deleted"
+            if job.id in cancelled:
                 if job.kind == "collect":
-                    J.refund_job(session, job, session.get(CbomCollectionRun, job.run_id) if job.run_id else None)
+                    J.refund_job(session, job)
+                J.touch_run(session, job.run_id)
+                J.settle_after_commit(session, job.run_id)
             job.params = {**(job.params or {}), "node_name": node.name}
             job.node_id = None
             session.add(job)

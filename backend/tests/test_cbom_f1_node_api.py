@@ -57,6 +57,12 @@ api, world, enroll_node = base.api, base.world, base.enroll_node  # fixtures, us
 LEGACY_API = Path(__file__).resolve().parent / "fixtures/scan_node_1_0/api.py"  # dev 3399452, verbatim
 
 
+def _seq0() -> int:
+    """A realistic protocol-2 sequence base: now in microseconds, shifted (the server refuses sequences more than 30
+    days ahead of its clock)."""
+    return (time.time_ns() // 1000) << NA.SEQ_SHIFT
+
+
 # ----------------------------------------------------------------------------- helpers
 def _p2_headers(key, method: str, path: str, body: bytes, token: str, seq: int, ts: int | None = None) -> dict:
     ts_s = str(int(time.time()) if ts is None else ts)
@@ -179,7 +185,7 @@ def test_protocol2_replay_is_refused_without_a_nonce_row(api, world):
     path = "/cbom/node/heartbeat"
     with Session(engine) as s:
         before = len(s.exec(select(CbomNodeNonce)).all())
-    seq = 3_700_000_000_000_000_000
+    seq = _seq0()
     first = _p2_headers(key, "POST", path, body, client.token, seq)
     assert api.client.post(path, headers=first, content=body).status_code == 200
     replay = api.client.post(path, headers=first, content=body)  # the captured request, byte for byte
@@ -204,7 +210,7 @@ def test_a_replay_to_another_worker_is_refused_too(api, world, tmp_path, monkeyp
     _node_id, client, key, _ = _signed_node(api)
     body = b"{}"
     path = "/cbom/node/heartbeat"
-    h = _p2_headers(key, "POST", path, body, client.token, 3_700_000_000_000_000_123)
+    h = _p2_headers(key, "POST", path, body, client.token, _seq0() + 123)
     assert api.client.post(path, headers=h, content=body).status_code == 200
     engine_b = create_engine(str(engine_a.url), connect_args={"check_same_thread": False})
     for module in (cbom_node, NA):
@@ -249,18 +255,18 @@ def test_heartbeat_interval_is_server_driven_with_jitter_and_carries_a_claim_hin
     values = {client.heartbeat({})["heartbeat_interval_s"] for _ in range(15)}
     assert all(48 <= v <= 72 for v in values) and len(values) > 1  # jitter
     hb = client.heartbeat({})
-    assert hb["claim"] is False and hb["pending_jobs"] == 0
+    assert hb["claim"] == 0 and hb["pending_jobs"] == 0
     assert {"server_time", "stop_all_network", "never_scan", "pending_jobs", "cancel_job_ids",
             "heartbeat_interval_s"} <= set(hb)  # every protocol-1 key is still there
     monkeypatch.setenv("CBOM_NODE_HEARTBEAT_S", "300")
     assert 240 <= client.heartbeat({})["heartbeat_interval_s"] <= 360
     monkeypatch.setenv("CBOM_NODE_HEARTBEAT_S", "nonsense")
     assert 48 <= client.heartbeat({})["heartbeat_interval_s"] <= 72  # an invalid value falls back to the default
-    with Session(engine) as s:
-        s.add(CbomCollectionJob(team_id=1, node_id=node_id, kind="collect", status="pending"))
+    with Session(engine) as s:  # a connection test runs whatever the scan window says, so it is runnable now
+        s.add(CbomCollectionJob(team_id=1, node_id=node_id, kind="test_connection", status="pending"))
         s.commit()
     hb = client.heartbeat({})
-    assert hb["claim"] is True and hb["pending_jobs"] == 1
+    assert hb["claim"] == 1 and hb["pending_jobs"] == 1  # a grant of one claim (dispatch)
 
 
 def test_an_idle_heartbeat_does_not_read_the_queue_or_write_a_nonce(api, world):
@@ -377,12 +383,12 @@ def test_segment_jobs_go_to_any_agentless_node_of_the_segment_and_back_on_lease_
     with Session(engine) as s:
         jobs = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run_id)).all()
         assert {(j.node_id, j.node_segment) for j in jobs} == {(None, "DC")}
-    assert other.heartbeat({})["claim"] is False and other.claim() is None  # another segment never sees them
-    assert a.heartbeat({})["claim"] is True and b.heartbeat({})["pending_jobs"] == 2
+    assert other.heartbeat({})["claim"] == 0 and other.claim() is None  # another segment never sees them
+    assert a.heartbeat({})["claim"] >= 1 and b.heartbeat({})["pending_jobs"] == 2
     pa, pb = a.claim(), b.claim()
     assert pa["job"]["id"] != pb["job"]["id"]
-    assert set(pa) == {"job", "scope", "source"} and set(pa["job"]) == {"id", "kind", "lease_id", "lease_seconds",
-                                                                        "attempt", "run_id"}
+    assert set(pa) == {"job", "scope", "source", "claim"} and set(pa["job"]) == {
+        "id", "kind", "lease_id", "lease_seconds", "attempt", "run_id"}
     with Session(engine) as s:
         assert s.get(CbomCollectionJob, pa["job"]["id"]).node_id == a_id
     # node a dies holding its job: once the lease is over, the reaper puts it back in the segment, b takes it
@@ -502,7 +508,7 @@ def test_public_authenticate_node_and_leased_job(api, world):
     engine, _ = world
     node_id, client, key, _ = _signed_node(api)
     body = b"{}"
-    h = _p2_headers(key, "POST", "/cbom/node/x", body, client.token, 3_700_000_000_000_000_999)
+    h = _p2_headers(key, "POST", "/cbom/node/x", body, client.token, _seq0() + 999)
     req = NA.NodeRequest(method="POST", path="/cbom/node/x", timestamp=h["X-ZS-Timestamp"], nonce=h["X-ZS-Nonce"],
                          signature=h["X-ZS-Signature"])
     with Session(engine) as s:
@@ -618,7 +624,8 @@ def test_many_nodes_claim_one_segment_at_once_without_a_double_claim():
     nodes = []
     with Session(engine) as s:
         for i in range(12):
-            n = CbomScanNode(team_id=1, owner_user_id=1, name=f"n{i}", segment="DC", node_token_hash=f"{i:064d}")
+            n = CbomScanNode(team_id=1, owner_user_id=1, name=f"n{i}", segment="DC", node_token_hash=f"{i:064d}",
+                             signing_public_key="k" * 44)  # only signed nodes take segment jobs (S3)
             s.add(n)
             s.flush()
             nodes.append(n.id)
@@ -680,17 +687,17 @@ def test_the_last_two_jobs_ending_together_finish_the_run(monkeypatch):
                                     claimed_at=now, attempts=1))
         s.commit()
         job_ids = [j.id for j in s.exec(select(CbomCollectionJob)).all()]
-    real = J.recompute_run
+    real = J.touch_run
     barrier = threading.Barrier(2)
 
-    def both_ended_then_recompute(session, run_id, at):
+    def both_ended_then_commit(session, run_id):
         try:
-            barrier.wait(timeout=2)  # both job UPDATEs are done (uncommitted) before either decides the run
+            barrier.wait(timeout=2)  # both job UPDATEs are done (uncommitted) before either commits and checks the run
         except threading.BrokenBarrierError:
             pass
-        return real(session, run_id, at)
+        return real(session, run_id)
 
-    monkeypatch.setattr(J, "recompute_run", both_ended_then_recompute)
+    monkeypatch.setattr(J, "touch_run", both_ended_then_commit)
     errors: list[BaseException] = []
 
     def end(i: int) -> None:

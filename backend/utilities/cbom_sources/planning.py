@@ -43,10 +43,12 @@ def node_status(node: CbomScanNode | None, now: _dt.datetime) -> str:
 
 
 def segment_status(nodes: dict[int, CbomScanNode], segment: str, now: _dt.datetime) -> str:
-    """A segment source's "node" status (F1.1): online when an enrolled agentless node of that segment is online,
-    offline when such nodes exist but none is, missing when the team has none."""
+    """A segment source's "node" status (F1.1): online when an enrolled, SIGNED agentless node of that segment is
+    online, offline when such nodes exist but none is, missing when the team has none (only signed nodes take segment
+    jobs, which carry decrypted credentials: security review S3)."""
     members = [n for n in nodes.values()
-               if (n.segment or "") == segment and (n.mode or "agentless") != "agent" and n.node_token_hash is not None]
+               if (n.segment or "") == segment and (n.mode or "agentless") != "agent" and n.node_token_hash is not None
+               and n.signing_public_key]
     if not members:
         return "missing"
     return "online" if any(node_status(n, now) == "online" for n in members) else "offline"
@@ -208,7 +210,7 @@ def plan_run(
             item.reason = ("Cloud collection is not available yet" if group == "cloud"
                            else "Collection for this connector is not available yet")
         elif needs_node and segment and status == "missing":
-            item.reason = f"No enrolled agentless scan node is in segment {segment}"
+            item.reason = f"No enrolled, signed agentless scan node is in segment {segment}"
         elif needs_node and node is None and not segment:
             item.reason = "No scan node assigned"
         elif needs_node and status in ("pending_registration", "registration_expired"):

@@ -20,7 +20,6 @@ import datetime as _dt
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Security
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import APIKeyHeader
 from pydantic import ValidationError
@@ -29,10 +28,13 @@ from sqlmodel import Session, select
 
 from backend.get_db import get_db
 from backend.new_models import CbomNodePool, CbomScanNode
+from backend.utilities import request_timing as RT
 from backend.utilities.cbom_sources import agents as AG
+from backend.utilities.cbom_sources import dispatch as D
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import limits as LIM
 from backend.utilities.cbom_sources import node_auth as NA
+from backend.utilities.cbom_sources import node_obs as OBS
 from backend.utilities.cbom_sources.common import audit, clean_text, iso_z, log, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import scrub
 from backend.utilities.cbom_sources.http import (
@@ -52,8 +54,9 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings, team
 router = APIRouter(tags=["cbom-node"], route_class=CbomRoute)
 node_token_header = APIKeyHeader(name="X-ZS-Node-Token", auto_error=False)
 # Node protocol this server speaks.  2 (F1.1): server-driven heartbeat with jitter (limits.heartbeat_seconds), a
-# ``claim`` hint in every heartbeat answer (a protocol-2 node claims only then), sequence nonces checked against a
-# per-node replay window.  Protocol-1 nodes (scan node 1.0/1.1) are served exactly as before.
+# ``claim`` grant (how many claims the node may make now, ``dispatch``) in every heartbeat, claim and result answer
+# (a protocol-2 node claims only then), sequence nonces checked against a per-node replay window.  Protocol-1 nodes
+# (scan node 1.0/1.1) are served as before, except that their claims draw on the same dispatch rate (204 when none).
 PROTOCOL = 2
 SMALL_BODY = 16 * 1024
 RESULT_BODY = 256 * 1024
@@ -115,14 +118,16 @@ def _authenticate(session: Session, token: str | None, req: NA.NodeRequest, raw:
     parsed.  A node with a signing key must sign; a legacy node is refused when its team requires signed nodes.
 
     ``touch``: node columns (last seen) written in the same statement as the replay check when the node uses
-    protocol-2 sequence nonces.  Returns (node, written): the caller writes ``touch`` itself when not written."""
+    protocol-2 sequence nonces.  Returns (node, written): the caller writes ``touch`` itself when not written.  The
+    replay-window step is bound to this token and key (a Reset in between refuses the request)."""
     node = _node_for(token, session)
+    RT.note(node_id=node.id)
     NA.check_mtls(node, req)
     if node.signing_public_key:
         written = NA.verify_signature(session, node.id, node.signing_public_key, req, raw, now,  # type: ignore[arg-type]
-                                      touch=touch)
+                                      touch=touch, token_hash=sha256_hex(token or ""))
         return node, written
-    if get_or_create_settings(session, node.team_id).require_signed_nodes:
+    if get_or_create_settings(session, node.team_id, commit=False).require_signed_nodes:
         message = ("Refused: this team requires signed scan nodes. Reset the node in ZeroShield and enroll it again "
                    "with scan node 1.1 or later")
         if node.last_node_error != message:
@@ -142,8 +147,9 @@ def authenticate_node(session: Session, token: str | None, req: NA.NodeRequest, 
 
 
 async def _guard(what: str, fn, *args):
+    """Run a route's synchronous body on the node thread limiter (``node_obs``; DA E2), mapping errors to a 500."""
     try:
-        return await run_in_threadpool(fn, *args)
+        return await OBS.to_node_thread(fn, *args)
     except HTTPException:
         raise
     except Exception as exc:
@@ -155,7 +161,12 @@ def _rebind_pool_node(session: Session, pool: CbomNodePool, node: CbomScanNode, 
                       req: NA.NodeRequest, raw: bytes, ip: str, token: str, fingerprint: str | None,
                       now: _dt.datetime) -> dict:
     """A pod enrolling again with its pool token after its node was reset: the same node gets a new credential and
-    signing key (no enrollment is used; any registration token the reset issued stops working)."""
+    signing key (no enrollment is used; any registration token the reset issued stops working).  The request is
+    verified BEFORE anything changes (S2): a replayed re-bind is refused and changes nothing.  The replay window starts
+    again for the new credential (S1)."""
+    if body.signing_public_key:  # proof that the node holds the key it registers; the nonce is recorded with it
+        NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now,  # type: ignore[arg-type]
+                            enrollment=True)
     changed = session.exec(
         update(CbomScanNode)
         .where(CbomScanNode.id == node.id, CbomScanNode.pool_id == pool.id,
@@ -166,13 +177,12 @@ def _rebind_pool_node(session: Session, pool: CbomNodePool, node: CbomScanNode, 
                 capabilities=scrub(body.capabilities), clock_skew_s=_clock_skew(body.clock, now),
                 last_heartbeat_at=now, last_seen_ip=ip, row_version=node.row_version + 1, last_updated=now,
                 signing_public_key=body.signing_public_key, client_cert_sha256=fingerprint, last_node_error=None,
-                mode=AG.AGENT)
+                mode=AG.AGENT, replay_hwm=0, replay_bits=0)
     ).rowcount
     if changed != 1:  # another request took this node back at the same moment; the pod retries
+        session.rollback()
         raise HTTPException(status_code=409, detail="This node is enrolling from another request; retry")
     AG.ensure_host_source(session, node, pool.owner_user_id, now)
-    if body.signing_public_key:  # proof that the node holds the key it registers (nothing is kept if it fails)
-        NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now)  # type: ignore[arg-type]
     audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action="node.enroll",
           object_type="node", object_id=node.id, changed_fields=["node_token", "pool_id"])
     session.commit()
@@ -202,7 +212,7 @@ def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> 
                 log("agent pool enroll refused", team=pool.team_id, pool=pool.id, reason=status)
             raise refused
         fingerprint = NA.check_mtls(None, req)
-        settings = get_or_create_settings(session, pool.team_id)
+        settings = get_or_create_settings(session, pool.team_id, commit=False)
         if not body.signing_public_key and settings.require_signed_nodes:
             log("node enroll refused", team=pool.team_id, pool=pool.id, reason="signed_nodes_required")
             raise NA.refuse("signed_nodes_required", "This team requires signed scan nodes: install scan node 1.1 or "
@@ -220,8 +230,8 @@ def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> 
         if agents >= cap:
             raise HTTPException(status_code=400, detail=f"A team can have at most {cap} agent nodes "
                                                         "(CBOM_MAX_AGENT_NODES)")
-        # the slot first: verify_signature commits (to record the nonce), so the slot, the node and its source are
-        # committed together or, when anything before that fails, not at all
+        # the slot, the node, its source and the enrollment's nonce are committed together, or (a refusal, a replay)
+        # not at all
         taken = session.exec(
             update(CbomNodePool)
             .where(CbomNodePool.id == pool.id, CbomNodePool.revoked_at.is_(None),  # type: ignore[union-attr]
@@ -245,7 +255,8 @@ def _enroll_pool(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> 
         session.flush()
         AG.ensure_host_source(session, node, pool.owner_user_id, now)
         if body.signing_public_key:  # proof that the node holds the key it registers (nothing is kept if it fails)
-            NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now)  # type: ignore[arg-type]
+            NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now,  # type: ignore[arg-type]
+                                enrollment=True)
         audit(session, team_id=node.team_id, actor_type="node", actor_id=node.id, action="node.enroll",
               object_type="node", object_id=node.id, changed_fields=["mode", "pool_id"])
         session.commit()
@@ -271,9 +282,10 @@ def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
             raise _registration_refused()
         # Checked before the token is used, so a refused enrollment leaves the registration token valid.
         fingerprint = NA.check_mtls(None, req)
-        if body.signing_public_key:  # proof that the node holds the key it registers; the nonce is recorded
-            NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now)  # type: ignore[arg-type]
-        elif get_or_create_settings(session, node.team_id).require_signed_nodes:
+        if body.signing_public_key:  # proof that the node holds the key it registers; the nonce is recorded with it
+            NA.verify_signature(session, node.id, body.signing_public_key, req, raw, now,  # type: ignore[arg-type]
+                                enrollment=True)
+        elif get_or_create_settings(session, node.team_id, commit=False).require_signed_nodes:
             log("node enroll refused", team=node.team_id, node=node.id, reason="signed_nodes_required")
             raise NA.refuse("signed_nodes_required", "This team requires signed scan nodes: install scan node 1.1 or "
                                                      "later and enroll with this registration token")
@@ -289,9 +301,10 @@ def _enroll(body: EnrollBody, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
                     capabilities=scrub(body.capabilities), clock_skew_s=_clock_skew(body.clock, now),
                     last_heartbeat_at=now, last_seen_ip=ip, row_version=node.row_version + 1, last_updated=now,
                     signing_public_key=body.signing_public_key, client_cert_sha256=fingerprint, last_node_error=None,
-                    mode=mode)
+                    mode=mode, replay_hwm=0, replay_bits=0)
         ).rowcount
         if changed != 1:
+            session.rollback()
             raise _registration_refused()
         if mode == AG.AGENT:  # a single host agent (docker run / AMI with ZS_MODE=agent): its own host source
             session.refresh(node)
@@ -338,17 +351,36 @@ def _facts(node: CbomScanNode, body: HeartbeatBody, now: _dt.datetime) -> dict[s
     return out
 
 
+def _protocol(node: CbomScanNode, body_caps: dict | None = None) -> int:
+    caps = body_caps if isinstance(body_caps, dict) and body_caps else (node.capabilities or {})
+    try:
+        return int((caps or {}).get("protocol") or 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _grant_base(session: Session, node: CbomScanNode, settings, now: _dt.datetime, held: int,
+                caps: dict | None = None) -> int:
+    """How many more jobs this node could start now: its free slots (``max_jobs`` clamped to 1..8, less the jobs it
+    holds) capped by the runnable jobs it could claim.  0 for a protocol-1 node (it polls and ignores grants)."""
+    if _protocol(node, caps) < 2:
+        return 0
+    free = J.max_jobs_of(caps if caps else node.capabilities) - held
+    if free <= 0:
+        return 0
+    return J.claimable_count(session, node, settings, now, cap=free)
+
+
 def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict:
     """One heartbeat.  An idle node on protocol 2 costs: the node read, ONE UPDATE (replay window + last seen, committed
     with the signature check), the settings read, its claimed jobs (partial index, usually none), a bounded count of
-    the jobs it could claim, and a read-only commit.  No nonce row, no reap of the whole queue, no count of every
-    pending job."""
+    the jobs it could run now (the runnable predicate), and a read-only commit.  No nonce row, no nonce sweep (the
+    reaper's), no reap of the whole queue."""
     now = utcnow()
     seen = {"last_heartbeat_at": now, "last_seen_ip": ip}
     with Session(get_db(), expire_on_commit=False) as session:
         node, stamped = _authenticate(session, token, req, raw, now, touch=seen)
         body = _parse(HeartbeatBody, parse_json(raw))
-        NA.sweep_nonces(session, now)  # protocol-1 nonces; at most once a minute per worker
         gap = (now - node.last_heartbeat_at).total_seconds() if node.last_heartbeat_at else None
         changes = _facts(node, body, now)
         if not stamped:
@@ -366,8 +398,10 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
         claimed = J.claimed_jobs(session, node)
         released = J.renew_leases(session, node, now, running, claimed)
         J.reap_claimed(session, now, claimed)  # this node's own jobs past their runtime or an unconfirmed cancel
-        settings = get_or_create_settings(session, node.team_id)
+        settings = get_or_create_settings(session, node.team_id, commit=False)
+        handed_back = J.requeue_unsigned_segment_jobs(session, node, claimed, now)
         cancel_ids = J.cancel_ids_for_node(session, node, settings, claimed) if claimed else []
+        cancel_ids += handed_back
         if running is not None:
             # jobs the node runs but the server already ended (released, reaped, cancelled) must stop too
             live = {job_id for job_id, _lease in running}
@@ -379,58 +413,98 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
             cancel_ids = sorted(set(cancel_ids) | (set(released) & live))
         busy = [job for job in claimed if job.status == "claimed"]
         network = any(J.is_network_job(session, job) for job in busy)
-        pending = J.claimable_count(session, node)
+        pending = J.claimable_count(session, node, settings, now)
+        caps = body.capabilities if isinstance(body.capabilities, dict) else None
+        base = _grant_base(session, node, settings, now, len(busy), caps) if pending else 0
         exclusions = team_exclusions(settings)
+        J.defer_closers(session)
         session.commit()
-        if gap is not None and gap > 120:
-            log("node back", team=node.team_id, node=node.id, gap_s=int(gap))
-        return {"server_time": iso_z(now), "stop_all_network": settings.stop_all_network,
-                "never_scan": exclusions.normalized, "pending_jobs": pending, "cancel_job_ids": cancel_ids,
-                # server-driven cadence with jitter: idle 60 s; while a network job runs, every few seconds so a
-                # stop-all reaches it fast; other busy nodes in between (limits.heartbeat_seconds)
-                "heartbeat_interval_s": LIM.heartbeat_seconds(busy=bool(busy), network=network),
-                # protocol 2: claim only when told (a protocol-1 node ignores this and polls)
-                "claim": pending > 0, "protocol": PROTOCOL}
+        J.run_closers(session, now)
+    grant = D.get().grant(node.id, node.team_id, base) if base > 0 else 0
+    if gap is not None and gap > 120:
+        log("node back", team=node.team_id, node=node.id, gap_s=int(gap))
+    return {"server_time": iso_z(now), "stop_all_network": settings.stop_all_network,
+            "never_scan": exclusions.normalized, "pending_jobs": pending, "cancel_job_ids": cancel_ids,
+            # server-driven cadence with jitter: idle 60 s; while a network job runs, every few seconds so a stop-all
+            # reaches it fast; a busy node, or one just granted claims, in between (limits.heartbeat_seconds)
+            "heartbeat_interval_s": LIM.heartbeat_seconds(busy=bool(busy) or grant > 0, network=network),
+            # protocol 2: how many claims the node may make now (0: wait for the next answer that grants one)
+            "claim": grant, "protocol": PROTOCOL}
 
 
 @router.post("/cbom/node/heartbeat", dependencies=[Depends(node_limiter)], summary="Report that the node is alive")
 async def heartbeat(request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
     raw = await read_capped_body(request, SMALL_BODY)
-    return JSONResponse(await _guard("heartbeat", _heartbeat, token, NA.NodeRequest.of(request), raw, client_ip(request)),
-                        headers=PRIVATE)
+    out = await _guard("heartbeat", _heartbeat, token, NA.NodeRequest.of(request), raw, client_ip(request))
+    await OBS.delivered(request)
+    return JSONResponse(out, headers=PRIVATE)
 
 
 # ----------------------------------------------------------------------------- claim
-def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> dict | None:
+def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> tuple[dict | None, int]:
+    """One claim.  Every node version draws on the worker's dispatch rate before the queue is read (no permit: 204
+    without touching the queue; a claim that finds nothing returns its permit).  The node row is written as the
+    claim's LAST statement (last seen for protocol 1, ``last_claim_at``), so a claim plugin that mints material never
+    holds it (C4).  Returns (payload or None, node id)."""
     now = utcnow()
     seen = {"last_heartbeat_at": now, "last_seen_ip": ip}
     with Session(get_db(), expire_on_commit=False) as session:
         node, stamped = _authenticate(session, token, req, raw, now, touch=seen)
         body = _parse(ClaimBody, parse_json(raw)) if raw else None  # older nodes send no body
-        if not stamped:
-            session.exec(update(CbomScanNode).where(CbomScanNode.id == node.id).values(**seen)
-                         .execution_options(synchronize_session=False))
         # a node restarted in agent mode may claim before its first heartbeat: it is never given a secret again
         AG.reconcile_mode(session, node, body.mode if body else None, now)
-        settings = get_or_create_settings(session, node.team_id)
-        payload = J.claim_next(session, node, settings, now)
+        dispatcher = D.get()
+        payload, base = None, 0
+        if dispatcher.admit(node.id, node.team_id):
+            settings = get_or_create_settings(session, node.team_id, commit=False)
+            payload = J.claim_next(session, node, settings, now)
+            if payload is None:
+                dispatcher.give_back()
+            else:
+                RT.note(job_id=payload["job"]["id"])
+                base = _grant_base(session, node, settings, now, len(J.claimed_jobs(session, node)))
+        stamp = {} if stamped else dict(seen)
+        if payload is not None:
+            stamp["last_claim_at"] = now
+        if stamp:
+            session.exec(update(CbomScanNode).where(CbomScanNode.id == node.id).values(**stamp)
+                         .execution_options(synchronize_session=False))
+        J.defer_closers(session)
         session.commit()
-        return payload
+        J.run_closers(session, now)
+    if payload is not None:
+        OBS.STATS.bump("claims_committed")
+        payload["claim"] = dispatcher.grant(node.id, node.team_id, base) if base > 0 else 0
+    return payload, node.id  # type: ignore[return-value]
+
+
+def _release_undelivered(node_id: int, payload: dict) -> bool:
+    job = payload.get("job") or {}
+    with Session(get_db()) as session:
+        released = J.release_undelivered(session, node_id, int(job.get("id") or 0), str(job.get("lease_id") or ""),
+                                         utcnow())
+        session.commit()
+    return released
 
 
 @router.post("/cbom/node/jobs/claim", dependencies=[Depends(node_limiter)],
-             summary="Claim the next job (204 when there is nothing to do)")
+             summary="Claim the next job (204 when there is nothing to do, or no claim may be made now)")
 async def claim(request: Request, token: Annotated[str | None, Security(node_token_header)] = None):
     raw = await read_capped_body(request, SMALL_BODY)
-    payload = await _guard("claim", _claim, token, NA.NodeRequest.of(request), raw, client_ip(request))
+    payload, node_id = await _guard("claim", _claim, token, NA.NodeRequest.of(request), raw, client_ip(request))
     if payload is None:
         return Response(status_code=204, headers=PRIVATE)
+    if not await OBS.delivered(request):
+        # the node left before the answer was written, so it cannot hold the job: hand it back now (DA D3), without
+        # counting an attempt, instead of waiting 120 s for its heartbeat to omit it
+        await _guard("claim release", _release_undelivered, node_id, payload)
     return JSONResponse(payload, headers=PRIVATE)
 
 
 # ----------------------------------------------------------------------------- assets
 def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
+    RT.note(job_id=job_id)
     with Session(get_db()) as session:
         node = authenticate_node(session, token, req, raw, now)
         body = _parse(AssetsBody, parse_json(raw))
@@ -455,18 +529,30 @@ async def assets(job_id: int, request: Request, token: Annotated[str | None, Sec
     if job_id < 1 or job_id > 2_147_483_647:
         raise HTTPException(status_code=404, detail="Job not found")
     raw = await read_capped_body(request, ASSETS_BODY)
-    return JSONResponse(await _guard("assets", _assets, token, job_id, NA.NodeRequest.of(request), raw), headers=PRIVATE)
+    out = await _guard("assets", _assets, token, job_id, NA.NodeRequest.of(request), raw)
+    await OBS.delivered(request)
+    return JSONResponse(out, headers=PRIVATE)
 
 
 # ----------------------------------------------------------------------------- result
 def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
+    """A job's end.  No run or team row is locked or written here (the run closer and refund settlement run after
+    the commit, ``jobs``); the answer grants the node its next claims."""
     now = utcnow()
-    with Session(get_db()) as session:
+    RT.note(job_id=job_id)
+    with Session(get_db(), expire_on_commit=False) as session:
         node = authenticate_node(session, token, req, raw, now)
         body = _parse(ResultBody, parse_json(raw))
         job = J.finish_job(session, node, job_id, body.lease_id, body.status, body.result, body.error, now)
+        settings = get_or_create_settings(session, node.team_id, commit=False)
+        base = _grant_base(session, node, settings, now, len(J.claimed_jobs(session, node)))
+        out = {"job_id": job.id, "status": job.status, "server_time": iso_z(now)}
+        J.defer_closers(session)
         session.commit()
-        return {"job_id": job.id, "status": job.status, "server_time": iso_z(now)}
+        J.run_closers(session, now)
+    OBS.STATS.bump("results_committed")
+    out["claim"] = D.get().grant(node.id, node.team_id, base) if base > 0 else 0
+    return out
 
 
 @router.post("/cbom/node/jobs/{job_id}/result", dependencies=[Depends(node_limiter)],
@@ -475,4 +561,6 @@ async def result(job_id: int, request: Request, token: Annotated[str | None, Sec
     if job_id < 1 or job_id > 2_147_483_647:
         raise HTTPException(status_code=404, detail="Job not found")
     raw = await read_capped_body(request, RESULT_BODY)
-    return JSONResponse(await _guard("result", _result, token, job_id, NA.NodeRequest.of(request), raw), headers=PRIVATE)
+    out = await _guard("result", _result, token, job_id, NA.NodeRequest.of(request), raw)
+    await OBS.delivered(request)
+    return JSONResponse(out, headers=PRIVATE)

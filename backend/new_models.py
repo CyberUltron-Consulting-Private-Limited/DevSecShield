@@ -438,6 +438,9 @@ class CbomCollectionJob(SQLModel, table=True):
     source_version: int | None = Field(default=None)
     weight_c: int = Field(default=0)
     refunded: bool = Field(default=False)
+    # F1.1 (DA C2): a job end only marks its credits as owed back here; ``jobs.settle_refunds`` moves the money in one
+    # statement per run (reaper pass, run end, user cancel) and sets ``refunded`` exactly once
+    refund_due: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     attempts: int = Field(default=0)
     lease_id: str | None = Field(default=None, max_length=32)
     lease_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
@@ -471,6 +474,9 @@ _SaIndex("ix_cbomcollectionjob_pending_created", CbomCollectionJob.created_at,
          postgresql_where=_PENDING, sqlite_where=_PENDING)
 _SaIndex("ix_cbomcollectionjob_team_status_segment", CbomCollectionJob.team_id, CbomCollectionJob.status,
          CbomCollectionJob.node_segment, CbomCollectionJob.id)
+_REFUND_DUE = _sa_text("refund_due AND NOT refunded")
+_SaIndex("ix_cbomcollectionjob_refund_due", CbomCollectionJob.run_id,
+         postgresql_where=_REFUND_DUE, sqlite_where=_REFUND_DUE)
 
 
 class CbomCollectedAsset(SQLModel, table=True):
