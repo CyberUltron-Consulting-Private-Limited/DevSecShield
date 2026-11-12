@@ -1031,7 +1031,21 @@ def test_d2_a_forged_max_jobs_buys_at_most_8_claims(api, world):
     node_id, client, _key, _ = F._signed_node(api)
     _pinned_jobs(engine, node_id, 30, window="any")
     hb = client.heartbeat({"capabilities": {"collectors": ["linux_servers"], "max_jobs": 1_000_000, "protocol": 2}})
-    assert 1 <= hb["claim"] <= 8 and hb["pending_jobs"] == 30
+    assert 1 <= hb["claim"] <= 8 and hb["pending_jobs"] == 8  # protocol 2: counted up to the (clamped) free slots
+
+
+def test_d1_a_protocol_2_heartbeat_counts_the_runnable_jobs_once_up_to_its_free_slots(api, world, monkeypatch):
+    """EC2 E2a round 7: with a 10,000-job queue the heartbeat's two counts (up to 100 rows for the hint, then the
+    grant base) were the top statement and heartbeats alone outran the box.  A protocol-2 heartbeat counts once, up
+    to its free slots; a protocol-1 node keeps the 100-row hint it polls on."""
+    engine, _ = world
+    node_id, client, _key, _ = F._signed_node(api)
+    _pinned_jobs(engine, node_id, 30, window="any")
+    caps = []
+    real = J.claimable_count
+    monkeypatch.setattr(J, "claimable_count", lambda *a, **k: caps.append(k.get("cap")) or real(*a, **k))
+    hb = client.heartbeat({"capabilities": {"collectors": ["linux_servers"], "max_jobs": 2, "protocol": 2}})
+    assert caps == [2] and hb["pending_jobs"] == 2 and 1 <= hb["claim"] <= 2
 
 
 def test_d2_a_claim_that_finds_nothing_returns_its_permit(api, world):

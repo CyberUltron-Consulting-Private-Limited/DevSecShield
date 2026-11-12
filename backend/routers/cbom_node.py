@@ -413,9 +413,16 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
             cancel_ids = sorted(set(cancel_ids) | (set(released) & live))
         busy = [job for job in claimed if job.status == "claimed"]
         network = any(J.is_network_job(session, job) for job in busy)
-        pending = J.claimable_count(session, node, settings, now)
         caps = body.capabilities if isinstance(body.capabilities, dict) else None
-        base = _grant_base(session, node, settings, now, len(busy), caps) if pending else 0
+        if _protocol(node, caps) >= 2:
+            # ONE bounded count, up to the node's free slots: a protocol-2 node acts on ``claim`` only, so counting
+            # 100 runnable rows (and then again for the grant) is work no answer uses.  EC2 E2a round 7: with a
+            # 10,000-job queue the two counts per heartbeat were the top statement and heartbeats alone outran the box.
+            free = J.max_jobs_of(caps if caps else node.capabilities) - len(busy)
+            pending = J.claimable_count(session, node, settings, now, cap=max(1, free))
+            base = min(pending, free) if free > 0 else 0
+        else:
+            pending, base = J.claimable_count(session, node, settings, now), 0
         exclusions = team_exclusions(settings)
         J.defer_closers(session)
         session.commit()
