@@ -1,0 +1,62 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": 1,
+      "gate": "G9",
+      "id": "G9/estimate_eq_rates",
+      "kind": "flow",
+      "observed": 1,
+      "reason": "",
+      "subject": {
+        "check": "estimate_eq_rates"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": 1,
+      "gate": "G9",
+      "id": "G9/one_run_for_double_click",
+      "kind": "flow",
+      "observed": 1,
+      "reason": "",
+      "subject": {
+        "check": "one_run_for_double_click"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": 1,
+      "gate": "G9",
+      "id": "G9/charge_eq_rates",
+      "kind": "flow",
+      "observed": 1,
+      "reason": "",
+      "subject": {
+        "check": "charge_eq_rates"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": 1,
+      "gate": "G9",
+      "id": "G9/estimate_eq_charge",
+      "kind": "flow",
+      "observed": 1,
+      "reason": "",
+      "subject": {
+        "check": "estimate_eq_charge"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:23:29Z",
+  "gate": "G9",
+  "note": "",
+  "seconds": 5.3,
+  "started": "2026-11-12T15:23:24Z",
+  "status": "ran"
+}
