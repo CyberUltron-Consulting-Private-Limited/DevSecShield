@@ -133,10 +133,12 @@ def enroll_node(api, team=1, who="alice", name="dc-mumbai-01"):
 def test_target_counting_rules():
     p = T.parse_targets(["ip", "10.0.0.0/24", "10.0.0.128/25", "10.0.1.1-10.0.1.10", "Host.Example.COM.", "host.example.com",
                          "::ffff:10.0.2.1", "# comment", ""])
-    assert T.size(p.intervals) == 256 + 10 + 1
+    # what the scan node scans: the /24's 254 host addresses (not its network and broadcast addresses; the /25 is
+    # inside it), the 10 of the range, and the mapped address as its IPv4 address
+    assert T.size(p.intervals) == 254 + 10 + 1
     assert p.hostnames == ["host.example.com"]
     excl = T.parse_exclusions(["10.0.0.0/26", "host.example.com"])
-    assert T.count_in_scope(p, excl) == 256 + 10 + 1 - 64
+    assert T.count_in_scope(p, excl) == 254 + 10 + 1 - 63
     assert T.count_blocks([(4, 0x0A000080, 0x0A0000FF), (4, 0x0A000100, 0x0A00017F)]) == 2
     assert T.parse_targets(["10.0.0.0/31"]).intervals[0][2] - T.parse_targets(["10.0.0.0/31"]).intervals[0][1] == 1
     with pytest.raises(T.TargetError, match="did you mean 10.0.0.0/24"):
@@ -204,7 +206,7 @@ def test_secrets_are_write_only_and_encrypted(api, world):
     r = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id))
     assert r.status_code == 201, r.text
     src = r.json()["source"]
-    assert src["secrets_set"] == ["password"] and src["target_count"] == 9
+    assert src["secrets_set"] == ["password"] and src["target_count"] == 7  # the /29's 6 hosts + 1 name
     api("GET", "/1/cbom/sources/items")
     api("GET", f"/1/cbom/sources/items/{src['id']}")
     api("GET", "/1/cbom/sources/overview")
@@ -363,23 +365,23 @@ def test_run_charges_once_refunds_on_cancel(api, world):
     node_id, _t, _ = enroll_node(api)
     src = api("POST", "/1/cbom/sources/items", json=linux_body(node_id=node_id)).json()["source"]
     est = api("POST", "/1/cbom/sources/estimate", json={"include": {"servers": True}}).json()
-    assert est["total_credits"] == 1.8  # 9 targets x 0.2
+    assert est["total_credits"] == 1.4  # 7 targets x 0.2 (the /29's 6 host addresses + 1 name: what the node scans)
     body = {"include": {"servers": True}, "client_request_id": "run-req-000001", "expected_credits": 1.0, "scan_id": 77}
     assert api("POST", "/1/cbom/sources/runs", json=body).status_code == 409
-    body["expected_credits"] = 1.8
+    body["expected_credits"] = 1.4
     first = api("POST", "/1/cbom/sources/runs", json=body)
     assert first.status_code == 201, first.text
     replay = api("POST", "/1/cbom/sources/runs", json=body)
     assert replay.status_code == 200 and replay.json()["replayed"] is True
     with Session(engine) as s:
-        assert round(s.get(Team, 1).credit_balance, 2) == 98.2
+        assert round(s.get(Team, 1).credit_balance, 2) == 98.6
     again = api("POST", "/1/cbom/sources/runs", json={**body, "client_request_id": "run-req-000002"})
     assert again.status_code == 409
     run_id = first.json()["run"]["id"]
     assert api("POST", f"/1/cbom/sources/runs/{run_id}/cancel", "bob").status_code == 400
     c1 = api("POST", f"/1/cbom/sources/runs/{run_id}/cancel").json()
     c2 = api("POST", f"/1/cbom/sources/runs/{run_id}/cancel").json()
-    assert c1["refunded"] == 1.8 and c2["refunded"] == 0 and c1["run"]["status"] == "cancelled"
+    assert c1["refunded"] == 1.4 and c2["refunded"] == 0 and c1["run"]["status"] == "cancelled"
     with Session(engine) as s:
         assert round(s.get(Team, 1).credit_balance, 2) == 100.0
     assert src["id"]
@@ -391,7 +393,7 @@ def test_insufficient_credits_creates_nothing(api, world):
     node_id, _t, _ = enroll_node(api, team=2, who="carol")
     api("POST", "/2/cbom/sources/items", "carol", json=linux_body(node_id=node_id))
     r = api("POST", "/2/cbom/sources/runs", "carol", json={"include": {"servers": True}, "client_request_id": "poor-team-001"})
-    assert r.status_code == 400 and "needs 1.8" in r.json()["detail"]
+    assert r.status_code == 400 and "needs 1.4" in r.json()["detail"]
     with Session(engine) as s:
         assert s.exec(select(CbomCollectionRun)).all() == []
         assert s.get(Team, 2).credit_balance == 0.5

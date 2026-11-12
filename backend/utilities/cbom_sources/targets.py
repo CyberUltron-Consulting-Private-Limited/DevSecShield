@@ -22,6 +22,11 @@ _LABEL_RE = re.compile(r"^(?!-)[a-z0-9_-]{1,63}(?<!-)$")
 
 Interval = tuple[int, int, int]  # (ip version, first address, last address), inclusive
 
+_NAT64 = int(ipaddress.IPv6Address("64:ff9b::"))  # RFC 6052 well-known prefix 64:ff9b::/96
+# What the scan node never scans whatever the never-scan list says (scan_node netutil.match_ip): 0.0.0.0/8 and ::, which
+# reach the node itself, and the NAT64 form of 0.0.0.0/8.  Counts, credits and samples leave them out too.
+NEVER_SCANNED: list[Interval] = [(4, 0, 0x00FF_FFFF), (6, 0, 0), (6, _NAT64, _NAT64 + 0x00FF_FFFF)]
+
 
 class TargetError(ValueError):
     """A line that cannot be parsed.  ``str(err)`` is safe to show to the user."""
@@ -212,20 +217,41 @@ def parse_targets(
                 seen_hosts.add(value_)
                 parsed.hostnames.append(value_)
         else:
-            raw.append(value_)
             parsed.raw_size += value_[2] - value_[1] + 1
+            scanned = scanned_interval(value_, canonical)
+            if scanned is not None:
+                raw.append(scanned)
     if parsed.raw_size > max_addresses:
         raise TargetError(f"{parsed.raw_size:,} addresses; the limit is {max_addresses:,} per source")
     parsed.intervals = merge(raw)
     return parsed
 
 
+def scanned_interval(interval: Interval, canonical: str) -> Interval | None:
+    """The addresses the scan node scans for one target line (netutil.iter_line_ips): every address of a range, an
+    IPv6 network or an IPv4 /31 or /32, but only the host addresses of an IPv4 /30 or larger (not its network and
+    broadcast addresses).  ``canonical`` is the stored form the node receives (a mapped network is stored as IPv4)."""
+    version, start, end = interval
+    if version == 4 and "/" in canonical and end - start >= 3:
+        return (version, start + 1, end - 1)
+    return interval
+
+
+def _removed(exclusions: ParsedTargets | None) -> list[Interval]:
+    """What the node refuses: the list, the NAT64 form of each IPv4 entry (the node checks a 64:ff9b::/96 address as
+    the IPv4 address it reaches), and NEVER_SCANNED."""
+    removed = list(NEVER_SCANNED)
+    if exclusions is not None:
+        removed += exclusions.intervals
+        removed += [(6, _NAT64 + start, _NAT64 + end) for version, start, end in exclusions.intervals if version == 4]
+    return removed
+
+
 def in_scope(targets: ParsedTargets, exclusions: ParsedTargets | None) -> tuple[list[Interval], list[str]]:
-    """Addresses and hostnames left after the never-scan list (hostnames match exactly)."""
-    if exclusions is None:
-        return targets.intervals, list(targets.hostnames)
-    intervals = subtract(targets.intervals, exclusions.intervals)
-    excluded_hosts = set(exclusions.hostnames)
+    """Addresses and hostnames the scan node will scan after the never-scan list (hostnames match exactly; the node
+    may skip more of them, by the addresses they resolve to, which only it can see)."""
+    intervals = subtract(targets.intervals, _removed(exclusions))
+    excluded_hosts = set(exclusions.hostnames) if exclusions is not None else set()
     return intervals, [h for h in targets.hostnames if h not in excluded_hosts]
 
 
@@ -235,12 +261,12 @@ def count_in_scope(targets: ParsedTargets, exclusions: ParsedTargets | None) -> 
 
 
 def sample_targets(targets: ParsedTargets, exclusions: ParsedTargets | None, n: int = 5) -> list[str]:
-    """Up to ``n`` addresses or hostnames for a connection test (skips a network address when possible)."""
+    """Up to ``n`` addresses or hostnames for a connection test, taken from what the node will scan (in_scope): never a
+    network or broadcast address of an IPv4 network (parse_targets left them out), never 0.0.0.0/8 or ::."""
     intervals, hosts = in_scope(targets, exclusions)
     out: list[str] = []
     for version, start, end in intervals:
-        first = start + 1 if end - start >= 3 else start
-        for value in range(first, min(end, first + n - len(out) - 1) + 1):
+        for value in range(start, min(end, start + n - len(out) - 1) + 1):
             out.append(str(ipaddress.ip_address(value)) if version == 4 else str(ipaddress.IPv6Address(value)))
             if len(out) >= n:
                 return out

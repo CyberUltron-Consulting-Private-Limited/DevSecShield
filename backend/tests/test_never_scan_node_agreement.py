@@ -5,6 +5,12 @@ credits, and sends ``exclusions.normalized`` to the node.  The node's ``NeverSca
 the backend subtracted, for every entry form: single addresses, CIDRs, IPv4 and IPv6 ``a-b`` ranges (including
 ones whose first address ends in a hex letter) and IPv4-mapped forms.  Host-name entries are matched by the node
 only (the backend cannot resolve names on the customer's network).
+
+The same holds for the targets: what the backend counts (estimates, credits) and offers as connection-test samples
+is exactly what the node's ``expand_targets`` scans for every address target form, including the addresses the
+node never scans whatever the list says (network and broadcast addresses of an IPv4 /30 or larger, 0.0.0.0/8, ::,
+and the NAT64 form of an excluded IPv4 address).  Host-name targets are counted once each: the node may scan fewer
+(two names of one host, or a name with a listed address), never more.
 """
 from __future__ import annotations
 
@@ -25,7 +31,7 @@ from zs_scan_node.netutil import NeverScan, expand_targets  # noqa: E402
 ENTRIES = [
     "10.0.0.5", "10.0.1.0/30", "10.0.2.250-10.0.3.5", "::ffff:10.0.4.7", "::ffff:10.0.5.0/126",
     "::ffff:10.0.6.1-::ffff:10.0.6.3", "fd00::1-fd00::5", "fd00::a-fd00::f", "FD00:1::A - FD00:1::C", "fd00:2::/126",
-    "2001:db8::7",
+    "2001:db8::7", "fe80::1%br-ab12", "fe80::a%vlan-10",  # a zone with a dash is still an address (Docker br-<hash>)
 ]
 PROBES = (
     [f"10.0.0.{i}" for i in range(3, 8)] + [f"10.0.1.{i}" for i in range(0, 6)]
@@ -33,6 +39,7 @@ PROBES = (
     + [f"10.0.3.{i}" for i in range(0, 7)] + ["10.0.4.6", "10.0.4.7", "10.0.4.8"] + [f"10.0.5.{i}" for i in range(0, 6)]
     + [f"10.0.6.{i}" for i in range(0, 5)] + [f"fd00::{i:x}" for i in range(0, 0x12)]
     + [f"fd00:1::{i:x}" for i in range(8, 0xe)] + [f"fd00:2::{i}" for i in range(0, 6)] + ["2001:db8::6", "2001:db8::7"]
+    + [f"fe80::{i:x}" for i in range(0, 0xc)]
 )
 
 
@@ -70,3 +77,27 @@ def test_the_backend_count_matches_what_the_node_scans(source, entries, expected
     assert T.count_in_scope(T.parse_targets([source]), excl) == expected
     targets, _skipped = expand_targets([source], NeverScan(excl.normalized))
     assert len(targets) == expected
+
+
+@pytest.mark.parametrize("source, entries", [
+    (["10.0.0.0/24"], []),  # the node skips the network and broadcast addresses of an IPv4 /30 or larger
+    (["10.0.0.0/29"], ["10.0.0.1"]),
+    (["10.0.1.0/30", "10.0.1.4/31", "10.0.1.9", "10.0.1.16/32"], []),  # a /31 and a /32 keep every address
+    (["10.0.2.0/25", "10.0.2.128/25"], []),
+    (["10.0.3.0/24", "10.0.3.255", "10.0.3.0/25"], []),  # an address written out is scanned, even a broadcast one
+    (["::ffff:10.0.4.0/126"], []),  # stored (and sent to the node) as 10.0.4.0/30
+    (["10.0.5.0-10.0.5.9", "10.0.5.8/29"], ["10.0.5.2", "::ffff:10.0.5.12"]),
+    (["0.0.0.0"], []), (["0.0.0.0/29"], []), (["0.255.255.250-1.0.0.3"], []),  # 0.0.0.0/8 reaches the node itself
+    (["::"], []), (["::/125"], []), (["64:ff9b::/125"], []),  # ::, and NAT64 of 0.0.0.0/8
+    (["64:ff9b::a00:5", "64:ff9b::a00:6", "64:ff9b::a00:7"], ["10.0.0.5"]),  # NAT64 reaches the excluded IPv4 host
+    (["fd00::/125"], ["fd00::1-fd00::5"]),
+    (["fe80::/125"], ["fe80::1%br-ab12"]),
+])
+def test_the_backend_count_and_samples_match_what_the_node_scans_for_every_target_form(source, entries):
+    """Security re-review 5871690938: the count, the credits and the connection-test samples are the node's targets."""
+    parsed, excl = T.parse_targets(source), T.parse_exclusions(entries)
+    targets, _skipped = expand_targets(parsed.normalized, NeverScan(excl.normalized))  # the node gets the stored lines
+    scanned = {t.ip for t in targets}
+    assert T.count_in_scope(parsed, excl) == len(scanned)
+    samples = T.sample_targets(parsed, excl, 5)
+    assert set(samples) <= scanned and len(samples) == min(5, len(scanned))
