@@ -23,6 +23,17 @@ API_PORT=${F1_API_PORT:-18080}
 VENV=${F1_VENV:-/home/claude/devsecshield/backend/.venv}
 PIN=${F1_PIN_SERVER:-}
 
+if [[ $cmd == stop-api ]]; then  # an API outage (E7): gunicorn only; PostgreSQL and the reaper keep running
+  work=${2:?workdir}
+  if [[ -f $work/gunicorn.pid ]]; then
+    pid=$(cat "$work/gunicorn.pid"); kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+    kill -KILL "$pid" 2>/dev/null || true; rm -f "$work/gunicorn.pid"
+  fi
+  echo "api stopped"
+  exit 0
+fi
+
 if [[ $cmd == down ]]; then
   work=${2:?workdir}
   if [[ -f $work/gunicorn.pid ]]; then kill "$(cat "$work/gunicorn.pid")" 2>/dev/null || true; rm -f "$work/gunicorn.pid"; fi
@@ -85,7 +96,7 @@ if [[ ${F1_SKIP_API:-0} != 1 ]]; then
   done
   curl -fsS "http://127.0.0.1:$API_PORT/health" >/dev/null || { tail -40 "$work/gunicorn.log"; exit 1; }
   echo "api up: http://127.0.0.1:$API_PORT (workers=$workers, src=$src, pin=${PIN:-none})"
-  if [[ ${F1_REAPER:-0} == 1 ]]; then
+  if [[ ${F1_REAPER:-0} == 1 && ( ${F1_KEEP_REAPER:-0} != 1 || ! -f $work/reaper.pid ) ]]; then
     if [[ -f $work/reaper.pid ]]; then kill "$(cat "$work/reaper.pid")" 2>/dev/null || true; fi
     DB_POOL_SIZE=3 DB_MAX_OVERFLOW=0 PYTHONPATH="$src" nohup "${pin[@]}" "$VENV/bin/python" "$here/reaper.py" \
       --every "${F1_REAP_EVERY_S:-30}" >> "$work/reaper.log" 2>&1 &

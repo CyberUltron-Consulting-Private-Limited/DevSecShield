@@ -20,7 +20,6 @@ from sqlalchemy import text, update
 from sqlmodel import Session, select
 
 import test_cbom_f1_node_api as F
-from test_cbom_f1_node_api import api, world  # noqa: F401  (fixtures)
 
 from backend.new_models import (
     CbomCollectionJob,
@@ -39,6 +38,7 @@ from backend.utilities.cbom_sources.settings import get_or_create_settings
 from zs_scan_node import api as node_api
 
 needs_pg = F.needs_pg
+api, world = F.api, F.world  # the SQLite world and API client fixtures, used by name
 DAY_US = 86_400 * 1_000_000
 
 

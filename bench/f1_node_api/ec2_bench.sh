@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# F1.1 bench on a dedicated box (Amazon Linux 2023), "before" (dev) and "after" (branch) with the same parameters.
+# F1.1 re-bench on ONE dedicated box (c6i.xlarge class, Amazon Linux 2023): the devil's-advocate matrix
+# (f1-1/DEVILS-ADVOCATE.md section 5.4), run in priority order.
 #
-#   ec2_bench.sh setup                # docker, uv, Python 3.12, the backend venv, postgres:15-alpine
-#   ec2_bench.sh run <scenario...>    # scenarios below; results in $ROOT/results/<scenario>.json
-#   ec2_bench.sh summary              # one compact line per finished scenario
+#   ec2_bench.sh setup                 # docker, uv, Python 3.12, the backend venv, postgres:15-alpine
+#   ec2_bench.sh run <scenario...>     # E0 E1 E2a E2b E5 E4a E4b E7 E6 E1b; artefacts in $ROOT/results/<scenario>/
+#   ec2_bench.sh summary               # one line per scenario: valid, pass, the failing gates
 #
-# $ROOT (default /opt/f1) holds before/{backend,scan_node}, after/{backend,scan_node} and after/bench/f1_node_api.
-# No secret is shipped: the database password and JWT/encryption keys are generated on the box (stack.sh).
+# $ROOT (default /opt/f1) holds after/{backend,bench} (the branch).  No secret is shipped: the database password and
+# JWT/encryption keys are generated on the box (stack.sh).  Pinning (V1): gunicorn, the reaper and PostgreSQL on
+# vCPUs 0-2, the simulator on vCPU 3.  3 gunicorn workers; dispatch 25 claims/s per worker (75/s).
 set -euo pipefail
 ROOT=${F1_ROOT:-/opt/f1}
 B=$ROOT/after/bench/f1_node_api
-export F1_VENV=$ROOT/venv
-export F1_WORKERS=${F1_WORKERS:-3}
+export F1_VENV=$ROOT/venv F1_WORKERS=3 F1_PIN_SERVER=0-2 F1_PIN_SIM=3 F1_API_PORT=18080 F1_PG_NAME=f1-1-bench-pg
+export CBOM_DISPATCH_PER_WORKER_S=${CBOM_DISPATCH_PER_WORKER_S:-25}
 cmd=${1:?setup|run|summary}; shift || true
 
 if [[ $cmd == setup ]]; then
-  dnf install -y -q docker tar gzip python3-pip >/dev/null
+  dnf install -y -q docker tar gzip python3-pip util-linux iproute procps-ng >/dev/null
   systemctl start docker
   python3 -m pip install -q uv
   export PATH=/usr/local/bin:$PATH
@@ -27,48 +29,57 @@ if [[ $cmd == setup ]]; then
 fi
 
 if [[ $cmd == summary ]]; then
-  for f in "$ROOT"/results/*.json; do
-    "$F1_VENV/bin/python" - "$f" <<'PY'
-import json, os, sys
-d = json.load(open(sys.argv[1]))
-lat = d["latency"]
-out = {"scenario": os.path.basename(sys.argv[1])[:-5], "req_per_s": d["req_per_s"], "measured_s": d["measured_s"],
-       "all": lat["all"], "by_call": {k: v for k, v in lat.items() if k != "all"}, "errors": d["errors"],
-       "error_rate": d["error_rate"], "error_kinds": d["error_kinds"], "cpu": d["cpu_pct_of_one_cpu"],
-       "lag": d["sim_loop_lag_ms"],
-       "db": {k: d["db"].get(k) for k in ("tps_avg", "tps_peak", "statements_per_s", "calls", "nonce_inserts",
-                                          "nonce_rows")},
-       "run": {k: v for k, v in d["run"].items() if k not in ("timeline",)}}
-print(json.dumps(out, separators=(",", ":")))
+  for d in "$ROOT"/results/*/; do
+    [[ -f $d/gates.json ]] || continue
+    "$F1_VENV/bin/python" - "$d/gates.json" <<'PY'
+import json, sys
+g = json.load(open(sys.argv[1]))
+fails = [f"{x['gate']}={x['value']}" for x in g["gates"] if x["pass"] is False]
+print(json.dumps({"scenario": g["scenario"], "valid": g["valid"], "pass": g["pass"], "invalid": g["invalid_because"],
+                  "fails": fails}, default=str))
 PY
   done
   exit 0
 fi
 
 mkdir -p "$ROOT/results" "$ROOT/work"
+W=$ROOT/work
+seg=(--assign segment)
 for scenario in "$@"; do
   echo "=== $(date -u +%T) $scenario"
-  unset CBOM_JOB_LEASE_S
-  export F1_REAPER=0
+  unset CBOM_JOB_LEASE_S F1_BENCH_CAP_KIND
+  export F1_REAPER=1
+  ideal=()
   case $scenario in
-    before-steady)  src=before; seed=(--nodes 10000 --sources 0 --assign pinned)
-                    sim=(--protocol 1 --hb-override 60 --no-claims --duration 600 --warmup 60 --spread 60) ;;
-    after-steady)   src=after; seed=(--nodes 10000 --sources 0 --assign pinned)
-                    sim=(--protocol 2 --duration 600 --warmup 60 --spread 60) ;;
-    after-steady-p1) src=after; seed=(--nodes 10000 --sources 0 --assign pinned)
-                    sim=(--protocol 1 --duration 180 --warmup 30) ;;
-    before-run)     src=before; seed=(--nodes 10000 --sources 10000 --assign pinned); export F1_REAPER=1
-                    sim=(--protocol 1 --warmup 30 --duration 1 --run --run-timeout 600) ;;
-    after-run)      src=after; seed=(--nodes 10000 --sources 10000 --assign segment); export F1_REAPER=1
-                    sim=(--protocol 2 --warmup 75 --spread 60 --duration 1 --run --run-timeout 600) ;;
-    after-run-kill) src=after; seed=(--nodes 10000 --sources 10000 --assign segment); export F1_REAPER=1
-                    export CBOM_JOB_LEASE_S=120
-                    sim=(--protocol 2 --warmup 75 --spread 60 --duration 1 --run --run-timeout 900 --kill-frac 0.05) ;;
+    E0)   seed=(--nodes 1000 --sources 0 "${seg[@]}"); sim=(--duration 120 --warmup 30) ;;
+    E1|E1b) seed=(--nodes 10000 --sources 0 "${seg[@]}")
+          dur=600; [[ $scenario == E1b ]] && dur=300
+          sim=(--duration "$dur" --warmup 60) ;;
+    E2a|E2b) seed=(--nodes 10000 --sources 10000 "${seg[@]}")
+          sim=(--warmup 60 --duration 1 --run --mix --run-timeout 600) ;;
+    E5)   export F1_BENCH_CAP_KIND=linux_servers:bench_x
+          seed=(--nodes 10000 --sources 10000 --team-b-nodes 201 --team-b-sources 1000 --closed-window-team 1 "${seg[@]}")
+          sim=(--warmup 60 --duration 1 --run --mix --runs "0:1,0:2" --open-window "300:1" --cap-x bench_x
+               --cap-x-ranges "0:10000,10200:10201" --run-timeout 900) ;;
+    E4a)  seed=(--nodes 500 --sources 10000 "${seg[@]}"); sim=(--warmup 60 --duration 1 --run --mix --run-timeout 600) ;;
+    E4b)  seed=(--nodes 500 --sources 10000 "${seg[@]}"); ideal=(--ideal-s 300)
+          sim=(--warmup 60 --duration 1 --run --mix --work-s 30 --run-timeout 900) ;;
+    E7)   export CBOM_JOB_LEASE_S=60  # raised to the 600 s floor (D4)
+          seed=(--nodes 10000 --sources 10000 "${seg[@]}")
+          sim=(--warmup 60 --duration 1 --run --mix --work-s 10 --kill-frac 0.05 --kill-at 30 --run-timeout 1000
+               --at "90=kill -HUP \$(cat $W/gunicorn.pid)"
+               --at "180=$B/stack.sh stop-api $W"
+               --at "270=F1_KEEP_REAPER=1 $B/stack.sh up $ROOT/after $W 3") ;;
+    E6)   seed=(--nodes 10000 --sources 10000 "${seg[@]}")
+          sim=(--warmup 60 --duration 1 --run --mix --p1-frac 0.1 --run-timeout 600) ;;
     *) echo "unknown scenario $scenario" >&2; exit 2 ;;
   esac
-  "$B/run_bench.sh" "$ROOT/$src" "$ROOT/work" "$scenario" "${seed[@]}" -- "${sim[@]}" || echo "scenario $scenario FAILED"
-  cp "$ROOT/work/$scenario.json" "$ROOT/results/" 2>/dev/null || true
-  cp "$ROOT/work/$scenario.server-log.txt" "$ROOT/results/" 2>/dev/null || true
-  cp "$ROOT/work/reaper.log" "$ROOT/results/$scenario.reaper.log" 2>/dev/null || true
+  "$B/run_bench.sh" "$ROOT/after" "$W" "$scenario" "${seed[@]}" -- "${sim[@]}" > "$ROOT/results/$scenario.out" 2>&1 \
+    || echo "scenario $scenario FAILED (see $scenario.out)"
+  if [[ ${#ideal[@]} -gt 0 ]]; then
+    "$F1_VENV/bin/python" "$B/report.py" --name "$scenario" --dir "$W/$scenario" "${ideal[@]}" > "$W/$scenario/gates.json" || true
+  fi
+  rm -rf "$ROOT/results/$scenario"; cp -r "$W/$scenario" "$ROOT/results/$scenario"
+  tar -C "$ROOT/results" -czf "$ROOT/results/$scenario.tgz" "$scenario" "$scenario.out"
+  echo "=== $(date -u +%T) $scenario done: $(sha256sum "$ROOT/results/$scenario.tgz" | cut -c1-16)"
 done
-echo "=== $(date -u +%T) done"

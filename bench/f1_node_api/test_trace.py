@@ -120,7 +120,7 @@ def test_a_100_ms_loop_stall_makes_the_run_invalid(tmp_path):
                               nodes=0, node_range=None, p1_frac=0.0, max_jobs=2, duration=0, warmup=0, spread=0,
                               conns=0, force_close=False, run=False, run_timeout=0, work_s=0, mix=False, kill_frac=0,
                               kill_at=0, at=None, residual_ms=20.0, trace=None, out=None, runs=None, open_window=None,
-                              cap_x="x", cap_x_ranges=None)
+                              cap_x="x", cap_x_ranges=None, run_before_nodes=False)
     sim = S.Sim(args)
 
     async def main():

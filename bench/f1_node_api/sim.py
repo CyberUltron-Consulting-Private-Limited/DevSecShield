@@ -33,7 +33,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import math
 import os
 import random
 import re
@@ -650,6 +649,10 @@ class Sim:
     async def main(self) -> dict:
         await self.client.open()
         sampler = Sampler(self.args.db, self.args.server_pid, self.args.port)
+        early: dict | None = None
+        if self.args.run_before_nodes:  # a deep queue: the run exists before any node starts (L1, L2)
+            early = await self.start_run(self.runs[0][1])
+            early["t0"] = time.monotonic()
         spread = self.args.spread if self.args.spread is not None else 60.0
         start = time.perf_counter()
         rnd = random.Random(11)
@@ -674,7 +677,12 @@ class Sim:
             t_run = time.perf_counter()
             events = asyncio.create_task(self.at_events(t_run))
             opener = asyncio.create_task(self.open_window(t_run))
-            runs = await asyncio.gather(*(self.one_run(d, team, t_run) for d, team in self.runs))
+            if early is not None:
+                info = dict(early)
+                info.update(await self.watch_run(info["run_id"], info.pop("t0")))
+                runs = [info]
+            else:
+                runs = await asyncio.gather(*(self.one_run(d, team, t_run) for d, team in self.runs))
             await opener
             run_info.update(runs[0])
             run_info["runs"] = runs
@@ -802,6 +810,7 @@ def main() -> None:
     ap.add_argument("--run", action="store_true")
     ap.add_argument("--run-timeout", type=float, default=900)
     ap.add_argument("--runs", default=None, help='"SECONDS:TEAM,...": runs to queue (default "0:1")')
+    ap.add_argument("--run-before-nodes", action="store_true", help="queue the run before any node starts")
     ap.add_argument("--open-window", default=None, help="SECONDS:TEAM: open the team's scan window then")
     ap.add_argument("--cap-x", default="bench_x", help="the capability the --cap-x-ranges nodes report")
     ap.add_argument("--cap-x-ranges", default=None, help='"a:b,c:d": node indexes that have --cap-x')

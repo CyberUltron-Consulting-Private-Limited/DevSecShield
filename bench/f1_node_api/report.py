@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import re
 from pathlib import Path
 
@@ -89,7 +88,7 @@ def main() -> None:
     pg = pg_facts((d / "pg.log").read_text(errors="replace") if (d / "pg.log").exists() else "")
     srv = server_facts(log, float(sim.get("wall_measure_start") or 0), args.workers)
     name = args.name
-    cfg = sim.get("config") or {}
+
     rate = args.rate or 25.0 * args.workers
     lat = sim.get("latency") or {}
     worst = sim.get("worst_10s_window") or {}
