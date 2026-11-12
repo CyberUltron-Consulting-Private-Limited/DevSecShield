@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-nginx-controller
+data:
+  ssl-protocols: "TLSv1 TLSv1.1 TLSv1.2"                   # K1 legacy TLS in ingress-nginx
+  ssl-ciphers: "DES-CBC3-SHA:RC4-SHA"                     # K2 weak ciphers
