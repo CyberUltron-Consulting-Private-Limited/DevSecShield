@@ -31,6 +31,27 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 ROLES = ("owner", "admin", "member", "viewer")
+AUDIT_INDEXES = (("ix_auditevent_team_id_id", ("team_id", "id")),
+                 ("ix_auditevent_actor_user_id_id", ("actor_user_id", "id")),
+                 ("ix_auditevent_action_id", ("action", "id")))
+# Append-only: UPDATE, DELETE and TRUNCATE raise, with one exception, the erasure of personal data
+# (audit.erase_personal_data): inside a transaction that set zs.audit_erasure, an UPDATE may set actor_email, ip and
+# user_agent to NULL and change nothing else (those three are outside the hash chain).
+APPEND_ONLY_FUNCTION = """
+CREATE OR REPLACE FUNCTION auditevent_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND coalesce(current_setting('zs.audit_erasure', true), '') = 'on'
+     AND NEW.actor_email IS NULL AND NEW.ip IS NULL AND NEW.user_agent IS NULL
+     AND (NEW.id, NEW.at, NEW.team_id, NEW.actor_user_id, NEW.actor_type, NEW.action, NEW.object_type, NEW.object_id,
+          NEW.outcome, NEW.prev_hash, NEW.hash, NEW.details::text)
+         IS NOT DISTINCT FROM
+         (OLD.id, OLD.at, OLD.team_id, OLD.actor_user_id, OLD.actor_type, OLD.action, OLD.object_type, OLD.object_id,
+          OLD.outcome, OLD.prev_hash, OLD.hash, OLD.details::text) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'auditevent is append-only: % refused', TG_OP USING ERRCODE = 'insufficient_privilege';
+END $$
+"""
 # one admin per ownerless team: the one whose default team it is, else the lowest user id; ``why`` names the rule
 OWNER_PICK = """
 SELECT team_id, user_id, why FROM (
@@ -93,7 +114,7 @@ def upgrade() -> None:
     else:
         op.create_table(
             'auditevent',
-            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),  # never pruned: int8
             sa.Column('at', sa.DateTime(), nullable=False),
             sa.Column('team_id', sa.Integer(), nullable=True),
             sa.Column('actor_user_id', sa.Integer(), nullable=True),
@@ -110,13 +131,17 @@ def upgrade() -> None:
             sa.Column('hash', sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
             sa.PrimaryKeyConstraint('id'),
         )
-        for column in ("at", "team_id", "actor_user_id", "action"):
-            op.create_index(op.f(f'ix_auditevent_{column}'), 'auditevent', [column], unique=False)
+        # what is read: a team's log and its chain head, one account's actions, one action platform-wide (id order
+        # is time order, so no index on at); three indexes on an append-only table, no more
+        for name, columns in AUDIT_INDEXES:
+            op.create_index(name, 'auditevent', list(columns), unique=False)
+
+    # ---- the account lookups every request makes: the policy by email, sign-in by lower(email)
+    op.create_index('ix_user_email', 'user', ['email'], unique=False)
+    op.create_index('ix_user_email_lower', 'user', [sa.text('lower(email)')], unique=False)
 
     if _is_postgres(bind):
-        bind.execute(sa.text(
-            "CREATE OR REPLACE FUNCTION auditevent_append_only() RETURNS trigger LANGUAGE plpgsql AS $$ "
-            "BEGIN RAISE EXCEPTION 'auditevent is append-only: % refused', TG_OP USING ERRCODE = 'insufficient_privilege'; END $$"))
+        bind.execute(sa.text(APPEND_ONLY_FUNCTION))
         bind.execute(sa.text("CREATE TRIGGER auditevent_no_update_delete BEFORE UPDATE OR DELETE ON auditevent "
                              "FOR EACH ROW EXECUTE FUNCTION auditevent_append_only()"))
         bind.execute(sa.text("CREATE TRIGGER auditevent_no_truncate BEFORE TRUNCATE ON auditevent "
@@ -130,6 +155,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    op.drop_index('ix_user_email_lower', table_name='user')
+    op.drop_index('ix_user_email', table_name='user')
     if _is_postgres(bind):
         bind.execute(sa.text("DROP TRIGGER IF EXISTS auditevent_no_truncate ON auditevent"))
         bind.execute(sa.text("DROP TRIGGER IF EXISTS auditevent_no_update_delete ON auditevent"))

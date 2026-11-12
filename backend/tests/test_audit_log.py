@@ -89,9 +89,10 @@ def test_a_successful_team_write_is_recorded_once_with_who_what_where_and_when(w
                                                      "User-Agent": "pytest-agent/1"},
                           json={"name": "Acme Security", "description": "d"})
     assert response.status_code == 200, response.text
-    written = rows(engine, action="team.update")
+    written = rows(engine, action="team.update", outcome="success")
     assert len(written) == 1
     event = written[0]
+    assert len(rows(engine, action="team.update", outcome="attempted")) == 1  # announced before the handler ran
     assert (event.team_id, event.actor_user_id, event.actor_email, event.actor_type) == (team, ids[ADMIN], ADMIN, "user")
     assert (event.object_type, event.object_id, event.outcome) == ("team", str(team), "success")
     assert event.ip == "testclient"  # the client address, never the header the client sent
@@ -182,10 +183,11 @@ def test_the_chain_finds_a_changed_and_a_removed_event(world):
     engine, _, _ = world
     for i in range(5):
         audit.record_now(engine, action=f"test.{i}", team_id=1, details={"i": i})
-    assert audit.verify_chain(engine) == {"ok": True, "checked": 5, "first_bad_id": None, "reason": None}
+    clean = audit.verify_chain(engine)
+    assert (clean["ok"], clean["checked"], clean["first_bad_id"]) == (True, 5, None)
     ids = [e.id for e in rows(engine)]
-    with engine.begin() as conn:  # behind the application's back (SQLite has no trigger)
-        conn.execute(sa.text("UPDATE auditevent SET actor_email = 'someone-else@acme.test' WHERE id = :i"), {"i": ids[2]})
+    with engine.begin() as conn:  # behind the application's back (SQLite has no trigger): who did it is hashed
+        conn.execute(sa.text("UPDATE auditevent SET actor_user_id = 999 WHERE id = :i"), {"i": ids[2]})
     changed = audit.verify_chain(engine)
     assert changed["ok"] is False and changed["first_bad_id"] == ids[2] and "changed" in changed["reason"]
     with engine.begin() as conn:
@@ -279,7 +281,7 @@ def test_postgresql_refuses_update_delete_and_truncate(pg_schema):
 
 
 @needs_pg
-def test_concurrent_writers_keep_one_chain_on_postgresql(pg_schema):
+def test_concurrent_writers_keep_one_chain_per_team_on_postgresql(pg_schema):
     engine, _ = pg_schema
     SQLModel.metadata.create_all(engine, tables=[AuditEvent.__table__])
     errors: list[BaseException] = []
@@ -298,7 +300,7 @@ def test_concurrent_writers_keep_one_chain_on_postgresql(pg_schema):
         t.join()
     assert errors == []
     result = audit.verify_chain(engine)
-    assert result == {"ok": True, "checked": 80, "first_bad_id": None, "reason": None}
+    assert (result["ok"], result["checked"], result["chains"], result["first_bad_id"]) == (True, 80, 16, None)
 
 
 def _create_pre_rbac_tables(engine):
@@ -384,3 +386,98 @@ def test_the_migration_gives_every_team_with_an_admin_one_owner_deterministicall
     out = capsys.readouterr().out
     assert "default team: 1" in out and "only admin: 2" in out and "lowest admin id: 1" in out
     assert "no admin (a superuser assigns the owner): 1" in out
+
+
+# ------------------------------------------------------------------------------------------------ review 5869394244
+
+def test_a_privileged_write_is_refused_when_the_audit_log_cannot_record_it(world, client, monkeypatch):
+    """audit.py:225: the generic event was written after the response and failed open (200, renamed, no row)."""
+    engine, ids, _ = world
+    team = ids["Acme"]
+
+    def broken(*_a, **_k):
+        raise RuntimeError("audit insert failed (lock timeout, disk full, connection lost)")
+
+    monkeypatch.setattr(audit, "record_now", broken)
+    response = TestClient(app, raise_server_exceptions=False).put(
+        f"/team/{team}", headers=bearer(ADMIN), json={"name": "Renamed while the audit log is down", "description": "d"})
+    assert response.status_code == 503 and "audit" in response.json()["detail"].lower()
+    with Session(engine) as s:
+        assert s.get(Team, team).name == "Acme"  # the handler never ran
+
+
+def test_every_privileged_write_is_announced_before_it_runs(world, client):
+    engine, ids, _ = world
+    team = ids["Acme"]
+    assert client.put(f"/team/{team}", headers=bearer(ADMIN), json={"name": "Acme 2", "description": "d"}).status_code == 200
+    written = rows(engine, action="team.update")
+    assert [e.outcome for e in written] == ["attempted", "success"]
+    assert written[1].details["attempt_id"] == written[0].id and written[0].actor_user_id == ids[ADMIN]
+
+
+def test_each_team_has_its_own_chain(world):
+    """audit.py:86: one global chain serialised every audit write of every team behind one lock."""
+    engine, ids, _ = world
+    a, b = ids["Acme"], ids["Other"]
+    for team in (a, b, a, None, b, a, None):
+        audit.record_now(engine, action="chain.test", team_id=team)
+    events = rows(engine, action="chain.test")
+    by_team: dict = {}
+    for e in events:
+        assert e.prev_hash == by_team.get(e.team_id, audit.GENESIS), e.id  # linked to its own team's previous event
+        by_team[e.team_id] = e.hash
+    assert audit.verify_chain(engine)["ok"] is True
+    only_a = audit.verify_chain(engine, team_id=a)
+    assert only_a["ok"] is True and only_a["checked"] == len([e for e in rows(engine) if e.team_id == a])
+
+
+def test_personal_data_is_outside_the_hash_so_it_can_be_erased(world):
+    """r6f4rbac001:93: email, address and user agent were inside the hash: an erasure request broke the chain."""
+    engine, ids, _ = world
+    for _ in range(3):
+        audit.record_now(engine, action="erasure.test", team_id=ids["Acme"], actor_user_id=ids[MEMBER],
+                         actor_email=MEMBER, ip="10.1.2.3", user_agent="agent/1")
+    assert audit.erase_personal_data(engine, MEMBER) == 3
+    erased = rows(engine, action="erasure.test")
+    assert all((e.actor_email, e.ip, e.user_agent) == (None, None, None) for e in erased)
+    assert all(e.actor_user_id == ids[MEMBER] for e in erased)  # who it was stays, as an account id
+    assert audit.verify_chain(engine)["ok"] is True
+
+
+@needs_pg
+def test_postgresql_allows_only_the_erasure_update(pg_schema):
+    engine, _ = pg_schema
+    _create_pre_rbac_tables(engine)
+    _migrate(engine, "upgrade")
+    audit.record_now(engine, action="pg.erasure", team_id=1, actor_user_id=7, actor_email="gone@x.test", ip="10.0.0.1")
+    with pytest.raises(sa.exc.DBAPIError), engine.begin() as conn:  # a plain update is still refused
+        conn.execute(sa.text("UPDATE auditevent SET actor_email = NULL"))
+    assert audit.erase_personal_data(engine, "gone@x.test") == 1
+    with pytest.raises(sa.exc.DBAPIError), engine.begin() as conn:  # the erasure switch never allows other changes
+        conn.execute(sa.text("SELECT set_config('zs.audit_erasure', 'on', true)"))
+        conn.execute(sa.text("UPDATE auditevent SET action = 'forged'"))
+    event = rows(engine)[0]
+    assert (event.actor_email, event.ip, event.actor_user_id) == (None, None, 7)
+    assert audit.verify_chain(engine)["ok"] is True
+
+
+@needs_pg
+def test_the_migration_indexes_what_the_queries_use(pg_schema):
+    """policy.py:102 (user.email had no index), r6f4rbac001:86 (audit indexes missed the queries), :69 (int4 id)."""
+    engine, _ = pg_schema
+    _create_pre_rbac_tables(engine)
+    _migrate(engine, "upgrade")
+    inspector = sa.inspect(engine)
+    audit_indexes = {i["name"]: i["column_names"] for i in inspector.get_indexes("auditevent")}
+    assert audit_indexes == {"ix_auditevent_team_id_id": ["team_id", "id"],
+                             "ix_auditevent_actor_user_id_id": ["actor_user_id", "id"],
+                             "ix_auditevent_action_id": ["action", "id"]}
+    assert str(next(c["type"] for c in inspector.get_columns("auditevent") if c["name"] == "id")) == "BIGINT"
+    user_indexes = {i["name"] for i in inspector.get_indexes("user")}
+    assert {"ix_user_email", "ix_user_email_lower"} <= user_indexes
+    with engine.begin() as conn:
+        plan = " ".join(r[0] for r in conn.execute(sa.text(
+            "EXPLAIN SELECT * FROM \"user\" WHERE lower(email) = 'a@x.test'")).all())
+    assert "ix_user_email_lower" in plan or "Seq Scan" in plan  # (tiny table: the planner may still scan)
+    _migrate(engine, "downgrade")
+    assert not ({"ix_user_email", "ix_user_email_lower"} & {i["name"] for i in sa.inspect(engine).get_indexes("user")})

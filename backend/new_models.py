@@ -71,7 +71,7 @@ class Team(SQLModel,table=True):
 
 class User(SQLModel,table=True):
     id : int | None = Field(default=None,primary_key=True)
-    email : str
+    email : str = Field(index=True)  # ix_user_email: every access check finds the token's account by its email (F4)
     password : str
     first_name : str | None
     last_name : str | None
@@ -100,6 +100,10 @@ class User(SQLModel,table=True):
 
     dast_profiles : list["DastScanProfile"] = Relationship(back_populates="owner_user")
 
+
+
+# sign-in and invitation lookups compare lower(email) (auth_utils.user_by_email): an expression index (F4, r6f4rbac001)
+_SaIndex("ix_user_email_lower", _sa_func.lower(User.__table__.c.email))
 
 class TeamInvitation(SQLModel, table=True):
     """An offer to join a team, mailed as a link to /invite/<token>; nobody joins until the invitee accepts.

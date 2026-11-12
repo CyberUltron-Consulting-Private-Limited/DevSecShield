@@ -525,9 +525,13 @@ async def platform_audit_log(limit: Annotated[int, Query(ge=1, le=200)] = 50,
                                    action=action, actor_email=actor_email, outcome=outcome, platform=True)
 
 
-@router.get('/admin/audit/verify', summary="Check the audit log's hash chain (superusers)", dependencies=READ)
-async def verify_audit_log():
-    return await run_in_threadpool(audit.verify_chain, get_db())
+@router.get('/admin/audit/verify', summary="Check the audit log's hash chains (superusers)", dependencies=READ)
+async def verify_audit_log(team_id: Annotated[int | None, Query(ge=1)] = None,
+                           from_id: Annotated[int | None, Query(ge=1)] = None,
+                           to_id: Annotated[int | None, Query(ge=1)] = None):
+    """One chain per team: ``team_id`` checks one team; ``from_id`` / ``to_id`` check a slice (a large log is
+    verified in slices, each answer's ``last_id`` + 1 is the next ``from_id``)."""
+    return await run_in_threadpool(lambda: audit.verify_chain(get_db(), team_id=team_id, from_id=from_id, to_id=to_id))
 
 
 @router.post("/admin/teams/{target_team_id}/owner",

@@ -219,9 +219,11 @@ class Authenticated(AccessPolicy):
         return "any signed-in account" + (" (also a closed session)" if self.allow_inactive_session else "")
 
     async def __call__(self, request: Request) -> Principal:
-        principal = await resolve_principal(request, _engine(self.engine_getter),
-                                            allow_inactive=self.allow_inactive_session)
-        self._context(request, engine_getter=self.engine_getter, principal=principal)
+        engine = _engine(self.engine_getter)
+        principal = await resolve_principal(request, engine, allow_inactive=self.allow_inactive_session)
+        ctx = self._context(request, engine_getter=self.engine_getter, principal=principal)
+        if self.audited:
+            await _audit_attempt(request, ctx, engine)
         return principal
 
 
@@ -244,6 +246,8 @@ class PlatformAdmin(AccessPolicy):
                 await _audit_denial(request, ctx, engine, action=f"platform.{request.method.lower()}",
                                     reason="not a superuser")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SUPERUSER_REQUIRED)
+        if self.audited:
+            await _audit_attempt(request, ctx, engine)
         return principal
 
 
@@ -272,7 +276,27 @@ class TeamPermission(AccessPolicy):
                                 reason=f"role {principal.role} below {self.permission.min_role}")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail=role_denied_detail(principal.role, self.permission))
+        if self.audited:
+            await _audit_attempt(request, ctx, engine)
         return principal
+
+
+AUDIT_UNAVAILABLE = "The audit log cannot record this change right now, so nothing was changed. Try again shortly."
+
+
+async def _audit_attempt(request: Request, ctx: AccessContext, engine: Engine) -> None:
+    """Fail closed: an audited request is written to the audit log (outcome "attempted") BEFORE its handler runs; if
+    that write fails the request is refused with 503 and nothing changes.  The middleware then records how it ended
+    (success / denied / failed) with this row's id."""
+    from backend.utilities.rbac import audit
+
+    try:
+        attempt_id = await run_in_threadpool(audit.record_from_context, engine, ctx, request_meta(request),
+                                             outcome="attempted")
+    except Exception as exc:
+        log.error("audit: attempt not recorded, request refused (%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=AUDIT_UNAVAILABLE) from None
+    request.state.audit_attempt_id = attempt_id
 
 
 async def _audit_denial(request: Request, ctx: AccessContext, engine: Engine, *, action: str, reason: str) -> None:
@@ -353,6 +377,14 @@ def bind_api_key(request: Request, engine_getter: EngineGetter, *, user_id: int,
                           role=role, via="api_key")
     if ctx is not None:
         ctx.principal, ctx.team_id, ctx.engine_getter = principal, team_id, engine_getter
+        if ctx.policy.audited:  # fail closed, as for people (``_audit_attempt``); this resolver is synchronous
+            from backend.utilities.rbac import audit
+            try:
+                request.state.audit_attempt_id = audit.record_from_context(
+                    _engine(engine_getter), ctx, request_meta(request), outcome="attempted")
+            except Exception as exc:
+                log.error("audit: key attempt not recorded, request refused (%s)", type(exc).__name__)
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=AUDIT_UNAVAILABLE) from None
     return principal
 
 

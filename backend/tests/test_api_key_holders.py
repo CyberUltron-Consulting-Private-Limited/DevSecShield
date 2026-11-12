@@ -6,7 +6,6 @@ with keys were not audited.  Now every key route names the permission it needs (
 the key's creator must still be a member whose role holds it, checked on every use; key-driven writes are written to
 the audit log with the creator as actor (``actor_type`` ``api_key``).
 """
-import datetime as dt
 import os
 import sys
 

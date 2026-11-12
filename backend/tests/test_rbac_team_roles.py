@@ -144,7 +144,7 @@ def test_a_team_with_several_admins_and_no_owner_is_never_claimed_first_come(wor
         refused = client.post(f"/team/{legacy}/ownership/claim", headers=bearer(who))
         assert refused.status_code == 409 and "platform operator" in refused.json()["detail"], refused.text
     assert roles(engine, legacy) == {ADMIN: "admin", ADMIN2: "admin", MEMBER: "member"}
-    claim_events = events(engine, "team.ownership.claim")
+    claim_events = [e for e in events(engine, "team.ownership.claim") if e.outcome != "attempted"]
     assert [(e.actor_user_id, e.outcome) for e in claim_events] == [
         (ids[MEMBER], "denied"), (ids[ADMIN], "denied"), (ids[ADMIN2], "denied")]
 
@@ -183,7 +183,7 @@ def test_a_superuser_makes_a_member_the_owner_of_an_ownerless_team(world, client
     assert made.status_code == 200, made.text
     assert roles(engine, legacy) == {ADMIN: "admin", ADMIN2: "owner", MEMBER: "member"}
     ratelimit.reset_all()
-    assert client.post(f"/admin/teams/999999/owner", headers=bearer(ROOT), json={"email": ADMIN}).status_code == 404
+    assert client.post("/admin/teams/999999/owner", headers=bearer(ROOT), json={"email": ADMIN}).status_code == 404
     assigned = events(engine, "team.ownership.assign")
     assert len(assigned) == 1 and assigned[0].actor_type == "superuser" and assigned[0].team_id == legacy
     assert assigned[0].details["email"] == ADMIN2 and assigned[0].details["from"] == "admin"
@@ -426,9 +426,11 @@ def test_a_team_deletion_that_fails_half_way_still_says_who_started_it(world, cl
         s.commit()
     failed = TestClient(app, raise_server_exceptions=False).delete(f"/team/{ids['team']}", headers=bearer(OWNER))
     assert failed.status_code >= 500
-    trail = [e for e in events(engine) if e.team_id == ids["team"]]
-    assert [e.action for e in trail if e.action.startswith("team.delete")] == ["team.delete.started"]
-    assert trail[-1].actor_user_id == ids[OWNER] and trail[-1].details["scans"] == 1
+    trail = [e for e in events(engine) if e.team_id == ids["team"] and e.action.startswith("team.delete")]
+    # announced (fail closed), started (committed before any data went), then the failure; never a completion
+    assert [(e.action, e.outcome) for e in trail] == [
+        ("team.delete", "attempted"), ("team.delete.started", "success"), ("team.delete", "failed")]
+    assert trail[1].actor_user_id == ids[OWNER] and trail[1].details["scans"] == 1
 
 
 # ----------------------------------------------------------------------------------------- viewers

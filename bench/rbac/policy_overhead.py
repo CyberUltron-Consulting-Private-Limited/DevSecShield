@@ -2,7 +2,12 @@
 
     PYTHON_DOTENV_DISABLED=1 PYTHONPATH=. JWT_SECRET_KEY=x JWT_REFRESH_SECRET_KEY=y AWS_ACCESS_KEY_ID=x \
       AWS_SECRET_ACCESS_KEY=y AWS_DEFAULT_REGION=us-east-1 \
-      backend/.venv/bin/python bench/rbac/policy_overhead.py postgresql+psycopg2://user@host:port/db [requests]
+      backend/.venv/bin/python bench/rbac/policy_overhead.py postgresql+psycopg2://user@host:port/db [requests] \
+        [users] [no-email-index]
+
+``users`` (default 1,000) accounts exist besides the bench user, so the account lookup is measured on a realistic
+table (the PR #42 architecture review measured 100,000: a sequential scan without ``ix_user_email``);
+``no-email-index`` drops ix_user_email / ix_user_email_lower first, to show the difference on the same host.
 
 Creates its tables in a fresh schema (dropped at the end), 1,000 teams and 5,000 memberships so the lookups are
 index lookups on a non-trivial table, then times the same route through the real app (rate limiter, policy,
@@ -22,6 +27,8 @@ from sqlmodel import Session, SQLModel, create_engine
 def main() -> int:
     url = sys.argv[1]
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 2000
+    n_users = max(1000, int(sys.argv[3])) if len(sys.argv) > 3 else 1000
+    drop_index = len(sys.argv) > 4 and sys.argv[4] == "no-email-index"
     schema = f"rbac_bench_{uuid.uuid4().hex[:8]}"
     admin = create_engine(url)
     with admin.begin() as conn:
@@ -49,6 +56,22 @@ def main() -> int:
                             profile_photo=None, session_active=True, default_team_id=1 + i % 1000)
                        for i in range(1, 1001)])
             s.commit()
+        if n_users > 1000:  # the rest in bulk (Core inserts): accounts with no membership, as on a real platform
+            table = User.__table__
+            with engine.begin() as conn:
+                for start in range(1001, n_users + 1, 10000):
+                    conn.execute(table.insert(), [
+                        {"id": i, "email": f"u{i}@bench.test", "password": "x", "first_name": "u", "last_name": "b",
+                         "session_active": True, "default_team_id": 1 + i % 1000, "token_version": 0,
+                         "must_change_password": False}
+                        for i in range(start, min(start + 10000, n_users + 1))])
+        with engine.begin() as conn:
+            if drop_index:
+                conn.execute(sa.text("DROP INDEX IF EXISTS ix_user_email"))
+                conn.execute(sa.text("DROP INDEX IF EXISTS ix_user_email_lower"))
+            conn.execute(sa.text('ANALYZE "user"'))
+        print(f"users={n_users} email index={'dropped' if drop_index else 'ix_user_email + ix_user_email_lower'}")
+        with Session(engine) as s:
             s.add_all([TeamMembership(team_id=1 + (u * 7 + k) % 1000, user_id=u, role="member")
                        for u in range(1, 1001) for k in range(5)])
             s.commit()
