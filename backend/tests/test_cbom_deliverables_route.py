@@ -684,17 +684,28 @@ def test_only_get_is_allowed(api, method):
 # ---------------------------------------------------------------------------------------------
 # 429: a REAL, per-token, decorator-level limiter
 # ---------------------------------------------------------------------------------------------
+def pin_limiter_clock(monkeypatch) -> None:
+    """Keep every request of the calling test inside one limiter window.
+
+    The limiter is a fixed window aligned to the wall clock (``now // seconds``, backend/utilities/ratelimit.py).
+    A test whose requests straddle hh:mm:00 starts a fresh budget mid-test and gets 200 where it expects 429; on a
+    busy CI runner two PDF renders are enough (F-CI-FLAKE-1). Every test that counts requests up to a 429 calls this
+    before its first request."""
+    now = routes.limiter.clock()
+    monkeypatch.setattr(routes.limiter, "clock", lambda: now)
+
+
 def test_the_default_limit_is_thirty_requests_per_sixty_seconds(api, monkeypatch):
     assert (routes.limiter.times, routes.limiter.seconds) == (30, 60)
     # all 31 requests inside one window even when a busy machine takes over a minute to serve them
-    now = routes.limiter.clock()
-    monkeypatch.setattr(routes.limiter, "clock", lambda: now)
+    pin_limiter_clock(monkeypatch)
     statuses = [api.get(manifest_url(TEAM_ONE)).status_code for _ in range(31)]
     assert statuses == [200] * 30 + [429]
 
 
 def test_over_the_limit_is_429_with_retry_after_and_no_pdf(api, monkeypatch):
     monkeypatch.setattr(routes.limiter, "times", 2)
+    pin_limiter_clock(monkeypatch)
     slug = SLUGS[0]
     assert [api.get(pdf_url(TEAM_ONE, slug)).status_code for _ in range(2)] == [200, 200]
     blocked = api.get(pdf_url(TEAM_ONE, slug))
@@ -707,6 +718,7 @@ def test_over_the_limit_is_429_with_retry_after_and_no_pdf(api, monkeypatch):
 
 def test_the_limit_is_per_token_not_per_address(api, monkeypatch):
     monkeypatch.setattr(routes.limiter, "times", 2)
+    pin_limiter_clock(monkeypatch)
     assert [api.get(manifest_url(TEAM_ONE)).status_code for _ in range(3)] == [200, 200, 429]
     other_user = api.get(manifest_url(TEAM_OTHER), who="bob")
     assert other_user.status_code == 200, "another token must have its own budget"
@@ -714,6 +726,7 @@ def test_the_limit_is_per_token_not_per_address(api, monkeypatch):
 
 def test_invalid_tokens_are_throttled_before_authentication(api, monkeypatch):
     monkeypatch.setattr(routes.limiter, "times", 2)
+    pin_limiter_clock(monkeypatch)
     bad = {"Authorization": "Bearer not.a.jwt"}
     codes = [api.get(manifest_url(TEAM_ONE), who=None, headers=bad).status_code for _ in range(3)]
     assert codes == [401, 401, 429]
@@ -746,6 +759,7 @@ def test_the_limiter_key_is_the_verified_subject_and_never_the_token(api):
 
 def test_changing_the_scheme_case_does_not_buy_a_second_budget(api, monkeypatch):
     monkeypatch.setattr(routes.limiter, "times", 2)
+    pin_limiter_clock(monkeypatch)
     token = api.token("alice")
     codes = [
         api.get(manifest_url(TEAM_ONE), who=None, headers={"Authorization": f"{scheme} {token}"})
