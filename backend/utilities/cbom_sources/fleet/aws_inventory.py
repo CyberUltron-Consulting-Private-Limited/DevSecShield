@@ -180,8 +180,10 @@ class _Lister:
         for n, cert in enumerate(items):
             arn = cert["CertificateArn"]
             tags = client.list_tags_for_certificate(CertificateArn=arn).get("Tags") or [] if n < MAX_TAG_LOOKUPS else []
+            domain = cert.get("DomainName") or None
             rows.append({**self._base("acm"), "external_id": arn, "kind": "certificate",
-                         "hostname": cert.get("DomainName") or None, "tags": tags,
+                         # a wildcard (*.example.com) names many hosts, not one to connect to: it stays an attribute
+                         "hostname": domain if domain and not domain.startswith("*") else None, "tags": tags,
                          "attributes": {"service": "acm", "domain": cert.get("DomainName"),
                                         "key_algorithm": cert.get("KeyAlgorithm"), "type": cert.get("Type"),
                                         "status": cert.get("Status"), "in_use": cert.get("InUse"),

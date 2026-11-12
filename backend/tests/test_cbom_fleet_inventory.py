@@ -369,18 +369,18 @@ def aws(monkeypatch):
 TAGS = [{"Key": "Project", "Value": "DevSecShield"}, {"Key": "zs-lab", "Value": "sandbox"}]
 
 
-def _self_signed():
+def _self_signed(domain: str = "lab.bank.test"):
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.x509.oid import NameOID
 
     key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "lab.bank.test")])
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, domain)])
     now = dt.datetime.now(dt.timezone.utc)
     cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key()).serial_number(7)
             .not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=30))
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName("lab.bank.test")]), critical=False)
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(domain)]), critical=False)
             .sign(key, hashes.SHA256()))
     return (cert.public_bytes(serialization.Encoding.PEM),
             key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL,
@@ -568,3 +568,20 @@ def test_a_sync_stops_listing_before_its_lease_runs_out(aws, api, world):
         statuses = [v for r in REGIONS for v in cov[r].values()]
         assert statuses.count("cancelled") == len(statuses) - 1 and cov["eu-west-1"]["ec2"] == "ok"
         assert s.exec(select(CbomInventoryTarget).where(CbomInventoryTarget.missing_since.is_not(None))).all() == []
+
+
+def test_a_wildcard_certificate_is_in_the_inventory(aws):
+    """Live sandbox finding (Nov 12): ACM wildcard certificates (DomainName ``*.example.com``) were put in
+    ``hostname``, which must be a host one can connect to, so every wildcard certificate failed normalisation and was
+    left out of the inventory (only an error line in the sync summary).  The domain is an attribute; ``hostname`` is
+    set only for a plain host name."""
+    acm = boto3.client("acm", region_name="us-east-1")
+    for domain in ("*.wild.bank.test", "plain.bank.test"):
+        cert, key = _self_signed(domain)
+        acm.import_certificate(Certificate=cert, PrivateKey=key, Tags=TAGS)
+    result, targets = _discover(regions=["us-east-1"], services=["acm"])
+    assert result.errors == [] and result.complete
+    by_domain = {t.attributes["domain"]: t for t in targets}
+    assert set(by_domain) == {"*.wild.bank.test", "plain.bank.test"}
+    assert by_domain["*.wild.bank.test"].hostname is None and by_domain["*.wild.bank.test"].kind == "certificate"
+    assert by_domain["plain.bank.test"].hostname == "plain.bank.test"
