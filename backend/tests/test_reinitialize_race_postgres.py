@@ -2,9 +2,10 @@
 
 * Several reinitializes of one scan at once: exactly one is charged the difference, once; the others are refused and
   charge nothing.
-* Two scans of one team competing for a balance that covers one difference: one is charged, the other refused, and
-  the balance never goes below zero.
-* A reinitialize racing a cancel: always ends cancelled with everything the scan paid refunded once.
+* Two scans of one team competing for a balance that covers one difference (also EXACTLY one difference): one is
+  charged, the other refused, and the balance never goes below zero.
+* A reinitialize racing a cancel: always ends cancelled with everything the scan paid refunded once, every movement
+  with its ledger line (the lines add up to the balance change), and a stable refusal code.
 * A reinitialize racing a poll that sees the REPLACED run succeed: either the old run's result is stored and nothing
   more was charged, or the new run is queued and paid for; never the old result on a scan that paid for the new input.
 
@@ -13,6 +14,7 @@ CI sets it, .github/workflows/ci.yml backend job). The schema is dropped and cre
 """
 import asyncio
 import io
+import itertools
 import json
 import os
 import random
@@ -28,7 +30,7 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-os.environ.setdefault("JWT_SECRET_KEY", "t2-reinitialize-race-secret-not-for-production-use")
+os.environ.setdefault("JWT_SECRET_KEY", __import__("secrets").token_urlsafe(48))  # generated: no key-shaped literal
 
 from sqlmodel import Session, SQLModel, create_engine, select  # noqa: E402
 
@@ -71,9 +73,9 @@ class FakeCelery:
         with self.lock:
             self.revoked.append(task_id)
 
-    def send_task(self, name, kwargs, queue):
+    def send_task(self, name, kwargs, queue, task_id=None):
         with self.lock:
-            task_id = f"new-{len(self.sent) + 1}"
+            task_id = task_id or f"new-{len(self.sent) + 1}"
             self.sent.append(task_id)
         return types.SimpleNamespace(id=task_id)
 
@@ -112,7 +114,13 @@ def pg(monkeypatch):
     monkeypatch.setattr(s3_utils, "delete_file", lambda *_a: True)
     monkeypatch.setattr(cc, "get_celery_app", lambda: celery)
     monkeypatch.setattr(start_mod, "get_celery_app", lambda: celery)
-    monkeypatch.setattr(credits_mod, "get_db", lambda: engine)  # the failure path's refund
+    ids = itertools.count(1)
+    try:  # readable run ids (next() on a count is atomic); the module exists from the #57 review fixes on
+        from backend.utilities.scan import claim_token
+        monkeypatch.setattr(claim_token, "new_task_id", lambda: f"new-{next(ids)}")
+    except ImportError:
+        pass
+    monkeypatch.setattr(credits_mod, "get_db", lambda: engine)
     monkeypatch.setattr(cc, "get_mongo_client_db", lambda: {"scan_findings": types.SimpleNamespace(
         delete_many=lambda *_a, **_k: None)})
     monkeypatch.setattr(cc, "create_findings_in_mongo_db", lambda **_k: None)
@@ -176,7 +184,8 @@ def _state(engine, scan_id):
 
     with Session(engine) as s:
         scan = s.get(Scan, scan_id)
-        lines = s.exec(select(CreditLedgerEntry).where(CreditLedgerEntry.scan_id == scan_id)).all()
+        lines = s.exec(select(CreditLedgerEntry).where(CreditLedgerEntry.scan_id == scan_id)
+                       .order_by(CreditLedgerEntry.id)).all()
         return (scan.scan_status, scan.task_id, scan.credit_charged, round(s.get(Team, 1).credit_balance, 4),
                 [line.delta for line in lines])
 
@@ -195,7 +204,9 @@ def test_several_reinitializes_of_one_scan_charge_the_difference_once(pg):
         ok = [v[1]["credits_charged"] for v in out.values() if v[0] == 200]
         refused = [v for v in out.values() if v[0] != 200]
         assert sorted(ok)[-1:] == [6.5] and sorted(ok)[:-1] == [0.0] * (len(ok) - 1), out
-        assert all(v[0] == 409 and v[1] in ("reinitialize_conflict", "already_started", "superseded")
+        # a request that read the scan while another held its claim is told to wait (starting); never superseded:
+        # nobody takes over a live claim any more
+        assert all(v[0] == 409 and v[1] in ("reinitialize_conflict", "not_pending", "starting")
                    for v in refused), out
         status, task, charged, balance, deltas = _state(engine, scan_id)
         assert (status, charged, balance, deltas) == ("pending", 7.5, 93.5, [-6.5]), (i, out)
@@ -210,17 +221,20 @@ def test_several_reinitializes_of_one_scan_charge_the_difference_once(pg):
     print(f"\nsix reinitializes at once over {ROUNDS} rounds: {dict(sorted(seen.items()))}")
 
 
-def test_two_scans_competing_for_one_difference_never_overdraw(pg):
+@pytest.mark.parametrize("balance, left", [(10.0, 3.5), (6.5, 0.0)])
+def test_two_scans_competing_for_one_difference_never_overdraw(pg, balance, left):
+    """10 credits cover one difference of 6.5, not two; exactly 6.5 covers one, to a balance of exactly 0 (QA mutants
+    N9/N10: a strict comparison in the pre-check or the conditional debit would refuse both)."""
     engine, _celery = pg
     for i in range(ROUNDS):
         a, b = 200 + 2 * i, 201 + 2 * i
-        _new_scan(engine, a, balance=10.0)  # covers one difference of 6.5, not two
-        _new_scan(engine, b, balance=10.0)
+        _new_scan(engine, a, balance=balance)
+        _new_scan(engine, b, balance=balance)
         out = _together(("r:a", lambda: _reinit(engine, a)), ("r:b", lambda: _reinit(engine, b)))
         assert sorted(v[0] for v in out.values()) == [200, 402], out
         assert [v[1] for v in out.values() if v[0] == 402] == ["insufficient_credits"]
         sa, sb = _state(engine, a), _state(engine, b)
-        assert sa[3] == sb[3] == 3.5, (i, out)  # one difference taken, the balance never negative
+        assert sa[3] == sb[3] == left, (i, out)  # one difference taken, the balance never negative
         assert sorted([sa[2], sb[2]]) == [1.0, 7.5] and sorted(sa[4] + sb[4]) == [-6.5]
 
 
@@ -242,10 +256,17 @@ def test_reinitialize_racing_a_cancel_always_ends_cancelled_and_refunded_once(pg
         _new_scan(engine, scan_id, balance=100.0)
         delay = random.Random(i).uniform(0, 0.03)
         out = _together(("r:x", lambda: _reinit(engine, scan_id)), ("cancel", lambda: cancel(scan_id, delay)))
-        status, _task, _charged, balance, _deltas = _state(engine, scan_id)
+        status, _task, _charged, balance, deltas = _state(engine, scan_id)
         # whatever the order: cancelled, and everything the scan had paid (1, or 1 + 6.5) came back exactly once
         assert (status, balance) == ("cancelled", 101.0), (i, out)
-        seen[out["r:x"][0]] = seen.get(out["r:x"][0], 0) + 1
+        # every movement has its line: the lines add up to the balance change (the 1 credit of /start predates them)
+        assert deltas in ([1.0], [-6.5, 7.5]) and round(sum(deltas), 4) == balance - 100.0, (i, out, deltas)
+        assert out["cancel"] in (1.0, 7.5), (i, out)
+        status_code, code = out["r:x"][0], (out["r:x"][1] if out["r:x"][0] != 200 else "ok")
+        assert (status_code, code) in {(200, "ok"), (409, "superseded"), (409, "not_pending"),
+                                       (409, "reinitialize_conflict")}, (i, out)
+        key = f"{status_code} {code}"
+        seen[key] = seen.get(key, 0) + 1
     print(f"\nreinitialize outcomes racing a cancel over {ROUNDS} rounds: {seen}")
 
 

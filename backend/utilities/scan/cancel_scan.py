@@ -2,7 +2,8 @@
 Cancelling a code scan (SAST, IaC, SCA + SBOM, CBOM, AI BOM).
 
 The scan row in Postgres decides the outcome. Cancel is ONE compare-and-set that flips a dispatched, unfinished scan to
-"cancelled" and gives the charge back in the same transaction; the poller's transitions into "success" and "failure"
+"cancelled" and gives the charge back, with its credits-ledger line (``scan_cancel_refund``), in the same transaction;
+the poller's transitions into "success" and "failure"
 (utilities/celery/celery_connection.py) never touch a cancelled row, and its own refund only follows its own
 transition. So a cancel racing with completion ends in exactly one state: completed and charged, or cancelled and
 refunded once.
@@ -11,6 +12,7 @@ The worker learns about the cancel from a mark in the Celery result backend's Mo
 scan worker can reach, RabbitMQ/worker/helpers/context/cancellation.py): a queued task that a worker picks up is never
 run, and a running one stops at its next progress point and kills the tool processes it started. ``revoke`` (without
 terminate) is also sent so a worker that is up discards the queued message at once; the mark covers worker restarts.
+A scan cancelled while a reinitialize holds its claim (``reinit-<new>.<replaced>``) gets both runs withdrawn.
 """
 from __future__ import annotations
 
@@ -23,7 +25,9 @@ from sqlalchemy import or_, update
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
-from backend.new_models import Scan, Team
+from backend.new_models import Scan
+from backend.utilities.scan import claim_token
+from backend.utilities.team import credit_ledger
 
 console = Console()
 
@@ -68,9 +72,14 @@ def _refusal(scan: Scan) -> CancelRefused:
     return CancelRefused("not_started", "This scan has not been started, so there is nothing to cancel.")
 
 
-def tell_workers(task_id: str) -> None:
-    """Revoke the queued message and leave the mark the worker checks (both best effort: the scan is already
-    cancelled and refunded, and the poller never ingests a cancelled scan's results)."""
+def tell_workers(task_id: str | None) -> None:
+    """Withdraw a run: revoke the queued message and leave the mark the worker checks before it starts (and, for code
+    scans, while it runs). Both best effort: the scan row is already final or replaced, and the poller never ingests a
+    run that is not the scan's current task. A reinitialize's claim (utilities/scan/claim_token.py) stands for two
+    runs, the one being sent and the one it replaces: both are withdrawn."""
+    task_ids = claim_token.task_ids(task_id)
+    if not task_ids:
+        return
     from backend.utilities.celery.celery_connection import get_celery_app
 
     try:
@@ -78,18 +87,19 @@ def tell_workers(task_id: str) -> None:
     except Exception as err:  # the broker is down: the mark below is the one that matters
         console.print(f"Cancel: no Celery app for task {task_id}: {err}", style="bold red")
         return
-    try:
-        app.control.revoke(task_id)  # no terminate: a running scan stops itself at its next safe point
-    except Exception as err:
-        console.print(f"Cancel: revoke failed for task {task_id}: {type(err).__name__}", style="bold yellow")
-    try:
-        app.backend.database[CANCEL_COLLECTION].update_one(
-            {"_id": task_id},
-            {"$set": {"cancelled_at": datetime.datetime.now(timezone.utc)}},
-            upsert=True,
-        )
-    except Exception as err:
-        console.print(f"Cancel: could not mark task {task_id} for the worker: {type(err).__name__}", style="bold red")
+    for one in task_ids:
+        try:
+            app.control.revoke(one)  # no terminate: a running scan stops itself at its next safe point
+        except Exception as err:
+            console.print(f"Cancel: revoke failed for task {one}: {type(err).__name__}", style="bold yellow")
+        try:
+            app.backend.database[CANCEL_COLLECTION].update_one(
+                {"_id": one},
+                {"$set": {"cancelled_at": datetime.datetime.now(timezone.utc)}},
+                upsert=True,
+            )
+        except Exception as err:
+            console.print(f"Cancel: could not mark task {one} for the worker: {type(err).__name__}", style="bold red")
 
 
 def _sync_with_worker(engine: Engine, scan: Scan) -> None:
@@ -150,8 +160,11 @@ def cancel_scan(engine: Engine, *, scan_id: int, team_id: int, scan_type: str, u
                        or_(*(Scan.scan_status == s for s in _RUNNING)))
                 .values(scan_status="cancelled", info=info, last_updated=now)
             ).rowcount == 1
-            if won and refund > 0:
-                session.exec(update(Team).where(Team.id == team_id).values(credit_balance=Team.credit_balance + refund))
+            if won and refund > 0:  # the refund and its ledger line commit with the compare-and-set
+                credit_ledger.move(session, team_id=team_id, delta_mc=credit_ledger.to_mc(refund),
+                                   reason="scan_cancel_refund", movement_key=f"scan:{scan_id}:cancel",
+                                   ref_type="scan", ref_id=scan_id, scan_id=scan_id, user_id=user_id,
+                                   detail={"scan_type": scan_type, "refunded": round(refund, 4)})
             session.commit()
             if won:
                 break

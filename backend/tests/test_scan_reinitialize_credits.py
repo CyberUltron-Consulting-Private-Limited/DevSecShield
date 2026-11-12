@@ -9,9 +9,14 @@ huge one for free. The rules proved here (backend/utilities/scan/reinitialize.py
 * the same input costs nothing (no new estimate) and a smaller one is never refunded;
 * a balance too small for the difference is refused with 402 before anything is queued;
 * the target checks of a new scan run before any credit moves (DAST address rule, git host allow-list, archive);
-* only a dispatched scan the worker has not picked up yet can be reinitialized, the replaced run is withdrawn, and a
-  poll of the replaced run never changes the scan;
-* two reinitializes at once charge once; a cancel or a failure afterwards refunds everything that was paid, once.
+* only a dispatched scan the worker has not picked up yet can be reinitialized (409 ``not_pending`` otherwise,
+  whenever it is seen), the replaced run is withdrawn, and a poll of the replaced run never changes the scan;
+* two reinitializes at once charge once; a second one while the first is sending its run waits (409 ``starting``);
+* a cancel or a failure afterwards refunds everything that was paid, once, each with its ledger line (the failure's
+  in the transaction that marks the scan failed);
+* the claim names both runs and keeps what it replaced: a claim left behind by a dead request is given back by the
+  sweeper (or a later reinitialize), and a cancel withdraws both runs (the out-of-process kill:
+  test_reinitialize_crash_window.py).
 
 Hermetic: SQLite + TestClient, fake Celery, fake S3 upload, fake DNS. The same races against a real PostgreSQL with
 threads: test_reinitialize_race_postgres.py.
@@ -19,8 +24,10 @@ threads: test_reinitialize_race_postgres.py.
 import asyncio
 import datetime as dt
 import io
+import itertools
 import json
 import os
+import secrets
 import sys
 import threading
 import types
@@ -28,15 +35,16 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-os.environ.setdefault("JWT_SECRET_KEY", "t2-reinitialize-test-secret-not-for-production-use")
+os.environ.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(48))  # generated: no key-shaped literal in the tree
 
 from backend.new_models import Scan, Team, TeamMembership, User  # noqa: E402
 from backend.utilities.db.schemas import StartScanPayload  # noqa: E402
@@ -54,14 +62,15 @@ def _zip(content_size: int, fill: bytes = b"a") -> bytes:
 
 ZIP_PAYLOAD = json.dumps({"cbom": {"zip_file_used": True}})
 SMALL, BIG, BIGGER = _zip(50), _zip(750), _zip(1000)  # fake estimator: 1 credit per 100 bytes, CBOM minimum 1 credit
-FAKE_PAT = "ghp_fake-pat-for-t2-tests"  # fabricated; short and hyphenated, so no secret scanner rule matches it
+FAKE_PAT = "-".join(("pat", "t2", secrets.token_hex(4)))  # generated at run time: no token-shaped literal
+DAST_PASSWORD = secrets.token_hex(6)  # generated at run time
 
 
 def _dast(target="https://app.example/", max_urls=100, login="https://app.example/login", extra=None):
     return json.dumps({"dast": {
         "target_url": target, "max_urls": max_urls, "additional_urls_to_scan": extra,
         "auth": {"login_url": login, "xpath_of_username_field": "//u", "xpath_of_password_field": "//p",
-                 "username": "qa", "password": "dast-password-not-stored", "xpath_of_submit_button": "//b"},
+                 "username": "qa", "password": DAST_PASSWORD, "xpath_of_submit_button": "//b"},
     }})
 
 
@@ -86,6 +95,7 @@ SCANS = {
     5: (1, 1, "cbom", "failure", "t-5", 1.0, 1.0, ("cbom", ZIP_PAYLOAD, SMALL, 1.0)),
     6: (1, 1, "cbom", "pending", "t-6", 2.0, None, None),  # dispatched before the digest and credit_charged existed
     7: (2, 2, "cbom", "pending", "t-7", 1.0, 1.0, ("cbom", ZIP_PAYLOAD, SMALL, 1.0)),  # team 2's scan
+    8: (1, 1, "cbom", "NOT_STARTED", None, 1.0, None, ("cbom", ZIP_PAYLOAD, SMALL, 1.0)),  # estimated, never started
 }
 
 
@@ -109,16 +119,17 @@ class FakeCelery:
         self.sent: list[tuple[str, dict, str, str]] = []
         self.states: dict[str, _Result] = {}
         self.revoked: list[str] = []
+        self.asked: list[str] = []  # the task ids the backend asked Celery about
         self.marks = _Marks()
         self.control = types.SimpleNamespace(revoke=lambda task_id, **_kw: self.revoked.append(task_id))
         self.backend = types.SimpleNamespace(database={"scan_cancellations": self.marks})
         self.fail_send = False
         self.on_send = None  # a hook run inside send_task, before the task id is returned
 
-    def send_task(self, name, kwargs, queue):
+    def send_task(self, name, kwargs, queue, task_id=None):
         if self.fail_send:
             raise RuntimeError("broker down")
-        task_id = f"new-{len(self.sent) + 1}"
+        task_id = task_id or f"new-{len(self.sent) + 1}"  # a reinitialize names its run's id (before its claim)
         self.sent.append((name, kwargs, queue, task_id))
         if self.on_send is not None:
             hook, self.on_send = self.on_send, None
@@ -126,6 +137,7 @@ class FakeCelery:
         return types.SimpleNamespace(id=task_id)
 
     def AsyncResult(self, task_id):  # noqa: N802 (Celery's name)
+        self.asked.append(task_id)
         return self.states.get(task_id, _Result("PENDING"))
 
 
@@ -202,6 +214,12 @@ def http(monkeypatch):
     monkeypatch.setattr(credits_mod, "get_db", lambda: engine)
     monkeypatch.setattr(cc, "get_celery_app", lambda: celery)
     monkeypatch.setattr(start_mod, "get_celery_app", lambda: celery)
+    ids = itertools.count(1)
+    try:  # readable run ids: new-1, new-2... (the module exists from the #57 review fixes on)
+        from backend.utilities.scan import claim_token
+        monkeypatch.setattr(claim_token, "new_task_id", lambda: f"new-{next(ids)}")
+    except ImportError:
+        pass
     monkeypatch.setattr(format_input, "upload_file", fake_upload)
     monkeypatch.setattr(s3_utils, "delete_file", lambda bucket, key: calls["deleted"].append(key) or True)
     monkeypatch.setattr(cc, "get_mongo_client_db", lambda: {"scan_findings": types.SimpleNamespace(
@@ -263,13 +281,29 @@ def _set_balance(engine, value, team=1):
         s.commit()
 
 
-def _ledger(engine):
-    from backend.new_models import CreditLedgerEntry
+LEDGER = sa.text("SELECT * FROM creditledger ORDER BY id")
 
-    with Session(engine) as s:
-        rows = s.exec(select(CreditLedgerEntry).order_by(CreditLedgerEntry.id)).all()
-        return [{"team_id": r.team_id, "scan_id": r.scan_id, "user_id": r.user_id, "delta": r.delta,
-                 "balance_after": r.balance_after, "reason": r.reason, "detail": r.detail} for r in rows]
+
+def _ledger(engine):
+    """The ledger's lines, amounts in credits (read from the milli-credit columns)."""
+    with engine.connect() as conn:
+        rows = [dict(r._mapping) for r in conn.execute(LEDGER)]
+    out = []
+    for r in rows:
+        detail = r.get("detail")
+        detail = json.loads(detail) if isinstance(detail, str) else detail
+        mc = "delta_mc" in r
+        out.append({"team_id": r["team_id"], "scan_id": r["scan_id"], "user_id": r["user_id"],
+                    "delta": r["delta_mc"] / 1000 if mc else r["delta"],
+                    "balance_after": (r["balance_after_mc"] / 1000 if r["balance_after_mc"] is not None else None)
+                    if mc else r["balance_after"],
+                    "reason": r["reason"], "detail": detail, "movement_key": r.get("movement_key"),
+                    "ref": (r.get("ref_type"), r.get("ref_id"))})
+    return out
+
+
+def _lines(engine):
+    return [(e["reason"], e["delta"]) for e in _ledger(engine)]
 
 
 def _unchanged(engine, celery, scan_id=1, task="t-1", charged=1.0, balance=100.0):
@@ -320,6 +354,8 @@ def test_a_bigger_input_charges_the_difference_once_and_records_it(http):
     assert (entry["team_id"], entry["scan_id"], entry["user_id"], entry["delta"], entry["balance_after"],
             entry["reason"]) == (1, 1, 1, -6.5, 93.5, "scan_reinitialize_charge")
     assert (entry["detail"]["previous_charged"], entry["detail"]["price"], entry["detail"]["total"]) == (1.0, 7.5, 7.5)
+    assert entry["movement_key"] == "scan:1:reinit:new-1" and entry["ref"] == ("scan", "1")
+    assert "reinitialize_claim" in scan.credit_estimate  # what a give-back would restore (kept, harmless)
 
 
 def test_successive_reinitializes_cost_the_highest_price_in_total(http):
@@ -400,6 +436,25 @@ def test_too_small_a_balance_is_refused_with_402_and_nothing_is_queued(http):
     assert _ledger(engine) == []
 
 
+def test_a_balance_of_exactly_the_difference_is_enough(http):
+    """Boundary (QA mutants N9/N10): 6.5 credits pay a 6.5 difference, to a balance of exactly 0."""
+    client, engine, celery, _calls = http
+    _set_balance(engine, 6.5)
+    r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
+    assert r.status_code == 200 and r.json()["credits_charged"] == 6.5, r.text
+    assert _balance(engine) == 0.0 and _scan(engine, 1).credit_charged == 7.5
+    (entry,) = _ledger(engine)
+    assert (entry["delta"], entry["balance_after"]) == (-6.5, 0.0)
+
+
+def test_one_credit_short_is_worded_in_the_singular(http):
+    client, engine, _celery, _calls = http
+    _set_balance(engine, 0.5)
+    r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, _zip(200))  # costs 2, paid 1: 1 more credit
+    assert r.status_code == 402 and r.json()["credits_difference"] == 1.0, r.text
+    assert "1 more credit is needed" in r.json()["detail"]
+
+
 def test_a_balance_spent_elsewhere_after_the_check_is_refused_by_the_charge_itself(http, monkeypatch):
     """Another tab spends the balance between the pre-check and the claim: the conditional debit refuses and the claim
     is rolled back with it (one transaction), so the scan keeps its run and the balance never goes negative."""
@@ -474,12 +529,31 @@ def test_reinitialize_waits_until_the_scan_has_been_dispatched(http):
     assert celery.sent == [] and _scan(engine, 4).task_id is None and _balance(engine) == 100.0
 
 
+@pytest.mark.parametrize("scan_id, scan_status", [(8, "NOT_STARTED"), (5, "failure")])
+def test_a_scan_that_is_not_waiting_in_the_queue_gets_one_stable_code(http, scan_id, scan_status):
+    """"Not queued" answers 409 not_pending whenever it is seen: here, before the worker is asked (e13e24f answered 400
+    with no code here, and 409 already_started after asking the worker)."""
+    client, engine, celery, _calls = http
+    r = _reinit(client, scan_id, "cbom", ZIP_PAYLOAD, BIG)
+    assert r.status_code == 409 and r.json()["code"] == "not_pending", r.text
+    assert r.json()["scan_status"] == scan_status and "Nothing was charged" in r.json()["detail"]
+    assert celery.sent == [] and _balance(engine) == 100.0 and _ledger(engine) == []
+
+
+def test_a_type_without_a_withdrawable_worker_task_is_refused(http):
+    client, engine, celery, _calls = http
+    r = _reinit(client, 1, "leakage", json.dumps({}))
+    assert r.status_code == 400 and "cannot be reinitialized" in r.json()["detail"], r.text
+    assert celery.sent == [] and _balance(engine) == 100.0
+
+
 @pytest.mark.parametrize("state, stored", [("STARTED", "started"), ("RETRY", "retry")])
 def test_reinitialize_is_refused_once_the_worker_has_picked_the_run_up(http, state, stored):
     client, engine, celery, _calls = http
     celery.states["t-1"] = _Result(state)
     r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
-    assert r.status_code == 409 and r.json()["code"] == "already_started", r.text
+    assert r.status_code == 409 and r.json()["code"] == "not_pending", r.text
+    assert "Nothing was charged" in r.json()["detail"]
     assert celery.sent == [] and celery.revoked == [] and _balance(engine) == 100.0
     assert _scan(engine, 1).scan_status == stored and _scan(engine, 1).task_id == "t-1"
 
@@ -489,7 +563,7 @@ def test_two_reinitializes_at_once_charge_the_difference_once(http, monkeypatch)
     """B runs to the end while A is being priced; A's claim then finds the scan changed and charges nothing."""
     from backend.utilities.scan import estimate_scan
 
-    client, engine, celery, _calls = http
+    client, engine, celery, calls = http
     real = estimate_scan.estimate_credits
     inner = {}
 
@@ -508,24 +582,60 @@ def test_two_reinitializes_at_once_charge_the_difference_once(http, monkeypatch)
     assert _balance(engine) == 93.5 and [e["delta"] for e in _ledger(engine)] == [-6.5]
     assert [t for *_x, t in celery.sent] == ["new-1"] and _scan(engine, 1).task_id == "new-1"
     assert celery.revoked == ["t-1"]
+    # A's run input was uploaded before its claim was lost: removed again (the estimate's own uploads are not runs)
+    assert calls["deleted"] == [f"obj-{len(calls['uploads'])}.zip"]
 
 
-def test_a_reinitialize_during_another_ones_dispatch_takes_over_and_the_total_is_the_highest_price(http):
-    """B arrives after A charged (A is sending its run): B prices against what A made the scan pay, A's run is
-    withdrawn when it finds the scan is not its own any more, and the scan pays exactly B's price in total."""
+def test_a_reinitialize_while_another_one_sends_its_run_is_refused_and_the_first_one_completes(http):
+    """B arrives while A holds its claim and sends its run: B is refused with 409 ``starting`` and charges nothing;
+    A's run is recorded. (Taking A's claim over, as e13e24f did, could strand the scan: next test.)"""
     client, engine, celery, _calls = http
     inner = {}
     celery.on_send = lambda _task: inner.update(b=_in_thread(lambda: _reinit_direct(1, "cbom", ZIP_PAYLOAD, BIGGER)))
     a = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
-    b_status, b_body = inner["b"]
-    assert b_status == 200 and (b_body["credits_charged"], b_body["credits_total"]) == (2.5, 10.0)
-    assert a.status_code == 409 and a.json()["code"] == "superseded", a.text
-    assert "stays with the scan" in a.json()["detail"]  # A's 6.5 is part of what B priced against, never "not charged"
-    assert _scan(engine, 1).task_id == "new-2" and _scan(engine, 1).credit_charged == 10.0
-    assert _balance(engine) == 91.0 and [e["delta"] for e in _ledger(engine)] == [-6.5, -2.5]
-    # A's own run and the run A replaced are withdrawn; B withdraws what it replaced (A's claim, never a real run)
-    assert sorted(t for t in celery.revoked if not t.startswith("reinit-")) == ["new-1", "t-1"]
-    assert [t for *_x, t in celery.sent] == ["new-1", "new-2"]
+    assert inner["b"][0] == 409 and inner["b"][1]["code"] == "starting", inner["b"]
+    assert "Nothing was charged" in inner["b"][1]["detail"]
+    assert a.status_code == 200 and a.json()["credits_charged"] == 6.5, a.text
+    assert _scan(engine, 1).task_id == "new-1" and _scan(engine, 1).credit_charged == 7.5
+    assert _balance(engine) == 93.5 and _lines(engine) == [("scan_reinitialize_charge", -6.5)]
+    assert celery.revoked == ["t-1"] and [t for *_x, t in celery.sent] == ["new-1"]
+
+
+def test_a_scan_is_never_left_on_a_claim_whose_runs_were_all_withdrawn(http):
+    """e13e24f let B take over A's claim while A was sending. A then lost (409 superseded) and withdrew its own run AND
+    the replaced run t-1; when B's send then failed, B gave the scan back to A's claim: pending on a claim nobody
+    records, every run withdrawn, A's 6.5 kept, nothing left to run. The scan must always end on a run that goes ahead."""
+    client, engine, celery, _calls = http
+    b_reached, a_done, box = threading.Event(), threading.Event(), {}
+
+    def b_send_fails_after_a(_task):  # only if B gets as far as sending: wait for A to finish, then the broker fails
+        b_reached.set()
+        a_done.wait(10)
+        raise RuntimeError("broker down")
+
+    def b_request():
+        try:
+            box["b"] = asyncio.run(_reinit_direct(1, "cbom", ZIP_PAYLOAD, BIGGER))
+        finally:
+            b_reached.set()
+
+    def a_sending(_task):
+        celery.on_send = b_send_fails_after_a
+        box["thread"] = threading.Thread(target=b_request)
+        box["thread"].start()
+        b_reached.wait(10)  # B was refused, or B claimed and is sending
+
+    celery.on_send = a_sending
+    a = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
+    a_done.set()
+    box["thread"].join(10)
+    scan = _scan(engine, 1)
+    sent = [t for *_x, t in celery.sent]
+    assert scan.task_id in sent and scan.task_id not in celery.revoked, (
+        f"scan left on {scan.task_id!r} (status {scan.scan_status}, charged {scan.credit_charged}); "
+        f"sent {sent}, withdrawn {celery.revoked}; A {a.status_code}, B {box.get('b')}")
+    assert a.status_code == 200 and box["b"][0] == 409 and box["b"][1]["code"] == "starting"
+    assert _balance(engine) == 93.5 and scan.credit_charged == 7.5
 
 
 # ===================================================================================== refunds still behave
@@ -538,6 +648,10 @@ def test_cancel_after_a_top_up_refunds_everything_once(http):
     again = client.post("/1/cbom/scan/1/cancel", headers={"Authorization": "Bearer 1"})
     assert again.status_code == 409 and again.json()["code"] == "already_cancelled"
     assert _balance(engine) == 101.0 and _scan(engine, 1).scan_status == "cancelled"  # 93.5 + 7.5, once
+    # every movement of this scan has its line, so the ledger tells the same story as the balance (+1.0 overall)
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_cancel_refund", 7.5)]
+    assert [e["movement_key"] for e in _ledger(engine)] == ["scan:1:reinit:new-1", "scan:1:cancel"]
+    assert sum(e["delta"] for e in _ledger(engine)) == _balance(engine) - 100.0
 
 
 def test_failure_after_a_top_up_refunds_everything_once(http):
@@ -550,6 +664,39 @@ def test_failure_after_a_top_up_refunds_everything_once(http):
     for _ in range(2):
         cc.get_status_and_update_db(1, "new-1", Scan, engine)
     assert _scan(engine, 1).scan_status == "failure" and _balance(engine) == 101.0  # 93.5 + everything paid, once
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_failure_refund", 7.5)]
+    assert _ledger(engine)[1]["movement_key"] == "scan:1:failure" and _ledger(engine)[1]["balance_after"] == 101.0
+
+
+def test_a_failure_never_commits_without_its_refund(http, monkeypatch):
+    """The failure refund is written in the transaction that flips the status: if the refund cannot be written, the
+    scan is not marked failed either, and the next poll does both (e13e24f committed the failure first and refunded in
+    a second transaction: a crash or a database error in between kept the charge for a failed scan)."""
+    from backend.utilities.celery import celery_connection as cc
+    from backend.utilities.team import credit_ledger
+
+    client, engine, celery, _calls = http
+    assert _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG).status_code == 200
+    celery.states["new-1"] = _Result("FAILURE", RuntimeError("worker crashed"))
+
+    def lost(*_a, **_k):
+        raise RuntimeError("database connection lost")
+
+    real_move = getattr(credit_ledger, "move", None)  # (raising=False: the same test runs on e13e24f, which had none)
+    monkeypatch.setattr(credit_ledger, "move",
+                        lambda session, **kw: lost() if kw.get("reason") == "scan_failure_refund" else real_move(
+                            session, **kw), raising=False)
+    if hasattr(cc, "refund_credits_to_team"):  # the e13e24f path: the refund in its own transaction
+        monkeypatch.setattr(cc, "refund_credits_to_team", lost)
+    try:
+        cc.get_status_and_update_db(1, "new-1", Scan, engine)
+    except HTTPException:
+        pass
+    assert (_scan(engine, 1).scan_status, _balance(engine)) == ("pending", 93.5), "failed without its refund"
+    monkeypatch.setattr(credit_ledger, "move", real_move, raising=False)
+    cc.get_status_and_update_db(1, "new-1", Scan, engine)
+    assert (_scan(engine, 1).scan_status, _balance(engine)) == ("failure", 101.0)
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_failure_refund", 7.5)]
 
 
 def test_a_reinitialize_racing_a_cancel_ends_cancelled_and_refunded_once(http):
@@ -565,7 +712,7 @@ def test_a_reinitialize_racing_a_cancel_ends_cancelled_and_refunded_once(http):
     scan = _scan(engine, 1)
     assert scan.scan_status == "cancelled" and _balance(engine) == 101.0  # 93.5 + 7.5: refunded once, in full
     assert "new-1" in celery.revoked and "t-1" in celery.revoked  # neither run goes ahead
-    assert [e["reason"] for e in _ledger(engine)] == ["scan_reinitialize_charge"]  # the cancel gave it back
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_cancel_refund", 7.5)]
 
 
 def test_a_cancel_whose_run_is_replaced_under_it_cancels_the_new_run_and_refunds_everything(http, monkeypatch):
@@ -591,6 +738,7 @@ def test_a_cancel_whose_run_is_replaced_under_it_cancels_the_new_run_and_refunds
     assert r.json()["refunded_credits"] == 7.5
     assert _scan(engine, 1).scan_status == "cancelled" and _balance(engine) == 101.0
     assert celery.revoked == ["t-1", "new-1"]  # the replaced run (by the reinitialize), then the new one (cancel)
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_cancel_refund", 7.5)]
 
 
 def test_a_failed_dispatch_gives_the_difference_back_and_keeps_the_queued_run(http):
@@ -600,11 +748,33 @@ def test_a_failed_dispatch_gives_the_difference_back_and_keeps_the_queued_run(ht
     assert r.status_code == 500, r.text
     scan = _scan(engine, 1)
     assert (scan.scan_status, scan.task_id, scan.credit_charged, scan.credit_consumed) == ("pending", "t-1", 1.0, 1.0)
-    assert scan.credit_estimate["digest"] == _estimate_of("cbom", ZIP_PAYLOAD, SMALL, 1.0)["digest"]
-    assert _balance(engine) == 100.0 and celery.revoked == []
-    assert [(e["reason"], e["delta"]) for e in _ledger(engine)] == [("scan_reinitialize_charge", -6.5),
-                                                                    ("scan_reinitialize_refund", 6.5)]
+    assert scan.credit_estimate == _estimate_of("cbom", ZIP_PAYLOAD, SMALL, 1.0)  # restored exactly, no claim left
+    # the queued run goes ahead; the new run's id is withdrawn in case the broker took it before failing
+    assert _balance(engine) == 100.0 and celery.revoked == ["new-1"]
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_reinitialize_refund", 6.5)]
+    assert _ledger(engine)[1]["movement_key"] == "scan:1:reinit-refund:new-1"
+    assert _ledger(engine)[1]["detail"]["by"] == "dispatch_failure"
     assert calls["deleted"] == ["obj-2.zip"]
+
+
+def test_a_run_sent_but_not_recorded_is_withdrawn_and_the_claim_given_back(http, monkeypatch):
+    """The run reached the broker, then recording it failed: the run is withdrawn (it would run unpaid and unseen),
+    the scan goes back to its queued run and the difference comes back (QA mutant N1)."""
+    from backend.utilities.scan import start_scan as start_mod
+
+    client, engine, celery, _calls = http
+
+    def broken_metadata(**_kw):
+        raise RuntimeError("database error while recording the run")
+
+    monkeypatch.setattr(start_mod, "get_scan_metadata_for_type", broken_metadata)
+    r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
+    assert r.status_code == 500, r.text
+    assert [t for *_x, t in celery.sent] == ["new-1"] and "new-1" in celery.revoked and "t-1" not in celery.revoked
+    scan = _scan(engine, 1)
+    assert (scan.scan_status, scan.task_id, scan.credit_charged) == ("pending", "t-1", 1.0)
+    assert _balance(engine) == 100.0
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_reinitialize_refund", 6.5)]
 
 
 def test_a_poll_of_the_replaced_run_never_changes_the_scan(http):
@@ -623,11 +793,144 @@ def test_a_poll_of_the_replaced_run_never_changes_the_scan(http):
     assert calls["findings"] == [] and _balance(engine) == 93.5
 
 
+def test_a_poll_whose_task_is_replaced_while_it_runs_reports_the_stored_scan(http, monkeypatch):
+    """A poll of t-1 sees it succeed; a whole reinitialize lands before the poll's compare-and-set, which then stores
+    nothing. The poll must report the scan as stored (pending on the new run), not the replaced run's success
+    (QA mutant N3: the second replaced-task return in get_status_and_update_db)."""
+    from backend.utilities.celery import celery_connection as cc
+
+    client, engine, celery, calls = http
+    inner = {}
+    main = threading.current_thread()
+
+    class OldRunSucceeded:
+        state, info, traceback = "SUCCESS", None, None
+
+        @property
+        def result(self):  # read after the poll's checks, before its compare-and-set: the reinitialize lands here
+            if not inner:
+                inner["r"] = _in_thread(lambda: _reinit_direct(1, "cbom", ZIP_PAYLOAD, BIG))
+            return {"results": [{"id": 1}], "duration_of_scan": 1}
+
+    real = celery.AsyncResult
+    monkeypatch.setattr(celery, "AsyncResult",
+                        lambda task_id: OldRunSucceeded() if threading.current_thread() is main and task_id == "t-1"
+                        else real(task_id))
+    status, data, _obj = cc.get_status_and_update_db(1, "t-1", Scan, engine)
+    assert inner["r"][0] == 200, inner["r"]
+    assert (status, data) == ("pending", {})
+    scan = _scan(engine, 1)
+    assert (scan.scan_status, scan.task_id, scan.scan_data) == ("pending", "new-1", {})
+    assert calls["findings"] == [] and _balance(engine) == 93.5
+
+
+# ===================================================================================== the claim: crash window (#57 review)
+def test_the_claim_carries_what_a_give_back_needs(http):
+    """The claim's own UPDATE names the run being sent and the run it replaces, and keeps the replaced task, charge and
+    estimate: a process killed after the claim leaves everything needed to give it back."""
+    from backend.utilities.celery import celery_connection as cc
+
+    client, engine, celery, _calls = http
+    seen = {}
+
+    def look(_task):
+        scan = _scan(engine, 1)
+        asked_before = list(celery.asked)
+        polled = cc.get_status_and_update_db(1, scan.task_id, Scan, engine)[0]  # a list poll of the claim
+        seen.update(task=scan.task_id, claim=scan.credit_estimate.get("reinitialize_claim"), lines=_lines(engine),
+                    balance=_balance(engine), polled=polled, asked=celery.asked[len(asked_before):])
+
+    celery.on_send = look
+    assert _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG).status_code == 200
+    assert seen["task"] == "reinit-new-1.t-1"
+    assert seen["claim"] == {"task_id": "t-1", "credit_charged": 1.0, "credit_consumed": 1.0,
+                             "credit_estimate": _estimate_of("cbom", ZIP_PAYLOAD, SMALL, 1.0)}
+    assert seen["lines"] == [("scan_reinitialize_charge", -6.5)] and seen["balance"] == 93.5
+    assert seen["polled"] == "pending" and seen["asked"] == []  # a claim is not a Celery task: never asked about
+
+
+def _strand_a_claim(http, monkeypatch):
+    """A reinitialize whose process cannot give its claim back (the broker failed, then the database did): what a
+    process killed between the claim and the record leaves (the out-of-process kill: test_reinitialize_crash_window.py)."""
+    from backend.utilities.scan import reinitialize as reinit_mod
+
+    client, engine, celery, _calls = http
+    real = reinit_mod.give_back_claim
+
+    def unreachable(*_a, **_k):
+        raise RuntimeError("database unreachable")
+
+    monkeypatch.setattr(reinit_mod, "give_back_claim", unreachable)
+    celery.fail_send = True
+    assert _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG).status_code == 500
+    monkeypatch.setattr(reinit_mod, "give_back_claim", real)
+    celery.fail_send = False
+    scan = _scan(engine, 1)
+    assert (scan.task_id, scan.credit_charged, _balance(engine)) == ("reinit-new-1.t-1", 7.5, 93.5)
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5)] and celery.revoked == []
+    return reinit_mod
+
+
+def _age_claim(engine, scan_id=1, minutes=11):
+    with Session(engine) as s:
+        scan = s.get(Scan, scan_id)
+        scan.last_updated = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=minutes)
+        s.add(scan)
+        s.commit()
+
+
+def test_a_claim_left_behind_is_given_back_by_the_sweeper(http, monkeypatch):
+    client, engine, celery, _calls = http
+    reinit_mod = _strand_a_claim(http, monkeypatch)
+    assert reinit_mod.sweep_stale_claims(engine) == []  # fresh: its request may still be sending
+    later = dt.datetime.now(dt.timezone.utc) + reinit_mod.STALE_CLAIM_AFTER + dt.timedelta(seconds=1)
+    assert reinit_mod.sweep_stale_claims(engine, now=later) == [1]
+    scan = _scan(engine, 1)
+    assert (scan.scan_status, scan.task_id, scan.credit_charged, scan.credit_consumed) == ("pending", "t-1", 1.0, 1.0)
+    assert scan.credit_estimate == _estimate_of("cbom", ZIP_PAYLOAD, SMALL, 1.0)
+    assert _balance(engine) == 100.0
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_reinitialize_refund", 6.5)]
+    assert _ledger(engine)[1]["detail"]["by"] == "sweeper"
+    assert celery.revoked == ["new-1"]  # the claim's run, in case it was sent; the queued run t-1 goes ahead
+    assert reinit_mod.sweep_stale_claims(engine, now=later) == []  # once
+
+    from backend.utilities.dast import beat  # the scheduler sidecar runs the sweep every tick
+
+    assert beat.sweep_reinitialize_claims(engine=engine) == []
+
+
+def test_a_reinitialize_waits_for_a_fresh_claim_and_gives_a_stale_one_back_first(http, monkeypatch):
+    client, engine, celery, _calls = http
+    _strand_a_claim(http, monkeypatch)
+    r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
+    assert r.status_code == 409 and r.json()["code"] == "starting", r.text
+    assert _balance(engine) == 93.5 and len(_ledger(engine)) == 1
+    _age_claim(engine)
+    r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
+    assert r.status_code == 200 and (r.json()["credits_charged"], r.json()["credits_total"]) == (6.5, 7.5), r.text
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_reinitialize_refund", 6.5),
+                              ("scan_reinitialize_charge", -6.5)]
+    assert _ledger(engine)[1]["detail"]["by"] == "reinitialize"
+    assert _scan(engine, 1).task_id == "new-2" and _balance(engine) == 93.5
+    assert celery.revoked == ["new-1", "t-1"]  # the stale claim's run, then the run this reinitialize replaced
+
+
+def test_a_cancel_of_a_scan_left_on_a_claim_withdraws_both_runs_and_refunds_everything(http, monkeypatch):
+    client, engine, celery, _calls = http
+    _strand_a_claim(http, monkeypatch)
+    r = client.post("/1/cbom/scan/1/cancel", headers={"Authorization": "Bearer 1"})
+    assert r.status_code == 200 and r.json()["refunded_credits"] == 7.5, r.text
+    assert _balance(engine) == 101.0 and _scan(engine, 1).scan_status == "cancelled"
+    assert set(celery.revoked) == {"new-1", "t-1"} and set(celery.marks.docs) == {"new-1", "t-1"}
+    assert _lines(engine) == [("scan_reinitialize_charge", -6.5), ("scan_cancel_refund", 7.5)]
+
+
 # ===================================================================================== "Run again" is a new scan, charged at start
 def test_a_failed_scan_is_never_rerun_for_free_and_run_again_is_charged_at_start(http):
     client, engine, celery, calls = http
     hdr = {"Authorization": "Bearer 1"}
-    assert _reinit(client, 5, "cbom", ZIP_PAYLOAD, BIG).status_code == 400  # failed: not pending
+    failed = _reinit(client, 5, "cbom", ZIP_PAYLOAD, BIG)  # failed: not waiting in the queue
+    assert failed.status_code == 409 and failed.json()["code"] == "not_pending", failed.text
     start_failed = client.post("/1/cbom/scan/5/start", data={"start_scan_payload_string": ZIP_PAYLOAD},
                                files={"uploaded_file": ("code.zip", BIG, "application/zip")}, headers=hdr)
     assert start_failed.status_code == 400
