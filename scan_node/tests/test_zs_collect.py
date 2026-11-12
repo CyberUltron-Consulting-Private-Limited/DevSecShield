@@ -366,7 +366,12 @@ def test_drops_to_the_run_as_user_before_running_anything(monkeypatch, tmp_path)
     monkeypatch.setattr(Z.os, "getuid", lambda: 0 if "setuid" not in events else 1234)
     monkeypatch.setattr(Z.pwd, "getpwnam", lambda name: pwd.struct_passwd(
         (name, "x", 1234, 1234, "", "/home/" + name, "/usr/sbin/nologin")))
-    monkeypatch.setattr(Z.os, "chown", lambda path, uid, gid, **kw: events.append("chown"))
+    chowned = []
+    monkeypatch.setattr(Z.os, "chown", lambda path, uid, gid, **kw: events.append("chown") or chowned.append(
+        (path, kw.get("follow_symlinks", True))))
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.txt"
+    outside.write_text("not zs-collect's\n")
+    (tmp_path / "link-out").symlink_to(outside)  # a link in the temp dir must not hand its target to the user
     monkeypatch.setattr(Z.os, "initgroups", lambda name, gid: events.append("initgroups"), raising=False)
     monkeypatch.setattr(Z.os, "setgid", lambda gid: events.append("setgid"))
     monkeypatch.setattr(Z.os, "setuid", lambda uid: events.append("setuid") if uid == 1234 else
@@ -382,6 +387,8 @@ def test_drops_to_the_run_as_user_before_running_anything(monkeypatch, tmp_path)
     user = Z.drop_privileges("zs-cbom", str(tmp_path))
     assert user == "zs-cbom"
     assert events.index("initgroups") < events.index("setgid") < events.index("setuid")
+    assert str(tmp_path / "link-out") in {p for p, _f in chowned}
+    assert all(follow is False for _p, follow in chowned)  # links are re-owned themselves, never followed
     doc = _run_local(tmp_path, user=user)
     assert doc["status"] == "success" and rec.calls
 
