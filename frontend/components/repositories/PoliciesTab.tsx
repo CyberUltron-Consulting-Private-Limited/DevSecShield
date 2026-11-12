@@ -66,7 +66,8 @@ function PolicyEditor({ teamId, policy, nextPosition, iacModeList, onClose }: {
     const t = setTimeout(() => setDebounced(body.selector), 400);
     return () => clearTimeout(t);
   }, [body.selector]);
-  const problem = filtersError(debounced) ?? (body.products.length ? null : "Choose at least one product");
+  // the preview follows the debounced selector; Save sends the current one, so both must be valid
+  const problem = filtersError(body.selector) ?? filtersError(debounced) ?? (body.products.length ? null : "Choose at least one product");
   const [touched, setTouched] = useState(false);
   const nameProblem = nameError(body.name);
   const preview = useQuery({
@@ -197,7 +198,8 @@ function PolicyEditor({ teamId, policy, nextPosition, iacModeList, onClose }: {
           </div>
           {save.isError && <p className="text-sm text-red-500" role="alert">{refusalReason(save.error) ?? "Could not save the policy."}</p>}
         </div>
-        <DialogFooter>
+        {/* the editor is taller than a laptop screen: Save stays in view while the dialog scrolls */}
+        <DialogFooter className="sticky -bottom-6 -mx-6 -mb-6 border-t border-zinc-200 dark:border-zinc-800 bg-background px-6 py-4">
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>Cancel</Button>
           <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" disabled={Boolean(problem) || save.isPending}
                   onClick={() => { setTouched(true); if (!nameProblem) save.mutate(); }}>

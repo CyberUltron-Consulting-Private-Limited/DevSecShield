@@ -13,13 +13,16 @@ import {
   joinList,
   listError,
   parseList,
+  parseSizeLimit,
   PRODUCT_LABEL,
   PRODUCTS,
   reasonLabel,
   REASON_LABEL,
   scheduleText,
   SCOPES,
+  SIZE_RULE,
   sizeLabel,
+  sizeLimitError,
   skippedSentence,
   toggleIds,
   webhookUrl,
@@ -31,7 +34,25 @@ assert.equal(joinList(["a", "b"]), "a, b")
 assert.equal(listError(Array.from({ length: 101 }, (_, i) => `p${i}`)), "At most 100 entries")
 assert.equal(listError(["x".repeat(201)]), "Each entry is at most 200 characters")
 assert.equal(listError(["ok"]), null)
-assert.equal(filtersError({ ...emptyFilters(), max_size_mb: -1 }), "The size limit must be 0 or more")
+assert.equal(filtersError({ ...emptyFilters(), max_size_mb: -1 }), SIZE_RULE)
+// the size limit is typed as text: empty is "no limit"; anything else must be a number from 0 to 1,000,000 MB
+// (filters.RepoFilters.max_size_mb). Text that is not a number must block the preview and the import, not silently
+// become "no limit" (the snapshot turned "abc" into null and imported every repository).
+assert.equal(parseSizeLimit(""), null)
+assert.equal(parseSizeLimit("   "), null)
+assert.equal(parseSizeLimit(" 250 "), 250)
+assert.equal(parseSizeLimit("0"), 0)
+assert.equal(parseSizeLimit("1.5"), 1.5)
+assert.ok(Number.isNaN(parseSizeLimit("abc") as number))
+assert.ok(Number.isNaN(parseSizeLimit("12abc") as number))
+assert.equal(filtersError({ ...emptyFilters(), max_size_mb: parseSizeLimit("abc") }), SIZE_RULE)
+assert.equal(filtersError({ ...emptyFilters(), max_size_mb: 1_000_001 }), SIZE_RULE)
+assert.equal(filtersError({ ...emptyFilters(), max_size_mb: 1_000_000 }), null)
+assert.equal(filtersError({ ...emptyFilters(), max_size_mb: 0 }), null)
+assert.equal(sizeLimitError(parseSizeLimit("-3")), SIZE_RULE)
+assert.equal(sizeLimitError(null), null)
+// a list error is reported first; the size field still shows its own error
+assert.equal(filtersError({ ...emptyFilters(), languages: ["x".repeat(201)], max_size_mb: Number.NaN }), "Each entry is at most 200 characters")
 assert.equal(filtersError(emptyFilters()), null)
 assert.deepEqual(filtersFrom({ languages: ["Go"] }), { ...emptyFilters(), languages: ["Go"] })
 

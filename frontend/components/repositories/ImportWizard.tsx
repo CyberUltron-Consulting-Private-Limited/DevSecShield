@@ -136,7 +136,9 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
     onError: (err) => toast.error(refusalReason(err) ?? "Could not start discovery. Try again."),
   });
 
-  const filterProblem = filtersError(debounced);
+  // the preview follows the debounced filters; Import sends the current ones, so both must be valid (a typo made in
+  // the 400 ms before a click must not be imported as "no limit")
+  const filterProblem = filtersError(filters) ?? filtersError(debounced);
   const preview = useQuery({
     queryKey: ["scm", teamId, "preview", connection?.id ?? 0, JSON.stringify(debounced), products.join(",")],
     queryFn: () => previewScmFilters(teamId, connection!.id, debounced, products),
@@ -145,7 +147,8 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
   });
 
   const apply = useMutation({
-    mutationFn: () => applyScmFilters(teamId, connection!.id, filters),
+    // the version this dialog opened at: filters saved meanwhile by someone else are a 409, never silently overwritten
+    mutationFn: () => applyScmFilters(teamId, connection!.id, filters, connection!.row_version),
     onSuccess: (data) => {
       setImported(data.in_scope);
       setStep("done");
@@ -347,7 +350,8 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
               )}
             </div>
             {apply.isError && <p className="text-sm text-red-500" role="alert">{refusalReason(apply.error) ?? "Could not import. Try again."}</p>}
-            <DialogFooter>
+            {/* the filter form is taller than a laptop screen: Import stays in view while the dialog scrolls */}
+            <DialogFooter className="sticky -bottom-6 -mx-6 -mb-6 border-t border-zinc-200 dark:border-zinc-800 bg-background px-6 py-4">
               {!existing && (
                 <Button variant="outline" className="cursor-pointer" onClick={() => setStep("discover")}>
                   <ChevronLeft className="h-4 w-4 mr-1" />Back

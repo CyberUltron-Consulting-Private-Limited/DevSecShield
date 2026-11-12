@@ -9,7 +9,7 @@ import { Checkbox2, Field } from "@/components/cbom/sources/shared";
 import { Input } from "@/components/ui/input";
 import type { ScmFilters, ScmVisibility } from "@/utils/api/scm";
 
-import { joinList, listError, parseList } from "./logic";
+import { joinList, listError, parseList, parseSizeLimit, sizeLimitError } from "./logic";
 
 type ListKey = "include_names" | "exclude_names" | "topics_any" | "exclude_topics" | "languages";
 
@@ -52,7 +52,8 @@ export default function FiltersForm({ idPrefix, value, onChange, disabled }: {
         );
       })}
       <Field label="Skip repositories larger than (MB)" htmlFor={`${idPrefix}-size`}
-             hint="Size as the provider reports it (GitHub includes history). Empty: no limit.">
+             hint="Size as the provider reports it (GitHub includes history). Empty: no limit."
+             error={sizeLimitError(parseSizeLimit(size))}>
         <Input
           id={`${idPrefix}-size`}
           inputMode="decimal"
@@ -60,8 +61,8 @@ export default function FiltersForm({ idPrefix, value, onChange, disabled }: {
           placeholder="No limit"
           onChange={(e) => {
             setSize(e.target.value);
-            const n = e.target.value.trim() === "" ? null : Number(e.target.value);
-            onChange({ ...value, max_size_mb: n === null || Number.isNaN(n) ? null : n });
+            // NaN for text that is not a number: filtersError refuses it, so the preview and the import wait for a fix
+            onChange({ ...value, max_size_mb: parseSizeLimit(e.target.value) });
           }}
         />
       </Field>

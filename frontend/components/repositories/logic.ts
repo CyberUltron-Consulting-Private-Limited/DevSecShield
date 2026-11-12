@@ -4,6 +4,7 @@
 import type {
   ScmAuthKind,
   ScmConnection,
+  ScmConnectionCreate,
   ScmEstimate,
   ScmFilters,
   ScmProduct,
@@ -94,13 +95,27 @@ export function listError(list: string[]): string | null {
   return long ? `Each entry is at most ${MAX_PATTERN} characters` : null
 }
 
+/** The server's bound on the size limit (filters.RepoFilters.max_size_mb: 0 to 1,000,000, or none). */
+export const MAX_SIZE_MB = 1_000_000
+export const SIZE_RULE = "The size limit is a number of MB from 0 to 1,000,000 (empty: no limit)"
+
+/** The size-limit field as typed: empty is no limit (null); text that is not a number is NaN, which filtersError
+ * refuses, so a typo blocks the preview and the import instead of silently meaning "no limit". */
+export function parseSizeLimit(text: string): number | null {
+  const t = text.trim()
+  return t === "" ? null : Number(t)
+}
+
+export function sizeLimitError(size: number | null): string | null {
+  return size !== null && (!Number.isFinite(size) || size < 0 || size > MAX_SIZE_MB) ? SIZE_RULE : null
+}
+
 export function filtersError(f: ScmFilters): string | null {
   for (const key of ["include_names", "exclude_names", "topics_any", "exclude_topics", "languages"] as const) {
     const err = listError(f[key])
     if (err) return err
   }
-  if (f.max_size_mb !== null && (!Number.isFinite(f.max_size_mb) || f.max_size_mb < 0)) return "The size limit must be 0 or more"
-  return null
+  return sizeLimitError(f.max_size_mb)
 }
 
 export function formatCredits(value: number | null | undefined): string {
@@ -199,7 +214,7 @@ export function connectionErrors(f: ConnectionForm): Partial<Record<keyof Connec
   return e
 }
 
-export function connectionBody(f: ConnectionForm, filters: ScmFilters) {
+export function connectionBody(f: ConnectionForm, filters: ScmFilters): ScmConnectionCreate {
   return {
     name: f.name.trim(),
     provider: f.provider,
