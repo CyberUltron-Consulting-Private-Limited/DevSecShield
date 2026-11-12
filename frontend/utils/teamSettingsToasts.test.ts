@@ -55,8 +55,6 @@ async function main() {
     ["add", () => removeOrAddTeamMembers(13, { intent: "add", email_ids: ["b@acme.test"] }), "PATCH /team/13"],
     ["delete", () => deleteTeam(13), "DELETE /team/13"],
   ];
-  const log = console.log;
-  console.log = () => undefined; // handleApiError logs the whole AxiosError
   for (const [name, call, request] of failures) {
     toasts.length = 0;
     sent.length = 0;
@@ -69,7 +67,6 @@ async function main() {
     showErrorToast(error, "fallback");
     assert.deepEqual(errorToasts(), [["error", DETAIL]], `${name}: one toast with the server's reason`);
   }
-  console.log = log;
 
   // 2. the settings page shows the one toast for each of the three actions, keeping the old context text
   const page = fs.readFileSync(path.join(root, "app", "[team_id]", "settings", "page.tsx"), "utf8");
@@ -93,12 +90,20 @@ async function main() {
     assert.ok(!block.includes("toast.error("), `${name}: a second error toast`);
   }
 
-  // 3. every other caller of these helpers must show the error itself (today the settings page is the only one)
-  const callers = ["app", "components"].flatMap((d) => walk(path.join(root, d)))
-    .filter((f) => /\b(updateTeam|removeOrAddTeamMembers|deleteTeam)\(/.test(fs.readFileSync(f, "utf8")))
-    .map((f) => path.relative(root, f));
-  assert.deepEqual(callers, [path.join("app", "[team_id]", "settings", "page.tsx")],
-    "a new caller of updateTeam / removeOrAddTeamMembers / deleteTeam must show the error in its onError");
+  // 3. every other user of these helpers must show the error itself (today the settings page is the only one). Found
+  // by import, not by call text: a helper passed by reference (mutationFn: deleteTeam) or used from hooks/, lib/ or
+  // utils/ counts too (code/QA review of PR #30).
+  const helpers = ["updateTeam", "removeOrAddTeamMembers", "deleteTeam"];
+  const users = sourceFiles().filter((rel) => backendApiImports(read(rel)).some((name) => helpers.includes(name)));
+  assert.deepEqual(users, [path.join("app", "[team_id]", "settings", "page.tsx")],
+    "a new user of updateTeam / removeOrAddTeamMembers / deleteTeam must show the error in its onError, then be listed here");
+  // the detector itself: named, renamed, multi-line, type-mixed and namespace imports, and nothing else
+  assert.deepEqual(backendApiImports('import { a, deleteTeam as remove,\n  type T } from "@/utils/backend_api";'), ["a", "deleteTeam"]);
+  assert.deepEqual(backendApiImports("import { updateTeam } from '../utils/backend_api'"), ["updateTeam"]);
+  assert.deepEqual(backendApiImports('import * as api from "@/utils/backend_api"; api.removeOrAddTeamMembers(1, x)'),
+    ["removeOrAddTeamMembers"]);
+  assert.deepEqual(backendApiImports('const m = await import("@/utils/backend_api"); m.deleteTeam(1)'), ["deleteTeam"]);
+  assert.deepEqual(backendApiImports('import { deleteTeam } from "@/utils/other"; // deleteTeam(1)'), []);
 
   // 4. the helpers still say what succeeded (one success toast, from the API layer)
   const apiSrc = fs.readFileSync(path.join(root, "utils", "backend_api.ts"), "utf8");
@@ -112,10 +117,36 @@ async function main() {
   console.log("team settings: one toast per refused action: tests passed");
 }
 
-function walk(dir: string): string[] {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+const read = (rel: string) => fs.readFileSync(path.join(root, rel), "utf8");
+
+/** Every source file of the app (tests and the API module itself excluded), relative to frontend/. */
+function sourceFiles(): string[] {
+  const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? walk(path.join(dir, e.name))
-      : /\.tsx?$/.test(e.name) && !e.name.endsWith(".test.ts") ? [path.join(dir, e.name)] : []);
+      : /\.(tsx?|jsx?|mjs)$/.test(e.name) && !/\.test\.[a-z]+$/.test(e.name) ? [path.join(dir, e.name)] : []);
+  return ["app", "components", "hooks", "lib", "utils"].flatMap((d) => walk(path.join(root, d)))
+    .map((f) => path.relative(root, f)).filter((rel) => rel !== path.join("utils", "backend_api.ts")).sort();
+}
+
+/** The names a source file takes from utils/backend_api: named imports (by their exported name), and the members it
+ * reads from a namespace or dynamic import of the module. */
+function backendApiImports(src: string): string[] {
+  const apiModule = String.raw`["'](?:@\/utils\/|(?:\.\.?\/)+(?:utils\/)?)backend_api["']`;
+  const names = new Set<string>();
+  for (const m of src.matchAll(new RegExp(String.raw`import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*` + apiModule, "g"))) {
+    for (const part of m[1].split(",")) {
+      const name = part.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0].trim();
+      if (name && !/^type\s/.test(part.trim())) names.add(name);
+    }
+  }
+  const aliases = [
+    ...src.matchAll(new RegExp(String.raw`import\s*\*\s*as\s+(\w+)\s*from\s*` + apiModule, "g")),
+    ...src.matchAll(new RegExp(String.raw`(?:const|let|var)\s+(\w+)\s*=\s*await\s+import\(\s*` + apiModule + String.raw`\s*\)`, "g")),
+  ].map((m) => m[1]);
+  for (const alias of aliases) {
+    for (const m of src.matchAll(new RegExp(String.raw`\b${alias}\.(\w+)`, "g"))) names.add(m[1]);
+  }
+  return [...names];
 }
 
 main().catch((e) => {
