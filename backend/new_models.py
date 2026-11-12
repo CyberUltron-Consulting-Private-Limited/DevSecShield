@@ -145,6 +145,28 @@ class Scan(SQLModel,table=True):
         arbitrary_types_allowed = True
 
 
+class CreditLedgerEntry(SQLModel, table=True):
+    """One movement of a team's credits and why (#33): append-only, written in the SAME transaction as the balance
+    change it records (backend/utilities/team/credit_ledger.py), so a balance never moves without its line.
+
+    ``delta`` is negative when credits are taken from the team and positive when they are given back; ``balance_after``
+    is the team's balance right after the movement. No foreign keys: the line outlives a deleted scan or team.
+    ``detail`` holds numbers and the input digest, never an input, a URL or a secret.
+    Recorded today: a reinitialize's charge for a costlier input and its refund when the new run could not be sent.
+    The other charge and refund paths still move ``team.credit_balance`` without a line (follow-up issue)."""
+    __tablename__ = "creditledger"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(index=True)
+    scan_id: int | None = Field(default=None, index=True)
+    user_id: int | None = Field(default=None)  # who caused it
+    delta: float
+    balance_after: float | None = Field(default=None)
+    reason: str = Field(max_length=48)
+    detail: Dict | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime.datetime | None = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), sa_type=DateTime)
+
+
 class DastScanProfile(SQLModel, table=True):
     """Saved DAST target + encrypted login for scheduled and Jenkins runs."""
     __tablename__ = "dastscanprofile"

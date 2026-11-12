@@ -38,6 +38,7 @@ from backend.utilities.dashboard.sbom_license import (
 )
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.cancel_scan import CancelRefused, cancel_scan, refunded_credits
+from backend.utilities.scan.reinitialize import ReinitializeRefused, reinitialize_scan as reinitialize_with_payload
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.scan import credit_estimate
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
@@ -445,8 +446,7 @@ async def get_scan(
 
 
 def _payload_section(start_scan_payload: StartScanPayload, scan_type: str) -> dict:
-    section = getattr(start_scan_payload, scan_type, None)
-    return section.model_dump(mode="json") if section is not None and hasattr(section, "model_dump") else {}
+    return credit_estimate.payload_section(start_scan_payload, scan_type)
 
 
 async def _read_upload(uploaded_file: UploadFile | None) -> bytes | None:
@@ -950,15 +950,20 @@ async def reinitialize_scan(
     uploaded_file: UploadFile | None = None,
     Authorization: Annotated[str | None, Header()] = None ):
     """
-    Reinitialize a scan.
+    Replace the queued run of a dispatched scan the worker has not picked up yet with a run of this input (#33).
+
+    The input is priced like a new scan's and the scan pays the positive difference against what it has already paid
+    (never a refund for a cheaper input), recorded in the credits ledger; the same input costs nothing. The target
+    checks of a new scan run before any credit moves. Refusals: 402 ``insufficient_credits``, 409 ``starting`` /
+    ``already_started`` / ``reinitialize_conflict`` (nothing charged or sent); 400/413/422 for the input, as for a
+    new scan. Rules and races: utilities/scan/reinitialize.py.
     """
     try:
         # STEP [ 0 ] : =========== Get the engine and user ======================
         engine = get_db()
         user = await get_user_from_header_or_raise_exception(engine, Authorization)
-        # user = User(id=1) # for testing purposes
 
-        # -----------------> get start scan payload from the json formatted string in start_scan_payload_string -----------------
+        # -----------------> the payload; its validators are the git host allow-list -----------------
         try:
             start_scan_payload = StartScanPayload.model_validate_json(start_scan_payload_string)
         except ValidationError as ve:
@@ -966,35 +971,19 @@ async def reinitialize_scan(
 
         # STEP [ 1 ] : =========== Check if user is in team ======================
         check_if_user_is_in_team(user.id, team_id, engine)
-        
 
-        
-        
-        # STEP [ 2 ] : =========== Validate getting the conversation from the main db ======================
-        with Session(engine) as session:
-            scan = None
-            scan = session.exec(select(Scan).where(Scan.id == scan_id).where(Scan.team_id == team_id).where(Scan.scan_type == type)).first()
-            if scan==None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found or User not allowed to start this scan")
-            if scan.scan_status != "pending" : 
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan is not pending, cannot reinitialize")
-            if scan.owner_user_id != user.id: # only the user who created the scan can reinitialize the scan ⭐
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You do not have permission to reinitialize this scan")
-            
-        
-        # STEP [ 3 ] : =========== Reinitialize the scan and update the main db ======================
-        await start_scan_and_update_db(
-            scan_id=scan_id,
-            start_scan_payload=start_scan_payload,
-            team_id=team_id,
-            engine=engine,
+        # STEP [ 2 ] : =========== price, check, claim + charge, send (one place: utilities/scan/reinitialize.py) =====
+        return await reinitialize_with_payload(
+            engine,
             scan_type=type,
+            scan_id=scan_id,
+            team_id=team_id,
+            user_id=user.id,
+            start_scan_payload=start_scan_payload,
             uploaded_file=uploaded_file,
         )
-
-        return {
-            "message": "Scan reinitialized successfully",
-        }
+    except ReinitializeRefused as refused:
+        return JSONResponse(status_code=refused.status_code, content=refused.body())
     except Exception as e:
         console.print(f"Error in reinitializing {type} scan: {e}",style="bold red")
         if isinstance(e,HTTPException):

@@ -31,6 +31,7 @@ CANCELLABLE_TYPES = ("sast", "iac", "sbom_sca", "cbom", "ai_bom")
 # The Mongo collection (in the Celery result backend's database) the scan worker reads.
 CANCEL_COLLECTION = "scan_cancellations"
 _RUNNING = ("pending", "started", "retry")
+CANCEL_ATTEMPTS = 3  # reads of the row when a reinitialize replaces the task under the cancel
 
 
 class CancelRefused(Exception):
@@ -125,30 +126,37 @@ def cancel_scan(engine: Engine, *, scan_id: int, team_id: int, scan_type: str, u
     _sync_with_worker(engine, scan)
 
     with Session(engine) as session:
-        scan = load(session)
-        if scan.scan_status not in _RUNNING or not scan.task_id:
-            raise _refusal(scan)
-        refund = refunded_credits(scan)
-        task_id = scan.task_id
-        now = datetime.datetime.now(timezone.utc)
-        info = {
-            "cancelled": True,
-            "refunded_credits": round(refund, 4),
-            "cancelled_by": user_id,
-            "cancelled_at": now.isoformat(),
-        }
-        # The compare-and-set and the refund commit together: exactly one request flips the row, and only it refunds.
-        won = session.exec(
-            update(Scan)
-            .where(Scan.id == scan_id, Scan.team_id == team_id, Scan.task_id == task_id,
-                   or_(*(Scan.scan_status == s for s in _RUNNING)))
-            .values(scan_status="cancelled", info=info, last_updated=now)
-        ).rowcount == 1
-        if won and refund > 0:
-            session.exec(update(Team).where(Team.id == team_id).values(credit_balance=Team.credit_balance + refund))
-        session.commit()
-        if not won:
-            raise _refusal(load(session))
+        # A reinitialize (utilities/scan/reinitialize.py) can replace the task, and the price paid with it, between
+        # the read and the compare-and-set below: the cancel then reads the row again and cancels the run that
+        # replaced it, refunding what the scan has paid by then (a few attempts; the customer asked to stop it).
+        for _attempt in range(CANCEL_ATTEMPTS):
+            scan = load(session)
+            if scan.scan_status not in _RUNNING or not scan.task_id:
+                raise _refusal(scan)
+            refund = refunded_credits(scan)
+            task_id = scan.task_id
+            now = datetime.datetime.now(timezone.utc)
+            info = {
+                "cancelled": True,
+                "refunded_credits": round(refund, 4),
+                "cancelled_by": user_id,
+                "cancelled_at": now.isoformat(),
+            }
+            # The compare-and-set and the refund commit together: exactly one request flips the row, and only it
+            # refunds.
+            won = session.exec(
+                update(Scan)
+                .where(Scan.id == scan_id, Scan.team_id == team_id, Scan.task_id == task_id,
+                       or_(*(Scan.scan_status == s for s in _RUNNING)))
+                .values(scan_status="cancelled", info=info, last_updated=now)
+            ).rowcount == 1
+            if won and refund > 0:
+                session.exec(update(Team).where(Team.id == team_id).values(credit_balance=Team.credit_balance + refund))
+            session.commit()
+            if won:
+                break
+        else:
+            raise CancelRefused("busy", "This scan's run is being replaced right now. Try cancelling again in a moment.")
 
     console.print(f"Scan {scan_id} cancelled by user {user_id}; {refund} credits refunded to team {team_id}",
                   style="bold yellow")
