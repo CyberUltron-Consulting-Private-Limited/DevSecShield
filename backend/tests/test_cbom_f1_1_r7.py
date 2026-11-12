@@ -350,6 +350,32 @@ def test_b3_a_segment_job_an_unsigned_node_held_before_the_change_goes_back_to_t
         assert (job.status, job.node_id, job.attempts) == ("pending", None, 0)  # handed back, never cancelled
 
 
+def test_s6_reset_and_delete_hand_a_segment_job_back_to_its_segment(api, world):
+    """Security review S6: Reset and Delete of the node holding a segment job hand the job back to the segment
+    (pending, no node), so another node of the segment claims it."""
+    engine, _ = world
+    a_id, a, _ka, _ = F._signed_node(api, name="seg-a")
+    _b_id, b, _kb, _ = F._signed_node(api, name="seg-b")
+    F._segment_sources(engine, 2)
+    F._run(api)
+    first = a.claim()
+    assert first is not None
+    assert api("POST", f"/1/cbom/sources/nodes/{a_id}/reset").status_code == 200
+    with Session(engine) as s:
+        job = s.get(CbomCollectionJob, first["job"]["id"])
+        assert job.status == "pending" and job.node_id is None
+    taken = {b.claim()["job"]["id"], b.claim()["job"]["id"]}
+    assert first["job"]["id"] in taken
+    c_id, c, _kc, _ = F._signed_node(api, name="seg-c")
+    with Session(engine) as s:  # hand one of b's jobs to c, then delete c while it holds it
+        s.exec(update(CbomCollectionJob).where(CbomCollectionJob.id == first["job"]["id"]).values(node_id=c_id))
+        s.commit()
+    assert api("DELETE", f"/1/cbom/sources/nodes/{c_id}").status_code in (200, 204)
+    with Session(engine) as s:
+        job = s.get(CbomCollectionJob, first["job"]["id"])
+        assert job.status == "pending" and job.node_id is None
+
+
 def test_b3_planning_counts_only_signed_segment_nodes(api, world):
     engine, _ = world
     _unsigned_node(engine)
@@ -496,6 +522,50 @@ def test_c1_300_successful_job_ends_at_the_tail_take_no_run_row_lock():
     assert sampler.max == 0 and sampler.samples > 10, sampler.queries[:5]
     with Session(engine) as s:
         assert s.get(CbomCollectionRun, run_id).status == "done"
+
+
+@needs_pg
+def test_c1_the_first_claims_of_a_run_never_wait_on_the_run_row():
+    """EC2 E2a round 7: the first claims of a 10,000-job run all ran ``UPDATE cbomcollectionrun SET status='running'
+    WHERE status='queued'`` at once; every one but the first waited on the row lock of the first claim's open
+    transaction (43 lock waits > 100 ms in 0.1 s).  A claim that finds the row locked leaves the update to its holder."""
+    import threading
+
+    engine = F._pg_world()
+    _node_id, run_id, _jobs = _pg_fleet(engine, 2, claimed=False)
+    now = dt.datetime.utcnow()
+    first = Session(engine)
+    J.mark_run_running(first, run_id, now)  # holds the run row, uncommitted
+    took: list[float] = []
+
+    def second():
+        with Session(engine) as s:
+            s.exec(text("SET LOCAL lock_timeout = '2s'"))
+            t0 = time.perf_counter()
+            J.mark_run_running(s, run_id, now)
+            took.append(time.perf_counter() - t0)
+            s.commit()
+
+    t = threading.Thread(target=second)
+    t.start()
+    t.join(5)
+    first.commit()
+    first.close()
+    assert took and took[0] < 0.5
+    with Session(engine) as s:
+        assert s.get(CbomCollectionRun, run_id).status == "running"
+    # the holder rolled back: the next claim marks the run
+    with Session(engine) as s:
+        s.exec(update(CbomCollectionRun).where(CbomCollectionRun.id == run_id).values(status="queued"))
+        s.commit()
+    held = Session(engine)
+    J.mark_run_running(held, run_id, now)
+    held.rollback()
+    held.close()
+    with Session(engine) as s:
+        J.mark_run_running(s, run_id, now)
+        s.commit()
+        assert s.get(CbomCollectionRun, run_id).status == "running"
 
 
 @needs_pg

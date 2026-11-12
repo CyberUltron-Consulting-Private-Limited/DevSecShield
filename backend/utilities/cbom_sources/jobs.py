@@ -378,14 +378,22 @@ def reconcile_runs(session: Session, now: _dt.datetime, team_id: int | None = No
 
 
 def mark_run_running(session: Session, run_id: int | None, now: _dt.datetime) -> None:
-    """A job of the run was claimed: the run is running (one guarded UPDATE, only the first claim writes)."""
+    """A job of the run was claimed: the run is running (one guarded UPDATE, only the first claim writes, and on
+    PostgreSQL no claim waits for another's lock on the run row)."""
     if run_id is None:
         return
     current = session.exec(select(CbomCollectionRun.status).where(CbomCollectionRun.id == run_id)).first()
     if current is None or current == "running":
         return
+    target = CbomCollectionRun.id == run_id
+    if session.get_bind().dialect.name == "postgresql":
+        # EC2 E2a round 7: the first claims of a run all reach this UPDATE together; each waited on the row lock of
+        # the first claim's open transaction.  A row someone else is locking is being marked by them: skip it (if
+        # that claim rolls back, the next claim marks the run).
+        target = CbomCollectionRun.id == select(CbomCollectionRun.id).where(
+            CbomCollectionRun.id == run_id).with_for_update(skip_locked=True).scalar_subquery()
     if session.exec(update(CbomCollectionRun)
-                    .where(CbomCollectionRun.id == run_id, CbomCollectionRun.status.in_(("queued",)))  # type: ignore[attr-defined]
+                    .where(target, CbomCollectionRun.status.in_(("queued",)))  # type: ignore[attr-defined]
                     .values(status="running", last_updated=now, finished_at=None)
                     .execution_options(synchronize_session=False)).rowcount:
         team = session.exec(select(CbomCollectionRun.team_id).where(CbomCollectionRun.id == run_id)).first()
