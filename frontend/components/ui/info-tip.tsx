@@ -62,9 +62,9 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
   );
 }
 
+/** Text only: tooltip content cannot take focus (WAI-ARIA tooltip pattern), so it never holds a link or a button. */
 function InfoTipBody({ id }: { id: InfoTipId }) {
   const tip = INFO_TIPS[id];
-  const more = "learnMore" in tip ? (tip.learnMore as { href: string; label?: string } | undefined) : undefined;
   return (
     <span className="block space-y-1.5">
       <span className="block">{tip.what}</span>
@@ -72,16 +72,6 @@ function InfoTipBody({ id }: { id: InfoTipId }) {
         <span className="font-semibold">Example: </span>
         {tip.example}
       </span>
-      {more && (
-        <a
-          href={more.href}
-          target={more.href.startsWith("/") ? undefined : "_blank"}
-          rel={more.href.startsWith("/") ? undefined : "noopener noreferrer"}
-          className="block underline underline-offset-2"
-        >
-          {more.label ?? "Learn more"}
-        </a>
-      )}
     </span>
   );
 }

@@ -89,6 +89,7 @@ import { ComplianceCoverage, type Compliance } from "@/components/ai-bom/AiBomVi
 import { FRAMEWORK_GROUPS_SBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
 import { RbiCsfRollup, type RbiCsfRollupData } from "@/components/rbi/RbiCsfRollup";
 import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
+import { InfoTip } from "@/components/ui/info-tip";
 import { type CertInRollupData } from "@/components/certin/certinShared";
 
 // SBOM agent output format (from worker_sbom_agent_results_testing.json): array of flat vulnerability objects
@@ -258,7 +259,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Total vulnerabilities</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Total vulnerabilities <InfoTip id="sbom.res.kpi.total" /></p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{card.total_vulnerabilities ?? 0}</p>
             </div>
           </CardContent>
@@ -269,7 +270,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
               <AlertCircle className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Critical</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Critical <InfoTip id="sbom.res.kpi.critical" /></p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{card.total_critical_vulnerabilities ?? 0}</p>
             </div>
           </CardContent>
@@ -280,7 +281,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
               <Scale className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Policy violations</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Policy violations <InfoTip id="sbom.res.kpi.policy" /></p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{card.total_policy_violations ?? 0}</p>
             </div>
           </CardContent>
@@ -291,7 +292,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
               <Shield className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">License risks</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">License risks <InfoTip id="sbom.res.kpi.license_risks" /></p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{card.total_license_risks ?? 0}</p>
             </div>
           </CardContent>
@@ -302,7 +303,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
               <Package className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">High-risk licenses</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">High-risk licenses <InfoTip id="sbom.res.kpi.high_risk_licenses" /></p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{card.total_high_risk_licenses ?? 0}</p>
             </div>
           </CardContent>
@@ -313,7 +314,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
               <Target className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avg risk score</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Avg risk score <InfoTip id="sbom.res.kpi.avg_risk" /></p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{Number(card.average_risk_score ?? 0).toFixed(1)}</p>
             </div>
           </CardContent>
@@ -324,7 +325,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
               <Activity className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Reachable issues</p>
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Reachable issues <InfoTip id="sbom.res.kpi.reachable" /></p>
               <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{card.total_reachable_issues ?? 0}</p>
             </div>
           </CardContent>
@@ -334,7 +335,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
       {/* 2. Remediation actions */}
       <Card className="border-zinc-200 dark:border-zinc-800">
         <CardHeader>
-          <CardTitle className="text-base">Remediation actions</CardTitle>
+          <CardTitle className="text-base flex items-center gap-1">Remediation actions <InfoTip id="sbom.res.remediation" /></CardTitle>
           <CardDescription>Finding status breakdown</CardDescription>
         </CardHeader>
         <CardContent>
@@ -369,6 +370,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
             <CardTitle className="text-base flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
               Severity distribution
+              <InfoTip id="sbom.res.severity" />
             </CardTitle>
             <CardDescription>By impact level</CardDescription>
           </CardHeader>
@@ -394,6 +396,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
               Reachability distribution
+              <InfoTip id="sbom.res.reachability" />
             </CardTitle>
             <CardDescription>Reachable vs not reachable</CardDescription>
           </CardHeader>
@@ -421,6 +424,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
           <CardTitle className="text-base flex items-center gap-2">
             <TrendingUp className="w-4 h-4" />
             Vulnerability trends over time
+            <InfoTip id="sbom.res.trends" />
           </CardTitle>
           <CardDescription>Findings by severity (by discovery date)</CardDescription>
         </CardHeader>
@@ -451,7 +455,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
         {/* 6. Licenses distribution (card with progress bars) */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Licenses Distribution</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Licenses Distribution <InfoTip id="sbom.res.licenses" /></CardTitle>
             <CardDescription>
               Distribution of dependencies by license type. Risk levels: Low (permissive, public domain, unknown), Medium (weak copyleft, creative commons, commercial), High (strong copyleft, network copyleft, source available).
             </CardDescription>
@@ -475,7 +479,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
         {/* 8. Average risk score per reachability */}
         <Card className="border-zinc-200 dark:border-zinc-800">
           <CardHeader>
-            <CardTitle className="text-base">Average risk score per reachability</CardTitle>
+            <CardTitle className="text-base flex items-center gap-1">Average risk score per reachability <InfoTip id="sbom.res.risk_by_reach" /></CardTitle>
             <CardDescription>Weighted average by reachability level</CardDescription>
           </CardHeader>
           <CardContent>
@@ -509,7 +513,7 @@ function SbomDashboardCharts({ dashboard }: { dashboard: SbomScanDashboardData }
       {/* 7. Top vulnerabilities by risk score */}
       <Card className="border-zinc-200 dark:border-zinc-800">
         <CardHeader>
-          <CardTitle className="text-base">Top vulnerabilities by risk score</CardTitle>
+          <CardTitle className="text-base flex items-center gap-1">Top vulnerabilities by risk score <InfoTip id="sbom.res.top" /></CardTitle>
           <CardDescription>Sorted by impact (descending)</CardDescription>
         </CardHeader>
         <CardContent>
@@ -1070,7 +1074,7 @@ function SbomResultsView({
                   <Github className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Repository</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Repository <InfoTip id="results.meta.repository" /></p>
                   <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate" title={String(scanMetadata.repo_url)}>{String(scanMetadata.repo_url)}</p>
                 </div>
               </CardContent>
@@ -1083,7 +1087,7 @@ function SbomResultsView({
                   <GitBranch className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Branch <InfoTip id="results.meta.branch" /></p>
                   <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{String(scanMetadata.branch)}</p>
                 </div>
               </CardContent>
@@ -1096,8 +1100,8 @@ function SbomResultsView({
                   <Archive className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source</p>
-                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{scanMetadata.zip_file_used ? "ZIP upload" : "Repository"}</p>
+                  <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1">Source <InfoTip id="results.meta.source" /></p>
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{scanMetadata.zip_file_used ? "ZIP upload" : (scanMetadata as { sbom_file_used?: boolean | null }).sbom_file_used ? "SBOM file" : "Repository"}</p>
                 </div>
               </CardContent>
             </Card>
@@ -1144,7 +1148,7 @@ function SbomResultsView({
 
       <Card id="bom-findings">
         <CardHeader>
-          <CardTitle>Findings</CardTitle>
+          <CardTitle className="flex items-center gap-1">Findings <InfoTip id="results.findings" /></CardTitle>
           <CardDescription>
             {useFindings
               ? `${totalFindings} findings. Select rows to create Jira tickets; use Action to change finding state.`
@@ -1169,6 +1173,7 @@ function SbomResultsView({
                     aria-label="Search findings table"
                   />
                 </div>
+                <InfoTip id="sbom.res.search" className="-ml-2" />
                 <Select value={filterImpact} onValueChange={setFilterImpact}>
                   <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
                     <SelectValue placeholder="Impact" />
@@ -1181,6 +1186,7 @@ function SbomResultsView({
                     <SelectItem value="Low">Low</SelectItem>
                   </SelectContent>
                 </Select>
+                <InfoTip id="results.filter.impact" className="-ml-2" />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -1203,6 +1209,7 @@ function SbomResultsView({
                       <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
+                  <InfoTip id="sbom.res.filter.risk" className="-ml-2" />
                   <DropdownMenuContent align="start" className="min-w-[180px]">
                     <DropdownMenuLabel className="text-xs font-normal text-zinc-500">Filter by risk score</DropdownMenuLabel>
                     <DropdownMenuSeparator />
@@ -1254,24 +1261,27 @@ function SbomResultsView({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[48px]">
-                      <Checkbox
-                        checked={filteredFindingsList.length > 0 && selectedRowIds.size === filteredFindingsList.length}
-                        onCheckedChange={toggleSelectAll}
-                        aria-label="Select all rows"
-                        className="cursor-pointer"
-                      />
+                    <TableHead className="w-[64px]">
+                      <div className="flex items-center gap-0.5">
+                        <Checkbox
+                          checked={filteredFindingsList.length > 0 && selectedRowIds.size === filteredFindingsList.length}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label="Select all rows"
+                          className="cursor-pointer"
+                        />
+                        <InfoTip id="results.select_all" />
+                      </div>
                     </TableHead>
                     <TableHead className="min-w-[180px]">Title</TableHead>
-                    <TableHead className="min-w-[120px]">Dependency</TableHead>
-                    <TableHead className="min-w-[90px]">Impact</TableHead>
-                    <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                    <TableHead className="min-w-[100px]">Status</TableHead>
-                    <TableHead className="min-w-[100px]">Reachability</TableHead>
-                    <TableHead className="min-w-[90px]">License</TableHead>
-                    <TableHead className="min-w-[80px] text-center">OWASP</TableHead>
-                    <TableHead className="min-w-[80px] text-center">Compliance</TableHead>
-                    <TableHead className="min-w-[100px] text-right">Actions</TableHead>
+                    <TableHead className="min-w-[120px]"><span className="inline-flex items-center gap-1">Dependency <InfoTip id="sbom.res.table.dependency" /></span></TableHead>
+                    <TableHead className="min-w-[90px]"><span className="inline-flex items-center gap-1">Impact <InfoTip id="results.table.impact" /></span></TableHead>
+                    <TableHead className="min-w-[90px] text-center"><span className="inline-flex items-center gap-1">Risk score <InfoTip id="sbom.res.table.risk" /></span></TableHead>
+                    <TableHead className="min-w-[100px]"><span className="inline-flex items-center gap-1">Status <InfoTip id="results.table.status" /></span></TableHead>
+                    <TableHead className="min-w-[100px]"><span className="inline-flex items-center gap-1">Reachability <InfoTip id="sbom.res.table.reachability" /></span></TableHead>
+                    <TableHead className="min-w-[90px]"><span className="inline-flex items-center gap-1">License <InfoTip id="sbom.res.table.license" /></span></TableHead>
+                    <TableHead className="min-w-[80px] text-center"><span className="inline-flex items-center gap-1">OWASP <InfoTip id="results.table.owasp" /></span></TableHead>
+                    <TableHead className="min-w-[80px] text-center"><span className="inline-flex items-center gap-1">Compliance <InfoTip id="results.table.compliance" /></span></TableHead>
+                    <TableHead className="min-w-[100px] text-right"><span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1292,7 +1302,8 @@ function SbomResultsView({
                         key={f.id}
                         className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedRowIds.has(f.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                       >
-                        <TableCell onClick={(e) => e.stopPropagation()} className="w-[48px]">
+                        <TableCell onClick={(e) => e.stopPropagation()} className="w-[64px]">
+                          {/* infotip-shared: row selection, explained by the (i) on the select-all box in the header */}
                           <Checkbox
                             checked={selectedRowIds.has(f.id)}
                             onCheckedChange={() => toggleFindingRowSelection(f.id)}
@@ -1356,6 +1367,7 @@ function SbomResultsView({
                         </TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
+                            {/* infotip-shared: explained by the (i) on the Actions column header */}
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8 shrink-0" aria-label="Finding actions">
                                 <Pencil className="h-3.5 w-3.5 opacity-70" />
@@ -1388,19 +1400,22 @@ function SbomResultsView({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[48px]">
-                      <Checkbox
-                        checked={vulnerabilities.length > 0 && selectedRows.size === vulnerabilities.length}
-                        onCheckedChange={toggleSelectAll}
-                        aria-label="Select all rows"
-                        className="cursor-pointer"
-                      />
+                    <TableHead className="w-[64px]">
+                      <div className="flex items-center gap-0.5">
+                        <Checkbox
+                          checked={vulnerabilities.length > 0 && selectedRows.size === vulnerabilities.length}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label="Select all rows"
+                          className="cursor-pointer"
+                        />
+                        <InfoTip id="sbom.res.vuln.select" />
+                      </div>
                     </TableHead>
-                    <TableHead className="w-[280px]">Vulnerability</TableHead>
-                    <TableHead className="w-[200px]">Dependencies</TableHead>
-                    <TableHead className="w-[80px] text-center">OWASP Top 10</TableHead>
-                    <TableHead className="w-[80px] text-center">Compliance Controls</TableHead>
-                    <TableHead className="w-[100px]">Impact</TableHead>
+                    <TableHead className="w-[280px]"><span className="inline-flex items-center gap-1">Vulnerability <InfoTip id="sbom.res.vuln.title" /></span></TableHead>
+                    <TableHead className="w-[200px]"><span className="inline-flex items-center gap-1">Dependencies <InfoTip id="sbom.res.vuln.deps" /></span></TableHead>
+                    <TableHead className="w-[80px] text-center"><span className="inline-flex items-center gap-1">OWASP Top 10 <InfoTip id="results.table.owasp" /></span></TableHead>
+                    <TableHead className="w-[80px] text-center"><span className="inline-flex items-center gap-1">Compliance Controls <InfoTip id="results.table.compliance" /></span></TableHead>
+                    <TableHead className="w-[100px]"><span className="inline-flex items-center gap-1">Impact <InfoTip id="results.table.impact" /></span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1423,7 +1438,8 @@ function SbomResultsView({
                           key={idx}
                           className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedRows.has(idx) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                         >
-                          <TableCell onClick={(e) => e.stopPropagation()} className="w-[48px]">
+                          <TableCell onClick={(e) => e.stopPropagation()} className="w-[64px]">
+                            {/* infotip-shared: row selection, explained by the (i) on the select-all box in the header */}
                             <Checkbox
                               checked={selectedRows.has(idx)}
                               onCheckedChange={() => toggleRowSelection(idx)}
