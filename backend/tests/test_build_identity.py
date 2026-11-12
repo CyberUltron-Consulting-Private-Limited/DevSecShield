@@ -177,6 +177,17 @@ def test_log_lines_and_500_refs_carry_the_request_id(api, world, monkeypatch, ca
     assert "database went away" not in lines[0]  # the error class only, as before
 
 
+def test_log_lines_from_the_threadpool_carry_the_request_id(api, world, capsys, build):  # noqa: F811
+    """Route work runs in the threadpool (run_in_threadpool copies the context): its log lines carry the id too."""
+    r = api("POST", "/1/cbom/sources/nodes", json={"name": "dc-trace-01", "segment": "DC"})
+    capsys.readouterr()
+    e = api("POST", "/cbom/node/enroll", None, headers={RID: "enrol-trace-0001"},
+            json={"registration_token": r.json()["registration_token"], "hostname": "n1", "version": "1.0"})
+    assert e.status_code == 200, e.text
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if "cbom sources node enrolled" in ln]
+    assert len(lines) == 1 and lines[0].endswith("request_id=enrol-trace-0001") and ISO_Z.match(lines[0]), lines
+
+
 def test_security_log_lines_use_iso_utc():
     handler = logging.getLogger("backend.auth").handlers[0]
     record = logging.LogRecord("backend.auth", logging.WARNING, __file__, 1, "sign-in refused", None, None)
