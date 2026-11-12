@@ -24,7 +24,7 @@ from typing import Any, Iterator
 from urllib.parse import quote, quote_plus
 
 from .checks import Checks
-from .rundir import read_json
+from .rundir import read_json, write_text
 
 GATE = "G15"
 MAX_FILE = 256 * 1024 * 1024
@@ -127,7 +127,7 @@ def judge(run: Path, checks: Checks) -> list[str]:
     report: list[str] = []
     if doc is None:
         checks.not_run(f"{GATE}/canaries", GATE, "canary", "oracle/canaries.json not written (lab not run)", {})
-        (run / "canaries.txt").write_text("no canaries: oracle/canaries.json absent\n", encoding="utf-8")
+        write_text(run / "canaries.txt", "no canaries: oracle/canaries.json absent\n")
         return report
     canaries = doc.get("canaries") or []
     shared = _shared_lines(canaries, run)
@@ -157,7 +157,7 @@ def judge(run: Path, checks: Checks) -> list[str]:
         report.append(f"{cid} ({canary.get('kind')}): encodings={','.join(k for k, v in needles.items() if v)} "
                       f"control={'found' if found_control else 'MISSING'} leaks={len(leaks)}")
         report.extend(f"  leak: {leak}" for leak in leaks)
-    (run / "canaries.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+    write_text(run / "canaries.txt", "\n".join(report) + "\n")
     return report
 
 

@@ -107,11 +107,24 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fields: list[str] | None =
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = fields or sorted({k for row in rows for k in row})
-    with open(path, "w", encoding="utf-8", newline="") as fh:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
             writer.writerow({k: _cell(row.get(k)) for k in fields})
+    tmp.replace(path)
+    return path
+
+
+def write_text(path: Path, text: str) -> Path:
+    """Write by replacing the file (a new inode): a judge run on a hard-linked copy of a sealed bundle (cp -al,
+    negative controls) never rewrites the bundle's own bytes."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
     return path
 
 

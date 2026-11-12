@@ -286,9 +286,11 @@ def c_5b_stale_cert_date_api_db(run, p):
 
 
 def c_5c_new_defect_in_ledgered_target(run, p):
-    """a NEW defect on a ledgered target, all four views: z05b cert[0] not_after a year off (KF-3 is elsewhere)"""
+    """a NEW defect on a ledgered target, all four views: z01 cert[0] not_after a year off (KF-18 pins only z01/tls's
+    /complete checks). Was z05b's certificate (KF-3); since CB-02 v7.1 every z05b key is unverified, so a change there
+    is NOT-JUDGED by design (O-3) and can no longer serve as a control."""
     v = Views(run)
-    aid = p["z05b/cert[0]"]
+    aid = p["z01/cert[0]"]
     v.set_facts(aid, lambda f: f.__setitem__("not_after", "2025-12-14T12:13:02Z"))
     cert = v.comp(aid).get("cryptoProperties", {}).get("certificateProperties")
     if cert is not None:

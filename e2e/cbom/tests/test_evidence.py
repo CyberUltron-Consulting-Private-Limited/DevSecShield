@@ -363,3 +363,21 @@ def test_deferred_lab_parts_become_not_run_checks_the_ledger_must_name(tmp_path)
                                                     not_run=2, owner="CB-02", issue="#93"))
     passed, report = gate.judge(run, led)
     assert passed, [c["id"] for c in report["blocking"]]
+
+
+def test_judging_a_hard_linked_copy_never_rewrites_the_sealed_bundle(tmp_path):
+    """Run 5 incident: `cp -al` + judge rewrote the bundle's diff/oracle-run1.csv through the shared inode."""
+    import os
+    import shutil
+    run = FakeRun(tmp_path / "a").write()
+    gate.judge(run, ledgers.write(tmp_path / "l.yaml", ledgers.POSTURE))
+    sealed = {p: p.read_bytes() for p in run.rglob("*") if p.is_file()}
+    copy = tmp_path / "copy"
+    shutil.copytree(run, copy, copy_function=os.link)
+    api = copy / "api" / "assets-run1.json"  # a different judgement must not leak back into the original
+    doc = json.loads(api.read_text(encoding="utf-8"))
+    doc["items"][0]["algorithm"] = "DSA"
+    api.unlink()
+    api.write_text(json.dumps(doc), encoding="utf-8")
+    gate.judge(copy, ledgers.write(tmp_path / "l.yaml", ledgers.POSTURE))
+    assert {p: p.read_bytes() for p in run.rglob("*") if p.is_file()} == sealed

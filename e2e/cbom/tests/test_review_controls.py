@@ -463,3 +463,17 @@ def test_lab_stated_verdict_must_agree_with_its_own_groups(tmp_path):
     passed, blocking, _ = judge(fr.dir, tmp_path)
     assert blocking["G11/oracle/run1/z01/tls_endpoint/quantum_vulnerable/lab_vs_derivation"]["reason"] == \
         "lab-vs-derivation"
+
+
+def test_a_derivation_from_an_unverified_oracle_key_is_not_judged(tmp_path):
+    """Run 5: z05/tls cipher_suites is unverified (v7.1 #5), so 'negotiated suite is accepted' cannot be judged."""
+    fr = FakeRun(tmp_path)
+    fr.write()
+    _edit(fr.dir / "oracle/run1.json",
+          lambda d: d["targets"][0]["assets"][1]["expect"].pop("algorithm", None))
+    _edit(fr.dir / "lab/selfcheck.json",
+          lambda d: d["targets"][0].__setitem__("unverified_keys", {"z01/tls_endpoint": ["cipher_suites"]}))
+    manifest.freeze_oracle(fr.dir)
+    passed, blocking, _ = judge(fr.dir, tmp_path)
+    check = blocking["G11/oracle/run1/z01/tls_endpoint/algorithm"]
+    assert check["verdict"] == "NOT-JUDGED" and check["reason"] == "lab-not-independent"

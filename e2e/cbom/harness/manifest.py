@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import SCHEMA_MANIFEST
-from .rundir import iso, read_json, sha256_file, sha256_tree, utc_now, write_json
+from .rundir import iso, read_json, sha256_file, sha256_tree, utc_now, write_json, write_text
 
 SUMS = "SHA256SUMS"
 MANIFEST = "MANIFEST.json"
@@ -53,7 +53,7 @@ def write_sums(run: Path) -> str:
     lines = []
     for path in sorted(p for p in run.rglob("*") if p.is_file() and p.name != SUMS and not p.name.endswith(".tmp")):
         lines.append(f"{sha256_file(path)}  {path.relative_to(run).as_posix()}")
-    (run / SUMS).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_text(run / SUMS, "\n".join(lines) + "\n")
     return hashlib.sha256((run / SUMS).read_bytes()).hexdigest()
 
 

@@ -23,7 +23,7 @@ from typing import Any
 
 from . import SCHEMA_REPORT, canary, derived, join, ledger, logs, manifest, oracle, redact, timing
 from .checks import Check, Checks
-from .rundir import iso, read_json, run_steps, utc_now, write_json
+from .rundir import iso, read_json, run_steps, utc_now, write_json, write_text
 
 GATES = [f"G{i}" for i in range(18)] + ["G5b", "G13b"]
 # the waves of DEVILS-ADVOCATE §4.5 (a deferred lab part may name one)
@@ -110,7 +110,7 @@ def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str
         "checks": [c.as_dict() for c in checks],
     }
     write_json(run / "report.json", report)
-    (run / "report.md").write_text(render_md(report), encoding="utf-8")
+    write_text(run / "report.md", render_md(report))
     return passed, report
 
 
@@ -182,7 +182,7 @@ def redact_run(run: Path, known: list[str]) -> list[str]:
                     if value and len(value) >= 8:
                         text = text.replace(value, redact.mark(f"known-{k}", value))
                 if text != original:
-                    path.write_text(text, encoding="utf-8")
+                    write_text(path, text)
             left = redact.residual_secrets(text, known)
             problems += [f"{path.relative_to(run).as_posix()}: {kind}" for kind in left]
     return problems

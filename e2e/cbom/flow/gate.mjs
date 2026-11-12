@@ -569,7 +569,10 @@ try {
       prevIds = ids;
       rows.push(...got);
       if (!got.length) break;
-      const next = page.getByTestId("run-results").getByRole("button", { name: /next/i }).first();
+      // the pagination exists only when there is more than one page ("Page n of m"); its button is named exactly
+      // "Next" (the certificate calendar's "Next month" button sits in the same panel: run 5's paging_stuck)
+      if (!(await page.getByTestId("run-results-page").count())) break;
+      const next = page.getByTestId("run-results").getByRole("button", { name: "Next", exact: true });
       if (!(await next.count()) || (await next.isDisabled())) break;
       await next.click(); await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
     }

@@ -168,6 +168,16 @@ def derive(asset: dict[str, Any], key: str, item: dict[str, Any]) -> tuple[Any, 
     return None
 
 
+def derived_from(asset: dict[str, Any], key: str) -> str | None:
+    """The oracle ``expect`` key ``derive`` reads for ``key`` (its independence decides the derived check's)."""
+    atype = asset.get("asset_type")
+    if atype in ("tls_endpoint", "database_tls"):
+        return {"quantum_vulnerable": "groups", "algorithm": "cipher_suites"}.get(key)
+    if atype == "ssh_endpoint":
+        return {"quantum_vulnerable": "kex_algorithms", "algorithm": "host_keys", "key_size": "host_keys"}.get(key)
+    return None
+
+
 def _derived_ok(key: str, want: Any, item: dict[str, Any], asset: dict[str, Any]) -> bool:
     got = item.get(key)
     if isinstance(want, str) and want.startswith("one of "):
@@ -296,6 +306,13 @@ def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]
                 cid = f"{prefix}/{oid}/{key}"
                 ksubject = {**subject, "asset_id": aid, "field": key}
                 derived = derive(asset, key, item)
+                source = derived_from(asset, key)
+                if derived is not None and (oid.split("[", 1)[0], source) in weak_keys:
+                    # a derivation is only as independent as the oracle fact it is made from (O-3)
+                    checks.not_judged(cid, GATE, "oracle", "lab-not-independent",
+                                      {**ksubject, "expectation": "derived"}, expected=f"{derived[0]} ({derived[1]})",
+                                      observed=f"derived from {source}, which the lab did not verify independently")
+                    continue
                 if derived is not None:
                     want, how = derived
                     ok = _derived_ok(key, want, item, asset)
