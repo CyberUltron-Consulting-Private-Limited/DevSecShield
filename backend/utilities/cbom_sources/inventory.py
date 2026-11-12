@@ -6,6 +6,8 @@ The table, the counts on the run and the export are built from the same query ov
 from __future__ import annotations
 
 import datetime as _dt
+import json
+import re
 import uuid
 from typing import Any
 
@@ -16,6 +18,10 @@ from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollec
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
 from backend.utilities.cbom_sources.common import iso_z
+# CB-06: per-component provenance, PQC class and algorithm families for the export
+from backend.utilities.cbom_sources import provenance as PROV
+from backend.utilities.cbom_sources.classify import family, quantum_vulnerable
+from backend.utilities.cbom_sources.posture import pqc_class
 
 EXPORT_CAP = 50_000
 # serialNumber = uuid5(this namespace, "<run id>:<KB version>"): the same run exported with the same knowledge base is
@@ -266,7 +272,152 @@ def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, A
     return out
 
 
-def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None) -> dict[str, Any]:
+# ----------------------------------------------------------------------------- what each component carries (CB-06)
+COVERAGE = "coverage"  # a coverage row says what was NOT read: a gap of the document, never a cryptographic asset
+COVERAGE_GAP_CAP = 5_000
+_LIST_CAP = 200
+_OID = re.compile(r"^[0-2](\.[0-9]{1,20}){1,40}$")
+# RFC 3339 date-time with upper-case T/Z (what both the JSON schema's date-time and the XSD's xs:dateTime accept)
+_DATE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,12})?(Z|[+-](\d{2}):(\d{2}))$")
+# facts CB-04 adds to the collectors' output (KF-9 extended), exported as zs:<name> whenever a collector wrote them
+_IDENTITY_FACTS = ("key_alg_oid", "sig_alg_oid", "parameter_set", "nist_category", "algorithm_unknown")
+
+
+def _text(value: Any, limit: int = 128) -> str | None:
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    text = (str(value).lower() if isinstance(value, bool) else str(value)).strip()[:limit]
+    return text or None
+
+
+def _first(facts: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        text = _text(facts.get(key))
+        if text:
+            return text
+    return None
+
+
+def _names(*values: Any) -> list[str]:
+    """Names from lists or comma-separated strings, in order, each once (at most ``_LIST_CAP``)."""
+    out: list[str] = []
+    for value in values:
+        items = value.split(",") if isinstance(value, str) else value if isinstance(value, (list, tuple)) else []
+        for item in items:
+            text = _text(item)
+            if text and text not in out and len(out) < _LIST_CAP:
+                out.append(text)
+    return out
+
+
+def _date_time(value: Any) -> str | None:
+    """A certificate date as an RFC 3339 date-time (CycloneDX ``notValidBefore/After``): kept as collected when it is
+    one; another readable time is written in UTC with Z (a time without an offset is UTC, as everywhere here);
+    anything else is left out, so one odd value from a collector never makes the whole document invalid."""
+    text = _text(value, 64)
+    if not text:
+        return None
+    text = text.upper()
+    match = _DATE_TIME.match(text)
+    if match:
+        try:
+            _dt.datetime.strptime(text[:19], "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+        if match.group(3) is not None and (int(match.group(3)) > 14 or int(match.group(4)) > 59):
+            return None  # xs:dateTime offsets stop at 14:00
+        return text
+    try:
+        moment = _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return iso_z(moment)
+
+
+def _key_primitive(algorithm: str) -> str:
+    """CycloneDX primitive of a certificate's subject key algorithm, by family (unknown when the family does not say)."""
+    fam = family(algorithm)
+    if fam == "RSA":
+        return "pke"
+    if fam in ("EC", "ECDSA", "ED25519", "ED448", "EDDSA", "DSA", "SM2"):
+        return "signature"
+    if fam in ("X25519", "X448", "ECDH", "DH"):
+        return "key-agree"
+    return "unknown"
+
+
+def _algorithm(ref: str, name: str, primitive: str, *, oid: str | None = None, curve: str | None = None,
+               parameter: str | None = None) -> dict[str, Any]:
+    props = {k: v for k, v in {"primitive": primitive, "parameterSetIdentifier": parameter, "curve": curve,
+                               # 0: a quantum computer breaks it (CycloneDX allows the level only on algorithms)
+                               "nistQuantumSecurityLevel": 0 if quantum_vulnerable(name) is True else None,
+                               }.items() if v is not None}
+    crypto: dict[str, Any] = {"assetType": "algorithm", "algorithmProperties": props}
+    oid = oid or (name if _OID.match(name) else None)
+    if oid and _OID.match(oid):
+        crypto["oid"] = oid
+    return {"type": "cryptographic-asset", "bom-ref": ref, "name": name[:255], "cryptoProperties": crypto}
+
+
+def _certificate_parts(ref: str, row: CbomCollectedAsset, facts: dict[str, Any], size: int | None,
+                       curve: str | None, signature: str | None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """CycloneDX 1.6 certificate references and the components they point at, nested in the certificate:
+    ``signatureAlgorithmRef`` -> the signature algorithm; ``subjectPublicKeyRef`` -> the public key (size), whose
+    ``algorithmRef`` -> the key algorithm (curve, or the size as its parameter set)."""
+    refs: dict[str, Any] = {}
+    nested: list[dict[str, Any]] = []
+    if signature and signature.lower() != "unknown":
+        refs["signatureAlgorithmRef"] = f"{ref}-signature-algorithm"
+        nested.append(_algorithm(refs["signatureAlgorithmRef"], signature, "signature",
+                                 oid=_first(facts, "sig_alg_oid")))
+    key_alg = _first(facts, "key_alg") or _text(row.algorithm)
+    key_alg = key_alg if key_alg and key_alg.lower() != "unknown" else None
+    if key_alg or size:
+        refs["subjectPublicKeyRef"] = f"{ref}-public-key"
+        material: dict[str, Any] = {"type": "public-key"}
+        if size:
+            material["size"] = size
+        if key_alg:
+            material["algorithmRef"] = f"{ref}-public-key-algorithm"
+        label = "-".join(str(part) for part in (key_alg, curve or size) if part) or "public key"
+        nested.append({"type": "cryptographic-asset", "bom-ref": refs["subjectPublicKeyRef"], "name": label[:255],
+                       "cryptoProperties": {"assetType": "related-crypto-material",
+                                            "relatedCryptoMaterialProperties": material}})
+        if key_alg:
+            nested.append(_algorithm(material["algorithmRef"], key_alg, _key_primitive(key_alg),
+                                     oid=_first(facts, "key_alg_oid"), curve=curve,
+                                     parameter=None if curve or not size else str(size)))
+    return refs, nested
+
+
+def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: dict[str, Any], size: int | None,
+                       curve: str | None, signature: str | None, view: dict[str, Any]) -> list[dict[str, str]]:
+    """The values the asset table and the oracle compare that CycloneDX has no field for (or not on this asset type):
+    PQC class, key size, curve, signature algorithm, key-exchange groups, SSH algorithm lists, CB-04 identity facts."""
+    out: list[tuple[str, str | None]] = [
+        ("zs:pqc_class", pqc_class(row.asset_type, row.quantum_vulnerable, list(view["finding_codes"]), facts)),
+        ("zs:key_size", str(size) if size else None), ("zs:curve", curve), ("zs:signature_algorithm", signature),
+    ]
+    out += [(f"zs:{name}", _text(facts.get(name))) for name in _IDENTITY_FACTS]
+    proto = crypto.get("protocolProperties") or {}
+    if crypto.get("assetType") == "protocol" and proto.get("type") == "ssh":
+        out += [("zs:kex_algorithms", ",".join(_names(facts.get("kex"), facts.get("kexalgorithms"))) or None),
+                ("zs:host_key_algorithms", ",".join(_names(facts.get("host_key_algs"), facts.get("hostkey_algorithms"),
+                                                           facts.get("hostkeyalgorithms"))) or None),
+                ("zs:ciphers", ",".join(_names(facts.get("ciphers"), facts.get("ciphers_s2c"),
+                                               facts.get("ciphers_c2s"))) or None),
+                ("zs:macs", ",".join(_names(facts.get("macs"), facts.get("macs_s2c"), facts.get("macs_c2s"))) or None)]
+    elif crypto.get("assetType") == "protocol":
+        # every group the server was seen to offer or accept: its own lists, the negotiated one, the PQ probe's
+        groups = sorted(set(_names(*(facts.get(k) for k in ("groups", "supported_groups", "accepted_groups",
+                                                           "pq_groups", "negotiated_group", "group", "pq_group")))))
+        out += [("zs:groups", ",".join(groups) or None),
+                ("zs:groups_negotiated", _first(facts, "negotiated_group", "group"))]
+    return [{"name": name, "value": value} for name, value in out if value]
+
+
+def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None,
+               prov: PROV.JobProvenance | None = None) -> dict[str, Any]:
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
@@ -289,10 +440,16 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         if run["finding"]:
             props.append({"name": "zs:run_finding", "value": run["finding"]})
     name = row.name or row.algorithm or row.location
+    size = next((v for v in (row.key_size, facts.get("key_size"))
+                 if isinstance(v, int) and not isinstance(v, bool) and 0 < v < 1_000_000), None)
+    curve = _first(facts, "curve", "crv")
+    signature = _first(facts, "sig_alg", "signature_alg", "signature_algorithm")
+    provenance = [{"name": key, "value": value} for key, value in PROV.values(row, prov).items()]
     if row.cdx_type == "library":
         from backend.utilities.cbom_sources.sbom_link import ecosystem_of, library_purl
 
         package, version = str(facts.get("package") or name)[:255], str(facts.get("version") or "")
+        props += _detail_properties(row, facts, {}, size, curve, signature, view) + provenance
         out = {"type": "library", "bom-ref": ref, "name": package, "version": version,
                "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
         # an OS package the node read from a package database carries its own purl (pkg:deb/ubuntu/libssl3@...,
@@ -304,11 +461,13 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
             out["purl"] = purl
         return out
     crypto: dict[str, Any] = {"assetType": row.cdx_type if row.cdx_type in ("certificate", "protocol", "related-crypto-material") else "algorithm"}
+    nested: list[dict[str, Any]] = []
     if crypto["assetType"] == "certificate":
+        refs, nested = _certificate_parts(ref, row, facts, size, curve, signature)
         crypto["certificateProperties"] = {
-            "subjectName": facts.get("subject"), "issuerName": facts.get("issuer"),
-            "notValidBefore": facts.get("not_before"), "notValidAfter": facts.get("not_after"),
-            "certificateFormat": "X.509", "certificateExtension": facts.get("format") or "pem",
+            "subjectName": _text(facts.get("subject"), 2048), "issuerName": _text(facts.get("issuer"), 2048),
+            "notValidBefore": _date_time(facts.get("not_before")), "notValidAfter": _date_time(facts.get("not_after")),
+            **refs, "certificateFormat": "X.509", "certificateExtension": _text(facts.get("format"), 32) or "pem",
         }
         crypto["certificateProperties"] = {k: v for k, v in crypto["certificateProperties"].items() if v}
     elif crypto["assetType"] == "protocol":
@@ -336,8 +495,35 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         }.items() if v is not None and v != ""}
     if row.algorithm:
         props.append({"name": "zs:algorithm", "value": row.algorithm})
-    return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
-            "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
+    props += _detail_properties(row, facts, crypto, size, curve, signature, view) + provenance
+    out = {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
+           "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
+    if nested:
+        out["components"] = nested
+    return out
+
+
+def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_names: dict[int, Any],
+                  provs: dict[int, PROV.JobProvenance]) -> list[dict[str, str]]:
+    """The run's coverage rows as document gaps: ``zs:coverage_gap_count`` (all of them) and one ``zs:coverage_gap``
+    per row (at most ``COVERAGE_GAP_CAP``), whose value is compact JSON: ``ref`` (``zs-asset-<id>``, the id the asset
+    API lists the row under), source, target, location, check, status, detail, scope, incomplete, by_choice, finding,
+    and the row's provenance (``provenance.NAMES`` without the ``zs:`` prefix; job_id and attempt as numbers)."""
+    out = [{"name": "zs:coverage_gap_count", "value": str(len(rows))}] if rows else []
+    for row in rows[:COVERAGE_GAP_CAP]:
+        facts = row.facts if isinstance(row.facts, dict) else {}
+        gap: dict[str, Any] = {
+            "ref": f"zs-asset-{row.id}", "source": names.get(row.source_id or 0) or job_names.get(row.job_id) or "",
+            "target": row.target or "", "location": row.location, "check": _text(facts.get("check"), 255),
+            "status": _text(facts.get("status"), 64), "detail": _text(facts.get("detail"), 512),
+            "scope": _names(facts.get("scope"))[:20], "incomplete": facts.get("incomplete") is True,
+            "by_choice": facts.get("by_choice") is True, "finding": row.finding,
+        }
+        for key, value in PROV.values(row, provs.get(row.job_id)).items():
+            gap[key[3:]] = int(value) if key in ("zs:job_id", "zs:attempt") and value.isdigit() else value
+        out.append({"name": "zs:coverage_gap", "value": json.dumps(gap, sort_keys=True, separators=(",", ":"),
+                                                                     ensure_ascii=False)})
+    return out
 
 
 def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
@@ -346,12 +532,15 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                         .order_by(CbomCollectedAsset.id).limit(EXPORT_CAP + 1)).all()
     truncated = len(rows) > EXPORT_CAP
     rows = rows[:EXPORT_CAP]
+    coverage = [row for row in rows if row.asset_type == COVERAGE]  # what was not read: gaps of the document
+    rows = [row for row in rows if row.asset_type != COVERAGE]  # the cryptographic assets: one component each
     today = now if now.tzinfo is None else now.astimezone(_dt.timezone.utc).replace(tzinfo=None)
     views = {row.id: shown(row, today) for row in rows}
     judged_on = next((v["as_of_run"]["judged_on"] for v in views.values() if v["as_of_run"]), None)
     jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all()
     names = _source_names(session, run.team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
+    provs = PROV.load(session, run.team_id, jobs)
     gaps = []
     for job in jobs:
         info = _job_targets(job, names)
@@ -377,9 +566,10 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                 *[{"name": name, "value": str(value)} for name, value in versions],
                 *([{"name": "zs:judged_on", "value": judged_on}] if judged_on else []),
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
+                *coverage_gaps(coverage, names, job_names, provs),
             ],
         },
-        "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id])
-                       for row in rows],
+        "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
+                                  provs.get(row.job_id)) for row in rows],
         "vulnerabilities": vulnerabilities(list(rows), views),
     }

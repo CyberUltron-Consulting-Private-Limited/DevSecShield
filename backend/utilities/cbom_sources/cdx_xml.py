@@ -24,8 +24,9 @@ The schemas are vendored, unmodified, from the CycloneDX specification repositor
 sha256 cbc2211755af5ecf9b52dd514c14e4af6f74985b76cf75876ad2608741cb58dc). Validation never touches the network: the
 XSD's ``http://cyclonedx.org/schema/spdx`` import is resolved to the vendored file.
 
-Signature: ``bom_signature`` (HMAC over the canonical JSON) covers the JSON document only. The XML is generated from
-that same JSON; to check integrity, verify the JSON download (the XML response says so in ``X-ZS-Signature-Scope``).
+Signature: for a code scan's BOM, ``bom_signature`` (HMAC over the canonical JSON) covers the JSON document only. The
+XML is generated from that same JSON; to check integrity, verify the JSON download (the code-scan XML response says so
+in ``X-ZS-Signature-Scope``). A collection run's CBOM is not signed, so its XML response carries no such header.
 """
 from __future__ import annotations
 

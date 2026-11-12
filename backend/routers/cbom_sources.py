@@ -728,7 +728,7 @@ def _remove_source(session: Session, source: CbomCollectionSource, team_id: int,
     J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
     for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
         # the stable uid stays on the job, so the deleted source's runs still compare with each other
-        job.params = {**(job.params or {}), "source_name": source.name,
+        job.params = {**(job.params or {}), "source_name": source.name, "source_kind": source.kind,
                       "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
         job.source_id = None
         session.add(job)
@@ -1405,11 +1405,11 @@ async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(defaul
                    Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     payload = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id)
-    if format == "xml":  # the same document, written as XML (cdx_xml); the signature covers the JSON form only
+    if format == "xml":  # the same document, written as XML (cdx_xml). A run's CBOM is not signed (only code-scan
+        # BOMs are, certin.py), so this response states no signature scope
         body = await _run("run cbom xml", team_id, CDX_XML.to_xml, payload)
         return Response(body, media_type=CDX_XML.XML_MEDIA_TYPE, headers={
-            **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.xml"',
-            "X-ZS-Signature-Scope": CDX_XML.SIGNATURE_SCOPE})
+            **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.xml"'})
     return JSONResponse(payload, headers={**PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
 
 
