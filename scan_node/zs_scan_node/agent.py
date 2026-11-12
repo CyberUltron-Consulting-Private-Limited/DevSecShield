@@ -356,6 +356,7 @@ class Agent:
                          deadline=deadline, deadline_reason=reason, poster=poster, state_dir=self.state.directory,
                          node_private_key_path=self.state.key_path, vault_prefix=self.vault_prefix,
                          agent_mode=self.agent_mode)
+        ctx.cert_refresher = lambda: self.api.ssh_cert(job_id, attempt, lease_id)  # F1.4: SSH CA certificates
         if self.stop_network.is_set() and is_network:
             ctx.stop_network.set()
         running = Running(job_id, lease_id, ctx, is_network, scope_never)
