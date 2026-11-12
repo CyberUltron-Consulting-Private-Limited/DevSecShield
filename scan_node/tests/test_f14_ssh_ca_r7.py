@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -194,3 +195,138 @@ def test_a_refused_certificate_login_says_what_the_server_had_to_accept(tmp_path
     for needle in ("serial 42", "zs-1-prod", "10.0.0.5", "TrustedUserCAKeys", "principals file", "clock",
                    "RevokedKeys", "valid until"):
         assert needle in text, (needle, text)
+
+
+# ============================================================================ code/QA re-check 5874197917 (e913f46)
+def _short_cert(key, serial: int, ttl: int) -> str:
+    now = int(time.time())
+    skew = min(60, ttl // 5)
+    return (SSHCertificateBuilder().public_key(key.public_key()).serial(serial).type(SSHCertificateType.USER)
+            .key_id(b"zs:1:2:3:1").valid_principals([b"zs-1-prod"]).valid_after(now - skew)
+            .valid_before(now - skew + ttl).add_critical_option(b"source-address", b"10.0.0.5")
+            .sign(CA).public_bytes().decode())
+
+
+def test_the_clock_tolerance_in_the_refusal_comes_from_the_certificate(tmp_path):
+    """QA nit sshca.py:232: 60 s only for TTL >= 300; at TTL 60 the server may be 12 s off."""
+    path, key = _node_key(tmp_path)
+    long = sshca.CertSource(str(path), _short_cert(key, 1, 300), 240, 120, None).refusal_detail("zs-cbom")
+    short = sshca.CertSource(str(path), _short_cert(key, 2, 60), 48, 24, None).refusal_detail("zs-cbom")
+    assert "within 60 s" in long and "within 12 s" in short, short
+
+
+def test_open_session_reports_a_refused_certificate_with_its_serial(tmp_path, monkeypatch):
+    """QA nit linux_ssh.py:356 (mutant NK5): the transport refuses the certificate login."""
+    import socket
+
+    import paramiko as pk
+
+    from zs_scan_node import netutil
+    from zs_scan_node.collectors import linux_ssh as L
+    from zs_scan_node.jobctx import JobContext
+    from zs_scan_node.netutil import NeverScan, Target
+    from zs_scan_node.scrub import Scrubber
+
+    path, key = _node_key(tmp_path)
+    host = pk.Ed25519Key.generate() if hasattr(pk.Ed25519Key, "generate") else None
+    host_key = host or pk.Ed25519Key.from_private_key_file(str(path))
+
+    class FakeTransport:
+        _key_info = {}
+        banner_timeout = auth_timeout = 0
+
+        def __init__(self, sock):
+            self.closed = False
+
+        def get_security_options(self):
+            return type("O", (), {"key_types": ()})()
+
+        def start_client(self, timeout=None):
+            return None
+
+        def get_remote_server_key(self):
+            return host_key
+
+        def auth_publickey(self, user, k):
+            raise pk.AuthenticationException("refused")
+
+        def is_authenticated(self):
+            return False
+
+        def close(self):
+            self.closed = True
+
+    a, b = socket.socketpair()
+    monkeypatch.setattr(netutil, "connect", lambda *args, **kw: a)
+    monkeypatch.setattr(L.paramiko, "Transport", FakeTransport)
+    ctx = JobContext(job_id=7, attempt=1, run_id=None, kind="collect", source_kind="linux_servers",
+                     scrubber=Scrubber([]), never_scan=NeverScan(), deadline=time.monotonic() + 60,
+                     state_dir=str(tmp_path), node_private_key_path=str(path))
+    src = sshca.CertSource(str(path), _short_cert(key, 77, 300), 240, 120, None)
+    with pytest.raises(L.TargetFail) as err:
+        L.open_session(ctx, Target("10.0.0.9", "10.0.0.9"), {"host_key_policy": "tofu"}, {"cert_source": src})
+    a.close()
+    b.close()
+    assert err.value.status == "auth_failed"
+    assert "serial 77" in err.value.error and "TrustedUserCAKeys" in err.value.error, err.value.error
+
+
+def test_with_nothing_usable_left_renewal_backs_off_exponentially_and_honours_retry_after(tmp_path):
+    """QA nit sshca.py:186: 62 calls in a 400 s outage before; now 2, 4, 8 ... 30 s apart, never sooner than the
+    route's Retry-After."""
+    path, key = _node_key(tmp_path)
+    clock = Clock(0.0)
+    calls: list[float] = []
+
+    def refresher():
+        calls.append(clock())
+        raise node_api.ApiError(503, "AWS KMS is not answering right now", retry_after=None) \
+            if len(calls) % 2 else node_api.ApiError(400, "refused")
+
+    src = sshca.CertSource(str(path), None, None, 120, refresher, clock=clock)
+    for second in range(0, 400):
+        clock.t = float(second)
+        try:
+            src.key()
+        except sshca.CertUnavailable:
+            pass
+        src.wait_renewal(2)
+    gaps = [b - a for a, b in zip(calls, calls[1:])]
+    assert len(calls) <= 18, (len(calls), calls)
+    assert gaps[:4] == [2.0, 4.0, 8.0, 16.0] and max(gaps) == 30.0, gaps
+
+    clock2 = Clock(0.0)
+    calls2: list[float] = []
+
+    def busy():
+        calls2.append(clock2())
+        raise node_api.ApiError(503, "AWS KMS is not answering right now", retry_after=15.0)
+
+    src2 = sshca.CertSource(str(path), None, None, 120, busy, clock=clock2)
+    for second in range(0, 60):
+        clock2.t = float(second)
+        try:
+            src2.key()
+        except sshca.CertUnavailable:
+            pass
+        src2.wait_renewal(2)
+    gaps2 = [b - a for a, b in zip(calls2, calls2[1:])]
+    assert gaps2 and min(gaps2) >= 15.0, gaps2
+
+
+def test_the_certificate_route_is_called_once_per_renewal_with_its_retry_after():
+    """The node's call itself does not retry a 503 (the renewal back-off does) and keeps the Retry-After."""
+    import httpx
+
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(1)
+        return httpx.Response(503, json={"detail": "AWS KMS is not answering right now"}, headers={"Retry-After": "15"})
+
+    client = node_api.Api("https://zs.example", "zsn_" + secrets.token_hex(20))  # generated at run time
+    client.client = httpx.Client(base_url="https://zs.example", transport=httpx.MockTransport(handler))
+    client._wait = lambda seconds: None
+    with pytest.raises(node_api.ApiError) as err:
+        client.ssh_cert(42, 2, "lease-abc")
+    assert len(seen) == 1 and err.value.status == 503 and err.value.retry_after == 15.0
