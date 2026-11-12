@@ -6,8 +6,7 @@
 # was skipped although its paths changed.
 #
 #   changes      what changed -> which suites run, and the image list
-#   pr-checks    branch-flow (staging <- dev, main <- staging | hotfix/*), review-labels (drop outdated review labels),
-#                pr-hygiene (title, acceptance criteria, no secret files, gate changes and suppressions need a label)
+#   pr-checks    branch-flow (staging <- dev, main <- staging | hotfix/*), pr-hygiene (title, acceptance criteria)
 #   backend      backend/ pytest on Python 3.12 with PostgreSQL 15, ruff "no new findings"
 #   aibom        aibom/ pytest (AI-BOM + CBOM gates), ruff + mypy "no new findings", representative-repo gates
 #   cbom-action  .github/actions/cbom-scan: a clean tree passes, a vulnerable tree is blocked (exit 1, not 127)
@@ -17,7 +16,8 @@
 #   dast-worker  RabbitMQ/dast_worker pytest (helpers/tests/test_*)
 #   worker-locks uv lock --check for the guardrail worker
 #   frontend     npm ci, tsc, eslint "no new errors", *.test.ts with tsx, next build
-#   security     gitleaks, ggshield, Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint
+#   security     Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint (no secret scanning since
+#                2026-11-12, owner decision)
 #   codeql       python + javascript-typescript (only where CodeQL is licensed; see reusable-codeql.yml)
 #   images       docker build (no push) + Trivy image scan for each changed image
 #   ci-gate      summary of all of the above; the required status check
@@ -281,7 +281,7 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-      pull-requests: write # review-labels removes review labels that new commits outdate; it checks out nothing
+      pull-requests: read # pr-hygiene reads the PR's title and body
     uses: ./.github/workflows/reusable-pr-checks.yml
 
   backend:
@@ -510,11 +510,10 @@ jobs:
     name: security
     permissions:
       contents: read
-      pull-requests: read # gitleaks reads the PR's secret-fixtures-reviewed label
     uses: ./.github/workflows/reusable-security.yml
     with:
       # Deliberately vulnerable detector fixtures and benchmark clones, anchored to their real roots (a future
-      # product directory named "fixtures" or "examples" elsewhere is still scanned). gitleaks ignores this list.
+      # product directory named "fixtures" or "examples" elsewhere is still scanned).
       exclude-regex: >-
         ^(aibom/tests/fixtures|scan_node/tests/fixtures|backend/tests/fixtures|e2e/fixtures|bench/repos|aibom/bench/repos|aibom/examples)/|(^|/)(node_modules|\.venv|venv|\.next|dist)/
       semgrep-exclude: >-
@@ -527,8 +526,6 @@ jobs:
       helm-charts: >-
         deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
         --set agent.enabled=true --set agent.poolToken=ci-placeholder
-    secrets:
-      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
 
   codeql:
     name: codeql
