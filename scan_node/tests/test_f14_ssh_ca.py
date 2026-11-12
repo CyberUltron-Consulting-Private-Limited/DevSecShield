@@ -94,11 +94,14 @@ def test_cert_source_renews_before_expiry_and_falls_back_while_the_old_one_lasts
     assert calls == []  # 300 s left: no renewal
     clock.t += 200  # 100 s left: inside the 120 s window
     answers.append({"certificate": _cert(key, serial=2), "expires_in_s": 300, "serial": 2})
+    assert src.key() is first  # 100 s left: renewed in the background while this login uses the current one
+    assert src.wait_renewal(2)
     second = src.key()
     assert calls == [1] and second is not first and src.serial == 2 and src.renewals == 1
     clock.t += 250  # 50 s left; ZeroShield cannot be reached: keep using the current certificate
     answers.append(node_api.ApiError(0, "ConnectError"))
     assert src.key() is second
+    assert src.wait_renewal(2)
     clock.t += 45  # 5 s left and renewal refused: no certificate for a new login
     answers.append(node_api.ApiError(400, "The source's SSH CA has no active key (missing, revoked or not promoted)"))
     with pytest.raises(sshca.CertUnavailable, match="no active key"):
