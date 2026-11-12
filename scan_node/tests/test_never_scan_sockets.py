@@ -379,7 +379,9 @@ def test_the_unspecified_address_never_reaches_the_node_itself(lis, dns):
 # ----------------------------------------------------------------------------- a host listed by its name
 def test_a_host_listed_by_name_is_not_contacted_by_alias_address_range_or_sni(lis, dns):
     table, _ = dns
-    table["db.corp.internal"] = ["127.0.0.2"]
+    # a loopback-only answer is no usable address (a blocklist's answer): the listed host also has a real address,
+    # and the loopback one it answered stays blocked with it
+    table["db.corp.internal"] = ["127.0.0.2", "192.0.2.10"]
     table["db"] = ["127.0.0.2"]  # the short name of the same host (resolver search domain)
     table["alias.internal"] = ["127.0.0.2"]  # a CNAME to it
     ctx = _ctx(["db.corp.internal"])

@@ -47,6 +47,10 @@ FRESH_S = 5.0
 # Answers that are no host's address: what DNS sinkholes and RPZ policies return (0.0.0.0, ::), multicast, broadcast.
 _NO_HOST_NETS = _UNSPECIFIED_NETS + (ipaddress.ip_network("224.0.0.0/4"), ipaddress.ip_network("255.255.255.255/32"),
                                      ipaddress.ip_network("ff00::/8"))
+# Loopback is no remote host's address either: the node runs in its own network namespace (docker run, the Helm pod,
+# the AMI/OVA wrapper), and hosts-file blocklists answer 127.0.0.1.  An answer of only loopback (with or without the
+# above) is no usable address; in a mixed answer the loopback addresses are blocked along with the real ones.
+_LOOPBACK_NETS = (ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128"))
 
 
 def _reaches(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> tuple:
@@ -108,7 +112,9 @@ class NameResolver:
 
     An answer is the host's addresses only when it has a usable one: 0.0.0.0/8, ::, multicast and broadcast addresses
     (and their IPv4-mapped and NAT64 forms) are what DNS sinkholes and RPZ policies answer, not the address of any
-    host, so they are dropped, and an answer with nothing else is a failure (``why`` says what it answered)."""
+    host, so they are dropped; loopback addresses are no remote host's either (blocklists answer 127.0.0.1).  An
+    answer with nothing else is a failure (``why`` says what it answered); a usable answer keeps its loopback
+    addresses blocked too."""
 
     def __init__(self, workers: int | None = None) -> None:
         self._cond = threading.Condition()
@@ -261,14 +267,20 @@ class NameResolver:
                 self._cond.notify_all()
 
 
+def _in_nets(forms, nets) -> bool:
+    return any(f.version == n.version and f in n for f in forms for n in nets)
+
+
 def _no_host(forms) -> bool:
-    return any(f.version == n.version and f in n for f in forms for n in _NO_HOST_NETS)
+    return _in_nets(forms, _NO_HOST_NETS)
 
 
 def _usable_answer(name: str) -> tuple[set, str | None]:
-    """(every address the name's usable answers reach, or empty; what it answered when nothing was usable)."""
+    """(every address the name's answer reaches when it has a usable one, loopback included, or empty; what it
+    answered when nothing was usable)."""
     found: set = set()
-    unusable: list[str] = []
+    loopback: set = set()
+    odd: list[str] = []  # the answers that are no remote host's address, as the resolver wrote them
     try:
         answer = resolve(name)  # the module's resolve (tests replace it)
     except Exception:  # noqa: BLE001 - a name that does not resolve stays unresolved and is retried
@@ -279,13 +291,18 @@ def _usable_answer(name: str) -> tuple[set, str | None]:
         except ValueError:
             continue
         if _no_host(forms):
-            unusable.append(str(ip))  # as the resolver wrote it
+            odd.append(str(ip))
+        elif _in_nets(forms, _LOOPBACK_NETS):
+            odd.append(str(ip))
+            loopback.update(forms)
         else:
             found.update(forms)
-    if found or not unusable:
+    if found:
+        return found | loopback, None
+    if not odd:
         return found, None
-    shown = ", ".join(unusable[:3]) + (" ..." if len(unusable) > 3 else "")
-    return found, f"answers only {shown}, a DNS sinkhole answer"
+    shown = ", ".join(odd[:3]) + (" ..." if len(odd) > 3 else "")
+    return found, f"answers only {shown}, a {'loopback or ' if loopback else ''}DNS sinkhole answer"
 
 
 _RESOLVER: NameResolver | None = None

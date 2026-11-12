@@ -108,7 +108,7 @@ def test_a_name_that_never_answers_is_held_at_most_name_lookup_s(slow_dns, monke
     never = NeverScan(["slow.internal"])
     assert time.monotonic() - started < 0.2  # setting the list never waits for DNS
     entry = never.match_ip("10.0.0.5")  # the job's own thread waits for the answer, bounded
-    assert 0.2 < time.monotonic() - started < 1.5
+    assert 0.2 < time.monotonic() - started < 1.0  # the bound, with slack for a loaded runner (not 4x the bound)
     assert entry is not None and "slow.internal" in entry and never.unresolved == ["slow.internal"]
     with pytest.raises(netutil.Blocked, match="slow.internal has not resolved from the scan node"):
         netutil.checked_ip("10.0.0.5", never)
@@ -246,18 +246,28 @@ def test_a_connection_test_says_why_every_address_was_held(slow_dns, monkeypatch
 
 # ----------------------------------------------------------------------------- round 2 (re-review 5873185024)
 @pytest.mark.parametrize("answer", [["0.0.0.0"], ["0.1.2.3"], ["::"], ["::ffff:0.0.0.0"], ["64:ff9b::"],
-                                    ["0.0.0.0", "::"], ["224.0.0.1"], ["255.255.255.255"], ["ff02::1"]])
+                                    ["0.0.0.0", "::"], ["224.0.0.1"], ["255.255.255.255"], ["ff02::1"],
+                                    ["127.0.0.1"], ["::1"], ["::ffff:127.0.0.1"], ["127.0.1.1", "0.0.0.0"]])
 def test_a_listed_name_answering_only_a_sinkhole_address_holds_every_target(slow_dns, answer):
-    """A DNS sinkhole (or RPZ local data) answering 0.0.0.0 or :: is not an address of the host: the node still has
-    no address for the listed name, so the real host may be any target and every target is held, with the reason."""
+    """A DNS sinkhole (or RPZ local data, or a hosts-file blocklist answering 127.0.0.1) is not an address of the host:
+    the node still has no address for the listed name, so the real host may be any target and every target is held,
+    with the reason.  The node runs in its own network namespace, so no remote host is on its loopback."""
     slow_dns.table["prod-db.corp.internal"] = answer
     never = NeverScan(["prod-db.corp.internal"])
     reasons: dict[str, str] = {}
     targets, skipped = expand_targets(["10.1.2.0/29"], never, reasons=reasons)
     assert targets == [] and "10.1.2.3" in skipped
     assert never.unresolved == ["prod-db.corp.internal"]
-    assert f"answers only {answer[0]}" in reasons["10.1.2.4"] and "a DNS sinkhole answer" in reasons["10.1.2.4"]
+    assert f"answers only {answer[0]}" in reasons["10.1.2.4"] and "sinkhole answer" in reasons["10.1.2.4"]
     assert UNRESOLVED in reasons["10.1.2.4"]
+
+
+def test_a_mixed_answer_with_a_loopback_address_blocks_both(slow_dns):
+    slow_dns.table["db.corp.internal"] = ["127.0.0.2", "192.0.2.10"]
+    never = NeverScan(["db.corp.internal"])
+    assert never.match_ip("192.0.2.10") == never.match_ip("127.0.0.2") == "an address of db.corp.internal"
+    assert never.match_ip("::ffff:127.0.0.2") == "an address of db.corp.internal"
+    assert never.match_ip("127.0.0.3") is None and never.unresolved == []
 
 
 def test_a_mixed_answer_keeps_its_real_addresses(slow_dns):
@@ -284,19 +294,58 @@ def test_a_sinkhole_answer_on_refresh_keeps_the_addresses_learned_before(slow_dn
 
 def test_a_new_job_looks_listed_names_up_again_before_its_first_target(slow_dns, monkeypatch):
     """Another running job already lists the name: the new job still gets a lookup made after it started (not an
-    answer up to NAME_REFRESH_S old) before it checks its first target."""
-    monkeypatch.setattr(netutil, "FRESH_S", 0.05, raising=False)  # jobs starting this close share one lookup
+    answer up to NAME_REFRESH_S old) before it checks its first target, in the agent's order: the watcher's first
+    sync() merges the cached answer before the collector's first check, and the new lookup takes a moment."""
+    monkeypatch.setattr(netutil, "FRESH_S", 0.05)  # jobs starting this close share one lookup
     slow_dns.table["prod-db.corp.internal"] = ["10.1.2.3"]
     job_a = NeverScan(["prod-db.corp.internal"])
     assert job_a.match_ip("10.1.2.3") == "an address of prod-db.corp.internal"
     time.sleep(0.1)
-    slow_dns.table["prod-db.corp.internal"] = ["10.1.2.9"]  # re-pointed while job A runs
+    slow_dns.table["prod-db.corp.internal"] = ["10.1.2.9"]  # re-pointed while job A runs ...
+    real = netutil.resolve
+    monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: (time.sleep(0.5), real(name))[1])  # ... slowly
     time.sleep(0.2)
     job_b = NeverScan(["prod-db.corp.internal", "10.5.0.0/16"])
+    job_b.sync()  # Agent.run_job starts the watcher first: its first pass merges the cached answer (10.1.2.3)
     targets, _skipped = expand_targets(["10.1.2.8/29"], job_b)
     assert "10.1.2.9" not in [t.ip for t in targets]
-    assert job_b.match_ip("10.1.2.9") == "an address of prod-db.corp.internal"
+    assert job_b.match_ip("10.1.2.9") == job_b.match_ip("10.1.2.3") == "an address of prod-db.corp.internal"
     assert slow_dns.looked_up.count("prod-db.corp.internal") == 2
+
+
+def test_a_lookup_in_flight_that_started_too_early_is_followed_by_one_for_the_new_job(monkeypatch):
+    """A refresh of the name started more than FRESH_S before the new job and is still running (a slow resolver) when
+    it starts: its answer predates the job, so the resolver looks the name up once more after it, and the new job
+    waits for that one."""
+    monkeypatch.setattr(netutil, "FRESH_S", 0.2)
+    monkeypatch.setattr(netutil, "NAME_LOOKUP_S", 3.0)
+    table = {"prod-db.corp.internal": ["10.1.2.3"]}
+    slow, release, calls = threading.Event(), threading.Event(), []
+
+    def resolve(name, timeout=5.0):
+        answer = list(table[name])  # what DNS says when the lookup starts ...
+        calls.append(answer)
+        if slow.is_set() and len(calls) == 2:
+            release.wait(10)  # ... delivered late (the refresh in flight)
+        return answer
+
+    monkeypatch.setattr(netutil, "resolve", resolve)
+    job_a = NeverScan(["prod-db.corp.internal"])
+    assert job_a.match_ip("10.1.2.3") == "an address of prod-db.corp.internal"
+    slow.set()
+    job_a.update(["prod-db.corp.internal", "10.6.0.0/16"])  # a team change: job A's names are refreshed now; it hangs
+    time.sleep(0.4)  # more than FRESH_S
+    table["prod-db.corp.internal"] = ["10.1.2.9"]  # re-pointed after that refresh started
+    job_b = NeverScan(["prod-db.corp.internal"])
+    job_b.sync()
+    threading.Timer(0.3, release.set).start()  # the stale refresh returns 10.1.2.3 ...
+    targets, _skipped = expand_targets(["10.1.2.8/29"], job_b)  # ... and job B waits for the lookup made for it
+    try:
+        assert "10.1.2.9" not in [t.ip for t in targets]
+        assert job_b.match_ip("10.1.2.9") == "an address of prod-db.corp.internal"
+        assert [c[0] for c in calls] == ["10.1.2.3", "10.1.2.3", "10.1.2.9"]
+    finally:
+        release.set()
 
 
 def test_a_closed_job_whose_list_changes_does_not_drop_another_jobs_names(slow_dns, monkeypatch):
