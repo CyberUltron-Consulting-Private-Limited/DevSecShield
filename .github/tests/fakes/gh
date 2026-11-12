@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Fake `gh api <path> [--jq <expr>]` for the publish-ghcr.yml step tests: answers from $FAKE_STATE/gh/<path with / -> _>
+# (a JSON file); a path with no file fails like a 404. Calls are appended to $FAKE_STATE/calls.log.
+set -euo pipefail
+echo "gh $*" >> "$FAKE_STATE/calls.log"
+[ "${1:-}" = api ] || { echo "fake gh: unsupported $*" >&2; exit 2; }
+path=$2
+shift 2
+jqexpr=.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --jq) jqexpr=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+f="$FAKE_STATE/gh/${path//\//_}"
+[ -f "$f" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+jq -r "$jqexpr" "$f"
