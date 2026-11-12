@@ -483,6 +483,7 @@ def test_claim_plugin_mints_in_the_claim_and_never_raises(api, ca_world):
     facts = C.read_cert(out["secrets"]["ssh_certificate"])
     assert facts.public_key_blob == C.public_blob(line) and facts.serial == out["config"]["ssh_ca"]["serial"]
     assert out["config"]["ssh_ca"]["refresh_before_s"] == 120 and out["config"]["ssh_ca"]["expires_in_s"] >= 235
+    assert out["config"]["ssh_ca"]["backdated_s"] == 60  # the node names it when a login is refused
     with Session(engine) as session:
         rows = session.exec(select(CbomSshCertIssued)).all()
         assert [(r.job_id, r.via) for r in rows] == [(test["job_id"], "claim")]
