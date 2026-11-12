@@ -3,7 +3,7 @@ from fastapi import Depends, FastAPI, HTTPException, Header, status, APIRouter
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from backend.utilities.auth.auth_schema import NoEchoValidationRoute, clean_email, clean_new_password
 import datetime
 from backend.utilities.auth.auth_utils import (
@@ -43,7 +43,10 @@ class UpdateUserPlanData(BaseModel):
 
 class UpdateTeamCreditBalanceData(BaseModel):
     team_id: int
-    credit_balance: int
+    # credits are fractional (Team.credit_balance is a float; prices are to the cent, a server is 0.2, a chat message
+    # 0.006), so any finite number; NaN / Infinity, which Python's JSON parser accepts, would break every later
+    # comparison. Negative: 400 below. The admin console checks the same (frontend/utils/adminCredits.ts).
+    credit_balance: float = Field(allow_inf_nan=False)
 
 class ToggleAdminAccessData(BaseModel):
     user_id: int
