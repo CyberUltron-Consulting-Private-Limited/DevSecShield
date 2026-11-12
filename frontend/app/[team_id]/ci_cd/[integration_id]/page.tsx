@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
-import { getCicdIntegrationDashboard, CicdIntegrationDashboard, updateCicdIntegration, UpdateCicdIntegrationData, type CicdLog, type SastAppLang } from "@/utils/backend_api";
+import { getCicdIntegrationDashboard, CicdIntegrationDashboard, updateCicdIntegration, UpdateCicdIntegrationData, type SastAppLang } from "@/utils/backend_api";
 import { formatDateIst as formatDate, formatDateOnlyIst, formatMediumDateIst } from "@/utils/datetime";
 import Link from "next/link";
 import { GitHubActionsGuide } from "@/components/GitHubActionsIntegrationGuide";
@@ -26,6 +26,7 @@ import { JenkinsGuide } from "@/components/JenkinsIntegrationGuide";
 import { JenkinsDastGuide } from "@/components/JenkinsDastGuide";
 import { BambooGuide } from "@/components/BambooIntegrationGuide";
 import { GitLabCiGuide } from "@/components/GitLabCiIntegrationGuide";
+import { PolicyGateBadge } from "@/components/cicd/PolicyGateBadge";
 import { DastProfilesTab } from "@/components/dast/DastProfilesTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -164,18 +165,6 @@ export default function CicdIntegrationDashboardPage() {
       return <Badge className="bg-gray-500 hover:bg-gray-600 text-white"><AlertCircle className="w-3 h-3 mr-1" />Not Started</Badge>;
     }
     return <Badge variant="outline">{status}</Badge>;
-  };
-
-  // CBOM policy gate verdict as the pipeline received it (stored on the log); older logs have none.
-  const getGateBadge = (gate: CicdLog["gate"]) => {
-    if (!gate) return <span className="text-zinc-400">—</span>;
-    if (gate.verdict === "pass") {
-      return <Badge className="bg-green-500 hover:bg-green-600 text-white" title={gate.reason}><CheckCircle2 className="w-3 h-3 mr-1" />Passed</Badge>;
-    }
-    if (gate.verdict === "fail") {
-      return <Badge className="bg-red-600 hover:bg-red-700 text-white" title={gate.reason}><XCircle className="w-3 h-3 mr-1" />Blocked ({gate.failing_count})</Badge>;
-    }
-    return <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white" title={gate.reason}><AlertCircle className="w-3 h-3 mr-1" />No verdict</Badge>;
   };
 
   const handleViewResults = (log: { id: string; scan_id?: number | null; scan_kind?: string | null }) => {
@@ -599,7 +588,7 @@ export default function CicdIntegrationDashboardPage() {
                           </TableCell>
                           {isCbomIntegration && (
                             <TableCell>
-                              {getGateBadge(log.gate)}
+                              <PolicyGateBadge gate={log.gate} />
                             </TableCell>
                           )}
                           <TableCell className="text-zinc-600 dark:text-zinc-400 font-mono tabular-nums">
