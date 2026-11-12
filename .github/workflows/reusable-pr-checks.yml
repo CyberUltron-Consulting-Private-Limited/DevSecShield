@@ -15,14 +15,15 @@
 #               `pull-requests: write`; it checks out nothing.
 # pr-hygiene    title format; the template's "Acceptance criteria" table filled in (bots exempt); no secret-bearing
 #               file (.env, keys, keystores, credential files; case-insensitive) added or modified (deleting one is
-#               allowed, and so is MODIFYING one back to production-branch's exact blob); and changes to the security
-#               gates themselves (.github/**, scanner configs, ignore files; added, modified, renamed or DELETED) and
-#               added inline suppressions (nosemgrep, checkov:skip, ...) need the `security-config-reviewed` label.
-#               In a promotion (base in promotion-bases, head in trusted-heads, same repository) a gate file needs no
+#               allowed); and changes to the security gates themselves (.github/**, scanner configs, ignore files;
+#               added, modified, renamed or DELETED) and added inline suppressions (nosemgrep, checkov:skip, ...)
+#               need the `security-config-reviewed` label. Title, body and labels are read from the API when the job
+#               runs, so after editing the PR or adding a label, re-run the failed jobs.
+#               Two exceptions. A secret-bearing file MODIFIED back to production-branch's exact blob passes. In a
+#               promotion (base in promotion-bases, head in trusted-heads, same repository) a gate file needs no
 #               label when every commit that changes it came in through a merged PR that carried the label: the
 #               review-coverage step checks that with .github/ci/review_coverage.py taken from the BASE commit (or
-#               from a protected head), never from the PR's own head. Title, body and labels are read from the API
-#               when the job runs, so after editing the PR or adding a label, re-run the failed jobs.
+#               from a protected head), never from the PR's own head.
 name: reusable / pr checks
 
 on:

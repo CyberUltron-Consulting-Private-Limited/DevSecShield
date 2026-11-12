@@ -538,11 +538,12 @@ Builds use Buildx's `docker` driver; with `cache: true` the runner's Docker must
 `require-acceptance-criteria` (`true`; bots are exempt), `acceptance-heading-regex`, `forbidden-files-regex`,
 `allowed-files-regex` (`*.pub`, `.env.example` / `.sample` / `.template` / `.dist`), `secret-fixture-label`,
 `secret-fixture-regex`, `security-config-regex`, `security-config-label`, `suppression-regex`
-(`nosemgrep|checkov:skip|hadolint ignore|shellcheck disable|trivy:ignore`), `trusted-heads` (`dev staging`: promotion
-heads; a protected one may supply its own copy of the review-coverage rule), `promotion-bases` (`staging main`),
-`production-branch` (`main`: a modified secret-bearing file passes only as this branch's exact blob). The caller
-grants `contents: read` and `pull-requests: write` (the review-labels job removes outdated labels; it checks out
-nothing; pr-hygiene checks out blobless history only for a promotion's review-coverage step and runs nothing from it).
+(`nosemgrep|checkov:skip|hadolint ignore|shellcheck disable|trivy:ignore`). The caller grants `contents: read` and
+`pull-requests: write` (the review-labels job removes outdated labels; it checks out nothing).
+Also `trusted-heads` (`dev staging`: promotion heads; a protected one may supply its own copy of the review-coverage
+rule), `promotion-bases` (`staging main`) and `production-branch` (`main`: a modified secret-bearing file passes only
+as this branch's exact blob). pr-hygiene checks out blobless history only for a promotion's review-coverage step and
+runs nothing from it.
 
 **pr-labels.yml**: `configuration-path` (`.github/labeler.yml`), `size-thresholds` (`10 50 250 1000`). The caller
 grants `pull-requests: write`.
