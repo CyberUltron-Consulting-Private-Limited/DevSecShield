@@ -5,6 +5,7 @@
 // When the stack cannot honour the rule yet (no node image, no alias), the plan still starts the node so the later
 // steps judge real product output, but it records every extra token: G3 then fails (ledger row PRE-node-on-L).
 import { spawnSync } from "node:child_process";
+import { isIP } from "node:net";
 
 /** Split a POSIX-shell command line (single/double quotes, backslash-newline continuations) into argv. */
 export function splitCommand(text) {
@@ -110,4 +111,27 @@ export function tokenDiff(uiArgv, runArgv) {
     if (i >= 0) left.splice(i, 1); else added.push(t);
   }
   return { added, removed: left };
+}
+
+// ---------------------------------------------------------------------------- exact comparisons (review 5878413538)
+/** Every IP address in a text, as whole tokens: a database array (`{10.231.0.2}`), a JSON list or one table cell.
+ * Never a substring: "10.231.0.25".includes("10.231.0.2") is true, an address compare must not be. */
+export function ipTokens(text) {
+  return String(text ?? "").split(/[\s,;{}[\]"'()]+/).filter((t) => t && isIP(t) !== 0);
+}
+
+/** The node's address is one of the cells' addresses exactly (cells read one by one, never the row's joined text). */
+export function cellsHaveIp(cells, ips) {
+  const seen = new Set((cells || []).flatMap((c) => ipTokens(c)));
+  return (ips || []).length > 0 && (ips || []).some((ip) => seen.has(ip));
+}
+
+/** The export's zs:engine_version names the build: a git SHA prefix of at least 7 hex characters of `sha`, or text
+ * that contains `sha`'s first 12 characters. A shorter prefix ("b") would match every SHA that starts with it. */
+export function engineMatchesBuild(engine, sha) {
+  const e = String(engine ?? "").trim().toLowerCase();
+  const s = String(sha ?? "").trim().toLowerCase();
+  if (!e || !/^[0-9a-f]{40}$/.test(s)) return false;
+  if (/^[0-9a-f]{7,40}$/.test(e)) return s.startsWith(e);
+  return e.includes(s.slice(0, 12));
 }

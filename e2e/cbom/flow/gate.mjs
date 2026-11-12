@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync }
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { allowedDiff, allowedTokens, sameTokens, splitCommand, tokenDiff } from "./command.mjs";
+import { allowedDiff, allowedTokens, cellsHaveIp, engineMatchesBuild, ipTokens, sameTokens, splitCommand, tokenDiff } from "./command.mjs";
 import { inCidr, plannedCharge } from "./rates.mjs";
 import { createConnection } from "node:net";
 
@@ -352,7 +352,8 @@ try {
     // the node's source address: the container's address = what the API saw (DB last_seen_ip / source_ips)
     const addrs = nodeAddresses(plan.container);
     state.node.addresses = addrs;
-    s.check("node_ip_eq_db", !!row && addrs.includes(row[5]) && (row[3] || "").includes(row[5]), { expected: { container: addrs },
+    // exact addresses (review 5878413538): the DB's last_seen_ip is one of the container's, and source_ips holds it
+    s.check("node_ip_eq_db", !!row && addrs.includes(row[5]) && ipTokens(row[3]).includes(row[5]), { expected: { container: addrs },
       observed: row ? { last_seen_ip: row[5], source_ips: row[3] } : null, reason: "node-ip" });
     await page.reload({ waitUntil: "networkidle" });
     const uiRow = page.getByRole("row", { name: /e2e-node-1/ }).first();
@@ -406,9 +407,10 @@ try {
       s.check(`never_scan_${l.name}`, listed > 0, { expected: `${l.address} listed under never scan`, observed: listed ? "listed" : "refused or absent", evidence: [await s.shot(page, "never-scan")] });
     }
     state.never_scan_g5 = canaries.map((l) => l.address);
-    const socText = ((await page.getByTestId("network-soc-table").textContent().catch(() => "")) || "");
+    // the SOC table's cells one by one (its joined text glues "e2e-node-1" to the address), compared as whole addresses
+    const socCells = await page.getByTestId("network-soc-table").locator("td").allTextContents().catch(() => []);
     const nodeIps = state.node?.addresses || [];
-    s.check("soc_ip_eq_node", nodeIps.length > 0 && nodeIps.some((ip) => socText.includes(ip)), { expected: nodeIps, observed: socText.replace(/\s+/g, " ").slice(0, 200), reason: "soc-ip" });
+    s.check("soc_ip_eq_node", cellsHaveIp(socCells, nodeIps), { expected: nodeIps, observed: socCells.map((c) => c.trim()).slice(0, 20), reason: "soc-ip" });
     s.notRun("discovery_sweep", "DA G5 'sweep = the self-checked open ports': the flow does not run the discovery sweep yet (CB-05)");
     await page.getByRole("button", { name: /^every hour$/i }).first().click();
     await page.getByTestId("network-soc-email").fill("soc@agents.dss.test");
@@ -624,7 +626,7 @@ try {
           s.check("cdx_spec", doc.bomFormat === "CycloneDX" && doc.specVersion === "1.6", { expected: "CycloneDX 1.6", observed: `${doc.bomFormat} ${doc.specVersion}` });
           // DA G12: the export names the build it was judged by (CB-03 sets engine_version = build)
           const engine = ((doc.metadata?.properties) || []).find((x) => x.name === "zs:engine_version")?.value || null;
-          s.check("engine_version_eq_build", !!engine && !!SHA && (SHA.startsWith(engine) || engine.includes(SHA.slice(0, 12))), { expected: SHA.slice(0, 12), observed: engine, reason: "engine-version" });
+          s.check("engine_version_eq_build", engineMatchesBuild(engine, SHA), { expected: SHA.slice(0, 12), observed: engine, reason: "engine-version" });
         }
       } else {
         const xml = file.toString("utf8");
