@@ -21,6 +21,7 @@
   issue: "#73"
   owner: CB-14
   why: "targets skipped at run time (window, stop, never-scan) are charged in full (R2 billing.json, R3 test_f4)"
+  not_run_ok: "the core flow has no CHARGED target skipped at run time on L: the planner leaves team never-scan addresses out of the charge, and S-canary/S-idn are not queued because their connection tests fail (plain TCP listeners); exercised by a window/stop case (W-STATE, CB-14)"
 - row: KF-9
   gate: [G11]
   match: {kind: join, view: export, field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id]}
