@@ -31,6 +31,7 @@ from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, read
 # F1.2 imports
 # F1.3 imports
 # F1.4 imports
+from backend.routers import cbom_node_sshca, cbom_sshca
 
 router = APIRouter(tags=["cbom-fleet"], route_class=CbomRoute)
 READ = [Depends(read_limiter)]
@@ -47,3 +48,5 @@ async def fleet_status(team_id: TeamId, ctx: Member):
 # F1.3 routers
 
 # F1.4 routers
+router.include_router(cbom_sshca.router)
+router.include_router(cbom_node_sshca.router)

@@ -4,6 +4,7 @@ from __future__ import annotations
 from sqlalchemy import delete
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
+from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued  # F1.4
 
 from backend.new_models import (
     CbomCollectedAsset,
@@ -38,6 +39,8 @@ _ORDER = (
     CbomCollectionSettings,
     CbomEvidenceVendor,
     CbomEvidenceArea,
+    CbomSshCertIssued,  # F1.4: the certificate audit, then the CA keys
+    CbomSshCa,
     CbomCollectionAuditEvent,
 )
 
