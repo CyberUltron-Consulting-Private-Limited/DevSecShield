@@ -17,6 +17,8 @@ import NetworkTab from "@/components/cbom/sources/NetworkTab";
 import EvidenceTab from "@/components/cbom/sources/EvidenceTab";
 import ReviewRunTab from "@/components/cbom/sources/ReviewRunTab";
 import CmdbImportDialog from "@/components/cbom/sources/CmdbImportDialog";
+import FleetTab, { useFleetStatus } from "@/components/cbom/sources/fleet/FleetTab";
+import { fleetTabVisible, pickTab } from "@/components/cbom/sources/fleet/fleetLogic";
 
 const TABS = [
   { value: "scan-nodes", label: "Scan nodes" },
@@ -25,6 +27,7 @@ const TABS = [
   { value: "cloud", label: "Cloud & Identity" },
   { value: "network", label: "Network TLS" },
   { value: "evidence", label: "Evidence" },
+  { value: "fleet", label: "Fleet" },
   { value: "review", label: "Review & Run" },
 ] as const;
 type TabValue = (typeof TABS)[number]["value"];
@@ -37,7 +40,10 @@ function SourcesPage() {
   const queryClient = useQueryClient();
   const teamId = Number(params?.team_id);
   const requested = search.get("tab");
-  const tab: TabValue = (TABS.find((t) => t.value === requested)?.value ?? "scan-nodes") as TabValue;
+  // Fleet shows only when the deployment has a fleet feature turned on (GET /fleet/status).
+  const showFleet = fleetTabVisible(useFleetStatus(teamId).data);
+  const shown = (value: TabValue) => value !== "fleet" || showFleet;
+  const tab: TabValue = pickTab(requested, TABS.map((t) => t.value), shown);
 
   const goTo = useCallback(
     (value: string) => {
@@ -86,7 +92,7 @@ function SourcesPage() {
           <Tabs value={tab} onValueChange={goTo} className="w-full">
             <div className="overflow-x-auto -mx-1 px-1">
               <TabsList className="mb-4 bg-transparent h-auto flex-wrap justify-start gap-1">
-                {TABS.map((t) => (
+                {TABS.filter((t) => shown(t.value)).map((t) => (
                   <TabsTrigger
                     key={t.value}
                     value={t.value}
@@ -116,6 +122,11 @@ function SourcesPage() {
             <TabsContent value="evidence" forceMount className="data-[state=inactive]:hidden">
               <EvidenceTab teamId={teamId} onNavigate={goTo} />
             </TabsContent>
+            {showFleet && (
+              <TabsContent value="fleet">
+                <FleetTab teamId={teamId} onNavigate={goTo} />
+              </TabsContent>
+            )}
             <TabsContent value="review">
               <ReviewRunTab teamId={teamId} onNavigate={goTo} />
             </TabsContent>

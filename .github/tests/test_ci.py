@@ -220,5 +220,137 @@ class PathFilters(unittest.TestCase):
                 self.assertFalse(never & suites_for(path), f"{path} runs {sorted(suites_for(path))}")
 
 
+# ----------------------------------------------------------------------------------------------------------------
+# the `Decide` step (which suites and images run) and the merge queue
+
+
+def job_text(job: str) -> str:
+    """The text of one job of ci.yml (from its `  <job>:` line to the next job)."""
+    m = re.search(rf"\n  {re.escape(job)}:\n((?:(?:    .*|\s*)\n)+)", CI)
+    assert m, job
+    return m.group(1)
+
+
+def step_script(step_name: str) -> str:
+    """The `run: |` block of the named step in ci.yml."""
+    m = re.search(rf"- name: {re.escape(step_name)}\n(?:.*\n)*?\s+run: \|\n((?:(?:\s{{10}}.*)?\n)+)", CI)
+    assert m, step_name
+    return textwrap.dedent(m.group(1))
+
+
+def decide(event: str, paths: list[str], ref: str = "dev") -> dict[str, str]:
+    """Run the Decide step as CI does, with the filter outputs that `paths` would produce."""
+    if event == "workflow_dispatch":  # the filter steps do not run
+        filters, broad = {}, ""
+    else:
+        filters = {name: str(any(glob_re(p).match(f) for p in pats for f in paths)).lower()
+                   for name, pats in STEPS["filter"].items()}
+        pats = STEPS["broad"]["backend-broad"]  # predicate-quantifier: every; "!" negates
+        broad = str(any(all((not glob_re(p[1:]).match(f)) if p.startswith("!") else glob_re(p).match(f) for p in pats)
+                        for f in paths)).lower()
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "out"
+        env = dict(os.environ, EVENT=event, REF=ref, F=json.dumps(filters), BROAD=broad, GITHUB_OUTPUT=str(out))
+        res = subprocess.run(["bash", "-c", step_script("Decide")], env=env, capture_output=True, text=True)
+        assert res.returncode == 0, res.stderr
+        return dict(line.split("=", 1) for line in out.read_text().splitlines())
+
+
+def image_names(outputs: dict[str, str]) -> set[str]:
+    return {i["name"] for i in json.loads(outputs["images"])}
+
+
+class Decide(unittest.TestCase):
+    def test_a_pull_request_runs_the_changed_suites(self):
+        out = decide("pull_request", ["scan_node/zs_scan_node/x.py"])
+        self.assertEqual(out["scan-node"], "true")
+        self.assertEqual(out["frontend"], "false")
+        self.assertEqual(image_names(out), {"scan-node"})
+
+    def test_a_promotion_push_runs_images_only(self):
+        out = decide("push", ["scan_node/zs_scan_node/x.py"], ref="staging")
+        self.assertEqual(out["scan-node"], "false")
+        self.assertEqual(image_names(out), {"scan-node"})
+
+    def test_docs_build_no_image(self):
+        self.assertEqual(image_names(decide("pull_request", ["docs/ci/README.md"])), set())
+
+
+class ScanWorkerImage(unittest.TestCase):
+    """#50: the scan-worker image (torch through garak) is the one that fills the runner disk."""
+
+    def test_a_worker_change_builds_it_with_the_disk_clean_up(self):
+        out = decide("pull_request", ["RabbitMQ/worker/helpers/context/scan_context.py"])
+        sw = [i for i in json.loads(out["images"]) if i["name"] == "scan-worker"]
+        self.assertEqual(len(sw), 1, out["images"])
+        self.assertIs(sw[0].get("free-disk-space"), True)
+
+    def test_a_change_to_the_image_workflow_builds_it(self):
+        # A change to how images are built is proven on the largest image, not only on the four small ones.
+        out = decide("pull_request", [".github/workflows/reusable-image-build.yml"])
+        self.assertIn("scan-worker", image_names(out))
+
+    def test_other_pipeline_changes_do_not_build_it(self):
+        out = decide("pull_request", [".github/workflows/ci.yml"])
+        self.assertEqual(image_names(out), {"backend", "frontend", "scan-node", "dast-worker"})
+
+    def test_aibom_builds_it_on_a_push_to_dev_only(self):
+        self.assertNotIn("scan-worker", image_names(decide("pull_request", ["aibom/src/aibom/cli.py"])))
+        self.assertNotIn("scan-worker", image_names(decide("merge_group", ["aibom/src/aibom/cli.py"])))
+        self.assertIn("scan-worker", image_names(decide("push", ["aibom/src/aibom/cli.py"])))
+
+
+class MergeQueue(unittest.TestCase):
+    """A merge queue (ruleset setting, owner action) runs ci.yml on `merge_group`; ci-gate must report there."""
+
+    def test_ci_runs_on_merge_group(self):
+        on = re.search(r"\non:\n((?:(?:  .*|\s*)\n)+?)\S", CI)
+        self.assertIn("\n  merge_group:\n    types: [checks_requested]\n", "\n" + on.group(1))
+
+    def test_changes_checks_out_the_queue_commit(self):
+        # dorny/paths-filter diffs merge_group.base_sha..head_sha with git, which needs the history
+        changes = job_text("changes")
+        m = re.search(r"- name: Checkout\n\s+if: (.*)\n(?:\s+.*\n)*?\s+fetch-depth: 0\n", changes)
+        self.assertTrue(m, "the changes job has no conditional full-history checkout")
+        self.assertIn("github.event_name == 'merge_group'", m.group(1))
+        self.assertIn("github.event_name == 'push'", m.group(1))
+
+    def test_paths_filter_gets_no_base_on_merge_group(self):
+        # With `base` empty, paths-filter v4.0.3 takes merge_group.base_sha / head_sha from the event (src/main.ts).
+        # A branch name there would diff against the wrong commit.
+        bases = re.findall(r"\n          base: (.*)\n", job_text("changes"))
+        self.assertEqual(len(bases), 2, bases)
+        for b in bases:
+            self.assertEqual(b, "${{ github.event_name == 'push' && github.ref_name || '' }}")
+
+    def test_merge_group_runs_the_changed_suites_and_images_like_a_pull_request(self):
+        out = decide("merge_group", ["RabbitMQ/worker/scan_worker.py"], ref="gh-readonly-queue/dev/pr-40-abc")
+        self.assertEqual(out["worker"], "true")
+        self.assertEqual(out["backend"], "true")
+        self.assertEqual(out["frontend"], "false")
+        self.assertIn("scan-worker", image_names(out))
+
+    def test_ci_gate_reports_on_merge_group(self):
+        gate = CiGate()
+        results = gate.base_results(pr_checks="skipped", worker="success", images="success")
+        outputs = gate.outputs(worker="true", images='[{"name":"scan-worker"}]')
+        ok = gate.run_gate(results, outputs, event="merge_group")
+        self.assertEqual(ok.returncode, 0, ok.stdout)  # no PR checks in a merge queue
+        failed = gate.run_gate({**results, "images": "failure"}, outputs, event="merge_group")
+        self.assertEqual(failed.returncode, 1, failed.stdout)
+        no_security = gate.run_gate({**results, "security": "skipped"}, outputs, event="merge_group")
+        self.assertEqual(no_security.returncode, 1, no_security.stdout)
+
+    def test_jobs_that_gate_a_merge_also_run_on_merge_group(self):
+        # ci-gate must not be skipped, and pr-checks is the only job limited to pull requests.
+        self.assertIn("    if: always()\n", job_text("ci-gate"))
+        for job in ("changes", "security"):
+            self.assertNotIn("github.event_name == 'pull_request'", job_text(job).split("steps:")[0], job)
+        self.assertIn("if: github.event_name == 'pull_request'", job_text("pr-checks"))
+
+    def test_a_queue_run_is_never_cancelled_by_another(self):
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", CI)
+
+
 if __name__ == "__main__":
     unittest.main()
