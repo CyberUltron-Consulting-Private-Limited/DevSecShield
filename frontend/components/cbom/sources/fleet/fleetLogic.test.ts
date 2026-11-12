@@ -146,6 +146,9 @@ assert.equal(decisionText({ action: "collect", policy_id: 9, matched_policy_ids:
 // the order they apply (the winner marked), and the preview's overlaps.
 const inventory = readFileSync(join(__dirname, "InventorySection.tsx"), "utf8");
 assert.ok(inventory.includes("Decision (which policy won)"), "the targets table lost its decision column");
+// On a phone the decision column must be on screen: the secondary columns give way below md (browser QA at 390 px).
+assert.ok(inventory.includes('<TableHead className="hidden md:table-cell">Tags</TableHead>'), "on a phone the decision column is pushed off screen");
+assert.ok(!/<TableHead className="hidden[^"]*">Decision/.test(inventory), "the decision column is hidden on small screens");
 assert.ok(inventory.includes("decisionText(t.decision, data.policies)"), "the list does not say which policy won");
 assert.ok(inventory.includes('p.won ? " · won" : " · overridden"'), "the detail does not mark the winner");
 // Search and tag are debounced: typing does not send one request per key.
