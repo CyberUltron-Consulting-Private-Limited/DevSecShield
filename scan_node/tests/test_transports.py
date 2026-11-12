@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -163,7 +164,8 @@ def test_awx_collects_through_one_launch_and_reassembles_chunked_events(mock_htt
     assert out[0].document["run_nonce"] == NONCE and len(out[0].document["assets"]) == len(FIXTURE["assets"])
     assert len(fake.launches) == 1
     assert fake.launches[0]["limit"] == "host-1,host-2,host-3"
-    assert fake.launches[0]["extra_vars"] == {"zs_nonce": NONCE, "zs_tier": 2}
+    # the source's per-host timeout (options: 60 s) reaches zs-collect through the playbook's --timeout-s
+    assert fake.launches[0]["extra_vars"] == {"zs_nonce": NONCE, "zs_tier": 2, "zs_timeout_s": 60}
     assert len(chunked("10.0.0.1")) > 1  # really several events per host, across event pages (page_size=3)
 
 
@@ -258,13 +260,28 @@ def test_control_plane_must_be_https_and_is_never_scan_checked():
     assert e.value.status == "skipped_never_scan"
 
 
+class FakeClock:
+    """time.monotonic / time.sleep for a transport module: sleeping advances the clock instead of waiting."""
+
+    def __init__(self):
+        self.t = time.monotonic()
+
+    def monotonic(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += max(s, 0.001)
+
+
 # ----------------------------------------------------------------------------- a salt-api fake
 class FakeSalt:
     def __init__(self, minions: dict[str, object], *, client="local_async", user="zs", password="pw", slow=()):
         self.minions, self.client, self.user, self.password = minions, client, user, password
         self.slow = set(slow)
         self.calls: list[dict] = []
-        self.polls = 0
+        self.polls = 0           # jobs.exit_success status polls
+        self.full_lookups = 0    # GET /jobs/<jid>: every minion's whole return
+        self.ready_after = 1     # status polls before the non-slow minions show as returned
 
     def ret_for(self, low: dict, mid: str):
         spec = self.minions[mid]
@@ -285,6 +302,14 @@ class FakeSalt:
             return httpx.Response(200, json={"return": [{"token": "t0k", "eauth": body.get("eauth")}]})
         if request.headers.get("x-auth-token") != "t0k":
             return httpx.Response(401)
+        if path == "/" and request.method == "POST" and json.loads(request.content)[0].get("client") == "runner":
+            low = json.loads(request.content)[0]
+            assert low["fun"] == "jobs.exit_success" and low["jid"] == "20261112"
+            self.polls += 1
+            job = self.calls[-1]
+            ready = self.polls >= self.ready_after
+            return httpx.Response(200, json={"return": [{m: ready and m not in self.slow for m in job["tgt"]
+                                                         if m in self.minions}]})
         if path == "/" and request.method == "POST":
             low = json.loads(request.content)[0]
             self.calls.append(low)
@@ -300,7 +325,7 @@ class FakeSalt:
                 return httpx.Response(200, json={"return": [out]})
             return httpx.Response(200, json={"return": [{m: {"ret": self.ret_for(low, m), "retcode": 0} for m in tgt}]})
         if path.startswith("/jobs/"):
-            self.polls += 1
+            self.full_lookups += 1
             low = self.calls[-1]
             ready = [m for m in low["tgt"] if m in self.minions and (m not in self.slow)]
             return httpx.Response(200, json={"return": [{m: self.ret_for(low, m) for m in ready}],
@@ -323,21 +348,29 @@ def doc_line(label: str, nonce: str = NONCE) -> str:
 
 
 @pytest.mark.parametrize("mode", ["cmd", "state"])
-def test_salt_local_async_collects_and_a_silent_minion_is_unreachable(mock_http, mode):
+def test_salt_local_async_collects_and_a_silent_minion_is_unreachable(mock_http, monkeypatch, mode):
     ts = targets(3)
     fake = FakeSalt({"host-1": {"stdout": doc_line("10.0.0.1")}, "host-2": {"stdout": doc_line("10.0.0.2")},
                      "host-3": {"stdout": doc_line("10.0.0.3")}}, slow={"host-3"})
     mock_http(fake)
-    out = list(salt().run_collect(ts, salt_cred(mode=mode), options()))
+    clock = FakeClock()
+    monkeypatch.setattr(SALT, "time", clock)
+    started = clock.t
+    out = list(SALT.SaltTransport(NeverScan([]), poll_s=3.0, grace_s=30).run_collect(ts, salt_cred(mode=mode),
+                                                                                     options(deadline_s=3600)))
+    # the silent minion is waited for as long as zs-collect may run there (its 60 s + 60 s of slack, + grace)
+    assert 60 + 60 <= clock.t - started <= 60 + 60 + 30 + 3
     assert [(r.target.label, r.status) for r in out] == [("10.0.0.1", "ok"), ("10.0.0.2", "ok"),
                                                          ("10.0.0.3", "unreachable")]
     low = fake.calls[0]
     assert low["tgt"] == ["host-1", "host-2", "host-3"] and low["tgt_type"] == "list"
     if mode == "cmd":
         assert low["fun"] == "cmd.script" and low["arg"] == ["salt://zeroshield/zs-collect-run.sh",
-                                                              f"--nonce {NONCE} --tier 2 --output json"]
+                                                              f"--nonce {NONCE} --tier 2 --timeout-s 60 --output json"]
     else:
-        assert low["fun"] == "state.apply" and low["kwarg"]["pillar"] == {"zs_nonce": NONCE, "zs_tier": 2}
+        assert low["fun"] == "state.apply" and low["kwarg"]["pillar"] == {"zs_nonce": NONCE, "zs_tier": 2,
+                                                                          "zs_timeout_s": 60}
+    assert fake.full_lookups == 1  # the slow minion was waited for with status polls, the returns fetched once
 
 
 def test_salt_ssh_client_shapes(mock_http):
@@ -540,17 +573,60 @@ def test_zsdoc_parse_output_takes_json_or_chunks():
         zsdoc.parse_output("nothing here", NONCE)
 
 
+def _fake_proc(root: Path, tree: dict[int, tuple[int, float]], hz: int) -> str:
+    """A /proc with ``stat`` files: {pid: (parent pid, start time in seconds since boot)}."""
+    for pid, (ppid, start) in tree.items():
+        (root / str(pid)).mkdir(parents=True)
+        rest = " ".join(["0"] * 13) + f" {int(start * hz)} 0 0"  # fields 9..21 (flags..itrealvalue), starttime (22)
+        (root / str(pid) / "stat").write_text(f"{pid} (proc name) S {ppid} 1 1 0 -1 {rest}\n")
+    return str(root)
+
+
+HZ = os.sysconf("SC_CLK_TCK")
+
+
 def test_zs_collect_ignores_the_transports_own_processes_but_keeps_services(tmp_path):
     from zs_scan_node import zscollect as Z
 
-    # pid 1 init <- 50 salt-minion (a service) <- 700 minion job <- 710 sh <- 720 launcher sh <- (zs-collect)
-    tree = {50: 1, 700: 50, 710: 700, 720: 710}
-    for pid, ppid in tree.items():
-        (tmp_path / str(pid)).mkdir()
-        (tmp_path / str(pid) / "stat").write_text(f"{pid} (proc name) S {ppid} 1 1 0 -1\n")
-    assert Z.transient_ancestors(720, proc=str(tmp_path)) == [720, 710, 700]
-    assert Z.transient_ancestors(50, proc=str(tmp_path)) == []  # a service itself is never excluded
-    assert Z.transient_ancestors(999, proc=str(tmp_path)) == []  # unknown pid: nothing
+    # salt-minion (review 5874466030, live-local-r7): init <- 21 salt-minion <- 79, 86 long-lived minion processes
+    # <- 700 the job <- 710 sh <- 720 launcher.  The SSH path reports 21, 79 and 86 (no job running): they stay.
+    minion = _fake_proc(tmp_path / "minion", {21: (1, 1000), 79: (21, 1001), 86: (79, 1002), 700: (86, 1180),
+                                              710: (700, 1185), 720: (710, 1186)}, HZ)
+    assert Z.transient_ancestors(720, proc=minion) == [720, 710, 700]
+    # sshd as PID 1 (a container): the transport's own SSH session (695 [priv], 696) is excluded too, while it hangs
+    # off PID 1 directly; the SSH path does not report its own session either
+    lab = _fake_proc(tmp_path / "lab", {1: (0, 5), 695: (1, 3000), 696: (695, 3000.2), 697: (696, 3001),
+                                        698: (697, 3001.1), 699: (698, 3002)}, HZ)
+    assert Z.transient_ancestors(699, proc=lab) == [699, 698, 697, 696, 695]
+    # a systemd host: init <- 500 sshd (since boot) <- 695 session ... : sshd itself is a service and is kept
+    host = _fake_proc(tmp_path / "host", {500: (1, 12), 695: (500, 90000), 696: (695, 90000), 699: (696, 90002)}, HZ)
+    assert Z.transient_ancestors(699, proc=host) == [699, 696, 695]
+    assert Z.transient_ancestors(699, proc=host, window_s=1) == [699]  # the window is what bounds the chain
+    assert Z.transient_ancestors(500, proc=host) == [500]  # the walk always starts at the given pid
+    assert Z.transient_ancestors(999, proc=minion) == []  # unknown pid: nothing
+    (tmp_path / "minion" / "79" / "stat").write_text("garbage")
+    assert Z.transient_ancestors(720, proc=minion) == [720, 710, 700]  # an unreadable ancestor ends the walk
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
+def test_transient_ancestors_on_real_processes(tmp_path):
+    """A real tree: a "service" that has run for 2 s starts a "transport" process, which starts zs-collect's probe.
+    With a 1 s window the transport process is excluded and the service (and everything above it) is kept."""
+    import sys
+
+    probe = ("import json, os, sys; sys.path.insert(0, sys.argv[1]); from zs_scan_node import zscollect as Z; "
+             "print(json.dumps({'chain': Z.transient_ancestors(window_s=1.0), 'parent': os.getppid()}))")
+    transport = f"import subprocess, sys; sys.stdout.write(subprocess.run([sys.executable, '-c', {probe!r}, sys.argv[1]], " \
+                "capture_output=True, text=True).stdout)"
+    service = f"import os, subprocess, sys, time; time.sleep(2.0); print(os.getpid()); sys.stdout.flush(); " \
+              f"sys.stdout.write(subprocess.run([sys.executable, '-c', {transport!r}, sys.argv[1]], capture_output=True, " \
+              "text=True).stdout)"
+    p = subprocess.run([sys.executable, "-c", service, str(Path(__file__).resolve().parents[1])], capture_output=True,
+                       text=True, timeout=60)
+    service_pid, result = p.stdout.strip().splitlines()
+    result = json.loads(result)
+    assert result["chain"] == [result["parent"]]  # the transport process only
+    assert int(service_pid) not in result["chain"] and os.getpid() not in result["chain"]
 
 
 # ----------------------------------------------------------------------------- one host's output never fails the batch
@@ -646,3 +722,168 @@ def test_fleet_one_hosts_failure_never_fails_the_others(monkeypatch):
     by = {o.target: o for o in ctx.outcomes}
     assert by["10.0.0.1"].status == "unreachable"
     assert by["db.internal"].status == "error" and "RuntimeError" in by["db.internal"].error
+
+
+# ----------------------------------------------------------------------------- review 5874466030 minors
+def test_salt_local_async_polls_a_cheap_status_and_fetches_the_returns_once(mock_http, monkeypatch):
+    fake = FakeSalt({f"host-{i}": {"stdout": doc_line(f"10.0.0.{i}")} for i in range(1, 4)})
+    fake.ready_after = 5  # the minions return after five status polls
+    mock_http(fake)
+    monkeypatch.setattr(SALT, "time", FakeClock())
+    out = list(SALT.SaltTransport(NeverScan([]), poll_s=3.0).run_collect(targets(3), salt_cred(), options()))
+    assert {r.status for r in out} == {"ok"}
+    assert fake.polls == 5 and fake.full_lookups == 1  # every document crossed the wire once, not once per poll
+
+
+def test_salt_ssh_batches_are_at_most_100_hosts(mock_http):
+    fake = FakeSalt({f"host-{i + 1}": {"stdout": doc_line(f"10.0.{i // 250}.{i % 250 + 1}")} for i in range(150)},
+                    client="ssh")
+    mock_http(fake)
+    cred = TransportCredential("salt_eauth", {**salt_cred(client="ssh").config, "batch_size": 500},
+                               {"username": "zs", "password": "pw"})
+    ts = [CollectTarget(f"10.0.{i // 250}.{i % 250 + 1}", f"host-{i + 1}") for i in range(150)]
+    out = list(salt().run_collect(ts, cred, options()))
+    assert [len(c["tgt"]) for c in fake.calls] == [100, 50] and len(out) == 150
+    local = FakeSalt({f"host-{i + 1}": {"stdout": doc_line(f"10.0.{i // 250}.{i % 250 + 1}")} for i in range(150)},
+                     client="local")
+    mock_http(local)
+    cred = TransportCredential("salt_eauth", {**salt_cred(client="local").config, "batch_size": 500},
+                               {"username": "zs", "password": "pw"})
+    list(salt().run_collect(ts, cred, options()))
+    assert [len(c["tgt"]) for c in local.calls] == [150]  # minions are not limited this way
+
+
+@pytest.mark.parametrize("bad", [9, 3601, 0, True, "60; id", None])
+def test_the_per_host_timeout_is_validated_before_it_reaches_a_shell(bad):
+    with pytest.raises(ValueError):
+        wrappers.salt_args(NONCE, 1, timeout_s=bad)
+    with pytest.raises(ValueError):
+        wrappers.timeout_arg(bad)
+    pattern = re.compile(wrappers.TIMEOUT_PATTERN)
+    assert not pattern.match(str(bad)) or isinstance(bad, bool)
+    assert all(pattern.match(str(v)) for v in (10, 99, 300, 1000, 3599, 3600))
+    assert wrappers.salt_args(NONCE, 2, timeout_s=3600) == f"--nonce {NONCE} --tier 2 --timeout-s 3600 --output json"
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs /bin/sh")
+def test_the_ssm_document_hands_the_timeout_to_the_launcher(tmp_path):
+    """Run the SSM document's script as SSM would (parameters substituted) with a launcher that prints its
+    arguments: --timeout-s arrives, and a collected host's exit becomes 0 with ZSRC on stderr."""
+    echo = "#!/bin/sh\nprintf 'ARGS %s\\n' \"$*\"\nexit 1\n"
+    doc = wrappers.render_ssm_document("1.0.0", echo)
+    assert doc["parameters"]["timeout"]["allowedPattern"] == wrappers.TIMEOUT_PATTERN
+    assert int(doc["mainSteps"][0]["inputs"]["timeoutSeconds"]) >= 3600 + 60
+    script = "\n".join(doc["mainSteps"][0]["inputs"]["runCommand"])
+    for name, value in (("nonce", NONCE), ("tier", "2"), ("timeout", "1200"), ("output", "chunks")):
+        script = script.replace("{{ " + name + " }}", value)
+    p = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin",
+                                                                                   "TMPDIR": str(tmp_path)})
+    assert p.returncode == 0, p.stderr
+    assert f"ARGS --nonce {NONCE} --tier 2 --timeout-s 1200 --output chunks" in p.stdout
+    assert "ZSRC 1" in p.stderr
+
+
+def test_the_ansible_playbook_passes_and_checks_the_timeout():
+    play = yaml.safe_load(wrappers.render_ansible("1.0.0", LAUNCHER)["zs-collect.yml"])[0]
+    tasks = {t["name"]: t for t in play["tasks"]}
+    assert "--timeout-s {{ zs_timeout_s | default(300) | int }}" in tasks["zs-collect"]["ansible.builtin.script"]
+    that = tasks["zs-collect inputs"]["ansible.builtin.assert"]["that"]
+    assert "(zs_timeout_s | default(300) | int) >= 10" in that and "(zs_timeout_s | default(300) | int) <= 3600" in that
+
+
+def _raising(exc):
+    def handler(request):
+        raise exc
+    return handler
+
+
+@pytest.mark.parametrize("exc,status", [
+    (httpx.ConnectTimeout("timed out"), "timeout"),
+    (httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate"),
+     "identity_unverified"),
+    (httpx.ConnectError("[Errno 111] Connection refused"), "unreachable"),
+    (httpx.ReadTimeout("read timed out"), "timeout"),
+])
+def test_control_plane_connection_failures_map_to_target_statuses(mock_http, monkeypatch, exc, status):
+    mock_http(_raising(exc))
+    with pytest.raises(TransportError) as e:
+        list(awx().run_collect(targets(1), AWX_CRED, options()))
+    assert e.value.status == status
+    # and every host of the job gets that status, through the real AWX adapter (fleet._transport is not patched)
+    ctx = ctx_for()
+    cfg = {**SOURCE_CFG, "targets": ["10.0.0.1", "db.internal"]}
+    fleet.collect(ctx, cfg, {"token": "tok"}, {"targets": cfg["targets"]})
+    assert {o.status for o in ctx.outcomes} == {status}
+
+
+def test_zsdoc_guards_duplicates_oversized_output_and_facts(monkeypatch):
+    d = doc_for("10.0.0.1")
+    lines = zsdoc.encode_chunks(d, NONCE, chunk_bytes=1024)
+    assert len(lines) >= 2
+    head, data = lines[0].rsplit(" ", 1)
+    altered = head + " " + ("A" if data[0] != "A" else "B") + data[1:]
+    with pytest.raises(zsdoc.ChunkError, match="twice"):  # the altered copy first: last-wins would reassemble
+        zsdoc.reassemble([altered] + lines, NONCE)
+    # a gzip that inflates past the cap (a bomb) is refused before it is parsed
+    monkeypatch.setattr(zsdoc, "MAX_DOCUMENT_BYTES", 1000)
+    with pytest.raises(zsdoc.ChunkError, match="larger than"):
+        zsdoc.reassemble(zsdoc.encode_chunks({"pad": "x" * 5000}, NONCE, chunk_bytes=4096), NONCE)
+    with pytest.raises(ValueError, match="larger than"):
+        zsdoc.parse_output(json.dumps({"pad": "x" * 5000}), NONCE)
+    monkeypatch.undo()
+    big = copy.deepcopy(d)
+    big["assets"][0]["facts"] = {"blob": "x" * (16 * 1024)}
+    assert "16 KB" in zsdoc.validate_document(big, NONCE, VERSION)
+    assert zsdoc.validate_document(d, NONCE, VERSION) is None
+
+
+@pytest.mark.parametrize("kind", ["awx_hosts", "salt_hosts"])
+def test_fleet_dispatches_each_kind_to_its_own_adapter(mock_http, monkeypatch, kind):
+    """No monkeypatching of fleet._transport: the kind alone picks the adapter and the credential kind."""
+    monkeypatch.setattr(fleet, "_nonce", lambda ctx: NONCE)  # the fakes answer with documents for NONCE
+    if kind == "awx_hosts":
+        fake = FakeAwx({"web-1": {"lines": chunked("10.0.0.1")}})
+        cfg = {**SOURCE_CFG, "targets": ["10.0.0.1"]}
+        secrets = {"token": "tok"}
+        assert isinstance(fleet._transport("awx", ctx_for(kind)), AWX.AwxTransport)
+    else:
+        fake = FakeSalt({"web-1": {"stdout": doc_line("10.0.0.1")}}, client="local")
+        cfg = {**SOURCE_CFG, "targets": ["10.0.0.1"],
+               "transport": {"base_url": "https://salt.example:8000", "client": "local", "mode": "cmd"}}
+        secrets = {"username": "zs", "password": "pw"}
+        assert isinstance(fleet._transport("salt", ctx_for(kind)), SALT.SaltTransport)
+    assert fleet.KINDS[kind] == {"awx_hosts": ("awx", "awx_token"), "salt_hosts": ("salt", "salt_eauth")}[kind]
+    _name, _t, _o, credential = fleet._setup(ctx_for(kind), cfg, secrets, {"targets": ["10.0.0.1"]})
+    assert credential.kind == ("awx_token" if kind == "awx_hosts" else "salt_eauth")
+    mock_http(fake)
+    ctx = ctx_for(kind)
+    status, error, _ = run_job(ctx, {"kind": "collect"}, {"targets": ["10.0.0.1"]},
+                               {"kind": kind, "config": cfg, "secrets": secrets})
+    assert status == "success", error
+    assert [o.status for o in ctx.outcomes] == ["ok"] and {a["target"] for a in ctx.collected} == {"10.0.0.1"}
+    if kind == "awx_hosts":
+        assert len(fake.launches) == 1 and fake.launches[0]["limit"] == "web-1"
+    else:
+        assert fake.calls and fake.calls[0]["tgt"] == ["web-1"]
+
+
+def test_the_parity_normaliser_reports_pid_set_differences():
+    """diff() ignores process ids (they change between runs); pid_differences() reports them, so a transport's own
+    process joining a group, or a service's process left out, cannot hide behind an empty diff again."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "bench" / "f1_transports" / "normalize.py"
+    spec = importlib.util.spec_from_file_location("f1_normalize", path)
+    N = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(N)
+
+    def lib(pids, name="sshd"):
+        return {"type": "process_library", "target": "10.0.0.1", "location": "/usr/lib/libcrypto.so.3", "name": name,
+                "facts": {"exe": "/usr/sbin/sshd", "lib": "/usr/lib/libcrypto.so.3", "pids": pids, "deleted": False,
+                          "ports": [22], "process": name}}
+
+    ssh, zs = {"assets": [lib([1])]}, {"assets": [lib([1, 695])]}
+    assert N.diff(N.normalise(ssh, "10.0.0.1"), N.normalise(zs, "10.0.0.1")) == []
+    assert N.pid_differences(ssh, zs, "10.0.0.1") == [
+        "pids differ: sshd /usr/lib/libcrypto.so.3: only A []; only B [695]"]
+    assert N.pid_differences(ssh, {"assets": [lib([1])]}) == []

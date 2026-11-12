@@ -393,7 +393,9 @@ def _stub_common(c: Clients, online: list[str], sent: list[str], bucket=None, id
     if not sent:
         return
     params = {"InstanceIds": sent, "DocumentName": "devsecshield-zs-collect-1.0.0",
-              "Parameters": {"nonce": [NONCE], "tier": ["2"], "output": ["json" if bucket else "chunks"]},
+              # the source's per-host timeout (options: 60 s) reaches zs-collect as the document's timeout parameter
+              "Parameters": {"nonce": [NONCE], "tier": ["2"], "timeout": ["60"],
+                             "output": ["json" if bucket else "chunks"]},
               "TimeoutSeconds": timeout_seconds(len(sent)), "Comment": f"ZeroShield CBOM collection {NONCE}",
               "MaxConcurrency": "10%",
               "MaxErrors": "100%"}
@@ -771,3 +773,95 @@ def test_a_fleet_source_holds_at_most_200_hosts_so_its_assets_fit_one_job(api):
     r = fleet_source(api, t["id"], node_id=node_id, targets=hosts[:200])
     assert r.status_code == 201, r.text
     assert len(r.json()["source"]["config"]["targets"]) == 200
+
+
+# ----------------------------------------------------------------------------- review 5874466030 minors (backend)
+def test_salt_ssh_batches_are_at_most_100_and_minion_batches_up_to_500(api):
+    def make(client, batch):
+        return api("POST", BASE, json={**SALT, "name": f"salt-{client}-{batch}",
+                                       "config": {**SALT["config"], "client": client, "batch_size": batch}})
+
+    r = make("ssh", 101)
+    assert r.status_code == 400 and "at most 100 with client ssh" in r.json()["detail"], r.text
+    assert make("ssh", 100).status_code == 201
+    assert make("local_async", 500).status_code == 201
+
+
+def _jinja():
+    import re
+
+    import jinja2
+
+    env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+    env.filters["regex_match"] = lambda value, pattern: re.match(pattern, str(value))
+    return env
+
+
+@pytest.mark.parametrize("pillar,args", [
+    ({"zs_nonce": NONCE, "zs_tier": 2, "zs_timeout_s": 1200}, f"--nonce {NONCE} --tier 2 --timeout-s 1200 --output json"),
+    ({"zs_nonce": NONCE, "zs_tier": 1}, f"--nonce {NONCE} --tier 1 --timeout-s 300 --output json"),
+    ({"zs_nonce": NONCE, "zs_tier": 1, "zs_timeout_s": 9}, None),
+    ({"zs_nonce": NONCE, "zs_tier": 1, "zs_timeout_s": "60; id"}, None),
+])
+def test_the_salt_state_passes_a_checked_timeout_to_the_launcher(pillar, args):
+    import yaml
+
+    from backend.utilities.cbom_sources.transports import wrappers
+
+    sls = wrappers.render_salt("1.0.0", "#!/bin/sh\n")["zeroshield/zs_collect.sls"]
+    assert "512 MB + 80 MB x ssh_max_procs" in sls  # the master sizing the review asked for travels with the state
+    rendered = _jinja().from_string(sls).render(salt={"pillar.get": lambda key, default=None: pillar.get(key, default)})
+    state = yaml.safe_load(rendered)["zs_collect"]
+    if args is None:
+        assert "test.fail_without_changes" in state
+    else:
+        assert {"args": args} in state["cmd.script"]
+
+
+def test_the_ansible_script_line_renders_the_timeout():
+    import yaml
+
+    from backend.utilities.cbom_sources.transports import wrappers
+
+    play = yaml.safe_load(wrappers.render_ansible("1.0.0", "#!/bin/sh\n")["zs-collect.yml"])[0]
+    line = {t["name"]: t for t in play["tasks"]}["zs-collect"]["ansible.builtin.script"]
+    out = _jinja().from_string(line).render(zs_nonce=NONCE, zs_tier=2, zs_timeout_s=900, zs_chunk_bytes=393216)
+    assert out == f"zs-collect-run.sh --nonce {NONCE} --tier 2 --timeout-s 900 --output chunks --chunk-bytes 393216"
+
+
+def test_active_release_is_re_verified_on_every_use(api, world, release_key):
+    """AC9: the stored manifest is checked against the release key each time (a row edited in the database is not
+    trusted), and a claim then carries no release."""
+    engine, _ = world
+    t = api("POST", BASE, json=AWX).json()["transport"]
+    node_id, _token, _ = enroll_node(api)
+    src_id = fleet_source(api, t["id"], node_id=node_id).json()["source"]["id"]
+    row = import_active(engine, release_key)
+    with Session(engine) as s:
+        src = s.get(CbomCollectionSource, src_id)
+        assert CLAIM.claim_extras(s, src, None, None, {"config": dict(src.config), "secrets": {}})[
+            "config"]["zs_collect"]["version"] == "1.0.0"
+        db_row = s.get(CbomZsCollectRelease, row.id)
+        # still valid JSON with the same files and sha256: only the signature can tell
+        db_row.manifest_raw = db_row.manifest_raw.replace('"git_commit":"' + "0" * 40, '"git_commit":"' + "1" * 40)
+        s.commit()
+        assert json.loads(db_row.manifest_raw)["files"] == row.manifest["files"]
+        assert R.active_release(s) is None
+        out = CLAIM.claim_extras(s, src, None, None, {"config": dict(src.config), "secrets": {}})
+        assert out["config"]["zs_collect"] is None
+
+
+def test_a_source_of_one_kind_never_runs_through_a_transport_of_another(api, world):
+    engine, _ = world
+    t = api("POST", BASE, json=AWX).json()["transport"]
+    node_id, _token, _ = enroll_node(api)
+    src_id = fleet_source(api, t["id"], node_id=node_id).json()["source"]["id"]
+    with Session(engine) as s:
+        s.get(CbomTransport, t["id"]).kind = "ssm"  # the awx_hosts source now points at an SSM transport
+        s.commit()
+        src = s.get(CbomCollectionSource, src_id)
+        out = CLAIM.claim_extras(s, src, None, None, {"config": dict(src.config), "secrets": {}})
+        assert out["config"]["transport"] is None and out["secrets"] == {}
+        assert "is a ssm transport, not awx" in out["config"]["transport_problem"]
+        row, why = R.usable_transport(s, 1, t["id"], kind="awx")
+        assert row is None and "not awx" in why
