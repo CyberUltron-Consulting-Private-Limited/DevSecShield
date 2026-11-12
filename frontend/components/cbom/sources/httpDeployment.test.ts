@@ -1,9 +1,10 @@
 /**
  * CB-08: a ZeroShield deployment that is not served over HTTPS. The scan node refuses a plain-HTTP API unless it is
  * started with the lab switch ZS_ALLOW_INSECURE_HTTP=1 (scan_node/zs_scan_node/agent.py; Helm `allowInsecureHttp`;
- * the AMI's /etc/zs-node/env). So the Scan nodes tab says so, never advises port 80, keeps "Create node" working
- * (deploy/local is a plain-HTTP lab) and shows the command only inside a "Test lab only" block that carries the switch
- * and the warning. Every token the UI mints is shown. Review 5876424957: rendered, not grepped.
+ * the AMI's /etc/zs-node/env). So the wizard's warning (logic.insecureApiWarning, CB-03) says so, no port 80 is ever
+ * advised, "Create node" keeps working (deploy/local is a plain-HTTP lab) and the command is shown only inside a
+ * "Test lab only" block that carries the switch and the warning. Every token the UI mints is shown. Review
+ * 5876424957: rendered, not grepped (the wizard's warning itself: nodeInsecureApiRender.test.ts, jsdom).
  * Live check: cbom/cb-08/live/ (http and https variant builds in Chromium).
  * Run: npx --yes tsx components/cbom/sources/httpDeployment.test.ts
  */
@@ -15,8 +16,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement as h, type ReactElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
-import { NODE_API_NOT_HTTPS, helmAgentCommand, installCommand, nodeApiPort, nodeApiProblem } from "./logic"
-import { ApiEgressRow, ApiNotHttpsNotice, NodeInstallCommand, PoolHelmCommand } from "./NodeInstall"
+import { helmAgentCommand, insecureApiWarning, installCommand, labSwitchHelps, nodeApiPort } from "./logic"
+import { ApiEgressRow, NodeInstallCommand, PoolHelmCommand } from "./NodeInstall"
 
 // block and cell tags become spaces; inline tags (the syntax highlighter's token spans) join their text
 const text = (el: ReactElement) =>
@@ -36,14 +37,21 @@ async function main() {
   const helm = fs.readFileSync(path.join(__dirname, "../../../../deploy/helm/cbom-scan-node/templates/_helpers.tpl"), "utf8")
   assert.ok(helm.includes("{{- if .Values.allowInsecureHttp }}\n- name: ZS_ALLOW_INSECURE_HTTP"), "the Helm switch")
 
-  assert.equal(NODE_API_NOT_HTTPS,
-    "This ZeroShield deployment is not served over HTTPS. Scan nodes refuse a plain-HTTP API unless started with ZS_ALLOW_INSECURE_HTTP=1 (test labs only: credentials travel unencrypted).")
-  for (const url of [HTTPS, "https://api.dss.test:8443/"]) assert.equal(nodeApiProblem(url), null, url)
-  for (const url of [HTTP, "HTTP://API.EXAMPLE", "ftp://x", "ws://x", "", "not a url"]) assert.equal(nodeApiProblem(url), NODE_API_NOT_HTTPS, url)
+  // the warning (logic.insecureApiWarning, CB-03; also nodeInsecureApi*.test.ts) names the lab switch for http://
+  const warning = insecureApiWarning(HTTP)
+  assert.ok(warning && warning.includes("The scan node refuses http:// unless it is started with ZS_ALLOW_INSECURE_HTTP=1"), warning ?? "")
+  assert.ok(warning && /credentials unencrypted/.test(warning) && /"Test lab only"/.test(warning))
+  assert.ok(!/ZS_ALLOW_INSECURE_HTTP/.test(insecureApiWarning("HTTP://API.EXAMPLE") ?? ""), "upper case: the switch does not help")
+  for (const url of [HTTPS, "https://api.dss.test:8443/"]) assert.equal(insecureApiWarning(url), null, url)
+  // the lab switch helps exactly where agent.py accepts it: a lower-case http:// URL (after strip)
+  for (const url of [HTTP, " http://x ", "http://api.example:80"]) assert.ok(labSwitchHelps(url), url)
+  for (const url of [HTTPS, "HTTP://API.EXAMPLE", "ftp://x", "ws://x", "", "not a url"]) assert.ok(!labSwitchHelps(url), url)
   assert.equal(nodeApiPort(HTTPS), "443")
   assert.equal(nodeApiPort("https://api.dss.test:8443"), "8443")
   assert.equal(nodeApiPort(HTTP), null, "no port advice (never 80) for a plain-HTTP API")
   assert.equal(nodeApiPort("http://api.example:80"), null)
+  assert.equal(nodeApiPort("https://api.example:80"), null, "port 80 is the plain-HTTP port")
+  assert.equal(nodeApiPort("ftp://x"), null)
 
   // the lab switch in each command, and only when asked for
   const opts = { token: TOKEN, apiUrl: HTTP, image: IMAGE, name: "lab-1" }
@@ -55,8 +63,6 @@ async function main() {
   assert.ok(!helmAgentCommand({ poolToken: TOKEN, apiUrl: HTTPS, image: IMAGE }).includes("allowInsecureHttp"))
 
   // rendered pieces
-  assert.match(text(h(ApiNotHttpsNotice, { apiUrl: HTTP })), /not served over HTTPS\. Scan nodes refuse a plain-HTTP API/)
-  assert.equal(renderToStaticMarkup(h(ApiNotHttpsNotice, { apiUrl: HTTPS })), "")
 
   const labDocker = text(h(NodeInstallCommand, { apiUrl: HTTP, method: "docker", token: TOKEN, name: "lab-1", image: IMAGE }))
   assert.match(labDocker, /Test lab only/)
@@ -80,6 +86,7 @@ async function main() {
   assert.match(row(HTTPS), /devsecshieldapi\.zeroshield\.ai 443 Jobs in, results out \(HTTPS\)/)
   assert.match(row("https://api.dss.test:8443"), / 8443 /)
   assert.ok(!/\b80\b/.test(row(HTTP)) && row(HTTP).includes("—") && /test-lab nodes only/.test(row(HTTP)), row(HTTP))
+  assert.match(row("https://api.example:80"), /— Not usable as it is/)
 
   // the whole tab, as a customer first sees it
   const { default: ScanNodesTab } = await import("./ScanNodesTab")
@@ -90,12 +97,14 @@ async function main() {
     return text(h(QueryClientProvider, { client }, h(ScanNodesTab, { teamId: 7, onNavigate: () => {}, apiUrl })))
   }
   const httpTab = tab(HTTP)
-  assert.ok(httpTab.includes("not served over HTTPS. Scan nodes refuse a plain-HTTP API"), "banner on http")
   assert.ok(!/port 80\b/.test(httpTab) && !httpTab.includes("on port 80"), "no port 80 advice")
+  assert.match(httpTab, /One node per network segment\. /)
+  assert.ok(!/connects out to ZeroShield on port/.test(httpTab), "no port for a plain-HTTP API")
+  assert.match(httpTab, /It only connects out to devsec-staging-api\.zeroshield\.ai\./)
   assert.match(httpTab, /Add your first scan node/)
   const httpsTab = tab(HTTPS)
-  assert.ok(!httpsTab.includes("not served over HTTPS"), "no banner on https")
   assert.match(httpsTab, /Each connects out to ZeroShield on port 443 only\./)
+  assert.match(httpsTab, /It only connects out to devsecshieldapi\.zeroshield\.ai on port 443\./)
   console.log("http deployment tests passed")
 }
 

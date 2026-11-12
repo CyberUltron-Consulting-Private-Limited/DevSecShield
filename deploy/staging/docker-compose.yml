@@ -150,6 +150,9 @@ services:
     environment:
       SKIP_ALEMBIC: "1"
       FORWARDED_ALLOW_IPS: ${DSS_PROXY_IP:-172.30.250.10}
+      # 1 = GET /health and X-ZS-Build name the deployed commit publicly (staging, labs: the gate compares it);
+      # default off (production). Signed-in users read it from GET /version either way. README "Build identity".
+      DSS_EXPOSE_BUILD: ${DSS_EXPOSE_BUILD:-0}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -20,7 +20,7 @@ import {
 } from "@/utils/api/cbom_agents";
 
 import { cbomSourcesKeys } from "./keys";
-import { formatDateTime } from "./logic";
+import { formatDateTime, insecureApiWarning } from "./logic";
 import { PoolHelmCommand } from "./NodeInstall";
 import { ConfirmDialog, Field, SectionCard, StatusBadge, type Tone } from "./shared";
 
@@ -45,6 +45,8 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
   const [segment, setSegment] = useState("Kubernetes");
   const [hours, setHours] = useState(24 * 7);
   const [max, setMax] = useState("50");
+  // The Helm command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
+  const apiWarning = insecureApiWarning(apiUrl);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ pool: CbomNodePool; token: string } | null>(null);
   const [revoking, setRevoking] = useState<CbomNodePool | null>(null);
@@ -101,6 +103,12 @@ export function AgentPoolsCard({ teamId, image, apiUrl }: { teamId: number; imag
     >
       {open && (
         <div className="mb-6 space-y-4 rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="agent-pool-form">
+          {apiWarning && (
+            <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+              data-testid="pool-api-insecure">
+              {apiWarning}
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Field label="Name" htmlFor="pool-name" required error={error}>
               <Input id="pool-name" value={name} maxLength={64} disabled={!!created} placeholder="prod-cluster"

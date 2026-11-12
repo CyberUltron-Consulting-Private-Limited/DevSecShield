@@ -2,14 +2,15 @@
 
 // Scan node install pieces that depend on the ZeroShield API address (CB-08, review 5876424957). The node accepts an
 // http:// API only with the lab switch ZS_ALLOW_INSECURE_HTTP=1 (scan_node agent.py; Helm `allowInsecureHttp`; the AMI's
-// /etc/zs-node/env), so a plain-HTTP deployment gets a notice, no port advice, and every command (with the token it was
-// created for) inside a "Test lab only" block that carries the switch. Rendered by httpDeployment.test.ts.
+// /etc/zs-node/env), so on a plain-HTTP deployment every command (with the token it was created for) is shown inside a
+// "Test lab only" block that carries the switch, and no port is advised. The warning itself is logic.insecureApiWarning
+// (CB-03), shown in the wizard and the pool form. Rendered by httpDeployment.test.ts.
 
 import type { ReactNode } from "react";
 
 import { TableCell, TableRow } from "@/components/ui/table";
 
-import { OVA_NO_INSECURE_SWITCH, helmAgentCommand, installCommand, nodeApiPort, nodeApiProblem, type DeployMethod } from "./logic";
+import { OVA_NO_INSECURE_SWITCH, helmAgentCommand, installCommand, labSwitchHelps, nodeApiPort, type DeployMethod } from "./logic";
 import { CodeSnippet } from "./shared";
 
 export const LAB_ONLY_WARNING =
@@ -21,16 +22,6 @@ export function apiHost(apiUrl: string): string {
   } catch {
     return apiUrl;
   }
-}
-
-export function ApiNotHttpsNotice({ apiUrl }: { apiUrl: string }) {
-  const problem = nodeApiProblem(apiUrl);
-  if (!problem) return null;
-  return (
-    <div role="alert" className="rounded-lg border border-amber-500/50 px-4 py-3 text-sm text-amber-700 dark:text-amber-400" data-testid="node-api-not-https">
-      {problem}
-    </div>
-  );
 }
 
 function LabOnly({ children }: { children: ReactNode }) {
@@ -59,7 +50,7 @@ export function NodeInstallCommand({
   proxyUrl?: string | null;
   image: string;
 }) {
-  const lab = !!nodeApiProblem(apiUrl);
+  const lab = labSwitchHelps(apiUrl);
   const language = method === "ami" ? "yaml" : "bash";
   const code = installCommand(method, { token, apiUrl, proxyUrl, image, name, insecureHttp: lab && method !== "ova" });
   if (!lab) return <CodeSnippet code={code} language={language} />;
@@ -80,7 +71,7 @@ export function NodeInstallCommand({
 
 /** The Helm command for a host-agent pool token: the token is always shown. */
 export function PoolHelmCommand({ apiUrl, poolToken, image, proxyUrl }: { apiUrl: string; poolToken: string; image: string; proxyUrl?: string | null }) {
-  const lab = !!nodeApiProblem(apiUrl);
+  const lab = labSwitchHelps(apiUrl);
   const code = helmAgentCommand({ poolToken, apiUrl, image, proxyUrl, insecureHttp: lab });
   if (!lab) return <CodeSnippet code={code} language="bash" />;
   return (
@@ -93,12 +84,15 @@ export function PoolHelmCommand({ apiUrl, poolToken, image, proxyUrl }: { apiUrl
 /** The wizard's egress row for the ZeroShield API: its HTTPS port, never a plain-HTTP port. */
 export function ApiEgressRow({ apiUrl }: { apiUrl: string }) {
   const port = nodeApiPort(apiUrl);
+  const usedFor = port ? "Jobs in, results out (HTTPS)"
+    : labSwitchHelps(apiUrl) ? "Plain HTTP: test-lab nodes only (ZS_ALLOW_INSECURE_HTTP=1)"
+    : "Not usable as it is: see the warning above";
   return (
     <TableRow>
       <TableCell className="font-mono text-xs">{apiHost(apiUrl)}</TableCell>
       <TableCell>{port ?? "—"}</TableCell>
       <TableCell className="text-zinc-600 dark:text-zinc-400">
-        {port ? "Jobs in, results out (HTTPS)" : "Plain HTTP: test-lab nodes only (ZS_ALLOW_INSECURE_HTTP=1)"}
+        {usedFor}
       </TableCell>
     </TableRow>
   );

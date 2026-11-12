@@ -26,10 +26,11 @@ import { apiBaseURL } from "@/utils/interceptors";
 
 import { cbomSourcesKeys } from "./keys";
 import { AgentPoolsCard } from "./AgentPoolsCard";
-import { ApiEgressRow, ApiNotHttpsNotice, NodeInstallCommand, apiHost } from "./NodeInstall";
+import { ApiEgressRow, NodeInstallCommand, apiHost } from "./NodeInstall";
 import {
   DEPLOY_SUPPORT,
   ago,
+  insecureApiWarning,
   nodeApiPort,
   nodeInstallNames,
   offersRegistrationToken,
@@ -241,10 +242,11 @@ export default function ScanNodesTab({
   // A node takes a plain-HTTP API only with the lab switch: no port advice then, and a test-lab command (CB-08).
   const apiPort = nodeApiPort(apiUrl);
   const offlineSteps = created ? offlineImageSteps(createdNode?.deployment ?? wizard.deployment, NODE_IMAGE) : null;
+  // The install command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
+  const apiWarning = insecureApiWarning(apiUrl);
 
   return (
     <div className="space-y-6">
-      <ApiNotHttpsNotice apiUrl={apiUrl} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Scan nodes" value={nodes.length} />
         <StatCard label="Online" value={online} tone={online ? "green" : undefined} />
@@ -397,6 +399,12 @@ export default function ScanNodesTab({
             </Button>
           }
         >
+          {apiWarning && (
+            <p role="alert" className="mb-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+              data-testid="node-api-insecure">
+              {apiWarning}
+            </p>
+          )}
           <ol className="space-y-8">
             <li>
               <StepTitle n={1} title="Name and segment" />
@@ -443,8 +451,9 @@ export default function ScanNodesTab({
                       </summary>
                       <p className="mt-2">
                         Use this on a host without access to the image registry (air-gapped sites, or before the image is
-                        published there). The file and its SHA-256 checksum come from{" "}
-                        <span className="font-mono">make node-image</span>; check the checksum before you load it.
+                        published there). The steps say where the file and its SHA-256 checksum come from (ZeroShield,
+                        or <span className="font-mono">make node-image</span> for a release version); check the checksum
+                        before you load it.
                       </p>
                       <div className="mt-2"><CodeSnippet code={offlineSteps} language="bash" /></div>
                     </details>
