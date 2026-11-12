@@ -376,12 +376,13 @@ CRED = TransportCredential("aws_role", {"role_arn": "arn:aws:iam::111122223333:r
 
 def timeout_seconds(n_sent: int, max_concurrency: str = "10%", per_target_s: int = 60) -> int:
     """What SendCommand's TimeoutSeconds must be: SSM runs n instances in waves of MaxConcurrency (a percentage is
-    read rounded down, at least 1), each within the per-target timeout, plus 120 s of slack."""
+    read rounded down, at least 1), each within the per-target timeout plus zs-collect's 60 s command overrun, plus
+    120 s of slack."""
     import math
 
     pct = int(max_concurrency[:-1]) if max_concurrency.endswith("%") else None
     at_once = max(1, min(n_sent, n_sent * pct // 100 if pct is not None else int(max_concurrency)))
-    return math.ceil(n_sent / at_once) * per_target_s + 120 + 60  # + the margin before DeliveryTimedOut
+    return math.ceil(n_sent / at_once) * (per_target_s + 60) + 120 + 60  # + the margin before DeliveryTimedOut
 
 
 def _stub_common(c: Clients, online: list[str], sent: list[str], bucket=None, ids=None):
@@ -800,7 +801,12 @@ def _jinja():
 @pytest.mark.parametrize("pillar,args", [
     ({"zs_nonce": NONCE, "zs_tier": 2, "zs_timeout_s": 1200}, f"--nonce {NONCE} --tier 2 --timeout-s 1200 --output json"),
     ({"zs_nonce": NONCE, "zs_tier": 1}, f"--nonce {NONCE} --tier 1 --timeout-s 300 --output json"),
+    ({"zs_nonce": NONCE, "zs_tier": 1, "zs_timeout_s": 10}, f"--nonce {NONCE} --tier 1 --timeout-s 10 --output json"),
+    ({"zs_nonce": NONCE, "zs_tier": 1, "zs_timeout_s": 3600},
+     f"--nonce {NONCE} --tier 1 --timeout-s 3600 --output json"),
     ({"zs_nonce": NONCE, "zs_tier": 1, "zs_timeout_s": 9}, None),
+    ({"zs_nonce": NONCE, "zs_tier": 1, "zs_timeout_s": 5}, None),  # review 5879001771 (N17): pillar the customer sets
+    ({"zs_nonce": NONCE, "zs_tier": 1, "zs_timeout_s": 3601}, None),
     ({"zs_nonce": NONCE, "zs_tier": 1, "zs_timeout_s": "60; id"}, None),
 ])
 def test_the_salt_state_passes_a_checked_timeout_to_the_launcher(pillar, args):
@@ -865,3 +871,240 @@ def test_a_source_of_one_kind_never_runs_through_a_transport_of_another(api, wor
         assert "is a ssm transport, not awx" in out["config"]["transport_problem"]
         row, why = R.usable_transport(s, 1, t["id"], kind="awx")
         assert row is None and "not awx" in why
+
+
+# ----------------------------------------------------------------------------- review 5879001771
+def _dberr_job(monkeypatch, batch: int = 4, fail_calls=(1,)):
+    """The cloud worker's real _Job (emit, flush, should_stop) with a database error (not an HTTPException) on the
+    given add_assets calls; returns (job, stored)."""
+    from sqlalchemy.exc import OperationalError
+
+    from backend.workers import cbom_cloud_worker as W
+
+    class NoDb:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    stored, calls = [], [0]
+
+    def add_assets(session, _node, job_id, lease_id, assets, now, **kw):
+        calls[0] += 1
+        if calls[0] in fail_calls:
+            raise OperationalError("INSERT INTO cbom_collected_asset ...", {}, Exception("connection closed"))
+        stored.extend(assets)
+
+    monkeypatch.setattr(W, "Session", NoDb)
+    monkeypatch.setattr(W.J, "add_assets", add_assets)
+    monkeypatch.setattr(W, "BATCH", batch)
+    job = W._Job(None, {"job": {"id": 9, "attempt": 1, "team_id": 1, "lease_id": "L", "max_runtime_s": 3600},
+                        "source": {"id": 1, "kind": "ssm_hosts", "config": {}}})
+    return job, stored
+
+
+def _small_doc(label: str, nonce: str, n: int = 3) -> dict:
+    d = doc_for(label, nonce)
+    d["assets"] = [a for a in d["assets"] if a["type"] != "coverage"][:n]
+    d["result"]["targets"][0]["assets"] = n
+    return d
+
+
+class _Instances:
+    def __init__(self):
+        self.closed = False
+        self.reported = 0
+
+    def run_collect(self, targets, credential, options):
+        from backend.utilities.cbom_sources.transports.base import TargetResult
+
+        try:
+            for t in targets:
+                self.reported += 1
+                yield TargetResult(t, "ok", None, _small_doc(t.label, options.run_nonce))
+        finally:
+            self.closed = True
+
+
+SSM_CONFIG = {"targets": ["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4"], "tier": 2,
+              "handles": {f"10.0.0.{k + 1}": f"i-{k:017x}" for k in range(4)}, "transport": dict(CRED.config),
+              "zs_collect": {"version": FIXTURE["collector_version"], "sha256": {}}}
+
+
+def test_cloud_a_database_error_while_storing_fails_the_ssm_job_and_never_reports_unstored_assets_ok(monkeypatch):
+    """Review 5879001771 (cloud.py:92): the per-instance guard wrapped emit, so an OperationalError in the worker's
+    flush became one instance's error row while the batch it dropped (other instances' assets) was reported ok.  Now
+    only reading a document is guarded: the error leaves collect_ssm, the transport is closed (no next command), and
+    the worker stores "Collection failed"."""
+    from sqlalchemy.exc import OperationalError
+
+    job, stored = _dberr_job(monkeypatch)
+    fake = _Instances()
+    with pytest.raises(OperationalError):
+        collect_ssm({"id": 9, "attempt": 1, "kind": "collect"}, SSM_CONFIG, [], fake, job.emit, job.should_stop,
+                    job.deadline)
+    assert fake.closed and fake.reported == 2  # the flush failed on instance 2's assets: nothing after it was read
+    assert stored == [] and job.store_failed == "OperationalError"
+    assert job.should_stop()  # and anything that still asks is told to stop
+
+
+def test_cloud_worker_fails_a_job_whose_assets_were_not_stored_even_if_the_collector_swallows_it(monkeypatch):
+    """Defence in depth in the worker: a collector that catches the store error itself (any kind, not only SSM) still
+    ends as a failure, never success or cancelled."""
+    from backend.workers import cbom_cloud_worker as W
+
+    job, stored = _dberr_job(monkeypatch, batch=2)
+    job.source = {**job.source, "kind": "aws_account"}
+
+    def swallowing_collector(self):
+        for k in range(6):
+            try:
+                self.emit({"type": "kms_key", "target": "acct", "location": f"arn:k/{k}", "facts": {}})
+            except Exception:
+                pass
+        return {"summary": "6 keys", "targets": [{"target": "acct", "status": "ok"}]}
+
+    finished = {}
+
+    def finish_job(session, node, job_id, lease_id, status, result, error, now, **kw):
+        finished.update(status=status, error=error)
+
+        class Row:
+            asset_count = len(stored)
+        return Row()
+
+    monkeypatch.setattr(W._Job, "_aws", swallowing_collector)
+    monkeypatch.setattr(W.J, "finish_job", finish_job)
+    job.run()
+    assert finished["status"] == "failure" and finished["error"].startswith("Collection failed (ref ")
+    assert stored == []  # once a batch was lost nothing more was stored for a job that fails anyway
+
+
+def test_cloud_one_unreadable_document_is_that_instances_row(monkeypatch):
+    """The per-instance guard that stays: reading one instance's document (relabel, its outcome) raising is that
+    instance's error row; the others are stored and ok (review 5879001771, mutant BO8)."""
+    import backend.utilities.cbom_sources.transports.cloud as CLOUD
+
+    real = CLOUD.zsdoc.relabel
+
+    def relabel(doc, label):
+        if label == "10.0.0.2":
+            raise RecursionError("maximum recursion depth exceeded")
+        return real(doc, label)
+
+    monkeypatch.setattr(CLOUD.zsdoc, "relabel", relabel)
+    emitted = []
+    result = collect_ssm({"id": 9, "attempt": 1, "kind": "collect"}, SSM_CONFIG, [], _Instances(), emitted.append,
+                         lambda: None, time.monotonic() + 60)
+    rows = {r["target"]: r for r in result["targets"]}
+    assert rows["10.0.0.2"]["status"] == "error" and "RecursionError" in rows["10.0.0.2"]["error"]
+    assert [rows[f"10.0.0.{k}"]["status"] for k in (1, 3, 4)] == ["ok"] * 3
+    assert {a["target"] for a in emitted} == {"10.0.0.1", "10.0.0.3", "10.0.0.4"} and len(emitted) == 9
+
+
+@pytest.mark.parametrize("reason,past_deadline,expected", [
+    ("Stopped at the maximum run time", True, "skipped_deadline"),
+    ("This job is no longer leased to this worker", False, "skipped_cancelled"),
+    ("skipped_cancelled", False, "skipped_cancelled"),
+])
+def test_cloud_rows_carry_a_skip_status_never_the_workers_stop_text(reason, past_deadline, expected):
+    """The cloud worker's should_stop answers why it stops (text); the SSM transport and collect_ssm put what
+    should_stop answers into the rows' status.  It is mapped to a skip status."""
+    class StopsAfterOne:
+        def run_collect(self, targets, credential, options):
+            from backend.utilities.cbom_sources.transports.base import TargetResult
+
+            yield TargetResult(targets[0], "ok", None, _small_doc(targets[0].label, options.run_nonce))
+            for t in targets[1:]:
+                yield TargetResult(t, options.should_stop() or "skipped_deadline", "stopped", None)
+
+    stop = {"v": None}
+
+    def should_stop():
+        return stop["v"]
+
+    def emit(asset):
+        stop["v"] = reason  # the job is told to stop while the first instance's assets are stored
+
+    deadline = time.monotonic() + (-1 if past_deadline else 3600)
+    result = collect_ssm({"id": 9, "attempt": 1, "kind": "collect"}, SSM_CONFIG, [], StopsAfterOne(), emit,
+                         should_stop, deadline)
+    statuses = [r["status"] for r in result["targets"]]
+    assert statuses == ["ok"] + [expected] * 3
+
+
+def _waves(monkeypatch, n: int, per_host_s: float, max_concurrency: str = "10%", deadline_s: float = 8 * 3600,
+           timeout_s: int = 300):
+    from backend.utilities.cbom_sources.transports import ssm as SSM_MOD
+
+    clock = FakeClock()
+    monkeypatch.setattr(SSM_MOD, "time", clock)
+    fake = WaveSsm(clock, per_host_s)
+    opts = CollectOptions(tier=1, run_nonce=NONCE, deadline=clock.t + deadline_s, timeout_per_target_s=timeout_s,
+                          max_concurrency=max_concurrency, zs_collect_sha256={}, should_stop=lambda: None,
+                          collector_version=FIXTURE["collector_version"])
+    cred = TransportCredential("aws_role", {**CRED.config, "max_concurrency": max_concurrency}, {})
+    out = list(SsmTransport(lambda svc, region: fake, poll_s=3.0).run_collect(wave_targets(n), cred, opts))
+    return fake, [r.status for r in out]
+
+
+@pytest.mark.parametrize("max_concurrency,waves", [("2", 25), ("4%", 25), ("25", 2)])
+def test_ssm_the_wait_follows_the_transports_own_max_concurrency(monkeypatch, max_concurrency, waves):
+    """Review 5879001771 (ssm.py:63, mutant BO15): the budget is computed from the MaxConcurrency the transport
+    sends, not the default 10%.  "2" (or 4% of 50) is 25 waves: every instance finishes, and TimeoutSeconds covers
+    25 waves of the 300 s timeout plus zs-collect's overrun."""
+    fake, statuses = _waves(monkeypatch, 50, 300, max_concurrency)
+    assert statuses.count("ok") == 50, sorted(set(statuses))
+    (cmd,) = fake.sent
+    assert cmd["MaxConcurrency"] == max_concurrency
+    assert cmd["TimeoutSeconds"] >= waves * (300 + 60) + 120
+
+
+@pytest.mark.parametrize("per_host_s", [315, 330, 360])
+def test_ssm_hosts_that_overrun_their_timeout_by_a_command_are_still_waited_for(monkeypatch, per_host_s):
+    """zs-collect checks --timeout-s between commands, so a host can run up to one command timeout (60 s) past it.
+    The slack is per wave: 50 instances at 10% that each take 315-360 s are all collected (the per-batch slack gave
+    45 ok and 5 timeout at 315 s)."""
+    fake, statuses = _waves(monkeypatch, 50, per_host_s)
+    assert statuses.count("ok") == 50, sorted(set(statuses))
+    assert fake.sent[0]["TimeoutSeconds"] == 10 * (300 + 60) + 120 + 60
+
+
+@pytest.mark.parametrize("left_s,sent", [(5, False), (200, False), (479, False), (480, True)])
+def test_ssm_sends_nothing_when_the_job_cannot_wait_for_one_instance(monkeypatch, left_s, sent):
+    """Review 5879001771 (ssm.py:173): with less time left than one instance may need (300 + 60 + 120 s), no command
+    starts zs-collect on the customer's hosts only to be cancelled: every instance is skipped_deadline."""
+    fake, statuses = _waves(monkeypatch, 50, 8.5, deadline_s=left_s)
+    assert bool(fake.sent) is sent
+    if not sent:
+        assert statuses == ["skipped_deadline"] * 50
+    else:
+        assert fake.sent[0]["TimeoutSeconds"] >= 480 and "timeout" not in statuses[:5]
+
+
+def test_ssm_one_instances_unreadable_result_is_its_own_error(monkeypatch):
+    """The SSM adapter's own per-instance guard (ssm.py, mutant BO7): _result raising for one instance gives it an
+    error row; the others of the same command are collected."""
+    from backend.utilities.cbom_sources.transports import ssm as SSM_MOD
+
+    real = SSM_MOD.SsmTransport._result
+
+    def result(self, ssm, region, command_id, t, *rest):
+        if t.handle == wave_targets(3)[1].handle:
+            raise RuntimeError("an unexpected shape in this instance's output")
+        return real(self, ssm, region, command_id, t, *rest)
+
+    monkeypatch.setattr(SSM_MOD.SsmTransport, "_result", result)
+    _fake, statuses = _waves(monkeypatch, 3, 8.5)
+    assert statuses == ["ok", "error", "ok"]
+

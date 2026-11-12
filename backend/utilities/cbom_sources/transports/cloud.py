@@ -19,6 +19,7 @@ from backend.utilities.cbom_sources.transports.base import (CollectOptions, Coll
 
 Emit = Callable[[dict[str, Any]], None]
 _FIELDS = ("type", "target", "location", "name", "algorithm", "key_size", "protocol", "facts")
+SKIP_STATUSES = ("skipped_deadline", "skipped_cancelled", "skipped_stop", "skipped_window")
 
 
 class SsmRefused(Exception):
@@ -74,57 +75,91 @@ def collect_ssm(job: dict, config: dict, exclusions: list[str], transport, emit:
         else:
             todo.append(t)
     nonce = f"zs-{int(job.get('id') or 0)}-{int(job.get('attempt') or 1)}-{_secrets.token_hex(8)}"
+
+    def stop_status() -> str | None:
+        """The transports' ``should_stop`` answers a skip status; the cloud worker's answers why it stops ("Stopped
+        at the maximum run time", a lease or store problem).  Rows carry the status, never that text."""
+        reason = should_stop()
+        if not reason:
+            return None
+        if reason in SKIP_STATUSES:
+            return reason
+        return "skipped_deadline" if time.monotonic() >= deadline else "skipped_cancelled"
+
     options = CollectOptions(tier=2 if int(config.get("tier") or 1) == 2 else 1, run_nonce=nonce, deadline=deadline,
                              timeout_per_target_s=int(config.get("timeout_s") or 300),
                              max_concurrency=str(config["transport"].get("max_concurrency") or "10%"),
-                             zs_collect_sha256=dict(zs.get("sha256") or {}), should_stop=should_stop,
+                             zs_collect_sha256=dict(zs.get("sha256") or {}), should_stop=stop_status,
                              collector_version=str(zs["version"]))
     credential = TransportCredential("aws_role", dict(config["transport"]), {})
     done: set[str] = set()
     started = time.monotonic()
+
+    def reported():  # the transport's call itself, not only its iteration, is inside the guard below
+        yield from transport.run_collect(todo, credential, options)
+
+    def fail_the_rest(status: str, error: str) -> None:
+        for t in todo:
+            if t.label not in done:
+                done.add(t.label)
+                rows.append({"target": t.label, "status": status, "error": error[:256], "assets": 0})
+
+    results = reported()
     try:
-        for res in transport.run_collect(todo, credential, options):
+        while True:
+            try:  # guarded: the transport's own step only (storing assets happens in _take, outside this)
+                res = next(results)
+            except StopIteration:
+                break
+            except TransportError as exc:
+                fail_the_rest(exc.status, exc.detail)
+                break
+            except Exception as exc:  # the transport itself broke: the instances it reported keep their rows
+                fail_the_rest("error", f"the SSM transport failed before this instance was reported "
+                                       f"({exc.__class__.__name__})")
+                break
             if res.target.label in done:
                 continue
             done.add(res.target.label)
-            try:
-                rows.append(_post(res, emit, started))
-            except Exception as exc:  # one instance's document is that instance's error row, never the job's
-                rows.append({"target": res.target.label, "status": "error", "assets": 0,
-                             "error": f"the zs-collect document could not be stored ({exc.__class__.__name__})"})
+            rows.append(_take(res, emit, started))
             started = time.monotonic()
-    except TransportError as exc:
-        for t in todo:
-            if t.label not in done:
-                done.add(t.label)
-                rows.append({"target": t.label, "status": exc.status, "error": exc.detail[:256], "assets": 0})
-    except Exception as exc:  # the transport itself broke: the instances it reported keep their rows
-        for t in todo:
-            if t.label not in done:
-                done.add(t.label)
-                rows.append({"target": t.label, "status": "error", "assets": 0,
-                             "error": f"the SSM transport failed before this instance was reported "
-                                      f"({exc.__class__.__name__})"})
+    finally:
+        results.close()  # whatever ended the loop (a failed store too) ends the transport's run: no next command
     for t in todo:
         if t.label not in done:
-            rows.append({"target": t.label, "status": should_stop() or "error",
-                         "error": None if should_stop() else "SSM reported nothing for this instance", "assets": 0})
+            stop = stop_status()
+            rows.append({"target": t.label, "status": stop or "error",
+                         "error": None if stop else "SSM reported nothing for this instance", "assets": 0})
     ok = sum(1 for r in rows if r["status"] == "ok")
     failed = sum(1 for r in rows if r["status"] != "ok" and not r["status"].startswith("skipped_"))
     return {"summary": f"{ok} of {len(rows)} instances collected through SSM, {failed} failed",
             "targets": rows, "transport": "ssm"}
 
 
-def _post(res: TargetResult, emit: Emit, started: float) -> dict[str, Any]:
+def _assets(res: TargetResult) -> tuple[list[dict[str, Any]], tuple[str, str | None, int | None]]:
+    """One instance's assets as they are stored, and its outcome (status, error, zs-collect's count).  Pure: stores
+    nothing, so whatever it raises is about this instance's document, never about the database or the job."""
+    assets = [{k: a.get(k) for k in _FIELDS if k in a or k in ("facts",)}
+              for a in zsdoc.relabel(res.document, res.target.label)]
+    return assets, zsdoc.target_outcome(res.document)
+
+
+def _take(res: TargetResult, emit: Emit, started: float) -> dict[str, Any]:
+    """One reported instance's row, with its assets stored.  Only reading its document is guarded (one instance's
+    document is that instance's error row, never the job's).  Storing is not: an infrastructure failure in ``emit``
+    (the database, the lease) fails the job, as it does for every other cloud collector, instead of rows that say
+    ``ok`` for assets that were never stored."""
     t = res.target
     ms = int((time.monotonic() - started) * 1000)
     if res.document is None:
         return {"target": t.label, "status": res.status, "error": (res.error or "")[:256] or None, "assets": 0,
                 "duration_ms": ms}
-    n = 0
-    for a in zsdoc.relabel(res.document, t.label):
-        emit({k: a.get(k) for k in _FIELDS if k in a or k in ("facts",)})
-        n += 1
-    status, error, counted = zsdoc.target_outcome(res.document)
-    return {"target": t.label, "status": status, "error": error, "assets": n if counted is None else counted,
+    try:
+        assets, (status, error, counted) = _assets(res)
+    except Exception as exc:
+        return {"target": t.label, "status": "error", "assets": 0, "duration_ms": ms,
+                "error": f"the zs-collect document could not be read ({exc.__class__.__name__})"}
+    for a in assets:
+        emit(a)
+    return {"target": t.label, "status": status, "error": error, "assets": len(assets) if counted is None else counted,
             "duration_ms": ms}

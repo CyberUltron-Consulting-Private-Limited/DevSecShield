@@ -50,6 +50,7 @@ class _Job:
         self.last_renew = time.monotonic()
         self.deadline = time.monotonic() + int(self.job.get("max_runtime_s") or 8 * 3600) - 120
         self.emitted = 0
+        self.store_failed: str | None = None  # an asset batch was lost to an error that is not the API's refusal
 
     # -- leases and batches
     def should_stop(self) -> str | None:
@@ -88,6 +89,15 @@ class _Job:
                 session.rollback()
                 self.stop_reason = str(exc.detail)
                 log("cloud job stopped", team=self.job["team_id"], job=self.job["id"], reason=self.stop_reason[:120])
+            except Exception as exc:
+                # Anything else (the database connection lost, a failover): this batch is gone.  The job fails even
+                # when the collector that called emit() or should_stop() swallows the exception, and it stops (no
+                # more reads of the customer's cloud, no next SSM command) since nothing more would be kept.
+                self.store_failed = type(exc).__name__
+                self.stop_reason = self.stop_reason or "Collection stopped: assets could not be stored"
+                log("cloud job asset batch NOT stored", team=self.job["team_id"], job=self.job["id"], assets=len(batch),
+                    error=self.store_failed)
+                raise
 
     # -- run
     def run(self) -> None:
@@ -133,6 +143,10 @@ class _Job:
             log("cloud job FAILED", ref=ref, team=team_id, job=self.job["id"], error=type(exc).__name__)
             status, error = "failure", f"Collection failed (ref {ref})"
         self.flush()
+        if self.store_failed and status != "failure":  # a collector swallowed the failed store: the job still fails
+            ref = new_ref()
+            log("cloud job FAILED", ref=ref, team=team_id, job=self.job["id"], error=self.store_failed)
+            status, error = "failure", f"Collection failed (ref {ref})"
         if self.stop_reason and status == "success":
             status, error = "cancelled", self.stop_reason
         targets = result.get("targets") or []

@@ -13,9 +13,10 @@ Per region, per batch of at most 50 instance ids (the SendCommand limit):
    ``nonce`` / ``tier`` / ``output`` (SSM checks them against the document's allowed patterns), the S3 output location
    when one is configured, and a comment naming the ZeroShield job.
 3. ``ListCommandInvocations`` until every invocation is final.  SSM runs the batch in waves of ``MaxConcurrency``, so
-   the wait is one per-target timeout per wave plus slack (``wait_budget``), never past the job's deadline, and
-   ``TimeoutSeconds`` (after which SSM never starts a waiting instance) is at least that wait; at its end the command
-   is cancelled (``CancelCommand``).
+   the wait is one per-target timeout (plus zs-collect's possible overrun of it) per wave, plus slack
+   (``wait_budget``), never past the job's deadline; a batch is not sent at all when the job has less time left than
+   one instance may need.  ``TimeoutSeconds`` (after which SSM never starts a waiting instance) is at least the wait;
+   at its end the command is cancelled (``CancelCommand``).
 4. The output: from S3 when a bucket is configured (``GetCommandInvocation`` truncates stdout at 24,000 characters),
    otherwise inline from ``GetCommandInvocation`` with ``output=chunks`` (one gzip+base64 line); inline output that hits
    the 24,000-character cap is refused with "configure an output bucket", never half-read.
@@ -40,6 +41,9 @@ FINAL = {"Success", "Failed", "TimedOut", "Cancelled", "Undeliverable", "Termina
 STEP = "zsCollect"
 DEFAULT_MAX_CONCURRENCY = "10%"  # contract section 3: the customer's blast radius, honoured rather than overridden
 SLACK_S = 120  # SSM delivery, the launcher's checks and the output upload, once per batch
+# zs-collect checks its --timeout-s between commands, so a command in flight at that moment can run up to its own
+# command timeout (zscollect.CMD_TIMEOUT, 60 s) longer: every wave may overrun the per-target timeout by that much
+HOST_OVERRUN_S = 60
 MAX_TIMEOUT_SECONDS = 2_592_000  # SendCommand's TimeoutSeconds range is 30..2592000
 DELIVERY_MARGIN_S = 60  # TimeoutSeconds runs this much past the wait: the command is cancelled first
 NOT_STARTED = ("Pending", "Delayed")
@@ -58,9 +62,10 @@ def concurrency(max_concurrency: str, n: int) -> int:
 
 
 def wait_budget(n: int, max_concurrency: str, per_target_s: int) -> int:
-    """Seconds one command over ``n`` instances may need: one per-target timeout per wave, plus slack."""
+    """Seconds one command over ``n`` instances may need: per wave, the per-target timeout plus zs-collect's possible
+    overrun of it (HOST_OVERRUN_S); then the batch's slack once."""
     waves = math.ceil(max(n, 1) / concurrency(max_concurrency, n))
-    return waves * int(per_target_s) + SLACK_S
+    return waves * (int(per_target_s) + HOST_OVERRUN_S) + SLACK_S
 
 
 def _code(exc: Exception) -> str:
@@ -170,10 +175,12 @@ class SsmTransport:
         # the whole command's wait: SSM runs the batch in waves, each host within its own timeout; never past the
         # job's deadline (what is still running then is cancelled and reported, the next batches are not sent)
         wait_s = min(wait_budget(len(ready), max_concurrency, timeout), options.deadline - time.monotonic())
-        if wait_s <= 0:
+        one_host = wait_budget(1, "1", timeout)
+        if wait_s < one_host:  # not even one instance could finish: start nothing on the customer's hosts
             for t in ready:
                 yield TargetResult(t, options.should_stop() or "skipped_deadline",
-                                   "the job's deadline passed before this batch was sent", None)
+                                   f"the job had too little time left to send this batch (one instance may need "
+                                   f"{one_host} s)", None)
             return
         kw: dict[str, Any] = {
             "InstanceIds": [t.handle for t in ready], "DocumentName": document,
