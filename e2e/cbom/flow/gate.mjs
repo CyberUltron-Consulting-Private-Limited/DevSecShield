@@ -245,7 +245,15 @@ try {
     A = await signUp(browser, "customerA", s);
     state.teams = { ...(state.teams || {}), A: A.team };
     s.check("signed_up", Number.isInteger(A.team), { expected: "a new team id", observed: A.team });
-    execFileSync("python3", [`${R6}/local/bin/dss.py`, "topup", String(A.team), String(TOPUP)], { stdio: "ignore", timeout: 300000 });
+    // operator top-up: the shared stack's operator sign-in is rate-limited per IP; retry 4x, 30 s apart (CB-05 v7 #8)
+    let topupError = "";
+    for (let i = 0; i < 4; i++) {
+      const r = spawnSync("python3", [`${R6}/local/bin/dss.py`, "topup", String(A.team), String(TOPUP)], { encoding: "utf8", timeout: 300000 });
+      if (r.status === 0) { topupError = ""; break; }
+      topupError = ((r.stderr || r.stdout || String(r.error || "")).trim().split("\n").pop() || `exit ${r.status}`).slice(0, 300);
+      if (i < 3) await sleep(30000);
+    }
+    if (topupError) throw new Error(`operator top-up failed 4x: ${topupError}`);
     await A.page.reload({ waitUntil: "networkidle" });
     const text = await A.page.getByText(/\d+(\.\d+)? credits/).first().textContent({ timeout: 20000 }).catch(() => "");
     const shown = Number((text.match(/([\d.]+) credits/) || [])[1]);

@@ -83,7 +83,10 @@ def write_manifest(run: Path, sha: str, ref: str, started: str, node_image: str 
         exp = read_json(Path(run) / "exports" / f"run{k}.cdx.json") or {}
         if exp.get("serialNumber"):
             serials[k] = exp["serialNumber"]
-    return manifest.update(run, sha=sha, ref=ref, tier="L", started=started, stack_status=status_line,
+    here = Path(__file__).resolve().parents[1]
+    harness = {"commit": _sh("git", "-C", str(here), "rev-parse", "HEAD"),
+               "dirty": bool(_sh("git", "-C", str(here), "status", "--porcelain", "--", "."))}
+    return manifest.update(run, sha=sha, ref=ref, tier="L", started=started, stack_status=status_line, harness=harness,
                            images=images(run), node_image={"ref": node_image, "id": node_digest},
                            lab={"containers": lab_containers(run), "images": gen.get("images") or {},
                                 "generator": gen.get("generator"), "commit": gen.get("commit")},
@@ -103,7 +106,7 @@ def seal(run: Path, secrets_file: Path | None, started: str, budget_min: float) 
     elapsed = (utc_now() - t0).total_seconds() if t0 else None
     man = read_json(Path(run) / manifest.MANIFEST) or {}
     need = ("sha", "images", "playwright", "teams", "started", "runs", "jobs", "assets", "serialNumbers", "node_image",
-            "lab")
+            "lab", "harness")
     checks = [
         _check("no_residual_secrets", not problems, "no token, password or registration token left", problems[:20]),
         _check("manifest_complete", not _incomplete(man, need), list(need), _incomplete(man, need) or "complete"),
@@ -129,6 +132,8 @@ def _incomplete(man: dict[str, Any], need: tuple[str, ...]) -> list[str]:
         missing.append("node_image.id")
     if not (man.get("lab") or {}).get("containers"):
         missing.append("lab.containers")
+    if not (man.get("harness") or {}).get("commit"):
+        missing.append("harness.commit")
     return sorted(set(missing))
 
 

@@ -38,7 +38,8 @@ def test_seal_redacts_writes_g17_and_deletes_the_secrets_file(tmp_path):
     secrets.write_text(json.dumps(["Pw-very-secret-1"]), encoding="utf-8")
     bundle.manifest.update(run, sha="abc1234", images={"x": {}}, playwright={"version": "1.62.0"}, started="t",
                            runs=[55], jobs=[{"id": 900}], assets={"1": [101]}, serialNumbers={"1": "urn:uuid:x"},
-                           node_image={"ref": "img", "id": "sha256:1"}, lab={"containers": ["cb02-z01"]})
+                           node_image={"ref": "img", "id": "sha256:1"}, lab={"containers": ["cb02-z01"]},
+                           harness={"commit": "abc1234", "dirty": False})
     (run / "flow-state.json").write_text(json.dumps({"logged_out": {"A": True, "B": True}}), encoding="utf-8")
     assert bundle.seal(run, secrets, "2026-11-12T09:00:00Z", budget_min=10**6) == 0
     assert not secrets.exists()
@@ -58,7 +59,7 @@ def test_manifest_complete_needs_node_image_id_and_lab_containers(tmp_path):
     bundle.seal(run, None, "2026-11-12T09:00:00Z", budget_min=10**6)
     g17 = {c["id"]: c for c in json.loads((run / "steps" / "G17" / "step.json").read_text())["checks"]}
     assert g17["G17/manifest_complete"]["verdict"] == "FAIL"
-    assert g17["G17/manifest_complete"]["observed"] == ["lab.containers", "node_image.id"]
+    assert g17["G17/manifest_complete"]["observed"] == ["harness", "harness.commit", "lab.containers", "node_image.id"]
 
 
 def test_seal_fails_the_budget_and_a_missing_logout(tmp_path):

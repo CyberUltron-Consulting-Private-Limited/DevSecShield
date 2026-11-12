@@ -451,3 +451,15 @@ def test_unverified_keys_named_by_the_lab_are_not_judged(tmp_path):
           lambda d: d["targets"][0].__setitem__("unverified_keys", {"z01/tls_endpoint": ["cipher_suites"]}))
     passed, blocking, _ = judge(fr.dir, tmp_path)
     assert blocking["G11/oracle/run1/z01/tls_endpoint/cipher_suites"]["reason"] == "lab-not-independent"
+
+
+def test_lab_stated_verdict_must_agree_with_its_own_groups(tmp_path):
+    """v7 §A.2: the lab's stated endpoint verdict wins, but contradicting its own accepted groups is a lab bug."""
+    fr = FakeRun(tmp_path)
+    fr.write()
+    _edit(fr.dir / "oracle/run1.json", lambda d: d["targets"][0]["assets"][1]["expect"].update(
+        {"quantum_vulnerable": False, "groups": ["x25519", "secp256r1"]}))
+    manifest.freeze_oracle(fr.dir)
+    passed, blocking, _ = judge(fr.dir, tmp_path)
+    assert blocking["G11/oracle/run1/z01/tls_endpoint/quantum_vulnerable/lab_vs_derivation"]["reason"] == \
+        "lab-vs-derivation"

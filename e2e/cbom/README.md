@@ -52,5 +52,11 @@ defect under an old row) or down (a fix), fails the gate until the row is edited
 CI (ci-gate, backend job) runs `tests/` only: the judge's unit suite, the golden negative-control suite (a trimmed,
 sanitised snapshot of a real Tier-L run under `tests/golden/`, re-judged with every wrong CBOM), the O-1 import lint and
 the repository ledger's schema. CI never sees a live run: it cannot tell whether `known-fail.yaml`'s pinned counts are
-still true on dev. Only `run-gate.sh` on the local stack (Tier L) can, so **a ledger edit needs a live run in the same
-PR**: post the run's bundle sha256 (`sha256sum <run>/SHA256SUMS`) and its `report.md` ledger table with the change.
+still true on dev. Only `run-gate.sh` on the local stack (Tier L: the dss-staging stack, Docker, the CB-02 lab,
+Chromium) can, so **a ledger edit needs a live run in the same PR**.
+
+How a PR proves the gate (DA §4.6): run `run-gate.sh <head>` on the PR head rebased on dev, under `stack.lock`; no new
+failure (nothing blocking, every ledger row `holds` or `not-run-ok`); post the bundle sha256
+(`sha256sum <run>/SHA256SUMS`) and the `report.md` ledger table on the PR. A PR that fixes a ledgered defect sees its
+row `moved` or `stale` and edits or deletes it in the same PR, backed by that run. The golden fixture is refreshed
+with `python3 tools/golden.py <run> tests/golden` plus its own ledger snapshot when the lab or the judge changes shape.

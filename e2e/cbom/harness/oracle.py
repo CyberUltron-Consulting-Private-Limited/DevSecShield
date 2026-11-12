@@ -284,6 +284,12 @@ def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]
             # customer-visible fields the oracle does not state: derive from its own facts, else name the gap
             for key in VISIBLE_FIELDS:
                 if key in expect:
+                    # v7 §A.2: the lab states the value and wins; a derivation from its own facts must agree with it
+                    derived = derive(asset, key, item) if key == "quantum_vulnerable" else None
+                    if derived is not None and F.norm_bool(expect[key]) is not derived[0]:
+                        checks.fail(f"{prefix}/{oid}/{key}/lab_vs_derivation", GATE, "oracle", "lab-vs-derivation",
+                                    {**subject, "asset_id": aid, "field": key, "expectation": "lab-vs-derivation"},
+                                    expected=f"{derived[0]} ({derived[1]})", observed=expect[key])
                     continue
                 if world == "open" and asset.get("asset_type") not in ENDPOINT_TYPES:
                     continue
