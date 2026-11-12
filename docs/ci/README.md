@@ -199,13 +199,16 @@ push runs apply the merged PR's label is #24.
 line, is discarded. Every SARIF file has its `snippet` / `contextRegion` / `fixes` removed before upload, and the
 job fails if any snippet is left. Secrets inside binary and archive files (.docx, .zip) are not seen (#21).
 
-**The first `staging → main` promotion is blocked until #18 lands.** `main` (15 July) is 347 commits behind
-`dev`, and those commits modify tracked `.env` files (`backend/.env`, `backend/utilities/ai/.env`,
+**The first `staging → main` promotion and the tracked `.env` files.** `main` (15 July) is far behind `dev`, and
+`dev` changed the AWS key lines of four tracked `.env` files (`backend/.env`, `backend/utilities/ai/.env`,
 `RabbitMQ/worker/.env`, `RabbitMQ/worker/helpers/context/.env`). pr-hygiene refuses a PR that adds or modifies
-secret-bearing files, and it is deliberately **not** relaxed for promotion PRs. #18 removes the tracked `.env`
-files from `dev` (replacing them with `.env.example`) without breaking the staging deploy. Once it is merged, the
-promotion diff shows them as removed, which is allowed. gitleaks findings in those commits are covered by the
-baseline.
+secret-bearing files, and no label or promotion rule waives that. The owner chose to keep `main`'s copies as they
+are (2026-11-12): pr-hygiene therefore lets a PR modify such a file back to `main`'s exact blob (see pr-hygiene
+below), after which promotions no longer touch them. **But gitleaks blocks that restore commit**: it adds the AWS key
+lines again as new lines of a new commit, and the baseline holds per-commit fingerprints only (a local probe found
+8 findings, aws-access-token and generic-api-key, one pair per file). Restoring needs an owner decision on the
+secret gate first; deleting the tracked files instead (#18) passes both gates but would delete `main`'s copies at
+the `staging → main` promotion.
 
 ## Branch flow and hotfixes
 
@@ -239,14 +242,18 @@ baseline.
   `.npmrc`, `.pypirc`, `.netrc`, `.git-credentials`, `.pgpass`, `.htpasswd`, `.s3cfg`, `kubeconfig`,
   `credentials` (also `.json`, `.csv`), `accessKeys.csv`, `.docker/config.json`, private keys and keystores,
   `*.ovpn`, `*.keytab`, `.tfvars` / `.tfstate` / `.tfstate.backup`, `id_rsa*` and service-account JSON. Deleting
-  one is allowed.
+  one is allowed. So is **modifying** one back to `main`'s exact content (`production-branch`): the file's new blob
+  (from the PR's files API) must equal `main`'s blob for that path, read live from the contents API. A notice names
+  the file. Adding, renaming or copying one, any other content, a path `main` does not have, or an API error still
+  fails (owner decision, 2026-11-12, "Keep main's .env as is").
 - Changes to the gates themselves (`.github/**`, `.gitleaks.toml`, `.gitleaksignore`, `.gitattributes`,
   `CODEOWNERS`, `.coderabbit.yaml`, `.semgrepignore`, `.trivyignore`, `trivy.yaml`, `osv-scanner.toml`,
   `.hadolint.yaml`, `.shellcheckrc`, `.checkov.yaml`, `.gitguardian.yaml`) need the `security-config-reviewed`
   label, whether the file is added, modified, renamed (either name) or **deleted**. So does an added line with an
   inline scanner suppression (`nosemgrep`, `checkov:skip`, `hadolint ignore`, `shellcheck disable`,
   `trivy:ignore`; `suppression-regex`). The files are listed in the job summary. (A file whose patch the API omits,
-  binary or very large, is listed as unchecked for suppressions.)
+  binary or very large, is listed as unchecked for suppressions.) **In a promotion** the gate files can instead pass
+  through review coverage (next section); suppressions still need the label.
 - **Review labels cover the commits they were given for.** On every new push, `pr-checks / review labels` runs
   before pr-hygiene. It removes `security-config-reviewed` when the new commits touch gate files or add a
   suppression, and `secret-fixtures-reviewed` when they touch a fixture path (both, if the change cannot be read).
@@ -259,7 +266,51 @@ It reads the title, body and labels from the API when it runs, so after editing 
 **Dependabot's github-actions PRs** change `.github/workflows/`, so they fail pr-hygiene until a person checks the
 bump (the action's release notes and the new commit SHA) and adds the `security-config-reviewed` label, then
 re-runs the failed jobs. That is deliberate: an action update runs new third-party code with the workflow's token.
-Every promotion that carries a `.github/` change needs the label too.
+A promotion that carries a `.github/` change needs the label too, unless review coverage (below) proves that every
+such change was already reviewed.
+
+### Review coverage of gate files in promotions
+
+Owner decision, 2026-11-12 ("Exempt reviewed CI files"). A promotion (same repository, base in `promotion-bases`,
+head in `trusted-heads`: `dev → staging`, `staging → main`) re-carries gate files that their own PRs already had
+reviewed. For such a PR, a gate file needs no label when **every commit in base..head that changes it came in
+through a merged PR that carried `security-config-reviewed` when it merged**. pr-hygiene hands the promotion's gate
+files to the step *Review coverage of gate files in a promotion*, which prints, per file, the PR(s) that cover it
+(also in the job summary), or the first commit that is not covered and why.
+
+A commit C counts as covered by PR P when:
+
+| Condition | Why |
+|---|---|
+| P is the merged PR the API says introduced C (`commits/C/pulls`), or the PR whose merge commit brought C into the head branch (the head's first-parent merge) | the API names only the introducing PR; the first-parent merge finds an earlier promotion |
+| P merged into this repository, and its merge commit is in the head's history | |
+| C is P's merge commit, or reachable from it and **not** from its first parent | a direct push that a later labelled branch merely contains is not covered by that PR |
+| if C is P's merge commit and a merge: GitHub made it (valid signature, committer `noreply@github.com`) | a merge crafted locally and pushed directly cannot borrow P's review |
+| P carried the label when it merged (labeled/unlabeled events replayed up to `merged_at`) | a label added afterwards does not count |
+| or, for the merge commit of an earlier promotion merged without the label: every commit that promotion brought in that changes the file is covered | "an earlier promotion which passed this same rule" |
+
+"Changes the file": a commit whose diff to its parent names it; a merge only where its result differs from every
+parent (git's combined diff), i.e. what the merge itself introduced. A rename counts under both names. Rebase merges
+are not recognised (this repository merges with merge commits). Any GitHub API or git error fails closed: the label
+is needed.
+
+**The rule never comes from the promotion's own head.** The step fetches `.github/ci/review_coverage.py` through the
+contents API from the **base** commit, or from the head commit only when the head is in `trusted-heads`, the PR
+comes from this repository and the API reports the head branch as protected: the three conditions under which
+gitleaks trusts a head's config (see [The secret gate](#the-secret-gate)). It runs that copy with `python3 -I`
+against a blobless, credential-free checkout of the history (`fetch-depth: 0`, `filter: blob:none`, about 2 MB).
+If that commit has no rule yet, the label is needed. Consequences while branches are unprotected:
+
+- The **first** promotion that brings the rule into `staging` is judged by `staging`'s copy, which does not exist yet,
+  so it still needs the label (or `dev` protected first). Every later `dev → staging` promotion uses `staging`'s copy.
+  The first `staging → main` promotion has the same bootstrap.
+- What cannot be prevented inside a `pull_request` workflow: the PR's own workflow file runs, so a change to
+  `reusable-pr-checks.yml` itself could skip the step. The same holds for the gitleaks step and all of pr-hygiene.
+  On a promotion, such a change is itself a gate file that the base's rule must find covered. Branch protection
+  (below) closes the direct-push route.
+
+**Modified secret-bearing files are not gate files**: no label and no coverage waives them. The only exception is
+the exact restore of `main`'s blob (see the forbidden-files bullet above).
 
 ## Workflows
 
@@ -487,8 +538,11 @@ Builds use Buildx's `docker` driver; with `cache: true` the runner's Docker must
 `require-acceptance-criteria` (`true`; bots are exempt), `acceptance-heading-regex`, `forbidden-files-regex`,
 `allowed-files-regex` (`*.pub`, `.env.example` / `.sample` / `.template` / `.dist`), `secret-fixture-label`,
 `secret-fixture-regex`, `security-config-regex`, `security-config-label`, `suppression-regex`
-(`nosemgrep|checkov:skip|hadolint ignore|shellcheck disable|trivy:ignore`). The caller grants `contents: read` and
-`pull-requests: write` (the review-labels job removes outdated labels; it checks out nothing).
+(`nosemgrep|checkov:skip|hadolint ignore|shellcheck disable|trivy:ignore`), `trusted-heads` (`dev staging`: promotion
+heads; a protected one may supply its own copy of the review-coverage rule), `promotion-bases` (`staging main`),
+`production-branch` (`main`: a modified secret-bearing file passes only as this branch's exact blob). The caller
+grants `contents: read` and `pull-requests: write` (the review-labels job removes outdated labels; it checks out
+nothing; pr-hygiene checks out blobless history only for a promotion's review-coverage step and runs nothing from it).
 
 **pr-labels.yml**: `configuration-path` (`.github/labeler.yml`), `size-thresholds` (`10 50 250 1000`). The caller
 grants `pull-requests: write`.
@@ -556,7 +610,10 @@ Settings → Branches (or Rules → Rulesets), for each of `dev`, `staging` and 
 `pr-checks / pr-hygiene` on PRs. Requiring the individual jobs as well would break: path filtering skips them on
 many PRs, and a skipped required check blocks the merge. Do **not** turn on *Require review from Code Owners* while
 all authors and reviewers post through one account (see `.github/CODEOWNERS`). Once `dev` and `staging` are
-protected, the secret gate trusts them as promotion heads automatically (it reads the API's `protected` flag).
+protected, the secret gate trusts them as promotion heads automatically (it reads the API's `protected` flag), and
+so does pr-hygiene's review-coverage step. If protection comes from a ruleset, check that `GET
+/repos/{owner}/{repo}/branches/dev` then reports `"protected": true`; until it does, both keep using the base's files,
+which is the safe direction.
 
 **Merge queue (optional).** In the same ruleset, *Require merge queue* tests each PR merged onto the latest base
 before it lands, so two PRs that pass alone cannot break `dev` together. `ci.yml` already runs on `merge_group` and

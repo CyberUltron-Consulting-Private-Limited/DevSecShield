@@ -15,10 +15,14 @@
 #               `pull-requests: write`; it checks out nothing.
 # pr-hygiene    title format; the template's "Acceptance criteria" table filled in (bots exempt); no secret-bearing
 #               file (.env, keys, keystores, credential files; case-insensitive) added or modified (deleting one is
-#               allowed); and changes to the security gates themselves (.github/**, scanner configs, ignore files;
-#               added, modified, renamed or DELETED) and added inline suppressions (nosemgrep, checkov:skip, ...)
-#               need the `security-config-reviewed` label. Title, body and labels are read from the API when the job
-#               runs, so after editing the PR or adding a label, re-run the failed jobs.
+#               allowed, and so is MODIFYING one back to production-branch's exact blob); and changes to the security
+#               gates themselves (.github/**, scanner configs, ignore files; added, modified, renamed or DELETED) and
+#               added inline suppressions (nosemgrep, checkov:skip, ...) need the `security-config-reviewed` label.
+#               In a promotion (base in promotion-bases, head in trusted-heads, same repository) a gate file needs no
+#               label when every commit that changes it came in through a merged PR that carried the label: the
+#               review-coverage step checks that with .github/ci/review_coverage.py taken from the BASE commit (or
+#               from a protected head), never from the PR's own head. Title, body and labels are read from the API
+#               when the job runs, so after editing the PR or adding a label, re-run the failed jobs.
 name: reusable / pr checks
 
 on:
@@ -80,6 +84,24 @@ on:
           security-config-label, like a change to a gate's configuration.
         type: string
         default: 'nosemgrep|checkov:skip|hadolint ignore|shellcheck disable|trivy:ignore'
+      trusted-heads:
+        description: >-
+          Promotion heads (space-separated branch names). With a base in promotion-bases and a head from this
+          repository, the PR is a promotion: its gate files go to the review-coverage step. The step runs the head's
+          copy of the rule only if the head branch is also protected (as reusable-security.yml trusts a head's
+          gitleaks config); otherwise the base's.
+        type: string
+        default: dev staging
+      promotion-bases:
+        description: Promotion bases (space-separated branch names), see trusted-heads.
+        type: string
+        default: staging main
+      production-branch:
+        description: >-
+          A secret-bearing file that a PR MODIFIES (not adds, renames or copies) passes when its new blob equals this
+          branch's blob for the same path, i.e. the PR restores production's tracked content byte for byte.
+        type: string
+        default: main
 
 permissions:
   contents: read
@@ -187,6 +209,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Title, acceptance criteria, forbidden files, security-config changes
+        id: hygiene
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
@@ -201,18 +224,22 @@ jobs:
           CONFIG_RE: ${{ inputs.security-config-regex }}
           CONFIG_LABEL: ${{ inputs.security-config-label }}
           SUPPRESS_RE: ${{ inputs.suppression-regex }}
+          TRUSTED_HEADS: ${{ inputs.trusted-heads }}
+          PROMOTION_BASES: ${{ inputs.promotion-bases }}
+          PRODUCTION_BRANCH: ${{ inputs.production-branch }}
         run: |
           set -euo pipefail
           if [ -z "$PR" ]; then echo "::notice::not a pull request; nothing to check"; exit 0; fi
           # Live PR data (title, body, author type, labels): a re-run after an edit or a new label sees the change.
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" > "$RUNNER_TEMP/pr.json"
-          # Every file the PR touches, with its status, former name and patch. The API lists at most 3,000 files.
-          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | {status, filename, previous_filename, patch} | @json' > "$RUNNER_TEMP/files.jsonl"
+          # Every file the PR touches, with its status, former name, new blob and patch. The API lists at most 3,000 files.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | {status, filename, previous_filename, sha, patch} | @json' > "$RUNNER_TEMP/files.jsonl"
           python3 - "$RUNNER_TEMP/pr.json" "$RUNNER_TEMP/files.jsonl" <<'PY'
-          import json, os, re, sys
+          import json, os, re, subprocess, sys, urllib.parse
           env = os.environ
           pr = json.load(open(sys.argv[1], encoding="utf-8"))
           entries = [json.loads(l) for l in open(sys.argv[2], encoding="utf-8") if l.strip()]
+          by_name = {e["filename"]: e for e in entries}
           files = [e["filename"] for e in entries if e.get("status") != "removed"]  # added, modified, renamed, copied
           # every path the PR touches, including deleted files and the old name of a renamed one
           all_paths = list(dict.fromkeys(p for e in entries for p in (e.get("filename"), e.get("previous_filename")) if p))
@@ -227,6 +254,11 @@ jobs:
           promotion = (pr.get("base") or {}).get("ref") in ("staging", "main")
           template = ("the promotion template: add ?template=promotion.md to the compare URL, or copy "
                       ".github/PULL_REQUEST_TEMPLATE/promotion.md") if promotion else ".github/pull_request_template.md"
+          # A promotion for the review-coverage rule: a promotion base, a promotion head, from this repository.
+          head = pr.get("head") or {}
+          review_promotion = ((pr.get("base") or {}).get("ref") in env["PROMOTION_BASES"].split()
+                              and head.get("ref") in env["TRUSTED_HEADS"].split()
+                              and (head.get("repo") or {}).get("full_name") == env["GITHUB_REPOSITORY"])
 
           if env.get("NEED_AC") == "true" and (pr.get("user") or {}).get("type") != "Bot":
               lines = (pr.get("body") or "").replace("\r\n", "\n").split("\n")
@@ -263,16 +295,47 @@ jobs:
           fixture = re.compile(env["FIXTURE_RE"], re.I)
           bad = [f for f in files if forbid.search(f) and not allow.search(f)]
           waived = [f for f in bad if fixture.search(f) and env["FIXTURE_LABEL"] in labels]
+          # A tracked secret-bearing file MODIFIED back to the production branch's exact blob restores content that
+          # production already has; nothing else passes (added, renamed, copied, another blob, or no answer).
+          prod = env["PRODUCTION_BRANCH"]
+          def production_blob(path):
+              """(blob sha of path on the production branch or None, error text or None), read live from the API."""
+              url = f"repos/{env['GITHUB_REPOSITORY']}/contents/{urllib.parse.quote(path)}?ref={urllib.parse.quote(prod, safe='')}"
+              r = subprocess.run(["gh", "api", url], capture_output=True, text=True)
+              if r.returncode != 0:
+                  return None, (None if "HTTP 404" in r.stderr + r.stdout else f"GitHub API error: {(r.stderr or r.stdout).strip()[:200]}")
+              try:
+                  data = json.loads(r.stdout)
+              except ValueError:
+                  return None, "GitHub API error: the response is not JSON"
+              return (data.get("sha") if isinstance(data, dict) and data.get("type") == "file" else None), None
+          restored, unreadable = [], {}
+          for f in bad:
+              e = by_name.get(f) or {}
+              if f in waived or e.get("status") != "modified" or not e.get("sha"):
+                  continue
+              blob, err = production_blob(f)
+              if err:
+                  unreadable[f] = err
+              elif blob and blob == e["sha"]:
+                  restored.append(f)
           for f in bad:
               if f in waived:
                   print(f"::warning file={f}::{f}: allowed by the '{env['FIXTURE_LABEL']}' label (fabricated test fixture)")
+              elif f in restored:
+                  print(f"::notice file={f}::{f}: restored to {prod}'s tracked copy byte for byte (blob {by_name[f]['sha'][:12]}); allowed.")
               else:
-                  print(f"::error file={f}::{f}: secret-bearing files (.env, keys, keystores, credential files) must not be committed. Use a placeholder template such as .env.example.")
-          if len(bad) > len(waived):
-              hint = f" Fabricated fixture keys under a fixtures directory need the '{env['FIXTURE_LABEL']}' label." if any(fixture.search(f) for f in bad) else ""
-              problems.append(f"{len(bad) - len(waived)} forbidden file(s) added or modified: {', '.join(f for f in bad if f not in waived)[:500]}.{hint}")
+                  why = f" Could not compare it with {prod}'s copy ({unreadable[f]}); failing closed." if f in unreadable else ""
+                  print(f"::error file={f}::{f}: secret-bearing files (.env, keys, keystores, credential files) must not be committed. Use a placeholder template such as .env.example.{why}")
+          blocked = [f for f in bad if f not in waived and f not in restored]
+          if blocked:
+              hint = f" Fabricated fixture keys under a fixtures directory need the '{env['FIXTURE_LABEL']}' label." if any(fixture.search(f) for f in blocked) else ""
+              api = f" {prod}'s copy could not be read for: {', '.join(f for f in blocked if f in unreadable)} (GitHub API error)." if any(f in unreadable for f in blocked) else ""
+              problems.append(f"{len(blocked)} forbidden file(s) added or modified: {', '.join(blocked)[:500]}.{hint}{api}")
           if waived:
               notes.append(f"Fixture key files allowed by the `{env['FIXTURE_LABEL']}` label: " + ", ".join(f"`{f}`" for f in waived))
+          if restored:
+              notes.append(f"Secret-bearing files restored to `{prod}`'s exact blob (allowed): " + ", ".join(f"`{f}`" for f in restored))
           # Changes to the gates themselves, deletions included, and inline scanner suppressions the PR adds:
           # visible, and only with an explicit label.
           config = re.compile(env["CONFIG_RE"])
@@ -287,17 +350,35 @@ jobs:
           no_patch = [e["filename"] for e in entries if e.get("status") != "removed" and not e.get("patch")]
           if no_patch:
               notes.append(f"{len(no_patch)} file(s) have no patch in the API (binary or too large), so their lines were not checked for suppressions.")
+          coverage = []  # gate files the review-coverage step decides on (a promotion without the label)
           if touched or suppressions:
               if touched:
                   notes.append(f"Security-gate files changed ({len(touched)}): " + ", ".join(f"`{f}`" for f in touched[:40]))
               if suppressions:
                   notes.append(f"Inline scanner suppressions added in {len(set(suppressions))} file(s): " + ", ".join(f"`{f}`" for f in list(dict.fromkeys(suppressions))[:20]))
-              what = " and ".join(x for x in (f"{len(touched)} file(s) that configure the CI or security gates" if touched else "",
-                                                f"{len(suppressions)} inline scanner suppression(s)" if suppressions else "") if x)
               if env["CONFIG_LABEL"] in labels:
+                  what = " and ".join(x for x in (f"{len(touched)} file(s) that configure the CI or security gates" if touched else "",
+                                                    f"{len(suppressions)} inline scanner suppression(s)" if suppressions else "") if x)
                   print(f"::warning::This PR changes {what}; allowed by the '{env['CONFIG_LABEL']}' label.")
               else:
-                  problems.append(f"This PR changes {what} (added, modified, renamed or deleted). A security reviewer must check them and add the '{env['CONFIG_LABEL']}' label, then re-run this job.")
+                  # In a promotion, a gate file needs no label of its own when reviewed PRs brought every change to
+                  # it in: the next step checks that with the rule taken from the base. Suppressions are lines, not
+                  # files, and still need the label.
+                  coverage = touched if review_promotion else []
+                  if coverage:
+                      print(f"::notice::This promotion changes {len(coverage)} gate file(s) without the '{env['CONFIG_LABEL']}' label; the review-coverage step checks that every change to them came in through a merged PR that carried the label.")
+                      notes.append(f"Gate files left to the review-coverage step (promotion): {len(coverage)}")
+                  left = [] if coverage else touched
+                  what = " and ".join(x for x in (f"{len(left)} file(s) that configure the CI or security gates" if left else "",
+                                                    f"{len(suppressions)} inline scanner suppression(s)" if suppressions else "") if x)
+                  if what:
+                      problems.append(f"This PR changes {what} (added, modified, renamed or deleted). A security reviewer must check them and add the '{env['CONFIG_LABEL']}' label, then re-run this job.")
+          if coverage:
+              os.makedirs(os.path.join(env["RUNNER_TEMP"], "review-coverage"), exist_ok=True)
+              with open(os.path.join(env["RUNNER_TEMP"], "review-coverage", "paths.txt"), "w", encoding="utf-8") as p:
+                  p.write("".join(f + "\n" for f in coverage))
+          with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as o:
+              o.write(f"coverage={'needed' if coverage else 'none'}\n")
           with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
               s.write("### PR hygiene\n\n" + ("All checks passed.\n" if not problems else "\n".join(f"- {p}" for p in problems) + "\n"))
               if notes:
@@ -306,3 +387,58 @@ jobs:
               print(f"::error title=PR hygiene::{p}")
           sys.exit(1 if problems else 0)
           PY
+
+      # Commits and trees only (blobless: about 2 MB for this repository), no credentials kept. Nothing from this
+      # checkout is run: the rule below is fetched from the base commit (or a protected head) through the API.
+      - name: History for the review-coverage rule
+        if: ${{ !cancelled() && steps.hygiene.outputs.coverage == 'needed' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: history
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: .github/ci
+          persist-credentials: false
+
+      - name: Review coverage of gate files in a promotion
+        if: ${{ !cancelled() && steps.hygiene.outputs.coverage == 'needed' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          TRUSTED_HEADS: ${{ inputs.trusted-heads }}
+          PROMOTION_BASES: ${{ inputs.promotion-bases }}
+          CONFIG_LABEL: ${{ inputs.security-config-label }}
+          RULE_PATH: .github/ci/review_coverage.py
+        run: |
+          set -euo pipefail
+          # The rule that judges a promotion never comes from the promotion's own head, unless the head branch is
+          # protected (nothing reached it without a reviewed PR), the PR comes from this repository and the head is a
+          # trusted head: the three conditions under which the gitleaks step trusts a head's config
+          # (reusable-security.yml). Otherwise the base commit's copy; if the base has none, the label is needed.
+          protected=$(gh api "repos/$GITHUB_REPOSITORY/branches/$(jq -rn --arg b "$HEAD_REF" '$b | @uri')" --jq .protected 2>/dev/null || echo false)
+          src=$BASE_SHA; from="the base commit ($BASE_REF ${BASE_SHA:0:12})"
+          if [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] && [[ " $TRUSTED_HEADS " == *" $HEAD_REF "* ]] && [ "$protected" = true ]; then
+            src=$HEAD_SHA; from="the protected promotion head ($HEAD_REF ${HEAD_SHA:0:12})"
+          fi
+          rule="$RUNNER_TEMP/review-rule/review_coverage.py"
+          mkdir -p "$(dirname "$rule")"
+          if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$GITHUB_REPOSITORY/contents/$RULE_PATH?ref=$src" > "$rule" 2> "$rule.err"; then
+            if grep -q 'HTTP 404' "$rule.err"; then
+              why="$from has no $RULE_PATH yet"
+            else
+              why="$RULE_PATH could not be read from $from (GitHub API error: $(tr '\n' ' ' < "$rule.err" | head -c 200))"
+            fi
+            msg="$why, so nothing may exempt this promotion's gate files from review (the head's own copy counts only when '$HEAD_REF' is a protected branch). A security reviewer must check the gate files and add the '$CONFIG_LABEL' label, then re-run this job."
+            echo "::error title=Review coverage::$msg"
+            printf '\n### Review coverage (promotion)\n\n%s\n' "$msg" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "review-coverage rule: $RULE_PATH from $from (sha256 $(sha256sum "$rule" | cut -c1-16))"
+          python3 -I "$rule" --git-dir "$GITHUB_WORKSPACE/history" --repo "$GITHUB_REPOSITORY" \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --label "$CONFIG_LABEL" \
+            --promotion-bases "$PROMOTION_BASES" --promotion-heads "$TRUSTED_HEADS" \
+            --paths "$RUNNER_TEMP/review-coverage/paths.txt" --summary "$GITHUB_STEP_SUMMARY"

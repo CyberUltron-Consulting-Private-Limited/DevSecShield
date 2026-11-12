@@ -154,6 +154,7 @@ jobs:
             selftest:
               - '.github/workflows/**'
               - '.github/tests/**'
+              - '.github/ci/*.py'        # review_coverage.py (pr-hygiene's promotion rule): test_pr_checks.py
               - '.github/PULL_REQUEST_TEMPLATE/**'
               - '.github/pull_request_template.md'
               - 'docs/ci/README.md'      # test_docs.py: every reusable input is documented

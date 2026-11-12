@@ -275,6 +275,12 @@ class Decide(unittest.TestCase):
     def test_docs_build_no_image(self):
         self.assertEqual(image_names(decide("pull_request", ["docs/ci/README.md"])), set())
 
+    def test_a_change_to_the_review_coverage_rule_runs_the_ci_self_tests(self):
+        # .github/tests/test_pr_checks.py tests it; no product suite reads it
+        out = decide("pull_request", [".github/ci/review_coverage.py"])
+        self.assertEqual(out["pipeline"], "true")
+        self.assertEqual({s for s in SUITES if out[s] == "true"}, set())
+
 
 class ScanWorkerImage(unittest.TestCase):
     """#50: the scan-worker image (torch through garak) is the one that fills the runner disk."""
