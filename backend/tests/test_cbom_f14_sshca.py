@@ -1041,11 +1041,11 @@ def test_kms_access_denied_is_reported_safely(api, ca_world, monkeypatch):
     from botocore.stub import Stubber
     import boto3
 
-    arn = "arn:aws:kms:ap-south-1:935951870001:key/59416634-9568-4534-a00b-3feacd8b3043"
+    arn = "arn:aws:kms:ap-south-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
     monkeypatch.setenv(KW.KMS_ENV, arn)
     client = boto3.client("kms", region_name="ap-south-1")
     stub = Stubber(client)
-    message = ("User: arn:aws:iam::935951870001:user/sandbox-user is not authorized to perform: kms:GenerateDataKey "
+    message = ("User: arn:aws:iam::111122223333:user/sandbox-user is not authorized to perform: kms:GenerateDataKey "
                f"on resource: {arn} because no identity-based policy allows the kms:GenerateDataKey action")
     stub.add_client_error("generate_data_key", service_error_code="AccessDeniedException", service_message=message,
                           http_status_code=400)
