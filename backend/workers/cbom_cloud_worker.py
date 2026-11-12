@@ -1,5 +1,5 @@
 """ZeroShield cloud worker for CBOM Sources: collects node-less sources (AWS accounts, Azure Key Vault, Google Cloud
-KMS / CA Service / Secret Manager, identity providers).
+KMS / CA Service / Secret Manager, identity providers, Certificate Transparency logs).
 
     python -m backend.workers.cbom_cloud_worker            # loop
     python -m backend.workers.cbom_cloud_worker --once     # one job (tests)
@@ -115,6 +115,16 @@ class _Job:
                                          self.should_stop)
                 except GcpCollectError as exc:
                     raise _Refused(str(exc)) from exc
+            elif kind == "ct_logs":
+                from backend.utilities.cbom_sources.ct_collect import collect_ct
+
+                result = collect_ct(self.source["config"], self.source["name"], self.emit, self.should_stop,
+                                    deadline=self.deadline)
+                counts = result.get("counts") or {}
+                if counts.get("total") and not (counts.get("ok") or counts.get("partial")):
+                    # nothing was read: fail (and refund) so the last good collection stays the current one
+                    first = next((t.get("error") for t in result.get("targets") or [] if t.get("error")), None)
+                    raise _Refused(f"No domain could be searched: {first or 'every search failed'}"[:500])
             elif kind == "idp":
                 from backend.utilities.cbom_sources.idp_collect import collect_idp
 
