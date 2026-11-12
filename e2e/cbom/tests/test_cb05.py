@@ -102,3 +102,38 @@ def test_trace_zips_are_redacted(tmp_path):
         assert "[REDACTED:known-0" in zin.read("trace.trace").decode()
         assert zin.read("resources/shot.jpeg").startswith(b"\xff\xd8")
     assert problems == []
+
+
+def test_a_truncated_trace_does_not_stop_the_seal(tmp_path):
+    import secrets
+    canary = secrets.token_hex(16)
+    run = tmp_path / "run"
+    (run / "steps" / "G1").mkdir(parents=True)
+    (run / "steps" / "G1" / "trace.zip").write_bytes(b"PK\x03\x04" + canary.encode())
+    problems = gate.redact_run(run, [canary])
+    assert problems == ["steps/G1/trace.zip: unreadable zip (removed: held a known secret)"]
+    assert not (run / "steps" / "G1" / "trace.zip").exists()
+
+
+def test_preflight_treats_ci_only_commits_as_the_same_build(tmp_path):
+    import subprocess
+    from harness import preflight
+    repo = tmp_path / "r"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    git = ["git", "-C", str(repo), "-c", "user.email=e2e@lab", "-c", "user.name=e2e"]
+    (repo / "backend").mkdir()
+    (repo / "backend" / "main.py").write_text("a\n")
+    subprocess.run(git + ["add", "-A"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "one"], check=True)
+    one = subprocess.run(git + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    (repo / ".github").mkdir()
+    (repo / ".github" / "ci.yml").write_text("x\n")
+    subprocess.run(git + ["add", "-A"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "ci"], check=True)
+    two = subprocess.run(git + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    assert preflight.equivalent_build(str(repo), one, two)[0]
+    (repo / "backend" / "main.py").write_text("b\n")
+    subprocess.run(git + ["commit", "-q", "-am", "code"], check=True)
+    three = subprocess.run(git + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    ok, why = preflight.equivalent_build(str(repo), one, three)
+    assert not ok and "backend/main.py" in why

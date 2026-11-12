@@ -198,8 +198,17 @@ def redact_zip(path: Path, run: Path, known: list[str]) -> list[str]:
     as the other evidence (CB-05, found by the G15 canary grep on a full run). Image members are kept as they are."""
     import zipfile
     problems = []
-    with zipfile.ZipFile(path) as zin:
-        members = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    try:
+        with zipfile.ZipFile(path) as zin:
+            members = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    except (zipfile.BadZipFile, OSError):
+        # a trace cut short (the flow was stopped while writing it): unreadable, so it is removed when it holds a
+        # known secret, and reported either way
+        raw = path.read_bytes()
+        leaked = any(v and len(v) >= 8 and v.encode() in raw for v in known)
+        if leaked:
+            path.unlink()
+        return [f"{path.relative_to(run).as_posix()}: unreadable zip ({'removed: held a known secret' if leaked else 'kept'})"]
     changed = False
     out = []
     for info, data in members:

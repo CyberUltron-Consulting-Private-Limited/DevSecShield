@@ -83,6 +83,27 @@ def same_sha(a: str | None, sha: str) -> bool:
     return len(a) >= 7 and (sha.lower().startswith(a) or a.startswith(sha.lower()))
 
 
+# Paths that never go into an image: a commit touching only these runs the same images (restack.sh reuses them by
+# build key, so the image's revision label stays the earlier SHA).
+NON_IMAGE = (".github/", "docs/", "e2e/", "bench/", ".kiro/")
+
+
+def equivalent_build(repo: str, rev: str | None, sha: str) -> tuple[bool, str]:
+    """rev == sha, or every path changed between them is outside the image inputs (CI, docs, e2e)."""
+    if same_sha(rev, sha):
+        return True, "same SHA"
+    if not rev:
+        return False, "no revision label"
+    code, out = sh("git", "-C", repo, "diff", "--name-only", rev, sha, timeout=60)
+    if code:
+        return False, f"git diff failed: {out.strip()[:120]}"
+    changed = [p for p in out.split("\n") if p.strip()]
+    image_paths = [p for p in changed if not (p.startswith(NON_IMAGE) or p.endswith(".md"))]
+    if image_paths:
+        return False, f"{len(image_paths)} image path(s) differ, e.g. {image_paths[0]}"
+    return True, f"{len(changed)} changed path(s), none an image input ({', '.join(sorted({p.split('/')[0] for p in changed}))})"
+
+
 def migration_heads(repo: str, sha: str) -> list[str]:
     code, out = sh("git", "-C", repo, "ls-tree", "--name-only", f"{sha}:{MIGRATIONS}")
     if code:
@@ -155,7 +176,8 @@ def run(run_dir: Path, sha: str, repo: str, api: str, ui: str, ca: str, node_ima
     # the OCI revision labels the stack sets today (restack.sh): the running app is the SHA under test
     for svc in ("backend", "frontend", "cbom-cloud-worker"):
         rev = image_label(f"{PREFIX}{svc}-1")
-        st.add(f"image_revision_{svc}", same_sha(rev, sha), sha, rev or "<no label>")
+        ok, why = equivalent_build(repo, rev, sha)
+        st.add(f"image_revision_{svc}", ok, sha, f"{rev or '<no label>'} ({why})")
     # database at the ref's head
     heads = migration_heads(repo, sha)
     code, current = psql("SELECT version_num FROM alembic_version")
