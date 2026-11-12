@@ -1,0 +1,117 @@
+{
+ "_about": "Inputs of scripts/algid/build_algid.py. build_algid.py refuses a file without an entry or with a different sha256. Re-capture: see scripts/algid/README.md.",
+ "files": [
+  {
+   "file": "aws-apigw-security-policies-overview.html",
+   "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-security-policies.html",
+   "retrieved_utc": "2026-11-12T11:28:10Z",
+   "sha256": "65615c61901493e0aaf8bb5f7dcf84b762cac14ff9e29e0f239b26d17c2a2aea",
+   "tool": "curl 8.5.0 (raw HTML bytes)",
+   "licence": "AWS documentation (quoted for interoperability)"
+  },
+  {
+   "file": "aws-apigw-security-policies.html",
+   "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-security-policies-list.html",
+   "retrieved_utc": "2026-11-12T11:28:07Z",
+   "sha256": "aef69751e32607bc001e13aaa5b7f1b98510481f30c855602da0d6e7aec7046b",
+   "tool": "curl 8.5.0 (raw HTML bytes)",
+   "licence": "AWS documentation (quoted for interoperability)"
+  },
+  {
+   "file": "aws-elb-security-policies.html",
+   "url": "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/describe-ssl-policies.html",
+   "retrieved_utc": "2026-11-12T11:28:06Z",
+   "sha256": "175f0f141ae8c46e9dce1a0356025c3b50529d30427f750629bf9b00229f5273",
+   "tool": "curl 8.5.0 (raw HTML bytes)",
+   "licence": "AWS documentation (quoted for interoperability)"
+  },
+  {
+   "file": "botocore-enums.json",
+   "url": "botocore service models (pip wheel botocore==1.41.5, backend/uv.lock)",
+   "retrieved_utc": "2026-11-12T11:28:36Z",
+   "sha256": "14d6f8f1db34c7c054798e8c3ff6f16e92185f80dbd3ebfe5ed607d0c661fae0",
+   "tool": "scripts/algid/capture_botocore_enums.py, botocore 1.41.5",
+   "licence": "Apache-2.0 (botocore data)"
+  },
+  {
+   "file": "curated.json",
+   "url": "hand-curated; every section cites its document",
+   "retrieved_utc": "2026-11-12T11:45:00Z",
+   "sha256": "0ab812c8d56789dc82c8f85ea00720410329480f059e273e345bccaa545aeaf8",
+   "tool": "hand, second-agent review (O-9) recorded in the PR",
+   "licence": "this repository"
+  },
+  {
+   "file": "iana-ikev2-t4.csv",
+   "url": "https://www.iana.org/assignments/ikev2-parameters/ikev2-parameters-8.csv",
+   "retrieved_utc": "2026-11-12T11:27:11Z",
+   "sha256": "6ed52232302455c17439d41318820a174079c6ee548b5a5e4f9b454b42d34f1b",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "iana-pkix-alg.csv",
+   "url": "https://www.iana.org/assignments/smi-numbers/smi-numbers-1.3.6.1.5.5.7.6.csv",
+   "retrieved_utc": "2026-11-12T11:27:11Z",
+   "sha256": "3a054a338261228c71ea7e7f18928baa07e75cdbf3cd882e4c13e25136db0cd6",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "iana-ssh-kex.csv",
+   "url": "https://www.iana.org/assignments/ssh-parameters/ssh-parameters-16.csv",
+   "retrieved_utc": "2026-11-12T11:27:10Z",
+   "sha256": "982273d0dabf48d2492054005e8902f24181d9085edf6bf42e4eb4ca60516fc5",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "iana-tls-groups.csv",
+   "url": "https://www.iana.org/assignments/tls-parameters/tls-parameters-8.csv",
+   "retrieved_utc": "2026-11-12T11:27:09Z",
+   "sha256": "d35959b23d588f8b4daa038788f168227cc1e909500a8a4d8412b0f6aeffbc17",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "iana-tls-sigschemes.csv",
+   "url": "https://www.iana.org/assignments/tls-parameters/tls-signaturescheme.csv",
+   "retrieved_utc": "2026-11-12T11:27:10Z",
+   "sha256": "df70d06b074d8ef96d978ac83f5b3e232d04b59bb88a986dbc73a2242513dbf9",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "nist-csor.html",
+   "url": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration",
+   "retrieved_utc": "2026-11-12T11:27:12Z",
+   "sha256": "bbc400ee861f962b267dea2bde295cb14a85a6aeb9c0458c0d6aa1b8c0611ceb",
+   "tool": "curl 8.5.0 (raw HTML bytes)",
+   "licence": "US government work (public domain)"
+  },
+  {
+   "file": "openssh-kex-aliases.txt",
+   "url": "`ssh -V; ssh -Q kex`",
+   "retrieved_utc": "2026-11-12T11:31:55Z",
+   "sha256": "70dd0db6323a919b275aa9973cd45ce92adb42165d17423be9f3b078b105db7a",
+   "tool": "OpenSSH_10.0p2 Debian-7+deb13u4",
+   "licence": "generated here"
+  },
+  {
+   "file": "openssl-3.0-text.json",
+   "url": "the same certificates",
+   "retrieved_utc": "2026-11-12T11:31:14Z",
+   "sha256": "87b235d41db81cf369731536ecd08cad2d578653d96b5e48836ee8b599a35642",
+   "tool": "scripts/algid/capture_openssl_text.py, OpenSSL 3.0.13 (Ubuntu 24.04)",
+   "licence": "generated here"
+  },
+  {
+   "file": "openssl-3.5-text.json",
+   "url": "certificates from scripts/algid/make_capture_certs.sh + make_oid_only_certs.py",
+   "retrieved_utc": "2026-11-12T11:31:13Z",
+   "sha256": "27233e6eb12143e65baa8cb4aafdaf88082c592d5a72e8b0b24d1a6ec4321bd2",
+   "tool": "scripts/algid/capture_openssl_text.py, OpenSSL 3.5.7 (python:3.12-slim)",
+   "licence": "generated here"
+  }
+ ]
+}
