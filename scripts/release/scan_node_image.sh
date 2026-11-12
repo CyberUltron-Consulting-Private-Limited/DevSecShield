@@ -3,7 +3,8 @@
 #
 #   scan_node_image.sh build <version>   build registry.zeroshield.ai/cbom/scan-node:<version> from scan_node/, then
 #                                        docker save | gzip -> dist/scan-node/scan-node-<version>.tar.gz plus
-#                                        scan-node-<version>.tar.gz.sha256
+#                                        scan-node-<version>.tar.gz.sha256. <version>: a digit, then up to 18 digits,
+#                                        letters, dots or dashes (e.g. 1.1.0, 2.0.0-rc.1), what the node reports
 #   scan_node_image.sh lock              regenerate scan_node/requirements.lock (every package, transitive ones
 #                                        included, pinned with sha256 hashes) from scan_node/requirements.txt; the
 #                                        image build refuses a lock that does not match requirements.txt
@@ -18,6 +19,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IMAGE="${SCAN_NODE_IMAGE:-registry.zeroshield.ai/cbom/scan-node}"
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/dist/scan-node}"
+
+# The versions the node reports (scan_node/zs_scan_node/__init__.py _VERSION: "<version>+<12-character commit>" fits
+# its 32-character column); for anything else it reports its built-in version, so such an image is refused.
+NODE_VERSION_RE="^[0-9][0-9A-Za-z.-]{0,18}$"
 
 log() { printf '[scan_node_image %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[scan_node_image] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -40,7 +45,9 @@ cmd_lock() {
 
 cmd_build() {
   local version=${1:?usage: scan_node_image.sh build <version>}
-  [[ "${version}" =~ ^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$ ]] || die "invalid version: ${version}"
+  [[ "${version}" =~ ${NODE_VERSION_RE} ]] ||
+    die "invalid version: ${version}: the scan node reports only a version of 1-19 characters that starts with a" \
+      "digit (digits, letters, dots, dashes; e.g. 1.1.0 or 2.0.0-rc.1) and would report its built-in one instead"
   local ref="${IMAGE}:${version}" archive="${OUT_DIR}/scan-node-${version}.tar.gz" sha
   local -a args=()
   [[ -n "${BASE_IMAGE:-}" ]] && args+=(--build-arg "BASE_IMAGE=${BASE_IMAGE}")

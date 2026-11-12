@@ -23,7 +23,8 @@
 #      STAGING_SERVICES (compose services to start, default all), STAGING_INCLUDE_INFRA=1 (also ship the postgres,
 #      mongo, rabbitmq, nginx and, with profile minio, MinIO images, for a host without registry access),
 #      GRYPE_DB_ARCHIVE (save: also ship this Grype database archive as images/grype-db.tar.zst),
-#      STAGING_CHECK_INSECURE=1 (accept a self-signed certificate in the checks), SSH_OPTS (extra ssh/scp options).
+#      STAGING_CHECK_INSECURE=1 (accept a self-signed certificate in the checks), SSH_OPTS (extra ssh/scp options),
+#      DSS_EXPOSE_BUILD (build: 1 = the frontend names its commit in <meta name="zs-build">; default: .env's value, else 0).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -61,7 +62,8 @@ env_get() { # <KEY> [default]: value from deploy/staging/.env without sourcing i
 default_tag() {
   local sha
   sha="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null)" || die "not a git checkout: set DSS_TAG"
-  git -C "${REPO_ROOT}" diff --quiet HEAD -- 2>/dev/null || sha="${sha}-dirty"
+  # build_images.sh's rule: uncommitted or untracked changes (ignored files, such as deploy/staging/.env, do not count)
+  [[ -z "$(git -C "${REPO_ROOT}" status --porcelain --untracked-files=normal 2>/dev/null)" ]] || sha="${sha}-dirty"
   printf '%s\n' "${sha}"
 }
 
@@ -85,9 +87,10 @@ cmd_build() {
   local tag=${DSS_TAG:-$(default_tag)} api
   api="${NEXT_PUBLIC_BACKEND_URL:-https://$(env_get API_HOST devsec-staging-api.zeroshield.ai)}"
   log "building tag ${tag} (frontend API URL ${api})"
-  # the same .env switch that makes the backend name its build publicly puts the commit in the frontend's meta
+  # The switch that makes the backend name its build publicly (.env) also puts the commit in the frontend's meta.
+  # The caller's DSS_EXPOSE_BUILD comes first: deploy-staging.yml builds on a runner whose checkout has no .env.
   DSS_TAG="${tag}" DSS_IMAGE_PREFIX="$(prefix)" NEXT_PUBLIC_BACKEND_URL="${api}" \
-    DSS_EXPOSE_BUILD="$(env_get DSS_EXPOSE_BUILD 0)" \
+    DSS_EXPOSE_BUILD="${DSS_EXPOSE_BUILD:-$(env_get DSS_EXPOSE_BUILD 0)}" \
     "${REPO_ROOT}/scripts/deploy/build_images.sh" --only "$(components | tr ' ' ',')"
 }
 
@@ -504,7 +507,7 @@ main() {
     deploy) cmd_deploy "$@" ;;
     check) cmd_check ;;
     rollback) cmd_rollback "$@" ;;
-    -h | --help | help | "") sed -n '2,26p' "${BASH_SOURCE[0]}" ;;
+    -h | --help | help | "") sed -n '2,27p' "${BASH_SOURCE[0]}" ;;
     *) die "unknown command ${cmd} (see --help)" ;;
   esac
 }

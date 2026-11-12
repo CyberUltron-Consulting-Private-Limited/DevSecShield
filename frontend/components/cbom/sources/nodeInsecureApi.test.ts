@@ -22,6 +22,11 @@ assert.ok(insecureApiWarning("http://api.example:8080"), "any http:// port")
 const port80 = insecureApiWarning("https://api.example:80")
 assert.ok(port80 && /port 80/.test(port80), "https on port 80 is the plain-HTTP port")
 assert.ok(insecureApiWarning("not a url"), "an unparsable URL cannot work either")
+// https:// first, but no URL after it: the node accepts the prefix, then cannot connect (logic.ts, the parse branch)
+for (const broken of ["https://", "https://exa mple", "https://[::1"]) {
+  const w = insecureApiWarning(broken)
+  assert.ok(w && /is not a valid URL/.test(w) && w.includes(`(${broken})`), `${broken}: ${w}`)
+}
 // the node's own rule (agent.py: ZS_API_URL.startswith("https://"), case-sensitive): the UI warns exactly then
 for (const refused of ["HTTPS://api.example", "Https://api.example", "https:api.example", "https:/api.example", " http://x"]) {
   assert.ok(insecureApiWarning(refused), `the node refuses ${refused}`)

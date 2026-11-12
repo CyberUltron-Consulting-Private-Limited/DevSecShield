@@ -7,6 +7,10 @@
 #            STAGING_SSH_TARGET       user@host
 #   vars     STAGING_DIR              directory on the host (default /opt/devsecshield-staging) holding
 #                                     deploy/staging/.env, backend.env and certs/
+#
+# Build identity (CB-03): with expose_build (default on) the frontend names its commit in <meta name="zs-build">, so
+# the merge gate's G0 can compare it with the API's /health build on staging; the API names it there when the host's
+# deploy/staging/.env sets DSS_EXPOSE_BUILD=1 (deploy/staging/README.md, "Build identity").
 name: Deploy staging
 
 on:
@@ -20,6 +24,10 @@ on:
         description: "API URL baked into the frontend bundle"
         type: string
         default: "https://devsec-staging-api.zeroshield.ai"
+      expose_build:
+        description: "Frontend names its commit in a zs-build meta tag (DSS_EXPOSE_BUILD; staging G0). Off: production-like"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -49,6 +57,7 @@ jobs:
         env:
           DSS_TAG: ${{ steps.tag.outputs.tag }}
           NEXT_PUBLIC_BACKEND_URL: ${{ inputs.api_url }}
+          DSS_EXPOSE_BUILD: ${{ inputs.expose_build && '1' || '0' }}
         run: scripts/deploy/staging.sh build
 
       - name: Save images

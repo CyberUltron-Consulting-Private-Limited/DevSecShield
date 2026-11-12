@@ -30,6 +30,7 @@ import re
 import uuid
 
 UNKNOWN = "unknown"
+DIRTY = "-dirty"  # scripts/deploy/build_images.sh ends a dirty tree's version (it has no commit) with this
 BUILD_HEADER = "X-ZS-Build"
 REQUEST_ID_HEADER = "X-ZS-Request-Id"
 

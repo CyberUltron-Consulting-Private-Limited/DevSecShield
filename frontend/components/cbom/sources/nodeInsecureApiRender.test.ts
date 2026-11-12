@@ -2,12 +2,13 @@
  * CB-03 review (PR #72, AC8): the warning is RENDERED, not just present in the source. The real ScanNodesTab and
  * AgentPoolsCard are mounted in jsdom (react-dom/client) with this deployment's API URL set to plain HTTP, the way
  * a customer opens them: "Add your first scan node" opens the wizard, "Create agent pool token" opens the pool form.
- * With an https:// URL the pool card shows nothing. No network: the node list and pool list are seeded in the cache.
+ * With an https:// URL neither the wizard nor the pool card shows it. No network: the node list and pool list are seeded in the cache.
  * jsdom comes with isomorphic-dompurify (a dependency of the app), react-dom with the app itself.
  * Run: npx --yes tsx components/cbom/sources/nodeInsecureApiRender.test.ts
  */
 import assert from "node:assert/strict"
 import { createRequire } from "node:module"
+import { sep } from "node:path"
 
 const HTTP_API = "http://devsec-staging-api.example"
 
@@ -64,13 +65,30 @@ async function main() {
 
   // 1. the scan-node wizard, as a customer opens it
   const tab = await mount(React.createElement(ScanNodesTab, { teamId: 1, onNavigate: () => {} }))
-  assert.equal(tab.host.querySelector('[data-testid="node-api-insecure"]'), null, "nothing before the wizard opens")
+  assert.equal(tab.host.querySelector('[data-testid="node-api-insecure"]')?.textContent ?? null, null, "nothing before the wizard opens")
   await click(tab.host, /Add your first scan node/)
   const warning = tab.host.querySelector('[data-testid="node-api-insecure"]')
   assert.ok(warning, "the wizard shows the warning")
   assert.ok(warning!.textContent!.includes(HTTP_API) && /refuses http:\/\//.test(warning!.textContent!), warning!.textContent!)
   assert.equal(warning!.getAttribute("role"), "alert")
   tab.root.unmount()
+
+  // 1b. the same wizard on a deployment whose API is https://: no warning (a wizard that always warns fails here).
+  // utils/interceptors reads NEXT_PUBLIC_BACKEND_URL once, at import: load the app's modules again (react and
+  // react-query stay the cached copies, so the provider above still serves them).
+  const HTTPS_API = "https://devsec-api.example"
+  for (const key of Object.keys(load.cache)) if (!key.includes(`${sep}node_modules${sep}`)) delete load.cache[key]
+  process.env.NEXT_PUBLIC_BACKEND_URL = HTTPS_API
+  const { default: ScanNodesTabHttps } = load("./ScanNodesTab") as typeof import("./ScanNodesTab")
+  const secure = await mount(React.createElement(ScanNodesTabHttps, { teamId: 1, onNavigate: () => {} }))
+  await click(secure.host, /Add your first scan node/)
+  const wizard = secure.host.querySelector("#scan-node-wizard")
+  assert.ok(wizard, "the wizard is open")
+  assert.ok(wizard!.textContent!.includes("devsec-api.example"), "it was built from the https:// API URL")
+  // compare the text, not the element: a failing assert would try to print a whole jsdom node
+  const shown = secure.host.querySelector('[data-testid="node-api-insecure"]')?.textContent ?? null
+  assert.equal(shown, null, "https://: the wizard shows no warning")
+  secure.root.unmount()
 
   // 2. the agent-pool card: plain HTTP warns once the form is open, https:// never does
   for (const [url, shown] of [[HTTP_API, true], ["https://api.example", false]] as const) {

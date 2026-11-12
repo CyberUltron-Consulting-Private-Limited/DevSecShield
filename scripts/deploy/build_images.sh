@@ -20,7 +20,8 @@
 #         DSS_BUILD_ARGS               extra arguments for every `docker buildx build` (optional, word-split)
 #         DSS_BUILD_SHA                the commit baked into the images (default: git HEAD of a clean tree; a full
 #                                      40-character sha; a tree with uncommitted or untracked changes gets none)
-#         DSS_BUILD_VERSION            the version string baked into the backend (default: DSS_TAG)
+#         DSS_BUILD_VERSION            the version string baked into the backend (default: DSS_TAG; "-dirty" is added
+#                                      when the tree has changes and DSS_BUILD_SHA is unset)
 #         DSS_EXPOSE_BUILD             1 = the frontend also names the commit in <meta name="zs-build"> on every page
 #                                      (the local stack, the lab, staging); default off (production)
 #
@@ -39,7 +40,8 @@ die() { printf '[build_images] ERROR: %s\n' "$*" >&2; exit 1; }
 default_tag() {
   local sha
   sha="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
-  if ! git -C "${REPO_ROOT}" diff --quiet HEAD -- 2>/dev/null; then sha="${sha}-dirty"; fi
+  # the same rule as the commit check below (and staging.sh): uncommitted or untracked changes; ignored files do not
+  if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then sha="${sha}-dirty"; fi
   printf '%s\n' "${sha}"
 }
 
@@ -60,8 +62,11 @@ else
 fi
 case "${DSS_EXPOSE_BUILD:-0}" in 1 | true | yes | on) EXPOSE_SHA="${BUILD_SHA}" ;; *) EXPOSE_SHA="" ;; esac
 BUILD_VERSION="${DSS_BUILD_VERSION:-${DSS_TAG}}"
+# Without a commit, runs record the version (engine_version): a dirty tree's must not look like the clean build's,
+# whoever chose the tag (deploy-staging.yml passes DSS_TAG=<short commit>).
+if [[ -n "${DIRTY_SHA:-}" && "${BUILD_VERSION}" != *-dirty ]]; then BUILD_VERSION="${BUILD_VERSION}-dirty"; fi
 [[ "${BUILD_VERSION}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$ ]] ||
-  die "DSS_BUILD_VERSION (default DSS_TAG) must be 1-64 letters, digits, dots, plus, dash or underscore: ${BUILD_VERSION}"
+  die "DSS_BUILD_VERSION (default DSS_TAG${DIRTY_SHA:+, plus -dirty for the uncommitted changes}) must be 1-64 letters, digits, dots, plus, dash or underscore: ${BUILD_VERSION}"
 ALL=(backend frontend scan-worker dast-worker)
 ONLY=("${ALL[@]}")
 
@@ -153,7 +158,7 @@ log "tag=${DSS_TAG} prefix=${DSS_IMAGE_PREFIX} components=${ONLY[*]}"
 if [[ -n "${BUILD_SHA}" ]]; then
   log "build ${BUILD_SHA} version ${BUILD_VERSION}${EXPOSE_SHA:+ (exposed: the frontend meta names it)}"
 elif [[ -n "${DIRTY_SHA:-}" ]]; then
-  log "WARNING: the tree at ${DIRTY_SHA:0:12} has uncommitted changes: the images report build \"unknown\""
+  log "WARNING: the tree at ${DIRTY_SHA:0:12} has uncommitted changes: the images report build \"unknown\", version ${BUILD_VERSION}"
 else
   log "WARNING: no git commit (not a git checkout and DSS_BUILD_SHA unset): the images report build \"unknown\""
 fi

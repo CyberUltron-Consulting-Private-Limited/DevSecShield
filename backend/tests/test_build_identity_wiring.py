@@ -172,12 +172,103 @@ def test_a_dirty_tree_never_reports_the_clean_commit(tmp_path, change):
     assert explicit.returncode == 0 and f"DSS_BUILD_SHA={head}" in _args(_builds(env)[-1], "--build-arg")
 
 
-def test_staging_exposes_the_build_only_when_its_env_says_so():
+def test_staging_backend_exposes_the_build_only_when_its_env_says_so():
     compose = (ROOT / "deploy/staging/docker-compose.yml").read_text()
     backend = compose[compose.index("\n  backend:\n"):compose.index("\n  cbom-cloud-worker:")]
     assert "DSS_EXPOSE_BUILD: ${DSS_EXPOSE_BUILD:-0}" in backend  # off unless .env says 1
-    staging = (ROOT / "scripts/deploy/staging.sh").read_text()
-    assert 'DSS_EXPOSE_BUILD="$(env_get DSS_EXPOSE_BUILD 0)"' in staging  # the same .env value drives the meta
+
+
+@pytest.mark.parametrize("caller, env_file, exposed", [
+    (None, None, False),  # production default: no meta
+    ("1", None, True),    # deploy-staging.yml: a runner checkout has no deploy/staging/.env (PR #72 re-review)
+    (None, "1", True),    # a build machine whose .env says so (the same .env the staging backend reads)
+    ("0", "1", False),    # the caller's explicit choice wins over the file
+])
+def test_staging_build_takes_the_expose_switch_from_the_caller_then_its_env(tmp_path, caller, env_file, exposed):
+    repo, head, env = _repo(tmp_path, "scripts/deploy/staging.sh", "scripts/deploy/build_images.sh", ".gitignore")
+    if env_file is not None:  # gitignored (.gitignore: deploy/staging/*.env): the tree stays clean
+        (repo / "deploy/staging").mkdir(parents=True)
+        (repo / "deploy/staging/.env").write_text(f"DSS_EXPOSE_BUILD={env_file}\n")
+    run_env = {**env, "STAGING_COMPONENTS": "frontend", "NEXT_PUBLIC_BACKEND_URL": "https://api.example"}
+    if caller is not None:
+        run_env["DSS_EXPOSE_BUILD"] = caller
+    proc = subprocess.run([str(repo / "scripts/deploy/staging.sh"), "build"], env=run_env, capture_output=True,
+                          text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    (frontend,) = _builds(env)
+    assert f"NEXT_PUBLIC_BUILD_SHA={head if exposed else ''}" in _args(frontend, "--build-arg")
+    assert f"org.opencontainers.image.revision={head}" in _args(frontend, "--label")  # clean either way
+
+
+def test_staging_workflow_builds_staging_with_the_build_exposed():
+    """deploy-staging.yml builds the staging images: by default its frontend names the commit in its meta, so G0
+    (meta == /health.build) can pass on workflow-built staging. The workflow's own self-test is
+    .github/tests/test_deploy_staging.py; this one runs with the scripts it feeds."""
+    wf = (ROOT / ".github/workflows/deploy-staging.yml").read_text()
+    build = wf[wf.index("- name: Build images"):wf.index("- name: Save images")]
+    assert "DSS_EXPOSE_BUILD: ${{ inputs.expose_build && '1' || '0' }}" in build
+    assert "run: scripts/deploy/staging.sh build" in build
+
+
+def _dirty(repo: Path, change: str) -> None:
+    if change == "modified":
+        (repo / "prod_database_migrations/alembic.ini").write_text("[alembic]\n# edited\n")
+    else:
+        (repo / "backend").mkdir(exist_ok=True)
+        (repo / "backend/new_file.py").write_text("x = 1\n")
+
+
+@pytest.mark.parametrize("change", ["modified", "untracked"])
+@pytest.mark.parametrize("tag", ["default", "caller"])
+def test_a_dirty_build_says_so_in_its_version(tmp_path, change, tag):
+    """PR #72 re-review: a dirty image has no commit, so runs record its version (engine_version). That version must
+    not look like a clean build's: it ends in "-dirty" whoever chose the tag (the default tag, or deploy-staging.yml's
+    DSS_TAG=<sha12>), for modified and untracked files alike, and exactly once."""
+    repo, head, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
+    _dirty(repo, change)
+    extra = {"DSS_TAG": head[:12]} if tag == "caller" else {}
+    proc = subprocess.run([str(repo / "scripts/deploy/build_images.sh"), "--only", "backend"], env={**env, **extra},
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    build = _builds(env)[-1]
+    assert f"DSS_BUILD_VERSION={head[:12]}-dirty" in _args(build, "--build-arg"), _args(build, "--build-arg")
+    image = _args(build, "-t")[0]
+    # the default tag is marked by the shared dirty rule; a caller's tag is the caller's
+    assert image.endswith(f":{head[:12]}-dirty" if tag == "default" else f":{head[:12]}"), image
+
+
+def test_dirty_version_marking_edges(tmp_path):
+    repo, head, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
+    script = str(repo / "scripts/deploy/build_images.sh")
+    _dirty(repo, "untracked")
+
+    def version(**extra):
+        proc = subprocess.run([script, "--only", "backend"], env={**env, **extra}, capture_output=True, text=True,
+                              timeout=60)
+        if proc.returncode:
+            return proc
+        return next(a for a in _args(_builds(env)[-1], "--build-arg") if a.startswith("DSS_BUILD_VERSION="))
+
+    assert version(DSS_TAG="t1", DSS_BUILD_VERSION="1.4.0") == "DSS_BUILD_VERSION=1.4.0-dirty"
+    assert version(DSS_TAG="t1", DSS_BUILD_VERSION="1.4.0-dirty") == "DSS_BUILD_VERSION=1.4.0-dirty"  # not twice
+    # an operator who names the commit takes responsibility for it: no marker
+    assert version(DSS_TAG="t1", DSS_BUILD_SHA=head) == "DSS_BUILD_VERSION=t1"
+    # the marker counts toward the 64 characters the backend accepts (build_info._VERSION)
+    assert version(DSS_TAG="t1", DSS_BUILD_VERSION="v" * 58) == f"DSS_BUILD_VERSION={'v' * 58}-dirty"
+    too_long = version(DSS_TAG="t1", DSS_BUILD_VERSION="v" * 59)
+    assert not isinstance(too_long, str) and too_long.returncode != 0 and "-dirty" in too_long.stderr
+
+
+def test_staging_default_tag_uses_the_same_dirty_rule(tmp_path):
+    """Both default_tag()s (build_images.sh, staging.sh) count untracked files, like the commit check."""
+    repo, head, env = _repo(tmp_path, "scripts/deploy/staging.sh", "scripts/deploy/build_images.sh", ".gitignore")
+    _dirty(repo, "untracked")
+    proc = subprocess.run([str(repo / "scripts/deploy/staging.sh"), "build"],
+                          env={**env, "STAGING_COMPONENTS": "backend"}, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    (backend,) = _builds(env)
+    assert _args(backend, "-t") == [f"dss-staging/devsecshield-backend:{head[:12]}-dirty"]
+    assert f"DSS_BUILD_VERSION={head[:12]}-dirty" in _args(backend, "--build-arg")
 
 
 def test_build_images_outside_git_builds_without_identity(tmp_path):
@@ -206,3 +297,29 @@ def test_scan_node_release_bakes_the_commit_and_version(tmp_path):
     assert dirty.returncode == 0, dirty.stderr
     last = _builds(env)[-1]
     assert "ZS_NODE_BUILD=" in _args(last, "--build-arg") and not any(head in a for a in last)
+
+
+@pytest.mark.parametrize("version, ok", [
+    ("1.1.0", True), ("1.1", True), ("2.0.0-rc.1", True), ("1234567890123456789", True),  # the node's rule
+    ("v1.2", False), ("1.2_rc1", False), ("1.2+meta", False), ("12345678901234567890", False), ("latest", False),
+])
+def test_scan_node_release_refuses_a_version_the_node_would_not_report(tmp_path, version, ok):
+    """PR #72 re-review: the node keeps ZS_NODE_VERSION only when it matches zs_scan_node._VERSION and reports its
+    built-in 1.0.0 otherwise, so `build v1.2` would publish an image that says 1.0.0+<commit>. Refused instead."""
+    repo, head, env = _repo(tmp_path, "scripts/release/scan_node_image.sh")
+    proc = subprocess.run([str(repo / "scripts/release/scan_node_image.sh"), "build", version],
+                          env={**env, "OUT_DIR": str(tmp_path / "out")}, capture_output=True, text=True, timeout=60)
+    if ok:
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert f"ZS_NODE_VERSION={version}" in _args(_builds(env)[-1], "--build-arg")
+    else:
+        assert proc.returncode != 0 and "the scan node reports" in proc.stderr, proc.stdout + proc.stderr
+        assert not (tmp_path / "log").exists() or not _builds(env)  # nothing was built
+
+
+def test_scan_node_release_rule_is_the_nodes_rule():
+    """The script's check and the node's regex are one rule written twice (bash and Python): keep them equal."""
+    node = (ROOT / "scan_node/zs_scan_node/__init__.py").read_text()
+    script = (ROOT / "scripts/release/scan_node_image.sh").read_text()
+    rule = re.search(r'_VERSION = re\.compile\(r"(.+?)"\)', node).group(1)
+    assert f'NODE_VERSION_RE="^{rule}$"' in script

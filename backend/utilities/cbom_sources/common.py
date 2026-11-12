@@ -11,8 +11,8 @@ from rich.console import Console
 from sqlmodel import Session
 
 from backend.new_models import CbomCollectionAuditEvent
-from backend.utilities.build_info import (UNKNOWN, build_version, current_client_request_id, current_request_id,
-                                          short_build, utc_timestamp)
+from backend.utilities.build_info import (DIRTY, UNKNOWN, build_version, current_client_request_id,
+                                          current_request_id, short_build, utc_timestamp)
 
 console = Console()
 
@@ -48,12 +48,16 @@ def sha256_hex(value: str) -> str:
 def engine_version() -> str:
     """The API build that classifies node facts, recorded on each run (``engine_version``, 32 characters): the
     12-character commit the image was built from (``DSS_BUILD_SHA``, backend/utilities/build_info.py), else its
-    version string (``DSS_BUILD_VERSION``), else "unknown"."""
+    version string (``DSS_BUILD_VERSION``; "-dirty" for a tree with changes), else "unknown"."""
     short = short_build()
     if short:
         return short
     version = build_version()
-    return version[:32] if version != UNKNOWN else UNKNOWN
+    if version == UNKNOWN:
+        return UNKNOWN
+    if len(version) > 32 and version.endswith(DIRTY):  # cut the version, never build_images.sh's dirty-tree marker
+        return version[:32 - len(DIRTY)] + DIRTY
+    return version[:32]
 
 
 def new_token(prefix: str, nbytes: int = 32) -> str:

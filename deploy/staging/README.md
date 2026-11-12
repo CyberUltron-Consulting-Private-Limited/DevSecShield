@@ -136,12 +136,17 @@ the full list is `backend/.env.example`.
 ## Build identity
 
 Every image carries the commit it was built from (`build_images.sh`; the OCI `revision` label and, in the backend,
-`DSS_BUILD_SHA` / `DSS_BUILD_VERSION`). A tree with uncommitted or untracked changes claims no commit ("unknown").
+`DSS_BUILD_SHA` / `DSS_BUILD_VERSION`). A tree with uncommitted or untracked changes claims no commit ("unknown")
+and its version ends in `-dirty`, whoever chose the tag.
 Signed-in users and operators always read it from `GET /version`; collection runs and CBOM exports record it.
 `DSS_EXPOSE_BUILD=1` in `.env` also names it publicly: `GET /health` adds `build` / `version`, every response
 carries `X-ZS-Build`, and `staging.sh build` puts it into the frontend's `<meta name="zs-build">` (which makes every
-commit rebuild the frontend). Set it on staging and test stacks, where the gate compares the deployed commit
-without an account; leave it unset (0) in production, where it would fingerprint the exact build (ASVS V14.3.3).
+commit rebuild the frontend). For the meta, `staging.sh build` takes `DSS_EXPOSE_BUILD` from its environment first
+and `.env` second: the **Deploy staging** workflow builds on a runner without `.env` and sets it from its
+`expose_build` input (on by default). The API side is always the host's `.env`, so a staging host deployed by the
+workflow needs `DSS_EXPOSE_BUILD=1` there too. Set it on staging and test stacks, where the gate compares the
+deployed commit without an account; leave it unset (0) in production, where it would fingerprint the exact build
+(ASVS V14.3.3).
 
 Scan-node mTLS (optional): put the CA that issues scan-node client certificates at
 `$TLS_CERT_DIR/node-client-ca.pem`; nginx then asks the API host's clients for a certificate

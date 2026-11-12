@@ -99,6 +99,19 @@ def test_engine_version_is_the_short_build(monkeypatch):
     assert C.engine_version() == "unknown"  # before: "devsecshield-0.1.0" in tests, "unknown" in the image
 
 
+def test_engine_version_of_a_dirty_image_keeps_the_marker(monkeypatch):
+    """PR #72 review: build_images.sh marks a dirty tree's version "-dirty" (it has no commit). The column is 32
+    characters: cutting a long version must never cut the marker off, or the run looks like the clean build."""
+    monkeypatch.setenv("DSS_BUILD_SHA", "")
+    clean = "release-2026.11.12-candidate-0001-rc"  # 36 characters
+    monkeypatch.setenv("DSS_BUILD_VERSION", clean)
+    assert C.engine_version() == clean[:32]
+    monkeypatch.setenv("DSS_BUILD_VERSION", f"{clean}-dirty")
+    assert C.engine_version() == f"{clean[:26]}-dirty" and len(C.engine_version()) == 32
+    monkeypatch.setenv("DSS_BUILD_VERSION", "e9c367d1a8f4-dirty")
+    assert C.engine_version() == "e9c367d1a8f4-dirty"  # short ones are kept whole
+
+
 # ----------------------------------------------------------------------------- /health and headers
 def test_health_reports_build(build):
     r = TestClient(app).get("/health")
