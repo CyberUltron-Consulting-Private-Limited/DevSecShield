@@ -128,6 +128,42 @@ def test_a_failed_unwrap_is_shared_by_its_waiters_and_remembered(api, ca_world, 
     assert kms.calls == 2
 
 
+def test_while_kms_is_asked_again_the_other_callers_do_not_wait(api, ca_world, monkeypatch):
+    """After the 10 s window one caller asks KMS again; a failing call can take 16 s, so the others get the last error
+    at once instead of queueing behind it (only one thread per CA and worker waits on KMS in an outage)."""
+    engine, _ = ca_world
+    kms = OutageKms(hang=0.5)
+    row = _kms_row(api, engine, monkeypatch, kms)
+    KW.forget()
+    kms.down, kms.calls = True, 0
+    with pytest.raises(KW.WrapError):
+        KW.cached_private_key(row.id, 1, row.fingerprint, row.private_key_encrypted)
+    real = time.monotonic
+    monkeypatch.setattr(KW.time, "monotonic", lambda: real() + KW.NEGATIVE_CACHE_S + 1)  # the failure is not fresh
+    asking = threading.Event()
+    decrypt = kms.decrypt
+
+    def slow_decrypt(**kw):
+        asking.set()
+        return decrypt(**kw)
+
+    kms.decrypt = slow_decrypt
+    retry = threading.Thread(target=lambda: pytest.raises(KW.WrapError, KW.cached_private_key, row.id, 1,
+                                                          row.fingerprint, row.private_key_encrypted))
+    retry.start()
+    assert asking.wait(5)
+    waits = []
+    for _ in range(5):
+        t = time.monotonic()
+        with pytest.raises(KW.WrapError) as err:
+            KW.cached_private_key(row.id, 1, row.fingerprint, row.private_key_encrypted)
+        waits.append(time.monotonic() - t)
+        assert err.value.transient
+    retry.join()
+    assert kms.calls == 2, kms.calls  # the first call and the one retry, nothing for the 5 others
+    assert max(waits) < 0.1, waits
+
+
 def _pg_kms_world(nodes: int, kms: OutageKms):
     """PostgreSQL: one team, one admin, one KMS-wrapped CA and ``nodes`` enrolled nodes, each with a claimed job of
     its own ssh_ca source.  Returns (engine, [{token, job, lease}], ca row)."""

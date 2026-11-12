@@ -17,8 +17,10 @@ faults; throttling, KMS internal errors, timeouts and connection failures are ``
 
 Unwrapped keys (per worker): one thread unwraps a key while the others wait for it (single flight), and the flight's
 outcome is shared: when the unwrap fails, the threads that waited for it get the same error at once, and every caller
-for the next ``NEGATIVE_CACHE_S`` (10 s) gets it without calling KMS again, so an outage costs one KMS call per CA and
-worker every 10 s instead of one per request in a queue (architecture re-review 5874161772).  An entry lives at
+for the next ``NEGATIVE_CACHE_S`` (10 s) gets it without calling KMS again; after that one caller asks KMS again while
+the others keep getting the last error at once instead of queueing behind that call (a failing call can take 16 s
+with ``client_config()``'s timeouts and retries).  So an outage costs one KMS call per CA and worker at a time, and
+only that one thread waits for it (architecture re-review 5874161772).  An entry lives at
 most ``CACHE_SECONDS`` (contract: 10 minutes): expired entries are removed on every call and by a background sweeper
 every ``SWEEP_EVERY_S`` while anything is cached, so no key stays in memory more than ``CACHE_SECONDS +
 SWEEP_EVERY_S`` after it was unwrapped.  A CA that is no longer active drops its entry when this worker sees it
@@ -45,6 +47,7 @@ PURPOSE = "devsecshield-sshca"
 CACHE_SECONDS = 600
 SWEEP_EVERY_S = 30
 NEGATIVE_CACHE_S = 10.0  # a failed unwrap is answered from memory this long (no KMS call per request in an outage)
+FAILURE_KEEP_S = 300.0  # ... and while KMS is asked again within this time, the others get it instead of waiting
 KMS_ENV = "CBOM_SSHCA_KMS_KEY_ARNS"
 _ARN = re.compile(r"^arn:aws(-cn|-us-gov)?:kms:([a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-\d):(\d{12}):(key|alias)/[A-Za-z0-9/_+=,.@:-]{1,256}$")
 
@@ -242,7 +245,7 @@ def unwrap(blob: str, *, team_id: int, ca_fingerprint: str) -> bytes:
 _cache: dict[tuple[int, str], tuple[float, Any]] = {}
 _cache_lock = threading.Lock()
 _inflight: dict[tuple[int, str], threading.Lock] = {}
-_failed: dict[tuple[int, str], tuple[float, str, bool, str]] = {}  # until, message, transient, code
+_failed: dict[tuple[int, str], tuple[float, float, str, bool, str]] = {}  # fresh until, kept until, message, ...
 _sweeper: threading.Thread | None = None
 
 
@@ -250,21 +253,21 @@ def _sweep_locked(now: float) -> int:
     expired = [k for k, (until, _key) in _cache.items() if until <= now]
     for k in expired:
         del _cache[k]
-    for k in [k for k, (until, *_rest) in _failed.items() if until <= now]:
+    for k in [k for k, (_fresh, kept, *_rest) in _failed.items() if kept <= now]:
         del _failed[k]
     for k in [k for k, lock in _inflight.items() if k not in _cache and k not in _failed and not lock.locked()]:
         del _inflight[k]
     return len(expired)
 
 
-def _failure_locked(key: tuple[int, str], now: float) -> WrapError | None:
-    """The remembered failure of the last unwrap of ``key`` while it is fresh (a new exception object per caller: one
-    instance raised in several threads would share its traceback)."""
+def _failure_locked(key: tuple[int, str], now: float, *, retrying: bool = False) -> WrapError | None:
+    """The remembered failure of the last unwrap of ``key`` while it is fresh, or while another thread is asking KMS
+    again (``retrying``).  A new exception object per caller: one instance raised in several threads would share its
+    traceback."""
     hit = _failed.get(key)
-    if hit is None or hit[0] <= now:
+    if hit is None or (hit[0] <= now and not retrying):
         return None
-    return WrapError(hit[1], transient=hit[2], code=hit[3])
-
+    return WrapError(hit[2], transient=hit[3], code=hit[4])
 
 
 def sweep() -> int:
@@ -308,10 +311,10 @@ def cached_private_key(ca_id: int, team_id: int, ca_fingerprint: str, blob: str)
         hit = _cache.get(key)
         if hit:
             return hit[1]
-        failed = _failure_locked(key, now)
-        if failed is not None:
-            raise failed  # an unwrap failed a moment ago: no new KMS call
         flight = _inflight.setdefault(key, threading.Lock())
+        failed = _failure_locked(key, now, retrying=flight.locked())
+        if failed is not None:
+            raise failed  # an unwrap failed a moment ago, or KMS is being asked again right now: no wait, no call
     with flight:
         with _cache_lock:
             now = time.monotonic()
@@ -325,7 +328,8 @@ def cached_private_key(ca_id: int, team_id: int, ca_fingerprint: str, blob: str)
             pem = unwrap(blob, team_id=team_id, ca_fingerprint=ca_fingerprint)
         except WrapError as exc:
             with _cache_lock:
-                _failed[key] = (time.monotonic() + NEGATIVE_CACHE_S, str(exc), exc.transient, exc.code)
+                now = time.monotonic()
+                _failed[key] = (now + NEGATIVE_CACHE_S, now + FAILURE_KEEP_S, str(exc), exc.transient, exc.code)
             raise
         try:
             private = C.private_from_openssh(pem)
