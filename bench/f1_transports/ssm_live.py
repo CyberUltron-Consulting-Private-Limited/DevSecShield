@@ -175,7 +175,10 @@ def main() -> int:
         report["checks"]["same_as_direct_run"] = {"ok": not lines and problem is None and len(a["assets"]) > 0,
                                                   "direct_valid": problem, "direct_status": direct.get("status"),
                                                   "assets_ssm": len(a["assets"]), "assets_direct": len(b["assets"]),
-                                                  "diff": lines[:20]}
+                                                  "diff": lines[:20],
+                                                  "pid_diff": normalize.pid_differences(
+                                                      {"assets": emitted}, {"assets": zsdoc.relabel(direct, args.label)},
+                                                      args.label)}
     report["ok"] = all(c["ok"] for c in report["checks"].values())
     (out / "report.json").write_text(json.dumps(report, indent=1, default=str))
     print(json.dumps({k: (v["ok"] if isinstance(v, dict) and "ok" in v else v)

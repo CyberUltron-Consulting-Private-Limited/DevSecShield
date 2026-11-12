@@ -37,7 +37,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT / "scan_node"))
 sys.path.insert(0, str(HERE))
 
-from normalize import diff, normalise  # noqa: E402
+from normalize import diff, normalise, pid_differences  # noqa: E402
 from zs_scan_node.transports import wrappers  # noqa: E402
 
 IMAGE = "f1-3-fleet:1"
@@ -134,7 +134,7 @@ def compare(ref: dict, got: dict, labels: list[str]) -> list[dict]:
         a, b = normalise(ref, label), normalise(got, label)
         d = diff(a, b)
         rows.append({"target": label, "ssh_assets": len(a["assets"]), "transport_assets": len(b["assets"]),
-                     "diff": d})
+                     "diff": d, "pid_diff": pid_differences(ref, got, label)})
     return rows
 
 
@@ -310,10 +310,14 @@ def main() -> int:
             r["hosts"], r["hosts_with_empty_diff"] = len(r["rows"]), len(r["rows"]) - len(bad)
             r["assets"] = sum(row["transport_assets"] for row in r["rows"])
             failures += len(bad)
+            r["hosts_with_pid_differences"] = sum(1 for row in r["rows"] if row["pid_diff"])
             print(f"{name}: {r['hosts_with_empty_diff']}/{r['hosts']} hosts with an EMPTY normalised diff vs the SSH "
-                  f"path, {r['assets']} assets, {r['seconds']}s; {r['summary']}")
+                  f"path, {r['assets']} assets, {r['seconds']}s; {r['summary']}; process_library pid differences on "
+                  f"{r['hosts_with_pid_differences']} hosts")
             for row in bad[:5]:
                 print(f"  {row['target']}: ssh {row['ssh_assets']} vs {row['transport_assets']}: {row['diff'][:3]}")
+            for row in [row for row in r["rows"] if row["pid_diff"]][:3]:
+                print(f"  {row['target']}: {row['pid_diff'][:2]}")
         report["results"] = results
         report["failures"] = failures
         (out / "report.json").write_text(json.dumps(report, indent=1))

@@ -203,30 +203,45 @@ class LocalSession:
         pass
 
 
-def _ppid(pid: int, proc: str = "/proc") -> int | None:
+RUN_WINDOW_S = 120  # how long before zs-collect a transport's own process for this run may have started
+
+
+def _stat(pid: int, proc: str = "/proc") -> tuple[int, int] | None:
+    """(parent pid, start time in clock ticks since boot) from ``/proc/<pid>/stat`` (fields 4 and 22)."""
     try:
         with open(f"{proc}/{pid}/stat", encoding="ascii", errors="replace") as f:
             text = f.read()
-        return int(text[text.rindex(")") + 2:].split()[1])  # field 4, after "(comm) state"
+        fields = text[text.rindex(")") + 2:].split()  # after "pid (comm) ": state is field 3
+        return int(fields[1]), int(fields[19])
     except (OSError, ValueError, IndexError):
         return None
 
 
-def transient_ancestors(pid: int | None = None, proc: str = "/proc", limit: int = 64) -> list[int]:
-    """The processes that launched zs-collect for this run: its ancestors up to, not including, the first one that is
-    PID 1 or a child of PID 1 (a service: sshd, salt-minion, the SSM agent, a container's init).  They are the
-    transport's own short-lived processes (an SSH session for Ansible, salt-ssh's salt-call, a salt-minion job,
-    sudo, the launcher's shell), which the SSH path never sees on the host; the service they hang off is kept."""
+def transient_ancestors(pid: int | None = None, proc: str = "/proc", limit: int = 64,
+                        window_s: float = RUN_WINDOW_S) -> list[int]:
+    """The processes that launched zs-collect for this run: its ancestors (from its parent, or from ``pid``) that
+    started at most ``window_s`` before zs-collect itself (or before ``pid``).  They are the transport's own short-lived processes (the SSH
+    session Ansible or salt-ssh opened, salt-call, a salt-minion job, sudo, the launcher's shell), which the SSH path
+    never sees on the host.  A parent never starts after its child, so the walk stops at the first older ancestor: a
+    service (sshd, the salt-minion and its long-lived workers, the SSM agent), wherever it sits in the tree, and
+    everything above it, is kept.  PID 1 is never excluded, and an ancestor whose start time cannot be read ends the
+    walk (it is kept).  The window is a bound, not a proof: a service (re)started less than ``window_s`` before the
+    run that is itself an ancestor (a salt-minion restarted just before its job) is treated as part of the run, and a
+    transport slower than the window to start zs-collect leaves its oldest process in."""
     out: list[int] = []
+    anchor = _stat(os.getpid() if pid is None else pid, proc)
+    if anchor is None:
+        return out
+    since = anchor[1] - window_s * (os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100)
     current = os.getppid() if pid is None else pid
     for _ in range(limit):
         if current is None or current <= 1:
             break
-        parent = _ppid(current, proc)
-        if parent is None or parent <= 1:
+        info = _stat(current, proc)
+        if info is None or info[1] < since:
             break
         out.append(current)
-        current = parent
+        current = info[0]
     return out
 
 
