@@ -2,7 +2,9 @@
 
 Started from the reviewer's set for #75 (review 5874859738: 43 mutants, 25 killed) with the anchors moved to the
 v2 code, plus mutants for the code added in that round (ledger v2, timing, sampled/derived oracle rules, G16 positive
-controls, trace.zip redaction). Every surviving mutant is a hole in the suite: add the test that kills it.
+controls, trace.zip redaction); review 5878413538 added the second reviewer's 15 (R1-R15, anchors moved to the round-3
+code) and round 3's own (U compare-first, V codes/impact, I identities, N never-scan, T5-T7, J12, K1). Every surviving
+mutant is a hole in the suite: add the test that kills it.
 
     python3 e2e/cbom/tools/mutants.py [--only L1,O3] [--out results.json]
 
@@ -23,11 +25,9 @@ CBOM = Path(__file__).resolve().parents[1]
 LED, JOIN, ORA, LOGS = "harness/ledger.py", "harness/join.py", "harness/oracle.py", "harness/logs.py"
 M = [  # (id, file, exact old text (must occur once), new text, what it breaks)
     # ---- ledger (major 5, 6)
-    ("L1", LED, 'res.expect_failing and not res.failing and not res.not_run:\n            res.status = "stale"',
-     'res.expect_failing and not res.failing and not res.not_run:\n            res.status = "holds"',
+    ("L1", LED, '        elif not actual:\n            res.status = "stale"', '        elif not actual:\n            res.status = "holds"',
      "stale rows never reported"),
-    ("L2", LED, "if (res.failing, res.not_run) == (res.expect_failing, res.expect_not_run):",
-     "if res.failing or res.not_run:", "a moved count is not detected"),
+    ("L2", LED, "        if have == want:", "        if True:", "moved identities are not detected"),
     ("L3", LED, 'if row.get("not_run_ok"):\n                    covered.add(check.id)',
      'if True:\n                    covered.add(check.id)', "NOT-RUN covered by a row without not_run_ok"),
     ("L4", LED, 'return not blocking and all(r.status in ("holds", "not-run-ok") for r in results)',
@@ -41,11 +41,12 @@ M = [  # (id, file, exact old text (must occur once), new text, what it breaks)
      "exact match becomes substring"),
     ("L8", LED, "missing = [k for k in REQUIRED if k not in row", "missing = [k for k in REQUIRED[:3] if k not in row",
      "issue/owner/why/expect_failing no longer required"),
-    ("L9", LED, "if check.verdict in (FAIL, NOT_JUDGED):\n                res.failing += 1",
-     "if check.verdict in (FAIL,):\n                res.failing += 1", "NOT-JUDGED can no longer be ledgered"),
+    ("L9", LED, "if check.verdict in (FAIL, NOT_JUDGED):\n                actual.append",
+     "if check.verdict in (FAIL,):\n                actual.append", "NOT-JUDGED can no longer be ledgered"),
     ("L10", LED, "if not NARROWING & set(match):", "if False:", "a row need not name a narrowing key"),
-    ("L11", LED, 'if exp_n and not row.get("not_run_ok"):', "if False:", "expect_not_run without not_run_ok"),
-    ("L12", LED, "if not exp_f and not exp_n:", "if False:", "a row may pin nothing"),
+    ("L11", LED, 'if n_run and not row.get("not_run_ok"):', "if False:", "a pinned NOT-RUN without not_run_ok"),
+    ("L12", LED, 'row[k] in (None, "", [], {}) and not (pinning', 'row[k] in (None, "", {}) and not (pinning',
+     "a row may pin nothing (empty expect)"),
     ("L13", LED, "        if got is None:\n            return False", "        if got is None:\n            continue",
      "a key the check does not carry matches anything"),
     ("L14", LED, 'k.endswith("_prefix") or k not in MATCH_KEYS', 'k.endswith("_prefix")',
@@ -129,7 +130,7 @@ M = [  # (id, file, exact old text (must occur once), new text, what it breaks)
      "a code change passes as the same build"),
     ("W1", "harness/rundir.py", '    tmp = path.with_suffix(path.suffix + ".tmp")\n    with open(tmp, "w", encoding="utf-8", newline="")',
      '    tmp = path\n    with open(tmp, "w", encoding="utf-8", newline="")', "judge rewrites a hard-linked bundle"),
-    ("O20", ORA, "if derived is not None and (oid.split(\"[\", 1)[0], source) in weak_keys:", "if False:",
+    ("O20", ORA, "                    if (oid.split(\"[\", 1)[0], source) in weak_keys:", "                    if False:",
      "a derivation from an unverified oracle key is judged"),
     ("M1", "harness/manifest.py", "return frozen == now, (", "return True, (", "oracle changed after Start (O-5)"),
     ("M2", "harness/manifest.py",
@@ -146,7 +147,7 @@ M = [  # (id, file, exact old text (must occur once), new text, what it breaks)
      "ok_meta = True", "export timestamp from another day passes (O-10)"),
     ("T2", "harness/timing.py", '"G11", "timing", not bad, "outside-run-window"', '"G11", "timing", True, '
      '"outside-run-window"', "DB rows from before the run pass"),
-    ("T3", "harness/timing.py", 'serial.startswith("urn:uuid:") and len(serial) == 45,', "True,",
+    ("T3", "harness/timing.py", "    if not UUID_URN.match(serial.lower()):\n        problems", "    if False:\n        problems",
      "export serial not judged"),
     ("T4", "harness/timing.py", 'not disagree, "mismatch"', 'True, "mismatch"', "re-judged run verdict not compared"),
     ("X1", "harness/gate.py", '            for gate_name in part.get("gate") or []:',
@@ -163,10 +164,78 @@ M = [  # (id, file, exact old text (must occur once), new text, what it breaks)
      '"job_id": norm_int,', "key_size equal in every view join"),
     ("F2", "harness/fieldmap.py", 'SAMPLED = {"cipher_suites", "groups"}',
      'SAMPLED = {"cipher_suites", "groups", "protocol_versions"}', "protocol versions judged as a sample"),
-    ("S1", "harness/standards.py", "    if flags == {True}:\n        return False", "    if flags == {True}:\n"
+    ("S1", "harness/standards.py", '    if kinds == {"pq"}:\n        return False', '    if kinds == {"pq"}:\n'
      "        return True", "all-PQ key exchange called vulnerable"),
-    ("S2", "harness/standards.py", "    if flags == {False}:\n        return True", "    if flags == {False}:\n"
+    ("S2", "harness/standards.py", '    if kinds == {"classical"}:\n        return True', '    if kinds == {"classical"}:\n'
      "        return None", "classical-only key exchange not derived"),
+    # ---- review 5878413538: the reviewer's 15 mutants (rv-75-r2/bin/mymutants.py), anchors moved to the round-3 code
+    ("R1", "harness/timing.py", 'if str(k) == "1" else end) + SLACK', 'if str(k) == "1" else end) + dt.timedelta(days=1)',
+     "DB rows up to a day after G10 pass (no upper bound)"),
+    ("R2", "harness/timing.py", "SLACK = dt.timedelta(seconds=120)", "SLACK = dt.timedelta(hours=6)",
+     "six hours of clock slack"),
+    ("R3", "harness/timing.py", "ok_meta = meta_ts is not None and lo <= meta_ts <= hi and meta_ts.date() == start.date()",
+     "ok_meta = meta_ts is not None and lo <= meta_ts and meta_ts.date() == start.date()",
+     "export metadata.timestamp after the run passes"),
+    ("R4", "harness/timing.py", "    if not UUID_URN.match(serial.lower()):\n        problems", '    if not serial.startswith("urn:uuid:"):\n        problems',
+     "any urn:uuid: prefix is a serial number"),
+    ("R5", LOGS, 'if int(j.get("asset_count") or 0) > 0:', 'if int(j.get("asset_count") or 0) > 1:',
+     "a job that stored exactly one asset needs no 'assets stored' line"),
+    ("R6", JOIN, 'and (db_n is None or db_n == want), "count-mismatch"', 'and True, "count-mismatch"',
+     "ui_total no longer compares the DB row count"),
+    ("R7", "harness/rundir.py", 'found |= {str(i + 1) for i in range(len(state.get("runs") or []))}', "pass",
+     "a run the flow started with no oracle/API files is skipped"),
+    ("R8", JOIN, 'if run_id is None or str(r.get("run_id")) == str(run_id)]', "]",
+     "DB rows of other runs join this run's view"),
+    ("R9", LED, 'if row.get("not_run_ok") and not n_run and not pinning:', "if False:",
+     "not_run_ok without a pinned NOT-RUN accepted"),
+    ("R10", "harness/standards.py", '    "SecP256r1MLKEM768", "X25519MLKEM768", "SecP384r1MLKEM1024",',
+     '    "X25519MLKEM768", "SecP384r1MLKEM1024",', "SecP256r1MLKEM768 dropped from the PQ table"),
+    ("R11", "harness/standards.py", '"export": lambda s: "_EXPORT" in s,', '"export": lambda s: False,',
+     "EXPORT suites not a weak class"),
+    ("R12", ORA, 'return (bits.get(alg), f"derived: bits of the {alg or \'?\'} host key") if alg in bits else None',
+     'return (max(b or 0 for b in bits.values()), "derived: largest host key") if alg in bits else None',
+     "SSH key size derived from the largest host key"),
+    ("R13", ORA, 'return bool(got) and (F.norm_suites([got]) or [""])[0] in allowed', "return bool(got)",
+     "derived TLS suite: any reported suite passes"),
+    ("R14", ORA, 'len(cov) == 1 and not other, "empty-address"', 'len(cov) <= 1 and not other, "empty-address"',
+     "an empty address with no coverage row passes"),
+    ("R15", ORA, 'unverified |= {(str(oid).split("[", 1)[0], str(key)) for key in keys or []}',
+     'unverified |= {(str(oid).split("[", 1)[0], str(key)) for key in (keys or [])[:1]}',
+     "only the first unverified key per oracle row is NOT-JUDGED"),
+    # ---- round 3's own new code (compare-first, verdict fields, identities, never-scan, timing, G17)
+    ("U1", ORA, "                        same = got_raw is not F.MISSING and got == want", "                        same = True",
+     "an unverified key passes NOT-JUDGED whatever the product says (5c, N4)"),
+    ("U2", ORA, "same = got_raw is not F.MISSING and bool(got) and set(got) <= set(want or [])", "same = True",
+     "an unverified sampled list passes NOT-JUDGED whatever the product says"),
+    ("U3", ORA, "    if same:\n        checks.not_judged(", "    if True:\n        checks.not_judged(",
+     "disagreement with an unverified lab value is NOT-JUDGED, not FAIL"),
+    ("U4", ORA, 'bool(got) and (F.norm_suites([got]) or [""])[0] in STD.TLS13_SUITES', "True",
+     "a TLS 1.3-only endpoint may report any suite (N3)"),
+    ("V1", ORA, 'the lab states no codes_include"},\n                       observed=sorted(codes))',
+     'the lab states no codes_include"})', "unjudged codes carry no shown value, so a pinned row cannot see them change (N12)"),
+    ("V2", ORA, 'F.IMPACT_RANK.get(got, 4) <= F.IMPACT_RANK.get(asset["impact_min"], 4), "impact-too-low"',
+     'True, "impact-too-low"', "impact_min never judged"),
+    ("V3", ORA, '    if not asset.get("codes_include"):\n        checks.not_run(', "    if False:\n        checks.not_run(",
+     "the lab's silence on codes is not named"),
+    ("I1", "harness/identity.py", '        out["observed"] = normalise_value(check.observed, maps, field)\n    elif',
+     "    elif", "pins ignore the product's value (N6: a worse regression under one check)"),
+    ("I2", "harness/identity.py", 'out: dict[str, Any] = {"id": normalise_id(check.id, maps), "verdict": check.verdict}',
+     'out: dict[str, Any] = {"id": normalise_id(check.id, maps).split("/asset/")[0], "verdict": check.verdict}',
+     "pins ignore which asset failed (N8, N8b: swaps)"),
+    ("N1", "harness/neverscan.py", 'node = [x for x in after if str(x.get("peer", "")).rsplit(":", 1)[0] in node_ips]',
+     "node = []", "the sealed canary log is not recounted (N11)"),
+    ("N2", "harness/neverscan.py", "missing = lines is None", "missing = False", "a missing listener log reads as zero (N11b)"),
+    ("N3", "harness/neverscan.py", 'if (parse_ts(x.get("ts")) or start) >= start]', "]",
+     "node connections before Start (CB-05's G4 tests) count"),
+    ("T5", "harness/timing.py", "outside_rec = sorted(name for name, t in record.items() if t is None or not lo <= t <= stored_by)",
+     "outside_rec = []", "the run record's dates are not judged (N9b)"),
+    ("T6", "harness/timing.py", 'problems += [f"same as run {kk}\'s export" for kk, s in others.items() if s and s == serial]',
+     "problems += []", "run 1 and run 2 may share a serial number"),
+    ("T7", "harness/timing.py", '    else:\n        checks.not_run(f"G11/db_created_in_run_window/run{k}"',
+     '    elif False:\n        checks.not_run(f"G11/db_created_in_run_window/run{k}"', "no DB row for the run passes silently"),
+    ("J12", JOIN, "if len(numbers) == 1 else None", "if numbers else None", "a header with two numbers reads the first (N10)"),
+    ("K1", "harness/bundle.py", 'return bool(h.get("commit")) and h.get("dirty") is False and not h.get("untracked")',
+     'return bool(h.get("commit"))', "a dirty or untracked judge passes G17"),
 ]
 
 
