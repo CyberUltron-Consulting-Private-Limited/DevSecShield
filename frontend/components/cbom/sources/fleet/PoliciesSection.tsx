@@ -29,20 +29,39 @@ import {
   type CbomPolicyPreview,
   type CbomPolicySchedule,
   type CbomPolicyWrite,
+  type CbomWriteEvaluation,
 } from "@/utils/api/cbom_fleet";
 
 import { cbomSourcesKeys } from "../keys";
 import { refusalReason } from "../logic";
 import { ConfirmDialog, EmptyState, ErrorBlock, Field, LoadingBlock, NodeSelect, SectionCard, StatusBadge } from "../shared";
-import { OP_LABEL, actionText, draftFromSelector, selectorFromDraft, selectorText, type Condition, type SelectorDraft } from "./fleetLogic";
-import { cbomFleetKeys } from "./keys";
+import {
+  OP_LABEL,
+  actionText,
+  conditionProblems,
+  draftFromSelector,
+  isConflict,
+  selectorFromDraft,
+  selectorText,
+  type Condition,
+  type SelectorDraft,
+} from "./fleetLogic";
+import { cbomFleetKeys, refreshFleet } from "./keys";
 import type { FleetSectionProps } from "./sections";
+import { useOpener } from "./useOpener";
 
 const FIELDS = ["kind", "account_id", "region", "platform"];
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function errorText(err: unknown, fallback: string): string {
   return refusalReason(err) ?? fallback;
+}
+
+const CONFLICT = "This policy was changed elsewhere (another tab or person) since you opened it.";
+
+/** A write's toast: a large inventory is evaluated by the fleet worker, so the counts follow a few seconds later. */
+function savedText(done: string, res: CbomWriteEvaluation): string {
+  return res.evaluation === "queued" ? `${done}; the decisions and counts update in a few seconds` : done;
 }
 
 interface Draft {
@@ -117,7 +136,7 @@ function ConditionRow({ c, onChange, onRemove, index }: { c: Condition; onChange
         </SelectContent>
       </Select>
       {c.on === "tag" ? (
-        <Input className="w-36" aria-label="Tag key" placeholder="env" value={c.key} onChange={(e) => onChange({ ...c, key: e.target.value })} />
+        <Input className="w-36" aria-label="Tag key" placeholder="e.g. env" value={c.key} onChange={(e) => onChange({ ...c, key: e.target.value })} />
       ) : (
         <Select value={c.key} onValueChange={(v) => onChange({ ...c, key: v })}>
           <SelectTrigger className="w-36 cursor-pointer" aria-label="Field"><SelectValue /></SelectTrigger>
@@ -133,7 +152,7 @@ function ConditionRow({ c, onChange, onRemove, index }: { c: Condition; onChange
         </SelectContent>
       </Select>
       {c.op !== "exists" && (
-        <Input className="w-40" aria-label="Value" placeholder={c.op === "in" ? "prod, stage" : "prod"} value={c.value} onChange={(e) => onChange({ ...c, value: e.target.value })} />
+        <Input className="w-40" aria-label="Value" placeholder={c.op === "in" ? "e.g. prod, stage" : "e.g. prod"} value={c.value} onChange={(e) => onChange({ ...c, value: e.target.value })} />
       )}
       <Button variant="ghost" size="icon" className="cursor-pointer" aria-label="Remove condition" onClick={onRemove}>
         <X className="h-4 w-4" />
@@ -142,32 +161,61 @@ function ConditionRow({ c, onChange, onRemove, index }: { c: Condition; onChange
   );
 }
 
-function PolicyForm({ teamId, editing, onDone }: { teamId: number; editing: CbomFleetPolicy | null; onDone: () => void }) {
+function PolicyForm({ teamId, editing, onDone, onCloseAutoFocus }: {
+  teamId: number; editing: CbomFleetPolicy | null; onDone: () => void; onCloseAutoFocus: (e: Event) => void;
+}) {
   const queryClient = useQueryClient();
+  const [base, setBase] = useState<CbomFleetPolicy | null>(editing); // the version being edited (reloaded after a 409)
   const [d, setD] = useState<Draft>(() => draftOf(editing));
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
   const [preview, setPreview] = useState<CbomPolicyPreview | null>(null);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => { setD((cur) => ({ ...cur, [k]: v })); setPreview(null); };
   const creds = useQuery({ queryKey: cbomFleetKeys.credentials(teamId), queryFn: () => listCbomCredentials(teamId) });
   const nodes = useQuery({ queryKey: cbomSourcesKeys.nodes(teamId), queryFn: () => listCbomScanNodes(teamId) });
   const agentless = (nodes.data?.nodes ?? []).filter((n) => (n.mode ?? "agentless") !== "agent");
+  // an incomplete condition is named and blocks Preview and Save; it is never dropped from what is sent
+  const problems = d.selector ? conditionProblems(d.selector) : [];
   const body = () => {
     try { return bodyOf(d); } catch (e) { setError((e as Error).message); return null; }
   };
   const save = useMutation({
-    mutationFn: (b: CbomPolicyWrite) => (editing
-      ? updateCbomPolicy(teamId, editing.id, { ...b, expected_version: editing.row_version })
+    mutationFn: (b: CbomPolicyWrite) => (base
+      ? updateCbomPolicy(teamId, base.id, { ...b, expected_version: base.row_version })
       : createCbomPolicy(teamId, b)),
-    onSuccess: () => {
-      toast.success(editing ? "Policy saved" : "Policy added");
-      queryClient.invalidateQueries({ queryKey: cbomFleetKeys.all(teamId) });
+    onSuccess: (res) => {
+      toast.success(savedText(base ? "Policy saved" : "Policy added", res));
+      refreshFleet(queryClient, teamId, ["policies", "targets"]);
       onDone();
     },
-    onError: (err) => setError(errorText(err, "Could not save the policy")),
+    onError: (err) => {
+      if (isConflict(err)) {
+        setConflict(true);
+        setError(CONFLICT);
+        refreshFleet(queryClient, teamId, ["policies"]);
+      } else setError(errorText(err, "Could not save the policy"));
+    },
+  });
+  // after a 409: the latest saved version replaces the draft, so the person sees what changed and applies again
+  const reload = useMutation({
+    mutationFn: () => queryClient.fetchQuery({ queryKey: cbomFleetKeys.policies(teamId), queryFn: () => listCbomPolicies(teamId), staleTime: 0 }),
+    onSuccess: (data) => {
+      const fresh = data.policies.find((p) => p.id === base?.id);
+      if (!fresh) {
+        setError("This policy was deleted elsewhere.");
+        return;
+      }
+      setBase(fresh);
+      setD(draftOf(fresh));
+      setPreview(null);
+      setConflict(false);
+      setError(null);
+    },
+    onError: (err) => setError(errorText(err, "Could not load the latest version")),
   });
   const previewRun = useMutation({
     // an edit is previewed in place of the saved policy (same id, so a priority tie breaks as it will once saved)
-    mutationFn: (b: CbomPolicyWrite) => previewCbomPolicy(teamId, editing ? { policy: b, policy_id: editing.id } : { policy: b }),
+    mutationFn: (b: CbomPolicyWrite) => previewCbomPolicy(teamId, base ? { policy: b, policy_id: base.id } : { policy: b }),
     onSuccess: (data) => { setPreview(data); setError(null); },
     onError: (err) => setError(errorText(err, "Could not preview the policy")),
   });
@@ -175,9 +223,9 @@ function PolicyForm({ teamId, editing, onDone }: { teamId: number; editing: Cbom
   const setConditions = (next: Condition[]) => set("selector", { mode: d.selector?.mode ?? "all", conditions: next });
   return (
     <Dialog open onOpenChange={(v) => !v && onDone()}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
-          <DialogTitle>{editing ? `Edit ${editing.name}` : "Add a policy"}</DialogTitle>
+          <DialogTitle>{base ? `Edit ${base.name}` : "Add a policy"}</DialogTitle>
           <DialogDescription>Higher priority wins; on a tie the older policy wins. The never-scan list always wins.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -207,6 +255,11 @@ function PolicyForm({ teamId, editing, onDone }: { teamId: number; editing: Cbom
                   <ConditionRow key={i} index={i} c={c} onChange={(next) => setConditions(conditions.map((x, j) => (j === i ? next : x)))}
                     onRemove={() => setConditions(conditions.filter((_, j) => j !== i))} />
                 ))}
+                {problems.length > 0 && (
+                  <ul className="text-sm text-red-600 dark:text-red-400 space-y-0.5" role="alert" data-testid="policy-condition-problems">
+                    {problems.map((p) => <li key={p}>{p}</li>)}
+                  </ul>
+                )}
                 <Button variant="outline" size="sm" className="cursor-pointer" disabled={conditions.length >= 20}
                   onClick={() => setConditions([...conditions, { on: "tag", key: "", op: "eq", value: "" }])}>
                   <Plus className="h-4 w-4 mr-1" /> Add condition
@@ -287,9 +340,23 @@ function PolicyForm({ teamId, editing, onDone }: { teamId: number; editing: Cbom
               </div>
             )}
           </fieldset>
-          {error && <p className="text-sm text-red-600 dark:text-red-400" role="alert">{error}</p>}
+          {error && (
+            <div className="flex flex-wrap items-center gap-2" role="alert">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              {conflict && (
+                <Button variant="outline" size="sm" className="cursor-pointer" disabled={reload.isPending} onClick={() => reload.mutate()}>
+                  Load the latest version
+                </Button>
+              )}
+            </div>
+          )}
           {preview && (
             <div className="rounded-md border border-zinc-200 dark:border-zinc-800 p-3 text-sm space-y-1" role="status" data-testid="policy-preview">
+              {preview.enabled === false && (
+                <p className="text-zinc-600 dark:text-zinc-400">
+                  This policy is disabled: it matches nothing until it is enabled (it would match {preview.matched_if_enabled ?? 0}).
+                </p>
+              )}
               <p className="font-medium">Matches {preview.matched} · would collect {preview.would_collect} · never scan {preview.never_scan}</p>
               {preview.conflicts.map((c, i) => (
                 <p key={i} className="text-amber-700 dark:text-amber-400">
@@ -300,11 +367,11 @@ function PolicyForm({ teamId, editing, onDone }: { teamId: number; editing: Cbom
           )}
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" className="cursor-pointer" disabled={previewRun.isPending || !d.name.trim()} onClick={() => { const b = body(); if (b) previewRun.mutate(b); }}>
+          <Button variant="outline" className="cursor-pointer" disabled={previewRun.isPending || !d.name.trim() || problems.length > 0} onClick={() => { const b = body(); if (b) previewRun.mutate(b); }}>
             Preview
           </Button>
-          <Button className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" disabled={save.isPending || !d.name.trim()} onClick={() => { const b = body(); if (b) save.mutate(b); }}>
-            {editing ? "Save" : "Add policy"}
+          <Button className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" disabled={save.isPending || !d.name.trim() || problems.length > 0 || conflict} onClick={() => { const b = body(); if (b) save.mutate(b); }}>
+            {base ? "Save" : "Add policy"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -316,22 +383,34 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<CbomFleetPolicy | null | "new">(null);
   const [removing, setRemoving] = useState<CbomFleetPolicy | null>(null);
-  const policies = useQuery({ queryKey: cbomFleetKeys.policies(teamId), queryFn: () => listCbomPolicies(teamId) });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+  const opener = useOpener();
+  const policies = useQuery({
+    queryKey: cbomFleetKeys.policies(teamId),
+    queryFn: () => listCbomPolicies(teamId),
+    // a large inventory is evaluated by the fleet worker after a write: poll until the counts are current
+    refetchInterval: (q) => (q.state.data?.evaluation?.stale ? 3000 : false),
+  });
+  const refresh = () => refreshFleet(queryClient, teamId, ["policies", "targets"]);
   const toggle = useMutation({
     mutationFn: (p: CbomFleetPolicy) => updateCbomPolicy(teamId, p.id, { enabled: !p.enabled, expected_version: p.row_version }),
     onSuccess: refresh,
-    onError: (err) => toast.error(errorText(err, "Could not change the policy")),
+    onError: (err) => {
+      if (isConflict(err)) {
+        refreshFleet(queryClient, teamId, ["policies"]);
+        toast.error("This policy was changed elsewhere; the list now shows the latest version. Try again.");
+      } else toast.error(errorText(err, "Could not change the policy"));
+    },
   });
   const remove = useMutation({
     mutationFn: (id: number) => deleteCbomPolicy(teamId, id),
-    onSuccess: () => { setRemoving(null); refresh(); },
+    onSuccess: (res) => { setRemoving(null); refresh(); toast.success(savedText("Policy deleted", res)); },
     onError: (err) => toast.error(errorText(err, "Could not delete the policy")),
   });
   const apply = useMutation({
     mutationFn: () => reconcileCbomFleet(teamId),
     onSuccess: (r) => {
-      refresh();
+      // managed sources and schedules show on the other tabs too
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
       if (!r.materialize) toast.success(`Decisions refreshed (${r.decisions_changed} changed); managed sources are turned off in this deployment`);
       else toast.success(`Applied: ${r.sources_created} sources added, ${r.sources_updated} updated, ${r.sources_removed} removed, ${r.deferred} waiting for a running job`);
       r.problems.slice(0, 3).forEach((p) => toast.error(p));
@@ -350,7 +429,7 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
             title={data?.materialize ? "Create and update the managed sources and schedules now" : "Managed sources are turned off; this refreshes the decisions"}>
             <Wand2 className="h-4 w-4 mr-1.5" /> Apply policies
           </Button>
-          <Button size="sm" className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setEditing("new")} data-testid="fleet-add-policy">
+          <Button size="sm" className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" onClick={(e) => { opener.remember(e); setEditing("new"); }} data-testid="fleet-add-policy">
             <Plus className="h-4 w-4 mr-1.5" /> Add policy
           </Button>
         </div>
@@ -358,6 +437,16 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
     >
       {policies.isLoading && <LoadingBlock />}
       {!data && policies.isError && <ErrorBlock error={policies.error} onRetry={() => policies.refetch()} />}
+      {data?.evaluation?.stale && (
+        <p className="text-xs text-zinc-600 dark:text-zinc-400 mb-2" role="status" data-testid="fleet-policies-updating">
+          The decisions and counts are being updated after a change; this list refreshes when they are.
+        </p>
+      )}
+      {data?.materialize && (data.evaluation?.last_reconcile?.deferred ?? 0) > 0 && (
+        <p className="text-xs text-amber-700 dark:text-amber-400 mb-2" role="status" data-testid="fleet-policies-deferred">
+          {data.evaluation.last_reconcile.deferred} managed source change(s) wait for a running job; they are applied when it ends.
+        </p>
+      )}
       {data && data.policies.length === 0 && <EmptyState title="No policy yet" body="Add one, e.g. env is prod: collect weekly over SSH; env is pci: never scan." />}
       {data && data.policies.length > 0 && (
         <div className="overflow-x-auto">
@@ -385,8 +474,11 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
                   <TableCell className="max-w-[260px] text-sm">{actionText(p.action)}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">{p.won_targets ?? 0} / {p.matched_targets ?? 0}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">
-                    <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => toggle.mutate(p)}>{p.enabled ? "Disable" : "Enable"}</Button>
-                    <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Edit ${p.name}`} onClick={() => setEditing(p)}>
+                    <Button variant="ghost" size="sm" className="cursor-pointer" aria-label={`${p.enabled ? "Disable" : "Enable"} ${p.name}`}
+                      disabled={toggle.isPending} onClick={() => toggle.mutate(p)}>
+                      {p.enabled ? "Disable" : "Enable"}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Edit ${p.name}`} onClick={(e) => { opener.remember(e); setEditing(p); }}>
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Delete ${p.name}`} onClick={() => setRemoving(p)}>
@@ -399,12 +491,14 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
           </Table>
         </div>
       )}
-      {editing !== null && <PolicyForm teamId={teamId} editing={editing === "new" ? null : editing} onDone={() => setEditing(null)} />}
+      {editing !== null && (
+        <PolicyForm teamId={teamId} editing={editing === "new" ? null : editing} onDone={() => setEditing(null)} onCloseAutoFocus={opener.onCloseAutoFocus} />
+      )}
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(v) => !v && setRemoving(null)}
         title={`Delete ${removing?.name ?? "this policy"}?`}
-        description="Its targets fall to the next matching policy. Its managed sources and schedule go at the next Apply (a source with a running job waits for it)."
+        description="Its targets fall to the next matching policy. Its managed sources and schedule go at the next Apply; a job running on them is stopped."
         confirmLabel="Delete"
         destructive
         pending={remove.isPending}

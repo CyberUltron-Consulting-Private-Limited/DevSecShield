@@ -56,8 +56,29 @@ export interface CbomInventoryTarget {
   first_seen_at: string | null
   last_seen_at: string | null
   missing_since: string | null
+  /** removed from the inventory by a person (deleted, or its inventory source deleted): never collected again */
+  deleted_at: string | null
   managed_source_id: number | null
+  /** its managed source has a job running: the change waits for it (the fleet worker retries every minute) */
+  pending: boolean
+  pending_since: string | null
   decision: CbomDecision
+}
+
+/** Whether the stored decisions and counts are current. A write to a large inventory is evaluated by the fleet
+ * worker within seconds; until then the lists serve the previous decisions with ``stale``. */
+export interface CbomFleetEvaluation {
+  evaluated_at: string | null
+  stale: boolean
+  evaluation_requested: boolean
+  reconcile_requested: boolean
+  last_reconcile: Partial<CbomReconcileResult> & { at?: string }
+}
+
+/** What a write answers about the decisions: evaluated in the request ("done"), or by the fleet worker ("queued"). */
+export interface CbomWriteEvaluation {
+  evaluation: "done" | "queued"
+  decisions_changed: number | null
 }
 
 export interface CbomPolicyRef {
@@ -72,11 +93,14 @@ export interface CbomTargetPage {
   next_cursor: number | null
   total: number
   policies: Record<string, CbomPolicyRef>
+  evaluation: CbomFleetEvaluation
 }
 
 export interface CbomTargetFilters {
   kind?: string
-  tag?: string
+  /** a tag key (it may contain colons, as AWS system tags do); with tag_value, that value only */
+  tag_key?: string
+  tag_value?: string
   q?: string
   missing?: "yes" | "no" | "all"
   source_id?: number
@@ -108,7 +132,10 @@ export interface CbomImportResult {
   updated: number
   unchanged: number
   missing: number
-  errors: { row: number; error: string }[]
+  /** rows another inventory source already lists: that source owns them */
+  skipped: number
+  /** a row's problem (``row``), or a target's (``external_id``) such as which source owns it */
+  errors: { row?: number; external_id?: string; error: string }[]
   error_count: number
   rows: number
   digest: string
@@ -125,7 +152,7 @@ export async function importCbomInventory(
   return response.data
 }
 
-export async function deleteCbomInventoryTarget(teamId: number, targetId: number): Promise<{ deleted: number }> {
+export async function deleteCbomInventoryTarget(teamId: number, targetId: number): Promise<{ deleted: number } & CbomWriteEvaluation> {
   const response = await api.delete(`${base(teamId)}/inventory/targets/${targetId}`)
   return response.data
 }
@@ -173,7 +200,10 @@ export async function updateCbomInventorySource(
   return response.data
 }
 
-export async function deleteCbomInventorySource(teamId: number, sourceId: number): Promise<{ deleted: number }> {
+export async function deleteCbomInventorySource(
+  teamId: number,
+  sourceId: number,
+): Promise<{ deleted: number; targets_removed: number } & CbomWriteEvaluation> {
   const response = await api.delete(`${base(teamId)}/inventory/sources/${sourceId}`)
   return response.data
 }
@@ -228,12 +258,14 @@ export interface CbomPolicyWrite {
   action: CbomPolicyAction
 }
 
-export async function listCbomPolicies(teamId: number): Promise<{ policies: CbomFleetPolicy[]; materialize: boolean; order: string }> {
+export async function listCbomPolicies(
+  teamId: number,
+): Promise<{ policies: CbomFleetPolicy[]; materialize: boolean; order: string; evaluation: CbomFleetEvaluation }> {
   const response = await api.get(`${base(teamId)}/policies`)
   return response.data
 }
 
-export async function createCbomPolicy(teamId: number, body: CbomPolicyWrite): Promise<{ policy: CbomFleetPolicy }> {
+export async function createCbomPolicy(teamId: number, body: CbomPolicyWrite): Promise<{ policy: CbomFleetPolicy } & CbomWriteEvaluation> {
   const response = await api.post(`${base(teamId)}/policies`, body)
   return response.data
 }
@@ -242,12 +274,12 @@ export async function updateCbomPolicy(
   teamId: number,
   policyId: number,
   body: Partial<CbomPolicyWrite> & { expected_version?: number },
-): Promise<{ policy: CbomFleetPolicy; decisions_changed: number }> {
+): Promise<{ policy: CbomFleetPolicy } & CbomWriteEvaluation> {
   const response = await api.patch(`${base(teamId)}/policies/${policyId}`, body)
   return response.data
 }
 
-export async function deleteCbomPolicy(teamId: number, policyId: number): Promise<{ deleted: number }> {
+export async function deleteCbomPolicy(teamId: number, policyId: number): Promise<{ deleted: number } & CbomWriteEvaluation> {
   const response = await api.delete(`${base(teamId)}/policies/${policyId}`)
   return response.data
 }
@@ -258,6 +290,10 @@ export interface CbomPolicyPreview {
   never_scan: number
   conflicts: { winner_policy_id: number | null; winner: string | null; loser_policy_id: number | null; loser: string | null; targets: number }[]
   sample: (CbomInventoryTarget & { won: boolean })[]
+  /** the draft as it will be saved; a disabled one matches nothing */
+  enabled: boolean
+  /** with ``enabled`` false: what it would match once enabled */
+  matched_if_enabled?: number
 }
 
 export async function previewCbomPolicy(
@@ -319,7 +355,7 @@ export async function updateCbomCredential(
   teamId: number,
   credentialId: number,
   body: { name?: string; config?: Record<string, unknown>; secrets?: Record<string, string>; expected_version?: number },
-): Promise<{ credential: CbomCredential }> {
+): Promise<{ credential: CbomCredential } & CbomWriteEvaluation> {
   const response = await api.patch(`${base(teamId)}/credentials/${credentialId}`, body)
   return response.data
 }

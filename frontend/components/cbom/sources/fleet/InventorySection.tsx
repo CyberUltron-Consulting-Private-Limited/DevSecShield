@@ -2,10 +2,12 @@
 
 // Fleet inventory: where targets come from (an AWS account read through its validated role, a CSV/JSON import, the
 // API) and every target with the policy decision on it: which policy won, how many others matched, and why.
+// The targets table sizes its columns from its own width (a container query), not the window's: beside the sidebar
+// a 768 px tablet leaves it less room than a 390 px phone, and the decision column must stay on screen.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cloud, FileUp, Pause, Play, RefreshCcw, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
@@ -33,8 +35,9 @@ import {
 import { formatDateTime, refusalReason } from "../logic";
 import { ConfirmDialog, EmptyState, ErrorBlock, Field, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "../shared";
 import { DECISION_LABEL, coverageGaps, decisionText, targetLabel } from "./fleetLogic";
-import { cbomFleetKeys } from "./keys";
+import { cbomFleetKeys, refreshFleet } from "./keys";
 import type { FleetSectionProps } from "./sections";
+import { useOpener } from "./useOpener";
 
 const KINDS = ["linux_host", "windows_host", "database", "k8s_cluster", "load_balancer", "certificate", "kms_key", "secret", "other"];
 const KIND_LABEL: Record<string, string> = {
@@ -55,7 +58,9 @@ function gaps(source: CbomInventorySource): string[] {
 }
 
 // ---------------------------------------------------------------------------- import
-function ImportDialog({ teamId, open, onOpenChange }: { teamId: number; open: boolean; onOpenChange: (v: boolean) => void }) {
+function ImportDialog({ teamId, open, onOpenChange, onCloseAutoFocus }: {
+  teamId: number; open: boolean; onOpenChange: (v: boolean) => void; onCloseAutoFocus: (e: Event) => void;
+}) {
   const queryClient = useQueryClient();
   const [format, setFormat] = useState<"csv" | "json">("csv");
   const [content, setContent] = useState("");
@@ -68,7 +73,7 @@ function ImportDialog({ teamId, open, onOpenChange }: { teamId: number; open: bo
       setError(null);
       if (!data.dry_run) {
         toast.success(`Imported: ${data.created} new, ${data.updated} updated, ${data.unchanged} unchanged`);
-        queryClient.invalidateQueries({ queryKey: cbomFleetKeys.all(teamId) });
+        refreshFleet(queryClient, teamId, ["targets", "sources", "policies"]); // the policies' counts change too
       }
     },
     onError: (err) => setError(errorText(err, "Could not import the file")),
@@ -81,7 +86,7 @@ function ImportDialog({ teamId, open, onOpenChange }: { teamId: number; open: bo
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Import targets</DialogTitle>
           <DialogDescription>
@@ -123,12 +128,16 @@ function ImportDialog({ teamId, open, onOpenChange }: { teamId: number; open: bo
               <p className="font-medium">
                 {result.dry_run ? "Preview (nothing saved): " : "Saved: "}
                 {result.created} new · {result.updated} updated · {result.unchanged} unchanged · {result.missing} missing
+                {result.skipped ? ` · ${result.skipped} skipped` : ""}
               </p>
+              {result.skipped > 0 && (
+                <p className="text-amber-700 dark:text-amber-400">Skipped: another inventory source already lists them, so they stay with it.</p>
+              )}
               {result.missing_skipped && <p className="text-amber-700 dark:text-amber-400">Rows failed, so nothing was marked missing.</p>}
               {result.error_count > 0 && (
                 <ul className="text-red-600 dark:text-red-400 list-disc pl-5 max-h-40 overflow-y-auto">
                   {result.errors.map((e) => (
-                    <li key={`${e.row}-${e.error}`}>Row {e.row}: {e.error}</li>
+                    <li key={`${e.row ?? e.external_id}-${e.error}`}>{e.row != null ? `Row ${e.row}` : e.external_id}: {e.error}</li>
                   ))}
                   {result.error_count > result.errors.length && <li>... and {result.error_count - result.errors.length} more</li>}
                 </ul>
@@ -150,8 +159,9 @@ function ImportDialog({ teamId, open, onOpenChange }: { teamId: number; open: bo
 }
 
 // ---------------------------------------------------------------------------- AWS source
-function AwsSourceDialog({ teamId, open, onOpenChange, accounts }: {
+function AwsSourceDialog({ teamId, open, onOpenChange, accounts, onCloseAutoFocus }: {
   teamId: number; open: boolean; onOpenChange: (v: boolean) => void; accounts: { id: number; name: string; validated: boolean }[];
+  onCloseAutoFocus: (e: Event) => void;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState("aws-inventory");
@@ -167,14 +177,14 @@ function AwsSourceDialog({ teamId, open, onOpenChange, accounts }: {
     }),
     onSuccess: () => {
       toast.success("AWS inventory added; the first sync starts now");
-      queryClient.invalidateQueries({ queryKey: cbomFleetKeys.all(teamId) });
+      refreshFleet(queryClient, teamId, ["sources"]);
       onOpenChange(false);
     },
     onError: (err) => setError(errorText(err, "Could not add the AWS inventory")),
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Discover from an AWS account</DialogTitle>
           <DialogDescription>
@@ -237,25 +247,41 @@ function SourcesTable({ teamId }: { teamId: number }) {
   const queryClient = useQueryClient();
   const [removing, setRemoving] = useState<CbomInventorySource | null>(null);
   const [awsOpen, setAwsOpen] = useState(false);
+  const opener = useOpener();
   const sources = useQuery({
     queryKey: cbomFleetKeys.inventorySources(teamId),
     queryFn: () => listCbomInventorySources(teamId),
     refetchInterval: (q) => (q.state.data?.sources.some((s) => s.syncing) ? 5000 : 30_000),
   });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: cbomFleetKeys.all(teamId) });
+  // a sync that finishes brings targets: refresh them (and the policies' counts) when a source's last sync moves
+  const lastSyncs = (sources.data?.sources ?? []).map((s) => `${s.id}:${s.last_sync_at ?? ""}`).join(",");
+  const seenSyncs = useRef(lastSyncs);
+  useEffect(() => {
+    if (lastSyncs === seenSyncs.current) return;
+    const first = seenSyncs.current === ""; // the sources' first load: nothing finished yet
+    seenSyncs.current = lastSyncs;
+    if (!first) refreshFleet(queryClient, teamId, ["targets", "policies"]);
+  }, [lastSyncs, queryClient, teamId]);
   const sync = useMutation({
     mutationFn: (id: number) => syncCbomInventorySource(teamId, id),
-    onSuccess: () => { toast.success("Sync queued"); refresh(); },
+    onSuccess: () => { toast.success("Sync queued"); refreshFleet(queryClient, teamId, ["sources"]); },
     onError: (err) => toast.error(errorText(err, "Could not start the sync")),
   });
   const toggle = useMutation({
     mutationFn: (s: CbomInventorySource) => updateCbomInventorySource(teamId, s.id, { enabled: !s.enabled, expected_version: s.row_version }),
-    onSuccess: refresh,
-    onError: (err) => toast.error(errorText(err, "Could not change the source")),
+    onSuccess: () => refreshFleet(queryClient, teamId, ["sources"]),
+    onError: (err) => {
+      toast.error(errorText(err, "Could not change the source"));
+      refreshFleet(queryClient, teamId, ["sources"]); // a 409: show the latest version
+    },
   });
   const remove = useMutation({
     mutationFn: (id: number) => deleteCbomInventorySource(teamId, id),
-    onSuccess: () => { setRemoving(null); refresh(); },
+    onSuccess: (res) => {
+      setRemoving(null);
+      toast.success(`Source deleted; ${res.targets_removed} target(s) removed from the inventory`);
+      refreshFleet(queryClient, teamId, ["sources", "targets", "policies"]);
+    },
     onError: (err) => toast.error(errorText(err, "Could not delete the source")),
   });
   if (sources.isLoading) return <LoadingBlock />;
@@ -265,7 +291,7 @@ function SourcesTable({ teamId }: { teamId: number }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Inventory sources</h3>
-        <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => setAwsOpen(true)} data-testid="fleet-add-aws">
+        <Button variant="outline" size="sm" className="cursor-pointer" onClick={(e) => { opener.remember(e); setAwsOpen(true); }} data-testid="fleet-add-aws">
           <Cloud className="h-4 w-4 mr-1.5" />
           Discover from AWS
         </Button>
@@ -323,12 +349,14 @@ function SourcesTable({ teamId }: { teamId: number }) {
           </Table>
         </div>
       )}
-      {awsOpen && <AwsSourceDialog teamId={teamId} open={awsOpen} onOpenChange={setAwsOpen} accounts={sources.data.aws_accounts} />}
+      {awsOpen && (
+        <AwsSourceDialog teamId={teamId} open={awsOpen} onOpenChange={setAwsOpen} accounts={sources.data.aws_accounts} onCloseAutoFocus={opener.onCloseAutoFocus} />
+      )}
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(v) => !v && setRemoving(null)}
         title={`Delete ${removing?.name ?? "this source"}?`}
-        description="Its targets are marked missing. Policies stop collecting a target that has been missing for 7 days."
+        description="Its targets are removed from the inventory at once: policies stop collecting them at the next Apply (a job running on them is stopped). Importing or syncing them again brings them back."
         confirmLabel="Delete"
         destructive
         pending={remove.isPending}
@@ -339,12 +367,14 @@ function SourcesTable({ teamId }: { teamId: number }) {
 }
 
 // ---------------------------------------------------------------------------- targets
-function TargetDetail({ teamId, targetId, onClose }: { teamId: number; targetId: number; onClose: () => void }) {
+function TargetDetail({ teamId, targetId, onClose, onCloseAutoFocus }: {
+  teamId: number; targetId: number; onClose: () => void; onCloseAutoFocus: (e: Event) => void;
+}) {
   const detail = useQuery({ queryKey: cbomFleetKeys.target(teamId, targetId), queryFn: () => getCbomInventoryTarget(teamId, targetId) });
   const d = detail.data;
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle className="break-all">{d ? targetLabel(d.target) : "Target"}</DialogTitle>
           <DialogDescription className="break-all">{d?.target.external_id}</DialogDescription>
@@ -376,6 +406,14 @@ function TargetDetail({ teamId, targetId, onClose }: { teamId: number; targetId:
                 <p className="text-xs text-zinc-500">No policy matches this target.</p>
               )}
               {d.managed_source && <p className="text-xs text-zinc-500">Collected by the managed source {d.managed_source.name}.</p>}
+              {d.target.pending && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Waiting for a running job: its managed source changes when that job ends (retried every minute).
+                </p>
+              )}
+              {d.target.deleted_at && (
+                <p className="text-xs text-zinc-500">Removed from the inventory on {formatDateTime(d.target.deleted_at)}; it is not collected.</p>
+              )}
             </div>
             <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
               <dt className="text-zinc-500">Kind</dt><dd>{KIND_LABEL[d.target.kind] ?? d.target.kind}</dd>
@@ -404,37 +442,46 @@ function TargetsTable({ teamId }: { teamId: number }) {
   const [filters, setFilters] = useState<CbomTargetFilters>({ limit: 50 });
   const [cursors, setCursors] = useState<number[]>([0]);
   const [open, setOpen] = useState<number | null>(null);
+  const opener = useOpener();
   const page = { ...filters, cursor: cursors[cursors.length - 1] };
   const targets = useQuery({
     queryKey: cbomFleetKeys.targets(teamId, JSON.stringify(page)),
     queryFn: () => listCbomInventoryTargets(teamId, page),
     placeholderData: (prev) => prev,
+    // a large inventory is evaluated by the fleet worker after a write: poll until the decisions are current
+    refetchInterval: (q) => (q.state.data?.evaluation?.stale ? 3000 : false),
   });
   const set = (patch: Partial<CbomTargetFilters>) => {
     setFilters((f) => ({ ...f, ...patch }));
     setCursors([0]);
   };
-  // Search and tag are typed: one request when the typing pauses, not one per key (the read limiter answers 429).
-  const [text, setText] = useState({ q: "", tag: "" });
+  // Search and tag are typed: one request when the typing pauses, not one per key (the read limiter answers 429). The
+  // tag key and value are separate fields: a key may contain colons (aws:cloudformation:stack-name).
+  const [text, setText] = useState({ q: "", tagKey: "", tagValue: "" });
   useEffect(() => {
     const q = text.q.trim() || undefined;
-    const tag = text.tag.trim() || undefined;
-    if (q === filters.q && tag === filters.tag) return;
+    const tag_key = text.tagKey.trim() || undefined;
+    const tag_value = tag_key ? text.tagValue.trim() || undefined : undefined;
+    if (q === filters.q && tag_key === filters.tag_key && tag_value === filters.tag_value) return;
     const timer = setTimeout(() => {
-      setFilters((f) => ({ ...f, q, tag }));
+      setFilters((f) => ({ ...f, q, tag_key, tag_value }));
       setCursors([0]);
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [text, filters.q, filters.tag]);
+  }, [text, filters.q, filters.tag_key, filters.tag_value]);
   const data = targets.data;
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 @container">
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Search" htmlFor="fleet-q" className="w-48">
           <Input id="fleet-q" placeholder="name, address or ID" value={text.q} onChange={(e) => setText((t) => ({ ...t, q: e.target.value }))} />
         </Field>
-        <Field label="Tag" htmlFor="fleet-tag" className="w-40">
-          <Input id="fleet-tag" placeholder="env:prod" value={text.tag} onChange={(e) => setText((t) => ({ ...t, tag: e.target.value }))} />
+        <Field label="Tag key" htmlFor="fleet-tag-key" className="w-40">
+          <Input id="fleet-tag-key" placeholder="e.g. env" value={text.tagKey} onChange={(e) => setText((t) => ({ ...t, tagKey: e.target.value }))} />
+        </Field>
+        <Field label="Tag value" htmlFor="fleet-tag-value" className="w-36">
+          <Input id="fleet-tag-value" placeholder="any value" disabled={!text.tagKey.trim()} value={text.tagValue}
+            onChange={(e) => setText((t) => ({ ...t, tagValue: e.target.value }))} />
         </Field>
         <Field label="Kind" htmlFor="fleet-kind" className="w-40">
           <Select value={filters.kind ?? "all"} onValueChange={(v) => set({ kind: v === "all" ? undefined : v })}>
@@ -467,6 +514,11 @@ function TargetsTable({ teamId }: { teamId: number }) {
       </div>
       {targets.isLoading && <LoadingBlock />}
       {!data && targets.isError && <ErrorBlock error={targets.error} onRetry={() => targets.refetch()} />}
+      {data?.evaluation?.stale && (
+        <p className="text-xs text-zinc-600 dark:text-zinc-400" role="status" data-testid="fleet-targets-updating">
+          The decisions are being updated after a change; this list refreshes when they are.
+        </p>
+      )}
       {data && data.total === 0 && <EmptyState title="No targets" body="Import a file, discover an AWS account, or change the filters." />}
       {data && data.total > 0 && (
         <>
@@ -476,23 +528,24 @@ function TargetsTable({ teamId }: { teamId: number }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Target</TableHead>
-                  <TableHead className="hidden md:table-cell">Kind</TableHead>
-                  <TableHead className="hidden xl:table-cell">Tags</TableHead>
-                  <TableHead className="hidden xl:table-cell">Where</TableHead>
+                  <TableHead className="hidden @2xl:table-cell">Kind</TableHead>
+                  <TableHead className="hidden @5xl:table-cell">Tags</TableHead>
+                  <TableHead className="hidden @5xl:table-cell">Where</TableHead>
                   <TableHead>Decision (which policy won)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.targets.map((t: CbomInventoryTarget) => (
-                  <TableRow key={t.id} className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800" onClick={() => setOpen(t.id)} data-testid={`fleet-target-${t.id}`}>
+                  <TableRow key={t.id} className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800" data-testid={`fleet-target-${t.id}`}
+                    onClick={(e) => { opener.remember(e); setOpen(t.id); }}>
                     <TableCell className="max-w-[260px]">
-                      <button type="button" className="text-left cursor-pointer font-medium text-zinc-900 dark:text-white" onClick={() => setOpen(t.id)}>
+                      <button type="button" className="text-left cursor-pointer font-medium text-zinc-900 dark:text-white">
                         <Truncate text={targetLabel(t)} />
                       </button>
                       <p className="text-xs text-zinc-500 truncate" title={t.external_id}>{t.address && t.hostname ? `${t.address} · ` : ""}{t.external_id}</p>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell whitespace-nowrap">{KIND_LABEL[t.kind] ?? t.kind}</TableCell>
-                    <TableCell className="hidden xl:table-cell max-w-[240px]">
+                    <TableCell className="hidden @2xl:table-cell whitespace-nowrap">{KIND_LABEL[t.kind] ?? t.kind}</TableCell>
+                    <TableCell className="hidden @5xl:table-cell max-w-[240px]">
                       <div className="flex flex-wrap gap-1">
                         {Object.entries(t.tags).slice(0, 4).map(([k, v]) => (
                           <span key={k} className="rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-xs font-mono truncate max-w-[200px]" title={`${k}=${v}`}>{k}={v}</span>
@@ -500,10 +553,16 @@ function TargetsTable({ teamId }: { teamId: number }) {
                         {Object.keys(t.tags).length > 4 && <span className="text-xs text-zinc-500">+{Object.keys(t.tags).length - 4}</span>}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden xl:table-cell text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{[t.region, t.account_id].filter(Boolean).join(" · ") || "—"}</TableCell>
+                    <TableCell className="hidden @5xl:table-cell text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{[t.region, t.account_id].filter(Boolean).join(" · ") || "—"}</TableCell>
                     <TableCell className="max-w-[300px]">
                       <StatusBadge tone={DECISION_TONE[t.decision.action] ?? "zinc"}>{DECISION_LABEL[t.decision.action] ?? t.decision.action}</StatusBadge>
-                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 break-words md:truncate" title={t.decision.reason}>{decisionText(t.decision, data.policies)}</p>
+                      {t.deleted_at && <StatusBadge tone="zinc">Removed</StatusBadge>}
+                      {t.pending && (
+                        <span title="Its managed source has a job running: the change is applied when it ends">
+                          <StatusBadge tone="amber">Waiting for a running job</StatusBadge>
+                        </span>
+                      )}
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 break-words @2xl:truncate" title={t.decision.reason}>{decisionText(t.decision, data.policies)}</p>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -516,20 +575,21 @@ function TargetsTable({ teamId }: { teamId: number }) {
           </div>
         </>
       )}
-      {open !== null && <TargetDetail teamId={teamId} targetId={open} onClose={() => setOpen(null)} />}
+      {open !== null && <TargetDetail teamId={teamId} targetId={open} onClose={() => setOpen(null)} onCloseAutoFocus={opener.onCloseAutoFocus} />}
     </div>
   );
 }
 
 export default function InventorySection({ teamId }: FleetSectionProps) {
   const [importOpen, setImportOpen] = useState(false);
+  const opener = useOpener();
   return (
     <SectionCard
       id="fleet-inventory"
       title="Inventory"
       description="Every host, database, cluster, certificate, key and secret your inventory sources list, with the policy that decides how each is collected."
       actions={
-        <Button className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" size="sm" onClick={() => setImportOpen(true)} data-testid="fleet-import">
+        <Button className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" size="sm" onClick={(e) => { opener.remember(e); setImportOpen(true); }} data-testid="fleet-import">
           <FileUp className="h-4 w-4 mr-1.5" />
           Import CSV / JSON
         </Button>
@@ -539,7 +599,7 @@ export default function InventorySection({ teamId }: FleetSectionProps) {
         <SourcesTable teamId={teamId} />
         <TargetsTable teamId={teamId} />
       </div>
-      {importOpen && <ImportDialog teamId={teamId} open={importOpen} onOpenChange={setImportOpen} />}
+      {importOpen && <ImportDialog teamId={teamId} open={importOpen} onOpenChange={setImportOpen} onCloseAutoFocus={opener.onCloseAutoFocus} />}
     </SectionCard>
   );
 }

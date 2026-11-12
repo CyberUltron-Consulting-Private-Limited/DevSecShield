@@ -48,6 +48,11 @@ export function fleetTabState(q: { data?: unknown; isError: boolean; isLoading?:
   return q.isError ? "error" : "loading";
 }
 
+/** A 409: the row changed since it was loaded (another tab or person); the form offers the latest version. */
+export function isConflict(error: unknown): boolean {
+  return (error as { response?: { status?: number } } | null)?.response?.status === 409;
+}
+
 /** A 404 from the API (an older server without the fleet routes): not worth retrying. */
 export function isNotFound(error: unknown): boolean {
   return (error as { response?: { status?: number } } | null)?.response?.status === 404;
@@ -74,17 +79,34 @@ export const OP_LABEL: Record<ConditionOp, string> = {
   prefix: "starts with",
 };
 
-/** The selector the API takes: {} (every target), one condition, or {all|any: [...]}. */
+function splitValues(value: string): string[] {
+  return value.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+/** What stops the conditions from being saved, one line per condition ("Condition 2: enter a tag key"). A condition
+ * is never dropped: dropping "Tag (empty) is prod" left {}, which matches every target. */
+export function conditionProblems(draft: SelectorDraft): string[] {
+  return draft.conditions.flatMap((c, i) => {
+    const which = `Condition ${i + 1}`;
+    if (c.on === "tag" && c.key.trim() === "") return [`${which}: enter a tag key`];
+    if (c.op === "exists") return [];
+    if (c.op === "in") return splitValues(c.value).length ? [] : [`${which}: enter at least one value`];
+    return c.value.trim() === "" ? [`${which}: enter a value`] : [];
+  });
+}
+
+/** The selector the API takes: {} (no condition: every target), one condition, or {all|any: [...]}. Throws the first
+ * problem when a condition is incomplete. */
 export function selectorFromDraft(draft: SelectorDraft): Record<string, unknown> {
-  const leaves = draft.conditions
-    .filter((c) => c.key.trim() !== "")
-    .map((c) => {
-      const leaf: Record<string, unknown> = c.on === "tag" ? { tag: c.key.trim().toLowerCase() } : { field: c.key };
-      leaf.op = c.op;
-      if (c.op === "in") leaf.value = c.value.split(",").map((v) => v.trim()).filter(Boolean);
-      else if (c.op !== "exists") leaf.value = c.value.trim();
-      return leaf;
-    });
+  const problems = conditionProblems(draft);
+  if (problems.length) throw new Error(problems[0]);
+  const leaves = draft.conditions.map((c) => {
+    const leaf: Record<string, unknown> = c.on === "tag" ? { tag: c.key.trim().toLowerCase() } : { field: c.key };
+    leaf.op = c.op;
+    if (c.op === "in") leaf.value = splitValues(c.value);
+    else if (c.op !== "exists") leaf.value = c.value.trim();
+    return leaf;
+  });
   if (leaves.length === 0) return {};
   if (leaves.length === 1) return leaves[0];
   return { [draft.mode]: leaves };
