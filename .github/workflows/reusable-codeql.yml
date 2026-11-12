@@ -76,15 +76,28 @@ jobs:
           persist-credentials: false
 
       - name: CodeQL config
+        id: config
+        # Passed as the action's `config` input (a YAML string), not as a file: codeql-action refuses a config-file
+        # outside the workspace ("... _temp/codeql-config.yml is outside of the workspace"), and a file in the
+        # checkout would be analysed with the code.
         env:
           IGNORE: ${{ inputs.paths-ignore }}
         run: |
+          set -euo pipefail
+          entries=""
+          while IFS= read -r p; do
+            if [ -n "$p" ]; then entries+=$(printf '  - "%s"' "$p")$'\n'; fi
+          done <<< "$IGNORE"
           {
             echo "name: ci"
-            echo "paths-ignore:"
-            while IFS= read -r p; do [ -n "$p" ] && printf '  - "%s"\n' "$p"; done <<< "$IGNORE"
+            if [ -n "$entries" ]; then printf 'paths-ignore:\n%s' "$entries"; else echo "paths-ignore: []"; fi
           } > "$RUNNER_TEMP/codeql-config.yml"
           cat "$RUNNER_TEMP/codeql-config.yml"
+          {
+            echo "config<<ZS_CODEQL_EOF"
+            cat "$RUNNER_TEMP/codeql-config.yml"
+            echo "ZS_CODEQL_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Initialise CodeQL
         uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
@@ -92,7 +105,7 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: none
           queries: ${{ inputs.queries }}
-          config-file: ${{ runner.temp }}/codeql-config.yml
+          config: ${{ steps.config.outputs.config }}
 
       - name: Analyse
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
