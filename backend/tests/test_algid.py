@@ -141,7 +141,7 @@ def test_iana_ssh_kex_exact():
         found = A.ssh_kex(line.strip())
         assert found is not None and found.name == line.split("@")[0], line
     assert A.ssh_kex("ecdh-sha2-1.3.132.0.10").family_label == "ECDH"  # the registry's wildcard row
-    assert A.ssh_kex("gss-nistp256-sha256-toWM5Slw5Ew8Mqkay+al2g==").family_label == "ECDH"
+    assert A.ssh_kex("gss-nistp256-sha256-mechanism").family_label == "ECDH"  # RFC 8732 suffix
 
 
 def test_iana_ikev2_t4_exact():
