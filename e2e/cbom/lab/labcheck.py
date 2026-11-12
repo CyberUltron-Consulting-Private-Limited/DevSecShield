@@ -3,8 +3,8 @@ that share no code with the scan node's collectors, and compared with the oracle
 
 Runs on the host (stdlib only) and drives the tools through `docker exec cb02-tools ...`:
   TLS versions, TLS 1.3 groups, served certificates  tlscheck (Go crypto/tls)    [node: OpenSSL s_client + cryptography]
-  TLS <= 1.2 cipher suites                            nmap ssl-enum-ciphers (NSE's own TLS code)
-  SSH algorithms / host keys                          nmap ssh2-enum-algos, ssh-keyscan + ssh-keygen, ssh-audit
+  cipher suites (every enabled version)               nmap ssl-enum-ciphers (NSE's own TLS code)
+  SSH algorithms / host keys                          nmap ssh2-enum-algos, ssh-keyscan + labread blobs, ssh-audit
                                                                                   [node: paramiko]
   PostgreSQL / MySQL TLS                              tlscheck pg|mysql; the server's own view (psql / mysql client)
   TLS <= 1.2 groups                                   tlscheck hello, one group per handshake (equality)
