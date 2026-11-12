@@ -490,7 +490,11 @@
    "label": "trust-all TrustManager",
    "language": "java",
    "category": "cert_validation_off",
-   "vulnerable": true
+   "vulnerable": true,
+   "lines": [
+    57,
+    59
+   ]
   },
   {
    "id": "J10",

@@ -180,6 +180,10 @@ class PathFilters(unittest.TestCase):
         # CB-07 D1 lane: the engine, the worker's call, the lane, its corpus (bench/cbom/d1/README.md)
         "aibom/src/aibom/cbom/misuse.py": {"aibom", "backend", "cbom-action", "cbom-d1"},
         "aibom/src/aibom/integrations/cbom_devsecshield.py": {"aibom", "backend", "cbom-d1"},
+        # review 5878689101: the engine also loads aibom.model/scan/emit/compliance/score and aibom/config
+        "aibom/src/aibom/model/component.py": {"aibom", "backend", "worker", "cbom-d1"},
+        "aibom/src/aibom/scan/registry.py": {"aibom", "backend", "worker", "cbom-d1"},
+        "aibom/config/crypto-risk-weights.yaml": {"aibom", "backend", "cbom-d1"},
         "RabbitMQ/worker/helpers/tools/cbom_agent/main.py": {"backend", "worker", "aibom", "cbom-d1"},
         "bench/cbom/d1/lane/judge.py": {"cbom-d1", "aibom", "backend"},
         "bench/cbom/d1/floors.json": {"cbom-d1"},

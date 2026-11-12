@@ -4,9 +4,11 @@
   product   run the product on each scan tree (run_product.py, with --python = an interpreter that has aibom)
   score     judge observed/*.json against the labels, evaluate floors.json, write report.json + report.md
   all       prepare + product + score
+  check-floors --base REF   floors.json may only rise against REF's copy (ci.sh: the job's base; locally origin/dev)
 
-Exit codes: 0 every floor holds; 1 a floor failed (a regression, an unexpected pass, a floor not run);
-2 the lane could not judge (a pin, label count, code map or input mismatch): never a pass.
+Exit codes: 0 every floor holds; 1 a floor failed (a regression, an unexpected pass, a floor not run, a floor
+loosened without a record); 2 the lane could not judge (a pin, label count, code map, input or base mismatch):
+never a pass.
 """
 from __future__ import annotations
 
@@ -21,6 +23,7 @@ from pathlib import Path
 
 from . import BENCHES, SCHEMA_CASES
 from . import fetch as F
+from . import floorcheck as FC
 from . import floors as FL
 from . import judge as J
 from . import labels as L
@@ -139,7 +142,8 @@ def score(work: Path, floors_path: Path, codemap_path: Path, lane_commit: str) -
             "sources_sha256": _sha(HERE / "sources.json")}
     cases = [r for b in ("cryptoapi-bench", "owasp-benchmark", "corpus", "libraries") for r in results.get(b, [])]
     rep = R.build(generated_at=_now(), lane=lane, product=product, inputs=inputs, results=sl, cases=cases,
-                  extras=extras, osv=osv, floors=evaluated, verdict=FL.verdict(evaluated))
+                  extras=extras, osv=osv, floors=evaluated, floors_removed=fdoc.get("removed", []),
+                  verdict=FL.verdict(evaluated))
     rep["product_seconds"] = timings  # volatile: outside result_sha256
     return rep
 
@@ -158,6 +162,23 @@ def cmd_score(a: argparse.Namespace) -> int:
     return 0 if rep["verdict"] == "pass" else 1
 
 
+def cmd_check_floors(a: argparse.Namespace) -> int:
+    repo = Path(a.repo) if a.repo else REPO
+    rel = (HERE / "floors.json").relative_to(REPO).as_posix()
+    head = FL.load(Path(a.floors))
+    base = FC.load_at(repo, a.base, rel)
+    if base is None:
+        print(f"check-floors: {a.base} has no {rel}: nothing to compare (this change adds the floors)")
+        return 0
+    problems = FC.compare(base, head)
+    for p in problems:
+        print(f"check-floors: LOOSENED {p}")
+    records = [f["id"] for f in head["floors"] if f.get("lowered")] + [r["id"] for r in head.get("removed", [])]
+    print(f"check-floors: {len(problems)} loosening(s) without a record against {a.base} ({len(base['floors'])} base "
+          f"floors, {len(head['floors'])} now; lowered/removed records: {', '.join(records) or 'none'})")
+    return 1 if problems else 0
+
+
 def _git_head() -> str:
     try:
         return subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True, text=True,
@@ -169,6 +190,11 @@ def _git_head() -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="d1.py", description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
+    chk = sub.add_parser("check-floors", help="floors.json may only rise against the base's copy")
+    chk.add_argument("--base", required=True,
+                     help="git ref of the base (CI: the job's base commit; locally origin/dev)")
+    chk.add_argument("--floors", default=str(HERE / "floors.json"))
+    chk.add_argument("--repo", help="git repository holding the base (default: this checkout)")
     for name in ("prepare", "product", "score", "all"):
         p = sub.add_parser(name)
         p.add_argument("--work", required=True)
@@ -190,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_product(a)
         if a.cmd == "score":
             return cmd_score(a)
+        if a.cmd == "check-floors":
+            return cmd_check_floors(a)
         cmd_prepare(a)
         cmd_product(a)
         return cmd_score(a)

@@ -6,6 +6,8 @@
   turns the row into a non-regression floor (so the floors rise with the product and never silently lag).
 * A floor whose metric cannot be computed (empty slice, bench not run, OSV not answered) is NOT-RUN and fails,
   unless the row says `not_run_ok` with a reason.
+* Floors only rise (floorcheck.py, `d1.py check-floors`): a loosening carries a `lowered` record on its row, a floor
+  that goes without a replacement a `removed` entry, each `{"reason", "pr"}`; report.md prints them.
 """
 from __future__ import annotations
 
@@ -34,7 +36,16 @@ def load(path: Path) -> dict:
             raise LaneError(f"floor {f['id']}: kind {f['kind']!r} / op {f['op']!r}")
         if f["kind"] == "target" and not f.get("owner"):
             raise LaneError(f"target floor {f['id']} names no owning track")
+        if "lowered" in f and not _record_ok(f["lowered"]):
+            raise LaneError(f"floor {f['id']}: lowered must be {{\"reason\": ..., \"pr\": ...}}, got {f['lowered']!r}")
+    for r in doc.get("removed", []):
+        if not (_record_ok(r) and isinstance(r.get("id"), str) and r["id"].strip()):
+            raise LaneError(f"removed entries must be {{\"id\", \"reason\", \"pr\"}}, got {r!r}")
     return doc
+
+
+def _record_ok(rec: object) -> bool:
+    return isinstance(rec, dict) and all(isinstance(rec.get(k), str) and rec[k].strip() for k in ("reason", "pr"))
 
 
 def observe(floor: dict, results: dict[str, list[dict]], extras: dict[str, list]) -> object:

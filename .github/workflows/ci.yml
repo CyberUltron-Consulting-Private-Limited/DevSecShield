@@ -126,8 +126,9 @@ jobs:
               - *pipeline
               - 'bench/cbom/d1/**'
               - 'e2e/fixtures/cbom-d1-corpus/**'
-              - 'aibom/src/aibom/cbom/**'
-              - 'aibom/src/aibom/integrations/cbom_devsecshield.py'
+              # the engine loads more than aibom/cbom: model, scan, emit, compliance, score and aibom/config
+              - 'aibom/src/**'
+              - 'aibom/config/**'
               - 'aibom/pyproject.toml'
               - 'aibom/uv.lock'
               - 'RabbitMQ/worker/helpers/tools/cbom_agent/**'
@@ -404,6 +405,8 @@ jobs:
       python-version: "3.12"
       install-command: uv sync --frozen --all-extras --dev
       test-command: bash ../bench/cbom/d1/ci.sh
+      # 2: the merge commit and its first parent (the base branch), for `d1.py check-floors --base HEAD^1`
+      fetch-depth: 2
       artifact-paths: test-reports/
       timeout-minutes: 15
   scan-node:

@@ -402,3 +402,121 @@ def test_benchmark_targets_fail_on_todays_product():
     bb = {c: judge.metrics(judge.select(res["cryptoapi-bench"], {"complexity": "basis-benchmark", "category": c}),
                            "matched") for c in ("staticinitializationvector", "staticsalts", "predictableseeds")}
     assert [(m["tp"], m["vulnerable"]) for m in bb.values()] == [(0, 1), (0, 1), (0, 2)]
+
+
+# ------------------------------------------------------------------------------------------------ review 5878689101
+def test_a_vulnerable_item_wins_a_shared_line_over_a_negative():
+    """M14: vulnerable items consume findings before negative items, whatever the label order."""
+    cases = [case("corpus", "NEG", ["x.cs"], "csharp", "cert_validation_off", False, lines=[16], line_tolerance=1),
+             case("corpus", "VUL", ["x.cs"], "csharp", "cert_validation_off", True, lines=[16], line_tolerance=1)]
+    rows = [row("x.cs", 16, ["TLS_VERIFICATION_DISABLED"], "tls_endpoint:java.trustall")]
+    res, extras = judge.judge_by_line(cases, rows, CODEMAP, set())
+    assert {r["case_id"]: r["status"] for r in res} == {"NEG": "tn", "VUL": "hit"} and extras == []
+
+
+def test_slices_leave_not_run_library_rows_out():
+    """M15: a library row with no OSV answer (vulnerable None) is in no denominator: never counted as secure."""
+    results = [case("libraries", "L1", ["pom.xml"], "Maven", "vulnerable_library", None, flagged_matched=True,
+                    flagged_any=True),
+               case("libraries", "L2", ["pom.xml"], "Maven", "vulnerable_library", True, flagged_matched=True,
+                    flagged_any=True)]
+    sl = judge.slices(results, ["category"])
+    for m in (sl["overall"]["matched"], sl["by_category"]["Maven"]["any"]):
+        assert (m["cases"], m["vulnerable"], m["secure"], m["fp"], m["specificity"]) == (1, 1, 0, 0, None)
+
+
+def test_a_floor_change_changes_the_result_hash(tmp_path):
+    """M19: the floors are inside result_sha256."""
+    work = mini_work(tmp_path)
+    shas = []
+    for value in (1.0, 0.5):
+        fpath = tmp_path / f"floors-{value}.json"
+        fpath.write_text(json.dumps(floors_doc([fl(id="nr", bench="cryptoapi-bench", value=value)])))
+        rep = cli.score(work, fpath, D1 / "codemap.json", "x")
+        assert rep["verdict"] == "pass"
+        shas.append(rep["result_sha256"])
+    assert shas[0] != shas[1]
+
+
+def test_a_target_without_an_owner_is_refused(tmp_path):
+    """M20: every target names the track that owns it."""
+    fpath = tmp_path / "floors.json"
+    fpath.write_text(json.dumps(floors_doc([fl(id="t", kind="target", value=0.9)])))
+    with pytest.raises(LaneError, match="target floor t names no owning track"):
+        floors.load(fpath)
+
+
+def lib_work(tmp: Path, ids: list[str]) -> Path:
+    libs = [{"id": "L1", "file": "pom.xml", "line": 3, "ecosystem": "Maven", "name": "g:a", "version": "1"}]
+    work = mini_work(tmp)
+    cdoc = json.loads((work / "cases" / "corpus.json").read_text())
+    cdoc["libraries"] = libs
+    (work / "cases" / "corpus.json").write_text(json.dumps(cdoc))
+    (work / "osv.json").write_text(json.dumps({"schema": "zs-cbom-d1-osv/1", "answers": {"L1": {"ids": ids}},
+                                               "error": None, "asked_at": "2026-11-12T00:00:00Z"}))
+    return work
+
+
+def test_the_result_hash_reads_the_osv_verdict_not_the_advisory_ids(tmp_path):
+    """A new advisory for an already-vulnerable library does not change result_sha256; a changed verdict does
+    (README: equal for two runs on the same build, pins and per-library OSV verdicts)."""
+    fpath = tmp_path / "floors.json"
+    fpath.write_text(json.dumps(floors_doc([])))
+    sha = {}
+    for name, ids in (("one", ["GHSA-1"]), ("two", ["GHSA-1", "GO-2026-0001"]), ("none", [])):
+        rep = cli.score(lib_work(tmp_path / name, ids), fpath, D1 / "codemap.json", "x")
+        sha[name] = rep["result_sha256"]
+        assert rep["osv_answers"]["L1"]["ids"] == ids                     # the full answer stays in report.json
+    assert sha["one"] == sha["two"] and sha["one"] != sha["none"]
+
+
+def test_ecb_named_by_a_weak_algorithm_row_counts_as_ecb():
+    """Review 5878689101 nit: the product reports DES in ECB as WEAK_ALGORITHM `DES-ECB`; that row names ECB."""
+    for cat in ("ecb_mode", "cwe327_cipher"):
+        assert CODEMAP.accepts(cat, "WEAK_ALGORITHM", "DES-ECB")
+        assert CODEMAP.accepts(cat, "WEAK_ALGORITHM", "AES-128-ECB")
+        assert CODEMAP.accepts(cat, "WEAK_CIPHER_MODE", "AES-ECB")
+    assert not CODEMAP.accepts("ecb_mode", "WEAK_ALGORITHM", "DES")
+    assert not CODEMAP.accepts("ecb_mode", "WEAK_ALGORITHM", "DES-CBC")
+
+
+TLS_PATTERNS = json.loads((REPO / "aibom/src/aibom/cbom/data/verification_patterns.json").read_text())["rows"]
+
+
+def test_trust_and_hostname_findings_credit_only_their_own_category():
+    """Review 5878689101 nit: TLS_VERIFICATION_DISABLED is split on the pattern id the row carries. Every pattern the
+    product has (read from its data file: this is the product's vocabulary, not an expected value) is read as exactly
+    one of the two; patterns that switch all verification off count as certificate validation."""
+    seen = {}
+    for p in TLS_PATTERNS:
+        alg = f"tls_endpoint:{p['id']}"
+        got = [c for c in ("cert_validation_off", "hostname_verification_off")
+               if CODEMAP.accepts(c, "TLS_VERIFICATION_DISABLED", alg)]
+        assert len(got) == 1, (alg, got)
+        seen[p["id"]] = got[0]
+    assert {k for k, v in seen.items() if v == "hostname_verification_off"} == {
+        "java.hostname_verify_all", "java.hostname_verifier_lambda", "java.allow_all_hostnames",
+        "java.noop_hostname_verifier"}
+    assert seen["java.trustall"] == seen["go.skip"] == seen["openssl.verify_none"] == "cert_validation_off"
+    # a TLS_VERIFICATION_DISABLED row from another emitter (no pattern id) still counts somewhere
+    assert CODEMAP.accepts("cert_validation_off", "TLS_VERIFICATION_DISABLED", "PostgreSQL sslmode")
+    cases = [case("b", "cert", ["T.java"], "dummycertvalidation", "cert_validation_off", True),
+             case("b", "host", ["H.java"], "dummyhostnameverifier", "hostname_verification_off", True)]
+    rows = [row("T.java", 5, ["TLS_VERIFICATION_DISABLED"], "tls_endpoint:java.hostname_verify_all"),
+            row("H.java", 5, ["TLS_VERIFICATION_DISABLED"], "tls_endpoint:java.trustall")]
+    out = {r["case_id"]: (r["flagged_matched"], r["flagged_any"]) for r in judge.judge_by_file(cases, rows, CODEMAP)}
+    assert out == {"cert": (False, True), "host": (False, True)}
+
+
+def test_a_detector_on_the_empty_check_server_trusted_counts_for_j9():
+    """Review 5878689101 [minor]: J9's trust-all body is the empty checkServerTrusted on line 59 (CryptoAPI-Bench labels
+    its trust-manager cases by that method); the comment and the anonymous class are on line 57. A correct CB-27
+    detector reporting line 59 is a hit, not a new extra."""
+    rows = observed.load(D1 / "baseline" / "observed-corpus.json", "corpus")["rows"]
+    rows = rows + [row("java/src/main/java/com/bank/Crypto.java", 59, ["TLS_VERIFICATION_DISABLED"],
+                       "tls_endpoint:java.empty_check_server_trusted")]
+    res, extras = corpus_results(rows, OSV_TODAY)
+    j9 = next(r for r in res["corpus"] if r["case_id"] == "J9")
+    assert j9["lines"] == [57, 59] and j9["status"] == "hit"
+    ev = {e["id"]: e for e in floors.evaluate(corpus_floors(), res, extras)}
+    assert ev["NR-CORPUS-no-new-extras"]["status"] == "pass"

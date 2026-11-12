@@ -749,8 +749,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit (BB recall >= 0.9 in every misuse category) already holds on dev 3df26fd"
+   "value": 1.0,
+   "why": "today on dev 3df26fd (1/1; the CB-27 exit, BB recall >= 0.9 in every misuse category, already holds)"
   },
   {
    "id": "NR-CAB-BB-ecbcrypto",
@@ -763,8 +763,8 @@
    "metric": "recall",
    "mode": "matched",
    "op": ">=",
-   "value": 0.9,
-   "why": "CB-27 exit (BB recall >= 0.9 in every misuse category) already holds on dev 3df26fd"
+   "value": 1.0,
+   "why": "today on dev 3df26fd (1/1; the CB-27 exit, BB recall >= 0.9 in every misuse category, already holds)"
   },
   {
    "id": "T27-CAB-BB-http",

@@ -7,13 +7,22 @@ import json
 from . import SCHEMA_REPORT
 
 # The fields of report.json that depend only on the inputs (labels, observed rows, code map, floors): two runs on
-# the same product build and pins must give the same result_sha256 (exit F of CB-07).
-STABLE = ("inputs", "results", "cases", "extras", "osv_answers", "floors", "verdict")
+# the same product build, pins and per-library OSV verdicts must give the same result_sha256 (exit F of CB-07).
+STABLE = ("inputs", "results", "cases", "extras", "osv_answers", "floors", "floors_removed", "verdict")
+
+
+def _stable(report: dict) -> dict:
+    view = {k: report[k] for k in STABLE}
+    # OSV's advisory lists grow over time; the lane judges only whether a library has one (judge_libraries), so the
+    # hash reads that verdict, not the ids (review 5878689101). report.json keeps the full answer.
+    if view["osv_answers"] is not None:
+        view["osv_answers"] = {k: bool(v.get("ids")) for k, v in view["osv_answers"].items()}
+    view["cases"] = [{k: v for k, v in c.items() if k != "advisories"} for c in view["cases"]]
+    return view
 
 
 def result_sha256(report: dict) -> str:
-    stable = {k: report[k] for k in STABLE}
-    return hashlib.sha256(json.dumps(stable, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(_stable(report), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def _pct(x) -> str:
@@ -84,6 +93,14 @@ def markdown(rep: dict) -> str:
         out.append(f"| {f['id']} | {f['kind']} | {f.get('owner', '')} | {f['bench']} {where} | {f['metric']} "
                    f"({f.get('mode', 'matched')}) | {f['op']} {want} | {obs} | **{f['status']}** |")
     out.append("")
+    records = [(f["id"], "lowered", f["lowered"]) for f in rep["floors"] if f.get("lowered")]
+    records += [(r["id"], "removed", r) for r in rep.get("floors_removed") or []]
+    if records:
+        out += ["## Lowered or removed floors", "",
+                "Each loosening of floors.json is recorded in the change that made it (`d1.py check-floors`).", "",
+                "| floor | record | pr | reason |", "|---|---|---|---|"]
+        out += [f"| {fid} | {kind} | {rec['pr']} | {rec['reason']} |" for fid, kind, rec in records]
+        out.append("")
     notes = []
     for bench, inp in rep["inputs"].items():
         for e in inp.get("labels", {}).get("excluded", []):
@@ -96,10 +113,11 @@ def markdown(rep: dict) -> str:
 
 
 def build(*, generated_at: str, lane: dict, product: dict, inputs: dict, results: dict, cases: list,
-          extras: dict, osv: dict | None, floors: list, verdict: str) -> dict:
+          extras: dict, osv: dict | None, floors: list, verdict: str, floors_removed: list | None = None) -> dict:
     rep = {"schema": SCHEMA_REPORT, "generated_at": generated_at, "lane": lane, "product": product,
            "inputs": inputs, "results": results, "cases": cases, "extras": extras,
            "osv_answers": (osv or {}).get("answers"), "osv_asked_at": (osv or {}).get("asked_at"),
-           "osv_error": (osv or {}).get("error"), "floors": floors, "verdict": verdict}
+           "osv_error": (osv or {}).get("error"), "floors": floors, "floors_removed": floors_removed or [],
+           "verdict": verdict}
     rep["result_sha256"] = result_sha256(rep)
     return rep
