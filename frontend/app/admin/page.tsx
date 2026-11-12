@@ -14,7 +14,7 @@ import {
   type AdminTeam,
 } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
-import { parseCreditBalance } from "@/utils/adminCredits";
+import { formatCreditBalance, MAX_CREDIT_BALANCE, parseCreditBalance } from "@/utils/adminCredits";
 import { newPasswordProblem, NEW_PASSWORD_HINT } from "@/utils/password_rules";
 import {
   Card,
@@ -389,13 +389,16 @@ function TeamsTable() {
 
   const handleStartEdit = (team: AdminTeam) => {
     setEditingTeamId(team.team_id);
-    setCreditInput(String(team.team_credit_balance));
+    setCreditInput(formatCreditBalance(team.team_credit_balance));
   };
 
   const handleSave = (team_id: number) => {
     const val = parseCreditBalance(creditInput);
     if (val === null) {
-      showErrorToast(new Error("Enter a credit balance of 0 or more, for example 4984.79"), "Invalid credit balance");
+      showErrorToast(
+        new Error(`Enter a credit balance from 0 to ${MAX_CREDIT_BALANCE.toLocaleString("en-US")}, for example 4984.79`),
+        "Invalid credit balance",
+      );
       return;
     }
     updateMutation.mutate({ team_id, credit_balance: val });
@@ -457,6 +460,7 @@ function TeamsTable() {
                   <Input
                     type="number"
                     min={0}
+                    max={MAX_CREDIT_BALANCE}
                     step="any"
                     inputMode="decimal"
                     aria-label={`Credit balance of ${team.team_name}`}
@@ -477,7 +481,7 @@ function TeamsTable() {
                   </Button>
                 </div>
               ) : (
-                <span className="text-zinc-300">{team.team_credit_balance}</span>
+                <span className="text-zinc-300">{formatCreditBalance(team.team_credit_balance)}</span>
               )}
             </TableCell>
             <TableCell className="text-zinc-400">
