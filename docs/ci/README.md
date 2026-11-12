@@ -39,7 +39,7 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
 | Event | What runs |
 |---|---|
 | Pull request into dev, staging or main | pr-checks, security, and the suites and images whose paths changed |
-| `merge_group` (a merge queue entry) | security, and the suites and images whose paths changed between the queue's base commit and its merge commit, as on a PR. No pr-checks (there is no PR event; the PR's own run checked it), and security scans in report mode (see [Known limits](#known-limits)). `ci-gate` reports on the queue commit, so a queue can require it |
+| `merge_group` (a merge queue entry) | security, and the suites and images whose paths changed between the queue's base commit and its merge commit. The suites' tests and the image builds run as on a PR. Their lint-diff steps (ruff, mypy, ESLint "no new findings") do not run, as on a push, and the security jobs scan in report mode (see [Known limits](#known-limits), #70). There are no pr-checks: there is no PR event, and the PR's own run checked them. `ci-gate` reports on the queue commit, so a queue can require it |
 | Push to `dev` (a merge) | security, and the suites and images whose paths changed since the commit before the push |
 | Push to `staging` or `main` (a promotion) | security and the changed images only. The commit arrived through a PR whose run already tested the merged tree (branch protection requires branches to be up to date), so the suites are not run a second time |
 | `workflow_dispatch` | everything; scanners in report mode |
@@ -539,6 +539,17 @@ protected, the secret gate trusts them as promotion heads automatically (it read
 before it lands, so two PRs that pass alone cannot break `dev` together. `ci.yml` already runs on `merge_group` and
 `ci-gate` reports there; keep `ci-gate` as the one required check.
 
+**Until #70 lands, a queue commit is not security-gated.** On `merge_group` the security jobs run in report mode,
+and the suites' lint-diff steps do not run (see [Known limits](#known-limits)). A new finding that exists only in the
+merged tree therefore passes the queue, and the push run reports it only after the merge. The merged tree differs
+from the tree the PR's own run gated when:
+- the base moved after the PR's last run, or PRs ahead in the queue add commits;
+- the base changed the Semgrep, Checkov or gitleaks rules or configuration;
+- the OSV or Trivy advisory data changed.
+
+So keep *Require branches to be up to date* on `staging` and `main` even with a queue: it makes the PR run's
+diff-mode security run on the exact tree that lands. On `dev`, the push run after each merge reports such findings.
+
 **Make `dev` the default branch** (Settings → General). Schedules run only from the default branch, so today
 `security-scheduled.yml` and the weekly benchmarks would run July code from `main`. Dependabot security updates also
 always target the default branch. Promotions to `main` are unaffected.
@@ -643,7 +654,8 @@ cd frontend && npm ci && npx tsc --noEmit && npx eslint . && \
   when a rendered chart produced no evaluated check.
 - **Merge-queue runs scan security in report mode.** The secret and scanner gates compare with a base commit taken
   from the pull request or push event; a `merge_group` event has neither, so they scan in full mode and report
-  without blocking. The PR's own run already gated its diff. Gating the queue commit against
-  `merge_group.base_sha` is a follow-up.
+  without blocking. The suites' lint-diff steps are skipped too, as on a push. The PR's own run already gated
+  its diff, but a finding that exists only in the merged tree passes the queue (see Branch protection). Gating the
+  queue commit against `merge_group.base_sha` is #70.
 - **The pull-request files API lists at most 3,000 files**, so pr-hygiene does not see files beyond that in a huge
   PR. gitleaks still scans those commits.
