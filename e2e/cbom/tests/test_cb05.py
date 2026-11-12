@@ -62,12 +62,12 @@ def test_tightened_rows_do_not_swallow_other_failures_of_the_same_step():
 
 
 def test_deferred_parts_are_covered_only_as_not_run():
-    rows = [r for r in ledger.load(gate.DEFAULT_LEDGER) if r["row"].startswith("DEF-")]
-    assert {r["row"] for r in rows} == {"DEF-ubuntu-tier2", "DEF-idp", "DEF-receiver"}
+    rows = [r for r in ledger.load(gate.DEFAULT_LEDGER) if r["row"] == "LAB-deferred"]
+    assert len(rows) == 1
     checks = Checks()
     checks.add(_flow("G7/deferred_idp", "G7", NOT_RUN, check="deferred", part="idp"))
-    checks.add(_flow("G4/deferred_ubuntu-tier2_sudoers", "G4", NOT_RUN, check="deferred", part="ubuntu-tier2"))
-    checks.add(_flow("G15/deferred_ubuntu-tier2_forcecommand_allowlist", "G15", NOT_RUN, check="deferred", part="ubuntu-tier2"))
+    checks.add(_flow("G4/deferred_ubuntu-tier2", "G4", NOT_RUN, check="deferred", part="ubuntu-tier2", what="sudoers"))
+    checks.add(_flow("G15/deferred_ubuntu-tier2", "G15", NOT_RUN, check="deferred", part="ubuntu-tier2", what="forcecommand_allowlist"))
     checks.add(_flow("G13/deferred_receiver", "G13", NOT_RUN, check="deferred", part="receiver"))
     results, blocking = ledger.apply(rows, checks)
     assert blocking == [] and {r.status for r in results} == {"not-run-ok"}
@@ -75,7 +75,7 @@ def test_deferred_parts_are_covered_only_as_not_run():
     checks2 = Checks()
     checks2.add(_flow("G7/deferred_idp", "G7", FAIL, check="deferred", part="idp"))
     results2, _ = ledger.apply(rows, checks2)
-    assert {r.row: r.status for r in results2}["DEF-idp"] == "holds"
+    assert {r.row: r.status for r in results2}["LAB-deferred"] == "holds"
 
 
 def test_the_cb05_rows_name_checks_not_whole_steps():

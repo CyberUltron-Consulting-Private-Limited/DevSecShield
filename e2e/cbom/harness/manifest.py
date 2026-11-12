@@ -27,9 +27,10 @@ def freeze_oracle(run: Path) -> dict[str, Any]:
     after the run started; the judge then refuses to judge that run (a new run is needed)."""
     manifest = read_json(Path(run) / MANIFEST, {}) or {}
     manifest.setdefault("schema", SCHEMA_MANIFEST)
+    oracle_dir = Path(run) / "oracle"
     manifest["oracle"] = {"sha256": oracle_hash(run), "frozen_at": iso(utc_now()),
-                          "files": sorted(p.relative_to(run).as_posix()
-                                          for p in (Path(run) / "oracle").rglob("*") if p.is_file())}
+                          "files": sorted(p.relative_to(run).as_posix() for p in oracle_dir.rglob("*") if p.is_file())
+                          if oracle_dir.is_dir() else []}
     write_json(Path(run) / MANIFEST, manifest)
     return manifest["oracle"]
 

@@ -63,7 +63,7 @@ function deferred(ctx, part) {
 function notRunDeferred(ctx, s, part, gate = s.gate, what = "") {
   const d = deferred(ctx, part);
   if (!d) return false;
-  const id = `deferred_${part}${what ? `_${what}` : ""}`;
+  const id = `deferred_${part}`;  // the judge adds `<G>/deferred_<part>` for any part no step recorded (CB-01 943b820)
   s.checks.push({ id: `${gate}/${id}`, gate, kind: "flow", verdict: "NOT-RUN", reason: `lab part deferred by CB-02: ${d.reason}`, expected: null, observed: null, evidence: [],
     subject: { check: "deferred", part, address: d.address ?? null, gates: d.gate ?? null, issue: d.issue ?? null, issue_draft: d.issue_draft ?? null, ...(what ? { what } : {}) } });
   console.log(`  NOT-RUN ${gate}/${id}: deferred by CB-02`);

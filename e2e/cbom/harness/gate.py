@@ -27,6 +27,8 @@ from .checks import Check, Checks
 from .rundir import iso, read_json, run_steps, utc_now, write_json
 
 GATES = [f"G{i}" for i in range(18)] + ["G5b", "G13b"]
+# the waves of DEVILS-ADVOCATE §4.5 (a deferred lab part may name one)
+WAVES = ["W-NET", "W-HOST", "W-KEY", "W-STATE", "W-OUT", "W-INT", "W-D1", "W-CLOUD", "W-UPGRADE", "W-SKEW", "W-SCALE"]
 # the steps whose checks come from the flow / runner (step.json); G11 also gets the join, oracle and derived checks
 # judged here from the evidence, G15 and G16 only those
 FLOW_STEPS = ["G0", "G1", "G2", "G3", "G4", "G5", "G5b", "G6", "G7", "G8", "G9", "G10", "G11", "G12", "G13", "G13b", "G14",
@@ -53,10 +55,30 @@ def load_step_checks(run: Path, checks: Checks) -> dict[str, Any]:
     return info
 
 
+def deferred_checks(run: Path, checks: Checks) -> list[str]:
+    """INTERFACES v2.1: every lab part the lab marks ``deferred`` (lab.json or oracle/run<k>.json) becomes a NOT-RUN
+    check ``<gate>/deferred_<part>`` with the lab's reason, so the ledger must name it. A step that already recorded
+    the same check (CB-05) keeps its own."""
+    added = []
+    docs = [read_json(Path(run) / "lab" / "lab.json")] + [read_json(p) for p in sorted((Path(run) / "oracle").glob("run*.json"))]
+    for doc in docs:
+        for part in (doc or {}).get("deferred") or []:
+            for gate_name in part.get("gate") or []:
+                cid = f"{gate_name}/deferred_{part.get('part')}"
+                if checks.get(cid) is not None:
+                    continue
+                checks.not_run(cid, gate_name, "lab", str(part.get("reason") or "deferred by the lab"),
+                               {"check": "deferred", "part": part.get("part"), "address": part.get("address"),
+                                "issue_draft": part.get("issue_draft")})
+                added.append(cid)
+    return added
+
+
 def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str, Any]]:
     run = Path(run)
     checks = Checks()
     steps = load_step_checks(run, checks)
+    deferred_checks(run, checks)
     same, why = manifest.oracle_unchanged(run)
     if (run / "oracle").is_dir() and any((run / "oracle").iterdir()):
         checks.verdict("G0/oracle-frozen", "G0", "oracle", same, "oracle-changed", {"check": "oracle_frozen"},

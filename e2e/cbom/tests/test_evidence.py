@@ -215,7 +215,7 @@ def test_the_repository_ledger_is_valid():
     rows = ledger.load(gate.DEFAULT_LEDGER)
     assert rows, "e2e/cbom/known-fail.yaml is empty"
     for row in rows:
-        assert set(row["gate"]) <= set(gate.GATES), row["row"]
+        assert set(row["gate"]) <= set(gate.GATES + gate.WAVES), row["row"]
         assert str(row["issue"]).startswith(("#", "cbom/issues/")), row["row"]
         assert str(row["owner"]).startswith(("CB-", "#")), row["row"]
 
@@ -283,3 +283,26 @@ def test_a_missing_core_log_fails_g16(tmp_path):
     checks = Checks()
     logs.judge(run, checks, [9])
     assert _ids(checks, "FAIL") == {"G16/collected/nginx": "log-missing"}
+
+
+def test_deferred_lab_parts_become_not_run_checks_the_ledger_must_name(tmp_path):
+    fr = FakeRun(tmp_path)
+    run = fr.write()
+    deferred = [{"part": "idp", "address": "10.231.0.42", "gate": ["G7"], "reason": "IdP target not built",
+                 "deferred": True, "issue_draft": "round6/cbom/cb-02/issue-deferred.md"},
+                {"part": "k8s", "address": None, "gate": ["W-HOST"], "reason": "disk", "deferred": True}]
+    fr.edit_json("oracle/run1.json", lambda d: d.__setitem__("deferred", deferred))
+    (run / "lab" / "lab.json").write_text(json.dumps({"deferred": deferred}), encoding="utf-8")
+    manifest.freeze_oracle(run)
+    base = ("- row: POSTURE\n  gate: [G11]\n  match: {kind: derived, field: posture}\n  issue: '#1'\n  owner: CB-05\n"
+            "  why: x\n  not_run_ok: CB-05\n")
+    led = _write(tmp_path / "l.yaml", base)
+    passed, report = gate.judge(run, led)
+    ids = {c["id"]: c for c in report["checks"]}
+    assert ids["G7/deferred_idp"]["verdict"] == "NOT-RUN" and ids["G7/deferred_idp"]["reason"] == "IdP target not built"
+    assert ids["W-HOST/deferred_k8s"]["subject"]["part"] == "k8s"
+    assert not passed  # unlisted NOT-RUN blocks
+    _write(led, base + "- row: LAB\n  gate: [G7, W-HOST]\n  match: {check: deferred, part: [idp, k8s]}\n"
+           "  issue: '#93'\n  owner: CB-02\n  why: deferred lab parts\n  not_run_ok: deferred by the lab\n")
+    passed, report = gate.judge(run, led)
+    assert passed, [c["id"] for c in report["blocking"]]
