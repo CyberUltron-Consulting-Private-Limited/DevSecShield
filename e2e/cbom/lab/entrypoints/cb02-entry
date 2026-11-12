@@ -1,0 +1,45 @@
+#!/bin/sh
+# CB-02 lab target entrypoint. gen.py writes /lab/role.env (ROLE, PORT) and the role's files; this script only
+# starts the one server the role names, in the foreground, so `docker logs` holds its whole output.
+set -eu
+[ -r /lab/role.env ] || { echo "cb02-entry: /lab/role.env missing (run lab.sh gen)" >&2; exit 64; }
+# shellcheck disable=SC1091 # generated per run
+. /lab/role.env
+: "${ROLE:?}" "${PORT:?}"
+echo "cb02-entry: target=${TARGET:-?} role=$ROLE port=$PORT"
+
+case "$ROLE" in
+  nginx)
+    exec nginx -e /dev/stderr -c /lab/nginx.conf -g 'daemon off;'
+    ;;
+  s_server)
+    # one argument per line, so file names and group lists are never word-split
+    set --
+    while IFS= read -r arg || [ -n "$arg" ]; do set -- "$@" "$arg"; done < /lab/s_server.args
+    exec openssl s_server "$@"
+    ;;
+  sshd)
+    # sshd ignores host keys other users can read, and `find -xdev` (the node's file search) does not cross a bind
+    # mount, so keys and planted files are copied into the container's own file system first.
+    for k in /lab/hostkeys/*; do
+      case "$k" in *.pub) cp "$k" /etc/ssh/cb02/ ;; *) install -m 0600 "$k" /etc/ssh/cb02/ ;; esac
+    done
+    if [ -r /lab/authorized_keys ]; then install -m 0600 /lab/authorized_keys /home/zs-cbom/.ssh/authorized_keys; fi
+    if [ -d /lab/plant ]; then
+      cp -R /lab/plant/. /srv/cbom-lab/
+      if [ -r /lab/plant.modes ]; then
+        while read -r mode path; do [ -n "$path" ] && chmod "$mode" "/srv/cbom-lab/$path"; done < /lab/plant.modes
+      fi
+    fi
+    exec /usr/sbin/sshd -D -e -f /lab/sshd_config
+    ;;
+  listener)
+    # Every accepted connection is one JSON line in /logs/<target>.jsonl (lab/listeners/ in the run directory),
+    # written by cb02-accept from socat's SOCAT_PEER*/SOCAT_SOCK* variables; socat -d -d also logs it.
+    export CB02_LISTENER_LOG="/logs/${TARGET}.jsonl"
+    exec socat -d -d "TCP-LISTEN:${PORT},fork,reuseaddr" EXEC:/usr/local/bin/cb02-accept
+    ;;
+  *)
+    echo "cb02-entry: unknown role $ROLE" >&2; exit 64
+    ;;
+esac
