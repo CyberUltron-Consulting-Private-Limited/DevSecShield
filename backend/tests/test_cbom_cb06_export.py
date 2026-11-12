@@ -427,3 +427,98 @@ def test_every_source_kind_has_a_collector_method_and_transport():
         row = PV.kind_provenance(kind)
         assert row.collector != "unknown" and row.method in PV.METHODS and row.transport in PV.TRANSPORTS, kind
     assert PV.kind_provenance("no_such_kind").collector == "unknown"
+
+
+# ============================================================================== edge cases (hostile or partial input)
+def _row(**kw):
+    from backend.new_models import CbomCollectedAsset
+
+    base = {"id": 9, "team_id": 1, "run_id": 1, "job_id": 4, "source_id": None, "attempt": 1, "asset_key": "k" * 64,
+            "asset_type": "certificate", "cdx_type": "certificate", "target": "10.0.0.9", "location": "/x.pem",
+            "name": "x", "algorithm": "RSA", "key_size": 2048, "protocol": None, "quantum_vulnerable": True,
+            "impact": None, "finding_codes": ["QUANTUM_VULNERABLE"], "finding": None, "facts": {},
+            "created_at": dt.datetime(2026, 11, 12, 10, 0, 0)}
+    return CbomCollectedAsset(**{**base, **kw})
+
+
+def _job(**kw):
+    base = {"id": 4, "team_id": 1, "run_id": 1, "source_id": None, "node_id": None, "kind": "collect",
+            "status": "success", "attempts": 1, "params": {}, "result": {}}
+    return CbomCollectionJob(**{**base, **kw})
+
+
+def test_hostile_facts_never_break_the_document():
+    """A node is untrusted input: facts of the wrong type or size must give a schema-valid component."""
+    from backend.utilities.cbom_sources import inventory as INV
+
+    facts = {"subject": {"CN": "x"}, "issuer": ["a"], "not_before": 17, "not_after": "2027-13-45T99:00:00Z",
+             "sig_alg": 1234, "curve": {"name": "P-256"}, "crv": "P-256", "key_size": True, "format": ["pem"],
+             "groups": {"a": 1}, "negotiated_group": ["X25519"], "kex": "x" * 5000, "key_alg": None,
+             "key_alg_oid": "not an oid", "algorithm_unknown": True}
+    rows = [_row(facts=facts, key_size=None),
+            _row(id=10, asset_type="tls_endpoint", cdx_type="protocol", location="10.0.0.9:443",
+                 facts={"groups": [f"g{i}" for i in range(500)], "negotiated_group": 7, "protocols": ["TLSv1.3"]}),
+            _row(id=11, asset_type="ssh_endpoint", cdx_type="protocol", location="10.0.0.9:22",
+                 facts={"kex": ["a", "a", None, {"x": 1}, "b"], "ciphers_c2s": "c1,c2", "macs": 5})]
+    comps = [INV._component(r, "src") for r in rows]
+    doc = {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1, "components": comps}
+    assert json_errors(doc) == []
+    from backend.utilities.cbom_sources.cdx_xml import to_xml
+
+    assert xml_errors(to_xml(doc, strict=True)) == []
+    cert = comps[0]
+    assert _one(cert, "zs:curve") == "P-256"  # the JWK name when the curve fact is not text
+    assert "zs:key_size" not in _props(cert)  # a boolean is not a size
+    assert _one(cert, "zs:algorithm_unknown") == "true"
+    assert "notValidAfter" not in cert["cryptoProperties"]["certificateProperties"]  # month 13 is not a date
+    assert len(_one(comps[1], "zs:groups").split(",")) == 200  # capped
+    assert _one(comps[2], "zs:kex_algorithms") == "a,b"
+    assert _one(comps[2], "zs:ciphers") == "c1,c2"
+    for comp in comps:
+        assert [p for p in PROVENANCE if p not in _props(comp)] == []  # no job known: every value "unknown"
+        assert _one(comp, "zs:collector") == "unknown" and _one(comp, "zs:signed") == "unknown"
+
+
+@pytest.mark.parametrize("job_kw, kind, attempt, expect", [
+    # a running job has no report yet: its build is not known
+    ({"status": "claimed", "node_id": 3, "result": {"progress": {"done": 1}}}, "linux_servers", 1,
+     {"zs:node_build": "unknown", "zs:node_id": "3", "zs:collector": "linux_ssh"}),
+    # a finished job's report holds only for its own attempt
+    ({"status": "success", "node_id": 3, "attempts": 2, "result": {"node_version": "1.0.1"}}, "linux_servers", 1,
+     {"zs:node_build": "unknown", "zs:attempt": "1"}),
+    ({"status": "success", "node_id": 3, "attempts": 2, "result": {"node_version": "1.0.1"}}, "linux_servers", 2,
+     {"zs:node_build": "1.0.1", "zs:attempt": "2"}),
+    # source and node both deleted, nothing snapshotted: the node's name says a node ran it
+    ({"node_id": None, "params": {"node_name": "dc-1"}, "result": {"node_version": "1.0.0"}}, None, 1,
+     {"zs:collector": "unknown", "zs:node_id": "unknown", "zs:signed": "unknown", "zs:node_build": "1.0.0"}),
+    # an unknown kind whose report says the cloud worker ran it
+    ({"node_id": None, "result": {"node_version": "cloud-worker-1.0"}}, None, 1,
+     {"zs:node_id": "cloud-worker", "zs:signed": "false"}),
+    # a cloud kind is the cloud worker's whatever the report says
+    ({"node_id": None, "params": {"source_kind": "gcp_project"}}, None, 1,
+     {"zs:collector": "gcp", "zs:method": "api", "zs:node_id": "cloud-worker", "zs:node_build": "unknown"}),
+    # agent mode reads its own host
+    ({"node_id": 3, "params": {"source_kind": "host_agent"}, "result": {"node_version": "1.0.0"}}, None, 1,
+     {"zs:collector": "host_agent", "zs:method": "agent", "zs:transport": "local"}),
+])
+def test_provenance_of_partial_and_orphaned_jobs(job_kw, kind, attempt, expect):
+    from backend.utilities.cbom_sources import provenance as PV
+
+    source = CbomCollectionSource(id=5, team_id=1, owner_user_id=1, kind=kind, name="s", name_lower="s") if kind else None
+    job = _job(source_id=5 if kind else None, **job_kw)
+    node = CbomScanNode(id=3, team_id=1, owner_user_id=1, name="n", enrolled_at=dt.datetime(2026, 1, 1),
+                        signing_public_key=None) if job.node_id else None
+    got = PV.values(_row(attempt=attempt), PV.job_provenance(job, source, node))
+    assert list(got) == list(PV.NAMES)
+    assert {k: got[k] for k in expect} == expect
+
+
+def test_another_teams_node_or_source_is_never_used():
+    from backend.utilities.cbom_sources import provenance as PV
+
+    job = _job(source_id=5, node_id=3, result={"node_version": "1.0.0"})
+    foreign_source = CbomCollectionSource(id=5, team_id=2, owner_user_id=1, kind="aws_account", name="s", name_lower="s")
+    foreign_node = CbomScanNode(id=3, team_id=2, owner_user_id=1, name="n", enrolled_at=dt.datetime(2026, 1, 1),
+                                signing_public_key="A" * 43 + "=")
+    got = PV.values(_row(), PV.job_provenance(job, foreign_source, foreign_node))
+    assert got["zs:collector"] == "unknown" and got["zs:signed"] == "unknown"
