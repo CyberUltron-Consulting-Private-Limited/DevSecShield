@@ -6,7 +6,7 @@ The lab and its oracles (CB-02) live in `lab/`; the interface between the two is
 (`backend/tests/test_cbom_e2e_harness.py` enforces it).
 
 ```
-run-gate.sh <ref>          restack to <ref>, then one stack.lock hold (<= 45 min): lab up + self-check, oracle
+run-gate.sh <ref>          one stack.lock hold: restack to <ref> if needed, then the gate (<= 45 min): lab up + self-check, oracle
                            frozen, G0 pre-flight, the customer flow in Chromium, DB + logs collected, redaction,
                            G17 seal, judge; lab and node torn down; stack back on dev; SHA256SUMS
 collect-evidence.sh        <teams> <runs> <since> [run]: read-only DB rows + container logs (also the owner's OA-7 tool)

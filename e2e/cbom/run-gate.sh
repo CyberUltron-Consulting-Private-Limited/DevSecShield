@@ -10,8 +10,10 @@
 #     --steps G1,G2,...   flow steps to run (default: all)
 #     --runs-root DIR     default /home/claude/round6/cbom/runs
 #
-# Locks (TEAM-PROCESS): the restack and the gate each take $R6/locks/stack.lock for their own hold; the gate hold
-# is budgeted at 45 minutes (G17 fails beyond it). Needs >= 1.5 GB available memory before it starts.
+# Locks (TEAM-PROCESS): one $R6/locks/stack.lock hold covers the restack (skipped when STACK.md is already READY at
+# the SHA) and the gate, so no other session can switch the stack in between; the gate part is budgeted at 45 minutes
+# (G17 fails beyond it). The way back to dev is its own hold, skipped when the SHA is dev's. The lab is a singleton:
+# cbom-lab.lock from lab up to lab down. Needs >= 1.5 GB available memory before it starts.
 # Exit: 0 gate PASS, 1 gate FAIL, 2 could not run. The last line printed is the bundle's SHA256SUMS sha256.
 set -euo pipefail
 
@@ -40,15 +42,17 @@ git -C "$REPO" fetch -q origin "+refs/heads/dev:refs/remotes/origin/dev" || true
 SHA=$(git -C "$REPO" rev-parse --verify "${REF}^{commit}" 2>/dev/null || git -C "$REPO" rev-parse --verify "origin/${REF}^{commit}")
 [ "$(avail_mb)" -ge 1536 ] || { log "only $(avail_mb) MB available (< 1536): not starting"; exit 2; }
 
-# 1. the stack at <ref> (its own lock hold)
-if [ "$SKIP_RESTACK" = 1 ]; then
-  grep -q "^READY ${SHA:0:7}" "$R6/local/STACK.md" || { log "--skip-restack but STACK.md is not READY at ${SHA:0:7}"; exit 2; }
-else
-  log "restack $SHA"
-  flock "$LOCKS/stack.lock" "$R6/local/restack.sh" "$SHA"
-fi
-
-# 2. the gate (one hold, <= 45 min)
+# 1. + 2. the stack at <ref> and the gate, in one stack.lock hold
+restack_if_needed() {
+  if grep -q "^READY ${SHA:0:7}" "$R6/local/STACK.md"; then
+    log "stack already READY at ${SHA:0:7}"
+  elif [ "$SKIP_RESTACK" = 1 ]; then
+    log "--skip-restack but STACK.md is not READY at ${SHA:0:7}"; return 2
+  else
+    log "restack $SHA"
+    "$R6/local/restack.sh" "$SHA"
+  fi
+}
 RUN=$(cd "$HERE" && python3 -c "import sys; from harness import rundir; print(rundir.create(sys.argv[1], sys.argv[2]))" "$RUNS_ROOT" "$SHA")
 export CBOM_E2E_RUN_DIR=$RUN
 SECRETS=$(mktemp /tmp/cbom-e2e-secrets.XXXXXX)
@@ -57,7 +61,11 @@ log "run directory $RUN"
 
 gate() {
   set -euo pipefail
+  restack_if_needed
   local started; started=$(date -u +%FT%TZ)
+  # the node image the stack built for this SHA (CB-03's restack), else the one given with --node-image
+  local pre_image=$NODE_IMAGE
+  docker image inspect dss-staging/scan-node:stack > /dev/null 2>&1 && pre_image=dss-staging/scan-node:stack
   cd "$HERE"
   local gen=$LAB_DIR/e2e/cbom/lab/gen.py
   # the lab is a singleton (cbom-e2e-net, cbom-e2e-*): hold its lock from up to down (INTERFACES.md v3)
@@ -73,7 +81,7 @@ gate() {
   python3 -m harness.gate freeze-oracle "$RUN" > /dev/null
   python3 -m harness.bundle manifest "$RUN" --sha "$SHA" --ref "$REF" --started "$started" ${NODE_IMAGE:+--node-image "$NODE_IMAGE"}
   log "G0 pre-flight"
-  python3 -m harness.preflight "$RUN" --sha "$SHA" --repo "$REPO" ${NODE_IMAGE:+--node-image "$NODE_IMAGE"}
+  python3 -m harness.preflight "$RUN" --sha "$SHA" --repo "$REPO" ${pre_image:+--node-image "$pre_image"}
   log "customer flow (Chromium)"
   ( cd "$R6/local/pw" && env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy \
       PLAYWRIGHT_BROWSERS_PATH="$R6/local/pw/browsers" node "$HERE/flow/gate.mjs" --run-dir "$RUN" --sha "$SHA" \
@@ -103,14 +111,14 @@ gate() {
   echo "harness_seconds=$(( $(date +%s) - t_harness ))" >> "$RUN/steps/flow.log"
   return "$rc"
 }
-export -f gate log
-export HERE RUN SHA REF REPO LAB_DIR NODE_IMAGE STEPS SECRETS R6 LOCKS
+export -f gate log restack_if_needed
+export HERE RUN SHA REF REPO LAB_DIR NODE_IMAGE STEPS SECRETS R6 LOCKS SKIP_RESTACK
 rc=0
 flock "$LOCKS/stack.lock" bash -c gate || rc=$?
 rm -f "$SECRETS"
 
-# 3. the stack back on dev (its own hold), then the checksums
-if [ "$RETURN" = 1 ] && [ "$SKIP_RESTACK" = 0 ]; then
+# 3. the stack back on dev (its own hold; nothing to do when <ref> is dev), then the checksums
+if [ "$RETURN" = 1 ] && [ "$SHA" != "$(git -C "$REPO" rev-parse origin/dev)" ]; then
   log "restack dev"
   flock "$LOCKS/stack.lock" "$R6/local/restack.sh" dev || log "restack dev FAILED: tell the coordinator"
 fi

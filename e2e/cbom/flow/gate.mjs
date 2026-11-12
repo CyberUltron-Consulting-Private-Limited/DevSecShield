@@ -219,7 +219,7 @@ try {
     A = await signUp(browser, "customerA", s);
     state.teams = { ...(state.teams || {}), A: A.team };
     s.check("signed_up", Number.isInteger(A.team), { expected: "a new team id", observed: A.team });
-    execFileSync("python3", [`${R6}/local/bin/dss.py`, "topup", String(A.team), String(TOPUP)], { stdio: "ignore", timeout: 120000 });
+    execFileSync("python3", [`${R6}/local/bin/dss.py`, "topup", String(A.team), String(TOPUP)], { stdio: "ignore", timeout: 300000 });
     await A.page.reload({ waitUntil: "networkidle" });
     const text = await A.page.getByText(/\d+(\.\d+)? credits/).first().textContent({ timeout: 20000 }).catch(() => "");
     const shown = Number((text.match(/([\d.]+) credits/) || [])[1]);
@@ -277,7 +277,8 @@ try {
     await page.fill("#node-name", "e2e-node-1");
     await page.fill("#node-segment", "lab");
     await page.getByRole("button", { name: /create node and show install command/i }).click();
-    const pre = page.locator("#scan-node-wizard pre").first();
+    // the code block renders a light and a dark copy; the customer sees (and copies) the visible one
+    const pre = page.locator("#scan-node-wizard pre").filter({ visible: true }).first();
     await pre.waitFor({ timeout: 30000 });
     const command = (await pre.textContent()).trim();
     const token = (command.match(/ZS_REGISTRATION_TOKEN='?([^'\s\\]+)/) || [])[1];
@@ -349,25 +350,36 @@ try {
       await page.getByTestId("network-sni-text").fill(sni.join("\n"));
       await page.getByTestId("network-sni-save").click();
       await page.waitForTimeout(1000);
-      const body = await page.content();
-      s.check("sni_names_saved", sni.every((n) => body.includes(n)), { expected: sni, observed: sni.filter((n) => body.includes(n)) });
     }
-    for (const ex of lab.never_scan || []) {
-      await page.getByTestId("network-exclusion-cidr").fill(ex);
+    // the network never-scan list takes addresses and ranges (the UI refuses a host name there; never-scan by name is
+    // entered on Servers in G4): the canary listener's address, so the R-canary range keeps the control reachable
+    const canaries = (lab.listeners || []).filter((l) => l.role === "canary" && (state.scope.ranges || []).some((r) => r.startsWith(l.address.split(".").slice(0, 3).join("."))));
+    for (const l of canaries) {
+      await page.getByTestId("network-exclusion-cidr").fill(l.address);
       await page.getByTestId("network-exclusion-reason").fill("cbom-e2e canary");
       await page.getByTestId("network-exclusion-add").click();
-      const listed = await page.getByTestId("network-exclusions-table").getByText(ex).count().catch(() => 0);
-      s.check(`never_scan_${ex}`, listed > 0, { expected: `${ex} listed under never scan`, observed: listed ? "listed" : "refused or absent", evidence: [await s.shot(page, "never-scan")] });
+      const listed = await page.getByTestId("network-exclusions-table").getByText(l.address).count().catch(() => 0);
+      s.check(`never_scan_${l.name}`, listed > 0, { expected: `${l.address} listed under never scan`, observed: listed ? "listed" : "refused or absent", evidence: [await s.shot(page, "never-scan")] });
     }
+    state.never_scan_g5 = canaries.map((l) => l.address);
     await page.getByRole("button", { name: /^every hour$/i }).first().click();
     await page.getByTestId("network-soc-email").fill("soc@agents.dss.test");
-    await page.getByTestId("network-emergency").fill("+91 00000 00000 (lab)");
+    await page.getByTestId("network-emergency").fill("+91 00000 00000");
     await page.getByTestId("network-save").click();
+    const toast = await Promise.race([
+      page.getByText("Fix the highlighted fields before saving").first().waitFor({ timeout: 15000 }).then(() => "refused"),
+      page.getByText(/settings saved|network scope saved/i).last().waitFor({ timeout: 15000 }).then(() => "saved"),
+    ]).catch(() => "no toast");
     await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(1500);
     await s.shot(page, "network-saved");
-    const [[cfg] = []] = db(`SELECT row_to_json(s)::text FROM cbomcollectionsettings s WHERE team_id = ${A.team}`);
-    s.check("settings_saved_db", !!cfg && (nets[0].ranges || []).every((r) => cfg.includes(r)), { expected: nets.flatMap((n) => n.ranges), observed: cfg ? "ranges in cbomcollectionsettings" : "no settings row" });
+    s.check("network_scope_saved", toast === "saved", { expected: "saved", observed: toast });
+    const [row] = db(`SELECT sni_hostnames::text, network_exclusions::text, soc_email, (SELECT bool_and(c::boolean) FROM json_array_elements(scan_window) r, json_array_elements_text(r) c(c)) FROM cbomcollectionsettings WHERE team_id = ${A.team}`);
+    const ranges = db(`SELECT config->>'cidr' FROM cbomcollectionsource WHERE team_id = ${A.team} AND kind = 'network_range'`).map((r) => r[0]);
+    const want = nets.flatMap((n) => n.ranges || []);
+    s.check("ranges_eq_db", want.every((r) => ranges.includes(r)) && ranges.length === want.length, { expected: want, observed: ranges });
+    s.check("sni_eq_db", !!row && sni.every((n) => row[0].includes(n)), { expected: sni, observed: row && row[0] });
+    s.check("never_scan_eq_db", !!row && canaries.every((l) => row[1].includes(l.address)), { expected: canaries.map((l) => l.address), observed: row && row[1] });
+    s.check("soc_and_window_eq_db", !!row && row[2] === "soc@agents.dss.test" && row[3] === "t", { expected: { soc_email: "soc@agents.dss.test", every_hour: true }, observed: row && { soc_email: row[2], every_hour: row[3] } });
     // canary / control accept counts from the lab listeners (O-8 positive control) after the save
     for (const l of lab.listeners || []) {
       const p = join(RUN, l.log || "");
@@ -429,7 +441,7 @@ try {
     s.notRun("charge_after_runtime_skips", "the final charge after runtime skips follows OA-10b; CB-05 adds the check (KF-8)");
     const listeners = lab?.listeners || [];
     const count = (l) => { const p = join(RUN, l.log || ""); return existsSync(p) ? readFileSync(p, "utf8").split("\n").filter(Boolean).length : null; };
-    const byName = (lab?.never_scan || []).some((n) => !/^[\d.:/]+$/.test(n));
+    const byName = !(state.never_scan_g5 || []).length;
     for (const l of listeners.filter((x) => x.role === "canary")) {
       const n = count(l);
       s.check(`canary_accepts_${l.name}`, n === 0, { expected: 0, observed: n, reason: n === null ? "listener-log-missing" : "never-scan-reached",

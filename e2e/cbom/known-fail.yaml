@@ -47,6 +47,7 @@
   issue: "#17"
   owner: "#32"
   why: "a never-scan entry given by host name still reaches the canary (DA-P2: 7 connections on dev); #32 fixes it"
+  not_run_ok: "the never-scan by name is entered on Servers in G4 (CB-05's spec); G5 enters the canary by address"
 - row: KF-3
   gate: [G11]
   match: {kind: oracle, target_id: z05b}
