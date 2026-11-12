@@ -188,7 +188,7 @@ jobs:
           echo "== GET /{team}/cicd/integration/{id} (what the CI/CD page shows)"
           curl -fsS --noproxy '*' -H "Authorization: Bearer $DSS_USER_TOKEN" "http://127.0.0.1:8000/$DSS_TEAM/cicd/integration/$DSS_INTEGRATION" \
             | jq -c '{scan_type, logs: [.logs[] | {status, gate_verdict: .gate.verdict, failing: .gate.failing_count}]}'
-          echo "== answer the pipeline got"; jq -c '{status, finding_count, gate_failed, gate: {verdict: .gate.verdict, failing_count: .gate.failing_count, failing: .gate.failing}}' response.json || true
+          echo "== answer the pipeline got"; jq -c '{status, finding_count, gate_failed, gate: {verdict: .gate.verdict, failing_count: .gate.failing_count, failing: .gate.failing}}' "$GITHUB_WORKSPACE/response.json" || true
       - name: "[cb30-proof] the customer steps are the UI's generated file"
         if: always()
         working-directory: ${{ runner.temp }}/dss/frontend
@@ -198,7 +198,8 @@ jobs:
           cat > cb30-gen.ts <<'TS'
           import fs from "node:fs";
           import { githubActionsWorkflow } from "./components/cicd/ciTemplates";
-          fs.writeFileSync(process.argv[2], githubActionsWorkflow({ kind: "cbom", endpoint: "http://127.0.0.1:8000/cicd/cbom/scan", branch: process.env.BRANCH! }));
+          // + "\n": the page shows the text; saved as a file it ends with a newline (YAML keeps it in the last run block)
+          fs.writeFileSync(process.argv[2], githubActionsWorkflow({ kind: "cbom", endpoint: "http://127.0.0.1:8000/cicd/cbom/scan", branch: process.env.BRANCH! }) + "\n");
           TS
           npx --yes tsx@4.23.15 cb30-gen.ts "$RUNNER_TEMP/generated.yml"
           python3 - "$RUNNER_TEMP/generated.yml" "$GITHUB_WORKSPACE/.github/workflows/cbom-check.yml" <<'PY'
