@@ -1,0 +1,3 @@
+# Build context is e2e/cbom/lab: send only what the image copies (never .work/, which holds per-run lab keys).
+*
+!entrypoints/
