@@ -28,8 +28,8 @@
   {
    "file": "curated.json",
    "url": "hand-curated; every section cites its document",
-   "retrieved_utc": "2026-11-12T16:50:00Z",
-   "sha256": "7d12af8e61a3f01e36db87b4df5fed62ad8ba1b6d38b2350e29e4f67ae61eede",
+   "retrieved_utc": "2026-11-12T17:37:14Z",
+   "sha256": "ecd01494dc27e51c4d8314c1c990187762afd3c11f580272a2b165749f36201e",
    "tool": "hand, second-agent review (O-9) recorded in PR #94 (review 5874701640: all 20 categories agree)",
    "licence": "this repository"
   },
@@ -104,6 +104,54 @@
    "sha256": "27233e6eb12143e65baa8cb4aafdaf88082c592d5a72e8b0b24d1a6ec4321bd2",
    "tool": "scripts/algid/capture_openssl_text.py, OpenSSL 3.5.7 (python:3.12-slim)",
    "licence": "generated here"
+  },
+  {
+   "file": "iana-jose-key-types.csv",
+   "url": "https://www.iana.org/assignments/jose/web-key-types.csv",
+   "retrieved_utc": "2026-11-12T16:12:32Z",
+   "sha256": "44b20f129a915e1d63b63654cda7fbf3d305dcd5823ae993d6d13859a830b254",
+   "tool": "curl",
+   "licence": "IANA registry (public)"
+  },
+  {
+   "file": "iana-jose-algs.csv",
+   "url": "https://www.iana.org/assignments/jose/web-signature-encryption-algorithms.csv",
+   "retrieved_utc": "2026-11-12T16:12:32Z",
+   "sha256": "9dbc39672fe17c1343fcac7bb7537acc92b4b14624c8ebf76a2c7f59bd2a497d",
+   "tool": "curl",
+   "licence": "IANA registry (public)"
+  },
+  {
+   "file": "iana-jose-curves.csv",
+   "url": "https://www.iana.org/assignments/jose/web-key-elliptic-curve.csv",
+   "retrieved_utc": "2026-11-12T16:15:20Z",
+   "sha256": "ef820560d4c012af4c62b7d0a6a606dd31e7ffe6cc1397b7deee2d4c7480d598",
+   "tool": "curl",
+   "licence": "IANA registry (public)"
+  },
+  {
+   "file": "gcp-kms-algorithms.json",
+   "url": "https://cloudkms.googleapis.com/$discovery/rest?version=v1",
+   "retrieved_utc": "2026-11-12T16:12:33Z",
+   "sha256": "0b979bdb7f5ba79c1adce98216370ea86ca1d4fb45cffd8194f939a953ddb8f4",
+   "tool": "scripts/algid/extract_html.py from the raw capture cloudkms-v1-discovery.json (raw sha256 and the discovery revision inside the extract; the raw document is kept with the CB-04 evidence, not committed). The discovery document changes with each Cloud KMS release: the extract (the 50 CryptoKeyVersion.algorithm values) is the reproducible artefact.",
+   "licence": "Google API discovery document (CC BY 4.0 / Apache-2.0 per Google API terms)"
+  },
+  {
+   "file": "pkcs11-3.2-constants.json",
+   "url": "https://docs.oasis-open.org/pkcs11/pkcs11-spec/v3.2/os/include/pkcs11-v3.2/pkcs11t.h",
+   "retrieved_utc": "2026-11-12T16:12:47Z",
+   "sha256": "507c4878cd50732373379e389f090973138a51abe376f7d238f5cfced22e9976",
+   "tool": "scripts/algid/extract_html.py from the raw capture pkcs11t-3.2.h (raw sha256 inside the extract; the header is kept with the CB-04 evidence, not committed)",
+   "licence": "OASIS Open (copyright OASIS; constants extracted)"
+  },
+  {
+   "file": "kmip-3.0-algorithms.json",
+   "url": "https://docs.oasis-open.org/kmip/kmip-spec/v3.0/kmip-spec-v3.0.html",
+   "retrieved_utc": "2026-11-12T16:13:40Z",
+   "sha256": "1ca64f47ecbcb29d76bf5161b227f34dcd862fb4b346fedf328a203cc5f35540",
+   "tool": "scripts/algid/extract_html.py from the raw capture kmip-spec-v3.0.html (19 MB; raw sha256 inside the extract; kept with the CB-04 evidence, not committed)",
+   "licence": "OASIS Open (copyright OASIS; enumeration extracted)"
   }
  ]
 }

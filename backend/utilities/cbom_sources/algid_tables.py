@@ -11,13 +11,35 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
-SOURCES_SHA256 = "14de460aa85e6694db7959ff348ba1ac4651b311b0f1097456b001f497723fc6"
+SOURCES_SHA256 = "90f2404a05f3517c749462843e6cb69092ff99a8dbcab7cfa4fd1b98aea85ab4"
 
 # canonical name -> (family_label, primitive, standard, status, parameter_set,
 #                    nist_category, construction, quantum, key_size, components)
 ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
+    "AES": (
+        None, "block-cipher", None, "standard", None, None, "classical", None, None,
+        (),
+    ),
+    "AES-128-CBC": (
+        None, "block-cipher", None, "standard", None, None, "classical", None, 128, (),
+    ),
+    "AES-128-CTR": (
+        None, "block-cipher", None, "standard", None, None, "classical", None, 128, (),
+    ),
+    "AES-128-GCM": (
+        None, "ae", None, "standard", None, None, "classical", None, 128, (),
+    ),
+    "AES-256-CBC": (
+        None, "block-cipher", None, "standard", None, None, "classical", None, 256, (),
+    ),
+    "AES-256-CTR": (
+        None, "block-cipher", None, "standard", None, None, "classical", None, 256, (),
+    ),
     "AES-256-GCM": (
         None, "ae", None, "standard", None, None, "classical", None, 256, (),
+    ),
+    "AES-256-KWP": (
+        None, "block-cipher", None, "standard", None, None, "classical", None, 256, (),
     ),
     "BIKE": ("PQ", "kem", None, "candidate", None, None, "pure", "safe", None, ()),
     "BRAINPOOL-P224R1": (
@@ -68,6 +90,18 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
         "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
+    "ECDH": (
+        "ECDH", "key-agree", None, "standard", None, None, "classical", "vulnerable",
+        None, (),
+    ),
+    "ECDSA": (
+        "ECDSA", "signature", None, "standard", None, None, "classical", "vulnerable",
+        None, (),
+    ),
+    "ECMQV": (
+        "EC", "key-agree", None, "standard", None, None, "classical", "vulnerable",
+        None, (),
+    ),
     "ECP-192": (
         "EC", "key-agree", None, "standard", None, None, "classical", "vulnerable",
         192, (),
@@ -99,6 +133,10 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
     "Ed448": (
         "ED448", "signature", None, "standard", None, None, "classical", "vulnerable",
         456, (),
+    ),
+    "EdDSA": (
+        "EDDSA", "signature", None, "standard", None, None, "classical", "vulnerable",
+        None, (),
     ),
     "FN-DSA-1024": (
         "PQ", "signature", None, "draft", "FN-DSA-1024", 5, "pure", "safe", None, (),
@@ -144,6 +182,10 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
     "GOST 28147-89": (
         None, "block-cipher", None, "standard", None, None, "classical", None, 256, (),
     ),
+    "GOST R 34.10": (
+        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        None, (),
+    ),
     "GOST R 34.10-2012": (
         "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
@@ -164,6 +206,9 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
         "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
         512, (),
     ),
+    "GOST R 34.11": (
+        None, "hash", None, "standard", None, None, "classical", None, None, (),
+    ),
     "GOST R 34.11-2012": (
         None, "hash", None, "standard", None, None, "classical", None, None, (),
     ),
@@ -178,6 +223,9 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
     "GOST3410-2012-512": (
         "EC", "key-agree", None, "standard", None, None, "classical", "vulnerable",
         512, (),
+    ),
+    "HMAC-SHA1": (
+        None, "mac", None, "standard", None, None, "classical", None, None, (),
     ),
     "HMAC-SHA224": (
         None, "mac", None, "standard", None, None, "classical", None, None, (),
@@ -628,6 +676,9 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
     "SPHINCS+": (
         "PQ", "signature", None, "pre-standard", None, None, "pure", "safe", None, (),
     ),
+    "SPHINCS-256": (
+        "PQ", "signature", None, "pre-standard", None, None, "pure", "safe", None, (),
+    ),
     "SecP256r1Kyber768Draft00": (
         "PQ", "kem", None, "obsolete", None, None, "hybrid", "hybrid", None,
         ("P-256", "Kyber768"),
@@ -663,6 +714,10 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
     "X448": (
         "X448", "key-agree", None, "standard", None, None, "classical", "vulnerable",
         448, (),
+    ),
+    "XDH": (
+        "ECDH", "key-agree", None, "standard", None, None, "classical", "vulnerable",
+        None, (),
     ),
     "XMSS": (
         "PQ", "signature", "SP 800-208", "standard", None, None, "pure", "safe", None,
@@ -890,19 +945,19 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
         521, (),
     ),
     "ecdhPop-static-sha224-hmac-sha224": (
-        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        "ECDH", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ecdhPop-static-sha256-hmac-sha256": (
-        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        "ECDH", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ecdhPop-static-sha384-hmac-sha384": (
-        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        "ECDH", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ecdhPop-static-sha512-hmac-sha512": (
-        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        "ECDH", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ecdsa-with-SHA1": (
@@ -1945,7 +2000,14 @@ OPENSSL_TEXT: Mapping[str, str] = MappingProxyType({
 })
 
 ALIASES: Mapping[str, str] = MappingProxyType({
+    "aes": "AES",
+    "aes128cbc": "AES-128-CBC",
+    "aes128ctr": "AES-128-CTR",
+    "aes128gcm": "AES-128-GCM",
+    "aes256cbc": "AES-256-CBC",
+    "aes256ctr": "AES-256-CTR",
     "aes256gcm": "AES-256-GCM",
+    "aes256kwp": "AES-256-KWP",
     "arbitraryexplicitchar2curves": "arbitrary_explicit_char2_curves",
     "arbitraryexplicitprimecurves": "arbitrary_explicit_prime_curves",
     "bigncurve256v1": "bign-curve256v1",
@@ -2018,6 +2080,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "ecc": "EC",
     "eccsisha256": "eccsi_sha256",
     "eccsiwithsha256": "eccsi-with-sha256",
+    "ecdh": "ECDH",
     "ecdhpopstaticsha224hmacsha224": "ecdhPop-static-sha224-hmac-sha224",
     "ecdhpopstaticsha256hmacsha256": "ecdhPop-static-sha256-hmac-sha256",
     "ecdhpopstaticsha384hmacsha384": "ecdhPop-static-sha384-hmac-sha384",
@@ -2026,7 +2089,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "ecdhsha2nistp256": "ecdh-sha2-nistp256",
     "ecdhsha2nistp384": "ecdh-sha2-nistp384",
     "ecdhsha2nistp521": "ecdh-sha2-nistp521",
-    "ecdsa": "EC",
+    "ecdsa": "ECDSA",
     "ecdsabrainpoolp256r1tls13sha256": "ecdsa_brainpoolP256r1tls13_sha256",
     "ecdsabrainpoolp384r1tls13sha384": "ecdsa_brainpoolP384r1tls13_sha384",
     "ecdsabrainpoolp512r1tls13sha512": "ecdsa_brainpoolP512r1tls13_sha512",
@@ -2045,6 +2108,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "ecdsawithsha512": "ecdsa-with-SHA512",
     "ecdsawithshake128": "ecdsa-with-shake128",
     "ecdsawithshake256": "ecdsa-with-shake256",
+    "ecmqv": "ECMQV",
     "ecmqvsha2": "ecmqv-sha2",
     "ecp192": "ECP-192",
     "ecp224": "ECP-224",
@@ -2055,6 +2119,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "ed25519": "Ed25519",
     "ed25519ph": "Ed25519ph",
     "ed448": "Ed448",
+    "eddsa": "EdDSA",
     "falcon1024": "Falcon-1024",
     "falcon512": "Falcon-512",
     "ffdhe": "DH",
@@ -2075,10 +2140,10 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "gc512c": "GC512C",
     "gost28147": "GOST 28147-89",
     "gost2814789": "GOST 28147-89",
-    "gost3410": "GOST R 34.10-2012",
+    "gost3410": "GOST R 34.10",
     "gost34102012256": "GOST R 34.10-2012-256",
     "gost34102012512": "GOST R 34.10-2012-512",
-    "gostr3410": "GOST R 34.10-2012",
+    "gostr3410": "GOST R 34.10",
     "gostr34102012": "GOST R 34.10-2012",
     "gostr34102012256": "GOST R 34.10-2012-256",
     "gostr34102012256a": "gostr34102012_256a",
@@ -2095,7 +2160,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
         "GOST R 34.10-2012 with GOST R 34.11-2012 (256 bit)",
     "gostr34102012withgostr34112012512bit":
         "GOST R 34.10-2012 with GOST R 34.11-2012 (512 bit)",
-    "gostr3411": "GOST R 34.11-2012",
+    "gostr3411": "GOST R 34.11",
     "gostr34112012": "GOST R 34.11-2012",
     "gostr34132015": "GOST R 34.13-2015",
     "gsscurve25519sha256": "gss-curve25519-sha256-*",
@@ -2126,6 +2191,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "hashslhdsashake192swithshake256": "HashSLH-DSA-SHAKE-192s-with-SHAKE256",
     "hashslhdsashake256fwithshake256": "HashSLH-DSA-SHAKE-256f-with-SHAKE256",
     "hashslhdsashake256swithshake256": "HashSLH-DSA-SHAKE-256s-with-SHAKE256",
+    "hmacsha1": "HMAC-SHA1",
     "hmacsha224": "HMAC-SHA224",
     "hmacsha256": "HMAC-SHA256",
     "hmacsha384": "HMAC-SHA384",
@@ -2308,6 +2374,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "sntrup761x25519sha512": "sntrup761x25519-sha512",
     "sntrup761x25519sha512opensshcom": "sntrup761x25519-sha512",
     "sphincs": "SPHINCS+",
+    "sphincs256": "SPHINCS-256",
     "sphincsplus": "SPHINCS+",
     "sshed25519": "Ed25519",
     "sshed448": "Ed448",
@@ -2317,9 +2384,223 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "x25519kyber768draft00": "X25519Kyber768Draft00",
     "x25519mlkem768": "X25519MLKEM768",
     "x448": "X448",
+    "xdh": "XDH",
     "xmss": "XMSS",
     "xmssmt": "XMSS^MT",
     "xwing": "X-Wing",
+})
+
+GCP: Mapping[str, str] = MappingProxyType({
+    "AES_128_CBC": "AES-128-CBC",
+    "AES_128_CTR": "AES-128-CTR",
+    "AES_128_GCM": "AES-128-GCM",
+    "AES_256_CBC": "AES-256-CBC",
+    "AES_256_CTR": "AES-256-CTR",
+    "AES_256_GCM": "AES-256-GCM",
+    "AES_256_KWP": "AES-256-KWP",
+    "EC_SIGN_ED25519": "Ed25519",
+    "EC_SIGN_P256_SHA256": "P-256",
+    "EC_SIGN_P384_SHA384": "P-384",
+    "EC_SIGN_SECP256K1_SHA256": "secp256k1",
+    "GOOGLE_SYMMETRIC_ENCRYPTION": "AES-256-GCM",
+    "HMAC_SHA1": "HMAC-SHA1",
+    "HMAC_SHA224": "HMAC-SHA224",
+    "HMAC_SHA256": "HMAC-SHA256",
+    "HMAC_SHA384": "HMAC-SHA384",
+    "HMAC_SHA512": "HMAC-SHA512",
+    "KEM_ECDH_P256": "secp256r1",
+    "KEM_ECDH_P384": "secp384r1",
+    "KEM_XWING": "X-Wing",
+    "ML_KEM_1024": "ML-KEM-1024",
+    "ML_KEM_768": "ML-KEM-768",
+    "PQ_SIGN_HASH_SLH_DSA_SHA2_128S_SHA256": "HashSLH-DSA-SHA2-128s-with-SHA256",
+    "PQ_SIGN_ML_DSA_44": "ML-DSA-44",
+    "PQ_SIGN_ML_DSA_44_EXTERNAL_MU": "ML-DSA-44",
+    "PQ_SIGN_ML_DSA_65": "ML-DSA-65",
+    "PQ_SIGN_ML_DSA_65_EXTERNAL_MU": "ML-DSA-65",
+    "PQ_SIGN_ML_DSA_87": "ML-DSA-87",
+    "PQ_SIGN_ML_DSA_87_EXTERNAL_MU": "ML-DSA-87",
+    "PQ_SIGN_SLH_DSA_SHA2_128S": "SLH-DSA-SHA2-128s",
+    "RSA_DECRYPT_OAEP_2048_SHA1": "RSA-2048",
+    "RSA_DECRYPT_OAEP_2048_SHA256": "RSA-2048",
+    "RSA_DECRYPT_OAEP_3072_SHA1": "RSA-3072",
+    "RSA_DECRYPT_OAEP_3072_SHA256": "RSA-3072",
+    "RSA_DECRYPT_OAEP_4096_SHA1": "RSA-4096",
+    "RSA_DECRYPT_OAEP_4096_SHA256": "RSA-4096",
+    "RSA_DECRYPT_OAEP_4096_SHA512": "RSA-4096",
+    "RSA_SIGN_PKCS1_2048_SHA256": "RSA-2048",
+    "RSA_SIGN_PKCS1_3072_SHA256": "RSA-3072",
+    "RSA_SIGN_PKCS1_4096_SHA256": "RSA-4096",
+    "RSA_SIGN_PKCS1_4096_SHA512": "RSA-4096",
+    "RSA_SIGN_PSS_2048_SHA256": "RSA-2048",
+    "RSA_SIGN_PSS_3072_SHA256": "RSA-3072",
+    "RSA_SIGN_PSS_4096_SHA256": "RSA-4096",
+    "RSA_SIGN_PSS_4096_SHA512": "RSA-4096",
+    "RSA_SIGN_RAW_PKCS1_2048": "RSA-2048",
+    "RSA_SIGN_RAW_PKCS1_3072": "RSA-3072",
+    "RSA_SIGN_RAW_PKCS1_4096": "RSA-4096",
+})
+
+KMIP: Mapping[int, str] = MappingProxyType({
+    0x0003: "AES",
+    0x0004: "RSA",
+    0x0005: "DSA",
+    0x0006: "ECDSA",
+    0x0007: "HMAC-SHA1",
+    0x0008: "HMAC-SHA224",
+    0x0009: "HMAC-SHA256",
+    0x000A: "HMAC-SHA384",
+    0x000B: "HMAC-SHA512",
+    0x000D: "DH",
+    0x000E: "ECDH",
+    0x000F: "ECMQV",
+    0x001A: "EC",
+    0x002B: "SM2",
+    0x002E: "GOST R 34.10-2012",
+    0x002F: "GOST R 34.11-2012",
+    0x0030: "GOST R 34.13-2015",
+    0x0031: "GOST 28147-89",
+    0x0032: "XMSS",
+    0x0033: "SPHINCS-256",
+    0x0034: "Classic McEliece",
+    0x0035: "Classic McEliece",
+    0x0036: "Classic McEliece",
+    0x0037: "Ed25519",
+    0x0038: "Ed448",
+    0x0039: "ML-KEM-512",
+    0x003A: "ML-KEM-768",
+    0x003B: "ML-KEM-1024",
+    0x003C: "ML-DSA-44",
+    0x003D: "ML-DSA-65",
+    0x003E: "ML-DSA-87",
+    0x003F: "SLH-DSA-SHA2-128s",
+    0x0040: "SLH-DSA-SHA2-128f",
+    0x0041: "SLH-DSA-SHA2-192s",
+    0x0042: "SLH-DSA-SHA2-192f",
+    0x0043: "SLH-DSA-SHA2-256s",
+    0x0044: "SLH-DSA-SHA2-256f",
+    0x0045: "SLH-DSA-SHAKE-128s",
+    0x0046: "SLH-DSA-SHAKE-128f",
+    0x0047: "SLH-DSA-SHAKE-192s",
+    0x0048: "SLH-DSA-SHAKE-192f",
+    0x0049: "SLH-DSA-SHAKE-256s",
+    0x004A: "SLH-DSA-SHAKE-256f",
+    0x004B: "HashSLH-DSA-SHA2-128s-with-SHA256",
+    0x004C: "HashSLH-DSA-SHA2-128f-with-SHA256",
+    0x004D: "HashSLH-DSA-SHA2-192s-with-SHA512",
+    0x004E: "HashSLH-DSA-SHA2-192f-with-SHA512",
+    0x004F: "HashSLH-DSA-SHA2-256s-with-SHA512",
+    0x0050: "HashSLH-DSA-SHA2-256f-with-SHA512",
+    0x0051: "HashSLH-DSA-SHAKE-128s-with-SHAKE128",
+    0x0052: "HashSLH-DSA-SHAKE-128f-with-SHAKE128",
+    0x0053: "HashSLH-DSA-SHAKE-192s-with-SHAKE256",
+    0x0054: "HashSLH-DSA-SHAKE-192f-with-SHAKE256",
+    0x0055: "HashSLH-DSA-SHAKE-256s-with-SHAKE256",
+    0x0056: "HashSLH-DSA-SHAKE-256f-with-SHAKE256",
+    0x0057: "HashML-DSA-44-with-SHA512",
+    0x0058: "HashML-DSA-65-with-SHA512",
+    0x0059: "HashML-DSA-87-with-SHA512",
+    0x005A: "X25519",
+    0x005B: "X448",
+    0x005C: "X25519MLKEM768",
+    0x005D: "SecP256r1MLKEM768",
+})
+
+PKCS11_KEY_TYPES: Mapping[int, str] = MappingProxyType({
+    0x0000: "RSA",
+    0x0001: "DSA",
+    0x0002: "DH",
+    0x0003: "EC",
+    0x0004: "DH",
+    0x001F: "AES",
+    0x0028: "HMAC-SHA1",
+    0x002B: "HMAC-SHA256",
+    0x002C: "HMAC-SHA384",
+    0x002D: "HMAC-SHA512",
+    0x002E: "HMAC-SHA224",
+    0x0030: "GOST R 34.10",
+    0x0031: "GOST R 34.11",
+    0x0032: "GOST 28147-89",
+    0x0040: "EdDSA",
+    0x0041: "XDH",
+    0x0046: "HSS",
+    0x0047: "XMSS",
+    0x0048: "XMSS^MT",
+    0x0049: "ML-KEM",
+    0x004A: "ML-DSA",
+    0x004B: "SLH-DSA",
+})
+
+PKCS11_PARAMETER_SETS: Mapping[int, Mapping[int, str]] = MappingProxyType({
+    0x0049: MappingProxyType({
+        0x0001: "ML-KEM-512",
+        0x0002: "ML-KEM-768",
+        0x0003: "ML-KEM-1024",
+    }),
+    0x004A: MappingProxyType({
+        0x0001: "ML-DSA-44",
+        0x0002: "ML-DSA-65",
+        0x0003: "ML-DSA-87",
+    }),
+    0x004B: MappingProxyType({
+        0x0001: "SLH-DSA-SHA2-128s",
+        0x0002: "SLH-DSA-SHAKE-128s",
+        0x0003: "SLH-DSA-SHA2-128f",
+        0x0004: "SLH-DSA-SHAKE-128f",
+        0x0005: "SLH-DSA-SHA2-192s",
+        0x0006: "SLH-DSA-SHAKE-192s",
+        0x0007: "SLH-DSA-SHA2-192f",
+        0x0008: "SLH-DSA-SHAKE-192f",
+        0x0009: "SLH-DSA-SHA2-256s",
+        0x000A: "SLH-DSA-SHAKE-256s",
+        0x000B: "SLH-DSA-SHA2-256f",
+        0x000C: "SLH-DSA-SHAKE-256f",
+    }),
+})
+
+JOSE_KEY_TYPES = (
+    "EC", "RSA", "oct", "OKP", "AKP",
+)
+
+JOSE_KTY: Mapping[str, str] = MappingProxyType({
+    "EC": "EC",
+    "RSA": "RSA",
+})
+
+JOSE_CRV: Mapping[str, str] = MappingProxyType({
+    "Ed25519": "Ed25519",
+    "Ed448": "Ed448",
+    "P-256": "P-256",
+    "P-384": "P-384",
+    "P-521": "P-521",
+    "X25519": "X25519",
+    "X448": "X448",
+    "secp256k1": "secp256k1",
+})
+
+JOSE_ALG: Mapping[str, str] = MappingProxyType({
+    "ES256": "P-256",
+    "ES256K": "secp256k1",
+    "ES384": "P-384",
+    "ES512": "P-521",
+    "Ed25519": "Ed25519",
+    "Ed448": "Ed448",
+    "EdDSA": "EdDSA",
+    "ML-DSA-44": "ML-DSA-44",
+    "ML-DSA-65": "ML-DSA-65",
+    "ML-DSA-87": "ML-DSA-87",
+    "PS256": "RSA",
+    "PS384": "RSA",
+    "PS512": "RSA",
+    "RS1": "RSA",
+    "RS256": "RSA",
+    "RS384": "RSA",
+    "RS512": "RSA",
+    "RSA-OAEP": "RSA",
+    "RSA-OAEP-256": "RSA",
+    "RSA-OAEP-384": "RSA",
+    "RSA-OAEP-512": "RSA",
+    "RSA1_5": "RSA",
 })
 
 OID_PREFIXES: tuple[tuple[str, str, str | None], ...] = (

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Fake sleep for the step tests: records the delay, does not wait.
+echo "sleep $*" >> "$FAKE_STATE/calls.log"
