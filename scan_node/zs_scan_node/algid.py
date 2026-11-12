@@ -63,6 +63,7 @@ _TLS_GROUPS: Mapping[int, str] = _t.TLS_GROUPS
 _TLS_SIGSCHEMES: Mapping[int, str] = _t.TLS_SIGSCHEMES
 _SSH_KEX: Mapping[str, str] = _t.SSH_KEX
 _IKE_KE: Mapping[int, str] = _t.IKE_KE
+_IKE_KE_NAMES: Mapping[int, str] = _t.IKE_KE_NAMES
 _AWS: Mapping[str, Mapping[str, str]] = _t.AWS
 _AWS_TLS_POLICY: Mapping[str, Mapping[str, tuple[str, ...]]] = _t.AWS_TLS_POLICY
 _OPENSSL_TEXT: Mapping[str, str] = _t.OPENSSL_TEXT
@@ -156,8 +157,16 @@ def _by_oid(oid: str) -> Identity | None:
 
 
 def _marker(text: str) -> Identity | None:
+    """A PQ marker in the text: a marker of four letters or fewer (LMS, HSS, HQC,
+    BIKE, XMSS) must start a token ("LMS_SHA256_M32_H10", "HSS/LMS"), so classical
+    text such as "SHA1 with SSH" or "HELMS" never reads as post-quantum; a longer
+    marker may sit anywhere in the text with its separators removed."""
     compact = _norm(text).upper()
-    found = [m for m in _PQ_MARKERS if m in compact]
+    tokens = _SEPARATORS.split(unicodedata.normalize("NFKC", text).upper())
+    found = [
+        m for m in _PQ_MARKERS
+        if (any(tok.startswith(m) for tok in tokens) if len(m) <= 4 else m in compact)
+    ]
     if not found:
         return None
     kem = any(m in _KEM_MARKERS for m in found)
@@ -210,6 +219,8 @@ def resolve(value: object, namespace: str | None = None) -> Identity | None:
     marker scan, then the classical fallback. Sentinels ("<NULL>", "(NONE)",
     "Unknown OID", "") give None.
     """
+    if namespace is not None and namespace not in NAMESPACES:
+        raise ValueError(f"unknown namespace {namespace!r}")
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -247,15 +258,17 @@ def _strict(text: str, namespace: str) -> Identity | None:
         return ssh_kex(text)
     if namespace == "name":
         return _named(text)
+    if namespace == "ike_ke":  # the product spelling (ML-KEM-768) names the binding row
+        for transform_id, spelling in _IKE_KE_NAMES.items():
+            if spelling == text:
+                return _identity(_IKE_KE[transform_id], "name")
     tables = {
         "tls_group": _TLS_GROUPS,
         "tls_sigscheme": _TLS_SIGSCHEMES,
         "ike_ke": _IKE_KE,
     }
-    if namespace in tables:
-        found = text in tables[namespace].values()
-        return _identity(text, "name") if found else None
-    raise ValueError(f"unknown namespace {namespace!r}")
+    found = text in tables[namespace].values()
+    return _identity(text, "name") if found else None
 
 
 def _codepoint(value: object) -> bool:
@@ -281,11 +294,22 @@ def tls_sigscheme(codepoint: int) -> Identity | None:
 
 
 def ike_ke(transform_id: int) -> Identity | None:
-    """IKEv2 Transform Type 4 id, named with the product's spellings (MODP-2048...)."""
+    """IKEv2 Transform Type 4 id. Rows are named with the product's spellings
+    (MODP-2048...), except the ML-KEM bindings 35-37 (ml-kem-NNN, draft), whose
+    product spelling is the FIPS 203 algorithm row: ``ike_name`` gives what the
+    product emits."""
     if not _codepoint(transform_id):
         return None
     name = _IKE_KE.get(transform_id)
     return _identity(name, "codepoint") if name else None
+
+
+def ike_name(transform_id: int) -> str | None:
+    """The name the product emits for an IKEv2 Transform Type 4 id, exactly as
+    ikeprobe.GROUPS and appliance_parsers do today ("MODP-2048", "ML-KEM-768")."""
+    if not _codepoint(transform_id):
+        return None
+    return _IKE_KE_NAMES.get(transform_id)
 
 
 def ssh_kex(method: str) -> Identity | None:

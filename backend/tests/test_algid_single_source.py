@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -34,23 +35,28 @@ NOT_PRODUCT = re.compile(r"(^|/)(tests?|__tests__)/|\.test\.tsx?$|(^|/)(uv\.lock
 
 
 def _marker_pattern() -> re.Pattern[str]:
-    """algid's PQ markers, letters with or without separators (ML-KEM, ml_kem, MLKEM)."""
+    """algid's PQ markers as algid reads them (on NFKC text). A marker of five letters or more may have any
+    non-alphanumeric characters between its letters (ML-KEM, ml_kem, ML.KEM, ML/DSA) and may follow digits
+    (X25519MLKEM768, rsa3072_dilithium2). A marker of four letters or fewer (LMS, HSS, HQC, BIKE, XMSS) must start a
+    token, as in algid's _marker; LMS/HSS/HQC/BIKE must also not run on into letters ("bikes", "realms")."""
     parts = []
     for marker in sorted(A._PQ_MARKERS, key=len, reverse=True):
-        body = "[-_ ]?".join(re.escape(ch) for ch in marker)
-        if len(marker) <= 4 and marker != "XMSS":  # LMS, HSS, HQC, BIKE: whole tokens only
-            parts.append(f"(?<![0-9a-z]){body}(?![0-9a-z])")
-        else:  # a longer marker may follow digits: X25519MLKEM768, rsa3072_dilithium2
-            parts.append(f"(?<![a-z]){body}")
+        if len(marker) <= 4:
+            tail = "" if marker == "XMSS" else "(?![a-z])"  # XMSSMT is XMSS^MT
+            parts.append(f"(?<![0-9a-z]){re.escape(marker)}{tail}")
+        else:
+            parts.append("(?<![a-z])" + r"[\W_]*".join(re.escape(ch) for ch in marker))
     return re.compile("|".join(parts), re.IGNORECASE)
 
 
 def _pq_codepoints() -> set[int]:
-    """PQ TLS group and signature-scheme codepoints (0x0201/0x0202 are also classical sigschemes: left out)."""
+    """PQ TLS group and signature-scheme codepoints. 0x0200-0x0202 (MLKEM512/768/1024) are left out of the hex set,
+    as 512-514 are left out of the decimal set: they are common constants (a MySQL capability flag, the legacy
+    dsa_sha1 sigscheme 0x0202), and the markers catch those groups' names anyway."""
     out: set[int] = set()
     for table, other in ((A._TLS_GROUPS, A._TLS_SIGSCHEMES), (A._TLS_SIGSCHEMES, A._TLS_GROUPS)):
         out |= {cp for cp, name in table.items() if A._ALGS[name][0] == "PQ" and cp not in other}
-    return out
+    return {cp for cp in out if not 0x0200 <= cp <= 0x0202}
 
 
 MARKERS = _marker_pattern()
@@ -66,7 +72,7 @@ DOTTED = re.compile(r"(?<![\d.])([0-2](?:\.\d+){3,})")
 def count(text: str) -> int:
     """Matches of every way algid itself recognises a post-quantum identifier: a marker, a PQ codepoint (hex, or
     decimal), the OID of a PQ row, or an OID under a prototype/OQS arc."""
-    n = sum(1 for _ in MARKERS.finditer(text))
+    n = sum(1 for _ in MARKERS.finditer(unicodedata.normalize("NFKC", text)))
     n += sum(1 for m in HEX.finditer(text) if int(m.group(1), 16) in CODEPOINTS)
     n += sum(1 for m in DECIMAL.finditer(text) if int(m.group(1)) in DECIMAL_CODEPOINTS)
     n += sum(1 for m in DOTTED.finditer(text) if m.group(1) in PQ_OIDS or m.group(1).startswith(OID_ARCS))
@@ -78,7 +84,7 @@ ALLOWED = {
     "aibom/src/aibom/cbom/compliance.py": 55,
     "aibom/src/aibom/cbom/data/crypto_kb.json": 71,
     "aibom/src/aibom/cbom/data/named_groups.json": 10,
-    "aibom/src/aibom/cbom/detect.py": 55,
+    "aibom/src/aibom/cbom/detect.py": 59,
     "aibom/src/aibom/cbom/ingest.py": 29,
     "aibom/src/aibom/cbom/normalize.py": 4,
     "aibom/src/aibom/cbom/pqc.py": 45,
@@ -115,7 +121,7 @@ ALLOWED = {
     "scan_node/zs_scan_node/collectors/network.py": 1,
     "scan_node/zs_scan_node/ikeprobe.py": 5,
     "scan_node/zs_scan_node/kmip_ttlv.py": 5,
-    "scan_node/zs_scan_node/tlsprobe.py": 20,
+    "scan_node/zs_scan_node/tlsprobe.py": 15,
 }
 
 
@@ -156,5 +162,8 @@ def test_the_guard_catches_what_algid_recognises():
                  "ml_dsa_65", "2.16.840.1.114027.80.8.1.4", "0x11EC", "SecP256r1MLKEM768", "rsa3072_dilithium2"):
         assert count(text) >= 1, text
     assert count("PQ_GROUPS = (0x11EC, 0x11EB)  # X25519MLKEM768, MLKEM1024, ML-DSA-87") == 5
-    for text in ("realms", "bikes", "0x0201", "512", "sha256:0a4588ff", "2.16.840.1.101.3.4.3.2", "helms 2310ms"):
+    for text in ("ML.KEM-768", "ML/DSA/44", "ML\u2011DSA\u201165", "SLH\u2010DSA"):  # every spelling algid resolves
+        assert count(text) == 1 and A.family_label(text) == "PQ", text
+    for text in ("realms", "bikes", "0x0200", "0x0201", "0x0202", "512", "sha256:0a4588ff", "2.16.840.1.101.3.4.3.2",
+                 "helms 2310ms", "SHA1 with SSH", "client_caps = 0x0800 | 0x0200"):
         assert count(text) == 0, text
