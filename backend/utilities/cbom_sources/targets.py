@@ -26,6 +26,23 @@ _NAT64 = int(ipaddress.IPv6Address("64:ff9b::"))  # RFC 6052 well-known prefix 6
 # What the scan node never scans whatever the never-scan list says (scan_node netutil.match_ip): 0.0.0.0/8 and ::, which
 # reach the node itself, and the NAT64 form of 0.0.0.0/8.  Counts, credits and samples leave them out too.
 NEVER_SCANNED: list[Interval] = [(4, 0, 0x00FF_FFFF), (6, 0, 0), (6, _NAT64, _NAT64 + 0x00FF_FFFF)]
+# Names that are loopback by definition (scan_node netutil.LOOPBACK_NAMES: RFC 6761 section 6.3, localhost and every name
+# under .localhost, plus the default hosts files' loopback aliases).  As a never-scan entry the node does not look such a
+# name up: it blocks 127.0.0.0/8 and ::1, so counts, credits and samples leave those out too.  The UI keeps a copy
+# (frontend/components/cbom/sources/teamNeverScan.ts); backend/tests/test_never_scan_node_agreement.py compares all three.
+LOOPBACK_NAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback", "localhost.localdomain", "localhost4",
+                            "localhost4.localdomain4", "localhost6", "localhost6.localdomain6"})
+LOOPBACK: list[Interval] = [(4, 0x7F00_0000, 0x7FFF_FFFF), (6, 1, 1)]
+# The settings API's words for a host name in the team never-scan list (422).  The UI shows the same words for a typed
+# entry (teamNeverScan.ts HOST_NAME_NOT_ALLOWED; compared by test_never_scan_node_agreement).
+HOST_NAME_NOT_ALLOWED = ("{entry} is not an address or range (it reads as a host name); the team never-scan list takes "
+                         "addresses and ranges only. List host names in a server source's own Never scan field")
+
+
+def is_loopback_name(name: str) -> bool:
+    """Whether a host name is loopback by definition (LOOPBACK_NAMES, or a name under .localhost)."""
+    name = str(name).strip().lower().rstrip(".")
+    return name in LOOPBACK_NAMES or name.endswith(".localhost")
 
 
 class TargetError(ValueError):
@@ -238,12 +255,15 @@ def scanned_interval(interval: Interval, canonical: str) -> Interval | None:
 
 
 def _removed(exclusions: ParsedTargets | None) -> list[Interval]:
-    """What the node refuses: the list, the NAT64 form of each IPv4 entry (the node checks a 64:ff9b::/96 address as
-    the IPv4 address it reaches), and NEVER_SCANNED."""
+    """What the node refuses: the list, the loopback when a name that is loopback by definition is listed, the NAT64
+    form of each IPv4 entry (the node checks a 64:ff9b::/96 address as the IPv4 address it reaches), and NEVER_SCANNED."""
     removed = list(NEVER_SCANNED)
     if exclusions is not None:
-        removed += exclusions.intervals
-        removed += [(6, _NAT64 + start, _NAT64 + end) for version, start, end in exclusions.intervals if version == 4]
+        listed = list(exclusions.intervals)
+        if any(is_loopback_name(name) for name in exclusions.hostnames):
+            listed += LOOPBACK
+        removed += listed
+        removed += [(6, _NAT64 + start, _NAT64 + end) for version, start, end in listed if version == 4]
     return removed
 
 

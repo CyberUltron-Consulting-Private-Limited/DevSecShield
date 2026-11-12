@@ -471,11 +471,14 @@ def test_the_team_never_scan_list_takes_addresses_and_ranges_only(api, world):
     does not resolve holds every target of every job of the team, so names belong in a server source's own list."""
     for name in ("printer.corp.invalid", "Web-01.Corp.", "printer", "localhost", "bücher.corp", "10.0.0.0-24"):
         r = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
-            {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": name, "reason": "printer"}]})
+            {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": f" {name} ", "reason": "printer"}]})
         assert r.status_code == 422, (name, r.text)
-        detail = r.json()["detail"]
-        assert f"{name!r} is not an address or range (it reads as a host name)" in detail, detail
-        assert "takes addresses and ranges" in detail and "Never scan" in detail
+        # the whole detail, word for word, with the entry as typed (trimmed, not normalized, not quoted): the UI shows
+        # the same words for a typed entry (teamNeverScan.ts; test_never_scan_node_agreement compares the templates)
+        assert r.json()["detail"] == (
+            f"network_exclusions: {name} is not an address or range (it reads as a host name); the team never-scan "
+            "list takes addresses and ranges only. List host names in a server source's own Never scan field")
+        assert r.json()["detail"] == "network_exclusions: " + T.HOST_NAME_NOT_ALLOWED.format(entry=name)
     got = api("GET", "/1/cbom/sources/settings").json()["settings"]
     assert got["network_exclusions"] == []  # nothing of the refused request was stored
     ok = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
@@ -483,6 +486,26 @@ def test_the_team_never_scan_list_takes_addresses_and_ranges_only(api, world):
         {"cidr": "fe80::1%br-ab12", "reason": "bridge"}]})
     assert ok.status_code == 200, ok.text
     assert len(ok.json()["settings"]["network_exclusions"]) == 3
+
+
+def test_a_loopback_name_in_a_source_never_scan_list_is_kept_and_counted_as_loopback_only(api, world):
+    """Re-review 5879769432 (netutil.py:53): a server source may list localhost (or another name that is loopback by
+    definition).  The API keeps it, and the count, the credits and the connection-test samples leave out exactly
+    what the node leaves out for it: the loopback addresses, and nothing else (the node never holds on it)."""
+    node_id, _t, _ = enroll_node(api)
+    body = linux_body(node_id=node_id, targets=["127.0.0.0/29", "10.20.0.0/30", "::1", "localhost", "app-01.bank.local"],
+                      exclusions=["LOCALHOST.", "10.20.0.2", "db.localhost"])
+    r = api("POST", "/1/cbom/sources/items", json=body)
+    assert r.status_code == 201, r.text
+    src = r.json()["source"]
+    assert src["config"]["exclusions"] == ["localhost", "10.20.0.2", "db.localhost"]
+    assert src["target_count"] == 2  # 10.20.0.1 and app-01.bank.local: loopback (and the name localhost) left out
+    count = api("POST", "/1/cbom/sources/targets/count", json={
+        "targets": ["127.0.0.0/29", "10.20.0.0/30", "64:ff9b::7f00:1", "::ffff:127.0.0.9"], "exclusions": ["localhost"]}).json()
+    assert (count["valid"], count["count"], count["samples"]) == (True, 2, ["10.20.0.1", "10.20.0.2"])
+    other = api("POST", "/1/cbom/sources/targets/count", json={
+        "targets": ["127.0.0.0/29"], "exclusions": ["localhost.corp.internal"]}).json()
+    assert other["count"] == 6  # any other name: matched by the node only, by what it resolves to there
 
 
 @pytest.mark.parametrize("cidr, team, units", [

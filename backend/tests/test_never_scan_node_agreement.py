@@ -15,6 +15,8 @@ and the NAT64 form of an excluded IPv4 address).  Host-name targets are counted 
 from __future__ import annotations
 
 import ipaddress
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -92,6 +94,11 @@ def test_the_backend_count_matches_what_the_node_scans(source, entries, expected
     (["64:ff9b::a00:5", "64:ff9b::a00:6", "64:ff9b::a00:7"], ["10.0.0.5"]),  # NAT64 reaches the excluded IPv4 host
     (["fd00::/125"], ["fd00::1-fd00::5"]),
     (["fe80::/125"], ["fe80::1%br-ab12"]),
+    # a name that is loopback by definition (re-review 5879769432): both leave out the loopback, in every form, only
+    (["127.0.0.0/29", "10.0.7.0/30"], ["localhost"]),
+    (["::1", "::ffff:127.0.0.5", "64:ff9b::7f00:5", "64:ff9b::a00:9", "10.0.7.9"], ["ip6-localhost"]),
+    (["127.255.255.248/29", "::/126"], ["db.localhost", "10.0.7.1"]),
+    (["127.0.0.0/30", "10.0.7.4/30"], ["LOCALHOST6.LOCALDOMAIN6."]),
 ])
 def test_the_backend_count_and_samples_match_what_the_node_scans_for_every_target_form(source, entries):
     """Security re-review 5871690938: the count, the credits and the connection-test samples are the node's targets."""
@@ -101,3 +108,33 @@ def test_the_backend_count_and_samples_match_what_the_node_scans_for_every_targe
     assert T.count_in_scope(parsed, excl) == len(scanned)
     samples = T.sample_targets(parsed, excl, 5)
     assert set(samples) <= scanned and len(samples) == min(5, len(scanned))
+
+
+# ----------------------------------------------------------------------------- one rule, one wording (re-review 5879769432)
+FRONTEND = _REPO_ROOT / "frontend" / "components" / "cbom" / "sources" / "teamNeverScan.ts"
+
+
+def _ts_constant(name: str) -> str:
+    """The value of ``export const <name> = ...;`` in teamNeverScan.ts, as source text."""
+    match = re.search(rf"^export const {name}\b[^=]*=\s*(.+?);\s*$", FRONTEND.read_text(encoding="utf-8"), re.M | re.S)
+    assert match, f"{name} is not exported from {FRONTEND.name}"
+    return match.group(1)
+
+
+def test_the_node_the_backend_and_the_ui_know_the_same_loopback_names():
+    from zs_scan_node import netutil
+
+    assert T.LOOPBACK_NAMES == netutil.LOOPBACK_NAMES
+    ui = json.loads(_ts_constant("LOOPBACK_NAMES").replace("new Set(", "").rstrip(")"))
+    assert sorted(ui) == sorted(T.LOOPBACK_NAMES)
+    for name in sorted(T.LOOPBACK_NAMES) + ["LocalHost.", "db.localhost", "a.b.localhost", "localhost.corp", "notlocalhost",
+                                            "localhostx", "my-localhost", "ip6-localnet", "localhost5", "x.localhost.corp"]:
+        assert T.is_loopback_name(name) == netutil.is_loopback_name(name), name
+    assert T.is_loopback_name("db.localhost") and not T.is_loopback_name("localhost.corp")
+
+
+def test_the_ui_and_the_api_say_the_same_words_for_a_host_name_in_the_team_list():
+    """Re-review 5879769432 (teamNeverScan.ts:64): a typed entry (the UI's check) and a refused save (the API's 422)
+    read the same, so a drift on either side fails here, in the backend suite (which runs on frontend changes too)."""
+    assert json.loads(_ts_constant("HOST_NAME_NOT_ALLOWED")) == T.HOST_NAME_NOT_ALLOWED
+    assert T.HOST_NAME_NOT_ALLOWED.count("{entry}") == 1 and T.HOST_NAME_NOT_ALLOWED.startswith("{entry} ")

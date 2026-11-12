@@ -978,12 +978,11 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                 except T.TargetError as exc:
                     raise HTTPException(status_code=400, detail=f"network_exclusions: {exc}") from None
                 if parsed.hostnames:
-                    # Same rule as the UI (NetworkTab rangeError). On the node a listed name that does not resolve
-                    # holds every target of the jobs that carry it; at team level that would be every job of the team.
-                    raise HTTPException(status_code=422, detail=(
-                        f"network_exclusions: {item.cidr.strip()!r} is not an address or range (it reads as a host "
-                        "name); the team never-scan list takes addresses and ranges only. List host names in a server "
-                        "source's own Never scan field"))
+                    # Same rule and words as the UI (teamNeverScan.ts teamExclusionError). On the node a listed name
+                    # that does not resolve holds every target of the jobs that carry it; at team level that would be
+                    # every job of the team.
+                    raise HTTPException(status_code=422, detail="network_exclusions: "
+                                        + T.HOST_NAME_NOT_ALLOWED.format(entry=item.cidr.strip()))
                 if not parsed.normalized:
                     continue
                 canonical = parsed.normalized[0]
