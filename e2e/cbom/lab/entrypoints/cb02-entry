@@ -2,7 +2,7 @@
 # CB-02 lab target entrypoint. gen.py writes /lab/role.env (ROLE, PORT) and the role's files; this script only
 # starts the one server the role names, in the foreground, so `docker logs` holds its whole output.
 set -eu
-[ -r /lab/role.env ] || { echo "cb02-entry: /lab/role.env missing (run lab.sh gen)" >&2; exit 64; }
+[ -r /lab/role.env ] || { echo "cb02-entry: /lab/role.env missing (run gen.py up)" >&2; exit 64; }
 # /lab/role.env holds KEY=VALUE lines (TARGET, ROLE, PORT) written by gen.py; read, never sourced.
 while IFS='=' read -r key value; do
   case "$key" in TARGET) TARGET=$value ;; ROLE) ROLE=$value ;; PORT) PORT=$value ;; esac

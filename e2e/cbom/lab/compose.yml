@@ -129,6 +129,16 @@ services:
       lab:
         ipv4_address: 10.231.0.24
         aliases: [sshd-pq.lab]
+  sshd-psp:
+    <<: *target
+    container_name: cb02-sshd-psp
+    profiles: [psp]
+    volumes:
+      - "${CB_LAB_DIR:?run gen.py up}/targets/sshd-psp:/lab:ro"
+    networks:
+      lab:
+        ipv4_address: 10.231.0.28
+        aliases: [sshd-psp.lab]
   host:
     <<: *target
     container_name: cb02-host

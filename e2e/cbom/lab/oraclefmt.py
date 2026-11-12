@@ -160,7 +160,7 @@ def run_oracle(facts: list[dict], step: str, generated_at: str, commit: str, wav
         targets.append(entry)
     return {"schema": SCHEMA_RUN, "run_step": step, "generated_at": generated_at,
             "generator": {"name": "gen.py", "commit": commit, "wave": wave}, "quantum_vulnerable_source": QV_SOURCE,
-            "targets": targets}
+            "targets": targets, "deferred": deferred()}
 
 
 def sources_for(facts: list[dict]) -> tuple[list[dict], dict]:
@@ -221,9 +221,18 @@ def lab_json(facts: list[dict], generated_at: str, commit: str, wave: str, netwo
                                   "forcecommand_log": "lab/forcecommand.log"}
     return {"schema": SCHEMA_LAB, "network": network["name"], "subnet": network["subnet"], "node_ip": node_ip,
             "generated_at": generated_at, "generator": {"commit": commit, "wave": wave}, "ca_pem": "lab/ca.pem",
-            "targets": targets, "listeners": listeners, "hosts": hosts, "sources": sources,
+            "targets": targets, "listeners": listeners, "hosts": hosts, "sources": sources, "deferred": deferred(),
+            "authoritative_command_log": "lab/forcecommand.authoritative.jsonl (from the cb02-host container log)",
             "never_scan": [n for o in facts if o["kind"] == "listener" and o["expect"]["role"] == "canary"
                            for n in o["aliases"][:1] if n.startswith("cbom-e2e")]}
+
+
+def deferred() -> list[dict]:
+    """Lab parts this build does not provide (labspec.DEFERRED): the gate turns each into NOT-RUN rows with this
+    reason, so a missing target never passes or fails by accident."""
+    import labspec
+    return [{**d, "deferred": True, "issue_draft": labspec.DEFERRED_DRAFT, "issue": labspec.DEFERRED_ISSUE}
+            for d in labspec.DEFERRED]
 
 
 def canaries_json(canaries: list[dict]) -> dict:

@@ -89,18 +89,18 @@ def _run_dir(tmp_path: Path) -> Path:
 
 def test_oracle_hash_is_stable_and_detects_an_edit(tmp_path: Path) -> None:
     run = _run_dir(tmp_path)
-    h1 = gen.oracle_hash(run)
-    assert gen.cmd_hash(gen.argparse.Namespace(run_dir=str(run), verify=None)) == 0
+    h1 = gen.record_oracle_hash(run, "run1")
     assert gen.oracle_hash(run) == h1  # SHA256SUMS itself is not hashed
-    assert gen.cmd_hash(gen.argparse.Namespace(run_dir=str(run), verify=h1)) == 0
+    ns = gen.argparse.Namespace(run_dir=str(run), verify=h1, accept_change=False, reason=None)
+    assert gen.cmd_hash(ns) == 0
     (run / "oracle" / "facts" / "z01.json").write_text('{"a": 2}\n')
     assert gen.oracle_hash(run) != h1
-    assert gen.cmd_hash(gen.argparse.Namespace(run_dir=str(run), verify=h1)) == 2
+    assert gen.cmd_hash(ns) == 2
 
 
 def test_selfcheck_refuses_an_oracle_edited_after_generation(tmp_path: Path) -> None:
     run = _run_dir(tmp_path)
-    gen.cmd_hash(gen.argparse.Namespace(run_dir=str(run), verify=None))
+    gen.record_oracle_hash(run, "run1")
     (run / "oracle" / "run1.json").write_text('{"b": 3}\n')
     assert selfcheck.main(run) == 2
     report = json.loads((run / "lab" / "selfcheck.json").read_text())
@@ -265,3 +265,161 @@ def test_small_helpers() -> None:
     assert selfcheck.pem_certs(pem) == ["ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b53fc"]
     with pytest.raises(KeyError):
         S.by_id("nope")
+
+
+# ---------------------------------------------------------------- review 5873265185 (PR #79): fails first on 67d2beb
+def _ns(run: Path, **kw) -> object:
+    base = {"run_dir": str(run), "verify": None, "accept_change": False, "reason": None}
+    return gen.argparse.Namespace(**{**base, **kw})
+
+
+def test_hash_is_read_only_and_never_blesses_an_edited_oracle(tmp_path: Path) -> None:
+    run = _run_dir(tmp_path)
+    gen.record_oracle_hash(run, step="run1")                       # what generate() does
+    recorded = json.loads((run / "lab" / "gen.json").read_text())["oracle_sha256"]
+    (run / "oracle" / "run1.json").write_text('{"b": "edited"}\n')
+    assert gen.cmd_hash(_ns(run)) == 2                               # read-only: reports the mismatch
+    assert json.loads((run / "lab" / "gen.json").read_text())["oracle_sha256"] == recorded
+    assert selfcheck.main(run) == 2                                  # still refused after `hash`
+
+
+def test_accepting_an_oracle_change_needs_a_reason_and_is_logged(tmp_path: Path) -> None:
+    run = _run_dir(tmp_path)
+    gen.record_oracle_hash(run, step="run1")
+    (run / "oracle" / "run1.json").write_text('{"b": "edited"}\n')
+    assert gen.cmd_hash(_ns(run, accept_change=True)) == 1           # no reason: refused
+    assert gen.cmd_hash(_ns(run, accept_change=True, reason="CB-05 asked for z02 groups x25519")) == 0
+    gj = json.loads((run / "lab" / "gen.json").read_text())
+    assert gj["oracle_sha256"] == oraclefmt.oracle_hash(run)
+    change = gj["oracle_changes"][-1]
+    assert change["reason"].startswith("CB-05") and change["old"] != change["new"]
+    assert (run / "lab" / "oracle-changes.log").read_text().count("CB-05 asked") == 1
+
+
+P11TOOL = """Object 0:
+\tType: Public key (RSA-2048)
+\tLabel: rsa-2048-signing
+\tFlags: CKA_WRAP/UNWRAP;
+\tID: 01
+
+Object 1:
+\tType: Secret key
+\tLabel: aes-128-wrap
+\tFlags: CKA_WRAP/UNWRAP; CKA_EXTRACTABLE; CKA_SENSITIVE;
+\tID: 03
+
+Object 2:
+\tType: Private key (EC/ECDSA-SECP256R1)
+\tLabel: ec-p256-signing
+\tFlags: CKA_WRAP/UNWRAP; CKA_PRIVATE; CKA_NEVER_EXTRACTABLE; CKA_SENSITIVE;
+\tID: 02
+
+Object 3:
+\tType: Private key (RSA-2048)
+\tLabel: rsa-2048-signing
+\tFlags: CKA_WRAP/UNWRAP; CKA_PRIVATE; CKA_NEVER_EXTRACTABLE; CKA_SENSITIVE;
+\tID: 01
+"""  # real p11tool 3.8.13 output shape (URL lines dropped)
+
+
+def test_hsm_observation_uses_an_independent_reader_and_the_catalogue() -> None:
+    objs = selfcheck.parse_p11tool(P11TOOL)
+    assert [(o["label"], o["class"], o["key_type"], o["bits"], o["extractable"]) for o in objs] == [
+        ("aes-128-wrap", "Secret Key", None, None, True), ("ec-p256-signing", "Private Key", "EC", 256, False),
+        ("rsa-2048-signing", "Private Key", "RSA", 2048, False)]
+    objs = selfcheck.merge_secret_sizes(objs, selfcheck.parse_secret_sizes((FIX / "pkcs11-tok-a.txt").read_text()))
+    requested = S.by_id("softhsm")["tokens"][0]["objects"]
+    assert selfcheck.hsm_mismatches(requested, objs) == []
+    inverted = [{**o, "extractable": not o["extractable"]} for o in objs]   # mutation C, seen through any reader
+    assert len(selfcheck.hsm_mismatches(requested, inverted)) == 3
+
+
+def test_tls12_groups_are_observed_for_targets_without_tls13() -> None:
+    groups = selfcheck.parse_nmap_kex((FIX / "nmap-ssl-z02.xml").read_text())
+    assert groups == {"TLSv1.0": ["secp256r1"], "TLSv1.1": ["secp256r1"], "TLSv1.2": ["secp256r1"]}
+    assert selfcheck.legacy_groups_agree(["secp256r1"], groups) is True
+    assert selfcheck.legacy_groups_agree(["x25519"], groups) is False        # mutation B on z02
+    x = (FIX / "nmap-ssl-z02.xml").read_text().replace(">secp256r1<", ">ecdh_x25519<")
+    assert selfcheck.parse_nmap_kex(x)["TLSv1.2"] == ["x25519"]              # nmap's name for the IANA x25519
+
+
+class _FakeCtx:
+    """Canned tool output for the ML-DSA fallback (no Docker)."""
+
+    def __init__(self) -> None:
+        self.observed, self.tool_versions = {}, {}
+
+    def tlscheck(self, *args: str) -> dict:
+        return {"tool": "tlscheck", "versions": {v: False for v in S.VERSIONS}}
+
+    def exec(self, *cmd: str, **kw):
+        return type("R", (), {"stdout": "Cipher is (NONE)", "stderr": "", "returncode": 1})()
+
+    def save(self, name: str, text: str) -> str:
+        return name
+
+
+def test_ml_dsa_fallback_rows_are_marked_not_independent() -> None:
+    o = {"target": "z05b", "address": "10.231.0.21", "port": 443,
+         "expect": {"versions": {v: v == "TLSv1.3" for v in S.VERSIONS}, "groups": ["x25519"],
+                    "certificates": [{"sha256": "00", "key_algorithm": "ML-DSA-65"}]}}
+    t = selfcheck.check_tls_mldsa(_FakeCtx(), o, selfcheck.Target("z05b"))
+    fallback = [c for c in t.checks if "s_client" in c["tool"]]
+    assert fallback and all(c["independent"] is False and c["not_independent_reason"] for c in fallback)
+    assert all(c["independent"] is True for c in t.checks if "s_client" not in c["tool"])
+
+
+def test_lab_json_marks_every_deferred_part() -> None:
+    lab = oraclefmt.lab_json([], "t", "c", "core", S.NETWORK, S.NODE_IP)
+    parts = {d["part"]: d for d in lab["deferred"]}
+    assert set(parts) >= {"idp", "receiver", "ubuntu-tier2", "k8s"}
+    for d in parts.values():
+        assert d["deferred"] is True and d["reason"] and d["gate"] and d["issue_draft"].endswith("issue-deferred.md")
+    assert parts["idp"]["address"] == "10.231.0.42" and "G7" in parts["idp"]["gate"]
+
+
+def test_bench_line_cells_beyond_the_file_are_flagged_unreliable() -> None:
+    assert labgen.lines_unreliable("43720", 40) is True        # an Excel date serial, not a line
+    assert labgen.lines_unreliable("16, 22", 40) is False
+    assert labgen.lines_unreliable("11", 40) is False
+    assert labgen.lines_unreliable("", 40) is False
+
+
+def test_bench_counts_are_pinned_from_an_independent_read() -> None:
+    pinned = S.BENCH_PINNED
+    assert (pinned["cases"], pinned["vulnerable"], pinned["secure"]) == (171, 136, 35)
+    assert (pinned["judgeable"], pinned["judgeable_vulnerable"]) == (170, 135)
+
+
+def test_image_identity_follows_the_build_inputs(tmp_path: Path) -> None:
+    import shutil
+    copy = tmp_path / "lab"
+    for sub in ("images", "entrypoints", "tlscheck"):
+        shutil.copytree(LAB / sub, copy / sub)
+    before = gen.image_inputs_hash(copy)
+    (copy / "entrypoints" / "cb02-entry").write_text((copy / "entrypoints" / "cb02-entry").read_text() + "\n# x\n")
+    assert gen.image_inputs_hash(copy) != before
+
+
+def test_lab_sshd_targets_exempt_the_lab_but_one_keeps_the_default_penalties() -> None:
+    sshd = [t for t in S.TARGETS if t["kind"] in ("ssh", "host")]
+    default = [t for t in sshd if t.get("penalties") == "default"]
+    assert len(default) == 1 and default[0]["profile"] == "psp"
+    for t in sshd:
+        if t not in default:
+            assert t.get("penalty_exempt") == S.NETWORK["subnet"]
+
+
+def test_forcecommand_file_is_cross_checked_against_the_container_log() -> None:
+    a = {"ts": "t", "user": "zs-cbom", "peer": "10.231.0.2", "command": "id"}
+    b = {**a, "command": "uname -a"}
+    assert selfcheck.forcecommand_missing([a, b], [a, b]) == []
+    assert selfcheck.forcecommand_missing([a], [a, b]) == [b]          # a truncated file is caught
+
+
+def test_no_stale_lab_sh_references_and_no_session_ca_default() -> None:
+    for path in [*LAB.rglob("*.py"), *LAB.glob("images/*"), *LAB.glob("entrypoints/*")]:
+        if "tests" in path.parts:
+            continue
+        assert "lab.sh" not in path.read_text(), path
+    assert ".ccr" not in (LAB / "gen.py").read_text()

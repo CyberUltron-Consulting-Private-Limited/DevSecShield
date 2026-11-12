@@ -6,7 +6,7 @@
     python3 e2e/cbom/lab/gen.py mutate    --run-dir RUN --step run2
     python3 e2e/cbom/lab/gen.py down      [--run-dir RUN]
     python3 e2e/cbom/lab/gen.py status    [--run-dir RUN]
-    python3 e2e/cbom/lab/gen.py hash      --run-dir RUN [--verify SHA256]
+    python3 e2e/cbom/lab/gen.py hash      --run-dir RUN [--verify SHA256 | --accept-change --reason TEXT]
     python3 e2e/cbom/lab/gen.py build | fetch | compose [--check] | negative --run-dir-base DIR
 
 Exit codes: 0 ok; 2 lab bug (a target disagrees with its oracle, an oracle changed, memory below the floor);
@@ -16,6 +16,7 @@ Exit codes: 0 ok; 2 lab bug (a target disagrees with its oracle, an oracle chang
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -30,10 +31,12 @@ import labspec as S  # noqa: E402
 import oraclefmt  # noqa: E402
 
 PROJECT = "cb02-lab"
+DB_IMAGES = {"postgres": "postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139",
+             "mysql": "mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902"}
 COMPOSE = HERE / "compose.yml"
 IMAGES = {"target": "cb02-lab/target:dev", "tools": "cb02-lab/tools:dev"}
 MEM_FLOOR_MB = 1536          # keep >= 1.5 GB available (TEAM-PROCESS, DA §4.1)
-WAVE_MEM_MB = {"core": 400, "db": 700, "run2": 20, "hsm": 0, "code": 0, "k8s": 900, "tools": 150}
+WAVE_MEM_MB = {"core": 400, "db": 700, "run2": 20, "psp": 10, "hsm": 0, "code": 0, "k8s": 900, "tools": 150}
 LOCK_DIR = Path(os.environ.get("CB_LAB_LOCKS", "/home/claude/round6/locks"))
 CACHE = Path(os.environ.get("CB_LAB_CACHE", str(HERE / ".work" / "cache")))
 BENCH = S.by_id("code-cryptoapi-bench")
@@ -89,8 +92,7 @@ def compose_text() -> str:
         out.append(f"  {tid}:")
         vols = [f"${{CB_LAB_DIR:?run gen.py up}}/targets/{tid}:/lab:ro"]
         if t["kind"] in ("postgres", "mysql"):
-            image = {"postgres": "postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139",
-                     "mysql": "mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902"}[t["kind"]]
+            image = DB_IMAGES[t["kind"]]
             out += [f"    image: ${{CB_LAB_REGISTRY:-mirror.gcr.io/library}}/{image}",
                     "    restart: \"no\"", "    security_opt: [\"no-new-privileges:true\"]",
                     f"    mem_limit: {'96m' if t['kind'] == 'postgres' else '400m'}",
@@ -171,20 +173,52 @@ def locked(lock: str, cmd: list[str]) -> list[str]:
     return ["flock", str(path), *cmd] if LOCK_DIR.is_dir() and shutil.which("flock") else cmd
 
 
-def image_exists(ref: str) -> bool:
-    return run(["docker", "image", "inspect", ref], check=False).returncode == 0
+INPUTS_LABEL = "com.zeroshield.cbom-lab.inputs"
+
+
+def image_inputs_hash(lab: Path = HERE) -> str:
+    """sha256 over every build input of the two lab images (Dockerfiles, entrypoints, the Go observer)."""
+    h = hashlib.sha256()
+    for sub in ("images", "entrypoints", "tlscheck"):
+        for p in sorted((lab / sub).rglob("*")):
+            if p.is_file():
+                h.update(str(p.relative_to(lab)).encode() + b"\0" + p.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
+def image_label(ref: str) -> str | None:
+    res = run(["docker", "image", "inspect", "-f", "{{ index .Config.Labels \"" + INPUTS_LABEL + "\" }}", ref],
+              check=False)
+    return res.stdout.strip() if res.returncode == 0 else None
+
+
+def image_ids() -> dict:
+    """Image ids (content addresses) of every image the lab runs, for gen.json and the gate's MANIFEST (G17)."""
+    refs = {**IMAGES, "postgres": compose_image("postgres"), "mysql": compose_image("mysql")}
+    out = {}
+    for name, ref in refs.items():
+        res = run(["docker", "image", "inspect", "-f", "{{.Id}}", ref], check=False)
+        out[name] = {"ref": ref, "id": res.stdout.strip() if res.returncode == 0 else None,
+                     "inputs": image_label(ref) if name in IMAGES else None}
+    return out
+
+
+def compose_image(kind: str) -> str:
+    return f"{os.environ.get('CB_LAB_REGISTRY', 'mirror.gcr.io/library')}/{DB_IMAGES[kind]}"
 
 
 def cmd_build(a: argparse.Namespace) -> int:
-    ca = os.environ.get("CB_LAB_BUILD_CA", "/root/.ccr/ca-bundle.crt")
+    ca = os.environ.get("CB_LAB_BUILD_CA", "")  # a TLS-intercepting build proxy's CA, if the builder needs one
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    inputs = image_inputs_hash()
     for name, ref in IMAGES.items():
-        if image_exists(ref) and not getattr(a, "force", False):
-            continue
-        cmd = ["docker", "build", "-f", str(HERE / "images" / f"{name}.Dockerfile"), "-t", ref]
+        if image_label(ref) == inputs and not getattr(a, "force", False):
+            continue  # built from exactly these inputs; a tag alone is never trusted
+        cmd = ["docker", "build", "-f", str(HERE / "images" / f"{name}.Dockerfile"), "-t", ref,
+               "--label", f"{INPUTS_LABEL}={inputs}"]
         if proxy:  # a build behind the session's TLS-intercepting proxy: host network + its CA as a build secret
             cmd += ["--network", "host", "--build-arg", f"HTTPS_PROXY={proxy}"]
-        if Path(ca).is_file():
+        if ca and Path(ca).is_file():
             cmd += ["--secret", f"id=build_ca,src={ca}"]
         log(f"building {ref} (docker-build.lock)")
         run(locked("docker-build.lock", [*cmd, str(HERE)]), capture=True)
@@ -205,9 +239,15 @@ def ensure_network() -> None:
          "--gateway", net["gateway"], "--label", "com.zeroshield.cbom-lab=cbom-e2e-net", net["name"]])
 
 
+def lab_uid() -> tuple[int, int]:
+    """The uid:gid the tools container and the generator run as: the caller's, so they can read the run directory."""
+    return os.getuid(), os.getgid()
+
+
 def compose(run_dir: Path, *args: str, profiles: list[str]) -> subprocess.CompletedProcess:
-    env = {"CB_LAB_DIR": str(run_dir / "lab"), "CB_RUN_DIR": str(run_dir), "CB_LAB_UID": str(os.getuid()),
-           "CB_LAB_GID": str(os.getgid())}
+    uid, gid = lab_uid()
+    env = {"CB_LAB_DIR": str(run_dir / "lab"), "CB_RUN_DIR": str(run_dir), "CB_LAB_UID": str(uid),
+           "CB_LAB_GID": str(gid)}
     prof = [x for p in profiles for x in ("--profile", p)]
     return run(["docker", "compose", "-f", str(COMPOSE), "-p", PROJECT, *prof, *args], env=env)
 
@@ -245,22 +285,53 @@ oracle_hash = oraclefmt.oracle_hash
 oracle_sums = oraclefmt.oracle_sums
 
 
-def cmd_hash(a: argparse.Namespace) -> int:
-    run_dir = Path(a.run_dir).resolve()
+def record_oracle_hash(run_dir: Path, step: str) -> str:
+    """Freeze the oracle (O-5). Only generate() and labmutate call this, right after they write a new oracle."""
     h = oracle_hash(run_dir)
-    if a.verify:
-        if a.verify != h:
-            log(f"oracle changed: recorded {a.verify[:16]}..., now {h[:16]}... (rule O-5: start a new run)")
-            print(json.dumps({"oracle_sha256": h, "recorded": a.verify, "agree": False}))
-            return 2
-        print(json.dumps({"oracle_sha256": h, "agree": True}))
-        return 0
     (run_dir / "oracle" / "SHA256SUMS").write_text(oracle_sums(run_dir))
-    gen = json.loads((run_dir / "lab" / "gen.json").read_text())
-    gen["oracle_sha256"] = h
-    (run_dir / "lab" / "gen.json").write_text(json.dumps(gen, indent=1, sort_keys=True) + "\n")
-    print(json.dumps({"oracle_sha256": h}))
-    return 0
+    gj_path = run_dir / "lab" / "gen.json"
+    gj = json.loads(gj_path.read_text())
+    gj["oracle_sha256"] = h
+    gj.setdefault("oracle_sha256_history", []).append({"step": step, "oracle_sha256": h,
+                                                       "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    gj_path.write_text(json.dumps(gj, indent=1, sort_keys=True) + "\n")
+    return h
+
+
+def cmd_hash(a: argparse.Namespace) -> int:
+    """Read-only by default: prints the oracle hash and whether it equals the recorded one (or --verify SHA).
+    --accept-change --reason TEXT is the only way to re-record an edited oracle; it is logged in gen.json and
+    lab/oracle-changes.log, and the self-check report carries it, so the gate sees every accepted edit."""
+    run_dir = Path(a.run_dir).resolve()
+    now = oracle_hash(run_dir)
+    gj_path = run_dir / "lab" / "gen.json"
+    gj = json.loads(gj_path.read_text())
+    recorded = gj.get("oracle_sha256")
+    if getattr(a, "accept_change", False):
+        reason = (getattr(a, "reason", None) or "").strip()
+        if not reason:
+            log("--accept-change needs --reason: an oracle edit is never accepted silently")
+            return 1
+        if now == recorded:
+            print(json.dumps({"oracle_sha256": now, "agree": True, "changed": False}))
+            return 0
+        change = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "old": recorded, "new": now,
+                  "reason": reason, "by": os.environ.get("USER") or str(os.getuid())}
+        gj.setdefault("oracle_changes", []).append(change)
+        gj["oracle_sha256"] = now
+        gj_path.write_text(json.dumps(gj, indent=1, sort_keys=True) + "\n")
+        (run_dir / "oracle" / "SHA256SUMS").write_text(oracle_sums(run_dir))
+        with (run_dir / "lab" / "oracle-changes.log").open("a") as fh:
+            fh.write(json.dumps(change) + "\n")
+        log(f"accepted oracle change {str(recorded)[:12]} -> {now[:12]}: {reason}")
+        print(json.dumps({"oracle_sha256": now, "accepted_change": change}))
+        return 0
+    want = a.verify or recorded
+    agree = now == want
+    print(json.dumps({"oracle_sha256": now, "expected": want, "agree": agree}))
+    if not agree:
+        log("oracle differs from the recorded hash (rule O-5): start a new run, or --accept-change --reason")
+    return 0 if agree else 2
 
 
 def generate(run_dir: Path, waves: list[str], variant: str | None, only: str | None = None) -> None:
@@ -272,10 +343,11 @@ def generate(run_dir: Path, waves: list[str], variant: str | None, only: str | N
         return
     run_dir.mkdir(parents=True, exist_ok=True)
     run_dir.chmod(0o700)
+    uid, gid = lab_uid()
     if "code" in waves:
         cmd_fetch(argparse.Namespace())
     cache_mount = ["-v", f"{CACHE}:/cache:ro"] if CACHE.exists() else []
-    cmd = ["docker", "run", "--rm", "--network", "none", "--user", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
+    cmd = ["docker", "run", "--rm", "--network", "none", "--user", f"{uid}:{gid}", "-e", "HOME=/tmp",
            "-v", f"{run_dir}:/out", "-v", f"{HERE}:/opt/cb02:ro", *cache_mount, IMAGES["tools"],
            "python3", "/opt/cb02/labgen.py", "--out", "/out", "--profiles", ",".join(waves), "--wave", ",".join(waves),
            "--commit", git_commit(), *(["--cache", "/cache"] if cache_mount else []),
@@ -283,7 +355,7 @@ def generate(run_dir: Path, waves: list[str], variant: str | None, only: str | N
     log(f"generating lab + oracle for {waves}{' variant ' + variant if variant else ''}")
     res = run(cmd)
     (run_dir / "lab" / "gen.log").write_text(res.stdout + res.stderr)
-    cmd_hash(argparse.Namespace(run_dir=str(run_dir), verify=None))
+    record_oracle_hash(run_dir, "run1")
 
 
 # ------------------------------------------------------------------ up / down / status
@@ -311,6 +383,10 @@ def cmd_up(a: argparse.Namespace) -> int:
     else:
         compose(run_dir, "up", "-d", "--wait", "tools", profiles=["tools"])
     check_memory([], "after")
+    gj_path = run_dir / "lab" / "gen.json"
+    gj = json.loads(gj_path.read_text())
+    gj["images"] = image_ids()
+    gj_path.write_text(json.dumps(gj, indent=1, sort_keys=True) + "\n")
     print(json.dumps({"run_dir": str(run_dir), "waves": waves, "targets": services,
                       "oracle_sha256": oracle_hash(run_dir)}))
     return 0
@@ -322,7 +398,25 @@ def lab_containers() -> list[str]:
     return sorted(n for n in res.stdout.split() if n.startswith("cb02-"))
 
 
+def export_command_log(run_dir: Path) -> int:
+    """The tamper-proof copy of the ForceCommand record: sshd's stderr in the container log (the login user can write
+    the file copy, never the container log). Written to lab/forcecommand.authoritative.jsonl."""
+    rows = []
+    res = run(["docker", "logs", "cb02-host"], check=False)
+    for line in (res.stdout + res.stderr).splitlines():
+        if line.startswith("cb02-cmd "):
+            try:
+                rows.append(json.loads(line[len("cb02-cmd "):]))
+            except json.JSONDecodeError:
+                rows.append({"unparsed": line})
+    if res.returncode == 0 and (run_dir / "lab").is_dir():
+        (run_dir / "lab" / "forcecommand.authoritative.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return len(rows)
+
+
 def cmd_down(a: argparse.Namespace) -> int:
+    if getattr(a, "run_dir", None):
+        export_command_log(Path(a.run_dir).resolve())
     names = lab_containers()
     if names:
         # compose waits for each removal (a bare `docker rm -f` of many containers raced with the next `up` in the
@@ -362,13 +456,17 @@ def cmd_status(a: argparse.Namespace) -> int:
         if (run_dir / "lab" / "lab.json").exists():
             out["lab"] = json.loads((run_dir / "lab" / "lab.json").read_text())
             out["oracle_sha256"] = oracle_hash(run_dir)
+            out["commands_logged"] = export_command_log(run_dir)
     print(json.dumps(out, indent=1))
     return 0
 
 
 def cmd_selfcheck(a: argparse.Namespace) -> int:
     import labcheck
-    return labcheck.main(Path(a.run_dir).resolve(), only=a.only)
+    run_dir = Path(a.run_dir).resolve()
+    rc = labcheck.main(run_dir, only=a.only, expect_sha=a.expect_sha)
+    export_command_log(run_dir)
+    return rc
 
 
 def cmd_mutate(a: argparse.Namespace) -> int:
@@ -396,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("selfcheck")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--only")
+    p.add_argument("--expect-sha", help="the oracle hash recorded outside the lab (CB-01's MANIFEST); default gen.json")
     p.set_defaults(fn=cmd_selfcheck)
     p = sub.add_parser("mutate")
     p.add_argument("--run-dir", required=True)
@@ -407,9 +506,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("status")
     p.add_argument("--run-dir")
     p.set_defaults(fn=cmd_status)
-    p = sub.add_parser("hash")
+    p = sub.add_parser("hash", help="read-only unless --accept-change --reason")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--verify")
+    p.add_argument("--accept-change", action="store_true")
+    p.add_argument("--reason")
     p.set_defaults(fn=cmd_hash)
     p = sub.add_parser("build")
     p.add_argument("--force", action="store_true")

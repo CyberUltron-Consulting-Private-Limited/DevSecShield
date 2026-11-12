@@ -326,10 +326,11 @@ class Gen:
         return keys, cmds
 
     def sshd_config(self, t: dict, d: Path) -> None:
-        # PerSourcePenalties (OpenSSH >= 9.8) stays at its default for everyone but the self-check's address: its
-        # keyscan/nmap/ssh-audit probes never authenticate and would otherwise get its later login dropped.
-        lines = ["Port 22", "ListenAddress 0.0.0.0", "PidFile none", "StrictModes yes",
-                 f"PerSourcePenaltyExemptList {S.TOOLS_IP}/32",
+        # PerSourcePenalties (OpenSSH >= 9.8): about 15 connections that never authenticate get their source dropped.
+        # Lab sshd targets exempt the whole lab network, so gate runs cannot flake on it; one target (wave psp)
+        # keeps the default to show what the product does against it (cbom/FINDINGS-LOG.md).
+        exempt = [f"PerSourcePenaltyExemptList {t['penalty_exempt']}"] if t.get("penalty_exempt") else []
+        lines = ["Port 22", "ListenAddress 0.0.0.0", "PidFile none", "StrictModes yes", *exempt,
                  "PasswordAuthentication no", "KbdInteractiveAuthentication no", "PubkeyAuthentication yes",
                  "AuthorizedKeysFile .ssh/authorized_keys", "AllowUsers zs-cbom", "LogLevel VERBOSE",
                  "Subsystem sftp internal-sftp", "PermitUserEnvironment no", "X11Forwarding no",
@@ -348,6 +349,8 @@ class Gen:
         self.sshd_config(t, d)
         expect = {"kex": t["kex"], "host_key_algorithms": t["host_key_algorithms"], "ciphers": t["ciphers"],
                   "macs": t["macs"], "host_keys": keys,
+                  "per_source_penalties": "default" if t.get("penalties") == "default"
+                  else f"exempt {t.get('penalty_exempt')}",
                   "pq_kex": [k for k in t["kex"] if k.startswith(("mlkem", "sntrup"))]}
         return self.oracle(t, expect, {"host_keys": self.provenance("ssh-keygen", cmds),
                                        "algorithms": self.provenance("ssh-keygen", ["sshd_config written by gen.py"])},
@@ -562,7 +565,7 @@ class Gen:
 
     def code_target(self, t: dict) -> dict:
         if not self.cache:
-            raise SystemExit("gen: the code target needs --cache with the CryptoAPI-Bench checkout (lab.sh fetch)")
+            raise SystemExit("gen: the code target needs --cache with the CryptoAPI-Bench checkout (gen.py fetch)")
         src = self.cache / f"cryptoapi-bench-{t['commit'][:7]}"
         head = (src / ".cb02-commit").read_text().strip() if (src / ".cb02-commit").exists() else ""
         if head != t["commit"]:
@@ -585,13 +588,21 @@ class Gen:
         cases = []
         for row in labels:
             paths = [java.get(f) for f in row["files"]]
+            longest = max((len((tree / r).read_text(errors="replace").splitlines()) for r in paths if r), default=0)
             cases.append({**row, "paths": paths, "resolved": all(paths),
+                          "lines_unreliable": row["lines_date_typed"] or lines_unreliable(row["lines_raw"], longest),
                           "sha256": [hashlib.sha256((tree / r).read_bytes()).hexdigest() if r else None for r in paths]})
+        judge = [c for c in cases if c["resolved"] and c["vulnerable"] is not None]
         expect = {"commit": t["commit"], "labels_sha256": hashlib.sha256(labels_path.read_bytes()).hexdigest(),
                   "archive": zpath.name, "archive_sha256": hashlib.sha256(zpath.read_bytes()).hexdigest(),
                   "java_files": len(java), "cases": cases,
                   "summary": {"labelled": len(cases), "vulnerable": sum(1 for c in cases if c["vulnerable"] is True),
                               "secure": sum(1 for c in cases if c["vulnerable"] is False),
+                              "judgeable": len(judge),
+                              "judgeable_vulnerable": sum(1 for c in judge if c["vulnerable"] is True),
+                              "judgeable_secure": sum(1 for c in judge if c["vulnerable"] is False),
+                              "date_typed_line_cells": sum(1 for c in cases if c["lines_date_typed"]),
+                              "lines_unreliable": sum(1 for c in cases if c["lines_unreliable"]),
                               "unlabelled": sorted(f for c in cases if c["vulnerable"] is None for f in c["files"]),
                               "unresolved": sorted(f for c in cases for f, r in zip(c["files"], c["paths"]) if not r),
                               "java_files_without_label": sorted(set(java) - {f for c in cases for f in c["files"]})}}
@@ -767,6 +778,7 @@ def read_xlsx_labels(path: Path) -> list[dict]:
             for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall("m:si", ns):
                 shared.append("".join(x.text or "" for x in si.iter(f"{{{ns['m']}}}t")))
         sheet = ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
+        date_styles = xlsx_date_styles(z.read("xl/styles.xml") if "xl/styles.xml" in z.namelist() else b"")
     rows = []
     for row in sheet.iter(f"{{{ns['m']}}}row"):
         cells: dict[str, str] = {}
@@ -785,6 +797,8 @@ def read_xlsx_labels(path: Path) -> list[dict]:
             elif v is not None:
                 text = v.text or ""
             cells[col] = text.strip()
+            if c.get("s") and int(c.get("s")) in date_styles and c.get("t") not in ("s", "inlineStr", "b"):
+                cells[col + "_date"] = "1"  # Excel turned "9,12" into a date: the serial is not a line number
         rows.append(cells)
     out, group = [], ""
     for cells in rows[1:]:
@@ -799,8 +813,45 @@ def read_xlsx_labels(path: Path) -> list[dict]:
                       False if flag.startswith("FALSE") or flag == "0" else None)
         out.append({"files": [n if n.endswith(".java") else n + ".java" for n in names], "code": cells.get("C", ""),
                     "group": group, "vulnerable": vulnerable, "label_raw": cells.get("D", ""),
-                    "type": cells.get("E", ""), "method": cells.get("F", ""), "lines_raw": cells.get("G", "")})
+                    "type": cells.get("E", ""), "method": cells.get("F", ""), "lines_raw": cells.get("G", ""),
+                    "lines_date_typed": bool(cells.get("G_date"))})
     return out
+
+
+DATE_FMT_IDS = set(range(14, 23)) | set(range(27, 37)) | set(range(45, 48)) | set(range(50, 59))
+
+
+def xlsx_date_styles(styles_xml: bytes) -> set[int]:
+    """Indices of cellXfs whose number format is a date (built-in ids, or a custom code with y/m/d outside quotes)."""
+    import xml.etree.ElementTree as ET
+    if not styles_xml:
+        return set()
+    m = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    root = ET.fromstring(styles_xml)
+    custom = {}
+    for nf in root.iter(f"{m}numFmt"):
+        code = re.sub(r'"[^"]*"|\\.', "", nf.get("formatCode", ""))
+        custom[int(nf.get("numFmtId", "0"))] = bool(re.search(r"[ymd]", code, re.I))
+    xfs = root.find(f"{m}cellXfs")
+    out = set()
+    for i, xf in enumerate(xfs.findall(f"{m}xf") if xfs is not None else []):
+        fid = int(xf.get("numFmtId", "0"))
+        if fid in DATE_FMT_IDS or custom.get(fid):
+            out.add(i)
+    return out
+
+
+def lines_unreliable(raw: str, file_lines: int) -> bool:
+    """A "Line number" cell that cannot name lines of the file: not a list of integers, or beyond the file's end
+    (Excel stored some "9,12" cells as dates, whose serials such as 43720 surface here)."""
+    tokens = [t for t in re.split(r"[,\s]+", raw.strip()) if t]
+    if not tokens:
+        return False
+    try:
+        values = [float(t) for t in tokens]
+    except ValueError:
+        return True
+    return any(v != int(v) or v < 1 or v > file_lines for v in values)
 
 
 def main(argv: list[str] | None = None) -> int:

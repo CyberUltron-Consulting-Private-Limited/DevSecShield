@@ -1,5 +1,5 @@
 # CB-02 lab target image: every TLS, SSH and listener target of the CBOM lab runs from this one image, each with
-# the files and the entrypoint gen.py wrote for it (mounted read-only at /lab). Built by `lab.sh build`.
+# the files and the entrypoint gen.py wrote for it (mounted read-only at /lab). Built by `gen.py build`.
 #   OpenSSL 3.5 (ML-KEM groups, ML-DSA keys), nginx linked to it, OpenSSH 10 (mlkem768x25519-sha256), socat.
 # Behind a TLS-intercepting build proxy, pass its CA as a BuildKit secret (it is never written into the image):
 #   docker build --secret id=build_ca,src=<ca.pem> --build-arg HTTPS_PROXY=... -f images/target.Dockerfile .

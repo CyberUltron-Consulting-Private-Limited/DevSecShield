@@ -30,7 +30,8 @@ PROFILES = {
     "run2": "targets started only for the drift run (z08)",
     "hsm": "SoftHSM2 tokens (files; no container)",
     "code": "CryptoAPI-Bench repository and archive (files; no container)",
-    "k8s": "kind cluster with kubernetes.io/tls secrets (lab.sh k8s-up)",
+    "psp": "one sshd that keeps OpenSSH's default PerSourcePenalties (the product's behaviour against them)",
+    "k8s": "kind cluster with kubernetes.io/tls secrets (deferred: see DEFERRED)",
     "tools": "the self-check container cb02-tools",
 }
 
@@ -105,12 +106,19 @@ TARGETS: list[dict] = [
      "host_keys": ["rsa:1024", "ed25519"],
      "kex": ["curve25519-sha256", "ecdh-sha2-nistp256", "diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1"],
      "host_key_algorithms": ["ssh-ed25519", "rsa-sha2-512", "rsa-sha2-256"],
-     "ciphers": ["aes128-ctr", "aes256-ctr"], "macs": ["hmac-sha1", "hmac-sha2-256"], "force_command": False},
+     "ciphers": ["aes128-ctr", "aes256-ctr"], "macs": ["hmac-sha1", "hmac-sha2-256"], "force_command": False,
+     "penalty_exempt": NETWORK["subnet"]},
     {"id": "sshd-pq", "kind": "ssh", "ip": "10.231.0.24", "port": 22, "profile": "core", "world": "closed",
      "purpose": "post-quantum hybrid key exchange only (mlkem768x25519-sha256), Ed25519 host key",
      "host_keys": ["ed25519"], "kex": ["mlkem768x25519-sha256"], "host_key_algorithms": ["ssh-ed25519"],
      "ciphers": ["aes256-gcm@openssh.com", "chacha20-poly1305@openssh.com"],
-     "macs": ["hmac-sha2-256-etm@openssh.com"], "force_command": False},
+     "macs": ["hmac-sha2-256-etm@openssh.com"], "force_command": False, "penalty_exempt": NETWORK["subnet"]},
+    {"id": "sshd-psp", "kind": "ssh", "ip": "10.231.0.28", "port": 22, "profile": "psp", "world": "closed",
+     "purpose": "OpenSSH 10 with the default PerSourcePenalties (noauth:1 min:15): about 15 connections that never "
+                "authenticate get the source dropped for 16 s and more",
+     "host_keys": ["ed25519"], "kex": ["mlkem768x25519-sha256", "curve25519-sha256"],
+     "host_key_algorithms": ["ssh-ed25519"], "ciphers": ["aes256-gcm@openssh.com"],
+     "macs": ["hmac-sha2-256-etm@openssh.com"], "force_command": False, "penalties": "default"},
     {"id": "host", "kind": "host", "ip": "10.231.0.40", "port": 22, "profile": "core", "world": "open",
      "purpose": "Linux host reached over SSH as zs-cbom; ForceCommand logger; planted keys, certificates, keystores",
      "host_keys": ["rsa:3072", "ecdsa:256", "ed25519"],
@@ -119,6 +127,7 @@ TARGETS: list[dict] = [
      "host_key_algorithms": ["ssh-ed25519", "ecdsa-sha2-nistp256", "rsa-sha2-512", "rsa-sha2-256"],
      "ciphers": ["chacha20-poly1305@openssh.com", "aes256-gcm@openssh.com", "aes128-ctr"],
      "macs": ["hmac-sha2-256-etm@openssh.com", "hmac-sha2-512-etm@openssh.com"], "force_command": True,
+     "penalty_exempt": NETWORK["subnet"],
      "plant": [
          {"path": "keys/legacy-rsa1024.key", "make": "rsa_key", "bits": 1024, "mode": "0600"},
          {"path": "certs/expired-rsa2048.crt", "make": "cert", "key": "rsa:2048", "sig": "sha256", "issuer": "ca",
@@ -167,6 +176,30 @@ TARGETS: list[dict] = [
      "repo": "https://github.com/CryptoGuardOSS/cryptoapi-bench",
      "commit": "759622ff29c73eba4c47e6a8fe2f505c3fef8526",
      "labels_file": "CryptoAPI-Bench_details.xlsx", "source_root": "src/main/java/org/cryptoapi/bench"},
+]
+
+# CryptoAPI-Bench label counts read with openpyxl, independently of labgen.read_xlsx_labels, by CB-02 and by the PR #79
+# reviewer (review 5873265185): 171 cases, column D = 1 in 136 rows and 0 in 35. Case 9.8.2 names two files that are
+# not in the tree (PredictableSeedsABPM*), so 170 cases (135 vulnerable) can be judged. Not remapped (O-2).
+BENCH_PINNED = {"labels_sha256": "d08d3586d0d71f1000e4c693286fc2eaf7c6c1aae152b391a2f67bc3dce1e2b9",
+                "cases": 171, "vulnerable": 136, "secure": 35, "judgeable": 170, "judgeable_vulnerable": 135,
+                "judgeable_secure": 35, "unresolved_files": ["PredictableSeedsABPM2.java", "PredictableSeedsABPMCase2.java"],
+                "date_typed_line_cells": 18}
+
+# Lab parts this build does not provide. lab.json lists them, so the gate reports their rows NOT-RUN from this marking.
+DEFERRED_DRAFT = "round6/cbom/cb-02/issue-deferred.md"
+DEFERRED_ISSUE = "not filed: issue creation was refused for the builder agent (External System Writes)"
+DEFERRED = [
+    {"part": "idp", "address": "10.231.0.42", "gate": ["G7"],
+     "reason": "OIDC discovery + JWKS target not in the CB-02 brief's target list"},
+    {"part": "receiver", "address": "10.231.0.43", "gate": ["G13", "W-INT"],
+     "reason": "webhook receiver (scripts/integrations_lab) not in the CB-02 brief's target list"},
+    {"part": "ubuntu-tier2", "address": "10.231.0.40", "gate": ["G4", "G15"],
+     "reason": ".40 is Alpine + OpenSSH 10 without the product's Tier-2 sudoers; sshd, host keys and planted files "
+               "belong to the login user, so a Tier-1 login reads more than on a real host and can write the file "
+               "copy of the command log (the container log is the authoritative record)"},
+    {"part": "k8s", "address": None, "gate": ["W-HOST"],
+     "reason": "kind node image needs ~2.5 GB of disk; the shared machine had 3.8-7 GB free (rule: keep >= 3 GB)"},
 ]
 
 # The drift change set applied between run 1 and run 2 (DEVILS-ADVOCATE §4.3 G13 / G13b).

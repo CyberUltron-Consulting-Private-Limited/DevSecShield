@@ -78,9 +78,15 @@ class Target:
         self.tid, self.checks, self.controls = tid, [], []
 
     def check(self, oracle_id: str, key: str, tool: str, expected, observed, agree: bool | None = None,
-              note: str = "") -> bool:
+              note: str = "", independent: bool = True, reason: str = "") -> bool:
+        """One comparison. `independent` is False when the observation cannot disagree with the oracle for reasons
+        other than the target (same tool and file as the generator, or the scan node's own library); such rows are
+        reported but never count as O-3 evidence."""
         ok = (expected == observed) if agree is None else agree
-        row = {"oracle_id": oracle_id, "key": key, "tool": tool, "expected": expected, "observed": observed, "agree": ok}
+        row = {"oracle_id": oracle_id, "key": key, "tool": tool, "expected": expected, "observed": observed, "agree": ok,
+               "independent": independent}
+        if not independent:
+            row["not_independent_reason"] = reason or "same tool and file as the generator (identity check)"
         if note:
             row["note"] = note
         self.checks.append(row)
@@ -126,6 +132,125 @@ def parse_nmap_ssh(xml_text: str) -> dict[str, list[str]]:
         for table in script.findall("table"):
             out[table.get("key", "")] = [e.text.strip() for e in table.findall("elem") if e.text]
     return out
+
+
+# nmap names the Montgomery curves "ecdh_x25519" / "ecdh_x448"; the oracle uses the IANA group names.
+NMAP_GROUPS = {"ecdh_x25519": "x25519", "ecdh_x448": "x448"}
+
+
+def parse_nmap_kex(xml_text: str) -> dict[str, list[str]]:
+    """ssl-enum-ciphers -oX: the key-exchange group the server chose for its ECDHE suites, per protocol (kex_info)."""
+    out: dict[str, list[str]] = {}
+    root = ET.fromstring(xml_text)
+    for script in root.iter("script"):
+        if script.get("id") != "ssl-enum-ciphers":
+            continue
+        for proto in script.findall("table"):
+            groups = set()
+            for ciphers in proto.findall("table"):
+                if ciphers.get("key") != "ciphers":
+                    continue
+                for c in ciphers.findall("table"):
+                    elems = {e.get("key"): (e.text or "").strip() for e in c.findall("elem")}
+                    if "ECDHE" in elems.get("name", "") and elems.get("kex_info"):
+                        groups.add(NMAP_GROUPS.get(elems["kex_info"], elems["kex_info"]))
+            out[proto.get("key", "")] = sorted(groups)
+    return out
+
+
+def legacy_groups_agree(expected: list[str], by_version: dict[str, list[str]]) -> bool:
+    """TLS <= 1.2: nmap sees the group the server prefers, so the observed groups must be a non-empty subset."""
+    seen = {g for v, gs in by_version.items() if v != "TLSv1.3" for g in gs}
+    return bool(seen) and seen <= set(expected)
+
+
+P11_TYPE = re.compile(r"Type:\s*(Private key|Public key|Secret key)(?:\s*\(([^)]*)\))?")
+EC_BITS = {"SECP256R1": 256, "SECP384R1": 384, "SECP521R1": 521}
+
+
+def parse_p11tool(text: str) -> list[dict]:
+    """`p11tool --list-all` (GnuTLS, a different PKCS#11 client from OpenSC's pkcs11-tool that built the oracle): one
+    dict per private or secret key. p11tool prints no algorithm or size for secret keys (key_type/bits None there)."""
+    out = []
+    for block in re.split(r"\n(?=Object \d+:)", text.strip()):
+        m = P11_TYPE.search(block)
+        if not m or m.group(1) == "Public key":
+            continue
+        inner = (m.group(2) or "").upper()
+        family, bits = None, None
+        if inner.startswith("EC"):
+            family, bits = "EC", EC_BITS.get(inner.rsplit("-", 1)[-1])
+        elif re.fullmatch(r"[A-Z0-9]+-\d+", inner):
+            family, size = inner.rsplit("-", 1)
+            bits = int(size)
+        flags = re.search(r"Flags:\s*(.*)", block)
+        flagset = {f.strip() for f in (flags.group(1) if flags else "").split(";") if f.strip()}
+        label = re.search(r"Label:\s*(.*)", block)
+        out.append({"label": label.group(1).strip() if label else "",
+                    "class": "Private Key" if m.group(1) == "Private key" else "Secret Key",
+                    "key_type": family, "bits": bits, "extractable": "CKA_EXTRACTABLE" in flagset})
+    return sorted(out, key=lambda o: o["label"])
+
+
+def parse_secret_sizes(pkcs11_tool_listing: str) -> dict[str, tuple[str, int]]:
+    """Secret-key algorithm and size from `pkcs11-tool --list-objects` ("Secret Key Object; AES length 16"), parsed
+    here, not by labgen: p11tool does not print them."""
+    out = {}
+    for block in re.split(r"\n(?=\S)", pkcs11_tool_listing.strip()):
+        m = re.match(r"Secret Key Object; (\w+)\s+length (\d+)", block)
+        label = re.search(r"label:\s+(.+)", block)
+        if m and label:
+            out[label.group(1).strip()] = (m.group(1).upper(), 8 * int(m.group(2)))
+    return out
+
+
+def merge_secret_sizes(objs: list[dict], sizes: dict[str, tuple[str, int]]) -> list[dict]:
+    return [{**o, "key_type": sizes[o["label"]][0], "bits": sizes[o["label"]][1]}
+            if o["class"] == "Secret Key" and o["key_type"] is None and o["label"] in sizes else o for o in objs]
+
+
+def hsm_mismatches(requested: list[dict], observed: list[dict]) -> list[str]:
+    """Compare the catalogue's requested objects (labspec, the designer's intent) with an independent observation."""
+    problems = []
+    for r in requested:
+        family, _, size = r["key_type"].partition(":")
+        want_class = "Private Key" if r["make"] == "keypair" else "Secret Key"
+        want_bits = {"prime256v1": 256, "secp384r1": 384}.get(size) or (int(size) * 8 if family == "AES" else int(size))
+        got = [o for o in observed if o["label"] == r["label"] and o["class"] == want_class]
+        if len(got) != 1:
+            problems.append(f"{r['label']}: {len(got)} {want_class} objects")
+            continue
+        o = got[0]
+        for key, want in (("key_type", family.upper()), ("bits", want_bits), ("extractable", r["extractable"])):
+            if o[key] != want:
+                problems.append(f"{r['label']}: {key} {o[key]!r} != requested {want!r}")
+    return problems
+
+
+def forcecommand_missing(file_rows: list[dict], container_rows: list[dict]) -> list[dict]:
+    """Entries of the authoritative record (the container log) that the file copy lacks: a truncated or edited file."""
+    have = [json.dumps(r, sort_keys=True) for r in file_rows]
+    missing = []
+    for r in container_rows:
+        k = json.dumps(r, sort_keys=True)
+        if k in have:
+            have.remove(k)
+        else:
+            missing.append(r)
+    return missing
+
+
+def openssl_cert_facts(ctx: "Ctx", pem: str) -> dict:
+    """sha256, key size and signature algorithm of one PEM certificate, parsed by OpenSSL (not by Java/keytool)."""
+    der_sha = pem_certs(pem)
+    res = ctx.exec("openssl", "x509", "-noout", "-text", input_=pem)
+    bits = re.search(r"Public-Key: \((\d+) bit\)", res.stdout)
+    sig = re.search(r"Signature Algorithm: (\S+)", res.stdout)
+    return {"sha256": der_sha[0] if der_sha else None, "key_bits": int(bits.group(1)) if bits else None,
+            "signature_algorithm": sig.group(1) if sig else None}
+
+
+JAVA_SIGALG = {"SHA256withRSA": "sha256WithRSAEncryption", "SHA1withRSA": "sha1WithRSAEncryption"}
 
 
 def strip_markers(algs: list[str]) -> list[str]:
@@ -223,6 +348,17 @@ def check_tls(ctx: Ctx, o: dict) -> Target:
         for v in legacy:
             t.check(oid, f"cipher_suites[{v}]", "nmap ssl-enum-ciphers", sorted(e["suites"].get(v, [])),
                     suites.get(v, []))
+        ecdhe = any("ECDHE" in s_ for v in legacy for s_ in e["suites"].get(v, []))
+        if e.get("groups") is not None and ecdhe:
+            try:
+                kex = parse_nmap_kex(res.stdout)
+            except ET.ParseError:
+                kex = {}
+            legacy_kex = {v: g for v, g in kex.items() if v in legacy}
+            t.check(oid, "groups (TLS <= 1.2, ECDHE kex_info)", "nmap ssl-enum-ciphers", sorted(e["groups"]),
+                    sorted({g for gs in legacy_kex.values() for g in gs}),
+                    agree=legacy_groups_agree(e["groups"], legacy_kex),
+                    note="the server's preferred group per ECDHE suite: must be a non-empty subset of the oracle")
         go = m.get("suites_go") or {}
         for v in legacy:
             extra = sorted(set(go.get(v, [])) - set(e["suites"].get(v, [])))
@@ -255,10 +391,12 @@ def check_tls_mldsa(ctx: Ctx, o: dict, t: Target) -> Target:
         res = ctx.exec("sh", "-c", f"openssl s_client -connect {addr} -tls1_3 -groups {S.GROUPS[g]} </dev/null 2>&1")
         if re.search(r"New, TLSv1\.3", res.stdout):
             groups.append(g)
-    t.check(oid, "protocol_versions", tool, e["versions"], versions)
-    t.check(oid, "groups", tool, sorted(e["groups"] or []), sorted(groups))
+    why = ("OpenSSL s_client, the program the scan node's prober wraps (tools image 3.5.9, node 3.5.7): Go has no "
+           "ML-DSA signature schemes; a non-OpenSSL ML-DSA client (BoringSSL bssl) is the follow-up")
+    t.check(oid, "protocol_versions", tool, e["versions"], versions, independent=False, reason=why)
+    t.check(oid, "groups", tool, sorted(e["groups"] or []), sorted(groups), independent=False, reason=why)
     t.check(f"{o['target']}/cert", "fingerprint_sha256 (served chain)", tool, [c["sha256"] for c in e["certificates"]],
-            certs)
+            certs, independent=False, reason=why)
     ctx.observed[o["target"]] = {"versions": versions, "groups": sorted(groups)}
     return t
 
@@ -308,7 +446,44 @@ def check_ssh(ctx: Ctx, o: dict) -> Target:
     ctx.tool_versions.update({"nmap": "nmap 7.97", "ssh-keyscan": "OpenSSH_10.0p2", "ssh-audit": "ssh-audit 3.3.0"})
     pq = [k for k in strip_markers(algs.get("kex_algorithms", [])) if k.startswith(("mlkem", "sntrup"))]
     ctx.observed[o["target"]] = {"pq_kex": pq}
+    check_penalties(ctx, o, t)
     return t
+
+
+def check_penalties(ctx: Ctx, o: dict, t: Target) -> None:
+    """PerSourcePenalties: the server's own effective configuration (`sshd -T`), and on the target that keeps the
+    default, a positive control: a burst of connections that never authenticate must get the source dropped."""
+    want = o["expect"].get("per_source_penalties")
+    if not want:
+        return
+    oid = f"{o['target']}/ssh"
+    eff = subprocess.run(["docker", "exec", o["container"], "/usr/sbin/sshd", "-T", "-f", "/lab/sshd_config"],
+                         capture_output=True, text=True)
+    lines = {ln.split(" ", 1)[0]: ln.split(" ", 1)[-1] for ln in eff.stdout.splitlines() if " " in ln}
+    exempt = lines.get("persourcepenaltyexemptlist", "")
+    if want == "default":
+        t.check(oid, "PerSourcePenalties at the default, no exemption", "sshd -T (the server's own view)",
+                {"persourcepenalties": "default", "exempt": "none"},
+                {"persourcepenalties": "default" if "noauth:1" in lines.get("persourcepenalties", "") else
+                 lines.get("persourcepenalties"), "exempt": exempt or "none"})
+        burst = ctx.exec("python3", "-c", (
+            "import socket,time\n"
+            "n=0\n"
+            "for i in range(40):\n"
+            "    try:\n"
+            f"        s=socket.create_connection(('{o['address']}',{o['port']}),3); s.recv(64); s.close(); n+=1\n"
+            "    except OSError:\n"
+            "        break\n"
+            "print(n)"))
+        time.sleep(1)
+        logs = subprocess.run(["docker", "logs", "--since", "2m", o["container"]], capture_output=True, text=True)
+        activated = "activating ipv4 penalty" in (logs.stdout + logs.stderr)
+        t.check(oid, "unauthenticated burst activates a penalty", "python3 socket burst + sshd log", True, activated,
+                note=f"{burst.stdout.strip()} connections completed before the source was dropped")
+        t.control("penalty active (O-8)", o["target"], activated, "sshd logs `activating ipv4 penalty` for the burst")
+    else:
+        t.check(oid, "PerSourcePenaltyExemptList", "sshd -T (the server's own view)",
+                want.removeprefix("exempt "), exempt)
 
 
 def check_host(ctx: Ctx, o: dict) -> Target:
@@ -329,23 +504,78 @@ def check_host(ctx: Ctx, o: dict) -> Target:
                 sums.get(f["path"]))
         t.check(f"host:{f['path']}", "mode", "ssh + stat", f["mode"], modes.get(f["path"]))
     time.sleep(1)
-    logged = [r for r in jsonl(ctx.run / "lab" / "forcecommand.log") if r.get("command") == remote]
-    t.check("host/login", "ForceCommand logged the self-check's command", "lab/forcecommand.log", True, bool(logged))
+    file_rows = jsonl(ctx.run / "lab" / "forcecommand.log")
+    container_rows = container_command_log(o["container"])
+    logged = [r for r in container_rows if r.get("command") == remote]
+    t.check("host/login", "ForceCommand logged the self-check's command (container log, authoritative)",
+            "docker logs cb02-host (cb02-cmd lines)", True, bool(logged))
+    t.check("host/login", "file copy holds every authoritative entry", "lab/forcecommand.log vs container log", [],
+            forcecommand_missing(file_rows, container_rows))
     t.control("read-only command log (O-8)", o["target"], bool(logged), "the self-check's own command is in the log")
+    spec = {p_["path"]: p_ for p_ in S.by_id("host")["plant"]}
     for f in e["files"]:
+        rel = f["path"].removeprefix("/srv/cbom-lab/")
         if f["kind"] == "keystore":
-            pw = ctx.secrets.get(f"host-{Path(f['path']).name}-storepass")
-            local = f"/run-lab/lab/targets/host/plant/{f['path'].removeprefix('/srv/cbom-lab/')}"
-            res = ctx.exec("keytool", "-list", "-v", "-storetype", f["storetype"], "-keystore", local,
-                           "-storepass:env", "CB02_STOREPASS", env={"CB02_STOREPASS": pw or ""})
-            got = labgen.parse_keytool(res.stdout)
-            t.check(f"host:{f['path']}", "entries", "keytool (JRE 21)", f["entries"], got)
+            check_keystore(ctx, o, t, f, spec[rel])
         if f["kind"] == "certificate":
-            local = f"/run-lab/lab/targets/host/plant/{f['path'].removeprefix('/srv/cbom-lab/')}"
+            local = f"/run-lab/lab/targets/host/plant/{rel}"
             res = ctx.exec("openssl", "x509", "-in", local, "-noout", "-fingerprint", "-sha256")
             fp = res.stdout.strip().split("=", 1)[-1].replace(":", "").lower()
-            t.check(f"host:{f['path']}", "fingerprint_sha256", "openssl x509", f["certificate"]["sha256"], fp)
+            t.check(f"host:{f['path']}", "fingerprint_sha256", "openssl x509", f["certificate"]["sha256"], fp,
+                    independent=False)  # the served file's sha256 above is the independent row
     return t
+
+
+def container_command_log(container: str) -> list[dict]:
+    res = subprocess.run(["docker", "logs", container], capture_output=True, text=True)
+    rows = []
+    for line in (res.stdout + res.stderr).splitlines():
+        if line.startswith("cb02-cmd "):
+            try:
+                rows.append(json.loads(line[len("cb02-cmd "):]))
+            except json.JSONDecodeError:
+                pass
+    return rows
+
+
+def check_keystore(ctx: Ctx, o: dict, t: Target, f: dict, spec: dict) -> None:
+    """The keystore served by the host (fetched over SSH), read by OpenSSL where it can (PKCS#12) and by keytool only
+    to export certificates that OpenSSL then parses (JKS), compared with the catalogue's requested entries and with
+    the oracle's certificate hashes. The generator's keytool listing parser is not used here."""
+    oid = f"host:{f['path']}"
+    pw = ctx.secrets.get(f"host-{Path(f['path']).name}-storepass") or ""
+    key = "/run-lab/lab/secrets/operator_ed25519"
+    fetched = ctx.exec("sh", "-c", f"ssh -i {key} -o UserKnownHostsFile=/tmp/kh-host -o StrictHostKeyChecking=yes "
+                       f"-o BatchMode=yes -p {o['port']} zs-cbom@{o['address']} 'base64 {f['path']}' "
+                       f"| base64 -d > /tmp/ks.bin && sha256sum /tmp/ks.bin")
+    t.check(oid, "fetched file sha256", "ssh + base64 + sha256sum", f["sha256"], (fetched.stdout.split() or [None])[0])
+    want = {e["alias"]: e for e in spec["entries"]}
+    oracle_sha = {e["alias"]: e["cert_sha256"] for e in f["entries"]}
+    if f["storetype"] == "PKCS12":
+        res = ctx.exec("openssl", "pkcs12", "-in", "/tmp/ks.bin", "-nokeys", "-passin", "env:CB02_P",
+                       env={"CB02_P": pw})
+        certs = re.findall(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", res.stdout, re.S)
+        names = re.findall(r"friendlyName:\s*(\S+)", res.stdout)
+        got = {}
+        for name, pem in zip(names, certs):
+            got[name] = openssl_cert_facts(ctx, pem + "\n")
+        tool = "openssl pkcs12 + x509 (OpenSSL, not Java)"
+    else:
+        got = {}
+        for alias in want:
+            res = ctx.exec("keytool", "-exportcert", "-rfc", "-alias", alias, "-storetype", "JKS", "-keystore",
+                           "/tmp/ks.bin", "-storepass:env", "CB02_P", env={"CB02_P": pw})
+            got[alias] = openssl_cert_facts(ctx, res.stdout)
+        tool = "keytool -exportcert, parsed by openssl x509"
+    for alias, w in want.items():
+        g = got.get(alias) or {}
+        bits = int(w["key"].partition(":")[2])
+        sig = JAVA_SIGALG.get(f"{w['sig'].upper()}with{w['key'].partition(':')[0].upper()}",
+                              f"{w['sig']}With{w['key'].partition(':')[0].upper()}Encryption")
+        t.check(f"{oid}#{alias}", "entry vs catalogue (key bits, signature algorithm)", tool,
+                {"key_bits": bits, "signature_algorithm": sig},
+                {"key_bits": g.get("key_bits"), "signature_algorithm": g.get("signature_algorithm")})
+        t.check(f"{oid}#{alias}", "certificate sha256 vs oracle", tool, oracle_sha.get(alias), g.get("sha256"))
 
 
 def check_listener(ctx: Ctx, o: dict, health: dict[str, str]) -> Target:
@@ -452,11 +682,26 @@ def check_softhsm(ctx: Ctx, o: dict) -> Target:
     ctx.exec("sh", "-c", prep)
     env = {"SOFTHSM2_CONF": "/tmp/hsm/c"}
     pins = {tok["label"]: ctx.secrets.get(f"softhsm-{tok['label']}-pin", "") for tok in e["tokens"]}
+    requested = {tok["label"]: tok["objects"] for tok in S.by_id("softhsm")["tokens"]}
     for tok in e["tokens"]:
-        res = ctx.exec("pkcs11-tool", "--module", lib, "--token-label", tok["label"], "--login", "--pin",
-                       pins[tok["label"]], "--list-objects", env=env)
-        got = labgen.parse_pkcs11_objects(res.stdout)
-        t.check(f"softhsm/{tok['label']}", "objects", "pkcs11-tool (OpenSC 0.26)", tok["objects"], got)
+        oid = f"softhsm/{tok['label']}"
+        listing = ctx.exec("pkcs11-tool", "--module", lib, "--token-label", tok["label"], "--login", "--pin",
+                           pins[tok["label"]], "--list-objects", env=env)
+        p11 = ctx.exec("p11tool", "--provider", lib, "--login", "--list-all", f"pkcs11:token={tok['label']}",
+                       env={**env, "GNUTLS_PIN": pins[tok["label"]]})
+        ctx.save(f"softhsm-{tok['label']}.p11tool.txt", p11.stdout)
+        observed = merge_secret_sizes(parse_p11tool(p11.stdout), parse_secret_sizes(listing.stdout))
+        problems = hsm_mismatches(requested[tok["label"]], observed)
+        t.check(oid, "objects vs catalogue (type, size, extractable)", "p11tool (GnuTLS 3.8) + pkcs11-tool sizes",
+                [], problems)
+        facts = {(x["label"], x["class"]): x for x in tok["objects"] if x["class"] != "Public Key"}
+        diff = [f"{lab}/{cls}: oracle extractable {facts[(lab, cls)]['extractable']} observed {ob['extractable']}"
+                for ob in observed for lab, cls in [(ob["label"], ob["class"])]
+                if (lab, cls) in facts and facts[(lab, cls)]["extractable"] != ob["extractable"]]
+        t.check(oid, "oracle facts vs independent observation (extractable)", "p11tool (GnuTLS 3.8)", [], diff)
+        t.check(oid, "objects (re-listed with the generator's tool)", "pkcs11-tool (OpenSC 0.26)", tok["objects"],
+                labgen.parse_pkcs11_objects(listing.stdout), independent=False)
+        ctx.tool_versions["p11tool"] = "p11tool (GnuTLS 3.8.13)"
     a, b = e["tokens"][0]["label"], e["tokens"][1]["label"]
     wrong = ctx.exec("pkcs11-tool", "--module", lib, "--token-label", b, "--login", "--pin", pins[a], "--list-objects",
                      env=env)
@@ -482,9 +727,31 @@ def check_code(ctx: Ctx, o: dict) -> Target:
         inside = {n.removeprefix("cryptoapi-bench/"): hashlib.sha256(z.read(n)).hexdigest() for n in z.namelist()}
     on_disk = {str(p.relative_to(tree)): hashlib.sha256(p.read_bytes()).hexdigest() for p in tree.rglob("*") if p.is_file()}
     t.check("code/archive", "archive == tree", "zipfile", True, inside == on_disk)
+    pinned = S.BENCH_PINNED
+    t.check("code/labels", "labels sha256 vs pinned", "labspec.BENCH_PINNED (openpyxl reads by two agents)",
+            pinned["labels_sha256"], e["labels_sha256"])
+    got = {k: e["summary"].get(k) for k in ("vulnerable", "secure", "judgeable", "judgeable_vulnerable",
+                                             "judgeable_secure", "date_typed_line_cells")}
+    got["cases"] = len(e["cases"])
+    got["unresolved_files"] = e["summary"]["unresolved"]
+    t.check("code/labels", "counts vs pinned", "labspec.BENCH_PINNED (openpyxl reads by two agents)",
+            {k: pinned[k] for k in got}, got)
+    try:
+        import openpyxl  # a second, independent xlsx reader when the host has it
+    except ImportError:
+        openpyxl = None
+    if openpyxl is not None:
+        ws = openpyxl.load_workbook(labels, read_only=True).worksheets[0]
+        rows = [r for r in ws.iter_rows(min_row=2, values_only=True) if r[1]]
+        flag = {"=TRUE()": True, "TRUE": True, "1": True, "=FALSE()": False, "FALSE": False, "0": False}
+        theirs = [([n.strip() if n.strip().endswith(".java") else n.strip() + ".java" for n in str(r[1]).splitlines()
+                    if n.strip()], flag.get(str(r[3]).upper())) for r in rows]
+        t.check("code/labels", "cases (files, vulnerable) re-read with openpyxl", f"openpyxl {openpyxl.__version__}",
+                [(c["files"], c["vulnerable"]) for c in e["cases"]], theirs)
     relabel = labgen.read_xlsx_labels(labels)
-    t.check("code/labels", "cases re-read from the xlsx", "xlsx reader (stdlib)",
-            [(c["files"], c["vulnerable"]) for c in e["cases"]], [(c["files"], c["vulnerable"]) for c in relabel])
+    t.check("code/labels", "cases re-read with the generator's reader", "xlsx reader (stdlib)",
+            [(c["files"], c["vulnerable"]) for c in e["cases"]], [(c["files"], c["vulnerable"]) for c in relabel],
+            independent=False)
     for c in e["cases"]:
         for path, digest in zip(c["paths"], c["sha256"]):
             if path and on_disk.get(path) != digest:
@@ -545,12 +812,13 @@ def container_health() -> dict[str, str]:
     return out
 
 
-def main(run_dir: Path, only: str | None = None) -> int:
+def main(run_dir: Path, only: str | None = None, expect_sha: str | None = None) -> int:
     started = iso_now()
     gen_json = json.loads((run_dir / "lab" / "gen.json").read_text())
-    recorded, now_hash = gen_json.get("oracle_sha256"), oraclefmt.oracle_hash(run_dir)
+    recorded, now_hash = expect_sha or gen_json.get("oracle_sha256"), oraclefmt.oracle_hash(run_dir)
     report: dict = {"schema": SCHEMA, "checked_at": started, "run_id": gen_json["run_id"], "oracle_sha256": now_hash,
-                    "oracle_sha256_recorded": recorded, "targets": []}
+                    "oracle_sha256_recorded": recorded, "oracle_sha256_source": "argument" if expect_sha else "gen.json",
+                    "oracle_changes": gen_json.get("oracle_changes", []), "targets": []}
     if recorded != now_hash:
         report["error"] = "oracle changed after generation (rule O-5): start a new run"
         (run_dir / "lab" / "selfcheck.json").write_text(json.dumps(report, indent=1) + "\n")
@@ -592,6 +860,10 @@ def main(run_dir: Path, only: str | None = None) -> int:
     report["summary"] = {"targets": len(results), "agree": sum(r["agree"] for r in report["targets"]),
                          "disagree": sorted(r["target_id"] for r in report["targets"] if not r["agree"]),
                          "checks": sum(len(r["checks"]) for r in report["targets"]),
+                         "independent_checks": sum(1 for r in report["targets"] for c in r["checks"] if c["independent"]),
+                         "not_independent_checks": sum(1 for r in report["targets"] for c in r["checks"]
+                                                       if not c["independent"]),
+                         "accepted_oracle_changes": len(report["oracle_changes"]),
                          "controls": sum(len(r["controls"]) for r in report["targets"])}
     report["finished_at"] = iso_now()
     (run_dir / "lab" / "selfcheck.json").write_text(json.dumps(report, indent=1, ensure_ascii=False) + "\n")
