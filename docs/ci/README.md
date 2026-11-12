@@ -278,6 +278,37 @@ Every promotion that carries a `.github/` change needs the label too.
 | `cbom-nightly.yml` | **weekly** (Mon 07:30 UTC), manual | Live CBOM benchmark against IBM cbomkit-theia |
 | `deploy-staging.yml` | manual | Build the production images, optionally deploy them to staging |
 | `scan-node-image.yml` | manual | Release the CBOM scan-node image as a file |
+| `publish-ghcr.yml` | push to dev / staging; PR with label `publish-preview`; manual | Publish all images to GHCR (amd64 + arm64, provenance attested); see [Publish images](#publish-images-ghcr) |
+
+### Publish images (GHCR)
+
+`publish-ghcr.yml` pushes `ghcr.io/<owner>/devsecshield-{backend,frontend,scan-worker,dast-worker,scan-node,minio}`
+(private packages) for linux/amd64 and linux/arm64. `deploy/local/README.md` runs them on one machine.
+
+| Trigger | Immutable tag | Moving tag |
+|---|---|---|
+| push to `dev` / `staging` (not docs-only) | `dev-<sha12>` / `staging-<sha12>` | `dev` / `staging` |
+| PR from this repository with the label `publish-preview` (labeled, synchronize, reopened) | `pr-<n>-<head sha12>` | `pr-<n>` |
+| `workflow_dispatch` (inputs `ref`, `api_url`; needs the file on `main`) | `manual-<sha12>` | none |
+
+* **meta** (`contents: read`) decides with `.github/ci/ghcr_meta.py` (self-tested in `.github/tests/test_publish_ghcr.py`):
+  fork PRs, PRs without the label, other branches and other events publish nothing; dispatch inputs are validated.
+* **contexts** runs `scripts/deploy/check_image_contexts.sh` before any build.
+* **build** (`packages: write`) builds each image per architecture on a native runner (`ubuntu-24.04`,
+  `ubuntu-24.04-arm`; no QEMU) and pushes it by digest only, with OCI labels `source`, `revision`, `version`, `title`
+  and BuildKit's own provenance/SBOM manifests off.
+* **merge** joins the two digests into one index under the immutable tag, fails unless it lists exactly linux/amd64
+  and linux/arm64, and attests SLSA build provenance on the index digest (`actions/attest-build-provenance`, pushed
+  to the registry; private repositories need GitHub Enterprise Cloud).
+* **promote** moves the moving tag of all six images only after all six exist for the commit (a copy of the same
+  index, digest checked), so `dev` never mixes two commits.
+* Only `GITHUB_TOKEN`; the jobs that can write packages run no repository script, and each checks for forks itself.
+  A `labeled` event for another label, or a push to a PR without the label, cannot cancel a running publish
+  (concurrency group).
+* The frontend has `http://localhost:8000` inlined (manual runs: `api_url`) and names the scan-node image of the same
+  build in its install command (`NEXT_PUBLIC_CBOM_NODE_IMAGE`).
+* Verify an image: `gh attestation verify oci://ghcr.io/<owner>/devsecshield-backend:dev -R <owner>/<repo>`.
+* No layer cache yet (the 10 GB Actions cache is shared with `ci.yml`'s image caches): every run builds from scratch.
 
 ### What each `ci.yml` suite runs
 
@@ -503,6 +534,7 @@ grants `pull-requests: write`.
 | `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`, `STAGING_SSH_TARGET`; `STAGING_DIR` | `staging` environment secrets / variable | deploy-staging | Deploy step unavailable (the build still works). Give the environment deployment-branch rules (`staging` only) |
 | `security-config-reviewed` | PR label | pr-hygiene | A PR that changes CI or scanner configs fails |
 | `secret-fixtures-reviewed` | PR label | gitleaks, pr-hygiene | Fabricated secrets and key files under `tests/fixtures/` fail |
+| `publish-preview` | PR label (not a security label) | publish-ghcr | The PR's images are not published |
 
 No other workflow needs a secret. CI tests use dummy values that are marked as such.
 

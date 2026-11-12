@@ -1,0 +1,232 @@
+# DevSecShield on your machine, from GHCR
+
+Run the whole product (UI, API, workers, databases, S3, a mail catcher) on one machine from the images CI publishes
+to GitHub Container Registry, then connect scan nodes to real servers. This is a **local test stack**: plain HTTP,
+no reverse proxy, one settings file. For a server, use `deploy/staging/` (nginx, TLS).
+
+| What | Where |
+|---|---|
+| UI | http://localhost:3000 |
+| API | http://localhost:8000 (`/health`) |
+| Mail catcher (sign-in codes, invitations) | http://localhost:8025 |
+| Images | `ghcr.io/cyberultron-consulting-private-limited/devsecshield-{backend,frontend,scan-worker,dast-worker,scan-node,minio}` (private), linux/amd64 and linux/arm64 (Apple silicon runs them natively) |
+
+Services: postgres, mongo, rabbitmq, minio + minio-init (S3), mailpit, migrate (one-shot), backend, cbom-cloud-worker
+(AWS / identity-provider sources, the CBOM scheduler), dast-scheduler, scan-worker, cicd-worker, dast-worker,
+frontend. The scan node is not part of it: it runs on the machines that can reach your servers.
+
+Needs: Docker Engine 24+ or Docker Desktop with Compose v2, about 8 GB of RAM for Docker, about 15 GB of disk (the
+scan worker image is the largest), ports 3000, 8000 and 8025 free, and a checkout of this repository (the compose file
+mounts `compose/aibom-config-overlay`). All commands below run from the repository root.
+
+## 1. Log in to GHCR
+
+The packages are private. Create a **classic** personal access token with only the `read:packages` scope
+(GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic)); if the organisation uses SAML
+single sign-on, also press "Configure SSO" > "Authorize" for it. Then:
+
+```sh
+docker login ghcr.io -u <your GitHub user name>      # paste the token as the password
+```
+
+Every machine that pulls an image (this one, and each scan-node machine) logs in the same way.
+`docker logout ghcr.io` removes the stored token.
+
+## 2. Pick a tag
+
+| Tag | What it is |
+|---|---|
+| `dev` | the latest commit on `dev` (moves on every merge that changes more than docs) |
+| `staging` | the latest commit on `staging` |
+| `pr-<n>` | pull request `<n>` while it carries the label `publish-preview` (its latest head) |
+| `dev-<sha12>`, `staging-<sha12>`, `pr-<n>-<sha12>`, `manual-<sha12>` | one exact commit; never moves |
+
+All six images of a tag come from the same commit: the moving tags change only after every image of the new commit is
+published. Which commit a tag is now:
+
+```sh
+docker buildx imagetools inspect ghcr.io/cyberultron-consulting-private-limited/devsecshield-backend:dev \
+  --format '{{json .Manifest.Annotations}}'      # org.opencontainers.image.revision / version
+```
+
+The tags of a package are also listed on GitHub: the organisation's **Packages** page > `devsecshield-backend`.
+
+## 3. Configure
+
+```sh
+deploy/local/init-env.sh dev          # writes deploy/local/.env (mode 600) with random passwords and keys
+```
+
+It copies `.env.example` and replaces every `change-me` with a fresh random value (it never overwrites an existing
+`.env`). Or copy the file yourself and replace each `change-me`. `.env` is git-ignored; never commit it. To change the
+tag later, edit `DSS_TAG` in `.env`.
+
+## 4. Start
+
+```sh
+docker compose -f deploy/local/docker-compose.yml pull
+docker compose -f deploy/local/docker-compose.yml up -d --wait
+docker compose -f deploy/local/docker-compose.yml ps
+curl -s http://localhost:8000/health
+```
+
+The first start runs the database migrations (`migrate`, a one-shot that exits 0) before the API starts; `--wait`
+returns when everything is healthy. Logs: `docker compose -f deploy/local/docker-compose.yml logs -f backend`.
+
+To move to a newer build of the same tag: `pull`, then `up -d --wait` again (only changed containers restart).
+
+## 5. First admin and team
+
+1. Open http://localhost:3000/register, enter a name, e-mail and password, press **Send Verification Code**, open
+   http://localhost:8025, copy the 6-digit code from the newest mail and finish the sign-up. Every account gets its
+   own team; its id is the number in the UI's URLs (`http://localhost:3000/<team_id>/...`).
+   Sign-in works the same way (e-mail, password, a new code each time). Codes are rate-limited (5 sends per 2 minutes).
+2. Make that account the administrator (there is no other way to create the first one); replace the address:
+   ```sh
+   docker compose -f deploy/local/docker-compose.yml exec -T postgres \
+     sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+   UPDATE "user" SET is_superuser = true WHERE lower(email) = lower('you@example.com');
+   SQL
+   ```
+   It must print `UPDATE 1`. Sign out and in again.
+3. New teams start with 0 credits, and scans spend credits (a CBOM code scan at least 1). As the administrator open
+   http://localhost:3000/admin, find the team and **Update Credits** (for example 5000).
+4. More users: invite them from the team settings (the invitation mail lands in Mailpit) or register more accounts.
+
+## 6. Scan nodes: connect real servers
+
+A scan node is a small container that runs where it can reach your servers and calls out to the API. In the UI:
+**CBOM > Sources > Scan nodes > Add scan node**, choose **Docker container**, name it, and copy the command it shows:
+
+```sh
+docker run -d --name zs-scan-node-<name> --restart unless-stopped \
+  -e ZS_API_URL='http://localhost:8000' \
+  -e ZS_REGISTRATION_TOKEN='zsr_...' \
+  -v zs-node-<name>:/var/lib/zs-node \
+  ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<the same build's tag>
+```
+
+The image is the scan node of the same build. Two changes are needed because this stack speaks plain HTTP on your
+machine: the node must be told to accept `http://` (`ZS_ALLOW_INSECURE_HTTP=1`), and `localhost` inside a container
+is the container itself.
+
+**Node on another machine** (a Linux VM or server with Docker that can reach the servers to scan):
+1. Here: set `API_BIND=0.0.0.0` in `deploy/local/.env`, then
+   `docker compose -f deploy/local/docker-compose.yml up -d backend` (the API now listens on your LAN address too;
+   allow TCP 8000 in this machine's firewall, e.g. macOS asks on first use). Note this machine's LAN address
+   (`ipconfig getifaddr en0` on macOS, `hostname -I` on Linux).
+2. There: `docker login ghcr.io` (section 1), then run the UI's command with `ZS_API_URL` changed and one line added:
+   ```sh
+   docker run -d --name zs-scan-node-<name> --restart unless-stopped \
+     -e ZS_API_URL='http://<this machine LAN address>:8000' \
+     -e ZS_ALLOW_INSECURE_HTTP=1 \
+     -e ZS_REGISTRATION_TOKEN='zsr_...' \
+     -v zs-node-<name>:/var/lib/zs-node \
+     ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<tag>
+   ```
+3. `curl http://<this machine LAN address>:8000/health` from the node machine must answer `{"status":"healthy",...}`.
+
+**Node on this machine** (for a first try, or servers reachable from here): run the command with
+`--network devsecshield-local-nodes` added right after `docker run`, `ZS_API_URL='http://devsecshield-api:8080'` and
+`-e ZS_ALLOW_INSECURE_HTTP=1`. That network reaches only the API, not the databases.
+
+Within a minute the node shows **Online** in Scan nodes, with its SSH public key. `docker logs zs-scan-node-<name>`
+shows the enrolment. The registration token is single-use; to enrol again use **Reset** on the node.
+
+`ZS_ALLOW_INSECURE_HTTP=1` means the node's token and the credentials of its jobs cross the network unencrypted.
+Keep it to a network you trust. To use HTTPS instead, put a TLS proxy (for example Caddy or nginx with a certificate
+for this machine's name) in front of port 8000, set `ZS_API_URL=https://<name>`, drop `ZS_ALLOW_INSECURE_HTTP`, and
+give the node your CA with `-e ZS_CA_FILE=/ca.pem -v /path/to/ca.pem:/ca.pem:ro` if it is a private one.
+
+### Servers, ranges and cloud accounts
+
+All under **CBOM > Sources**; each form has an info tip with the details.
+* **Servers**: Linux over SSH (and Windows over WinRM HTTPS). The default credential is the node's own key: add the
+  public key shown in Scan nodes to the `authorized_keys` of a `zs-cbom` user on each server (the sudoers lines for
+  Tier 2 are in the form). Pick the node that reaches the server.
+* **Kubernetes & Databases**: kubeconfig (token or client certificate), PostgreSQL, MySQL, SQL Server, Oracle,
+  MongoDB, Redis, with read-only accounts.
+* **Network TLS**: IP addresses, CIDR ranges (up to a /16) or a-b ranges and the ports to probe, run by a node.
+  Scan window, rate limits and the never-scan list are in the source settings, with **Stop all network scanning**.
+* **Cloud & Identity**: AWS accounts and identity-provider metadata, collected by the cloud worker (no node).
+  AWS needs the switches below.
+* **Review & Run** starts a run; results appear in the CBOM views of the team.
+
+## 7. CBOM switches
+
+Set in `deploy/local/.env`, then `docker compose -f deploy/local/docker-compose.yml up -d` (the containers that read
+`.env` are recreated). Empty means off.
+
+| Variable | Effect |
+|---|---|
+| `CBOM_FLEET_INVENTORY`, `CBOM_FLEET_POLICIES`, `CBOM_FLEET_MATERIALIZE` | `1` turns on the Fleet parts (inventory; policies; policies may create managed sources and schedules). |
+| `CBOM_FLEET_TRANSPORTS`, `CBOM_SSH_CA` | `1` turns on fleet transports and the SSH certificate authority. |
+| (any of the five above) | The **Fleet** tab of Sources appears when at least one is on (`GET /fleet/status`). A part's screens exist only in builds that contain that part: a tag built before the part was merged shows the tab without them. |
+| `CBOM_AWS_PRINCIPAL_ARN` | The AWS identity customer accounts trust (`arn:aws:iam::<account>:role/<name>` or `:user/<name>`). Unset, the AWS form says **"This ZeroShield deployment is not set up for AWS collection; contact your administrator"** and the CloudFormation template cannot be downloaded. |
+| `CBOM_AWS_ACCESS_KEY_ID`, `CBOM_AWS_SECRET_ACCESS_KEY` (`CBOM_AWS_SESSION_TOKEN`) | That identity's credentials; **Validate connection** and collection assume the customer's role with them. Without them validation answers that the credentials are not configured. |
+| `CBOM_IDP_ALLOWED_PRIVATE` | Identity-provider metadata URLs on private networks (CIDRs and/or host names) that may be fetched; loopback, link-local and CGNAT stay refused. |
+| `CBOM_EXTRA_CA_FILE` | A PEM bundle trusted for those metadata URLs (mount the file into the backend-image services with a compose override). |
+| `CBOM_LAB_ALLOW_PRIVATE_FETCH` | `1`: metadata fetches may reach any RFC 1918 address. Test labs only. |
+| `CBOM_SCHEDULER` | `0` stops the CBOM schedule runner in the cloud worker (default on). |
+| `CBOM_ALLOW_LLM` | `1` allows the AI chat on CBOM scans (needs Bedrock credentials in `AWS_*`, which here are MinIO's). |
+| `CBOM_PUBLIC_APP_URL`, `CORS_ORIGINS` | The UI's address (`http://localhost:3000`); links in mails use it. |
+| `CBOM_MTLS_HEADER_TRUSTED`, `CBOM_MTLS_REQUIRED`, `CBOM_MTLS_PIN` | **Leave unset here.** They need nginx in front (deploy/staging); without it any client could send the certificate headers. |
+
+AWS, step by step: put the collector identity in the four `CBOM_AWS_*` variables and restart; in **Cloud & Identity >
+AWS** download the CloudFormation template (it creates the read-only role `ZeroShieldCBOMReader` that trusts that
+account with the team's external id), deploy it in the account to scan, enter the role ARN and press **Validate
+connection**. Never commit those keys; `.env` is git-ignored.
+
+Other scans: SAST, IaC and the SCA + SBOM chat need Amazon Bedrock and a Qdrant store (`QDRANT_*`, `LLM_MODEL`); without
+them they end as "failed". CBOM and AI-BOM code scans need neither.
+
+## 8. Stop, reset, update
+
+```sh
+docker compose -f deploy/local/docker-compose.yml stop          # stop, keep everything
+docker compose -f deploy/local/docker-compose.yml down          # remove the containers, keep the data volumes
+docker compose -f deploy/local/docker-compose.yml down -v       # also delete all data (database, S3, mail)
+docker rm -f zs-scan-node-<name> && docker volume rm zs-node-<name>   # a node on this machine
+```
+
+Going back to an OLDER tag after a newer one migrated the database fails in `migrate` ("Can't locate revision ...").
+On a test stack, `down -v` and start again; `deploy/staging/README.md` ("Rollback") shows the downgrade path.
+
+## The frontend's API address
+
+The browser code calls the API at the address inlined when the frontend image was built: `http://localhost:8000`
+(Next.js `NEXT_PUBLIC_BACKEND_URL`; the code has no runtime setting for it). So the UI works in a browser on this
+machine. To use it from another computer's browser, build the frontend for this machine's address and use it instead:
+
+```sh
+docker build -t devsecshield-frontend:lan -f frontend/Dockerfile frontend \
+  --build-arg NEXT_PUBLIC_BACKEND_URL=http://<this machine LAN address>:8000 \
+  --build-arg NEXT_PUBLIC_CBOM_NODE_IMAGE=ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<tag>
+```
+
+then point the `frontend` service at `devsecshield-frontend:lan` (a `docker-compose.override.yml` next to the compose
+file with `services: {frontend: {image: devsecshield-frontend:lan}}`, passed with a second `-f`), set `UI_BIND` and
+`API_BIND` to `0.0.0.0` and `CORS_ORIGINS` / `CBOM_PUBLIC_APP_URL` to `http://<address>:3000`. Once
+`publish-ghcr.yml` is on `main`, its manual run does the same in CI (inputs `ref` and `api_url`, tag `manual-<sha12>`).
+
+## Check where an image came from
+
+Every image index carries a SLSA build-provenance attestation made by `.github/workflows/publish-ghcr.yml`:
+
+```sh
+gh attestation verify oci://ghcr.io/cyberultron-consulting-private-limited/devsecshield-backend:dev \
+  -R CyberUltron-Consulting-Private-Limited/DevSecShield --source-ref refs/heads/dev
+```
+
+It names the workflow, the commit and the trigger. `docker buildx imagetools inspect <image>:<tag>` lists the two
+platforms; the image labels `org.opencontainers.image.revision` / `.version` name the commit and tag.
+
+## Troubleshooting
+
+* `denied` / `unauthorized` on pull: log in (section 1); the token needs `read:packages` and SSO authorisation; your
+  account needs read access to the repository.
+* `manifest unknown`: that tag was not published (a docs-only merge publishes nothing; a PR needs `publish-preview`).
+* Port already in use: stop what holds 3000, 8000 or 8025 (the frontend needs exactly 8000 for the API).
+* No mail: http://localhost:8025 shows every mail; `docker compose ... logs backend | grep -i smtp`.
+* A node stays offline: `docker logs zs-scan-node-<name>`; from the node machine `curl http://<address>:8000/health`;
+  `ZS_ALLOW_INSECURE_HTTP=1` present; `API_BIND=0.0.0.0` here; the firewall.

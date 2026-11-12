@@ -1,0 +1,383 @@
+# Publish the DevSecShield images to GitHub Container Registry, for linux/amd64 and linux/arm64, with SLSA build
+# provenance (docs/ci/README.md "Publish images"; how to run them: deploy/local/README.md).
+#
+#   ghcr.io/<owner>/devsecshield-{backend,frontend,scan-worker,dast-worker,scan-node,minio}
+#
+#   push to dev / staging              <branch>-<sha12> and the moving tag <branch>
+#   pull request from THIS repository  pr-<n>-<head sha12> and pr-<n>, only while it carries the label publish-preview
+#     (labeled, synchronize, reopened) (fork pull requests never publish)
+#   workflow_dispatch (ref, api_url)   manual-<sha12>
+#
+# Jobs: meta decides (.github/ci/ghcr_meta.py) -> contexts proves no secret file can enter a build context ->
+# build pushes each image for each architecture BY DIGEST on a native runner -> merge joins the two digests into one
+# multi-architecture index under the immutable tag, checks both platforms are in it and attests it -> promote moves
+# the moving tag of every image only when all of them exist for the commit, so `dev` never mixes two commits.
+#
+# Token: GITHUB_TOKEN only, no other secret. The jobs that can write packages run no repository script (only pinned
+# actions and the inline steps below): PR code runs only inside the image builds, which never see the registry login.
+# The frontend's API URL is inlined at build time (frontend/utils/interceptors.js): http://localhost:8000 unless the
+# api_url input of a manual run says otherwise; its scan-node wizard names the scan-node image of the same build.
+name: Publish images (GHCR)
+
+on:
+  push:
+    branches: [dev, staging]
+    paths-ignore: ["**/*.md", "docs/**"]
+  pull_request:
+    types: [labeled, synchronize, reopened]
+    paths-ignore: ["**/*.md", "docs/**"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit to build (published as manual-<sha12>)"
+        type: string
+        required: true
+        default: dev
+      api_url:
+        description: "API URL inlined into the frontend (http(s)://host[:port])"
+        type: string
+        default: "http://localhost:8000"
+
+permissions: {}
+
+concurrency:
+  # One publishing run per branch / PR; a newer one cancels the older (moving tags only change in `promote`, at the
+  # very end). An event that does not publish (a `labeled` event for another label such as security-config-reviewed,
+  # a push to a PR without publish-preview) gets a group of its own, so it never cancels a running publish.
+  group: >-
+    publish-ghcr-${{ github.event.pull_request.number || github.ref }}-${{
+    (github.event_name != 'pull_request' ||
+     (github.event.action == 'labeled' && github.event.label.name == 'publish-preview') ||
+     (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'publish-preview')))
+    && 'publish' || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  meta:
+    name: meta
+    # Forks and pull requests without the label stop here (ghcr_meta.py checks the same again).
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       ((github.event.action == 'labeled' && github.event.label.name == 'publish-preview') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'publish-preview'))))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+      registry: ${{ steps.decide.outputs.registry }}
+      source: ${{ steps.decide.outputs.source }}
+      api_url: ${{ steps.decide.outputs.api_url }}
+      moving: ${{ steps.decide.outputs.moving }}
+      sha: ${{ steps.tags.outputs.sha }}
+      tag: ${{ steps.tags.outputs.tag }}
+    steps:
+      - name: Checkout (the workflow's commit, for the script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/ci
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          SERVER_URL: ${{ github.server_url }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          LABEL: ${{ github.event.label.name }}
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_API_URL: ${{ inputs.api_url }}
+        run: |
+          set -euo pipefail
+          python3 .github/ci/ghcr_meta.py decide | tee -a "$GITHUB_OUTPUT"
+      - name: Checkout the commit to build
+        if: steps.decide.outputs.publish == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ steps.decide.outputs.ref }}
+          path: target
+          sparse-checkout: .github/ci
+      - name: Tags
+        id: tags
+        if: steps.decide.outputs.publish == 'true'
+        env:
+          PREFIX: ${{ steps.decide.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          SHA=$(git -C target rev-parse HEAD)
+          SHA="$SHA" python3 .github/ci/ghcr_meta.py tags | tee -a "$GITHUB_OUTPUT"
+
+  contexts:
+    name: build contexts
+    needs: meta
+    if: needs.meta.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.meta.outputs.sha }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: No secret file can enter an image build context
+        run: scripts/deploy/check_image_contexts.sh
+
+  build:
+    name: build (${{ matrix.image.name }}, ${{ matrix.platform.arch }})
+    needs: [meta, contexts]
+    # The fork check is repeated here: this job can write packages, so it does not rely on meta's output alone.
+    if: >-
+      needs.meta.outputs.publish == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # Same contexts as scripts/deploy/build_images.sh and ci.yml; minio is the local install's S3 stand-in.
+        image:
+          - {name: backend, context: backend, dockerfile: backend/Dockerfile, build-contexts: "migrations=prod_database_migrations"}
+          - {name: frontend, context: frontend, dockerfile: frontend/Dockerfile}
+          - {name: scan-worker, context: ".", dockerfile: RabbitMQ/worker/Dockerfile, free-disk-space: true}
+          - {name: dast-worker, context: RabbitMQ/dast_worker, dockerfile: RabbitMQ/dast_worker/Dockerfile}
+          - {name: scan-node, context: scan_node, dockerfile: scan_node/Dockerfile}
+          - {name: minio, context: deploy/local/minio, dockerfile: deploy/local/minio/Dockerfile}
+        platform:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    env:
+      IMAGE: ${{ needs.meta.outputs.registry }}/devsecshield-${{ matrix.image.name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.meta.outputs.sha }}
+
+      - name: Free disk space
+        if: matrix.image.free-disk-space
+        # The scan worker pulls torch through garak; the hosted runner's free space alone is not enough (#50).
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost \
+            /usr/share/swift /opt/hostedtoolcache /usr/lib/jvm /usr/local/share/powershell /usr/local/share/chromium \
+            /usr/local/lib/node_modules /opt/microsoft /opt/google /opt/az /usr/lib/google-cloud-sdk /opt/pipx \
+            /usr/share/miniconda
+          docker image prune --all --force > /dev/null
+          df -h /
+
+      - name: Build arguments and labels
+        id: args
+        env:
+          NAME: ${{ matrix.image.name }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          SHA: ${{ needs.meta.outputs.sha }}
+          SOURCE: ${{ needs.meta.outputs.source }}
+          API_URL: ${{ needs.meta.outputs.api_url }}
+          REGISTRY: ${{ needs.meta.outputs.registry }}
+        run: |
+          set -euo pipefail
+          {
+            echo 'build-args<<ZS_EOF'
+            if [ "$NAME" = frontend ]; then
+              echo "NEXT_PUBLIC_BACKEND_URL=$API_URL"
+              echo "NEXT_PUBLIC_CBOM_NODE_IMAGE=$REGISTRY/devsecshield-scan-node:$TAG"
+            fi
+            echo 'ZS_EOF'
+            echo 'labels<<ZS_EOF'
+            echo "org.opencontainers.image.source=$SOURCE"
+            echo "org.opencontainers.image.revision=$SHA"
+            echo "org.opencontainers.image.version=$TAG"
+            echo "org.opencontainers.image.title=devsecshield-$NAME"
+            if [ "$NAME" = frontend ]; then echo "com.zeroshield.devsecshield.api-url=$API_URL"; fi
+            echo 'ZS_EOF'
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push by digest (linux/${{ matrix.platform.arch }})
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          build-contexts: ${{ matrix.image.build-contexts }}
+          build-args: ${{ steps.args.outputs.build-args }}
+          labels: ${{ steps.args.outputs.labels }}
+          platforms: linux/${{ matrix.platform.arch }}
+          # No tag here: merge tags the multi-architecture index. BuildKit's own provenance/SBOM manifests are off
+          # so the index lists exactly linux/amd64 and linux/arm64; provenance comes from the GitHub attestation.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          provenance: false
+          sbom: false
+
+      - name: Record the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.platform.arch }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no image digest from the build ($DIGEST)"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/digest"
+          printf '%s\n' "$DIGEST" > "$RUNNER_TEMP/digest/$ARCH"
+          echo "$IMAGE@$DIGEST (linux/$ARCH)" | tee -a "$GITHUB_STEP_SUMMARY"
+          df -h / | tail -n 1
+
+      - name: Upload the digest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          path: ${{ runner.temp }}/digest/${{ matrix.platform.arch }}
+          if-no-files-found: error
+          retention-days: 3
+
+  merge:
+    name: merge + attest (${{ matrix.name }})
+    needs: [meta, build]
+    if: >-
+      needs.meta.outputs.publish == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [backend, frontend, scan-worker, dast-worker, scan-node, minio]
+    env:
+      IMAGE: ${{ needs.meta.outputs.registry }}/devsecshield-${{ matrix.name }}
+    steps:
+      - name: Download the digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-${{ matrix.name }}-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Create the multi-architecture index
+        id: index
+        env:
+          NAME: ${{ matrix.name }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          SHA: ${{ needs.meta.outputs.sha }}
+          SOURCE: ${{ needs.meta.outputs.source }}
+        run: |
+          set -euo pipefail
+          refs=()
+          for arch in amd64 arm64; do
+            f="$RUNNER_TEMP/digest/$arch"
+            [ -s "$f" ] || { echo "::error::no linux/$arch digest for $NAME"; exit 1; }
+            d=$(cat "$f")
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::bad digest for $arch: $d"; exit 1; }
+            refs+=("$IMAGE@$d")
+          done
+          docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.source=$SOURCE" \
+            --annotation "index:org.opencontainers.image.revision=$SHA" \
+            --annotation "index:org.opencontainers.image.version=$TAG" \
+            --annotation "index:org.opencontainers.image.title=devsecshield-$NAME" \
+            -t "$IMAGE:$TAG" "${refs[@]}"
+          docker buildx imagetools inspect --raw "$IMAGE:$TAG" > "$RUNNER_TEMP/index.json"
+          digest="sha256:$(sha256sum "$RUNNER_TEMP/index.json" | cut -d' ' -f1)"
+          platforms=$(jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(",")' "$RUNNER_TEMP/index.json")
+          if [ "$platforms" != "linux/amd64,linux/arm64" ]; then
+            echo "::error::$IMAGE:$TAG lists [$platforms], expected exactly linux/amd64 and linux/arm64"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "$IMAGE:$TAG = $IMAGE@$digest [$platforms]" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+
+  promote:
+    name: moving tags
+    needs: [meta, merge]
+    if: >-
+      needs.meta.outputs.publish == 'true' && needs.meta.outputs.moving != '' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Point the moving tag at this commit's images
+        env:
+          REGISTRY: ${{ needs.meta.outputs.registry }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          MOVING: ${{ needs.meta.outputs.moving }}
+          COMPONENTS: backend frontend scan-worker dast-worker scan-node minio
+        run: |
+          set -euo pipefail
+          digest_of() { docker buildx imagetools inspect --raw "$1" | sha256sum | cut -d' ' -f1; }
+          {
+            echo "### Published ($TAG, moving tag $MOVING)"
+            echo
+            echo "| image | digest | platforms |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for c in $COMPONENTS; do
+            img="$REGISTRY/devsecshield-$c"
+            want=$(digest_of "$img:$TAG")
+            # One source index and no annotations: buildx copies its bytes, so the digest (and its attestation) is kept.
+            docker buildx imagetools create -t "$img:$MOVING" "$img:$TAG"
+            got=$(digest_of "$img:$MOVING")
+            [ "$got" = "$want" ] || { echo "::error::$img:$MOVING is sha256:$got, not $TAG's sha256:$want"; exit 1; }
+            platforms=$(docker buildx imagetools inspect --raw "$img:$MOVING" |
+              jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(", ")')
+            echo "| \`$img:$MOVING\` = \`$img:$TAG\` | \`sha256:$want\` | $platforms |" >> "$GITHUB_STEP_SUMMARY"
+          done
