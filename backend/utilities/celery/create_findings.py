@@ -3,6 +3,7 @@ from rich.console import Console
 from backend.mongo_models import ScanFindings
 from pymongo.database import Database
 from datetime import datetime , timezone
+from backend.utilities.celery.sbom_finding_normalize import normalize_sbom_finding_data
 console = Console()
 
 
@@ -47,13 +48,31 @@ def create_findings_in_mongo_db(
                 mongo_db["scan_findings"].insert_many(to_insert)
             
         
-        elif scan_type == "iac" or scan_type == "sbom_sca" or scan_type == "dast" :
+        elif scan_type == "iac" or scan_type == "dast":
             results = scan_results["results"]
             to_insert = []
             for vulnerability in results:
                 scan_finding = ScanFindings(
                     scan_id = scan_id,
                     finding_data = vulnerability,
+                    created_at = datetime.now(timezone.utc),
+                    finding_status = "not_started",
+                    fixed_at = None,
+                    ignored_at = None,
+                    info = None,
+                )
+                to_insert.append(scan_finding)
+            if len(to_insert) > 0:
+                mongo_db["scan_findings"].insert_many(to_insert)
+
+        elif scan_type == "sbom_sca":
+            # Writer contract: always persist non-empty title + description string.
+            results = scan_results["results"]
+            to_insert = []
+            for vulnerability in results:
+                scan_finding = ScanFindings(
+                    scan_id = scan_id,
+                    finding_data = normalize_sbom_finding_data(vulnerability),
                     created_at = datetime.now(timezone.utc),
                     finding_status = "not_started",
                     fixed_at = None,

@@ -1,0 +1,39 @@
+[03-cryptography] clone https://github.com/pyca/cryptography
+[03-cryptography] target=/Users/anshsinghal/Desktop/DevSecShield/bench/cbom/repos/03-cryptography/src sha=ef7d12d72
+[03-cryptography] cbomkit...
+[03-cryptography] froze cbomkit baseline
+[03-cryptography] cdxgen...
+[03-cryptography] froze cdxgen baseline
+[03-cryptography] ours...
+[03-cryptography] DONE
+[04-mitmproxy] clone https://github.com/mitmproxy/mitmproxy
+[04-mitmproxy] target=/Users/anshsinghal/Desktop/DevSecShield/bench/cbom/repos/04-mitmproxy/mitmproxy sha=88462f4a
+[04-mitmproxy] cbomkit...
+[04-mitmproxy] froze cbomkit baseline
+[04-mitmproxy] cdxgen...
+[04-mitmproxy] froze cdxgen baseline
+[04-mitmproxy] ours...
+[04-mitmproxy] DONE
+[05-paramiko] clone https://github.com/paramiko/paramiko
+[05-paramiko] target=/Users/anshsinghal/Desktop/DevSecShield/bench/cbom/repos/05-paramiko/. sha=d60d5c1
+[05-paramiko] cbomkit...
+[05-paramiko] froze cbomkit baseline
+[05-paramiko] cdxgen...
+[05-paramiko] froze cdxgen baseline
+[05-paramiko] ours...
+[05-paramiko] DONE
+Baselines now:
+total 192
+drwxr-xr-x@ 13 anshsinghal  staff    416 Aug  9 13:23 .
+drwxr-xr-x@ 21 anshsinghal  staff    672 Jul 28 12:26 ..
+-rw-r--r--@  1 anshsinghal  staff   5538 Jul 28 12:26 00-synthetic.cbomkit.cdx.json
+-rw-r--r--@  1 anshsinghal  staff   1605 Jul 28 12:26 00-synthetic.cdxgen.cdx.json
+-rw-r--r--@  1 anshsinghal  staff  19245 Jul 28 12:26 01-pyjwt.cbomkit.cdx.json
+-rw-r--r--@  1 anshsinghal  staff    832 Jul 28 12:26 02-pyopenssl.cbomkit.cdx.json
+-rw-r--r--@  1 anshsinghal  staff    764 Jul 28 12:26 02-pyopenssl.cdxgen.cdx.json
+-rw-r--r--@  1 anshsinghal  staff   1849 Aug  9 13:23 03-cryptography.cbomkit.cdx.json
+-rw-r--r--@  1 anshsinghal  staff   1846 Aug  9 13:23 03-cryptography.cdxgen.cdx.json
+-rw-r--r--@  1 anshsinghal  staff    722 Aug  9 13:23 04-mitmproxy.cbomkit.cdx.json
+-rw-r--r--@  1 anshsinghal  staff   1876 Aug  9 13:23 04-mitmproxy.cdxgen.cdx.json
+-rw-r--r--@  1 anshsinghal  staff  32870 Aug  9 13:23 05-paramiko.cbomkit.cdx.json
+-rw-r--r--@  1 anshsinghal  staff   2569 Aug  9 13:23 05-paramiko.cdxgen.cdx.json

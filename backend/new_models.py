@@ -101,7 +101,8 @@ class Scan(SQLModel,table=True):
     class Config:
         arbitrary_types_allowed = True
 
-# ========================================= Guardrails Integration =========================================
+# ========================================= Guardrails Integration (DEPRECATED) =========================================
+# DEPRECATED: Guardrails product UI removed from user-facing frontend. Model retained for legacy APIs/workers.
 """
 threshold should not be 0 or it will fail the scan ( add validation for this )
 """
@@ -116,6 +117,7 @@ default_settings = {
 }
 
 class GuardrailsIntegration(SQLModel,table=True):
+    """DEPRECATED: Retained for legacy Guardrails APIs/workers; not exposed in product UI."""
     id : int | None = Field(default=None,primary_key=True)
     team_id : int = Field(foreign_key="team.id")
     owner_user_id : int = Field(foreign_key="user.id")

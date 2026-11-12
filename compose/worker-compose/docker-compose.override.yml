@@ -1,0 +1,22 @@
+# Attach workers to the infra compose network so RabbitMQ/Mongo DNS names resolve.
+services:
+  worker:
+    networks:
+      - default
+      - infra
+  cicd_worker:
+    networks:
+      - default
+      - infra
+  guardrail_worker:
+    networks:
+      - default
+      - infra
+  dast_worker:
+    networks:
+      - default
+      - infra
+networks:
+  infra:
+    name: devsecshield-infra-services_default
+    external: true

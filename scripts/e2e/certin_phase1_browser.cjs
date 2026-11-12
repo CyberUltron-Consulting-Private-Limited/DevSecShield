@@ -1,0 +1,151 @@
+#!/usr/bin/env node
+/**
+ * CERT-In Phase 1 — durable browser gate (customer path).
+ *
+ * Asserts CBOM results: CERT-In bar, All + India chips (All default), India
+ * filter, T9 + 8.4.1 drilldown, no QBOM, hard-refresh persistence.
+ *
+ * Inputs (first match wins):
+ *   - /tmp/certin_phase1_tokens.json  { access, refresh?, scan_id, team_id? }
+ *   - env ACCESS_TOKEN, SCAN_ID, TEAM_ID (default 1), FRONTEND_BASE (default http://localhost:3000)
+ *
+ * Usage:
+ *   node scripts/e2e/certin_phase1_browser.cjs
+ *
+ * Requires global Playwright: require('/opt/homebrew/lib/node_modules/playwright')
+ * Exit 0 on pass; non-zero on fail. Writes /tmp/certin_phase1_browser.json
+ */
+const fs = require('fs');
+const path = require('path');
+
+function loadTokens() {
+  const file = process.env.CERTIN_TOKENS_FILE || '/tmp/certin_phase1_tokens.json';
+  if (fs.existsSync(file)) {
+    const t = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return {
+      access: t.access || t.access_token,
+      refresh: t.refresh || t.refresh_token || t.access,
+      scanId: String(t.scan_id || t.scanId || process.env.SCAN_ID || ''),
+      teamId: String(t.team_id || t.teamId || process.env.TEAM_ID || '1'),
+    };
+  }
+  if (!process.env.ACCESS_TOKEN || !process.env.SCAN_ID) {
+    console.error('Missing tokens: set ACCESS_TOKEN+SCAN_ID or write', file);
+    process.exit(2);
+  }
+  return {
+    access: process.env.ACCESS_TOKEN,
+    refresh: process.env.REFRESH_TOKEN || process.env.ACCESS_TOKEN,
+    scanId: String(process.env.SCAN_ID),
+    teamId: String(process.env.TEAM_ID || '1'),
+  };
+}
+
+(async () => {
+  const { chromium } = require('/opt/homebrew/lib/node_modules/playwright');
+  const tokens = loadTokens();
+  const base = process.env.FRONTEND_BASE || 'http://localhost:3000';
+  const out = { scan_id: tokens.scanId, team_id: tokens.teamId, ok: false, errors: [] };
+
+  const fail = (msg) => {
+    out.errors.push(msg);
+    out.ok = false;
+    fs.writeFileSync('/tmp/certin_phase1_browser.json', JSON.stringify(out, null, 2));
+    console.error(JSON.stringify(out, null, 2));
+    process.exit(1);
+  };
+
+  const browser = await chromium.launch({ headless: true });
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await ctx.addInitScript((t) => {
+    localStorage.setItem('access_token', t.access);
+    localStorage.setItem('refresh_token', t.refresh);
+  }, tokens);
+
+  const page = await ctx.newPage();
+  const consoleErrors = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
+  });
+  page.on('pageerror', (err) => consoleErrors.push(String(err)));
+
+  const resultsUrl = `${base}/${tokens.teamId}/cbom/${tokens.scanId}/results`;
+  await page.goto(`${base}/login`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(resultsUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.waitForTimeout(5000);
+  await page
+    .getByText(/Crypto compliance readiness|CERT-In CBOM|India \/ CERT-In/i)
+    .first()
+    .waitFor({ timeout: 45000 })
+    .catch(() => {});
+
+  let body = await page.evaluate(() => document.body.innerText);
+  if (/\bQBOM\b/.test(body)) fail('QBOM text present in product UI');
+
+  const chipTexts = await page.locator('button').evaluateAll((els) =>
+    els.map((e) => (e.textContent || '').trim()).filter(Boolean)
+  );
+  out.chips = chipTexts.filter((t) =>
+    /^(All|India \/ CERT-In|Quantum-safe|Baseline crypto|Regulatory)$/.test(t)
+  );
+  if (!chipTexts.includes('All')) fail('All chip missing');
+  if (!chipTexts.includes('India / CERT-In')) fail('India / CERT-In chip missing');
+  if (!/CERT-In CBOM/i.test(body)) fail('CERT-In CBOM label/bar missing');
+
+  // India filter
+  const indiaBtn = page.getByRole('button', { name: 'India / CERT-In' });
+  if (!(await indiaBtn.count())) fail('India button not found');
+  await indiaBtn.click();
+  await page.waitForTimeout(1000);
+  body = await page.evaluate(() => document.body.innerText);
+  if (!/CERT-In CBOM/i.test(body)) fail('CERT-In disappeared after India filter');
+  if (/NIST SP 800-57/i.test(body)) fail('NIST still visible after India filter');
+
+  // Drilldown: click CERT-In label and/or thick bars
+  let drill = { hasT9: false, has841: false, reqTitle: false };
+  const certLabel = page.getByText('CERT-In CBOM (Guidelines v2.0)', { exact: false }).first();
+  if (await certLabel.count()) {
+    await certLabel.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(800);
+  }
+  const paths = page.locator('.recharts-bar-rectangle path, .recharts-rectangle');
+  const n = await paths.count();
+  for (let i = 0; i < Math.min(n, 50); i++) {
+    const box = await paths.nth(i).boundingBox();
+    if (box && box.width >= 6) {
+      await paths.nth(i).click({ force: true }).catch(() => {});
+      await page.waitForTimeout(500);
+      const t = await page.evaluate(() => document.body.innerText);
+      if (/T9-|8\.4\.1\.|— requirements/i.test(t)) break;
+    }
+  }
+  body = await page.evaluate(() => document.body.innerText);
+  drill.hasT9 = /T9-/.test(body);
+  drill.has841 = /8\.4\.1\./.test(body);
+  drill.reqTitle = /— requirements/i.test(body);
+  out.drilldown = drill;
+  if (!drill.hasT9) fail('T9- requirements not visible in drilldown');
+  if (!drill.has841) fail('8.4.1. manuals not visible in drilldown');
+
+  // Hard refresh
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.waitForTimeout(4000);
+  const after = await page.evaluate(() => document.body.innerText);
+  if (!/Crypto compliance readiness|CERT-In CBOM|India \/ CERT-In/i.test(after)) {
+    fail('compliance matrix missing after hard refresh');
+  }
+  if (/\bQBOM\b/.test(after)) fail('QBOM after refresh');
+
+  out.ok = true;
+  out.consoleErrors = consoleErrors
+    .filter((e) => !/favicon|HMR|websocket|Download the React DevTools/i.test(e))
+    .slice(0, 10);
+  out.refreshOk = true;
+  fs.writeFileSync('/tmp/certin_phase1_browser.json', JSON.stringify(out, null, 2));
+  console.log(JSON.stringify(out, null, 2));
+  await browser.close();
+  if (out.errors.length) process.exit(1);
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

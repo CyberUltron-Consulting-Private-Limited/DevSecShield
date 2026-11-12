@@ -323,6 +323,13 @@ export interface SbomScanMetadata {
   zip_file_used?: boolean
   sbom_compliance?: Record<string, unknown> | null
   rbi_csf_rollup?: Record<string, unknown> | null
+  certin_posture?: Record<string, unknown> | null
+  // CERT-In Phase 4 additive keys
+  attestations?: Record<string, unknown> | null
+  bom_signature?: Record<string, unknown> | null
+  vex_json?: Record<string, unknown> | null
+  /** CycloneDX 1.6 SBOM (real package names + advisory compliance properties) */
+  sbom_json?: Record<string, unknown> | null
 }
 
 /** SBOM/SCA single-scan dashboard from backend generate_scan_dashboard (scan.py sbom_sca branch) */
@@ -348,7 +355,7 @@ export interface SbomScanDashboardData {
     not_reachable: number
     potentially_reachable: number
     reachable: number
-    unknown: number
+    not_assessed: number
   }
   vulnerability_trends_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
   licenses_distribution: Record<string, number>
@@ -1226,9 +1233,36 @@ export interface RbiCsfRollupPayload {
         not_bom_evidenceable?: number
         na?: number
         coverage?: number | null
+        requirements?: Array<{
+            id: string
+            framework: string
+            verdict: string
+            title: string
+            source?: string
+            evidence?: string
+            refs?: string[]
+            attestable?: boolean
+            resolve_hint?: string
+            _scanner?: string
+        }>
+    }>
+    disclaimer?: string
+}
+
+/** CERT-In TG v2.0 posture rollup (team or per-scan metadata) — Phase 5 */
+export interface CertInPosturePayload {
+    certin_posture?: Record<string, {
+        pass?: number
+        pass_with_evidence?: number
+        fail?: number
+        out_of_scope?: number
+        not_bom_evidenceable?: number
+        na?: number
+        coverage?: number | null
         requirements?: Array<{ id: string; framework: string; verdict: string; title: string }>
     }>
     disclaimer?: string
+    hbom_note?: string
 }
 
 export interface TeamDashboardData {
@@ -1251,6 +1285,8 @@ export interface TeamDashboardData {
     card_data?: TeamDashboardCardData
     /** Aggregated RBI CSF posture from latest BOM scans */
     rbi_csf_rollup?: RbiCsfRollupPayload | null
+    /** Aggregated CERT-In TG posture from latest BOM scans (Phase 5) */
+    certin_posture?: CertInPosturePayload | null
 }
 
 /** Utilization item per team (key is string representation of team) */
@@ -1723,7 +1759,7 @@ export interface SBOMSCADashboardData {
         not_reachable: number
         potentially_reachable: number
         reachable: number
-        unknown: number
+        not_assessed: number
     }
     vulnerability_trends_over_time: Record<string, { critical: number; high: number; medium: number; low: number }>
     licenses_distribution: Record<string, number>
@@ -2063,6 +2099,8 @@ export {
 /** CBOM finding from backend get_findings_for_scan_type (cbom branch) */
 export interface CbomFinding {
   id: string
+  /** CycloneDX inventory bom-ref (charts → finding join); absent on legacy rows */
+  bom_ref?: string | null
   title: string
   description: string
   impact: string
@@ -2079,6 +2117,13 @@ export interface CbomFinding {
   location?: string | null
   snippet?: string | null
   remediation?: RemediationData | null
+  /** Inventory assetType (certificate / related-crypto-material / …) */
+  asset_type?: string | null
+  material_kind?: string | null
+  container_format?: string | null
+  not_valid_after?: string | null
+  self_signed?: boolean | null
+  expired?: boolean | null
 }
 
 /** CBOM scan metadata from backend get_scan_metadata (cbom branch) */
@@ -2101,7 +2146,14 @@ export interface CbomScanMetadata {
   // (F1) never re-walks the CycloneDX dependsOn/cryptoRefArray structure.
   // Absent on legacy worker CBOM scans (produced before the reconcile).
   cbom_graph?: CbomGraph | null
+  cbom_graph_compact?: CbomGraph | null
+  cbom_graph_expanded?: CbomGraph | null
   rbi_csf_rollup?: Record<string, unknown> | null
+  certin_posture?: Record<string, unknown> | null
+  // CERT-In Phase 4 additive keys
+  attestations?: Record<string, unknown> | null
+  bom_signature?: Record<string, unknown> | null
+  vex_json?: Record<string, unknown> | null
 }
 
 /** Normalized crypto dependency graph surfaced in CBOM scan_metadata (I1). */
@@ -2123,6 +2175,15 @@ export interface CbomGraphEdge {
 export interface CbomGraph {
   nodes: CbomGraphNode[]
   edges: CbomGraphEdge[]
+  meta?: {
+    raw_node_count?: number
+    raw_edge_count?: number
+    view_node_count?: number
+    view_edge_count?: number
+    clustered_members?: number
+    max_nodes?: number
+    lane?: string
+  }
 }
 
 /** CBOM single-scan dashboard from backend generate_scan_dashboard (scan.py cbom branch) */
@@ -2152,7 +2213,7 @@ export interface CbomScanDashboardData {
   severity_distribution: { critical: number; high: number; medium: number; low: number }
   algorithm_type_distribution: Record<string, number>
   strength_distribution: Record<string, number>
-  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown: number }
+  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown?: number }
   owasp_top_10_issues: Record<string, number>
   compliance_controls: Record<string, number>
   top_risks: Array<{
@@ -2211,7 +2272,7 @@ export interface CBOMDashboardData {
   severity_distribution: { critical: number; high: number; medium: number; low: number }
   algorithm_type_distribution: Record<string, number>
   strength_distribution: Record<string, number>
-  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown: number }
+  quantum_readiness: { quantum_safe: number; quantum_vulnerable: number; unknown?: number }
   remediation_actions_required: {
     total_findings: number
     total_fixed: number
@@ -2334,6 +2395,71 @@ const getCBOMExportResults = async (team_id: number, scan_id: number): Promise<B
   }
 };
 
+/** CERT-In Phase 4 — attestation / sign / VEX / evidence-pack (BOM types). */
+export type CertInBomScanType = "ai_bom" | "cbom" | "sbom_sca";
+
+const postCertInAttestation = async (
+  team_id: number,
+  scan_type: CertInBomScanType,
+  scan_id: number,
+  framework: string,
+  requirement_id: string,
+  file: File,
+  note?: string,
+) => {
+  const form = new FormData();
+  form.append("framework", framework);
+  form.append("requirement_id", requirement_id);
+  form.append("file", file);
+  if (note) form.append("note", note);
+  const response = await api.post(
+    `/${team_id}/${scan_type}/scan/${scan_id}/attestations`,
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
+  toast.success("Attestation uploaded");
+  return response.data as {
+    attestations: Record<string, unknown>;
+    compliance: Record<string, unknown>;
+  };
+};
+
+const postCertInSign = async (
+  team_id: number,
+  scan_type: CertInBomScanType,
+  scan_id: number,
+) => {
+  const response = await api.post(
+    `/${team_id}/${scan_type}/scan/${scan_id}/sign`,
+  );
+  return response.data as { bom_signature: Record<string, unknown> };
+};
+
+const getCertInVex = async (
+  team_id: number,
+  scan_type: CertInBomScanType,
+  scan_id: number,
+  refresh = false,
+) => {
+  const response = await api.get(
+    `/${team_id}/${scan_type}/scan/${scan_id}/vex`,
+    { params: refresh ? { refresh: true } : undefined },
+  );
+  return response.data as Record<string, unknown>;
+};
+
+const getCertInEvidencePack = async (
+  team_id: number,
+  scan_type: CertInBomScanType,
+  scan_id: number,
+): Promise<Blob> => {
+  const response = await api.get(
+    `/${team_id}/${scan_type}/scan/${scan_id}/evidence-pack`,
+    { responseType: "blob" },
+  );
+  return response.data as Blob;
+};
+
 /** Team-scoped: POST /{team_id}/cbom/scan/{scan_id}/reinitialize with FormData */
 const reinitializeCBOMScanWithPayload = async (
   team_id: number,
@@ -2359,6 +2485,10 @@ export {
   renameCBOMScan,
   getCBOMExportResults,
   reinitializeCBOMScanWithPayload,
+  postCertInAttestation,
+  postCertInSign,
+  getCertInVex,
+  getCertInEvidencePack,
 }
 
 // -------------------------------------------------------------- AI BOM API Routes --------------------------------------------------------------
@@ -2396,12 +2526,19 @@ export interface AiBomScanMetadata {
   scan_binaries?: boolean
   ai_bom_json?: Record<string, unknown>
   ai_bom_compliance?: Record<string, unknown>
-  ai_bom_graph?: { nodes?: unknown[]; edges?: unknown[] }
+  ai_bom_graph?: { nodes?: unknown[]; edges?: unknown[]; meta?: Record<string, unknown> }
+  ai_bom_graph_compact?: { nodes?: unknown[]; edges?: unknown[]; meta?: Record<string, unknown> }
+  ai_bom_graph_expanded?: { nodes?: unknown[]; edges?: unknown[]; meta?: Record<string, unknown> }
   ai_bom_scores?: Record<string, unknown>
   ai_bom_spdx?: Record<string, unknown>
   ai_bom_sarif?: Record<string, unknown>
   rbi_csf_rollup?: Record<string, unknown> | null
+  certin_posture?: Record<string, unknown> | null
   error_message?: string
+  // CERT-In Phase 4 additive keys
+  attestations?: Record<string, unknown> | null
+  bom_signature?: Record<string, unknown> | null
+  vex_json?: Record<string, unknown> | null
 }
 
 /** AI BOM single-scan dashboard from backend generate_scan_dashboard (scan.py ai_bom branch) */
@@ -2462,7 +2599,8 @@ export interface AIBOMConversation {
   total_unlicensed_assets: number | null
   zip_file_used: boolean | null
   ai_bom_file_used: boolean | null
-  info: string | null
+  /** Progress payload from worker; often `{ current: number }`, not a display string. */
+  info: ScanInfoField | string | null
   risk_data: {
     total_critical: number
     total_high: number
@@ -2929,8 +3067,11 @@ export {
     reinitializeLeakageScan
 }
 
-// -------------------------------------------------------------- Guardrails API Routes --------------------------------------------------------------
+// -------------------------------------------------------------- Guardrails API Routes (DEPRECATED) --------------------------------------------------------------
+// @deprecated Guardrails product UI is removed from user-facing surfaces.
+// These helpers remain for internal/API callers and Deprecated* page exports — do not call from new UI.
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 export interface GuardrailsIntegration {
     id: number
     title: string
@@ -2962,6 +3103,7 @@ export interface GuardrailsListDashboardData {
     high_or_critical_risks_daily_usage: Record<string, number>
 }
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 const getGuardrailsListDashboard = async (team_id: number): Promise<GuardrailsListDashboardData> => {
     try {
         const response = await api.get(`/guardrails/${team_id}/integrations/dashboard`)
@@ -2978,6 +3120,7 @@ export interface GuardrailsIntegrationsResponse {
     dashboard_data: GuardrailsListDashboardData
 }
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 const getGuardrailsIntegrations = async (team_id: number): Promise<GuardrailsIntegrationsResponse> => {
     try {
         const response = await api.get(`/guardrails/${team_id}/integrations`)
@@ -2990,6 +3133,7 @@ const getGuardrailsIntegrations = async (team_id: number): Promise<GuardrailsInt
     }
 }
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 const deleteGuardrailsIntegration = async (team_id: number, integration_id: number) => {
     try {
         const response = await api.delete(`/guardrails/${team_id}/integration/${integration_id}`)
@@ -3001,6 +3145,7 @@ const deleteGuardrailsIntegration = async (team_id: number, integration_id: numb
     }
 }
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 const renameGuardrailsIntegration = async ({ team_id, integration_id, title }: { team_id: number; integration_id: number; title: string }) => {
     return updateGuardrailsIntegration({ team_id, integration_id, data: { title } })
 }
@@ -3131,6 +3276,7 @@ export interface GuardrailsIntegrationDashboard {
     integration_settings?: IntegrationSettingsData | Record<string, unknown> | null
 }
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 const getGuardrailsIntegrationDashboard = async ({queryKey}: {queryKey: ['guardrails-integration-dashboard', string, string, number, number]}): Promise<GuardrailsIntegrationDashboard> => {
     const [, team_id, integration_id, limit, offset] = queryKey
     try {
@@ -3149,6 +3295,7 @@ export interface CreateGuardrailsIntegrationData {
     title: string
 }
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 const createGuardrailsIntegration = async (team_id: number, data: CreateGuardrailsIntegrationData) => {
     try {
         const response = await api.post(`/guardrails/${team_id}/integration`, data)
@@ -3175,6 +3322,7 @@ export interface UpdateGuardrailsIntegrationData {
     integration_settings?: IntegrationSettingsData
 }
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 const updateGuardrailsIntegration = async ({ team_id, integration_id, data }: { team_id: number; integration_id: number; data: UpdateGuardrailsIntegrationData }) => {
     try {
         const response = await api.put(`/guardrails/${team_id}/integration/${integration_id}`, data)
@@ -3186,6 +3334,7 @@ const updateGuardrailsIntegration = async ({ team_id, integration_id, data }: { 
     }
 }
 
+/** @deprecated Guardrails UI removed — do not call from user-facing frontend. */
 const getGuardrailsIntegrationSettings = async (team_id: number, integration_id: number) => {
     try {
         const response = await api.get(`/guardrails/${team_id}/integration/${integration_id}/settings`)

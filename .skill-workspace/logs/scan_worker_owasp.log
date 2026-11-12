@@ -1,0 +1,206 @@
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+Local environment detected
+Broker URL: localhost:4672
+Mongo URL: localhost:27017
+Celery App instantiated
+Registered SAST task
+Registered SBOM SCA task
+Registered IAC task with context pattern
+Registered SAST estimation task
+Registered SBOM SCA estimation task
+Registered IAC estimation task
+Registered CBOM task
+Registered AI BOM task
+Registered CBOM estimation task
+Registered AI BOM estimation task
+ 
+ -------------- owaspcb@Anshs-MacBook-Pro.local v5.5.3 (immunity)
+--- ***** ----- 
+-- ******* ---- macOS-26.6-arm64-arm-64bit 2026-08-09 16:27:27
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         worker:0x1128c30b0
+- ** ---------- .> transport:   amqp://admin:**@localhost:4672//
+- ** ---------- .> results:     mongodb://MongoAdmin:**@localhost:27017/
+- *** --- * --- .> concurrency: 4 (thread)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> scan_worker_queue exchange=scan_worker_queue(direct) key=scan_worker_queue
+                
+
+[tasks]
+  . scan_worker.ai_bom
+  . scan_worker.ai_bom_estimation
+  . scan_worker.cbom
+  . scan_worker.cbom_estimation
+  . scan_worker.iac
+  . scan_worker.iac_estimation
+  . scan_worker.llm_benchmark_estimation
+  . scan_worker.llm_benchmark_scan
+  . scan_worker.mcp_estimation
+  . scan_worker.mcp_scan
+  . scan_worker.sast
+  . scan_worker.sast_estimation
+  . scan_worker.sbom_sca
+  . scan_worker.sbom_sca_estimation
+
+[2026-08-09 16:27:27,080: INFO/MainProcess] Connected to amqp://admin:**@127.0.0.1:4672//
+[2026-08-09 16:27:27,086: INFO/MainProcess] mingle: searching for neighbors
+[2026-08-09 16:27:28,139: INFO/MainProcess] mingle: sync with 2 nodes
+[2026-08-09 16:27:28,140: INFO/MainProcess] mingle: sync complete
+[2026-08-09 16:27:28,173: INFO/MainProcess] owaspcb@Anshs-MacBook-Pro.local ready.
+[2026-08-09 16:27:31,989: INFO/MainProcess] Events of group {task} enabled by remote.
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+Local environment detected
+Broker URL: localhost:4672
+Mongo URL: localhost:27017
+Celery App instantiated
+Registered SAST task
+Registered SBOM SCA task
+Registered IAC task with context pattern
+Registered SAST estimation task
+Registered SBOM SCA estimation task
+Registered IAC estimation task
+Registered CBOM task
+Registered AI BOM task
+Registered CBOM estimation task
+Registered AI BOM estimation task
+ 
+ -------------- owaspcb@Anshs-MacBook-Pro.local v5.5.3 (immunity)
+--- ***** ----- 
+-- ******* ---- macOS-26.6-arm64-arm-64bit 2026-08-09 16:32:48
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         worker:0x112c37f50
+- ** ---------- .> transport:   amqp://admin:**@localhost:4672//
+- ** ---------- .> results:     mongodb://MongoAdmin:**@localhost:27017/
+- *** --- * --- .> concurrency: 4 (thread)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> scan_worker_queue exchange=scan_worker_queue(direct) key=scan_worker_queue
+                
+
+[tasks]
+  . scan_worker.ai_bom
+  . scan_worker.ai_bom_estimation
+  . scan_worker.cbom
+  . scan_worker.cbom_estimation
+  . scan_worker.iac
+  . scan_worker.iac_estimation
+  . scan_worker.llm_benchmark_estimation
+  . scan_worker.llm_benchmark_scan
+  . scan_worker.mcp_estimation
+  . scan_worker.mcp_scan
+  . scan_worker.sast
+  . scan_worker.sast_estimation
+  . scan_worker.sbom_sca
+  . scan_worker.sbom_sca_estimation
+
+[2026-08-09 16:32:48,945: INFO/MainProcess] Connected to amqp://admin:**@127.0.0.1:4672//
+[2026-08-09 16:32:48,948: INFO/MainProcess] mingle: searching for neighbors
+[2026-08-09 16:32:49,975: INFO/MainProcess] mingle: sync with 2 nodes
+[2026-08-09 16:32:49,976: INFO/MainProcess] mingle: sync complete
+[2026-08-09 16:32:50,014: INFO/MainProcess] owaspcb@Anshs-MacBook-Pro.local ready.
+[2026-08-09 16:32:50,015: INFO/MainProcess] Task scan_worker.cbom_estimation[c2d62f59-d5e2-4073-8964-e8c5d3598f0d] received
+[2026-08-09 16:32:50,016: INFO/MainProcess] Task scan_worker.cbom_estimation[533c18d5-9e24-460b-b2f5-86b8c25bca04] received
+[2026-08-09 16:32:50,073: WARNING/MainProcess] 📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_540ctjav Branch:master
+[2026-08-09 16:32:50,087: WARNING/MainProcess] 📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_xro007xx Branch:master
+[2026-08-09 16:32:51,227: WARNING/MainProcess] CBOM estimation: 26 files, 0.29 MB across 22 extension types
+[2026-08-09 16:32:51,228: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:32:51,228: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:32:51,228: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:32:51,238: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:32:51,240: INFO/MainProcess] Task scan_worker.cbom_estimation[c2d62f59-d5e2-4073-8964-e8c5d3598f0d] succeeded in 1.2245549579965882s: 0.6179495816025438
+[2026-08-09 16:32:51,254: WARNING/MainProcess] CBOM estimation: 26 files, 0.29 MB across 22 extension types
+[2026-08-09 16:32:51,254: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:32:51,255: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:32:51,255: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:32:51,263: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:32:51,264: INFO/MainProcess] Task scan_worker.cbom_estimation[533c18d5-9e24-460b-b2f5-86b8c25bca04] succeeded in 1.2481233750004321s: 0.6179495816025438
+[2026-08-09 16:32:51,989: INFO/MainProcess] Events of group {task} enabled by remote.
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+Local environment detected
+Broker URL: localhost:4672
+Mongo URL: localhost:27017
+Celery App instantiated
+Registered SAST task
+Registered SBOM SCA task
+Registered IAC task with context pattern
+Registered SAST estimation task
+Registered SBOM SCA estimation task
+Registered IAC estimation task
+Registered CBOM task
+Registered AI BOM task
+Registered CBOM estimation task
+Registered AI BOM estimation task
+ 
+ -------------- owaspcb@Anshs-MacBook-Pro.local v5.5.3 (immunity)
+--- ***** ----- 
+-- ******* ---- macOS-26.6-arm64-arm-64bit 2026-08-09 16:38:46
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         worker:0x11450fcb0
+- ** ---------- .> transport:   amqp://admin:**@localhost:4672//
+- ** ---------- .> results:     mongodb://MongoAdmin:**@localhost:27017/
+- *** --- * --- .> concurrency: 4 (thread)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> scan_worker_queue exchange=scan_worker_queue(direct) key=scan_worker_queue
+                
+
+[tasks]
+  . scan_worker.ai_bom
+  . scan_worker.ai_bom_estimation
+  . scan_worker.cbom
+  . scan_worker.cbom_estimation
+  . scan_worker.iac
+  . scan_worker.iac_estimation
+  . scan_worker.llm_benchmark_estimation
+  . scan_worker.llm_benchmark_scan
+  . scan_worker.mcp_estimation
+  . scan_worker.mcp_scan
+  . scan_worker.sast
+  . scan_worker.sast_estimation
+  . scan_worker.sbom_sca
+  . scan_worker.sbom_sca_estimation
+
+[2026-08-09 16:38:46,579: INFO/MainProcess] Connected to amqp://admin:**@127.0.0.1:4672//
+[2026-08-09 16:38:46,585: INFO/MainProcess] mingle: searching for neighbors
+[2026-08-09 16:38:47,637: INFO/MainProcess] mingle: sync with 2 nodes
+[2026-08-09 16:38:47,638: INFO/MainProcess] mingle: sync complete
+[2026-08-09 16:38:47,677: INFO/MainProcess] owaspcb@Anshs-MacBook-Pro.local ready.
+[2026-08-09 16:38:47,678: INFO/MainProcess] Task scan_worker.cbom_estimation[469b085d-f7c6-4213-ad09-3f185be51f82] received
+[2026-08-09 16:38:47,734: WARNING/MainProcess] 📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo__1c9lh5u Branch:master
+[2026-08-09 16:38:48,939: WARNING/MainProcess] CBOM estimation: 26 files, 0.29 MB across 22 extension types
+[2026-08-09 16:38:48,939: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:38:48,940: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:38:48,941: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:38:48,952: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:38:48,954: INFO/MainProcess] Task scan_worker.cbom_estimation[469b085d-f7c6-4213-ad09-3f185be51f82] succeeded in 1.2757151660043746s: 0.6179495816025438
+[2026-08-09 16:38:51,988: INFO/MainProcess] Events of group {task} enabled by remote.
+[2026-08-09 16:39:12,669: INFO/MainProcess] Task scan_worker.cbom_estimation[03cbe13f-ae6b-4be4-b5ff-0143c50c67ec] received
+[2026-08-09 16:39:12,681: WARNING/MainProcess] 📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_vb4wu9ks Branch:master
+[2026-08-09 16:39:13,868: WARNING/MainProcess] CBOM estimation: 26 files, 0.29 MB across 22 extension types
+[2026-08-09 16:39:13,869: WARNING/MainProcess] Performing cleanup .... 🧹
+[2026-08-09 16:39:13,869: WARNING/MainProcess] Temp Dir does Exist
+[2026-08-09 16:39:13,869: WARNING/MainProcess] Removing temporary directory ...
+[2026-08-09 16:39:13,877: WARNING/MainProcess] Temporary directory removed successfully
+[2026-08-09 16:39:13,880: INFO/MainProcess] Task scan_worker.cbom_estimation[03cbe13f-ae6b-4be4-b5ff-0143c50c67ec] succeeded in 1.208851458010031s: 0.6179495816025438
+[2026-08-09 16:39:14,756: INFO/MainProcess] Task scan_worker.cbom[4e56a48a-cfdb-4e31-8784-171628a8c945] received
+[2026-08-09 16:39:14,915: WARNING/MainProcess] 📦 Cloning https://github.com/jpadilla/pyjwt → 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/repo_uzkb1s34 Branch:master
+[2026-08-09 16:39:16,632: INFO/MainProcess] Task scan_worker.cbom[4e56a48a-cfdb-4e31-8784-171628a8c945] succeeded in 1.8754813330015168s: {'results': [{'title': 'SSH', 'impact': 'High', 'asset_type': 'protocol', 'primitive': None, 'key_size': None, 'security_strength_bits': None, 'mode': None, 'curve': None, 'protocol_version': None, 'not_valid_after': None, 'quantum_vulnerable': False, 'nist_quantum_security_level': None, 'pqc_migration_target': None, 'pqc_migration_roadmap': None, 'parameter_set': None, 'hybrid': False, 'weak': True, 'finding_codes': [...], 'description': 'Weak cryptographic suite(s) on SSH: ssh-dss (ssh-dss host key — 1024-bit DSA, weak); ssh-rsa (ssh-rsa host key — SHA-1 signature; use rsa-sha2-256/512). Disable these and offer only AEAD suites (TLS 1.2+ ECDHE + AES-GCM/ChaCha20-Poly1305; SSH curve25519 + aes-gcm + hmac-sha2; IKEv2 aes-gcm + modp2048+/ECP) per PCI-DSS 4.0 / NIST SP 800-52r2.', 'location': 'jwt/utils.py', 'algorithm_name': 'SSH', 'algorithm_type': 'protocol', 'crypto_strength': 'weak', 'quantum_safe': None, 'suggested_fix': 'Replace this weak cryptographic asset with a current, standards-approved algorithm...', ...}]}
+
+worker: Warm shutdown (MainProcess)
+
+worker: Warm shutdown (MainProcess)

@@ -1,0 +1,23 @@
+{
+  "packages": [
+    "click",
+    "gha-update",
+    "mypy",
+    "myst-parser",
+    "pallets-sphinx-themes",
+    "pre-commit",
+    "pre-commit-uv",
+    "pyright",
+    "pytest",
+    "pytest-randomly",
+    "pytest-xdist",
+    "ruff",
+    "sphinx",
+    "sphinx-autobuild",
+    "sphinx-tabs",
+    "sphinxcontrib-log-cabinet",
+    "tox",
+    "tox-uv",
+    "uv"
+  ]
+}

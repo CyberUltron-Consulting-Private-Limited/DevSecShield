@@ -47,3 +47,11 @@ def test_empty_findings_out_of_scope() -> None:
     report = run_sbom_compliance([])
     fw = report["rbi_free_ai_supply"]
     assert fw["out_of_scope"] >= 1
+
+
+def test_cert_in_sbom_peer_present_after_wire() -> None:
+    report = run_sbom_compliance([_row()])
+    assert "cert_in_sbom" in report
+    assert len(report["cert_in_sbom"]["requirements"]) == 41
+    # RBI still green on clean row.
+    assert report["rbi_free_ai_supply"]["fail"] == 0

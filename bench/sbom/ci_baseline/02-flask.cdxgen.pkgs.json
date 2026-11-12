@@ -1,0 +1,24 @@
+{
+  "packages": [
+    "asgiref",
+    "cryptography",
+    "flask",
+    "gha-update",
+    "mypy",
+    "pallets-sphinx-themes",
+    "pre-commit",
+    "pre-commit-uv",
+    "pyright",
+    "pytest",
+    "python-dotenv",
+    "ruff",
+    "sphinx-autobuild",
+    "sphinx-tabs",
+    "sphinxcontrib-log-cabinet",
+    "tox",
+    "tox-uv",
+    "types-contextvars",
+    "types-dataclasses",
+    "uv"
+  ]
+}

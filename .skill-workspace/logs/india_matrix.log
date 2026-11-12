@@ -1,0 +1,114 @@
+docs=0 root=404 — continuing
+
+=== c1 cbom jpadilla/pyjwt ===
+ created scan_id=77
+ estimate ok
+ started; polling…
+ success in 7.4s frameworks={'cert_in_cbom': {'ok': True, 'req_count': 43, 'coverage': 0.733}, 'sebi_cscrf_cbom': {'ok': True, 'req_count': 18, 'coverage': 1.0}, 'rbi_free_ai_protection': {'ok': True, 'req_count': 8, 'coverage': 0.833}} missing=[]
+
+=== c2 cbom pyca/pyopenssl ===
+ created scan_id=78
+ estimate ok
+ started; polling…
+ success in 7.3s frameworks={'cert_in_cbom': {'ok': True, 'req_count': 43, 'coverage': 0.909}, 'sebi_cscrf_cbom': {'ok': True, 'req_count': 18, 'coverage': 1.0}, 'rbi_free_ai_protection': {'ok': True, 'req_count': 8, 'coverage': 0.833}} missing=[]
+
+=== c3 cbom pyca/cryptography ===
+ created scan_id=79
+ estimate ok
+ started; polling…
+ success in 22.0s frameworks={'cert_in_cbom': {'ok': True, 'req_count': 43, 'coverage': 0.733}, 'sebi_cscrf_cbom': {'ok': True, 'req_count': 18, 'coverage': 0.625}, 'rbi_free_ai_protection': {'ok': True, 'req_count': 8, 'coverage': 0.333}} missing=[]
+
+=== c4 cbom mitmproxy/mitmproxy ===
+ created scan_id=80
+ estimate ok
+ started; polling…
+ success in 19.5s frameworks={'cert_in_cbom': {'ok': True, 'req_count': 43, 'coverage': 0.733}, 'sebi_cscrf_cbom': {'ok': True, 'req_count': 18, 'coverage': 0.5}, 'rbi_free_ai_protection': {'ok': True, 'req_count': 8, 'coverage': 0.167}} missing=[]
+
+=== c5 cbom paramiko/paramiko ===
+ created scan_id=81
+ estimate ok
+ started; polling…
+ success in 7.3s frameworks={'cert_in_cbom': {'ok': True, 'req_count': 43, 'coverage': 0.895}, 'sebi_cscrf_cbom': {'ok': True, 'req_count': 18, 'coverage': 0.625}, 'rbi_free_ai_protection': {'ok': True, 'req_count': 8, 'coverage': 0.333}} missing=[]
+
+=== a1 ai_bom karpathy/nanoGPT ===
+ created scan_id=82
+ estimate ok
+ started; polling…
+ success in 7.2s frameworks={'cert_in_aibom': {'ok': True, 'req_count': 32, 'coverage': 0.6}, 'sebi_cscrf_aibom': {'ok': True, 'req_count': 19, 'coverage': 0.667}, 'rbi_free_ai': {'ok': True, 'req_count': 24, 'coverage': 0.0}} missing=[]
+
+=== a2 ai_bom langchain-ai/langchain ===
+ created scan_id=83
+ estimate ok
+ started; polling…
+ success in 45.0s frameworks={'cert_in_aibom': {'ok': True, 'req_count': 32, 'coverage': 0.4}, 'sebi_cscrf_aibom': {'ok': True, 'req_count': 19, 'coverage': 0.667}, 'rbi_free_ai': {'ok': True, 'req_count': 24, 'coverage': 0.0}} missing=[]
+
+=== a3 ai_bom microsoft/autogen ===
+ created scan_id=84
+ estimate ok
+ started; polling…
+ success in 24.6s frameworks={'cert_in_aibom': {'ok': True, 'req_count': 32, 'coverage': 0.4}, 'sebi_cscrf_aibom': {'ok': True, 'req_count': 19, 'coverage': 0.667}, 'rbi_free_ai': {'ok': True, 'req_count': 24, 'coverage': 0.0}} missing=[]
+
+=== a4 ai_bom openai/openai-python ===
+ created scan_id=85
+ estimate ok
+ started; polling…
+ success in 27.6s frameworks={'cert_in_aibom': {'ok': True, 'req_count': 32, 'coverage': 0.8}, 'sebi_cscrf_aibom': {'ok': True, 'req_count': 19, 'coverage': 0.75}, 'rbi_free_ai': {'ok': True, 'req_count': 24, 'coverage': 0.0}} missing=[]
+
+=== a5 ai_bom modelcontextprotocol/servers ===
+ created scan_id=86
+ estimate ok
+ started; polling…
+ success in 7.3s frameworks={'cert_in_aibom': {'ok': True, 'req_count': 32, 'coverage': None}, 'sebi_cscrf_aibom': {'ok': True, 'req_count': 19, 'coverage': None}, 'rbi_free_ai': {'ok': True, 'req_count': 24, 'coverage': None}} missing=[]
+
+=== s1 sbom_sca psf/requests ===
+ created scan_id=87
+ estimate ok
+ started; polling…
+ success in 17.5s frameworks={'cert_in_sbom': {'ok': True, 'req_count': 41, 'coverage': 0.8}, 'sebi_cscrf_sbom': {'ok': True, 'req_count': 24, 'coverage': 0.727}, 'rbi_free_ai_supply': {'ok': True, 'req_count': 6, 'coverage': 0.8}} missing=[]
+
+=== s2 sbom_sca pallets/flask ===
+ created scan_id=88
+ estimate ok
+ started; polling…
+ success in 12.4s frameworks={'cert_in_sbom': {'ok': True, 'req_count': 41, 'coverage': 0.8}, 'sebi_cscrf_sbom': {'ok': True, 'req_count': 24, 'coverage': 0.636}, 'rbi_free_ai_supply': {'ok': True, 'req_count': 6, 'coverage': 0.4}} missing=[]
+
+=== s3 sbom_sca urllib3/urllib3 ===
+ created scan_id=89
+ estimate ok
+ started; polling…
+ success in 12.5s frameworks={'cert_in_sbom': {'ok': True, 'req_count': 41, 'coverage': 0.8}, 'sebi_cscrf_sbom': {'ok': True, 'req_count': 24, 'coverage': 0.636}, 'rbi_free_ai_supply': {'ok': True, 'req_count': 6, 'coverage': 0.4}} missing=[]
+
+=== s4 sbom_sca sqlalchemy/sqlalchemy ===
+ created scan_id=90
+ estimate ok
+ started; polling…
+ success in 14.4s frameworks={'cert_in_sbom': {'ok': True, 'req_count': 41, 'coverage': 0.8}, 'sebi_cscrf_sbom': {'ok': True, 'req_count': 24, 'coverage': 0.727}, 'rbi_free_ai_supply': {'ok': True, 'req_count': 6, 'coverage': 0.8}} missing=[]
+
+=== s5 sbom_sca pallets/click ===
+ created scan_id=91
+ estimate ok
+ started; polling…
+ success in 12.4s frameworks={'cert_in_sbom': {'ok': True, 'req_count': 41, 'coverage': 0.8}, 'sebi_cscrf_sbom': {'ok': True, 'req_count': 24, 'coverage': 0.636}, 'rbi_free_ai_supply': {'ok': True, 'req_count': 6, 'coverage': 0.4}} missing=[]
+
+======== MATRIX SUMMARY ========
+{
+  "ok": true,
+  "duration_s": 244.4,
+  "success": 15,
+  "failed": 0,
+  "by_lane": {
+    "cbom": {
+      "ok": 5,
+      "total": 5
+    },
+    "ai_bom": {
+      "ok": 5,
+      "total": 5
+    },
+    "sbom_sca": {
+      "ok": 5,
+      "total": 5
+    }
+  }
+}
+wrote /tmp/india_compliance_matrix.json

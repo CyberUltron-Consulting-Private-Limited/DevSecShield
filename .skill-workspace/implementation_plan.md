@@ -1,60 +1,70 @@
-# Implementation Plan — CBOM Frontend Consistency Refactor
+# CBOM Certificate Expiry Chart — Implementation Plan
 
-## Goal
-Make the CBOM frontend (results page = table + overview/dashboard, and the scan-list/overview page)
-structurally and visually consistent with the canonical scan pattern, using **SBOM/SCA** as the reference.
+> **For Claude:** REQUIRED SUB-SKILL: Use skill-executing-plans after user confirms.
 
-## Confirmed decisions
-1. Reference template: **SBOM/SCA** (`SbomResults.tsx`, `app/[team_id]/sbom_sca/**`).
-2. Theme: **convert** CBOM's hardcoded pure-dark (`bg-zinc-900`/`text-white`) to the canonical light+dark theme (`dark:` prefixes).
-3. Domain data: **keep** CBOM crypto-specific columns/charts (algorithm, strength, quantum-safe, algorithm-type / crypto-strength / quantum-readiness charts) but render them in the canonical layout/structure/styling.
-4. Extra fixes: **all** — add missing `[scan_id]/layout.tsx`, conditional routing to `/results`, metadata dialog, list risk-score filter + clear-filters.
+**Goal:** Make the Certificate expiry panel truthful and useful: clearer empty state on zero-cert scans, and a per-certificate validity view when certs exist (using fields already in `cbom_distributions.certificates`).
 
-## Root cause
-`CbomResults.tsx` and `cbom/page.tsx` were authored as a standalone dark-theme/custom-layout variant
-instead of following the shared skeleton SAST/SBOM/IAC/DAST use. No backend changes needed — the CBOM
-list/detail APIs already return every field the canonical UI requires.
+**Architecture:** Frontend-only change in `frontend/components/cbom/CbomCryptoCharts.tsx` (CertificateExpiry). Backend normalize already emits name / not_valid_after / expired / near_expiry / self_signed / weak_*. No worker restart. Extend FE types + chart-data contract comments if needed; keep hermetic aibom contract green.
 
-## Constraints
-- All changes LOCAL only on branch `ansh`. No git push / merge / PR (skill rule).
-- No backend changes. Frontend-only.
-- Preserve all existing CBOM functionality (CycloneDX JSON export, quantum filters, RemediationPanel, Jira ticketing, bulk status).
+**Tech stack:** React / Recharts / existing CbomCryptoCharts patterns.
 
 ---
 
-## Fix Group 1 — Scan-list / overview page: `app/[team_id]/cbom/page.tsx`
-Match `app/[team_id]/sbom_sca/page.tsx`.
-- Page wrapper: `flex h-screen` (was `ScrollArea h-screen`).
-- Tabs: rename "All Scans" → "Table"; use canonical `<Tabs>` styling.
-- Theme: convert hardcoded dark → light/dark canonical throughout (colored-icon cards, etc.).
-- `CBOMScanListDashboard`: restyle aggregate cards (colored icon boxes), chart cards (canonical `Card`/`CardHeader`/empty-states); keep crypto charts (severity radar, algorithm-type bar, crypto-strength bar, quantum-readiness bar, top-risks table) + canonical 4-bar remediation card.
-- Table: expand to canonical columns — Title / Created at / Last updated / Scan status (+progress bar) / Risks (C/H/M/L colored dots + QV badge) / Risk score / Repo / Branch / Credits / Owner (avatar) / Actions. Wrap in `ScrollArea` + horizontal `ScrollBar`.
-- Filter bar: add colored risk-score filter dropdown + Clear-filters button (match SBOM); keep search + status + sort.
-- Status: canonical `getStatusBadge` (badge + in-progress progress bar); dates via `lib/datetime_parser`.
-- Row nav: success → `/[team_id]/cbom/[scan_id]/results`, else → `/[team_id]/cbom/[scan_id]`.
-- Dialogs: add **Metadata** dialog (4th) alongside Create/Rename/Delete; Actions menu = View results (success) / View metadata / Rename / Delete.
-- Verify: `getCBOMScans` already returns all required fields (confirmed).
+## 0. Pre-Flight
 
-## Fix Group 2 — Results component: `components/CbomResults.tsx`
-Match `components/SbomResults.tsx`.
-- Root wrapper: `min-h-screen ...` + `container mx-auto p-6 space-y-6` (was `ScrollArea h-screen` / `max-w-7xl`).
-- Header: canonical title bar (light/dark); keep CBOM export buttons (CycloneDX JSON + PDF + Chat) restyled.
-- Tabs: icon+text — "Results" (`BarChart3`) / "Ticketing integrations" (`Ticket`) — canonical styling/labels.
-- Scan metadata: canonical colored-icon card grid before dashboard; keep CBOM-specific fields.
-- Dashboard: convert every chart card to canonical `Card border-zinc-200 dark:border-zinc-800` + `CardHeader`/`CardTitle`/`CardDescription` + canonical "No data" empty states; keep all CBOM charts + remediation KPIs.
-- Summary cards: canonical colored-icon style; keep 7 crypto cards.
-- Findings table: canonical structure (`ScrollArea h-[500px]` border, `min-w-max`, canonical `TableHead min-w-[..]`, checkbox col, canonical search `Input` + Impact `Select` + risk-score `DropdownMenu`); KEEP crypto columns (Algorithm, Type, Strength, Quantum, Key Size) + canonical Impact/Risk/Status/Location/OWASP/Compliance/Actions; keep strength/type/quantum filters restyled; Actions dropdown canonical style.
-- Finding detail / RemediationPanel: align opening pattern + dialog styling to canonical.
-- Align `getImpactBadgeClass` / `getFindingStatusBadgeClass` to canonical implementations.
+- [x] API: card `total_certificates` == `len(cbom_distributions.certificates)` on scans 94/80/79/78/81
+- [x] Normalize fixture emits cert rows
+- [x] Empty message only when `certificates` empty
+- [ ] User confirms scope (below)
+- [ ] No coding until confirm
 
-## Fix Group 3 — Add `app/[team_id]/cbom/[scan_id]/layout.tsx`
-Passthrough layout identical to `sbom_sca/[scan_id]/layout.tsx`.
+---
 
-## Fix Group 4 — Verify (Phase 6)
-- Typecheck/build: `cd frontend && npm run build` (or `npx tsc --noEmit` / `next lint`) — zero new errors.
-- Run dev server; Playwright the CBOM list page, results page (Dashboard + Table tabs, light & dark), compare side-by-side with SBOM for structural parity.
-- Confirm preserved behavior: CycloneDX JSON export, quantum/strength/type filters, status toggle, bulk status, Jira ticketing, RemediationPanel, conditional routing, metadata dialog.
+## Scope options (pick one)
 
-## Risk / rollback
-- Risk: large rewrites of 2 big files; mitigated by using canonical files as scaffold + build/typecheck + live verify.
-- Rollback: `git checkout -- frontend/components/CbomResults.tsx frontend/app/[team_id]/cbom/...` (all local, uncommitted or on branch `ansh`).
+### A — Recommended: FE UX + detail list (this plan)
+1. Empty copy → "No X.509 certificates in this scan" (+ short hint when other crypto charts have data)
+2. When certs exist: keep Valid/Expired/Self-signed bars **and** add compact list: name · not_valid_after · badges (Expired / Near expiry / Self-signed)
+3. Extend FE `CbomDistributions.certificates` type with optional near_expiry / weak_* already present in payload
+4. Verify: temp no-auth route OR live scan **#80** (32 certs) + scan **#78** (0 certs empty copy)
+5. `tsc --noEmit` + scoped eslint; no aibom change unless contract test needs type note
+
+### B — Do nothing (document as expected)
+Only if user confirms they were on a 0-cert repo (e.g. pyopenssl #78) and empty is acceptable.
+
+### C — Detection expansion (OUT OF SCOPE unless proven)
+Investigate whether a specific repo has `.pem`/`.crt` on disk that C2 missed. Requires reproduction target + fixture; separate CBOM scanner story.
+
+---
+
+## Fix group A1 — Empty state copy
+
+**Files:** `frontend/components/cbom/CbomCryptoCharts.tsx`  
+**Change:** Replace `EmptyChart message="No certificates detected"` with clearer wording; optionally pass `hasOtherCrypto` if useful.  
+**Verify:** Scan #78 / fixture with empty certificates array shows new copy.  
+**Risk:** Low
+
+## Fix group A2 — Per-cert expiry list
+
+**Files:** same + type fields on `CbomDistributions.certificates`  
+**Change:** Below (or instead of only) the bar chart, render sorted rows from `certificates` using `name`, `not_valid_after`, `expired`, `near_expiry`, `self_signed`. Cap list (~8) + “+N more” if large (mitmproxy 32).  
+**Verify:** Scan #80 / #94 shows cert names and expiry dates; expired badge on `testkey_rsa.cer`.  
+**Risk:** Low–Medium (layout density)
+
+## Fix group A3 — Verification
+
+1. Hermetic: existing `test_cbom_chart_data_contract` still asserts non-empty certificates on synthetic-crypto-app  
+2. Live: API assert on #80 certificates length > 0; Playwright on temp route with dumped distributions OR authenticated results page  
+3. Ruflo `memory_store` key `cbom-cert-expiry-verified`
+
+## Rollback
+
+Revert single FE file; no DB/worker migration.
+
+---
+
+## Explicit non-goals
+
+- Do not change `_certificate_expiry` / scanner unless user picks C with a missed-file repro
+- Do not change dashboard `total_certificates` aggregation (already matches)
+- No remote git push/PR

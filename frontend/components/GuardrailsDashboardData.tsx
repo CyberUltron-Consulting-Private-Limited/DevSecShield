@@ -1,5 +1,11 @@
 "use client";
+/* eslint-disable -- @deprecated Guardrails UI retained; pre-existing lint debt */
 
+/**
+ * @deprecated Guardrails product UI is removed from user-facing surfaces.
+ * Kept for internal reference / DeprecatedGuardrailsIntegrationPage only.
+ * Do not add new user-facing call sites.
+ */
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,6 +18,7 @@ import {
 } from "@/components/ui/chart";
 import { Area, AreaChart, CartesianGrid, PolarAngleAxis, PolarGrid, Radar, RadarChart, RadialBar, RadialBarChart, XAxis, YAxis } from "recharts";
 import type { GuardrailsDashboardData as DashboardData } from "@/utils/backend_api";
+import { formatDateOnlyIst, formatSlashDateIst } from "@/utils/datetime";
 import {
   BarChart3,
   Activity,
@@ -89,6 +96,7 @@ export interface GuardrailsDashboardDataProps {
   dashboardData: DashboardData | null | undefined;
 }
 
+/** @deprecated Prefer GuardrailsDeprecatedNotice for user-facing deep links. */
 export function GuardrailsDashboardData({ dashboardData }: GuardrailsDashboardDataProps) {
   if (dashboardData == null) {
     return (
@@ -267,7 +275,7 @@ export function GuardrailsDashboardData({ dashboardData }: GuardrailsDashboardDa
                         </TooltipTrigger>
                         <TooltipContent side="top" className="font-medium bg-zinc-800 text-zinc-100 border border-zinc-600 *:last:bg-zinc-800 *:last:fill-zinc-800">
                           <span className="font-normal text-zinc-300">
-                            {new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            {formatDateOnlyIst(dateStr)}
                           </span>
                           <br />
                           <span className="font-mono tabular-nums">{count}</span> detection{count !== 1 ? "s" : ""}
@@ -366,24 +374,12 @@ export function GuardrailsDashboardData({ dashboardData }: GuardrailsDashboardDa
                   axisLine={false}
                   tickMargin={8}
                   minTickGap={20}
-                  tickFormatter={(value) => {
-                    const date = new Date(value);
-                    const m = date.getMonth() + 1;
-                    const d = date.getDate();
-                    return `${m.toString().padStart(2, "0")}/${d.toString().padStart(2, "0")}`;
-                  }}
+                  tickFormatter={(value) => formatSlashDateIst(value)}
                   tick={({ payload, x, y }) => (
                     <g transform={`translate(${x},${y})`}>
                       <foreignObject x={-24} y={0} width={48} height={28} className="overflow-visible">
                         <div className="text-[10px] text-center text-zinc-600 dark:text-zinc-400 wrap-break-word leading-tight w-full">
-                          {payload.value
-                            ? (() => {
-                                const date = new Date(payload.value);
-                                const m = date.getMonth() + 1;
-                                const d = date.getDate();
-                                return `${m.toString().padStart(2, "0")}/${d.toString().padStart(2, "0")}`;
-                              })()
-                            : ""}
+                          {payload.value ? formatSlashDateIst(payload.value) : ""}
                         </div>
                       </foreignObject>
                     </g>
@@ -394,13 +390,7 @@ export function GuardrailsDashboardData({ dashboardData }: GuardrailsDashboardDa
                   cursor={false}
                   content={
                     <ChartTooltipContent
-                      labelFormatter={(value) =>
-                        new Date(value).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })
-                      }
+                      labelFormatter={(value) => formatDateOnlyIst(value)}
                       formatter={(value) => [value, "High/Critical risks"]}
                     />
                   }

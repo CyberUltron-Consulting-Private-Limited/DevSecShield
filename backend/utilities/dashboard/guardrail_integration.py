@@ -1,3 +1,8 @@
+"""DEPRECATED: Guardrails per-integration dashboard aggregation.
+
+Retained for legacy Guardrails router responses. Not surfaced in the product UI.
+"""
+
 from collections import defaultdict
 from backend.get_db import get_db, get_mongo_client_db
 from fastapi import HTTPException

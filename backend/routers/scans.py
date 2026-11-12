@@ -32,6 +32,12 @@ from backend.utilities.team import (
 )
 from backend.utilities.integrations.jira import create_issue_in_project as create_issue_in_jira
 from backend.utilities.dashboard.scan import generate_scan_dashboard
+from backend.utilities.dashboard.aibom_license import resolve_aibom_license
+from backend.utilities.dashboard.aibom_provider import resolve_aibom_provider
+from backend.utilities.dashboard.sbom_license import (
+    resolve_sbom_license_fields,
+    resolve_sbom_reachability,
+)
 from backend.utilities.scan.start_scan import start_scan_and_update_db
 from backend.utilities.scan.estimate_scan import estimate_credits
 from backend.utilities.team.credits import check_if_team_has_enough_credits , deduct_credits_from_team , update_scan_credit_consumed , refund_credits_to_team
@@ -353,6 +359,47 @@ async def get_scan(
         scan_result = None
         if SCAN_DATA and isinstance(SCAN_DATA, dict):
             scan_result = SCAN_DATA.get("results", SCAN_DATA)
+            # Read-time remap: never surface literal "unknown" on in-scope BOM fields
+            if isinstance(scan_result, list):
+                if type == "ai_bom":
+                    remapped = []
+                    for row in scan_result:
+                        if not isinstance(row, dict):
+                            remapped.append(row)
+                            continue
+                        r = dict(row)
+                        r["source"] = resolve_aibom_provider(r)
+                        r["license"] = resolve_aibom_license(r)
+                        remapped.append(r)
+                    scan_result = remapped
+                elif type == "sbom_sca":
+                    remapped = []
+                    for row in scan_result:
+                        if not isinstance(row, dict):
+                            remapped.append(row)
+                            continue
+                        r = dict(row)
+                        lic, cat = resolve_sbom_license_fields(r)
+                        r["license"] = lic
+                        r["license_type"] = cat
+                        r["reachability"] = resolve_sbom_reachability(r)
+                        remapped.append(r)
+                    scan_result = remapped
+                elif type == "cbom":
+                    remapped = []
+                    for row in scan_result:
+                        if not isinstance(row, dict):
+                            remapped.append(row)
+                            continue
+                        r = dict(row)
+                        at = r.get("algorithm_type")
+                        if not at or str(at).lower() in ("unknown", "none", "null"):
+                            r["algorithm_type"] = r.get("asset_type") or "other"
+                        cs = r.get("crypto_strength")
+                        if not cs or str(cs).lower() in ("unknown", "none", "null"):
+                            r["crypto_strength"] = "not-applicable"
+                        remapped.append(r)
+                    scan_result = remapped
         data = {
                 "title": scan.title,
                 "scan_metadata": scan_metadata,
@@ -726,11 +773,8 @@ async def export_scan(
             if scan.scan_status not in ["success"]:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan has not completed yet or failed, cannot export results")
             if scan.scan_data and "results" in scan.scan_data:
-                # BOM exports include RBI compliance appendix when present in scan_data.
-                if type in ("ai_bom", "cbom", "sbom_sca"):
-                    scan_data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
-                else:
-                    scan_data = scan.scan_data["results"]
+                # Full scan_data so generators can unwrap results + duration_of_scan.
+                scan_data = scan.scan_data if isinstance(scan.scan_data, dict) else {}
             else:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan data not found for specified team and scan id")
 

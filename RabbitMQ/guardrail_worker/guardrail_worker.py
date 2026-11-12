@@ -1,3 +1,9 @@
+"""DEPRECATED: Guardrails Celery worker entrypoint.
+
+Worker remains for legacy public API scans. Guardrails is removed from the
+user-facing product UI — do not add new product workflows here.
+"""
+
 from typing import Literal
 from celery import Celery
 from rich.console import Console

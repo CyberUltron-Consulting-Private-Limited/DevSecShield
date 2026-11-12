@@ -1,0 +1,54 @@
+LLM response cache enabled at 
+/var/folders/w0/7gcy34rx389gjjgs695th18c0000gn/T/.devsecshield_llm_cache.db
+Local environment detected
+Broker URL: localhost:4672
+Mongo URL: localhost:27017
+Celery App instantiated
+Registered SAST task
+Registered SBOM SCA task
+Registered IAC task with context pattern
+Registered SAST estimation task
+Registered SBOM SCA estimation task
+Registered IAC estimation task
+Registered CBOM task
+Registered AI BOM task
+Registered CBOM estimation task
+Registered AI BOM estimation task
+ 
+ -------------- sbomsupply@Anshs-MacBook-Pro.local v5.5.3 (immunity)
+--- ***** ----- 
+-- ******* ---- macOS-26.6-arm64-arm-64bit 2026-08-09 15:21:08
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         worker:0x116d9bcb0
+- ** ---------- .> transport:   amqp://admin:**@localhost:4672//
+- ** ---------- .> results:     mongodb://MongoAdmin:**@localhost:27017/
+- *** --- * --- .> concurrency: 4 (thread)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> scan_worker_queue exchange=scan_worker_queue(direct) key=scan_worker_queue
+                
+
+[tasks]
+  . scan_worker.ai_bom
+  . scan_worker.ai_bom_estimation
+  . scan_worker.cbom
+  . scan_worker.cbom_estimation
+  . scan_worker.iac
+  . scan_worker.iac_estimation
+  . scan_worker.llm_benchmark_estimation
+  . scan_worker.llm_benchmark_scan
+  . scan_worker.mcp_estimation
+  . scan_worker.mcp_scan
+  . scan_worker.sast
+  . scan_worker.sast_estimation
+  . scan_worker.sbom_sca
+  . scan_worker.sbom_sca_estimation
+
+[2026-08-09 15:21:08,249: INFO/MainProcess] Connected to amqp://admin:**@127.0.0.1:4672//
+[2026-08-09 15:21:08,253: INFO/MainProcess] mingle: searching for neighbors
+[2026-08-09 15:21:09,282: INFO/MainProcess] mingle: sync with 2 nodes
+[2026-08-09 15:21:09,283: INFO/MainProcess] mingle: sync complete
+[2026-08-09 15:21:09,321: INFO/MainProcess] sbomsupply@Anshs-MacBook-Pro.local ready.
+[2026-08-09 15:21:11,988: INFO/MainProcess] Events of group {task} enabled by remote.

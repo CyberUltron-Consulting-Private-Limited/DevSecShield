@@ -97,8 +97,12 @@ export function CBOMOptionsSidebar({
     if (!repo_url?.trim()) {
       return { valid: false, message: "Please enter the repository URL." };
     }
-    if (!PAT?.trim()) {
+    // GitHub public repos can clone without a PAT. GitLab/Bitbucket still need a token.
+    if (mode !== "github" && !PAT?.trim()) {
       return { valid: false, message: "Please enter a Personal Access Token." };
+    }
+    if (PAT?.trim() && (/:\/\//.test(PAT) || /github\.com|gitlab\.com|bitbucket\.org/i.test(PAT))) {
+      return { valid: false, message: "PAT looks like a URL. Paste a token (or leave blank for public GitHub repos)." };
     }
     return { valid: true };
   };
@@ -111,7 +115,7 @@ export function CBOMOptionsSidebar({
         repo_context:
           zip_file_used || cbom_file_used
             ? null
-            : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT, branch: (branch?.trim() || "main") },
+            : { mode: mode as RepoMode, repo_url: repo_url.trim(), PAT: (PAT || "").trim(), branch: (branch?.trim() || "main") },
         zip_file_used,
         cbom_file_used,
         scan_binaries,

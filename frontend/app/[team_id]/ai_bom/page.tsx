@@ -42,6 +42,7 @@ import type { AiBomScanDashboardData } from "@/utils/backend_api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
+import { formatDateIst as formatDate } from "@/utils/datetime";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -117,6 +118,14 @@ function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): 
   if (filter === "medium") return score >= 5 && score < 7;
   if (filter === "low") return score < 5;
   return true;
+}
+
+/** Backend `info` is often `{ current: number }` (progress), not a string — never render the object as a React child. */
+function getScanProgress(info: AIBOMConversation["info"]): number | null {
+  if (info != null && typeof info === "object" && typeof (info as { current?: number }).current === "number") {
+    return (info as { current?: number }).current ?? null;
+  }
+  return null;
 }
 
 // ─── Dashboard Tab ──────────────────────────────────────────────────────────────
@@ -534,11 +543,6 @@ export default function AIBOMPage() {
     onError: (error) => { showErrorToast(error); },
   });
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  };
-
   const getStatusBadge = (status: ScanStatus) => {
     const variants = {
       not_started: { variant: "outline" as const, className: "text-zinc-500 dark:text-zinc-500" },
@@ -819,7 +823,9 @@ export default function AIBOMPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredConversations.map((conversation) => (
+                          {filteredConversations.map((conversation) => {
+                            const progress = getScanProgress(conversation.info);
+                            return (
                             <TableRow
                               key={conversation.id}
                               className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
@@ -846,10 +852,10 @@ export default function AIBOMPage() {
                               <TableCell className="text-sm">
                                 <div className="flex flex-col gap-1.5">
                                   {getStatusBadge(conversation.scan_status as ScanStatus)}
-                                  {conversation.scan_status !== "success" && conversation.scan_status !== "failure" && conversation.info != null && conversation.info !== "" && (
+                                  {progress != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
                                     <div className="flex items-center gap-2">
-                                      <Progress value={undefined} className="h-1.5 flex-1" />
-                                      <span className="text-xs text-zinc-500 truncate max-w-[120px]" title={conversation.info}>{conversation.info}</span>
+                                      <Progress value={progress} className="h-1.5 flex-1" />
+                                      <span className="text-xs text-zinc-500 tabular-nums">{progress}%</span>
                                     </div>
                                   )}
                                 </div>
@@ -951,7 +957,8 @@ export default function AIBOMPage() {
                                 </DropdownMenu>
                               </TableCell>
                             </TableRow>
-                          ))}
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>

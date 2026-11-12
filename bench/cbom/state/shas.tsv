@@ -1,2 +1,5 @@
 01-pyjwt	jpadilla/pyjwt	7144e45	.
 02-pyopenssl	pyca/pyopenssl	c6b4a5f	.
+03-cryptography	pyca/cryptography	ef7d12d	src
+04-mitmproxy	mitmproxy/mitmproxy	88462f4	mitmproxy
+05-paramiko	paramiko/paramiko	d60d5c1	.

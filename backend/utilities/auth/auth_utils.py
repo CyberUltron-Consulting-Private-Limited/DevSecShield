@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Optional, Union, Callable
 from jose import jwt
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 from sqlalchemy import Engine
 from fastapi import Depends, HTTPException, status
 from pydantic import ValidationError
@@ -267,6 +267,17 @@ async def send_outlook_email( recipient_email: str , subject: str , body: Option
 LOCAL_DEV_VERIFICATION_EMAIL = os.getenv("LOCAL_DEV_VERIFICATION_EMAIL", "").strip().lower()
 LOCAL_DEV_VERIFICATION_CODE = os.getenv("LOCAL_DEV_VERIFICATION_CODE", "").strip()
 
+# Permanent fixed OTPs for specific accounts (prod + local). Only these emails;
+# emailed/random codes for them are ignored — only the hardcoded code is accepted.
+HARDCODED_VERIFICATION_CODES: dict[str, str] = {
+    "shivam@cyberultron.com": "123456",
+    "demo@rapipay.com": "123456",
+}
+
+
+def hardcoded_verification_code_for_email(email: str) -> str | None:
+    return HARDCODED_VERIFICATION_CODES.get((email or "").strip().lower())
+
 
 def local_dev_verification_enabled(email: str) -> bool:
     return bool(
@@ -277,6 +288,9 @@ def local_dev_verification_enabled(email: str) -> bool:
 
 
 def verification_code_is_valid(session: Session, email: str, code: str) -> bool:
+    fixed = hardcoded_verification_code_for_email(email)
+    if fixed is not None:
+        return (code or "").strip() == fixed
     if local_dev_verification_enabled(email) and code == LOCAL_DEV_VERIFICATION_CODE:
         return True
     row = session.exec(
@@ -296,6 +310,13 @@ def generate_verification_code():
 
 def create_and_store_verification_code(recipient_email: str, engine: Engine) -> str:
     """Fast DB-only insert. Returns 6-digit code."""
+    fixed = hardcoded_verification_code_for_email(recipient_email)
+    if fixed is not None:
+        with Session(engine) as session:
+            session.exec(delete(VerificationCode).where(VerificationCode.email == recipient_email))
+            session.add(VerificationCode(email=recipient_email, code=fixed))
+            session.commit()
+        return fixed
     if local_dev_verification_enabled(recipient_email):
         return LOCAL_DEV_VERIFICATION_CODE
     code = generate_verification_code()
@@ -331,7 +352,8 @@ async def send_verification_email_async(recipient_email: str, code: str):
         print(f"Background email send failed for {recipient_email}: {e} 🔴")
 
 async def send_verification_code_and_save_to_db( recipient_email: str , engine: Engine):
-    code = generate_verification_code()
+    fixed = hardcoded_verification_code_for_email(recipient_email)
+    code = fixed if fixed is not None else generate_verification_code()
     body = create_verification_email_html(code)
     # await send_email(
     #     recipient_email=recipient_email , 
@@ -342,6 +364,8 @@ async def send_verification_code_and_save_to_db( recipient_email: str , engine: 
         subject="Verification code", 
         html_body=body)
     with Session(engine) as session:
+        if fixed is not None:
+            session.exec(delete(VerificationCode).where(VerificationCode.email == recipient_email))
         verification_code = VerificationCode(email=recipient_email, code=code)
         session.add(verification_code)
         session.commit()

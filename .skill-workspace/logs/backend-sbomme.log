@@ -1,0 +1,13 @@
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+INFO:     Started server process [18033]
+INFO:     Waiting for application startup.
+✓ Threadpool tokens increased to 100
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8081 (Press CTRL+C to quit)
+INFO:     127.0.0.1:61172 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61179 - "GET /docs HTTP/1.1" 200 OK
