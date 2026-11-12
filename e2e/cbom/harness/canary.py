@@ -5,7 +5,10 @@ grep that cannot find the canary where it is known to be proves nothing about wh
 
 Encodings:
   string       raw, base64 (3 alignments), URL-encoded (quote and quote_plus), JSON-escaped
-  private_key  PEM base64 body lines, DER hex, SPKI sha256 (from ``openssl pkey -pubout``)
+  private_key  PEM base64 body lines and a DER hex window, minus everything public: the first line (format and
+               algorithm headers shared by every key of a type), lines of the key's own ``.pub`` file, and lines another
+               canary key shares. A public-key fingerprint (SPKI or OpenSSH SHA256) is NOT a needle: reporting it is
+               exactly what a CBOM is for, so finding it in an export proves nothing about the private key
 Files are searched as bytes; zip members (trace.zip) are searched inside. ``canaries.txt`` lists ids, encodings and
 paths only, never a value.
 """
@@ -13,10 +16,8 @@ from __future__ import annotations
 
 import base64
 import fnmatch
-import hashlib
 import json
 import re
-import subprocess
 import zipfile
 from pathlib import Path
 from typing import Any, Iterator
@@ -57,22 +58,16 @@ def _der_from_pem(pem: str) -> bytes:
     return base64.b64decode(body)
 
 
-def key_needles(pem: str) -> dict[str, list[bytes]]:
+def key_needles(pem: str, public: bytes = b"", shared: set[bytes] | None = None) -> dict[str, list[bytes]]:
     lines = [line.strip() for line in pem.splitlines() if line.strip() and not line.startswith("-----")]
     der = _der_from_pem(pem)
-    needles: dict[str, list[bytes]] = {
-        # full-width PEM lines (the last one is short and too generic)
-        "pem-line": [line.encode() for line in lines if len(line) >= 40][:64],
-        # a 48-hex window from the middle of the DER: the private part, not the shared algorithm header
-        "der-hex": [der[len(der) // 2: len(der) // 2 + 24].hex().encode()] if len(der) >= 64 else [],
+    shared = shared or set()
+    body = [line.encode() for line in lines[1:] if len(line) >= 40]  # the first line is format/algorithm header
+    return {
+        "pem-line": [b for b in body if b not in public and b not in shared][:64],
+        # a 24-byte window from the last third of the binary: past the public parts in PKCS#1/#8, SEC1 and OpenSSH
+        "der-hex": [der[2 * len(der) // 3: 2 * len(der) // 3 + 24].hex().encode()] if len(der) >= 96 else [],
     }
-    try:
-        spki = subprocess.run(["openssl", "pkey", "-pubout", "-outform", "DER"], input=pem.encode(),
-                              capture_output=True, timeout=20, check=True).stdout
-        needles["spki-sha256"] = [hashlib.sha256(spki).hexdigest().encode()]
-    except (OSError, subprocess.SubprocessError):
-        needles["spki-sha256"] = []
-    return needles
 
 
 def _files(run: Path) -> Iterator[tuple[str, bytes]]:
@@ -98,12 +93,32 @@ def _allowed(rel: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(base, pat) for pat in patterns)
 
 
-def needles_for(canary: dict[str, Any], run: Path) -> dict[str, list[bytes]]:
+def _pem(canary: dict[str, Any], run: Path) -> str:
+    pem_path = run / str(canary.get("pem_path", ""))
+    return canary.get("value") or (pem_path.read_text(encoding="utf-8") if pem_path.is_file() else "")
+
+
+def _public(canary: dict[str, Any], run: Path) -> bytes:
+    pub = run / (str(canary.get("pem_path", "")) + ".pub")
+    return pub.read_bytes() if canary.get("pem_path") and pub.is_file() else b""
+
+
+def needles_for(canary: dict[str, Any], run: Path, shared: set[bytes] | None = None) -> dict[str, list[bytes]]:
     if canary.get("kind") == "private_key":
-        pem_path = run / str(canary.get("pem_path", ""))
-        pem = canary.get("value") or (pem_path.read_text(encoding="utf-8") if pem_path.is_file() else "")
-        return key_needles(pem) if pem else {}
+        pem = _pem(canary, run)
+        return key_needles(pem, _public(canary, run), shared) if pem else {}
     return string_needles(str(canary.get("value", "")))
+
+
+def _shared_lines(canaries: list[dict[str, Any]], run: Path) -> set[bytes]:
+    """PEM lines two or more canary keys have in common: format boilerplate, never a secret of one key."""
+    seen: dict[bytes, int] = {}
+    for c in canaries:
+        if c.get("kind") != "private_key":
+            continue
+        for line in {ln.strip().encode() for ln in _pem(c, run).splitlines() if ln.strip()}:
+            seen[line] = seen.get(line, 0) + 1
+    return {line for line, n in seen.items() if n > 1}
 
 
 def judge(run: Path, checks: Checks) -> list[str]:
@@ -115,7 +130,8 @@ def judge(run: Path, checks: Checks) -> list[str]:
         (run / "canaries.txt").write_text("no canaries: oracle/canaries.json absent\n", encoding="utf-8")
         return report
     canaries = doc.get("canaries") or []
-    plan = [(c, needles_for(c, run)) for c in canaries]
+    shared = _shared_lines(canaries, run)
+    plan = [(c, needles_for(c, run, shared)) for c in canaries]
     hits: dict[str, list[tuple[str, str]]] = {c["id"]: [] for c in canaries}
     for rel, data in _files(run):
         for canary, needles in plan:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import secrets
 import shutil
@@ -81,30 +82,36 @@ def test_clean_run_canary_passes(tmp_path):
 
 
 @pytest.mark.skipif(not shutil.which("openssl"), reason="openssl needed to make a key")
-def test_private_key_canary_found_as_der_hex_and_spki(tmp_path):
+def test_private_key_canary_found_as_pem_line_and_der_hex_but_not_by_its_public_fingerprint(tmp_path):
     fr = FakeRun(tmp_path)
     run = fr.write()
     key = run / "lab" / "ubuntu" / "rsa1024.key"
-    subprocess.run(["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:1024", "-out", str(key)],
-                   check=True, capture_output=True)
-    fr.edit_json("oracle/canaries.json", lambda d: d["canaries"].append(
+    other = run / "lab" / "ubuntu" / "other.key"
+    for k in (key, other):
+        subprocess.run(["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:1024", "-out", str(k)],
+                       check=True, capture_output=True)
+    fr.edit_json("oracle/canaries.json", lambda d: d["canaries"].extend([
         {"id": "rsa1024", "kind": "private_key", "pem_path": "lab/ubuntu/rsa1024.key",
-         "allowed": ["oracle/canaries.json"], "control": "lab/ubuntu/rsa1024.key"}))
+         "allowed": ["oracle/canaries.json"], "control": "lab/ubuntu/rsa1024.key"},
+        {"id": "other", "kind": "private_key", "pem_path": "lab/ubuntu/other.key",
+         "allowed": ["oracle/canaries.json"], "control": "lab/ubuntu/other.key"}]))
     pem = key.read_text()
-    der = base64.b64decode("".join(ln for ln in pem.splitlines() if ln and not ln.startswith("-----")))
+    lines = [ln for ln in pem.splitlines() if ln and not ln.startswith("-----")]
+    der = base64.b64decode("".join(lines))
     spki = subprocess.run(["openssl", "pkey", "-pubout", "-outform", "DER"], input=pem.encode(),
                           capture_output=True, check=True).stdout
-    import hashlib
     (run / "db" / "dump.sql").write_text("x\\x" + der.hex() + "\n", encoding="utf-8")
-    (run / "exports" / "run1.cdx.json").write_text(
-        (run / "exports" / "run1.cdx.json").read_text() + " " + hashlib.sha256(spki).hexdigest(), encoding="utf-8")
+    (run / "logs" / "node.log").write_text("2026-11-12T09:00:00Z " + lines[5] + "\n", encoding="utf-8")
+    # what a CBOM is supposed to report: the public key's fingerprint, and the shared first PEM line
+    (run / "exports" / "fp.txt").write_text(hashlib.sha256(spki).hexdigest() + "\n" + lines[0] + "\n", encoding="utf-8")
     manifest.freeze_oracle(run)
     checks = Checks()
     canary.judge(run, checks)
     leak = next(c for c in checks if c.id == "G15/canary/rsa1024/leaks")
     assert leak.verdict == "FAIL"
-    assert set(leak.observed) == {"db/dump.sql [der-hex]", "exports/run1.cdx.json [spki-sha256]"}
+    assert set(leak.observed) == {"db/dump.sql [der-hex]", "logs/node.log [pem-line]"}
     assert next(c for c in checks if c.id == "G15/canary/rsa1024/control").verdict == "PASS"
+    assert next(c for c in checks if c.id == "G15/canary/other/leaks").verdict == "PASS"
 
 
 # --------------------------------------------------------------------------------------------------------- logs

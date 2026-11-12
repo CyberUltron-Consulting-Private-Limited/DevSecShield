@@ -34,6 +34,7 @@ const MAIL = args.mail || "http://127.0.0.1:8025";
 const PG = args.pg || "dss-staging-postgres-1";
 const CA = args.ca || `${R6}/local/ca/ca.pem`;
 const TOPUP = Number(args.topup || 50);
+const TERMINAL = ["success", "failure", "failed", "cancelled", "expired"];
 const ALL = ["G1", "G2", "G3", "G4", "G5", "G5b", "G6", "G7", "G8", "G9", "G10", "G11", "G12", "G13", "G13b", "G14"];
 const STEPS = new Set(args.steps ? args.steps.split(",") : ALL);
 const SECRETS_FILE = args["secrets-file"] || `/tmp/cbom-e2e-secrets-${process.pid}.json`;
@@ -56,9 +57,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ------------------------------------------------------------------------------------------------ database (read-only)
 function db(sql) {
   const out = execFileSync("docker", ["exec", "-i", PG, "sh", "-c",
-    'exec psql -X -q -At -F "\t" -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
+    'exec psql -X -q -At -z -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
     { input: `BEGIN READ ONLY;\n${sql};\nCOMMIT;\n`, encoding: "utf8", timeout: 60000 });
-  return out.trim() ? out.trim().split("\n").map((l) => l.split("\t")) : [];
+  return out.trim() ? out.trim().split("\n").map((l) => l.split("\0")) : [];
 }
 
 // ------------------------------------------------------------------------------------------------ mail catcher
@@ -131,6 +132,8 @@ async function step(gate, ctx, fn) {
 async function newCustomer(browser, name) {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 },
     recordHar: { path: join(RUN, "har", `${name}.har`), content: "embed" }, acceptDownloads: true });
+  ctx.setDefaultTimeout(30000);
+  ctx.setDefaultNavigationTimeout(60000);
   await ctx.tracing.start({ screenshots: true, snapshots: true, sources: false });
   const page = await ctx.newPage();
   const who = { name, ctx, page, token: null, console: [], failed: [] };
@@ -225,7 +228,7 @@ try {
       observed: { ui: shown, db: Number(dbBalance) }, evidence: [await s.shot(A.page, "credits")] });
   });
   if (!A) throw new Error("customer A could not sign up; nothing else can run");
-  await A.ctx.tracing.stop().catch(() => {});
+  await A.ctx.tracing.stop({ path: join(RUN, "steps", "G1", "trace.zip") }).catch(() => {});
   await A.ctx.tracing.start({ screenshots: true, snapshots: true });
 
   // G2 navigation -------------------------------------------------------------------------------------------
@@ -330,9 +333,8 @@ try {
     await sourcesTab(page, A.team, "Network TLS");
     for (const src of nets) {
       for (const cidr of src.ranges || []) {
-        await page.getByTestId("network-add-range").first().click().catch(async () => {
-          await page.getByRole("button", { name: /add (a )?range/i }).first().click();
-        });
+        if (await page.getByTestId("network-add-range").count()) await page.getByTestId("network-add-range").first().click();
+        else await page.getByRole("button", { name: /add (a |your first )?(network )?range/i }).first().click();
         await page.getByTestId("network-range-cidr").fill(cidr);
         await page.getByTestId("network-range-node").locator("button, [role=combobox]").first().click();
         await page.getByRole("option", { name: /e2e-node-1/ }).first().click();
@@ -408,10 +410,10 @@ try {
     let jobs = [];
     while (Date.now() - t0 < 15 * 60000) {
       jobs = db(`SELECT id, status, outcome, asset_count FROM cbomcollectionjob WHERE run_id = ${runId} ORDER BY id`);
-      if (jobs.length && jobs.every((j) => ["success", "failure", "cancelled", "expired"].includes(j[1]))) break;
+      if (jobs.length && jobs.every((j) => TERMINAL.includes(j[1]))) break;
       await sleep(5000);
     }
-    const done = jobs.length && jobs.every((j) => ["success", "failure", "cancelled", "expired"].includes(j[1]));
+    const done = jobs.length && jobs.every((j) => TERMINAL.includes(j[1]));
     s.check("run_finished_15min", !!done, { expected: "every job finished within 15 min", observed: jobs.map((j) => `${j[0]}:${j[1]}/${j[2]}`) });
     const { page } = A;
     await page.reload({ waitUntil: "networkidle" });
@@ -472,7 +474,7 @@ try {
           location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
       }));
       rows.push(...got);
-      const next = page.getByRole("button", { name: /next/i }).first();
+      const next = page.getByTestId("run-results").getByRole("button", { name: /next/i }).first();
       if (!(await next.count()) || (await next.isDisabled())) break;
       await next.click(); await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
     }
@@ -533,6 +535,7 @@ try {
   await step("G14", null, async (s) => {
     B = await signUp(browser, "customerB", s);
     state.teams = { ...(state.teams || {}), B: B.team };
+    await B.ctx.tracing.stop({ path: join(RUN, "steps", "G14", "trace-signup-b.zip") }).catch(() => {});
     const ids = { node: state.node?.id, run: state.runs?.[0] };
     const assets = readJson(join(RUN, "api", "assets-run1.json"))?.items || [];
     const probes = [
