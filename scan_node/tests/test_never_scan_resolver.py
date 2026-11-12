@@ -242,3 +242,76 @@ def test_a_connection_test_says_why_every_address_was_held(slow_dns, monkeypatch
     assert [s["status"] for s in ctx.samples] == ["skipped_never_scan"]
     assert "gone.corp.internal" in ctx.samples[0]["note"] and UNRESOLVED in ctx.samples[0]["note"]
     assert "gone.corp.internal" in ctx.result()["summary"]
+
+
+# ----------------------------------------------------------------------------- round 2 (re-review 5873185024)
+@pytest.mark.parametrize("answer", [["0.0.0.0"], ["0.1.2.3"], ["::"], ["::ffff:0.0.0.0"], ["64:ff9b::"],
+                                    ["0.0.0.0", "::"], ["224.0.0.1"], ["255.255.255.255"], ["ff02::1"]])
+def test_a_listed_name_answering_only_a_sinkhole_address_holds_every_target(slow_dns, answer):
+    """A DNS sinkhole (or RPZ local data) answering 0.0.0.0 or :: is not an address of the host: the node still has
+    no address for the listed name, so the real host may be any target and every target is held, with the reason."""
+    slow_dns.table["prod-db.corp.internal"] = answer
+    never = NeverScan(["prod-db.corp.internal"])
+    reasons: dict[str, str] = {}
+    targets, skipped = expand_targets(["10.1.2.0/29"], never, reasons=reasons)
+    assert targets == [] and "10.1.2.3" in skipped
+    assert never.unresolved == ["prod-db.corp.internal"]
+    assert f"answers only {answer[0]}" in reasons["10.1.2.4"] and "a DNS sinkhole answer" in reasons["10.1.2.4"]
+    assert UNRESOLVED in reasons["10.1.2.4"]
+
+
+def test_a_mixed_answer_keeps_its_real_addresses(slow_dns):
+    slow_dns.table["prod-db.corp.internal"] = ["0.0.0.0", "10.1.2.3", "::"]
+    never = NeverScan(["prod-db.corp.internal"])
+    targets, skipped = expand_targets(["10.1.2.0/29"], never)
+    assert skipped == ["10.1.2.3"] and [t.ip for t in targets] == ["10.1.2.1", "10.1.2.2", "10.1.2.4", "10.1.2.5",
+                                                                   "10.1.2.6"]
+    assert never.match_ip("10.1.2.3") == "an address of prod-db.corp.internal" and never.unresolved == []
+
+
+def test_a_sinkhole_answer_on_refresh_keeps_the_addresses_learned_before(slow_dns, monkeypatch):
+    monkeypatch.setattr(netutil, "NAME_REFRESH_S", 0.1)
+    slow_dns.table["prod-db.corp.internal"] = ["10.1.2.3"]
+    never = NeverScan(["prod-db.corp.internal"])
+    assert never.match_ip("10.1.2.3") == "an address of prod-db.corp.internal"
+    slow_dns.table["prod-db.corp.internal"] = ["0.0.0.0"]  # the scan VLAN's resolver starts blackholing the zone
+    time.sleep(0.5)
+    fresh = NeverScan(["prod-db.corp.internal"])  # a job starting now looks the name up again
+    for job in (never, fresh):
+        assert job.match_ip("10.1.2.3") == "an address of prod-db.corp.internal"
+        assert job.match_ip("10.1.2.4") is None and job.unresolved == []
+
+
+def test_a_new_job_looks_listed_names_up_again_before_its_first_target(slow_dns, monkeypatch):
+    """Another running job already lists the name: the new job still gets a lookup made after it started (not an
+    answer up to NAME_REFRESH_S old) before it checks its first target."""
+    monkeypatch.setattr(netutil, "FRESH_S", 0.05, raising=False)  # jobs starting this close share one lookup
+    slow_dns.table["prod-db.corp.internal"] = ["10.1.2.3"]
+    job_a = NeverScan(["prod-db.corp.internal"])
+    assert job_a.match_ip("10.1.2.3") == "an address of prod-db.corp.internal"
+    time.sleep(0.1)
+    slow_dns.table["prod-db.corp.internal"] = ["10.1.2.9"]  # re-pointed while job A runs
+    time.sleep(0.2)
+    job_b = NeverScan(["prod-db.corp.internal", "10.5.0.0/16"])
+    targets, _skipped = expand_targets(["10.1.2.8/29"], job_b)
+    assert "10.1.2.9" not in [t.ip for t in targets]
+    assert job_b.match_ip("10.1.2.9") == "an address of prod-db.corp.internal"
+    assert slow_dns.looked_up.count("prod-db.corp.internal") == 2
+
+
+def test_a_closed_job_whose_list_changes_does_not_drop_another_jobs_names(slow_dns, monkeypatch):
+    """The watcher can apply a team change just after the job ended (_done closed its list): that must not release
+    the job's names a second time and take them from another job, or look up names for a job that has ended."""
+    monkeypatch.setattr(netutil, "NAME_REFRESH_S", 0.2)
+    slow_dns.table.update({"shared.corp": ["10.1.2.3"], "other.corp": ["10.1.2.7"]})
+    job_a, job_b = NeverScan(["shared.corp"]), NeverScan(["shared.corp"])
+    assert job_a.match_ip("10.1.2.3") == job_b.match_ip("10.1.2.3") == "an address of shared.corp"
+    job_b.close()  # _done
+    job_b.update(["other.corp"])  # the watcher's update, a moment too late
+    slow_dns.table["shared.corp"] = ["10.1.2.9"]  # re-pointed: job A must still learn it at the next refresh
+    end = time.monotonic() + 3
+    while time.monotonic() < end and job_a.match_ip("10.1.2.9") is None:
+        job_a.sync()
+        time.sleep(0.05)
+    assert job_a.match_ip("10.1.2.9") == "an address of shared.corp"
+    assert "other.corp" not in slow_dns.looked_up  # nothing is looked up for the ended job

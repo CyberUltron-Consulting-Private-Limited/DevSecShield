@@ -195,15 +195,21 @@ sockets or HTTP clients any other way, so new collectors must use it.
   not a host: the entry covers that address on every interface.
 - *A host name entry* covers the name and every address it resolves to from the scan node. One resolver per node
   process looks the listed names up on its own threads (at most 8 lookups at once, never on a job's claim or watcher
-  thread): when a job lists a name and whenever the list changes, then every 5 minutes (every minute while a name
-  does not resolve). A host listed by name is therefore not reached by its short name, a CNAME, a target written as
-  its address, or a range sweep either.
-- *Fail closed:* while a listed host name has no known address (its lookup is pending, hangs, fails, or answers
-  that the name does not exist), the node cannot tell which address is that host, so it scans no target at all:
+  thread): when a job starts listing a name (jobs starting within 5 s of each other share one lookup), so a job's
+  first target is checked against a current answer; again whenever the list changes; then every 5 minutes (every
+  minute while a name does not resolve). A host listed by name is therefore not reached by its short name, a CNAME,
+  a target written as its address, or a range sweep either. Host name entries belong in a source's own never-scan
+  list: the team-level list takes addresses and ranges only (the API refuses a host name there with a 422).
+- *Fail closed:* while a listed host name has no known address (its lookup is pending, hangs, fails, answers that
+  the name does not exist, or answers only addresses no host has: `0.0.0.0/8`, `::`, their IPv4-mapped and NAT64
+  forms, multicast or broadcast, which is what DNS sinkholes and RPZ policies return), the node cannot tell which
+  address is that host, so it scans no target at all:
   each one is skipped as `skipped_never_scan` with a reason that names the host name, and the job's summary (and
   `never_scan_unresolved` in its result) lists the names. A newly listed name is waited for, on the job's own
   threads, for at most 15 s first, so a normal lookup costs nothing. The fix is to correct the name (or the node's
-  DNS), or to list that host by address instead.
+  DNS), or to list that host by address instead. A mixed answer keeps its real addresses and drops the others; an
+  answer with no usable address keeps the addresses learned before. A loopback answer (`127.0.0.0/8`, `::1`) counts
+  as an address: the node's own host name commonly resolves there (Debian maps it to 127.0.1.1).
 - *A target name* (a server, database, registry, token service, blob redirect, database redirect, CA, KMIP or
   Kubernetes API host) is skipped as `skipped_never_scan` when the name is listed or when ANY address it resolves to
   is listed, so a dual-stack host listed by its IPv4 address is not scanned over IPv6 and the other way round. The
