@@ -466,6 +466,43 @@ def test_settings_permissions_and_stop_all(api, world):
     assert api("POST", "/1/cbom/sources/settings/stop-all", json={"on": False}).json()["settings"]["stop_all_network"] is False
 
 
+def test_the_team_never_scan_list_takes_addresses_and_ranges_only(api, world):
+    """The UI's team list refuses host names (NetworkTab rangeError); the API must too. On the node a listed name that
+    does not resolve holds every target of every job of the team, so names belong in a server source's own list."""
+    for name in ("printer.corp.invalid", "Web-01.Corp."):
+        r = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+            {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": name, "reason": "printer"}]})
+        assert r.status_code == 422, r.text
+        assert "takes addresses and ranges" in r.json()["detail"] and "Never scan" in r.json()["detail"]
+    got = api("GET", "/1/cbom/sources/settings").json()["settings"]
+    assert got["network_exclusions"] == []  # nothing of the refused request was stored
+    ok = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+        {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": "fd00::1-fd00::5", "reason": "v6"},
+        {"cidr": "fe80::1%br-ab12", "reason": "bridge"}]})
+    assert ok.status_code == 200, ok.text
+    assert len(ok.json()["settings"]["network_exclusions"]) == 3
+
+
+@pytest.mark.parametrize("cidr, team, units", [
+    ("10.0.0.0/29", [], 6),  # the sweep visits the 6 host addresses, not the network and broadcast addresses
+    ("10.0.0.0/29", ["10.0.0.1"], 5),
+    ("10.0.0.0/31", [], 2),
+    ("0.0.0.0/29", [], 0),  # 0.0.0.0/8 reaches the node itself: never swept
+    ("fd00::/125", ["fd00::1-fd00::5"], 3),
+])
+def test_network_range_units_are_the_addresses_the_node_sweeps(api, world, cidr, team, units):
+    node_id, _t, _ = enroll_node(api)
+    r = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": "range", "node_id": node_id,
+                                                  "config": {"cidr": cidr, "mode": "full"}})
+    assert r.status_code == 201, r.text
+    if team:
+        assert api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
+            {"cidr": c, "reason": "x"} for c in team]}).status_code == 200
+    plan = api("POST", "/1/cbom/sources/estimate", json={"include": {"network": True}}).json()
+    item = next(i for i in plan["items"] if i["kind"] == "network_range")
+    assert (item["units"], item["unit"]) == (units, "addresses")
+
+
 def test_network_run_needs_soc_ack_and_respects_stop(api, world):
     node_id, _t, _ = enroll_node(api)
     r = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": "dc-range", "node_id": node_id,
