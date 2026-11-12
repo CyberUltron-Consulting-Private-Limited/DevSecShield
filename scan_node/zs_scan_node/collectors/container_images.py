@@ -88,6 +88,7 @@ TOKEN_SERVICES = {
     "registry.gitlab.com": "gitlab.com",  # GitLab.com
 }
 _AWS_V6_METADATA = ipaddress.ip_network("fd00:ec2::/32")
+_THIS_NETWORK = ipaddress.ip_network("0.0.0.0/8")  # reaches the node itself, like 0.0.0.0
 
 
 class ImageError(Exception):
@@ -312,12 +313,15 @@ def _tls(ca_pem: str | None, public: bool = True) -> ssl.SSLContext:
 
 def _internal_address(ip: str, registry_ip: str | None) -> str | None:
     """Why the node must not connect to ``ip`` for a host a registry named (its token service or a redirect), or None:
-    link-local (cloud metadata at 169.254.169.254, fe80::/10), unspecified, multicast and AWS's IPv6 metadata range
-    always; loopback unless the registry itself is on loopback (the node's own host, by the operator's choice)."""
+    0.0.0.0/8 and :: (they reach the node itself), link-local (cloud metadata at 169.254.169.254, fe80::/10), multicast
+    and AWS's IPv6 metadata range always; loopback unless the registry itself is on loopback (the node's own host, by
+    the operator's choice)."""
     addr = ipaddress.ip_address(ip)
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         addr = addr.ipv4_mapped
-    if addr.is_link_local or addr.is_unspecified or addr.is_multicast or addr in _AWS_V6_METADATA:
+    if addr.is_unspecified or (addr.version == 4 and addr in _THIS_NETWORK):
+        return f"an address that reaches the node itself ({ip})"
+    if addr.is_link_local or addr.is_multicast or addr in _AWS_V6_METADATA:
         return f"a link-local or metadata address ({ip})"
     if addr.is_loopback:
         own = ipaddress.ip_address(registry_ip) if registry_ip else None

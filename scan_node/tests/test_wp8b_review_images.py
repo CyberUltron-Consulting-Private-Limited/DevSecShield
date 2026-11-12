@@ -295,6 +295,17 @@ def test_a_registry_cannot_send_the_node_to_loopback_or_link_local(fake_net, rea
     assert not [s for s in fake_net.seen if s[0].startswith(f"https://{realm_host}")]
 
 
+@pytest.mark.parametrize("realm_host", ["0.0.0.0", "sink.example.com", "v6sink.example.com", "0.1.2.3",
+                                        "[64:ff9b::]", "zero8.example.com"])
+def test_a_registry_steering_the_node_to_itself_is_worded_as_such(fake_net, realm_host):
+    """0.0.0.0/8 and :: are neither link-local nor metadata: the refusal says the address reaches the node itself."""
+    reg = CI.Registry(_ctx(), CI.parse_ref("registry.example.com/app:1"), dict(CREDS), None)
+    reg._client(reg.base + "/v2/")
+    with pytest.raises(CI.ImageError) as err:
+        reg._authenticate(f'Bearer realm="https://{realm_host}/token"')
+    assert "an address that reaches the node itself" in err.value.detail and "link-local" not in err.value.detail
+
+
 def test_a_registry_on_loopback_may_use_loopback_for_its_token_service_and_blobs(lab_factory):
     lab = lab_factory(redirect_blobs=True)  # registry on 127.0.0.1, blobs redirected to 127.0.0.2
     lab.push("1.0", _image_layers())
