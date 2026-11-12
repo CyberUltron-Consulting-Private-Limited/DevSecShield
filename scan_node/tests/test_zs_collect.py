@@ -185,6 +185,21 @@ def test_every_command_is_on_the_allow_list(fake_popen, tmp_path):
     assert per_file >= 3  # the file commands were exercised too, with their quoted paths
 
 
+# Per-file arguments that a shell would not read as one quoted path.  Each one is a single absolute path to
+# shlex.split (so the one-path rule alone would let it through); only the "is exactly shlex.quote(path)" rule refuses
+# it, and /bin/sh -c would run the substitution or the second command.
+HOSTILE_FILE_ARGS = [
+    "/etc/$(id>/tmp/pwn).pem",      # unquoted command substitution
+    "/etc/`id`.pem",                # backticks
+    "/etc/a.pem;id",                # a command separator
+    "/etc/a.pem&&id",
+    "/etc/my\\ file.pem",           # an unquoted (backslash-escaped) space
+    "'/etc/a.pem';id",              # a quoted path, then a second command
+    "'/etc/a.pem'; id",             # the same with a space (two words)
+    '"/etc/$(id).pem"',             # double quotes still substitute
+]
+
+
 @pytest.mark.parametrize("line", [
     "rm -rf /",
     C.T1_ENV + " cat /etc/shadow </dev/null",
@@ -197,13 +212,23 @@ def test_every_command_is_on_the_allow_list(fake_popen, tmp_path):
     C.sudo_line(["/usr/bin/ss", "-H", "-tlnp", "-K"]),
     C.sudo_line(["/bin/sh", "-c", "id"]),
     "/usr/bin/sudo -n /usr/bin/ss -H -tlnp; id",
-])
+] + [C.tier1_line(template.format(file=arg)) for arg in HOSTILE_FILE_ARGS
+     for template in (C.CERTS_IN_FILE, C.PUBLIC_HALF_OF_KEY, C.FILE_MODE)])
 def test_unlisted_command_is_never_executed(fake_popen, tmp_path, line):
     sess = Z.LocalSession(tmp_dir=str(tmp_path), user="zs-cbom")
     fake_popen.calls.clear()  # the session read its own host key through the allowed ssh-keygen line
     with pytest.raises(Z.NotAllowed):
         sess.run(line)
     assert fake_popen.calls == []
+
+
+def test_hostile_file_args_reach_the_quoting_rule():
+    """Most of HOSTILE_FILE_ARGS pass every per-file check except the quoting one, so the test above exercises it."""
+    import shlex
+
+    single = [a for a in HOSTILE_FILE_ARGS if len(shlex.split(a)) == 1 and shlex.split(a)[0].startswith("/")]
+    assert len(single) >= 7
+    assert all(shlex.quote(shlex.split(a)[0]) != a for a in single)
 
 
 def test_allow_list_covers_every_command_the_collector_has():
@@ -245,6 +270,19 @@ def test_envelope_echoes_the_nonce_and_validates(fake_popen, tmp_path):
     bad = copy.deepcopy(doc)
     del bad["result"]
     assert Z.validate_document(bad, nonce=NONCE, version=VERSION)
+
+
+def test_document_with_an_unknown_status_or_oversized_facts_is_refused(fake_popen, tmp_path):
+    doc = _run_local(tmp_path)
+    assert Z.validate_document(doc, nonce=NONCE, version=VERSION) is None
+    bad = copy.deepcopy(doc)
+    bad["status"] = "done"
+    assert "status" in Z.validate_document(bad, nonce=NONCE, version=VERSION)
+    bad = copy.deepcopy(doc)
+    bad["assets"][0]["facts"] = {"blob": "x" * (16 * 1024)}  # just over the backend's 16 KB facts limit
+    assert "16 KB" in Z.validate_document(bad, nonce=NONCE, version=VERSION)
+    bad["assets"][0]["facts"] = {"blob": "x" * (16 * 1024 - 20)}  # just under it
+    assert Z.validate_document(bad, nonce=NONCE, version=VERSION) is None
 
 
 def test_schema_file_is_valid_json_and_names_every_envelope_field():
@@ -393,7 +431,7 @@ def test_given_temp_dir_is_left_as_found(fake_popen, monkeypatch, tmp_path, caps
 
 
 def _shared_dirs(tmp_path: Path) -> dict[str, Path]:
-    """Directories zs-collect must refuse as --tmp-dir: not made for it, shared, a link, someone else's, missing."""
+    """Paths zs-collect must refuse as --tmp-dir: not made for it, shared, a link, missing, or a regular file."""
     dirs = {}
     for name, mode in (("shared-like-tmp", 0o1777), ("home-like", 0o700), ("zs-collect.open", 0o755),
                        ("zs-collect.group", 0o770)):
@@ -406,14 +444,19 @@ def _shared_dirs(tmp_path: Path) -> dict[str, Path]:
     dirs["zs-collect.link"] = tmp_path / "zs-collect.link"
     dirs["zs-collect.link"].symlink_to(target)
     dirs["zs-collect.missing"] = tmp_path / "zs-collect.missing"
+    regular = tmp_path / "zs-collect.file"  # private, named for a run and owned by the caller, but not a directory
+    regular.write_text("not a directory\n")
+    regular.chmod(0o600)
+    dirs["zs-collect.file"] = regular
     return dirs
 
 
 def test_tmp_dir_not_made_for_the_run_is_refused_and_left_untouched(fake_popen, monkeypatch, tmp_path, capsys):
     # zs-collect hands its working directory to the run-as user when started as root; it must never do that to /tmp,
     # a home directory or anything else it was not given for this run, and it never changes a directory's mode.
-    dropped = []
+    dropped, moved = [], []
     monkeypatch.setattr(Z, "drop_privileges", lambda user, tmp: dropped.append(tmp))
+    monkeypatch.setattr(Z.os, "chdir", lambda path: moved.append(path))
     for name, d in _shared_dirs(tmp_path).items():
         before = os.lstat(d) if os.path.lexists(d) else None
         code = Z.main(["--nonce", NONCE, "--tier", "1", "--tmp-dir", str(d)])
@@ -423,7 +466,7 @@ def test_tmp_dir_not_made_for_the_run_is_refused_and_left_untouched(fake_popen, 
         after = os.lstat(d) if os.path.lexists(d) else None
         if before is not None:
             assert (after.st_mode, after.st_uid, after.st_gid) == (before.st_mode, before.st_uid, before.st_gid), name
-    assert dropped == [] and not fake_popen.calls
+    assert dropped == [] and moved == [] and not fake_popen.calls
 
 
 def test_tmp_dir_check_accepts_the_wrappers_directory(tmp_path):
@@ -453,6 +496,39 @@ def test_chunks_roundtrip_and_detect_tampering(fake_popen, tmp_path):
     with pytest.raises(Z.ChunkError):
         Z.reassemble(lines, "run-ffffffffffffffff")
     assert Z.MAX_CHUNK_BYTES <= 512 * 1024
+
+
+def test_chunks_of_another_document_under_this_digest_are_refused(fake_popen, tmp_path):
+    """Valid gzip + base64 of another document, sent under this document's header (digest): only the sha256 check
+    can tell, because the data itself decodes, decompresses and parses."""
+    doc = _run_local(tmp_path)
+    other = copy.deepcopy(doc)
+    other["assets"] = other["assets"][:1]
+    (mine,) = Z.encode_chunks(doc, NONCE, chunk_bytes=Z.MAX_CHUNK_BYTES)
+    (theirs,) = Z.encode_chunks(other, NONCE, chunk_bytes=Z.MAX_CHUNK_BYTES)
+    head, _data = mine.rsplit(" ", 1)
+    swapped = head + " " + theirs.rsplit(" ", 1)[1]
+    assert Z.reassemble([theirs], NONCE) == other  # the other document on its own is well formed
+    with pytest.raises(Z.ChunkError, match="checksum"):
+        Z.reassemble([swapped], NONCE)
+
+
+def test_a_chunk_sent_twice_must_carry_the_same_data(fake_popen, tmp_path):
+    doc = _run_local(tmp_path)
+    (whole,) = Z.encode_chunks(doc, NONCE, chunk_bytes=Z.MAX_CHUNK_BYTES)
+    head_len = len(whole) - len(whole.rsplit(" ", 1)[1])  # "ZSC1 <nonce> 1/1 <digest> "
+    half = (len(whole) - head_len + 1) // 2
+    lines = Z.encode_chunks(doc, NONCE, chunk_bytes=head_len + len("999999/999999") - len("1/1") + half)
+    assert len(lines) == 2  # the document spans exactly two chunks
+    first, second = lines
+    head, data = first.rsplit(" ", 1)
+    altered = head + " " + ("A" if data[0] != "A" else "B") + data[1:]
+    assert Z.reassemble([first, first, second], NONCE) == doc  # a re-sent identical chunk is harmless
+    # the altered copy arrives first; were it silently replaced by the genuine one, the document would reassemble
+    with pytest.raises(Z.ChunkError, match="twice"):
+        Z.reassemble([altered, first, second], NONCE)
+    with pytest.raises(Z.ChunkError, match="twice"):
+        Z.reassemble([first, altered, second], NONCE)
 
 
 # ----------------------------------------------------------------------------- real process: network and writes
