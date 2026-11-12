@@ -223,10 +223,12 @@ def _attributes(value: Any) -> dict[str, Any]:
         raise InventoryError("bad_attributes", "attributes must be an object")
     clean: dict[str, Any] = {}
     for key, val in value.items():
+        if len(str(key)) > 64:  # not cut: two keys sharing 64 characters would collide, the survivor set by order
+            raise InventoryError("bad_attributes", f"attribute {str(key)[:40]!r}...: names are at most 64 characters")
         if isinstance(val, (str, int, float, bool)) or val is None:
-            clean[str(key)[:64]] = val
+            clean[str(key)] = val
         elif isinstance(val, (list, tuple)) and all(isinstance(v, (str, int, float, bool)) for v in val):
-            clean[str(key)[:64]] = list(val)
+            clean[str(key)] = list(val)
         else:
             raise InventoryError("bad_attributes", f"attribute {str(key)[:40]!r}: only text, numbers, booleans or lists "
                                                    "of them")
@@ -381,8 +383,8 @@ def parse_json(content: str | Any, limit: int = MAX_IMPORT_ROWS) -> Parsed:
     if isinstance(content, str):
         try:
             data = json.loads(content)
-        except ValueError:
-            raise InventoryError("bad_json", "not valid JSON") from None
+        except (ValueError, RecursionError):  # RecursionError: nested deeper than the parser's limit
+            raise InventoryError("bad_json", "not valid JSON (or nested too deeply)") from None
     if isinstance(data, Mapping):
         data = data.get("targets")
     if not isinstance(data, list):

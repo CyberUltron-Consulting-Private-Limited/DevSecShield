@@ -17,7 +17,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from test_cbom_sources_api import api, enroll_node, world
 from test_cbom_fleet_policies import FLEET, INV, _credential, _managed, _policy, _targets
-from backend.new_models import CbomCollectionJob, CbomCollectionSchedule
+from backend.new_models import CbomCollectionJob, CbomCollectionSchedule, CbomCollectionSettings
 from backend.utilities.cbom_sources.fleet import aws_inventory, store
 from backend.utilities.cbom_sources.fleet import sync as SYNC
 from backend.utilities.cbom_sources.fleet.inventory_sources import InventoryError, normalize
@@ -156,6 +156,33 @@ def test_a_policy_write_asks_the_fleet_worker_to_reconcile(api, world):
     assert len(_addresses_in_managed(engine)) == 2
 
 
+def test_the_daily_pass_takes_a_target_out_after_its_seven_days_without_any_write(api, world):
+    """The 7-day rule moves with time: the worker re-evaluates and reconciles a team it last evaluated a day ago, so a
+    target its sync stopped listing more than 7 days ago leaves its managed source though nobody touched the team."""
+    engine, _ = world
+    _targets(api, 3)
+    _collect_all(api)
+    api("POST", f"{FLEET}/reconcile")
+    assert "10.2.0.1" in _addresses_in_managed(engine)
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    with Session(engine) as s:
+        row = s.exec(select(CbomInventoryTarget).where(CbomInventoryTarget.external_id == "h0")).one()
+        row.missing_since = now - dt.timedelta(days=8)
+        st = s.exec(select(CbomFleetTeamState)).one()
+        st.eval_requested_at = st.reconcile_requested_at = None
+        st.evaluated_at = now - dt.timedelta(hours=23)
+        s.commit()
+    assert cbom_inventory_sync.fleet_tick(engine, now=now) == []  # evaluated less than a day ago: nothing due
+    with Session(engine) as s:
+        s.exec(select(CbomFleetTeamState)).one().evaluated_at = now - dt.timedelta(hours=25)
+        s.commit()
+    ran = cbom_inventory_sync.fleet_tick(engine, now=now)
+    assert ran[0]["status"] == "reconciled" and ran[0]["sources_updated"] == 1, ran
+    assert "10.2.0.1" not in _addresses_in_managed(engine) and len(_addresses_in_managed(engine)) == 2
+    assert "more than 7 days" in _target(api, "h0")["decision"]["reason"]
+    assert cbom_inventory_sync.fleet_tick(engine, now=now) == []  # done for the day
+
+
 # ----------------------------------------------------------------------------- stickiness (M21) and ownership (M13)
 def test_removing_a_target_from_the_first_batch_moves_nothing_else(api, world):
     engine, _ = world
@@ -276,6 +303,85 @@ def test_preview_equals_what_saving_decides(api, world):
         assert prev["never_scan"] == sum(1 for t in mine if t["decision"]["action"] == "never_scan"), trial
         if not edit:  # keep the number of policies small
             api("DELETE", f"{FLEET}/policies/{pid}")
+
+
+def test_preview_from_the_stored_decisions_equals_preview_by_evaluating_every_policy(api, world, monkeypatch):
+    """While the stored decisions are current, preview takes the other policies' matches from them and runs only the
+    draft's selector; the answer is the one evaluating every policy gives (new drafts, edits, ties, disabled drafts,
+    a never-scan list).  Once an evaluation is pending, preview evaluates."""
+    from backend.routers import cbom_fleet_policies as POL
+    from backend.utilities.cbom_sources import http as cbom_http
+    from backend.utilities.cbom_sources.fleet.policy import PolicyEngine
+
+    rng = random.Random(2024)
+    node_id, _tok, _reg = enroll_node(api)
+    cred = _credential(api)
+    keys, vals = ["env", "team", "app", "aws:cloudformation:stack-name"], ["a", "b", "c"]
+    rows = [{"external_id": f"s{i}", "address": f"10.6.{i // 250}.{i % 250 + 1}",
+             "tags": {k: rng.choice(vals) for k in rng.sample(keys, rng.randint(0, 4))}} for i in range(150)]
+    api("POST", f"{INV}/import", json={"format": "json", "content": json.dumps(rows)})
+    with Session(world[0]) as s:  # a never-scan list (the policy writes below evaluate with it)
+        settings = s.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == 1)).one()
+        settings.network_exclusions = [{"cidr": "10.6.0.7"}]
+        s.add(settings)
+        s.commit()
+    ssh = {"transport": "ssh", "credential_id": cred["id"], "node_id": node_id}
+
+    def sel():
+        def leaf():
+            op = rng.choice(["eq", "ne", "in", "exists", "prefix"])
+            node = {"tag": rng.choice(keys), "op": op}
+            if op == "in":
+                node["value"] = rng.sample(vals, 2)
+            elif op != "exists":
+                node["value"] = rng.choice(vals)
+            return node
+        return rng.choice([leaf(), {"all": [leaf(), leaf()]}, {"any": [leaf(), leaf()]}, {"not": leaf()}, {}])
+
+    for i in range(10):
+        _policy(api, f"p{i}", rng.choice([10, 20, 30]), sel(), {"never_scan": True} if i % 3 == 0 else ssh)
+    saved_ids = [p["id"] for p in api("GET", f"{FLEET}/policies").json()["policies"]]
+    calls = {"evaluate": 0}
+    real = PolicyEngine.evaluate
+
+    def counting(self, target):
+        calls["evaluate"] += 1
+        return real(self, target)
+
+    monkeypatch.setattr(PolicyEngine, "evaluate", counting)
+    for trial in range(30):
+        draft = {"name": f"d{trial}", "priority": rng.choice([10, 20, 30]), "selector": sel(),
+                 "action": {"never_scan": True} if trial % 2 else ssh}
+        if rng.random() < 0.3:
+            draft["enabled"] = rng.random() < 0.5
+        body = {"policy": draft}
+        if trial % 3 == 1:
+            body["policy_id"] = rng.choice(saved_ids)
+        elif trial % 3 == 2:
+            body = {"policy_id": rng.choice(saved_ids)}  # a saved policy as it is
+        cbom_http.write_limiter.requests.clear()  # 60 writes a minute per user; this test sends 60 previews
+        monkeypatch.setattr(POL, "PREVIEW_FROM_STORED", True)
+        calls["evaluate"] = 0
+        fast = api("POST", f"{FLEET}/policies/preview", json=body)
+        used_stored = calls["evaluate"] == 0
+        monkeypatch.setattr(POL, "PREVIEW_FROM_STORED", False)
+        slow = api("POST", f"{FLEET}/policies/preview", json=body)
+        assert fast.status_code == slow.status_code == 200, (trial, fast.text)
+        assert fast.json() == slow.json(), (trial, body)
+        assert used_stored, trial  # the decisions are current: no policy was evaluated against a target
+    # a large team's write leaves the stored decisions behind until the worker runs: preview evaluates, and answers
+    # with the policies as they are now
+    monkeypatch.setenv("CBOM_FLEET_INLINE_EVAL_MAX", "0")
+    cbom_http.write_limiter.requests.clear()
+    queued = api("PATCH", f"{FLEET}/policies/{saved_ids[0]}", json={"selector": {}, "priority": 40}).json()
+    assert queued["evaluation"] == "queued"
+    monkeypatch.setattr(POL, "PREVIEW_FROM_STORED", True)
+    calls["evaluate"] = 0
+    body = {"policy": {"name": "late", "priority": 20, "selector": {}, "action": ssh}}
+    pending = api("POST", f"{FLEET}/policies/preview", json=body).json()
+    assert calls["evaluate"] > 0
+    monkeypatch.setattr(POL, "PREVIEW_FROM_STORED", False)
+    assert pending == api("POST", f"{FLEET}/policies/preview", json=body).json()
 
 
 def test_preview_of_an_edit_to_a_disabled_policy_equals_saving_it(api, world):

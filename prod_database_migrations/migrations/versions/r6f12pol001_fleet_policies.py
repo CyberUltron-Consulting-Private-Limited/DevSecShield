@@ -11,6 +11,8 @@ Create Date: 2026-11-11 12:10:00.000000
 * ``cbomcollectionsource``: ``managed_by_policy_id`` (indexed), ``credential_id``, ``batch_key`` (nullable; every
   existing source is a hand-made one).
 * ``cbomcollectionschedule``: ``policy_id`` (indexed, nullable).
+* ``cbomfleetteamstate``: per team, the last evaluation (inputs digest, time, per-policy counts) and the work
+  requested of the fleet worker (evaluation, reconcile; a lease).
 """
 from typing import Sequence, Union
 
@@ -67,6 +69,24 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
     )
     op.create_index(op.f('ix_cbomcredential_team_id'), 'cbomcredential', ['team_id'], unique=False)
+    op.create_table(
+        'cbomfleetteamstate',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('team_id', sa.Integer(), nullable=False),
+        sa.Column('inputs_digest', sqlmodel.sql.sqltypes.AutoString(length=64), nullable=True),
+        sa.Column('evaluated_at', sa.DateTime(), nullable=True),
+        sa.Column('counts', sa.JSON(), nullable=True),
+        sa.Column('eval_requested_at', sa.DateTime(), nullable=True),
+        sa.Column('reconcile_requested_at', sa.DateTime(), nullable=True),
+        sa.Column('lease_until', sa.DateTime(), nullable=True),
+        sa.Column('last_reconcile', sa.JSON(), nullable=True),
+        sa.Column('row_version', sa.Integer(), nullable=False, server_default='1'),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('last_updated', sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('team_id'),
+    )
     op.add_column('cbomcollectionsource', sa.Column('managed_by_policy_id', sa.Integer(), nullable=True))
     op.add_column('cbomcollectionsource', sa.Column('credential_id', sa.Integer(), nullable=True))
     op.add_column('cbomcollectionsource', sa.Column('batch_key', sqlmodel.sql.sqltypes.AutoString(length=64),
@@ -85,6 +105,7 @@ def downgrade() -> None:
     op.drop_column('cbomcollectionsource', 'batch_key')
     op.drop_column('cbomcollectionsource', 'credential_id')
     op.drop_column('cbomcollectionsource', 'managed_by_policy_id')
+    op.drop_table('cbomfleetteamstate')
     op.drop_index(op.f('ix_cbomcredential_team_id'), table_name='cbomcredential')
     op.drop_table('cbomcredential')
     op.drop_index(op.f('ix_cbomfleetpolicy_team_id'), table_name='cbomfleetpolicy')

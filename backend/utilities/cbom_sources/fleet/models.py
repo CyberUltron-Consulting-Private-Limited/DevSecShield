@@ -49,17 +49,26 @@ class CbomInventoryTarget(SQLModel, table=True):
     """One discovered or imported host, database, cluster, load balancer, certificate, key or secret.
 
     ``external_id`` is unique per team (AWS: the resource ARN); ``fingerprint`` is the SHA-256 of the normalised
-    target, so a re-import that changes nothing writes nothing but ``last_seen_at``.  ``decision`` caches the policy
-    engine's Decision; ``managed_source_id`` is the managed collection source (sticky batch) it is assigned to."""
+    target, so a re-import that changes nothing writes nothing but ``last_seen_at``.  ``inventory_source_id`` is its
+    one owner (the first source that listed it, until a person deletes it or its owner stops listing it).
+
+    ``decision`` is the policy engine's Decision, kept current by imports, syncs and the team's evaluation
+    (``fleet/evaluate.py``); ``decision_action`` / ``decision_policy_id`` repeat its two fields that lists filter and
+    count on, indexed.  ``deleted_at``: a person removed it from the inventory (never collected, unlike a target a
+    sync merely missed); ``pending_since``: its managed-source change waits for a busy source.
+    ``managed_source_id`` is the managed collection source (sticky batch) it is assigned to."""
     __tablename__ = "cbominventorytarget"
     __table_args__ = (
         UniqueConstraint("team_id", "external_id", name="uq_cbominventorytarget_team_external"),
+        Index("ix_cbominventorytarget_team_id_id", "team_id", "id"),
         Index("ix_cbominventorytarget_team_source", "team_id", "inventory_source_id"),
         Index("ix_cbominventorytarget_team_kind", "team_id", "kind"),
         Index("ix_cbominventorytarget_team_managed", "team_id", "managed_source_id"),
+        Index("ix_cbominventorytarget_team_action", "team_id", "decision_action"),
+        Index("ix_cbominventorytarget_team_policy", "team_id", "decision_policy_id"),
     )
     id: int | None = Field(default=None, primary_key=True)
-    team_id: int = Field(foreign_key="team.id", index=True, ondelete="CASCADE")
+    team_id: int = Field(foreign_key="team.id", ondelete="CASCADE")
     inventory_source_id: int
     external_id: str = Field(max_length=255)
     kind: str = Field(max_length=24)
@@ -77,6 +86,10 @@ class CbomInventoryTarget(SQLModel, table=True):
     last_seen_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     missing_since: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     decision: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    decision_action: str | None = Field(default=None, max_length=16)
+    decision_policy_id: int | None = Field(default=None)
+    deleted_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    pending_since: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     managed_source_id: int | None = Field(default=None)
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
@@ -120,4 +133,26 @@ class CbomCredential(SQLModel, table=True):
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
 
 
-FLEET_MODELS = (CbomInventoryTarget, CbomInventorySource, CbomFleetPolicy, CbomCredential)
+class CbomFleetTeamState(SQLModel, table=True):
+    """One row per team: what the last evaluation of its targets saw and found, and the work requested of the fleet
+    worker.  ``inputs_digest`` hashes everything a decision depends on besides the target (policies, credentials, scan
+    nodes, the never-scan list, the day for the 7-day rule): when it differs from the current inputs, the stored
+    decisions and ``counts`` (policy id -> [matched, won]) are stale.  ``eval_requested_at`` /
+    ``reconcile_requested_at`` are set by writes and cleared by the worker when the run that saw them ends (a later
+    request survives the run)."""
+    __tablename__ = "cbomfleetteamstate"
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", ondelete="CASCADE", unique=True)
+    inputs_digest: str | None = Field(default=None, max_length=64)
+    evaluated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    counts: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    eval_requested_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    reconcile_requested_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    lease_until: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    last_reconcile: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    row_version: int = Field(default=1)
+    created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+FLEET_MODELS = (CbomInventoryTarget, CbomInventorySource, CbomFleetPolicy, CbomCredential, CbomFleetTeamState)

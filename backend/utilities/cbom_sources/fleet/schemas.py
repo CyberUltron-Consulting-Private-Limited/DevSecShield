@@ -127,7 +127,11 @@ def public_target(t: Any, decision: dict[str, Any] | None = None) -> dict[str, A
             "tags": dict(t.tags or {}), "account_id": t.account_id, "region": t.region, "platform": t.platform,
             "handles": dict(t.handles or {}), "attributes": dict(getattr(t, "attributes", None) or {}),
             "first_seen_at": iso_z(getattr(t, "first_seen_at", None)), "last_seen_at": iso_z(getattr(t, "last_seen_at", None)),
-            "missing_since": iso_z(t.missing_since), "managed_source_id": t.managed_source_id,
+            "missing_since": iso_z(t.missing_since), "deleted_at": iso_z(getattr(t, "deleted_at", None)),
+            "managed_source_id": t.managed_source_id,
+            # its managed-source change waits for a busy source (the fleet worker retries it)
+            "pending": getattr(t, "pending_since", None) is not None,
+            "pending_since": iso_z(getattr(t, "pending_since", None)),
             "decision": decision if decision is not None else dict(t.decision or {})}
 
 

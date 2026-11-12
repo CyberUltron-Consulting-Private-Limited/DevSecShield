@@ -3,6 +3,11 @@
 ``/{team_id}/cbom/sources/fleet/inventory/...``: targets (list, detail with the live decision, CSV/JSON import, API
 upsert, soft delete) and inventory sources (AWS / CSV / JSON / API; CRUD and sync).  Members read; writes need a team
 admin (400, never 403).  Every write is audited (field names only).
+
+The list serves each target's stored decision and filters on it in SQL (``decision_action``; tags through the JSON
+column), so a page never evaluates the team; the detail evaluates its one target live.  Writes keep the stored
+decisions current through ``fleet/evaluate.py`` (in place for a small team, by the fleet worker for a large one; the
+list says ``stale`` meanwhile).
 """
 from __future__ import annotations
 
@@ -12,11 +17,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from sqlalchemy import func, update
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionSource
 from backend.utilities.cbom_sources.common import audit, log, utcnow
+from backend.utilities.cbom_sources.fleet import evaluate as EVAL
 from backend.utilities.cbom_sources.fleet import flags as FLAGS
 from backend.utilities.cbom_sources.fleet import store
 from backend.utilities.cbom_sources.fleet import sync as SYNC
@@ -27,20 +33,18 @@ from backend.utilities.cbom_sources.fleet.inventory_sources import (
 from backend.utilities.cbom_sources.fleet.models import (
     CbomFleetPolicy, CbomInventorySource, CbomInventoryTarget, TARGET_KINDS)
 from backend.utilities.cbom_sources.fleet.policy import PolicyEngine
-from backend.utilities.cbom_sources.fleet.refs import build_refs
 from backend.utilities.cbom_sources.fleet.schemas import (
     ApiTargetsBody, ImportBody, InventorySourceCreate, InventorySourceUpdate, public_inventory_source, public_target)
 from backend.utilities.cbom_sources.http import (
     PRIVATE, ObjectId, TeamId, bad_request, bump_version, check_version, read_capped_json, read_limiter,
     require_admin, server_error, write_limiter)
-from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 router = APIRouter(tags=["cbom-fleet"], route_class=FLAGS.route_class("inventory"))
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
 INV = FLEET + "/inventory"
 MAX_INVENTORY_SOURCES = 50
-MAX_TARGETS_PER_TEAM = 50_000
+MAX_TARGETS_PER_TEAM = store.MAX_TARGETS_PER_TEAM
 IMPORT_BODY_LIMIT = MAX_IMPORT_BYTES + 64 * 1024
 API_BODY_LIMIT = 4 * 1024 * 1024
 DEFAULT_IMPORT_NAMES = {"csv": "CSV import", "json": "JSON import"}
@@ -60,10 +64,8 @@ def _ok(payload: Any, status_code: int = 200) -> JSONResponse:
 
 
 def _engine_for(session: Session, team_id: int, now) -> tuple[PolicyEngine, dict[int, CbomFleetPolicy]]:
-    policies = session.exec(select(CbomFleetPolicy).where(CbomFleetPolicy.team_id == team_id)).all()
-    engine = PolicyEngine(policies, get_or_create_settings(session, team_id),
-                          refs=build_refs(session, team_id, policies), now=now)
-    return engine, {p.id: p for p in policies}
+    current = EVAL.inputs(session, team_id, now)
+    return current.engine, {p.id: p for p in current.policies}
 
 
 def _owned_source(session: Session, team_id: int, source_id: int) -> CbomInventorySource:
@@ -98,32 +100,31 @@ def _check_source_cap(session: Session, team_id: int) -> None:
 
 
 def _check_target_cap(session: Session, team_id: int, adding: int) -> None:
-    total = session.exec(select(func.count()).select_from(CbomInventoryTarget)
-                         .where(CbomInventoryTarget.team_id == team_id)).one()
-    if total + adding > MAX_TARGETS_PER_TEAM:
+    if EVAL.target_count(session, team_id) + adding > MAX_TARGETS_PER_TEAM:
         raise HTTPException(status_code=400, detail=f"A team can have at most {MAX_TARGETS_PER_TEAM:,} inventory targets")
 
 
 def _save(session: Session, team_id: int, user_id: int, source: CbomInventorySource, parsed: Parsed, now, *,
           snapshot: bool, dry_run: bool, action: str) -> dict[str, Any]:
     engine, _policies = _engine_for(session, team_id, now)
-    known = store._existing(session, team_id, [t.external_id for t in parsed.targets])
+    known = store.existing(session, team_id, [t.external_id for t in parsed.targets])
     _check_target_cap(session, team_id, len(parsed.targets) - len(known))
     # a file with rows that failed is not a complete snapshot: nothing is marked missing from it
     result = store.upsert(session, team_id, source, parsed.targets, now, engine=engine,
-                          snapshot=snapshot and parsed.error_count == 0, dry_run=dry_run)
+                          snapshot=snapshot and parsed.error_count == 0, dry_run=dry_run, known=known)
     out = result.public()
-    out["errors"] = parsed.errors
-    out["error_count"] = parsed.error_count
+    out["errors"] = (parsed.errors + result.errors)[:100]  # rows that failed, then rows another source owns
+    out["error_count"] = parsed.error_count + result.skipped
     out["rows"] = parsed.rows
     out["dry_run"] = dry_run
     out["inventory_source_id"] = source.id
     out["missing_skipped"] = snapshot and parsed.error_count > 0
     if not dry_run:
         source.last_sync_at, source.last_sync_status, source.last_updated = now, "ok" if not parsed.error_count else "partial", now
-        source.last_sync_summary = {k: out[k] for k in ("created", "updated", "unchanged", "missing", "error_count",
-                                                         "rows", "digest")}
+        source.last_sync_summary = {k: out[k] for k in ("created", "updated", "unchanged", "missing", "skipped",
+                                                         "error_count", "rows", "digest")}
         session.add(source)
+        out["evaluation"] = EVAL.after_change(session, team_id, now)["evaluation"]
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action=action,
               object_type="inventory_source", object_id=source.id,
               changed_fields=[f"created:{result.created}", f"updated:{result.updated}", f"missing:{result.missing}"])
@@ -131,11 +132,18 @@ def _save(session: Session, team_id: int, user_id: int, source: CbomInventorySou
 
 
 # ----------------------------------------------------------------------------- targets
-def _list_targets(engine, team_id: int, kind: str | None, tag: str | None, q: str | None, missing: str | None,
-                  source_id: int | None, decision: str | None, cursor: int, limit: int) -> dict:
+def _like(text: str) -> str:
+    """A LIKE pattern that matches ``text`` literally (``%`` and ``_`` escaped with ``\\``)."""
+    return "%" + text.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _list_targets(engine, team_id: int, kind: str | None, tag_key: str | None, tag_value: str | None, q: str | None,
+                  missing: str | None, source_id: int | None, decision: str | None, cursor: int, limit: int) -> dict:
     now = utcnow()
     with Session(engine) as session:
-        policy_engine, policies = _engine_for(session, team_id, now)
+        is_stale = EVAL.ensure_fresh(session, team_id, now)
+        state = EVAL.state(session, team_id, now)
+        session.commit()
         t = CbomInventoryTarget
         query = select(t).where(t.team_id == team_id)
         count = select(func.count()).select_from(t).where(t.team_id == team_id)
@@ -149,40 +157,34 @@ def _list_targets(engine, team_id: int, kind: str | None, tag: str | None, q: st
         elif missing != "all":
             conds.append(t.missing_since.is_(None))  # type: ignore[union-attr]
         if q:
-            like = f"%{q.lower()}%"
-            conds.append(func.lower(t.external_id).like(like) | func.lower(func.coalesce(t.address, "")).like(like)
-                         | func.lower(func.coalesce(t.hostname, "")).like(like))
+            like = _like(q)
+            conds.append(func.lower(t.external_id).like(like, escape="\\")
+                         | func.lower(func.coalesce(t.address, "")).like(like, escape="\\")
+                         | func.lower(func.coalesce(t.hostname, "")).like(like, escape="\\"))
+        if tag_key:  # the JSON column, in SQL (PostgreSQL ->>, SQLite json_extract): no row is loaded to filter
+            value = t.tags[tag_key.strip().lower()].as_string()  # type: ignore[index]
+            conds.append(value == tag_value if tag_value else value.is_not(None))
+        if decision:
+            conds.append(t.decision_action == decision)
         for cond in conds:
             query, count = query.where(cond), count.where(cond)
-        tag_key, _, tag_value = (tag or "").partition(":")
-        tag_key = tag_key.strip().lower()
-        python_filter = bool(tag_key) or bool(decision)
-        rows: list[Any] = []
-        total = 0
-        if not python_filter:  # the total counts every match; the page starts after the cursor
-            total = session.exec(count).one()
-            rows = list(session.exec(query.where(t.id > cursor).order_by(t.id).limit(limit + 1)).all())
-        else:  # tag and decision filters are applied here (JSON columns; the decision is evaluated live)
-            for row in session.exec(query.order_by(t.id)).all():
-                if tag_key and (tag_key not in (row.tags or {}) or (tag_value and (row.tags or {}).get(tag_key) != tag_value)):
-                    continue
-                if decision and policy_engine.evaluate(row).action != decision:
-                    continue
-                total += 1
-                if row.id > cursor and len(rows) <= limit:
-                    rows.append(row)
+        total = session.exec(count).one()
+        rows = list(session.exec(query.where(t.id > cursor).order_by(t.id).limit(limit + 1)).all())
         page, more = rows[:limit], len(rows) > limit
-        items = [public_target(r, policy_engine.evaluate(r).to_dict()) for r in page]
-        names = {pid: {"name": p.name, "priority": p.priority, "enabled": p.enabled, "deleted": p.deleted_at is not None}
-                 for pid, p in policies.items()}
+        items = [public_target(r) for r in page]
+        policies = session.exec(select(CbomFleetPolicy).where(CbomFleetPolicy.team_id == team_id)).all()
+        names = {p.id: {"name": p.name, "priority": p.priority, "enabled": p.enabled, "deleted": p.deleted_at is not None}
+                 for p in policies}
         return {"targets": items, "next_cursor": page[-1].id if more and page else None, "total": total,
-                "policies": {str(k): v for k, v in names.items()}}
+                "policies": {str(k): v for k, v in names.items()}, "evaluation": EVAL.status(state, is_stale)}
 
 
 @router.get(INV + "/targets", dependencies=READ, openapi_extra=permission("cbom.fleet.read"),
-            summary="Inventory targets with the policy decision of each (page with cursor)")
+            summary="Inventory targets with the stored policy decision of each (page with cursor; tag_key / tag_value)")
 async def list_targets(team_id: TeamId, ctx: Member, kind: str | None = Query(default=None, max_length=24),
-                       tag: str | None = Query(default=None, max_length=400), q: str | None = Query(default=None, max_length=200),
+                       tag_key: str | None = Query(default=None, max_length=128),
+                       tag_value: str | None = Query(default=None, max_length=256),
+                       q: str | None = Query(default=None, max_length=200),
                        missing: str | None = Query(default=None, pattern="^(yes|no|all)$"),
                        source_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                        decision: str | None = Query(default=None, pattern="^(collect|never_scan|unmanaged)$"),
@@ -190,8 +192,8 @@ async def list_targets(team_id: TeamId, ctx: Member, kind: str | None = Query(de
     engine, _user = ctx
     if kind is not None and kind not in TARGET_KINDS:
         raise HTTPException(status_code=400, detail=f"kind must be one of {', '.join(TARGET_KINDS)}")
-    return _ok(await _run("list targets", team_id, _list_targets, engine, team_id, kind, tag, q, missing, source_id,
-                          decision, cursor, limit))
+    return _ok(await _run("list targets", team_id, _list_targets, engine, team_id, kind, tag_key, tag_value, q, missing,
+                          source_id, decision, cursor, limit))
 
 
 def _get_target(engine, team_id: int, target_id: int) -> dict:
@@ -261,12 +263,14 @@ async def import_targets(team_id: TeamId, ctx: Member, request: Request):
 
 def _put_targets(engine, team_id: int, user_id: int, body: ApiTargetsBody) -> dict:
     now = utcnow()
+    with Session(engine) as session:  # refuse a non-admin before normalising up to 1,000 rows
+        require_admin(session, user_id, team_id, "the inventory")
     try:
         parsed = _collect(((i, row) for i, row in enumerate(body.targets, start=1)), len(body.targets))
     except InventoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     with Session(engine) as session:
-        require_admin(session, user_id, team_id, "the inventory")
+        require_admin(session, user_id, team_id, "the inventory")  # again, in the transaction that writes
         source = _source_named(session, team_id, "api", body.source_name, user_id, now)
         out = _save(session, team_id, user_id, source, parsed, now, snapshot=False, dry_run=False,
                     action="fleet.inventory.put")
@@ -293,17 +297,18 @@ def _delete_target(engine, team_id: int, user_id: int, target_id: int) -> dict:
         row = session.get(CbomInventoryTarget, target_id)
         if row is None or row.team_id != team_id:
             raise HTTPException(status_code=404, detail="Target not found")
-        session.exec(update(CbomInventoryTarget).where(CbomInventoryTarget.id == target_id).values(  # type: ignore[call-overload]
-            missing_since=row.missing_since or now, managed_source_id=None, last_updated=now,
-            row_version=CbomInventoryTarget.row_version + 1))
+        # removed by a person: never collected again (unlike a sync miss, no 7-day grace); the next reconcile takes it
+        # out of its managed source at once, even if a job is open there.  Its source listing it again brings it back.
+        store.mark_deleted(session, team_id, now, target_id=target_id)
+        evaluation = EVAL.after_change(session, team_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.inventory_target.delete",
               object_type="inventory_target", object_id=target_id)
         session.commit()
-        return {"deleted": target_id}
+        return {"deleted": target_id, **evaluation}
 
 
 @router.delete(INV + "/targets/{target_id}", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
-               summary="Mark a target missing and take it out of its managed source (soft delete)")
+               summary="Remove a target from the inventory: never collected, out of its managed source at the next reconcile")
 async def delete_target(team_id: TeamId, target_id: ObjectId, ctx: Member):
     engine, user = ctx
     return _ok(await _run("delete target", team_id, _delete_target, engine, team_id, user.id, target_id))
@@ -415,18 +420,17 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
         row.deleted_at, row.enabled, row.last_updated = now, False, now
         bump_version(session, row)
         session.add(row)
-        # its targets are no longer seen: missing (kept for history; a policy stops collecting them after 7 days)
-        session.exec(update(CbomInventoryTarget).where(  # type: ignore[call-overload]
-            CbomInventoryTarget.team_id == team_id, CbomInventoryTarget.inventory_source_id == source_id,
-            CbomInventoryTarget.missing_since.is_(None)).values(missing_since=now, last_updated=now))  # type: ignore[union-attr]
+        # its targets are removed from the inventory with it (kept for history): never collected again
+        removed = store.mark_deleted(session, team_id, now, source_id=source_id)
+        evaluation = EVAL.after_change(session, team_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.inventory_source.delete",
-              object_type="inventory_source", object_id=row.id)
+              object_type="inventory_source", object_id=row.id, changed_fields=[f"targets:{removed}"])
         session.commit()
-        return {"deleted": source_id}
+        return {"deleted": source_id, "targets_removed": removed, **evaluation}
 
 
 @router.delete(INV + "/sources/{source_id}", dependencies=WRITE, openapi_extra=permission("cbom.inventory.write"),
-               summary="Delete an inventory source (its targets are marked missing)")
+               summary="Delete an inventory source (its targets are removed from the inventory and never collected)")
 async def delete_source(team_id: TeamId, source_id: ObjectId, ctx: Member):
     engine, user = ctx
     return _ok(await _run("delete inventory source", team_id, _delete_source, engine, team_id, user.id, source_id))

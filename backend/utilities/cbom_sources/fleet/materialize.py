@@ -6,9 +6,12 @@
   the credential's non-secret fields and checked with ``credential_target_problem``, node or segment from the decision.
 * Targets are batched (at most the policy's ``batch_size``) per key (policy, transport, transport or credential, node
   or segment, kind).  **Assignment is sticky**: a target keeps its managed source while its key is unchanged.
-* A managed source with an open job is **never edited** (a changed target list changes ``connection_version``, which
-  would cancel the job); its change is deferred to the next reconcile.  An empty managed source without open jobs is
-  removed like a hand-deleted one (its runs and assets stay, unlinked).
+* **Taking targets out is never deferred**: when a target leaves a managed source (never scan, deleted, another
+  policy, unmanaged), the source is edited at once, and an open job on it is cancelled (it was created for the old
+  target list).  A source left empty is removed like a hand-deleted one (``removal.remove_source``: open jobs end,
+  runs and assets stay, unlinked).
+* **Adding** targets to a source with an open job is deferred (editing it would cancel the job): the targets keep
+  ``pending_since`` and the team asks for another reconcile, which the fleet worker retries until it is applied.
 * Managed sources and schedules have their own cap (``CBOM_MAX_MANAGED_SOURCES``, default 2,000) and do not count
   toward the hand-made limits.  Credits are unchanged: runs still go through ``runs.queue_run``.
 """
@@ -24,14 +27,15 @@ from pydantic import ValidationError
 from sqlalchemy import update
 from sqlmodel import Session, select
 
-from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSchedule, CbomCollectionSource
+from backend.new_models import CbomCollectionJob, CbomCollectionSchedule, CbomCollectionSource
+from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.common import audit, log
 from backend.utilities.cbom_sources.fleet import store
 from backend.utilities.cbom_sources.fleet.models import CbomCredential, CbomFleetPolicy
-from backend.utilities.cbom_sources.fleet.policy import Decision, PolicyEngine
-from backend.utilities.cbom_sources.fleet.refs import build_refs
+from backend.utilities.cbom_sources.fleet.policy import Decision
 from backend.utilities.cbom_sources.kinds import KINDS, credential_target_problem
+from backend.utilities.cbom_sources.removal import remove_source
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 KIND_FOR_TRANSPORT = {"ssh": "linux_servers", "awx": "awx_hosts", "salt": "salt_hosts", "ssm": "ssm_hosts"}
@@ -76,7 +80,8 @@ def _line(view: Any) -> str:
     return str(view.address or view.hostname)
 
 
-def _config(kind: str, d: Decision, lines: list[str], handles: dict[str, str], cred: CbomCredential | None) -> Any:
+def _config(kind: str, d: Decision, lines: list[str], handles: dict[str, str], cred: CbomCredential | None,
+            addresses: dict[str, list[str]] | None = None) -> Any:
     """The validated config model of a managed source, or raises ValueError (a problem to report)."""
     spec = KINDS.get(kind)
     if spec is None:
@@ -90,8 +95,10 @@ def _config(kind: str, d: Decision, lines: list[str], handles: dict[str, str], c
                                "credential_type": cred.credential_type, "vault": c.get("vault"), "tier": d.tier}
         if cred.credential_type == "ssh_ca":
             raw["ssh_ca_id"], raw["ssh_principals"] = c.get("ssh_ca_id"), c.get("ssh_principals") or []
-    else:  # F1.3 fleet kinds (FleetHostsConfig)
+    else:  # F1.3 fleet kinds (FleetHostsConfig): every address of each line, for the never-scan check at dispatch
         raw = {"transport_id": d.transport_id, "targets": lines, "handles": handles, "tier": d.tier}
+        if "addresses" in getattr(spec.model, "model_fields", {}):
+            raw["addresses"] = addresses
     try:
         cfg = spec.model.model_validate(raw)
     except ValidationError as exc:
@@ -109,18 +116,11 @@ def _open_sources(session: Session, team_id: int) -> set[int]:
         CbomCollectionJob.team_id == team_id, CbomCollectionJob.status.in_(OPEN))).all() if sid}  # type: ignore[attr-defined]
 
 
-def _drop_source(session: Session, source: CbomCollectionSource, team_id: int, actor_id: int | None) -> None:
-    """Remove an empty managed source that has no open job: its runs and assets stay, unlinked (as a hand delete)."""
-    for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
-        job.params = {**(job.params or {}), "source_name": source.name,
-                      "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
-        job.source_id = None
-        session.add(job)
-    session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))  # type: ignore[call-overload]
-    session.flush()
-    audit(session, team_id=team_id, actor_type="system", actor_id=actor_id, action="fleet.source.remove",
-          object_type="source", object_id=source.id)
-    session.delete(source)
+def _drop_source(session: Session, source: CbomCollectionSource, team_id: int, actor_id: int | None,
+                 now: _dt.datetime) -> None:
+    """Remove a managed source no policy needs: exactly as a person's delete (``removal.remove_source``)."""
+    remove_source(session, source, team_id, now, actor_type="system", actor_id=actor_id, action="fleet.source.remove",
+                  reason="A fleet policy no longer collects these targets")
 
 
 def _free_name(taken: set[str], policy_id: int) -> str:
@@ -134,12 +134,15 @@ def _free_name(taken: set[str], policy_id: int) -> str:
 
 def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: int | None) -> ReconcileResult:
     """Evaluate every target and bring managed sources, assignments and managed schedules in line (not committed)."""
+    from backend.utilities.cbom_sources.fleet.evaluate import evaluate_team, inputs, state
+
     out = ReconcileResult()
     settings = get_or_create_settings(session, team_id)
-    policies = session.exec(select(CbomFleetPolicy).where(CbomFleetPolicy.team_id == team_id)).all()
-    by_policy = {p.id: p for p in policies}
-    engine = PolicyEngine(policies, settings, refs=build_refs(session, team_id, policies), now=now)
-    out.decisions_changed = store.refresh_decisions(session, team_id, engine)
+    current = inputs(session, team_id, now)
+    by_policy = {p.id: p for p in current.policies}
+    refreshed = evaluate_team(session, team_id, now, keep_collect=True, current=current)
+    out.decisions_changed = refreshed.changed
+    decisions: dict[int, Decision] = refreshed.collect
     credentials = {c.id: c for c in session.exec(select(CbomCredential).where(CbomCredential.team_id == team_id)).all()}
     managed = {s.id: s for s in session.exec(select(CbomCollectionSource).where(
         CbomCollectionSource.team_id == team_id, CbomCollectionSource.managed_by_policy_id.is_not(None))).all()}  # type: ignore[union-attr]
@@ -149,8 +152,8 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
     groups: dict[str, dict[str, Any]] = {}
     views = list(store.iter_views(session, team_id))
     for view in views:
-        d = engine.evaluate(view)
-        if d.action != "collect":
+        d = decisions.get(view.id)
+        if d is None:
             continue
         kind = KIND_FOR_TRANSPORT[d.transport or "ssh"]
         key = batch_key(d, kind)
@@ -187,6 +190,7 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
 
     managed_total = len(managed)
     created: dict[int, CbomCollectionSource] = {}
+    pending: set[int] = set()  # targets assigned to a source whose edit waits for its open job
     for sid, vs in sorted(planned.items(), key=lambda kv: (kv[0] < 0, abs(kv[0]))):
         if sid > 0:
             source = managed[sid]
@@ -197,6 +201,7 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
             d, kind = group["decision"], group["kind"]
         lines = sorted({_line(v) for v in vs})
         handles = {_line(v): (v.handles or {}).get(d.transport or "", "") for v in vs if (v.handles or {}).get(d.transport or "")}
+        addresses = {_line(v): sorted(set(v.addresses or []) | ({v.address} if v.address else set())) for v in vs}
         cred = credentials.get(d.credential_id) if d.credential_id else None
         segment_column = hasattr(CbomCollectionSource, "node_segment")
         if d.node_segment is not None and not segment_column:
@@ -206,7 +211,7 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
         if not vs:
             continue
         try:
-            cfg = _config(kind, d, lines, handles, cred)
+            cfg = _config(kind, d, lines, handles, cred, addresses)
         except ValueError as exc:
             out.problems.append(f"policy #{d.policy_id}: {exc}")
             _unplan(vs, assignment)
@@ -217,8 +222,35 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
             if (source.config or {}) == config and source.node_id == d.node_id and source.credential_id == d.credential_id:
                 continue
             if sid in busy:
-                out.deferred += 1
-                continue
+                current_lines = set((source.config or {}).get("targets") or [])
+                kept = [v for v in vs if _line(v) in current_lines]
+                waiting = [v for v in vs if _line(v) not in current_lines]
+                if len({_line(v) for v in kept}) == len(current_lines):
+                    # nothing leaves: additions (or a node / credential change) wait for the open job, which an edit
+                    # would cancel
+                    out.deferred += 1
+                    pending.update(v.id for v in waiting)
+                    continue
+                # a target leaves: never wait. Apply the removal now and cancel the job made for the old list;
+                # what is to be added waits for the next reconcile
+                J.cancel_open_jobs(session, source, now, reason="A fleet policy took targets out of this source")
+                busy.discard(sid)
+                if waiting:
+                    out.deferred += 1
+                    pending.update(v.id for v in waiting)
+                    for v in waiting:
+                        assignment[v.id] = None
+                if not kept:
+                    _drop_source(session, source, team_id, actor_id, now)
+                    del managed[sid]
+                    out.sources_removed += 1
+                    continue
+                try:
+                    config = _config(kind, d, sorted({_line(v) for v in kept}), handles, cred, addresses
+                                     ).model_dump(mode="json")
+                except ValueError as exc:
+                    out.problems.append(f"policy #{d.policy_id}: {exc}")
+                    continue
             source.config, source.node_id, source.credential_id = config, d.node_id, d.credential_id
             if segment_column:
                 setattr(source, "node_segment", d.node_segment)
@@ -253,34 +285,42 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
         for view in vs:
             assignment[view.id] = source.id
 
-    # assignments (sticky): write only what changed
+    # assignments (sticky) and the pending flag: write only what changed
     changes = []
     for view in views:
         want = assignment.get(view.id)
         if want is not None and want < 0:
             want = created[want].id if want in created else None
-        if view.managed_source_id != want:
-            changes.append((view.id, want))
-            if want is None:
-                out.targets_unassigned += 1
-            else:
-                out.targets_assigned += 1
-    for target_id, source_id in changes:
+        want_pending = now if view.id in pending else None
+        if view.managed_source_id != want or (view.pending_since is None) != (want_pending is None):
+            changes.append((view.id, want, view.pending_since or want_pending if want_pending else None))
+            if view.managed_source_id != want:
+                if want is None:
+                    out.targets_unassigned += 1
+                else:
+                    out.targets_assigned += 1
+    for target_id, source_id, pending_since in changes:
         session.exec(update(store._TABLE).where(store._TABLE.c.id == target_id)  # type: ignore[call-overload]
-                     .values(managed_source_id=source_id, last_updated=now))
-    # empty managed sources go (unless a job is still open on them)
+                     .values(managed_source_id=source_id, pending_since=pending_since, last_updated=now))
+    # empty managed sources go: a source with an open job too (its job was made for targets no policy collects now)
     used = {sid for sid in assignment.values() if sid}
     used |= {created[s].id for s in created}
     for sid, source in list(managed.items()):
         if sid in used or sid in planned and planned[sid]:
             continue
-        if sid in busy:
-            out.deferred += 1
-            continue
-        _drop_source(session, source, team_id, actor_id)
+        _drop_source(session, source, team_id, actor_id, now)
         del managed[sid]
         out.sources_removed += 1
     _schedules(session, team_id, now, by_policy, managed, settings.window_timezone, out, actor_id)
+    row = state(session, team_id, now)
+    row.last_reconcile = {**out.public(), "at": now.isoformat(timespec="seconds") + "Z"}
+    if out.deferred:  # the fleet worker retries until every deferred change is applied
+        from backend.utilities.cbom_sources.fleet.evaluate import RETRY_DEFERRED
+
+        row.reconcile_requested_at = now + RETRY_DEFERRED
+    elif row.reconcile_requested_at is not None and row.reconcile_requested_at <= now:
+        row.reconcile_requested_at = None
+    session.add(row)
     log("fleet reconciled", team=team_id, **{k: v for k, v in out.public().items() if k != "problems" and v})
     return out
 
