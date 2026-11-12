@@ -111,6 +111,57 @@ def _pinned_known_hosts(text: str) -> paramiko.HostKeys:
     return hk
 
 
+# ----------------------------------------------------------------------------- key exchange
+def _accept_rfc8731_curve25519(transport: Any) -> None:
+    """(``transport``: the paramiko Transport open_session made on its gated socket; nothing here connects.)
+    paramiko implements curve25519-sha256 under its libssh name only (``curve25519-sha256@libssh.org``); RFC 8731
+    gave the same algorithm the name ``curve25519-sha256``, and a server that lists only that name (with ML-KEM
+    hybrids, for example) refused every login (CB-13).  The class does not use the name, so it serves both."""
+    try:
+        from paramiko.kex_curve25519 import KexCurve25519
+
+        if "curve25519-sha256" in transport._kex_info or not KexCurve25519.is_available():
+            return
+        transport._kex_info = {**transport._kex_info, "curve25519-sha256": KexCurve25519}  # this transport only
+        opts = transport.get_security_options()
+        opts.kex = ("curve25519-sha256",) + tuple(k for k in opts.kex if k != "curve25519-sha256")
+    except (ImportError, AttributeError, TypeError, ValueError):  # a paramiko without these internals: its own list
+        return
+
+
+def _server_algorithms(ctx: JobContext, target: Target, port: int) -> dict[str, list[str]] | None:
+    """The server's KEXINIT lists, read through the network gate with one more unauthenticated connection, to say
+    which of them the login could not use."""
+    from zs_scan_node import sshprobe
+
+    try:
+        sock = netutil.connect(target.ip, port, ctx.never_scan, 10)
+    except (netutil.Blocked, OSError):
+        return None
+    try:
+        return sshprobe.read_kexinit(sock, time.monotonic() + 10)["lists"]
+    except (sshprobe.ServerRefused, sshprobe.T.ProbeError, OSError):
+        return None
+    finally:
+        sock.close()
+
+
+def _incompatible(ctx: JobContext, target: Target, port: int, message: str) -> TargetFail:
+    """paramiko found nothing in common with the server: name what the server offers and what the login needs."""
+    lists = _server_algorithms(ctx, target, port) or {}
+    if "kex algorithm" in message:
+        offered = ", ".join(k for k in lists.get("kex") or []  # RFC 8308 / strict-KEX markers are not key exchanges
+                            if k not in ("ext-info-s", "kex-strict-s-v00@openssh.com")) or "not readable"
+        needs = ", ".join(("curve25519-sha256",) + tuple(paramiko.Transport._preferred_kex))
+        return TargetFail("kex_unsupported", f"the server offers only key exchanges the scan node's SSH login cannot "
+                                             f"use ({offered}); the login needs one of: {needs}"[:900])
+    what, key = next(((w, k) for w, k in (("host key", "host_key_algs"), ("ciphers", "ciphers_s2c"),
+                                          ("macs", "macs_s2c"), ("compression", "compression_s2c"))
+                      if w in message), ("algorithms", ""))
+    offered = ", ".join(lists.get(key) or []) or "not readable"
+    return TargetFail("not_supported", f"the scan node's SSH login cannot use the server's {what} ({offered})"[:900])
+
+
 # ----------------------------------------------------------------------------- credentials
 def _load_private_key(text: str) -> paramiko.PKey:
     for cls in (paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.RSAKey):
@@ -235,6 +286,7 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
     transport = paramiko.Transport(sock)
     transport.banner_timeout = 15
     transport.auth_timeout = 20
+    _accept_rfc8731_curve25519(transport)
     pinned_types: list[str] = []
     if policy == "pinned":
         hk = _pinned_known_hosts(config.get("known_hosts") or "")
@@ -263,6 +315,8 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
         transport.close()
         if pinned_types and "key" in str(exc).lower():
             raise TargetFail("host_key_changed", "the server no longer offers the pinned host key type") from None
+        if isinstance(exc, paramiko.IncompatiblePeer):
+            raise _incompatible(ctx, target, port, str(exc)) from None
         raise TargetFail("error", f"SSH handshake failed ({exc.__class__.__name__})") from None
     except (EOFError, OSError) as exc:
         transport.close()

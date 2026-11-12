@@ -198,7 +198,8 @@ class Stub:
                 ec.EllipticCurvePublicKey.from_encoded_point(curve, share)  # raises if not on the curve
                 rec["ec_point_ok"] = True
             reply_type = b"\x21" if kex.startswith("diffie-hellman-group-exchange") else b"\x1f"
-            conn.sendall(_packet(reply_type + _str(blob) + _str(os.urandom(64)) + sig))
+            server_share = os.urandom(32 if kex.startswith("curve25519") else 64)
+            conn.sendall(_packet(reply_type + _str(blob) + _str(server_share) + sig))
             try:
                 rec["after"] = _read_packet(conn)[0]  # the client's DISCONNECT
             except (EOFError, OSError):
@@ -572,3 +573,67 @@ def test_network_refusal_stops_ssh_to_the_address(monkeypatch):
     assert any(e["facts"]["host_keys_status"] == "server_refused" for e in eps) or "refused" in str(statuses)
     cov = [a for a in ctx.collected if a["type"] == "coverage"]
     assert any(c["facts"]["status"] == "refused" for c in cov)
+
+
+# ----------------------------------------------------------------------------- the Linux collector's login
+def _login(monkeypatch, stub, tmp_path):
+    """linux_ssh.open_session against ``stub`` (every gated connect reaches it); returns the TargetFail it raised."""
+    import paramiko
+
+    from zs_scan_node import netutil
+    from zs_scan_node.collectors import linux_ssh as L
+    from zs_scan_node.jobctx import JobContext
+    from zs_scan_node.netutil import NeverScan, Target
+    from zs_scan_node.scrub import Scrubber
+
+    monkeypatch.setattr(netutil, "connect", lambda ip, port, never, timeout: stub.connect())
+    ctx = JobContext(job_id=1, attempt=1, run_id=None, kind="collect", source_kind="linux_servers",
+                     scrubber=Scrubber(), never_scan=NeverScan([]), deadline=time.monotonic() + 60,
+                     state_dir=str(tmp_path))
+    creds = {"key": paramiko.RSAKey.generate(2048)}
+    with pytest.raises(L.TargetFail) as raised:
+        L.open_session(ctx, Target("192.0.2.20", "192.0.2.20"), {"port": 22}, creds)
+    return raised.value
+
+
+def test_login_to_a_pq_only_server_is_kex_unsupported_with_the_servers_list(monkeypatch, tmp_path):
+    """DA X4 / RC-5: the Linux source on a PQ-only host said only "error: SSH handshake failed (IncompatiblePeer)"."""
+    stub = Stub(["mlkem768x25519-sha256", "sntrup761x25519-sha512"], ["ssh-ed25519"])
+    try:
+        fail = _login(monkeypatch, stub, tmp_path)
+    finally:
+        stub.close()
+    assert fail.status == "kex_unsupported"
+    assert "mlkem768x25519-sha256, sntrup761x25519-sha512" in fail.error and "curve25519-sha256" in fail.error
+    assert len(stub.seen) == 2  # the login attempt, then one KEXINIT read to name the server's key exchanges
+
+
+def test_login_negotiates_the_rfc8731_curve25519_name(monkeypatch, tmp_path):
+    """RC-1b: a server offering ``curve25519-sha256`` (RFC 8731) without the libssh alias refused every login.  The
+    stub answers with an unsigned reply, so the login still fails, but only after paramiko started curve25519."""
+    stub = Stub(["curve25519-sha256", "mlkem768x25519-sha256"], ["ssh-ed25519"])
+    try:
+        fail = _login(monkeypatch, stub, tmp_path)
+    finally:
+        stub.close()
+    rec = stub.settled()[0]
+    assert rec.get("kex") == "curve25519-sha256" and rec.get("init_type") == 30 and len(rec["share"]) == 32
+    assert fail.status == "error"  # the stub's reply carries no valid signature
+
+
+def test_rfc8731_name_is_added_to_one_transport_only():
+    import paramiko
+    from paramiko.kex_curve25519 import KexCurve25519
+
+    from zs_scan_node.collectors import linux_ssh as L
+
+    a, b = socket.socketpair()
+    try:
+        t = paramiko.Transport(a)
+        L._accept_rfc8731_curve25519(t)
+        assert t.get_security_options().kex[0] == "curve25519-sha256"
+        assert t._kex_info["curve25519-sha256"] is KexCurve25519
+        assert "curve25519-sha256" not in paramiko.Transport._kex_info  # the class table is untouched
+    finally:
+        a.close()
+        b.close()
