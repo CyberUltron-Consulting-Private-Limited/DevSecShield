@@ -36,6 +36,7 @@ import {
 import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
+import { exclusionSaveError, hostnameError, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
 import {
   addressProgress,
   ago,
@@ -116,7 +117,6 @@ const MAX_ZONE_FILE = 8 * 1024 * 1024;
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const EMAIL_RE = /^[^@\s'"<>]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,}$/;
 const PHONE_RE = /^[0-9+()\- ]{3,64}$/;
-const HOST_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 
 type Mode = "full" | "fragile";
 const SECTION_LABEL: Record<string, string> = {
@@ -158,54 +158,6 @@ function same(a: unknown, b: unknown): boolean {
 
 function pad(hour: number): string {
   return String(hour).padStart(2, "0");
-}
-
-function ipv4ToInt(text: string): number | null {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
-  if (!m) return null;
-  const parts = m.slice(1).map(Number);
-  if (parts.some((p) => p > 255)) return null;
-  return parts[0] * 16777216 + parts[1] * 65536 + parts[2] * 256 + parts[3];
-}
-
-function intToIpv4(n: number): string {
-  return [Math.floor(n / 16777216) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 256) % 256, n % 256].join(".");
-}
-
-/** Light check of an IP, CIDR or a-b range (the server is the authority). Allowed ranges are capped at a /16. */
-function rangeError(raw: string, capped: boolean): string | null {
-  const text = raw.trim();
-  if (!text) return "Enter an IP address, CIDR range or a-b range, e.g. 10.20.0.0/16";
-  if (text.length > 64) return "Use at most 64 characters";
-  if (text.includes(":")) {
-    return /^[0-9a-fA-F:.]+(\/\d{1,3})?$|^[0-9a-fA-F:.]+\s*-\s*[0-9a-fA-F:.]+$/.test(text) ? null : `${text} is not an IP address or range`;
-  }
-  const dash = /^([\d.]+)\s*-\s*([\d.]+)$/.exec(text);
-  if (dash) {
-    const first = ipv4ToInt(dash[1]);
-    const last = ipv4ToInt(dash[2]);
-    if (first === null || last === null) return `${text} is not a valid address range`;
-    if (last < first) return `${text}: the range ends before it starts`;
-    if (capped && last - first + 1 > 65536) return `${text} has more than 65,536 addresses; split it into smaller ranges`;
-    return null;
-  }
-  const cidr = /^([\d.]+)(?:\/(\d{1,2}))?$/.exec(text);
-  const ip = cidr ? ipv4ToInt(cidr[1]) : null;
-  const prefix = cidr?.[2] === undefined ? 32 : Number(cidr[2]);
-  if (!cidr || ip === null || prefix > 32) return `${text} is not a valid IP address or CIDR range`;
-  const size = 2 ** (32 - prefix);
-  const network = ip - (ip % size);
-  if (network !== ip) return `${text} has host bits set; did you mean ${intToIpv4(network)}/${prefix}?`;
-  if (capped && prefix < 16) return `${text} is larger than a /16; split it into /16 ranges`;
-  return null;
-}
-
-/** Hostname check mirroring the server (lower-case labels, no wildcards, not an IP). */
-function hostnameError(name: string): string | null {
-  if (/[^\x00-\x7f]/.test(name)) return null; // internationalised names: the server converts and checks them
-  const labels = name.split(".");
-  if (name.length > 253 || !labels.every((l) => HOST_LABEL_RE.test(l)) || /^\d+$/.test(labels[labels.length - 1])) return `${name} is not a hostname`;
-  return null;
 }
 
 function cleanHostnames(lines: string[]): string[] {
@@ -346,6 +298,9 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
       setShowErrors(false);
     },
     onError: (err) => {
+      // a refused never-scan entry (a host name in the team list): say why under the field, not only in the toast
+      const neverScan = exclusionSaveError(err);
+      if (neverScan) setExclusionError(neverScan);
       if (httpStatus(err) === 409) {
         setDraft({});
         setShowErrors(false);
@@ -420,7 +375,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
     const cidr = exclusion.cidr.trim();
     const reason = exclusion.reason.trim();
     const error =
-      rangeError(cidr, false) ??
+      teamExclusionError(cidr) ??
       (exclusions.some((e) => e.cidr === cidr) ? `${cidr} is already in the list` : null) ??
       (exclusions.length >= MAX_EXCLUSIONS ? `At most ${MAX_EXCLUSIONS} entries` : null) ??
       (reason.length > 120 ? "Keep the reason under 120 characters" : null);
@@ -639,9 +594,19 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {exclusions.map((e) => (
+                        {exclusions.map((e) => {
+                          const issue = storedExclusionIssue(e.cidr);
+                          return (
                           <TableRow key={e.cidr} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
-                            <TableCell className="font-mono text-xs text-zinc-900 dark:text-white">{e.cidr}</TableCell>
+                            <TableCell className="font-mono text-xs text-zinc-900 dark:text-white">
+                              {e.cidr}
+                              {issue && (
+                                <div className="mt-1 space-y-1 font-sans whitespace-normal max-w-[320px]" data-testid="network-exclusion-hostname">
+                                  <StatusBadge tone="red" title={issue}>Host name: not allowed here</StatusBadge>
+                                  <p className="text-xs text-red-600 dark:text-red-400" role="alert">{issue}</p>
+                                </div>
+                              )}
+                            </TableCell>
                             <TableCell className="max-w-[240px] text-zinc-600 dark:text-zinc-400">
                               <Truncate text={e.reason || "—"} />
                             </TableCell>
@@ -651,13 +616,17 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                                 size="icon-sm"
                                 className="cursor-pointer"
                                 aria-label={`Remove ${e.cidr} from never scan`}
-                                onClick={() => setDraft((d) => ({ ...d, network_exclusions: exclusions.filter((x) => x.cidr !== e.cidr) }))}
+                                onClick={() => {
+                                  setExclusionError(null);
+                                  setDraft((d) => ({ ...d, network_exclusions: exclusions.filter((x) => x.cidr !== e.cidr) }));
+                                }}
                               >
                                 <X className="h-4 w-4" />
                               </Button>
                             </TableCell>
                           </TableRow>
-                        ))}
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
