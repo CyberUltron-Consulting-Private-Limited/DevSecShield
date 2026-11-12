@@ -19,7 +19,7 @@ they are written so that other repositories can reuse them.
 ## How a change is checked
 
 ```
-pull_request into dev / staging / main, push to dev / staging / main, workflow_dispatch
+pull_request into dev / staging / main, merge_group, push to dev / staging / main, workflow_dispatch
         │
         ▼
    ci.yml ── changes (dorny/paths-filter) ──┬────────────┬────────────┬────────────┬────────────┐
@@ -39,6 +39,7 @@ pull_request into dev / staging / main, push to dev / staging / main, workflow_d
 | Event | What runs |
 |---|---|
 | Pull request into dev, staging or main | pr-checks, security, and the suites and images whose paths changed |
+| `merge_group` (a merge queue entry) | security, and the suites and images whose paths changed between the queue's base commit and its merge commit, as on a PR. No pr-checks (there is no PR event; the PR's own run checked it), and security scans in report mode (see [Known limits](#known-limits)). `ci-gate` reports on the queue commit, so a queue can require it |
 | Push to `dev` (a merge) | security, and the suites and images whose paths changed since the commit before the push |
 | Push to `staging` or `main` (a promotion) | security and the changed images only. The commit arrived through a PR whose run already tested the merged tree (branch protection requires branches to be up to date), so the suites are not run a second time |
 | `workflow_dispatch` | everything; scanners in report mode |
@@ -51,12 +52,21 @@ pull_request into dev / staging / main, push to dev / staging / main, workflow_d
   the commit before the push (`base: <pushed branch>`), not with the default branch. `.github/tests/test_ci.py`
   checks the map: each tested file must select the suites whose tests read it, and docs must select none.
 - **The scan-worker image** (torch through garak, about 20 minutes) is built on a PR only when `RabbitMQ/worker/`
-  changes, and on a push to `dev` also when `aibom/` (copied into the image) changes. Its runner gets the
-  `free-disk-space` clean-up; the other images do not need it. Build layers go to the Actions cache from `dev` only,
-  and PRs read them.
+  or `reusable-image-build.yml` changes, and on a push to `dev` also when `aibom/` (copied into the image) changes.
+  Its runner gets the `free-disk-space` clean-up; the other images do not need it. Build layers go to the Actions
+  cache from `dev` only, and PRs read them. The cache is `mode=min` (final-image layers only), so a PR that changes
+  worker code re-installs every dependency: plan for a full build.
+- **Runner disk (#50).** Images are built with Buildx's `docker` driver, straight into the runner's Docker image
+  store. The default `docker-container` driver kept a second copy of the image in its own BuildKit store, and `load`
+  streamed it into Docker as a tarball that Docker stored and unpacked again. That filled the 44 GB left after the
+  clean-up on a full scan-worker build. After the build, the build cache (intermediate stages, uv's wheel cache) is
+  pruned before Trivy copies the image. Every image job samples the free disk space every 5 s and ends with a
+  *Disk headroom* step: the lowest value is in the log and the job summary, with a warning under 10 GB, so a
+  shrinking margin shows before a build fails.
 - **Concurrency.** A new push to a PR cancels that PR's older run. On `dev`, `staging` and `main` a running run is
   not cancelled. But GitHub keeps only one *pending* run per group, so after several quick merges the middle commits
-  may get no result of their own.
+  may get no result of their own. Merge-queue runs are never cancelled by this workflow: each queue entry has its
+  own ref, and the queue cancels the runs it no longer needs.
 - **Permissions.** The workflow defaults to `contents: read`, and each job asks only for what it needs. Only two jobs
   get a write token, `pull-requests: write`, and neither checks out PR code: the label job, and
   `pr-checks / review labels`, which removes review labels that new commits outdate. Every checkout uses
@@ -98,10 +108,11 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
 
 The comparators are Python embedded in the workflows, so callers in other repositories need no extra files. All
 their decisions (tool exit codes, missing base, renames) are inside that Python. `.github/tests/` extracts it from
-the YAML and tests it: 76 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
+the YAML and tests it: 102 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
 They check that the same findings from two checkouts at different paths give 0 new, that an added finding is new,
-that each failure mode above fails, that ci-gate, the path map and pr-hygiene behave as documented, and that every
-reusable-workflow input is documented here.
+that each failure mode above fails, that ci-gate, the path map, the image list (`Decide`, run for each event),
+pr-hygiene and the image job's disk steps behave as documented, and that every reusable-workflow input is documented
+here.
 
 Each new finding is annotated on a line the change added (`git diff -U0`), with the tool's own message, because
 several findings of one rule in one file share a key: a new long line in a file that already has some is shown on
@@ -446,6 +457,8 @@ build-contexts?, free-disk-space?}`), `pre-build-command` (run once, in its own 
 `trivy-version` / `trivy-sha256` (`0.76.1`, pinned), `trivy-severity` (`HIGH,CRITICAL`), `trivy-fail-on` (empty,
 which means report only), `cache` (`true`), `cache-write` (`true`; `ci.yml` writes from `dev` only),
 `free-disk-space` (`false` for all images; per image with `"free-disk-space": true`), `timeout-minutes` (`45`).
+Builds use Buildx's `docker` driver; with `cache: true` the runner's Docker must use the containerd image store
+(GitHub's Ubuntu runners do), and the job fails early with the reason if it does not.
 
 **reusable-pr-checks.yml**: `flows` (`staging:dev main:staging|hotfix/*`), `title-regex`, `title-max-length` (100),
 `require-acceptance-criteria` (`true`; bots are exempt), `acceptance-heading-regex`, `forbidden-files-regex`,
@@ -521,6 +534,10 @@ Settings → Branches (or Rules → Rulesets), for each of `dev`, `staging` and 
 many PRs, and a skipped required check blocks the merge. Do **not** turn on *Require review from Code Owners* while
 all authors and reviewers post through one account (see `.github/CODEOWNERS`). Once `dev` and `staging` are
 protected, the secret gate trusts them as promotion heads automatically (it reads the API's `protected` flag).
+
+**Merge queue (optional).** In the same ruleset, *Require merge queue* tests each PR merged onto the latest base
+before it lands, so two PRs that pass alone cannot break `dev` together. `ci.yml` already runs on `merge_group` and
+`ci-gate` reports there; keep `ci-gate` as the one required check.
 
 **Make `dev` the default branch** (Settings → General). Schedules run only from the default branch, so today
 `security-scheduled.yml` and the weekly benchmarks would run July code from `main`. Dependabot security updates also
@@ -624,5 +641,9 @@ cd frontend && npm ci && npx tsc --noEmit && npx eslint . && \
   OSV-Scanner and Trivy fs block new ones in the lockfiles.
 - **Checkov** renders Helm charts into `ci-rendered-charts/` (not a dot directory: Checkov skips those) and fails
   when a rendered chart produced no evaluated check.
+- **Merge-queue runs scan security in report mode.** The secret and scanner gates compare with a base commit taken
+  from the pull request or push event; a `merge_group` event has neither, so they scan in full mode and report
+  without blocking. The PR's own run already gated its diff. Gating the queue commit against
+  `merge_group.base_sha` is a follow-up.
 - **The pull-request files API lists at most 3,000 files**, so pr-hygiene does not see files beyond that in a huge
   PR. gitleaks still scans those commits.

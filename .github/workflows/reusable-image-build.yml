@@ -14,6 +14,12 @@
 #
 # Gating: the build must succeed. Trivy findings are reported; with `trivy-fail-on` set (for example CRITICAL) the
 # job also fails on fixable vulnerabilities of that severity.
+#
+# Disk: images are built by Buildx's `docker` driver, straight into the runner's Docker image store. The default
+# docker-container driver kept a second copy of the image in its own BuildKit store and loaded it into Docker as a
+# tarball, which Docker stored and unpacked again: the scan-worker image ran the runner out of disk that way (#50). The
+# layer cache (`type=gha`) works with the docker driver only on Docker's containerd image store; GitHub's Ubuntu
+# runners have it, and the job checks for it. Each job logs its lowest free disk space (sampled every 5 s).
 name: reusable / image build
 
 on:
@@ -51,8 +57,9 @@ on:
         default: true
       free-disk-space:
         description: >-
-          Delete the runner's preinstalled Android SDK, .NET, GHC, CodeQL bundle and Docker images before building
-          (frees about 25 GB of the hosted runner's ~14 GB free). Large images (the scan worker pulls torch through
+          Delete the runner's preinstalled toolchains this job never uses (Android SDK, .NET, GHC, the hosted tool
+          cache, JVMs, PowerShell, Chromium, cloud CLIs) and its Docker images before building. The hosted runner
+          has about 15 GB free; this frees roughly 30 GB more. Large images (the scan worker pulls torch through
           garak) otherwise fail with "No space left on device".
         type: boolean
         default: false
@@ -111,15 +118,53 @@ jobs:
 
       - name: Free disk space
         if: inputs.free-disk-space || matrix.image.free-disk-space
+        # Only tools this job never runs: the build uses Docker, and the steps below use curl, tar, jq and the
+        # runner's own Node. /mnt is shown too: it is a second disk on most hosted runners, not used here yet.
         run: |
-          df -h / | tail -1
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
-            /usr/local/share/boost /usr/share/swift
+          df -h / /mnt 2>/dev/null || true
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/boost \
+            /usr/share/swift /opt/hostedtoolcache /usr/lib/jvm /usr/local/share/powershell /usr/local/share/chromium \
+            /usr/local/lib/node_modules /opt/microsoft /opt/google /opt/az /usr/lib/google-cloud-sdk /opt/pipx \
+            /usr/share/miniconda
           docker image prune --all --force > /dev/null
-          df -h / | tail -1
+          df -h / /mnt 2>/dev/null || true
+
+      - name: Start the disk monitor
+        # Samples the free space on / every 5 s, in the background, until the runner ends the job. The last step
+        # reports the lowest value, so the log shows how close a build came to filling the disk (#50). Starts after
+        # the clean-up, which only adds space.
+        run: |
+          sample() {
+            while :; do
+              printf '%s\t%s\n' "$(date -u +%H:%M:%S)" "$(df --output=avail -BM / | tail -n 1 | tr -dc 0-9)"
+              sleep 5
+            done
+          }
+          log="$RUNNER_TEMP/disk-free.tsv"
+          sample >> "$log" 2> /dev/null < /dev/null &
+          echo "$!" > "$RUNNER_TEMP/disk-monitor.pid"
+          echo "DISK_LOG=$log" >> "$GITHUB_ENV"
+
+      - name: Docker uses the containerd image store
+        if: inputs.cache
+        # The docker driver below can read and write the gha layer cache only on this store (Docker docs, "Cache
+        # storage backends"). Fail here, with the reason, rather than in the middle of a build.
+        run: |
+          status=$(docker info --format '{{json .DriverStatus}}')
+          case "$status" in
+            *io.containerd.snapshotter.v1*) echo "Docker image store: containerd ($status)" ;;
+            *) echo "::error::Docker on this runner does not use the containerd image store ($status), which the gha" \
+                 "layer cache needs with the docker driver. Call this workflow with cache: false, or turn the store on."
+               exit 1 ;;
+          esac
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # Build inside the runner's Docker, not in a separate BuildKit container: the image lands in Docker's store
+          # once. The docker-container driver kept its own copy and loaded a tarball that Docker stored and unpacked
+          # again, which filled the runner disk on the scan-worker image (#50).
+          driver: docker
 
       - name: Build ${{ matrix.image.name }} (no push)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -136,6 +181,13 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: ${{ inputs.cache && format('type=gha,scope=img-{0}', matrix.image.name) || '' }}
           cache-to: ${{ inputs.cache && inputs.cache-write && format('type=gha,scope=img-{0},mode=min', matrix.image.name) || '' }}
+
+      - name: Free the build cache
+        # Intermediate stages and cache mounts (for example uv's wheel cache) are not part of the image, and the
+        # layer cache was already exported by the build. Trivy below writes its own temporary copy of the image.
+        run: |
+          docker builder prune --all --force | tail -n 1
+          df -h / | tail -n 1
 
       - name: Image size
         run: docker image inspect "$IMAGE_REF" --format 'size={{.Size}} bytes' | tee -a "$GITHUB_STEP_SUMMARY"
@@ -196,3 +248,25 @@ jobs:
           path: image-reports/
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Disk headroom
+        if: always()
+        env:
+          NAME: ${{ matrix.image.name }}
+          WARN_BELOW_MB: 10240 # a warning (not a failure) when a build came within 10 GB of filling the disk
+        run: |
+          sample=$'^[0-9]{2}:[0-9]{2}:[0-9]{2}\t[0-9]+$'   # HH:MM:SS <tab> free MB
+          if [ -z "${DISK_LOG:-}" ] || ! grep -qE "$sample" "$DISK_LOG" 2> /dev/null; then
+            echo "No disk samples (the disk monitor did not start)."
+            exit 0
+          fi
+          out=$(grep -E "$sample" "$DISK_LOG" | awk -F '\t' -v warn="$WARN_BELOW_MB" -v name="$NAME" '
+            { n++; if (n == 1) first = $2; last = $2; if (n == 1 || $2 + 0 < min + 0) { min = $2; at = $1 } }
+            END {
+              line = sprintf("Disk (%s): lowest free space %.1f GB at %s UTC; %.1f GB at the first sample, %.1f GB at the end (%d samples, every 5 s).", name, min / 1024, at, first / 1024, last / 1024, n)
+              print line
+              if (min + 0 < warn + 0)
+                printf "::warning title=Runner disk::%s Less than %.0f GB was left; see docs/ci/README.md.\n", line, warn / 1024
+            }')
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -v '^::' >> "$GITHUB_STEP_SUMMARY"

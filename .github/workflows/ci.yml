@@ -27,6 +27,11 @@ name: CI
 on:
   pull_request:
     branches: [dev, staging, main]
+  # A merge queue (a ruleset setting, not on yet) tests each queued PR merged onto the latest base before it lands.
+  # It runs this workflow on the queue's temporary branch (gh-readonly-queue/<base>/pr-<n>-<sha>); the queue waits
+  # for ci-gate there, as a PR does. The suites and images run as on a PR; pr-checks does not (no PR event).
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [dev, staging, main]
   workflow_dispatch:
@@ -38,6 +43,7 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   # A new push to a PR cancels the older run. On dev / staging / main a running run is not cancelled, but GitHub
   # keeps only one PENDING run per group: with several quick merges, the middle commits can end up with no result.
+  # Merge-queue runs are never cancelled here (their ref is unique per queue entry; the queue cancels its own).
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -62,9 +68,10 @@ jobs:
       images: ${{ steps.decide.outputs.images }}
     steps:
       # Pull requests: the file list comes from the API. Pushes: from git, against the commit before the push (`base`
-      # = the pushed branch; without it the action diffs against the default branch). workflow_dispatch: everything.
+      # = the pushed branch; without it the action diffs against the default branch). Merge queue: from git, with
+      # `base` empty, the action diffs merge_group.base_sha..head_sha from the event. workflow_dispatch: everything.
       - name: Checkout
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'merge_group'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -161,6 +168,8 @@ jobs:
               - 'scan_node/**'
             img-scan-worker:
               - 'RabbitMQ/worker/**'
+              # a change to how images are built is proven on the largest image (#50: it filled the runner disk)
+              - '.github/workflows/reusable-image-build.yml'
             img-scan-worker-aibom:
               - 'aibom/**'
             img-dast-worker:
@@ -191,14 +200,15 @@ jobs:
               - '!LICENSE*'
 
       # What runs:
-      #   pull requests and pushes to dev  the suites whose paths changed
+      #   pull requests, merge queue and pushes to dev
+      #                                   the suites whose paths changed
       #   pushes to staging and main      security and the changed images only: those commits arrive through a PR
       #                                   whose run already tested the merged tree ("Require branches to be up to
       #                                   date" in branch protection), so the suites are not run a second time
       #   workflow_dispatch               everything
-      # The scan-worker image (torch through garak, about 20 minutes) is built on a PR only when RabbitMQ/worker/
-      # changes; on a push to dev also when aibom/ (copied into the image) changes. Its layer cache is written on
-      # pushes to dev only, and PRs read it.
+      # The scan-worker image (torch through garak, about 20 minutes) is built on a PR or in the merge queue only
+      # when RabbitMQ/worker/ or the image workflow changes; on a push to dev also when aibom/ (copied into the
+      # image) changes. Its layer cache is written on pushes to dev only, and PRs read it.
       - name: Decide
         id: decide
         env:
