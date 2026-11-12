@@ -1,0 +1,220 @@
+name: CBOM Check
+on:
+  push:
+    branches: [ test/cb-30-live-rsa1024 ]  # Adjust this to your master branch name
+  pull_request:
+    branches: [ test/cb-30-live-rsa1024 ]  # Optionally run on PRs
+jobs:
+  cbom-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      # ---------------------------------------------------------------------------------------------------------------
+      # [cb30-proof] CB-30 live proof (PR #95). The steps named [cb30-proof] start a DevSecShield stack inside this
+      # runner (backend built from the PR head, worker/MinIO from GHCR, Postgres/Mongo/RabbitMQ/Mailpit), sign up a
+      # customer through the API and create its CBOM CI/CD integration. Every other step of this job is the file the
+      # CI/CD page generates for that integration (frontend/components/cicd/ciTemplates.ts at the PR head), byte for
+      # byte, except CICD_API_KEY, which comes from the integration created in this run instead of a repository secret.
+      # The last [cb30-proof] step proves that equality. This branch is a throwaway test branch; it is never merged.
+      # ---------------------------------------------------------------------------------------------------------------
+      - name: "[cb30-proof] free disk space"
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: "[cb30-proof] DevSecShield at the PR head"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 60e85f6bcb4a89b1224770e97be4f0de6ab7a7a3
+          path: .dss
+          persist-credentials: false
+      - name: "[cb30-proof] deploy/local (GHCR compose) from ci/publish-ghcr"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: de22b950885afd4dafb9c21a95c01a321d0d7dfa
+          path: .ghcr
+          sparse-checkout: deploy/local
+          persist-credentials: false
+      - name: "[cb30-proof] move both out of the customer's workspace"
+        run: |
+          mv .dss "$RUNNER_TEMP/dss"
+          mkdir -p "$RUNNER_TEMP/dss/deploy/local"
+          cp -a .ghcr/deploy/local/. "$RUNNER_TEMP/dss/deploy/local/"
+          rm -rf .ghcr
+          git -C "$RUNNER_TEMP/dss" log -1 --format='DevSecShield %H %s'
+      - name: "[cb30-proof] build the backend image at the PR head"
+        working-directory: ${{ runner.temp }}/dss
+        run: docker build -q --build-context migrations=prod_database_migrations -f backend/Dockerfile -t cb30/backend:pr backend
+      - name: "[cb30-proof] start the stack"
+        working-directory: ${{ runner.temp }}/dss/deploy/local
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          ./init-env.sh pr-92
+          cat > cb30.override.yml <<'YML'
+          services:
+            minio-init: {image: "cb30/backend:pr", pull_policy: never}
+            migrate: {image: "cb30/backend:pr", pull_policy: never}
+            backend: {image: "cb30/backend:pr", pull_policy: never}
+          YML
+          dc="docker compose -f docker-compose.yml -f cb30.override.yml"
+          $dc up -d postgres mongo rabbitmq minio mailpit minio-init migrate backend cicd-worker
+          for i in $(seq 1 90); do
+            if curl -fsS --noproxy '*' http://127.0.0.1:8000/health >/dev/null 2>&1; then echo "API healthy after ${i}0 s"; break; fi
+            sleep 10
+          done
+          curl -fsS --noproxy '*' http://127.0.0.1:8000/health
+          for i in $(seq 1 60); do
+            if $dc logs cicd-worker 2>&1 | grep -q ' ready\.'; then echo "cicd-worker ready"; break; fi
+            sleep 5
+          done
+          $dc ps --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}'
+          echo "DC=$dc" >> "$GITHUB_ENV"
+          echo "DSS_LOCAL=$PWD" >> "$GITHUB_ENV"
+      - name: "[cb30-proof] customer signs up and creates a CBOM CI/CD integration (API, as the UI does)"
+        env:
+          LEG: rsa1024
+        run: |
+          python3 - <<'PY'
+          import json, os, re, secrets, string, subprocess, time, urllib.parse, urllib.request
+          API, MAIL = "http://127.0.0.1:8000", "http://127.0.0.1:8025"
+          op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+          def call(method, url, body=None, token=None):
+              req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method)
+              req.add_header("Content-Type", "application/json"); req.add_header("Origin", "http://localhost:3000")
+              if token: req.add_header("Authorization", f"Bearer {token}")
+              with op.open(req, timeout=60) as r:
+                  return json.loads(r.read() or b"null")
+          email = f"cb30-{os.environ['LEG']}-{secrets.token_hex(3)}@customer.test"
+          call("POST", f"{API}/send_code", {"email": email})
+          code = None
+          for _ in range(30):
+              q = urllib.parse.quote(f'to:"{email}"')
+              msgs = json.loads(op.open(f"{MAIL}/api/v1/search?query={q}").read()).get("messages") or []
+              for m in msgs:
+                  full = json.loads(op.open(f"{MAIL}/api/v1/message/{m['ID']}").read())
+                  text = re.sub(r"(?s)<[^>]+>", " ", full.get("HTML") or "") + " " + (full.get("Text") or "")
+                  found = re.findall(r"(?<!\d)(\d{6})(?!\d)", text)
+                  if found: code = found[0]; break
+              if code: break
+              time.sleep(2)
+          assert code, "no sign-up code in the mail catcher"
+          alphabet = string.ascii_letters + string.digits
+          password = "Cb30-" + "".join(secrets.choice(alphabet) for _ in range(18)) + "9!"
+          token = call("POST", f"{API}/signup", {"email": email, "verification_code": code, "password": password,
+                                                  "first_name": "CB30", "last_name": "Customer"})["access_token"]
+          team = call("GET", f"{API}/teams", token=token)[0]["team_id"]
+          # operator top-up (a new team starts at 0 credits; the operator console sets the balance)
+          subprocess.run(["sh", "-c", f'cd "$DSS_LOCAL" && $DC exec -T postgres sh -c \'psql -X -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "UPDATE team SET credit_balance = 20 WHERE id = {int(team)}"\''], check=True)
+          created = call("POST", f"{API}/{team}/cicd/integration", {"title": f"cb30-live-{os.environ['LEG']}", "scan_type": "cbom"}, token)
+          key = created["api_key"]
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              print(f"::add-mask::{key}"); print(f"::add-mask::{token}")
+              env.write(f"DSS_CI_KEY={key}\nDSS_USER_TOKEN={token}\nDSS_TEAM={team}\nDSS_INTEGRATION={created['integration_id']}\n")
+          print(f"customer team {team}, CBOM CI/CD integration {created['integration_id']} created")
+          PY
+      # ------------------------------------------------ the generated file starts here ------------------------------
+      - uses: actions/checkout@v4
+
+      # Everything but .git is scanned (vendored code, build output and nested archives included); installed
+      # dependency trees stay out. The zip is written outside the workspace. Uploads are capped at 50 MB.
+      - name: Create project zip
+        run: |
+          zip -q -r "$RUNNER_TEMP/project.zip" . -x '.git/*' '*/.git/*' 'node_modules/*' '*/node_modules/*' 'venv/*' '.venv/*' '*/.venv/*'
+
+      - name: Perform CBOM Scan
+        id: cbom
+        env:
+          CICD_API_KEY: ${{ env.DSS_CI_KEY }}
+        run: |
+          set -u
+          # A failed scan fails the pipeline: --fail-with-body (curl 7.76+) exits non-zero on any HTTP error and still
+          # prints the reason. 429 (rate limited): wait Retry-After seconds (30 if absent, 300 at most), up to 5 tries.
+          for attempt in 1 2 3 4 5; do
+            rc=0
+            code=$(curl --fail-with-body -sS --max-time 900 -o response.json -D devsecshield-headers.txt -w '%{http_code}' \
+              -H "cicd-api-key: $CICD_API_KEY" -F "zip_file=@$RUNNER_TEMP/project.zip" \
+              "http://127.0.0.1:8000/cicd/cbom/scan") || rc=$?
+            if [ "${code}" = "429" ] && [ "${attempt}" -lt 5 ]; then
+              delay=$(awk 'tolower($1) == "retry-after:" {print $2 + 0}' devsecshield-headers.txt | tail -n 1)
+              [ -n "${delay}" ] && [ "${delay}" -gt 0 ] || delay=30
+              [ "${delay}" -le 300 ] || delay=300
+              echo "DevSecShield is rate limiting this key; retrying in ${delay}s (attempt ${attempt} of 5)"
+              sleep "${delay}"
+              continue
+            fi
+            break
+          done
+          if [ "${rc}" -ne 0 ]; then
+            echo "DevSecShield scan failed (curl exit ${rc}, HTTP ${code:-none}):"
+            cat response.json 2>/dev/null || true
+            exit 1
+          fi
+          echo "CBOM findings: $(jq '.finding_count // 0' response.json)"
+          jq -r '(.results | if type == "object" then (.results // []) elif type == "array" then . else [] end)[] | (.impact // "unknown") + " " + (.title // .name // "")' response.json
+
+      # Fails the job on a high crypto finding (weak algorithm or key, ECB, hard-coded key, static IV, reused nonce,
+      # weak RNG, weak padding, disabled certificate verification, vulnerable crypto library), and when the answer
+      # has no verdict. Quantum-vulnerable findings are reported, not blocked.
+      - name: CBOM policy gate
+        run: |
+          jq -r '.gate.reason // "No CBOM policy verdict in the answer."' response.json
+          jq -r '.gate.failing[]? | "\(.impact // "High") \(.codes | join(",")) \(.location)\(if .line then ":\(.line)" else "" end) \(.title)"' response.json
+          # CBOM policy gate: fail on a high crypto finding, and fail closed when the answer carries no verdict.
+          if grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*true' response.json; then
+            echo "DevSecShield CBOM policy gate: FAILED (high crypto findings, or no result in time; see the list above and the CI/CD page)"
+            exit 1
+          elif grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*false' response.json; then
+            echo "DevSecShield CBOM policy gate: passed (no high crypto finding)"
+          else
+            echo "DevSecShield CBOM policy gate: the answer has no verdict, so the job fails (fail closed)"
+            exit 1
+          fi
+
+      # ------------------------------------------------ the generated file ends here --------------------------------
+      - name: "[cb30-proof] evidence: API log, Mongo cicd_logs, the CI/CD page's data"
+        if: always()
+        run: |
+          cd "$DSS_LOCAL"
+          echo "== backend log: CBOM CI gate lines"; $DC logs --no-color --timestamps backend 2>&1 | grep -E 'CBOM CI gate|/cicd/cbom/scan' || true
+          echo "== cicd-worker log: cbom task lines"; $DC logs --no-color --timestamps cicd-worker 2>&1 | grep -E 'scan_worker.cbom|cbom scan summary|succeeded' | tail -n 5 || true
+          echo "== Mongo cicd_logs (gate verdict stored)"
+          $DC exec -T mongo sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --quiet --eval "JSON.stringify(db.getSiblingDB(\"new_devsecshield_backend_server_db\").cicd_logs.find({}, {status: 1, credits_consumed: 1, \"gate.verdict\": 1, \"gate.failing_count\": 1, \"gate.failing\": 1}).toArray())"'
+          echo "== GET /{team}/cicd/integration/{id} (what the CI/CD page shows)"
+          curl -fsS --noproxy '*' -H "Authorization: Bearer $DSS_USER_TOKEN" "http://127.0.0.1:8000/$DSS_TEAM/cicd/integration/$DSS_INTEGRATION" \
+            | jq -c '{scan_type, logs: [.logs[] | {status, gate_verdict: .gate.verdict, failing: .gate.failing_count}]}'
+          echo "== answer the pipeline got"; jq -c '{status, finding_count, gate_failed, gate: {verdict: .gate.verdict, failing_count: .gate.failing_count, failing: .gate.failing}}' response.json || true
+      - name: "[cb30-proof] the customer steps are the UI's generated file"
+        if: always()
+        working-directory: ${{ runner.temp }}/dss/frontend
+        env:
+          BRANCH: test/cb-30-live-rsa1024
+        run: |
+          cat > cb30-gen.ts <<'TS'
+          import fs from "node:fs";
+          import { githubActionsWorkflow } from "./components/cicd/ciTemplates";
+          fs.writeFileSync(process.argv[2], githubActionsWorkflow({ kind: "cbom", endpoint: "http://127.0.0.1:8000/cicd/cbom/scan", branch: process.env.BRANCH! }));
+          TS
+          npx --yes tsx@4.23.15 cb30-gen.ts "$RUNNER_TEMP/generated.yml"
+          python3 - "$RUNNER_TEMP/generated.yml" "$GITHUB_WORKSPACE/.github/workflows/cbom-check.yml" <<'PY'
+          import sys, yaml
+          gen = yaml.safe_load(open(sys.argv[1]))
+          run = yaml.safe_load(open(sys.argv[2]))
+          job = run["jobs"]["cbom-check"]
+          job.pop("permissions")  # allowed diff 1: packages:read to pull the stack's images
+          job["steps"] = [s for s in job["steps"] if not str(s.get("name", "")).startswith("[cb30-proof]")]  # allowed diff 2
+          expr = lambda body: "$" + "{{ " + body + " }}"  # written so the runner does not expand it in this script
+          for s in job["steps"]:  # allowed diff 3: the key of the integration created in this run
+              if s.get("env", {}).get("CICD_API_KEY") == expr("env.DSS_CI_KEY"):
+                  s["env"]["CICD_API_KEY"] = expr("secrets.CICD_API_KEY")
+          assert run == gen, "the customer steps differ from the generated file"
+          print("customer steps == ciTemplates.githubActionsWorkflow(cbom) at the PR head:", len(gen["jobs"]["cbom-check"]["steps"]), "steps")
+          PY
+      - name: "[cb30-proof] upload the evidence"
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cb30-live-rsa1024
+          path: response.json
+          if-no-files-found: warn
