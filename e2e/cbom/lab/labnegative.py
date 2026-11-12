@@ -57,7 +57,19 @@ PARSER_MUTATIONS = {
 }
 
 
+def wait_for_memory(wave: str, limit_s: int = 300) -> None:
+    """`up` refuses below the memory floor (gen.MEM_FLOOR_MB); on the shared machine wait for room instead of
+    recording a refused case as "not caught"."""
+    import gen
+    need = gen.MEM_FLOOR_MB + sum(gen.WAVE_MEM_MB.get(w, 0) for w in wave.split(","))
+    deadline = time.time() + limit_s
+    while gen.mem_available_mb() < need and time.time() < deadline:
+        time.sleep(10)
+
+
 def gen_cli(*args: str, lab: Path = HERE) -> subprocess.CompletedProcess:
+    if args and args[0] == "up":
+        wait_for_memory(args[args.index("--wave") + 1] if "--wave" in args else "core")
     return subprocess.run([sys.executable, str(lab / "gen.py"), *args], capture_output=True, text=True, timeout=900)
 
 
@@ -75,7 +87,8 @@ def mutated_copy(base: Path, file: str, old: str, new: str) -> Path:
 
 
 def report_of(run: Path) -> dict:
-    return json.loads((run / "lab" / "selfcheck.json").read_text())
+    path = run / "lab" / "selfcheck.json"
+    return json.loads(path.read_text()) if path.exists() else {"targets": [], "error": "no selfcheck.json"}
 
 
 def failing_rows(run: Path, target: str, key_part: str, exact: bool = False) -> list[dict]:
