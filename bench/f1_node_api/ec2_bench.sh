@@ -57,6 +57,9 @@ for scenario in "$@"; do
                     sim=(--protocol 2 --duration 600 --warmup 60 --spread 60) ;;
     after-steady-p1) src=after; seed=(--nodes 10000 --sources 0 --assign pinned)
                     sim=(--protocol 1 --duration 180 --warmup 30) ;;
+    # dev's own fleet behaviour (scan node 1.0 on dev: heartbeat every 30 s, a claim poll every 5 s per node)
+    before-real)    src=before; seed=(--nodes 10000 --sources 0 --assign pinned)
+                    sim=(--protocol 1 --duration 300 --warmup 60) ;;
     before-run)     src=before; seed=(--nodes 10000 --sources 10000 --assign pinned); export F1_REAPER=1
                     sim=(--protocol 1 --warmup 30 --duration 1 --run --run-timeout 600) ;;
     after-run)      src=after; seed=(--nodes 10000 --sources 10000 --assign segment); export F1_REAPER=1
