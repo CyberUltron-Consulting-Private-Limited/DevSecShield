@@ -67,6 +67,113 @@ def step_script(job: str, name: str) -> str:
     return textwrap.dedent(m.group(1))
 
 
+_EXPR_TOKEN = re.compile(r"\s*(?:(?P<op>\|\||&&|==|!=|!|\(|\))|'(?P<str>(?:[^']|'')*)'|(?P<name>[A-Za-z_][\w.*-]*(?:\(\))?))")
+STATUS_FUNCTIONS = ("success()", "failure()", "always()", "cancelled()")
+
+
+def _truthy(value) -> bool:
+    return value not in (None, False, "", 0)
+
+
+def evaluate(expr: str, ctx: dict):
+    """Evaluate a GitHub Actions expression: enough of the language for this workflow's `if:` conditions (&&, ||, !,
+    ==, !=, parentheses, '...' strings, context paths, status functions). `ctx` maps flat paths such as
+    `needs.build.result` or `cancelled()` to values; an unknown path is null, as in GitHub. Strings compare
+    case-insensitively and null equals '' (GitHub's loose equality)."""
+    tokens, pos, expr = [], 0, expr.strip()
+    while pos < len(expr):
+        m = _EXPR_TOKEN.match(expr, pos)
+        if not m or m.end() == pos:
+            raise ValueError(f"cannot parse {expr[pos:]!r}")
+        if m["str"] is not None:
+            tokens.append(("str", m["str"].replace("''", "'")))
+        else:
+            tokens.append(("op", m["op"]) if m["op"] else ("name", m["name"]))
+        pos = m.end()
+    i = 0
+
+    def peek():
+        return tokens[i] if i < len(tokens) else (None, None)
+
+    def take():
+        nonlocal i
+        i += 1
+        return tokens[i - 1]
+
+    def or_():
+        v = and_()
+        while peek() == ("op", "||"):
+            take()
+            r = and_()
+            v = v if _truthy(v) else r
+        return v
+
+    def and_():
+        v = cmp()
+        while peek() == ("op", "&&"):
+            take()
+            r = cmp()
+            v = r if _truthy(v) else v
+        return v
+
+    def cmp():
+        v = unary()
+        if peek() in (("op", "=="), ("op", "!=")):
+            op = take()[1]
+            r = unary()
+            a, b = ("" if v is None else v), ("" if r is None else r)
+            eq = a.casefold() == b.casefold() if isinstance(a, str) and isinstance(b, str) else a == b
+            return eq if op == "==" else not eq
+        return v
+
+    def unary():
+        if peek() == ("op", "!"):
+            take()
+            return not _truthy(unary())
+        kind, val = take()
+        if (kind, val) == ("op", "("):
+            v = or_()
+            if take() != ("op", ")"):
+                raise ValueError(f"unbalanced parentheses in {expr!r}")
+            return v
+        if kind == "str":
+            return val
+        if kind == "name":
+            if val.endswith("()") and val not in STATUS_FUNCTIONS:
+                raise ValueError(f"function {val} is not modelled")
+            return ctx[val] if val.endswith("()") else ctx.get(val)
+        raise ValueError(f"unexpected {val!r} in {expr!r}")
+
+    value = or_()
+    if i != len(tokens):
+        raise ValueError(f"trailing tokens in {expr!r}")
+    return value
+
+
+def job_runs(job: str, state: dict) -> bool:
+    """Whether job `job` runs, by its own `needs:` and `if:`, given the results and outputs of the jobs before it
+    (`state`: flat paths, e.g. {"needs.build.result": "skipped"}). Outputs of a job that is not in `needs:` are not
+    visible (null), and an `if:` without a status function gets GitHub's implicit `success()` (modelled over the
+    direct needs)."""
+    text = JOBS[job]
+    cond = " ".join(text.split("\n    if: >-\n", 1)[1].split("\n    runs-on:", 1)[0].split())
+    needs = [n.strip() for n in re.search(r"\n    needs: \[?([a-z, -]+?)\]?\n", text).group(1).split(",")]
+    ctx = {k: v for k, v in state.items() if not k.startswith("needs.") or k.split(".")[1] in needs}
+    success = all(state.get(f"needs.{n}.result") == "success" for n in needs)
+    ctx = {"success()": success, "always()": True, "cancelled()": False,
+           "failure()": any(state.get(f"needs.{n}.result") == "failure" for n in needs)} | ctx
+    runs = _truthy(evaluate(cond, ctx))
+    return runs and (success or any(f in cond for f in STATUS_FUNCTIONS))
+
+
+def step_if(job: str, name: str) -> str | None:
+    """The `if:` of step `name` in `job` (None when it has none)."""
+    parts = [p for p in re.split(r"\n      - ", JOBS[job]) if p.startswith(f"name: {name}\n")]
+    assert len(parts) == 1, f"{job}: step {name!r}"
+    m = re.search(r"\n        if: (.+)\n", parts[0] + "\n")
+    return m.group(1) if m else None
+
+
 class Registry:
     """A temporary fake registry + gh for running the workflow's step scripts (fakes/docker, fakes/gh, fakes/sleep)."""
 
@@ -348,11 +455,11 @@ class Images(unittest.TestCase):
         self.assertIn("needs: [meta, exists, contexts]", JOBS["build"])
 
     def test_moving_tags_change_only_after_every_image_is_merged(self):
-        self.assertIn("needs: [meta, exists, merge]", JOBS["promote"])
+        # merge runs on every publishing run, also when nothing was built (review 5878241489): promote needs it green.
+        self.assertIn("needs: [meta, merge]", JOBS["promote"])
         cond = JOBS["promote"].split("\n    if: >-\n", 1)[1].split("\n    runs-on:", 1)[0]
         self.assertIn("needs.merge.result == 'success'", cond)
-        self.assertIn("(needs.merge.result == 'skipped' && needs.exists.outputs.missing == '')", cond)
-        self.assertIn("needs.exists.result == 'success'", cond)
+        self.assertNotIn("'skipped'", cond)
 
     def test_promote_only_moves_tags_while_its_commit_is_the_newest(self):
         steps = re.split(r"\n      - ", JOBS["promote"])
@@ -375,6 +482,71 @@ class Images(unittest.TestCase):
                 self.assertIn("--from=", line)
         self.assertIn("test \"$(git rev-parse HEAD)\" = \"${MINIO_COMMIT}\"", MINIO)
         self.assertRegex(MINIO, r"\nUSER 10002\n")
+
+
+def run_state(**changes: str) -> dict:
+    """Job results/outputs of a push to dev, by default the all-six-exist case: nothing missing, contexts and build
+    skipped. Keyword names use __ for dots (needs__build__result)."""
+    state = {"github.event_name": "push", "github.repository": REPO,
+             "needs.meta.result": "success", "needs.meta.outputs.publish": "true", "needs.meta.outputs.moving": "dev",
+             "needs.exists.result": "success", "needs.exists.outputs.missing": "",
+             "needs.build.result": "skipped", "needs.merge.result": "success"}
+    return state | {k.replace("__", "."): v for k, v in changes.items()}
+
+
+class JobConditions(unittest.TestCase):
+    """The job and step `if:`s, evaluated (review 5878241489: when all six tags existed, merge was skipped, so a tag
+    whose attestation had failed was promoted without one)."""
+
+    def test_merge_runs_when_every_tag_existed_and_nothing_was_built(self):
+        self.assertTrue(job_runs("merge", run_state()))
+
+    def test_merge_runs_after_the_builds(self):
+        self.assertTrue(job_runs("merge", run_state(needs__build__result="success",
+                                                    needs__exists__outputs__missing="backend minio")))
+
+    def test_merge_does_not_run_when_the_builds_failed_or_never_ran(self):
+        for name, state in {
+            "build failed": run_state(needs__build__result="failure", needs__exists__outputs__missing="backend"),
+            "build cancelled": run_state(needs__build__result="cancelled", needs__exists__outputs__missing="backend"),
+            "contexts failed, so build skipped with tags missing":
+                run_state(needs__exists__outputs__missing="backend"),
+            "exists failed (no output)": run_state(needs__exists__result="failure"),
+            "nothing to publish": run_state(needs__meta__outputs__publish="false", needs__exists__result="skipped"),
+            "run cancelled": run_state() | {"cancelled()": True},
+            "fork pull request": run_state(github__event_name="pull_request") | {
+                "github.event.pull_request.head.repo.full_name": "someone/DevSecShield"},
+        }.items():
+            self.assertFalse(job_runs("merge", state), name)
+
+    def test_the_digests_are_downloaded_only_when_something_was_built(self):
+        cond = step_if("merge", "Download the digests")
+        self.assertIsNotNone(cond)
+        self.assertFalse(_truthy(evaluate(cond, run_state())))
+        self.assertTrue(_truthy(evaluate(cond, run_state(needs__exists__outputs__missing="backend"))))
+
+    def test_promote_runs_only_after_merge_succeeded(self):
+        self.assertTrue(job_runs("promote", run_state()))
+        for name, state in {
+            "merge skipped": run_state(needs__merge__result="skipped"),
+            "merge failed (an attestation failed)": run_state(needs__merge__result="failure"),
+            "merge cancelled": run_state(needs__merge__result="cancelled"),
+            "no moving tag (manual run)": run_state(needs__meta__outputs__moving=""),
+            "run cancelled": run_state() | {"cancelled()": True},
+        }.items():
+            self.assertFalse(job_runs("promote", state), name)
+
+    def test_the_evaluator_follows_github_semantics(self):
+        self.assertTrue(evaluate("!cancelled() && a == 'X'", {"cancelled()": False, "a": "x"}))
+        self.assertEqual(evaluate("a || 'd'", {}), "d")
+        self.assertTrue(evaluate("missing == ''", {}))
+        self.assertFalse(_truthy(evaluate("!(a == 'x' || b != '')", {"a": "x"})))
+        self.assertRaises(ValueError, evaluate, "contains(a, 'b')", {})
+        # build has no status function: GitHub's implicit success() skips it after a failed context check
+        self.assertFalse(job_runs("build", run_state(needs__exists__outputs__missing="backend",
+                                                     needs__contexts__result="failure")))
+        self.assertTrue(job_runs("build", run_state(needs__exists__outputs__missing="backend",
+                                                    needs__contexts__result="success")))
 
 
 def _contexts_from_ci() -> dict[str, tuple]:
@@ -489,6 +661,9 @@ class MergeStep(unittest.TestCase):
 
     def test_an_existing_tag_is_reused_never_overwritten(self):
         first = self.reg.put(f"{self.img}:{self.TAG}", _index({"amd64": "a" * 64, "arm64": "b" * 64}))
+        # When every tag existed nothing was built and no digest is downloaded: the reuse path needs none.
+        for f in (self.reg.dir / "digest").iterdir():
+            f.unlink()
         p = self.run_it()
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(self.reg.tag(f"{self.img}:{self.TAG}"), first)
@@ -501,6 +676,15 @@ class MergeStep(unittest.TestCase):
         p = self.run_it()
         self.assertNotEqual(p.returncode, 0)
         self.assertIsNone(self.reg.tag(f"{self.img}:{self.TAG}"))
+
+    def test_an_existing_tag_with_one_platform_is_refused_not_reused(self):
+        first = self.reg.put(f"{self.img}:{self.TAG}", _index({"amd64": "a" * 64}))
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("lists [linux/amd64], expected exactly linux/amd64 and linux/arm64", p.stdout)
+        self.assertEqual(self.reg.tag(f"{self.img}:{self.TAG}"), first)
+        self.assertNotIn("digest", self.reg.outputs())
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
 
     def test_a_wrong_platform_set_is_refused_before_the_tag_is_written(self):
         d = self.reg.put("", {"arch": "amd64"})
@@ -545,6 +729,19 @@ class FreshStep(unittest.TestCase):
             p = self.run_push(HEAD)
             self.assertEqual((p.returncode, self.reg.outputs()["fresh"]), (0, "false"), status)
             self.reg.out.unlink()
+
+    def test_a_truncated_compare_is_not_trusted(self):
+        # The compare API lists at most 300 files: 300 doc files can hide code changes after them.
+        self.reg.gh(f"repos/Acme-Org/DevSecShield/compare/{SHA}...{HEAD}",
+                    {"status": "ahead", "files": [{"filename": f"docs/page-{i}.md"} for i in range(300)]})
+        p = self.run_push(HEAD)
+        self.assertEqual((p.returncode, self.reg.outputs()["fresh"]), (0, "false"), p.stderr)
+
+    def test_a_path_that_only_starts_with_docs_is_code(self):
+        self.reg.gh(f"repos/Acme-Org/DevSecShield/compare/{SHA}...{HEAD}",
+                    {"status": "ahead", "files": [{"filename": "docs/ci/README.md"}, {"filename": "docsite/app.py"}]})
+        p = self.run_push(HEAD)
+        self.assertEqual((p.returncode, self.reg.outputs()["fresh"]), (0, "false"), p.stderr)
 
     def test_a_pull_request_compares_with_its_head(self):
         self.reg.gh("repos/Acme-Org/DevSecShield/pulls/93", {"head": {"sha": HEAD}})
@@ -617,6 +814,45 @@ class PromoteStep(unittest.TestCase):
         p = self.run_it()
         self.assertNotEqual(p.returncode, 0)
         self.assertEqual({c: self.moving(c) for c in COMPONENTS}, self.old)
+
+    def test_an_unreadable_moving_tag_moves_nothing(self):
+        # A registry error is not "the tag does not exist": nothing may move before every current position is known.
+        self.reg.knob("inspect-error.json", [f"{REG}/devsecshield-scan-node:{self.MOVING}"])
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn(f"devsecshield-scan-node:{self.MOVING} cannot be read; no moving tag was changed", p.stdout)
+        self.assertEqual({c: self.moving(c) for c in COMPONENTS}, self.old)
+        self.assertFalse([c for c in self.reg.calls() if "imagetools create" in c])
+
+    def test_a_write_that_lands_but_reports_failure_is_put_back_too(self):
+        # Review 5878241489: the registry keeps the write but the response is lost (502, client timeout), so the
+        # failing tag itself can be on the new commit; it is put back with the others.
+        self.reg.knob("create-lands-but-fails.json", {f"{REG}/devsecshield-dast-worker:{self.MOVING}": 99})
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual({c: self.moving(c) for c in COMPONENTS}, self.old, p.stdout + p.stderr)
+        self.assertIn(f"devsecshield-dast-worker:{self.MOVING} is back at sha256:{self.old['dast-worker']}", p.stdout)
+        self.assertNotRegex(p.stdout, r"::error::.* is at ")
+
+    def test_a_move_that_reads_back_other_bytes_fails_and_rolls_back(self):
+        # Only the read-back shows that the registry stored something else than the index that was sent.
+        self.reg.knob("create-wrong.json", {f"{REG}/devsecshield-dast-worker:{self.MOVING}": 3})
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual({c: self.moving(c) for c in COMPONENTS}, self.old, p.stdout + p.stderr)
+
+    def test_a_tag_that_cannot_be_put_back_is_named(self):
+        self.reg.knob("create-wrong.json", {f"{REG}/devsecshield-dast-worker:{self.MOVING}": 99})
+        p = self.run_it()
+        self.assertNotEqual(p.returncode, 0)
+        now = self.moving("dast-worker")
+        self.assertNotIn(now, (self.old["dast-worker"], self.new["dast-worker"]))
+        self.assertIn(f"::error::{REG}/devsecshield-dast-worker:{self.MOVING} is at sha256:{now}, "
+                      f"not back at sha256:{self.old['dast-worker']}", p.stdout)
+        self.assertIn("1 moving tag(s) dev are not where they were before this run", p.stdout)
+        for c in COMPONENTS:
+            if c != "dast-worker":
+                self.assertEqual(self.moving(c), self.old[c], c)
 
 
 class LocalCompose(unittest.TestCase):

@@ -2,8 +2,12 @@
 """Fake `docker buildx imagetools` for the publish-ghcr.yml step tests (test_publish_ghcr.py). A tiny registry in
 $FAKE_STATE: blobs/<sha256 hex> (manifest bytes) and tags.json {"<image>:<tag>": "<hex>"}. Every call is appended to
 calls.log. Knobs (files in $FAKE_STATE):
-  create-fail.json   {"<destination ref>": <number of create calls that fail before one succeeds>}
-  inspect-error.json ["<ref>", ...]  inspect fails with a registry error that is not "not found"
+  create-fail.json             {"<destination ref>": <number of create calls that fail before one succeeds>}
+  create-lands-but-fails.json  {"<destination ref>": n}: the next n creates WRITE the tag, then report a failure
+                               (the registry kept the write but the response was lost: a 502 or a client timeout)
+  create-wrong.json            {"<destination ref>": n}: the next n creates store other bytes than were sent and
+                               report success (only the read-back can tell)
+  inspect-error.json           ["<ref>", ...]  inspect fails with a registry error that is not "not found"
 """
 import hashlib
 import json
@@ -23,6 +27,16 @@ def load(name, default):
 
 def save(name, value):
     (STATE / name).write_text(json.dumps(value, indent=1, sort_keys=True))
+
+
+def take(name, dest):
+    """True (and one less left) while the knob file `name` still has calls left for `dest`."""
+    counts = load(name, {})
+    if counts.get(dest, 0) <= 0:
+        return False
+    counts[dest] -= 1
+    save(name, counts)
+    return True
 
 
 def resolve(ref):
@@ -100,11 +114,16 @@ def main(argv):
     if dry:
         sys.stdout.buffer.write(data)
         return 0
+    if dest and take("create-wrong.json", dest):
+        data += b"\n"
     hexd = store(data)
     if dest:
         tags = load("tags.json", {})
         tags[dest] = hexd
         save("tags.json", tags)
+    if dest and take("create-lands-but-fails.json", dest):
+        print(f"ERROR: failed to push {dest}: 502 Bad Gateway", file=sys.stderr)
+        return 1
     print(f"#1 pushing sha256:{hexd} to {dest}", file=sys.stderr)
     return 0
 

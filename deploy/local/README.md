@@ -248,6 +248,17 @@ platforms; the image labels `org.opencontainers.image.revision` / `.version` nam
 * `manifest unknown`: that tag was not published (a docs-only merge publishes nothing; a PR needs `publish-preview`).
   A commit superseded by a newer push may never be published at all (only the newest waiting run on a branch runs),
   and a run whose commit was overtaken by newer code publishes its immutable tags but leaves the moving tag alone.
+* The moving tag stays behind the branch after a re-run: re-run only the newest run of a branch. GitHub keeps one
+  waiting run per branch, so re-running an older `dev` or `staging` run while a newer one waits replaces the newer
+  one; the older run then leaves the moving tag alone (its commit is no longer the newest), and the newest commit is
+  published only when its own run is re-run or the branch is pushed again. On a PR, re-running an older run cancels
+  the newest one, with the same result.
+* `pr-<n>` images from two commits: a push to the PR cancels its running publish (`dev` and `staging` runs queue
+  instead), and a cancel while the six tags move (about 20 s) leaves `pr-<n>` mixed until the next run moves it.
+  Pin `pr-<n>-<sha12>`.
+* A publish run failed in "moving tags": it put back every tag it had moved, the failing one included, and its log
+  names any moving tag that is not where it was (`::error::... is at ..., not back at ...`). Until a later run moves
+  them, pin an immutable tag.
 * Port already in use: stop what holds 3000, 8000 or 8025 (the frontend needs exactly 8000 for the API).
 * No mail: http://localhost:8025 shows every mail; `docker compose ... logs backend | grep -i smtp`.
 * A node stays offline: `docker logs zs-scan-node-<name>`; from the node machine `curl http://<address>:8000/health`;

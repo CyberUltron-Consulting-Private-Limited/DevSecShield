@@ -12,9 +12,10 @@
 # build at all) -> contexts proves no secret file can enter a build context -> build pushes each image for each
 # architecture BY DIGEST on a native runner -> merge joins the two digests into one multi-architecture index under the
 # immutable tag (first write wins: an existing tag is reused, never overwritten), checks both platforms and attests it
-# -> promote moves the moving tags once all six images exist for the commit, only while that commit is still the
-# newest that publishes (a re-run of an older run never moves them back), retrying each tag and rolling the moved
-# ones back when one cannot be moved. The six tags still move one after another (about 20 s): pin the immutable tag.
+# (it also runs when nothing was built, so a reused tag is checked and attested again) -> promote moves the moving
+# tags once all six images exist for the commit, only while that commit is still the newest that publishes (a re-run
+# of an older run never moves them back), retrying each tag and, when one cannot be confirmed, putting it and the
+# moved ones back. The six tags still move one after another (about 20 s): pin the immutable tag.
 #
 # Token: GITHUB_TOKEN only, no other secret. The jobs that can write packages run no repository script (only pinned
 # actions and the inline steps below): PR code runs only inside the image builds, which never see the registry login.
@@ -150,7 +151,8 @@ jobs:
       - name: Which images already exist
         id: check
         # Immutable tags are written once. When all six exist (a re-run, the label added again, a reopened PR) nothing
-        # is built; promote still runs. A tag that cannot be read for any reason is built (merge decides again).
+        # is built; merge still checks and attests them, then promote runs. A tag that cannot be read for any reason
+        # is built (merge decides again).
         env:
           REGISTRY: ${{ needs.meta.outputs.registry }}
           TAG: ${{ needs.meta.outputs.tag }}
@@ -315,9 +317,14 @@ jobs:
 
   merge:
     name: merge + attest (${{ matrix.name }})
-    needs: [meta, build]
+    needs: [meta, exists, build]
+    # After the builds, or without them when every immutable tag already existed (build skipped): the reuse path
+    # needs no digest, and it attests the index again, so a tag whose first run failed to attest it is never promoted
+    # without an attestation. A build that failed, or was skipped because tags were missing, stops here.
     if: >-
-      needs.meta.outputs.publish == 'true' &&
+      !cancelled() && needs.meta.outputs.publish == 'true' &&
+      (needs.build.result == 'success' ||
+       (needs.build.result == 'skipped' && needs.exists.result == 'success' && needs.exists.outputs.missing == '')) &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -335,6 +342,7 @@ jobs:
       IMAGE: ${{ needs.meta.outputs.registry }}/devsecshield-${{ matrix.name }}
     steps:
       - name: Download the digests
+        if: needs.exists.outputs.missing != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digest-${{ matrix.name }}-*
@@ -413,12 +421,11 @@ jobs:
 
   promote:
     name: moving tags
-    needs: [meta, exists, merge]
-    # After merge, or without it when every immutable tag already existed (a re-run: nothing was built).
+    needs: [meta, merge]
+    # Only after merge checked and attested all six indexes (merge also runs when nothing was built).
     if: >-
       !cancelled() && needs.meta.outputs.publish == 'true' && needs.meta.outputs.moving != '' &&
-      needs.exists.result == 'success' &&
-      (needs.merge.result == 'success' || (needs.merge.result == 'skipped' && needs.exists.outputs.missing == '')) &&
+      needs.merge.result == 'success' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -482,8 +489,12 @@ jobs:
       - name: Point the moving tags at this commit's images
         if: steps.fresh.outputs.fresh == 'true'
         # Records where every moving tag points first, moves them one by one (each a copy of the same index: same
-        # digest, same attestation), retries a failed move 3 times, and when one still fails points the tags it
-        # already moved back to where they were, so the set is never left half on a new commit by this step.
+        # digest, same attestation) and retries a failed move 3 times. When one still fails it puts back the tags it
+        # moved AND the failing one (a failed write can still have landed: a lost response, a failed read-back), then
+        # reads all six and names any that is not where it was. So a failure here never leaves the set half on a new
+        # commit unnoticed. Exception: on a PR a newer push cancels the run (cancel-in-progress), and a cancel during
+        # these moves can leave pr-<n> mixed until the next run; dev and staging runs queue, so they are never cut
+        # off here. Pin the immutable tag.
         env:
           REGISTRY: ${{ needs.meta.outputs.registry }}
           TAG: ${{ needs.meta.outputs.tag }}
@@ -504,7 +515,8 @@ jobs:
             done
             return 1
           }
-          declare -A old want
+          show() { if [ "$1" = none ]; then echo "no tag (it did not exist)"; else echo "sha256:$1"; fi; }
+          declare -A old want tried
           for c in $COMPONENTS; do
             img="$REGISTRY/devsecshield-$c"
             if ! want[$c]=$(digest_of "$img:$TAG"); then
@@ -533,17 +545,46 @@ jobs:
               moved+=("$c")
               continue
             fi
-            echo "::error::$img:$MOVING could not be moved to $TAG; putting back the ${#moved[@]} tag(s) this run moved"
+            # Not confirmed is not "not moved": a failed attempt may have written the tag, so it is put back too.
+            moved+=("$c")
+            echo "::error::$img:$MOVING is not confirmed on $TAG after 3 attempts; putting back the ${#moved[@]} tag(s) this run may have moved (this one included)"
             for m in "${moved[@]}"; do
               mi="$REGISTRY/devsecshield-$m"
-              if [ "${old[$m]}" = none ]; then
-                echo "::warning::$mi:$MOVING did not exist before this run, so it stays at $TAG (imagetools cannot remove a tag)"
-              elif point "$mi:$MOVING" "$mi@sha256:${old[$m]}" "${old[$m]}"; then
-                echo "$mi:$MOVING is back at sha256:${old[$m]}"
+              tried[$m]=1
+              if [ "${old[$m]}" = none ] || [ "$(digest_of "$mi:$MOVING")" = "${old[$m]}" ]; then
+                continue # nothing to put back (imagetools cannot remove a tag), or it is still where it was
+              fi
+              point "$mi:$MOVING" "$mi@sha256:${old[$m]}" "${old[$m]}" || true # the check below has the last word
+            done
+            left=0
+            for k in $COMPONENTS; do
+              ki="$REGISTRY/devsecshield-$k"
+              if now=$(digest_of "$ki:$MOVING"); then
+                :
+              elif grep -q ': not found' "$RUNNER_TEMP/m.err"; then
+                now=none
               else
-                echo "::error::$mi:$MOVING could not be put back to sha256:${old[$m]}; it points at $TAG"
+                now=unreadable
+              fi
+              if [ "$now" = "${old[$k]}" ]; then
+                if [ -n "${tried[$k]:-}" ] && [ "$now" != none ]; then echo "$ki:$MOVING is back at sha256:$now"; fi
+                continue
+              fi
+              left=$((left + 1))
+              if [ "${old[$k]}" = none ] && [ "$now" = "${want[$k]}" ]; then
+                echo "::warning::$ki:$MOVING did not exist before this run, so it stays at $TAG (imagetools cannot remove a tag)"
+              elif [ "$now" = unreadable ]; then
+                cat "$RUNNER_TEMP/m.err"
+                echo "::error::$ki:$MOVING cannot be read to confirm it is back at $(show "${old[$k]}")"
+              else
+                echo "::error::$ki:$MOVING is at $(show "$now"), not back at $(show "${old[$k]}") where it was before this run"
               fi
             done
+            if [ "$left" -gt 0 ]; then
+              echo "::error::$left moving tag(s) $MOVING are not where they were before this run (above): pin an immutable tag until a later run moves them"
+            else
+              echo "every $MOVING tag is where it was before this run"
+            fi
             exit 1
           done
           {
