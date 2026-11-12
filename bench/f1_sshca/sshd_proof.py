@@ -2,13 +2,19 @@
 
 Everything ZeroShield-side is the real code: the CA is created through the API, the source is saved through the API,
 the scan node enrolls with its own Ed25519 key, claims its job, asks the node route for its certificate, and logs in
-with the real collector (``linux_ssh``).  The servers are configured only from what the API serves:
-``templates/sshd-config`` (Match User zs-cbom), ``trusted-keys``, ``revoked`` (KRL) and ``templates/principals``.
+with the real collector (``linux_ssh``).  The server is configured only from what the API serves: the
+``templates/sshd-config`` snippet (Match User zs-cbom), and its trust files (``trusted_user_ca_keys``, ``revoked.krl``,
+``principals/zs-cbom``) are fetched INSIDE the container by the ``templates/trust-fetch`` script over HTTP from the
+machine read path (``/cbom/ssh-ca-trust/*``) with a trust token, exactly as a customer's server does: conditional GETs
+(ETag / 304), atomic writes, the KRL checked with ``ssh-keygen -Q -l``, ``sshd -t`` then a reload (SIGHUP).  The API is
+the real app served by uvicorn on the docker bridge address for the duration of the proof.
 
 Cases: a valid certificate collects; an expired certificate is refused; a principal mismatch is refused; a
 source-address mismatch is refused; a revoked certificate is refused through the KRL; a rotated CA works during the
-overlap (old and new certificates), and the retired key stops working once it leaves trusted-keys; a revoked CA is
-refused through the KRL; a long job keeps logging in across several certificate lifetimes (TTL 60 s, renewals).
+overlap (old and new certificates; promote shows the fetcher has the new key), and the retired key stops working once
+it leaves trusted-keys; a revoked CA is refused through the KRL; an unchanged bundle is answered 304 and nothing is
+rewritten; a revoked trust token is refused and the server keeps its files; a long job keeps logging in across several
+certificate lifetimes (TTL 60 s, renewals).
 
 Run (one small container named f1-4-sshd, removed at the end; no stack lock; check `free -m` first):
 
@@ -23,10 +29,13 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import os
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -67,6 +76,37 @@ NODE_SEEN_AS = os.environ.get("ZS_F14_NODE_ADDRESS", "172.17.0.1")  # how the co
 CONTAINER = os.environ.get("ZS_F14_CONTAINER", "f1-4-sshd")
 SSHD_PORT = 2222  # the lab image's sshd runs as zs-cbom (uid 1000), not root (bench/f1_sshca/Dockerfile)
 LAB_UID = 1000
+FETCH_SCRIPT = "/opt/zs/zs-trust-fetch.sh"
+access_log: list[tuple[str, str, int]] = []  # (method, path, status) the uvicorn server answered
+
+
+class _Access(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        args = record.args if isinstance(record.args, tuple) else ()
+        if len(args) >= 5:
+            access_log.append((str(args[1]), str(args[2]), int(args[4])))
+
+
+def _serve_api():
+    """The real app on the docker bridge address (the container's view of this host), in a thread."""
+    import uvicorn
+
+    sock = socket.socket()
+    sock.bind((NODE_SEEN_AS, 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    logger = logging.getLogger("uvicorn.access")
+    logger.addHandler(_Access())
+    logger.setLevel(logging.INFO)
+    server = uvicorn.Server(uvicorn.Config(app, host=NODE_SEEN_AS, port=port, lifespan="off", log_level="info",
+                                           access_log=True, log_config=None))  # keep the handler added above
+    thread = threading.Thread(target=server.run, name="proof-api", daemon=True)
+    thread.start()
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(0.05)
+    return server, f"http://{NODE_SEEN_AS}:{port}"
 
 
 def _lab_owned(*paths: Path) -> None:
@@ -98,16 +138,23 @@ def lab(world, api, monkeypatch, tmp_path):
     monkeypatch.setattr(cbom_node_sshca, "get_db", lambda: engine)
     KW.forget()
     etc = Path(tempfile.mkdtemp(prefix="f14-sshd-"))
-    (etc / "principals").mkdir(parents=True)
-    _lab_owned(etc, etc / "principals")
+    _lab_owned(etc)  # empty: the trust-fetch script fills it
     conf = tmp_path / "50-zs-cbom-ca.conf"
     conf.write_text(api("GET", BASE + "/templates/sshd-config").text)
+    script_dir = Path(tempfile.mkdtemp(prefix="f14-fetch-"))
+    (script_dir / "zs-trust-fetch.sh").write_text(api("GET", BASE + "/templates/trust-fetch").text)
+    os.chmod(script_dir, 0o755)
+    os.chmod(script_dir / "zs-trust-fetch.sh", 0o755)
+    token = api("POST", BASE + "/trust-tokens", json={"name": "proof-server"})
+    assert token.status_code == 201, token.text
+    server, url = _serve_api()
     # lab only: verbose logs for the evidence, and no OpenSSH 9.8+ PerSourcePenalties (the refusals this proof makes
     # on purpose would otherwise make sshd drop this host's next connections for a while)
     (tmp_path / "10-proof-log.conf").write_text("LogLevel VERBOSE\nPerSourcePenalties no\n")
     _docker("rm", "-f", CONTAINER, check=False)
     _docker("run", "-d", "--name", CONTAINER, "--label", "zs-owner=f1-4",
-            "-v", f"{etc}:/etc/ssh/zs-cbom:ro", "-v", f"{conf}:/etc/ssh/sshd_config.d/50-zs-cbom-ca.conf:ro",
+            "-v", f"{etc}:/etc/ssh/zs-cbom", "-v", f"{script_dir}:/opt/zs:ro",
+            "-v", f"{conf}:/etc/ssh/sshd_config.d/50-zs-cbom-ca.conf:ro",
             "-v", f"{tmp_path / '10-proof-log.conf'}:/etc/ssh/sshd_config.d/10-proof-log.conf:ro", IMAGE)
     ip = _docker("inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", CONTAINER).strip()
     for _ in range(50):
@@ -136,9 +183,13 @@ def lab(world, api, monkeypatch, tmp_path):
     client.client = api.client  # the real node client talks to the real routes
     client._wait = lambda seconds: None
     lab = {"engine": engine, "etc": etc, "ip": ip, "key_path": key_path, "node_id": r.json()["node"]["id"],
-           "client": client, "state": tmp_path / "state", "line": line}
+           "client": client, "state": tmp_path / "state", "line": line, "url": url, "token": token.json()["token"],
+           "token_id": token.json()["trust_token"]["id"]}
     lab["state"].mkdir()
-    yield lab
+    try:
+        yield lab
+    finally:
+        server.should_exit = True
     logs = _docker("logs", CONTAINER, check=False)
     (REPORT.parent).mkdir(parents=True, exist_ok=True)
     version = _docker("exec", CONTAINER, "sh", "-c", "sshd -V 2>&1 | head -1", check=False).strip()
@@ -147,12 +198,30 @@ def lab(world, api, monkeypatch, tmp_path):
     _docker("rm", "-f", CONTAINER, check=False)
 
 
-def install(lab, api, principals=("zs-1-prod",)) -> None:
-    etc = lab["etc"]
-    (etc / "trusted_user_ca_keys").write_text(api("GET", BASE + "/trusted-keys").text)
-    (etc / "revoked.krl").write_bytes(api("GET", BASE + "/revoked").content)
-    (etc / "principals" / "zs-cbom").write_text("\n".join(principals) + "\n")
-    _lab_owned(etc / "trusted_user_ca_keys", etc / "revoked.krl", etc / "principals" / "zs-cbom")
+def fetch(lab, groups: str = "prod", token: str | None = None) -> dict:
+    """Run the trust-fetch script INSIDE the server container, as the server would from its timer: the trust token
+    and ZeroShield's address in the environment, this server's group(s), reload = SIGHUP to sshd (PID 1 here)."""
+    mark = len(access_log)
+    out = subprocess.run(["docker", "exec", "-u", str(LAB_UID), "-e", f"ZS_TRUST_TOKEN={token or lab['token']}",
+                          "-e", f"ZS_URL={lab['url']}", "-e", f"ZS_GROUPS={groups}", "-e", "ZS_RELOAD=kill -HUP 1",
+                          CONTAINER, "sh", FETCH_SCRIPT], capture_output=True, text=True, timeout=120)
+    time.sleep(0.5)  # a SIGHUP re-executes sshd: let it listen again before the next login
+    for _ in range(50):
+        probe = subprocess.run(["docker", "exec", CONTAINER, "bash", "-c", f"exec 3<>/dev/tcp/127.0.0.1/{SSHD_PORT}"],
+                               capture_output=True)
+        if probe.returncode == 0:
+            break
+        time.sleep(0.2)
+    answers = [(m, p.split("?")[0], st) for m, p, st in access_log[mark:] if p.startswith("/cbom/ssh-ca-trust/")]
+    return {"rc": out.returncode, "stderr": out.stderr.strip()[-400:], "answers": answers}
+
+
+def install(lab, api, principals=("zs-1-prod",)) -> dict:
+    """The server's trust files, through the machine read path only (no download by a person)."""
+    groups = " ".join(p.split("-", 2)[2] for p in principals)
+    got = fetch(lab, groups=groups)
+    assert got["rc"] == 0, got
+    return got
 
 
 def source(api, lab, ca_id, name, principals=("zs-1-prod",), **cfg):
@@ -220,7 +289,12 @@ def ca_key(lab, ca_id):
 
 def test_sshd_trusts_the_ca(api, lab):
     ca = api("POST", BASE, json={"name": "proof-ca"}).json()["ca"]
-    install(lab, api)
+    first = install(lab, api)
+    record("trust files fetched by the server (machine read path)", "3 x 200", ("rc=%d" % first["rc"],
+           ", ".join(f"{p}={st}" for _m, p, st in first["answers"])), [],
+           files=sorted(str(p.relative_to(lab["etc"])) for p in lab["etc"].rglob("*") if p.is_file()
+                        and ".etag" not in p.parts))
+    assert [st for _m, _p, st in first["answers"]] == [200, 200, 200]
     scoping = results[0]
     assert scoping["zs_cbom_trustedusercakeys"] and scoping["other_user_trustedusercakeys"] in (
         [], ["trustedusercakeys none"])
@@ -293,9 +367,17 @@ def test_sshd_trusts_the_ca(api, lab):
     old_creds = L._credentials(ctx_o, rcfg, payload["source"]["secrets"])
     old_key = old_creds["cert_source"].key()
     nxt = api("POST", f"{BASE}/{ca['id']}/rotate").json()["ca"]
+    before = api("GET", f"{BASE}/{nxt['id']}").json()["ca"]["readiness"]
     install(lab, api)
+    after = api("GET", f"{BASE}/{nxt['id']}").json()["ca"]["readiness"]
+    early = api("POST", f"{BASE}/{nxt['id']}/promote", json={})
+    record("promote readiness: the server fetched the rotated key", "0 -> 1 of 1, early promote refused",
+           (f"{before['fetchers_ready']}/{before['fetchers_total']} -> {after['fetchers_ready']}/"
+            f"{after['fetchers_total']}", f"promote without force: {early.status_code}"), [],
+           refusal=early.json().get("detail", "")[:200])
+    assert (after["fetchers_ready"], after["fetchers_total"]) == (1, 1) and early.status_code == 400
     assert login(lab, rcfg, {"key": old_key}, ctx_o)[0] == "ok"
-    api("POST", f"{BASE}/{nxt['id']}/promote")
+    assert api("POST", f"{BASE}/{nxt['id']}/promote", json={"force": True}).status_code == 200
     install(lab, api)
     payload = source(api, lab, ca["id"], "rotation-new")
     ctx_n = ctx_for(lab, payload)
@@ -321,15 +403,36 @@ def test_sshd_trusts_the_ca(api, lab):
     record("rotated CA: new key after the overlap", "ok", got_new, [])
     assert got_old[0] == "auth_failed" and got_new[0] == "ok"
 
-    # 7. a revoked CA is refused through the KRL even while trusted-keys still lists it (a stale file on the server)
+    # 7. a revoked CA is refused through the KRL even while trusted-keys still lists it (the lab puts the old
+    #    trusted-keys file back after the fetch, to show the KRL alone refuses it)
     trusted_before = (lab["etc"] / "trusted_user_ca_keys").read_text()
     api("POST", f"{BASE}/{nxt['id']}/revoke", json={"reason": "proof: compromised"})
-    (lab["etc"] / "revoked.krl").write_bytes(api("GET", BASE + "/revoked").content)
+    install(lab, api)
     (lab["etc"] / "trusted_user_ca_keys").write_text(trusted_before)
+    _lab_owned(lab["etc"] / "trusted_user_ca_keys")
     t0 = log_mark()
     got = login(lab, rcfg, new_creds, ctx_n)
     record("revoked CA refused (KRL, stale trusted-keys)", "auth_failed", got, sshd_lines(t0, "revoked", "krl"))
     assert got[0] == "auth_failed"
+
+    # 8. nothing changed: every answer is a 304 and no file is rewritten
+    install(lab, api)
+    stamps = {p.name: p.stat().st_mtime_ns for p in lab["etc"].rglob("*") if p.is_file() and ".etag" not in p.parts}
+    again = install(lab, api)
+    after = {p.name: p.stat().st_mtime_ns for p in lab["etc"].rglob("*") if p.is_file() and ".etag" not in p.parts}
+    record("unchanged bundle: conditional GETs", "3 x 304, files untouched",
+           ("rc=%d" % again["rc"], ", ".join(f"{p}={st}" for _m, p, st in again["answers"])), [],
+           files_untouched=stamps == after)
+    assert [st for _m, _p, st in again["answers"]] == [304, 304, 304] and stamps == after
+
+    # 9. a revoked trust token: the server is refused (401), keeps its files and the script fails loudly
+    assert api("POST", f"{BASE}/trust-tokens/{lab['token_id']}/revoke", json={}).status_code == 200
+    refused = fetch(lab)
+    kept = {p.name: p.stat().st_mtime_ns for p in lab["etc"].rglob("*") if p.is_file() and ".etag" not in p.parts}
+    record("revoked trust token", "401, files kept, non-zero exit",
+           ("rc=%d" % refused["rc"], ", ".join(f"{p}={st}" for _m, p, st in refused["answers"])), [],
+           stderr=refused["stderr"][-200:], files_kept=kept == after)
+    assert refused["rc"] != 0 and {st for _m, _p, st in refused["answers"]} == {401} and kept == after
 
 
 @pytest.mark.skipif(os.environ.get("ZS_F14_LONG_JOB_S") is None, reason="ZS_F14_LONG_JOB_S not set")
