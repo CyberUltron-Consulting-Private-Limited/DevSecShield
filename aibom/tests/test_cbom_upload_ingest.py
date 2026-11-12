@@ -315,35 +315,54 @@ def test_hybrid_claim_in_the_file_is_not_trusted():
     assert "crypto:hybrid" not in comps[0].properties
 
 
+
 def _part(comp):
     return {**comp, "properties": [{"name": "zs:part_of", "value": "certificate"}]}
 
 
+def _cbom(*components):
+    return {"bomFormat": "CycloneDX", "specVersion": "1.6",
+            "components": list(components)}
+
+
 def test_certificate_parts_of_a_run_export_are_read_into_their_certificates():
-    """A ZeroShield run export (CB-06 v2) lists each certificate's signature algorithm, public key and key algorithm
-    once, as top-level components marked ``zs:part_of`` and referenced by bom-ref from every certificate that has them.
-    Re-importing it counts the certificates, not the parts, and the certificates keep size, curve and algorithms."""
-    sig = _part(_asset("zs-signature-algorithm-a", "ecdsa-with-SHA384", "algorithm", primitive="signature"))
-    key_alg = _part(_asset("zs-public-key-algorithm-b", "EC", "algorithm", primitive="signature", curve="secp384r1"))
-    key = _part(_asset("zs-public-key-c", "EC-secp384r1", "related-crypto-material", type="public-key", size=384,
+    """A ZeroShield run export (CB-06 v2) lists each certificate's signature algorithm,
+    public key and key algorithm once, as top-level components marked ``zs:part_of`` and
+    referenced by bom-ref from every certificate that has them. Re-importing it counts
+    the certificates, not the parts; the certificates keep size, curve and
+    algorithms."""
+    sig = _part(_asset("zs-signature-algorithm-a", "ecdsa-with-SHA384", "algorithm",
+                       primitive="signature"))
+    key_alg = _part(_asset("zs-public-key-algorithm-b", "EC", "algorithm",
+                           primitive="signature", curve="secp384r1"))
+    key = _part(_asset("zs-public-key-c", "EC-secp384r1", "related-crypto-material",
+                       type="public-key", size=384,
                        algorithmRef="zs-public-key-algorithm-b"))
-    certs = [_asset(f"zs-asset-{i}", f"CN=h{i}", "certificate", signatureAlgorithmRef="zs-signature-algorithm-a",
-                    subjectPublicKeyRef="zs-public-key-c", subjectName=f"CN=h{i}", issuerName="CN=CA")
-             for i in (1, 2)]
-    comps, stats = components_from_cyclonedx({"bomFormat": "CycloneDX", "specVersion": "1.6",
-                                              "components": [*certs, sig, key_alg, key]})
+    certs = [
+        _asset(f"zs-asset-{i}", f"CN=h{i}", "certificate",
+               signatureAlgorithmRef="zs-signature-algorithm-a",
+               subjectPublicKeyRef="zs-public-key-c",
+               subjectName=f"CN=h{i}", issuerName="CN=CA")
+        for i in (1, 2)
+    ]
+    comps, stats = components_from_cyclonedx(_cbom(*certs, sig, key_alg, key))
     assert (stats.crypto_assets, stats.imported, stats.certificate_parts) == (2, 2, 3)
     assert any("parts of certificates" in note for note in stats.notes)
     for comp in comps:
         props = comp.properties
-        assert props["crypto:assetType"] == "certificate" and props["crypto:keySize"] == "384"
-        assert props["crypto:curve"] == "secp384r1" and props["crypto:signatureAlgorithm"] == "ecdsa-with-SHA384"
-        assert props["crypto:publicKeyAlgorithm"] == "ECDSA"  # the rule base's name for an EC key (by its curve)
+        assert props["crypto:assetType"] == "certificate"
+        assert props["crypto:keySize"] == "384"
+        assert props["crypto:curve"] == "secp384r1"
+        assert props["crypto:signatureAlgorithm"] == "ecdsa-with-SHA384"
+        # the rule base's name for an EC key (read from its curve)
+        assert props["crypto:publicKeyAlgorithm"] == "ECDSA"
 
 
-def test_an_algorithm_a_certificate_references_is_still_an_asset_without_the_part_marker():
-    """Other tools' CBOMs: a referenced algorithm with no ``zs:part_of`` stays an asset, as before."""
-    sig = _asset("alg-sha1rsa", "sha1WithRSAEncryption", "algorithm", primitive="signature")
+def test_a_referenced_algorithm_without_the_part_marker_is_still_an_asset():
+    """Other tools' CBOMs: a referenced algorithm with no ``zs:part_of`` stays an
+    asset."""
+    sig = _asset("alg-sha1rsa", "sha1WithRSAEncryption", "algorithm",
+                 primitive="signature")
     cert = _asset("cert-1", "CN=a", "certificate", signatureAlgorithmRef="alg-sha1rsa")
-    comps, stats = components_from_cyclonedx({"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [cert, sig]})
+    _comps, stats = components_from_cyclonedx(_cbom(cert, sig))
     assert (stats.crypto_assets, stats.imported, stats.certificate_parts) == (2, 2, 0)

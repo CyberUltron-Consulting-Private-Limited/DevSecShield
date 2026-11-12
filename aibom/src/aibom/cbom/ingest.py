@@ -43,8 +43,9 @@ class IngestStats:
     skipped_not_crypto: int = 0
     skipped_invalid: int = 0
     duplicates: int = 0
-    # components a ZeroShield run export marks as parts of certificates (``zs:part_of``): their signature algorithm,
-    # public key and key algorithm, read into the certificates that reference them, never assets of their own
+    # components a ZeroShield run export marks as parts of certificates
+    # (``zs:part_of``): their signature algorithm, public key and key algorithm,
+    # read into the certificates that reference them, never assets of their own
     certificate_parts: int = 0
     truncated: bool = False
     spec_version: str | None = None
@@ -274,14 +275,16 @@ def _certificate_props(cert: dict[str, Any], props: dict[str, str], refs: dict[s
     if pub is not None:
         pub_crypto = _d(pub.get("cryptoProperties"))
         material = _d(pub_crypto.get("relatedCryptoMaterialProperties"))
-        key_comp = pub  # CycloneDX 1.6: the subject's public key (related-crypto-material) -> its algorithm
+        # CycloneDX 1.6: the subject's public key (related-crypto-material),
+        # whose algorithmRef names its algorithm
+        key_comp = pub
         if pub_crypto.get("assetType") == "related-crypto-material":
             key_comp = refs.get(str(material.get("algorithmRef") or "")) or {}
         algo = _d(_d(key_comp.get("cryptoProperties")).get("algorithmProperties"))
         hint = _int(material.get("size")) or _int(algo.get("parameterSetIdentifier"))
         key, size = None, None
-        # the key algorithm's own name ("RSA"), else the key's label ("EC-secp384r1"), else its curve: "EC" alone
-        # names no algorithm the rule base knows, its curve does
+        # the key algorithm's own name ("RSA"), else the key's label ("EC-secp384r1"),
+        # else its curve: "EC" alone names no algorithm the rule base knows, its curve does
         for name in (key_comp.get("name"), pub.get("name"), algo.get("curve")):
             key, size, _mode, _param = resolve_algorithm(str(name or ""), hint)
             if key:
@@ -321,9 +324,13 @@ def _older_than_16(version: str) -> bool:
 
 
 def _is_certificate_part(comp: dict[str, Any]) -> bool:
-    """A ZeroShield run export's certificate part (``zs:part_of`` = ``certificate``, CB-06 v2)."""
-    return any(isinstance(p, dict) and p.get("name") == "zs:part_of" and p.get("value") == "certificate"
-               for p in _l(comp.get("properties")))
+    """A ZeroShield run export's certificate part (``zs:part_of`` = ``certificate``)."""
+    return any(
+        isinstance(p, dict)
+        and p.get("name") == "zs:part_of"
+        and p.get("value") == "certificate"
+        for p in _l(comp.get("properties"))
+    )
 
 
 def components_from_cyclonedx(doc: Any) -> tuple[list[CryptoAssetComponent], IngestStats]:
@@ -345,7 +352,8 @@ def components_from_cyclonedx(doc: Any) -> tuple[list[CryptoAssetComponent], Ing
         if comp.get("type") != "cryptographic-asset":
             stats.skipped_not_crypto += 1
             continue
-        if _is_certificate_part(comp):  # read through the certificates' refs below, not an asset of its own
+        # read through the certificates' refs below, not an asset of its own
+        if _is_certificate_part(comp):
             stats.certificate_parts += 1
             continue
         stats.crypto_assets += 1
@@ -398,9 +406,11 @@ def components_from_cyclonedx(doc: Any) -> tuple[list[CryptoAssetComponent], Ing
     if stats.truncated:
         stats.notes.append(f"Only the first {MAX_COMPONENTS} cryptographic assets were analysed.")
     if stats.certificate_parts:
-        stats.notes.append(f"{stats.certificate_parts} component(s) describe parts of certificates (signature "
-                           "algorithm, public key, key algorithm); they were read into the certificates that "
-                           "reference them, not judged as assets of their own.")
+        stats.notes.append(
+            f"{stats.certificate_parts} component(s) describe parts of certificates "
+            "(signature algorithm, public key, key algorithm); they were read into the "
+            "certificates that reference them, not judged as assets of their own."
+        )
     return out, stats
 
 
