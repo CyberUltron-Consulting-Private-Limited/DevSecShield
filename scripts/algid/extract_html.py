@@ -1,11 +1,13 @@
-"""Turn the raw third-party HTML captures into the small normalised extracts algid is built from.
+"""Turn the raw third-party captures into the small normalised extracts algid is built from.
 
     python3 scripts/algid/extract_html.py <raw dir>            # (re)write sources/*.json extracts
     python3 scripts/algid/extract_html.py <raw dir> --check    # exit 1 if an extract differs from its raw page
 
-The raw pages (NIST CSOR, the AWS ELB and API Gateway security-policy pages) are not committed; they are kept with
-the CB-04 evidence. Each extract records the raw page's URL, capture time and sha256, so anyone holding the raw
-capture can prove the extract was made from it. Stdlib only; reads files, runs nothing.
+The raw captures are not committed; they are kept with the CB-04 evidence: the NIST CSOR page, the AWS ELB and API
+Gateway security-policy pages, the Cloud KMS v1 discovery document, the OASIS PKCS#11 3.2 pkcs11t.h header and the
+OASIS KMIP 3.0 specification (HTML). Each extract records the raw capture's URL, capture time and sha256, so anyone
+holding the raw capture can prove the extract was made from it. (The name is historical: not every capture is HTML.)
+Stdlib only; reads files, runs nothing.
 """
 from __future__ import annotations
 
@@ -29,7 +31,15 @@ RAW = {
     "aws-apigw-security-policies-overview.html": (
         "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-security-policies.html",
         "2026-11-12T11:28:10Z"),
+    "cloudkms-v1-discovery.json": ("https://cloudkms.googleapis.com/$discovery/rest?version=v1",
+                                   "2026-11-12T16:12:33Z"),
+    "pkcs11t-3.2.h": ("https://docs.oasis-open.org/pkcs11/pkcs11-spec/v3.2/os/include/pkcs11-v3.2/pkcs11t.h",
+                      "2026-11-12T16:12:47Z"),
+    "kmip-spec-v3.0.html": ("https://docs.oasis-open.org/kmip/kmip-spec/v3.0/kmip-spec-v3.0.html",
+                            "2026-11-12T16:13:40Z"),
 }
+# the PKCS#11 parameter-set groups CB-04 reads (CKA_PARAMETER_SET of ML-DSA, SLH-DSA and ML-KEM keys)
+PKCS11_PARAMETER_GROUPS = ("CKP_ML_DSA_", "CKP_SLH_DSA_", "CKP_ML_KEM_")
 ELB_SENTENCE = ("The hybrid post-quantum policies support SecP256r1MLKEM768, SecP384r1MLKEM1024 and "
                 "X25519MLKEM768")
 APIGW_SENTENCE = "Use these policies for regulated workloads, advanced governance, or to use post-quantum cryptography"
@@ -44,6 +54,39 @@ def _provenance(raw_dir: Path, name: str) -> dict:
     url, when = RAW[name]
     return {"raw_file": name, "url": url, "retrieved_utc": when, "raw_sha256": hashlib.sha256(raw).hexdigest(),
             "raw_bytes": len(raw)}
+
+
+def _gcp(raw_dir: Path) -> dict:
+    """Cloud KMS CryptoKeyVersionAlgorithm: every enum value with its description (the discovery document's own)."""
+    doc = json.loads((raw_dir / "cloudkms-v1-discovery.json").read_bytes())
+    prop = doc["schemas"]["CryptoKeyVersion"]["properties"]["algorithm"]
+    values = [[v, " ".join(d.split())] for v, d in zip(prop["enum"], prop["enumDescriptions"])]
+    return {"provenance": [{**_provenance(raw_dir, "cloudkms-v1-discovery.json"), "revision": doc.get("revision")}],
+            "schema": "CryptoKeyVersion.algorithm", "algorithms": values}
+
+
+def _pkcs11(raw_dir: Path) -> dict:
+    """CKK_* key types (every one) and the ML-DSA / SLH-DSA / ML-KEM CKP_* parameter sets, as the header defines."""
+    text = (raw_dir / "pkcs11t-3.2.h").read_bytes().decode("utf-8")
+    defines = re.findall(r"^#define\s+(CK[KP]_\w+)\s+(0x[0-9A-Fa-f]+)UL", text, re.M)
+    key_types = [[name, int(value, 16)] for name, value in defines if name.startswith("CKK_")]
+    params = [[name, int(value, 16)] for name, value in defines if name.startswith(PKCS11_PARAMETER_GROUPS)]
+    return {"provenance": [_provenance(raw_dir, "pkcs11t-3.2.h")], "key_types": key_types,
+            "parameter_sets": params}
+
+
+def _kmip(raw_dir: Path) -> dict:
+    """The KMIP 3.0 Cryptographic Algorithm Enumeration table: (name, value) in table order."""
+    page = (raw_dir / "kmip-spec-v3.0.html").read_bytes().decode("utf-8", "replace")
+    for table in re.findall(r"<table.*?</table>", page, re.S):
+        cells = [" ".join(html.unescape(re.sub(r"<[^>]+>", " ", c)).split())
+                 for c in re.findall(r"<td[^>]*>(.*?)</td>", table, re.S)]
+        if cells[:3] == ["Cryptographic Algorithm", "Name", "Value"] and "Blowfish" in cells:
+            pairs = list(zip(cells[3::2], cells[4::2]))
+            rows = [[name, int(value, 16)] for name, value in pairs if re.fullmatch(r"[0-9A-F]{8}", value)]
+            return {"provenance": [_provenance(raw_dir, "kmip-spec-v3.0.html")],
+                    "enumeration": "Cryptographic Algorithm", "algorithms": rows}
+    raise SystemExit("the KMIP specification no longer has the Cryptographic Algorithm Enumeration table")
 
 
 def extracts(raw_dir: Path) -> dict[str, dict]:
@@ -68,6 +111,9 @@ def extracts(raw_dir: Path) -> dict[str, dict]:
             "provenance": [_provenance(raw_dir, "aws-apigw-security-policies.html"),
                            _provenance(raw_dir, "aws-apigw-security-policies-overview.html")],
             "pq_policy_names": api, "pq_statement": APIGW_SENTENCE},
+        "gcp-kms-algorithms.json": _gcp(raw_dir),
+        "pkcs11-3.2-constants.json": _pkcs11(raw_dir),
+        "kmip-3.0-algorithms.json": _kmip(raw_dir),
     }
 
 

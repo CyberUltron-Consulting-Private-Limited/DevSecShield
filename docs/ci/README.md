@@ -221,6 +221,57 @@ merging one, because an action update runs new third-party code with the workflo
 | `cbom-nightly.yml` | **weekly** (Mon 07:30 UTC), manual | Live CBOM benchmark against IBM cbomkit-theia |
 | `deploy-staging.yml` | push to `staging`; manual | Build the production images; deploy them to staging on every push to `staging` (manual: optional), one run at a time, never cancelled; a push deploys only while its commit is still the tip of `staging` (an older re-run fails "superseded") |
 | `scan-node-image.yml` | manual | Release the CBOM scan-node image as a file |
+| `publish-ghcr.yml` | push to dev / staging; PR with label `publish-preview`; manual | Publish all images to GHCR (amd64 + arm64, provenance attested); see [Publish images](#publish-images-ghcr) |
+
+### Publish images (GHCR)
+
+`publish-ghcr.yml` pushes `ghcr.io/<owner>/devsecshield-{backend,frontend,scan-worker,dast-worker,scan-node,minio}`
+(private packages) for linux/amd64 and linux/arm64. `deploy/local/README.md` runs them on one machine.
+
+| Trigger | Immutable tag | Moving tag |
+|---|---|---|
+| push to `dev` / `staging` (not docs-only) | `dev-<sha12>` / `staging-<sha12>` | `dev` / `staging` |
+| PR from this repository with the label `publish-preview` (labeled, synchronize, reopened) | `pr-<n>-<head sha12>` | `pr-<n>` |
+| `workflow_dispatch` (inputs `ref` = branch, tag or full commit, `api_url`; needs the file on `main`) | `manual-<sha12>`, or `manual-<sha12>-<8 hex of sha256(api_url)>` for another `api_url` | none |
+
+Immutable tags are written once (first write wins); moving tags only move forward.
+
+* **meta** (`contents: read`) decides with `.github/ci/ghcr_meta.py` (self-tested in `.github/tests/test_publish_ghcr.py`):
+  fork PRs, PRs without the label, other branches and other events publish nothing; dispatch inputs are validated
+  (an abbreviated commit is refused: `actions/checkout` would take it for a branch name).
+* **exists** (`packages: read`) checks the six immutable tags. When all exist (a re-run, the label added again, a
+  reopened PR) contexts and build are skipped; merge still runs, then promote.
+* **contexts** runs `scripts/deploy/check_image_contexts.sh` before any build.
+* **build** (`packages: write`) builds each image per architecture on a native runner (`ubuntu-24.04`,
+  `ubuntu-24.04-arm`; no QEMU) and pushes it by digest only, with OCI labels `source`, `revision`, `version`, `title`
+  and BuildKit's own provenance/SBOM manifests off.
+* **merge** runs after the builds, or without them when every immutable tag existed (then it downloads no digest). It
+  reuses an existing immutable tag as it is, after checking its two platforms; otherwise it plans the index
+  (`imagetools create --dry-run`), refuses it unless it lists exactly linux/amd64 and linux/arm64, then writes the
+  tag. A registry error is never taken for a missing tag. It attests SLSA build provenance on the index digest
+  (`actions/attest-build-provenance`, pushed to the registry; private repositories need GitHub Enterprise Cloud), a
+  reused index too, so a tag whose first attestation failed is attested by the next run before any moving tag can
+  point at it.
+* **promote** (`packages: write`, `contents: read`, `pull-requests: read`) runs only after merge succeeded for all
+  six. It first checks that the branch or PR head is still this commit, or ahead of it by docs only (`compare` API);
+  else it leaves the moving tags to the newer run, so a re-run of an older run never moves them back. Then it records
+  where each moving tag points, moves them one by one (a copy of the same index: same digest, same attestation),
+  retries a move 3 times, and on a lasting failure puts back the tags it moved and the failing one (a failed write can
+  still have landed), then reads all six and names any that is not where it was. The six tags still move one after
+  another (about 20 s), so deployments pin the immutable tag.
+* Concurrency: on a PR a newer push cancels the older run; on `dev` and `staging` runs queue (GitHub keeps the newest
+  pending one), so no dev or staging run is killed while it moves tags. A PR run cancelled while it moves tags leaves
+  `pr-<n>` mixed until the next run. Re-run only the newest run of a branch: a re-run of an older one replaces the
+  newer waiting run (on a PR, cancels it) and leaves the moving tag alone. Manual runs are grouped by `ref` and
+  `api_url`. A `labeled` event for another label, or a push to a PR without the label, cannot cancel a running publish.
+* Only `GITHUB_TOKEN`; the jobs that can write packages run no repository script, and each checks for forks itself.
+* The frontend has `http://localhost:8000` inlined (manual runs: `api_url`) and names the scan-node image of the same
+  build in its install command (`NEXT_PUBLIC_CBOM_NODE_IMAGE`).
+* The image definitions (context, Dockerfile, named contexts) of `ci.yml` "Decide", `scripts/deploy/build_images.sh`,
+  `scripts/deploy/check_image_contexts.sh` and this matrix are compared by a self-test (`OneDefinitionOfEachImage`).
+* Verify an image: `gh attestation verify oci://ghcr.io/<owner>/devsecshield-backend:dev -R <owner>/<repo>`.
+* Not yet: a layer cache (the 10 GB Actions cache is shared with `ci.yml`'s image caches) and retention of `pr-<n>`
+  versions after the PR closes (follow-ups).
 
 ### What each `ci.yml` suite runs
 
@@ -432,6 +483,7 @@ grants `pull-requests: write`.
 | `CODEQL_ENABLED` | repository variable (`true`) | codeql | CodeQL job skipped (see [Known limits](#known-limits)) |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | repository secrets | aibom-nightly (Bedrock) | Weekly benchmark cannot call Bedrock |
 | `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`, `STAGING_SSH_TARGET`; `STAGING_DIR` | `staging` environment secrets / variable | deploy-staging | Deploy step unavailable (the build still works). Give the environment deployment-branch rules (`staging` only) |
+| `publish-preview` | PR label | publish-ghcr | The PR's images are not published |
 
 No other workflow needs a secret. CI tests use dummy values that are marked as such.
 
