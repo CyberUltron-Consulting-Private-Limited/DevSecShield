@@ -201,7 +201,8 @@ class Machine(AccessPolicy):
         self.audited = bool(self.permission and self.permission.audited)
 
     def describe(self) -> str:
-        return f"machine ({self.credential}): {self.reason}"
+        acting = f"; acts as its creator, who needs {self.permission.name}" if self.permission else ""
+        return f"machine ({self.credential}): {self.reason}{acting}"
 
     async def __call__(self, request: Request) -> None:
         self._context(request)

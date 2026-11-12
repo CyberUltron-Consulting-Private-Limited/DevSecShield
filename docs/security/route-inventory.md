@@ -14,7 +14,7 @@ the matrix is `backend/utilities/rbac/permissions.py`). **authenticated**: any s
 a superuser. **public**: the reason is stated. **machine**: a non-person credential the handler checks.
 **Audited**: the middleware writes a successful request to the audit log; refused team writes are written too.
 
-157 routes (authenticated: 8, machine: 10, platform_admin: 9, public: 12, team: 118).
+158 routes (authenticated: 8, machine: 10, platform_admin: 10, public: 12, team: 118).
 
 | Method | Path | Handler | Checks before F4 (handler) | Policy | Lowest role | Audited |
 |---|---|---|---|---|---|---|
@@ -25,6 +25,7 @@ a superuser. **public**: the reason is stated. **machine**: a non-person credent
 | POST | `/admin/create_admin_user` | `admin.create_admin_user` | bearer_user, superuser | superuser (admin console) | superuser | yes |
 | DELETE | `/admin/delete_user` | `admin.delete_user` | bearer_user, superuser | superuser (admin console) | superuser | yes |
 | GET | `/admin/teams` | `admin.get_all_teams` | bearer_user, superuser | superuser (admin console) | superuser |  |
+| POST | `/admin/teams/{target_team_id}/owner` | `admin.assign_team_owner` | new route | superuser (admin console) | superuser | yes |
 | POST | `/admin/toggle_admin_access` | `admin.toggle_admin_access` | bearer_user, superuser | superuser (admin console) | superuser | yes |
 | POST | `/admin/update` | `admin.update_team_credit_balance` | bearer_user, superuser | superuser (admin console) | superuser | yes |
 | GET | `/admin/users` | `admin.get_all_users` | bearer_user, superuser | superuser (admin console) | superuser |  |
@@ -36,9 +37,9 @@ a superuser. **public**: the reason is stated. **machine**: a non-person credent
 | GET | `/cbom/vendor-questionnaire/{token}` | `cbom_vendor_public.show_questionnaire` | none | public: the single-use vendor questionnaire link is the credential | public |  |
 | POST | `/cbom/vendor-questionnaire/{token}` | `cbom_vendor_public.answer_questionnaire` | none | public: the single-use vendor questionnaire link is the credential | public |  |
 | POST | `/change_password` | `auth.change_password` | none | public: the one-time change token in the body is the credential | public |  |
-| POST | `/cicd/dast/scan` | `cicd.run_cicd_dast_scan` | none | machine (CI/CD API key): X-API-Key is checked by get_user_and_integration_id | machine |  |
-| GET | `/cicd/dast/scan/{scan_id}` | `cicd.get_cicd_dast_scan` | none | machine (CI/CD API key): X-API-Key is checked by get_user_and_integration_id | machine |  |
-| POST | `/cicd/{type}/scan` | `cicd.run_cicd_scan` | none | machine (CI/CD API key): X-API-Key is checked by get_user_and_integration_id | machine |  |
+| POST | `/cicd/dast/scan` | `cicd.run_cicd_dast_scan` | none | machine (CI/CD API key): X-API-Key is checked by get_user_and_integration_id; acts as its creator, who needs scan.create | machine (creator member+) | yes |
+| GET | `/cicd/dast/scan/{scan_id}` | `cicd.get_cicd_dast_scan` | none | machine (CI/CD API key): X-API-Key is checked by get_user_and_integration_id; acts as its creator, who needs scan.read | machine (creator viewer+) |  |
+| POST | `/cicd/{type}/scan` | `cicd.run_cicd_scan` | none | machine (CI/CD API key): X-API-Key is checked by get_user_and_integration_id; acts as its creator, who needs scan.create | machine (creator member+) | yes |
 | GET | `/get_user` | `auth.get_user` | bearer_user | any signed-in account | authenticated |  |
 | POST | `/guardrails/{team_id}/integration` | `guardrails.create_guardrails_integration` | bearer_user, team_member, cicd_key | guardrails.manage | member | yes |
 | DELETE | `/guardrails/{team_id}/integration/{integration_id}` | `guardrails.delete_guardrails_integration` | bearer_user, team_member, scan_owner | guardrails.manage | member | yes |
@@ -54,8 +55,8 @@ a superuser. **public**: the reason is stated. **machine**: a non-person credent
 | POST | `/invitations/{token}/register` | `invitations.register_from_invitation` | link_token | public: the invitation link is the credential | public |  |
 | POST | `/login` | `auth.login` | verification_code | public: sign-in: password and the mailed code | public |  |
 | GET | `/logout` | `auth.logout` | bearer_user | any signed-in account (also a closed session) | authenticated |  |
-| POST | `/public/guardrails/start_scan` | `guardrails_public.start_scan` | none | machine (guardrails API key): the API key is checked by get_user_and_integration_id | machine |  |
-| GET | `/public/guardrails/{scan_id}` | `guardrails_public.get_scan_status` | none | machine (guardrails API key): the API key is checked by get_user_and_integration_id | machine |  |
+| POST | `/public/guardrails/start_scan` | `guardrails_public.start_scan` | none | machine (guardrails API key): the API key is checked by get_user_and_integration_id; acts as its creator, who needs scan.create | machine (creator member+) | yes |
+| GET | `/public/guardrails/{scan_id}` | `guardrails_public.get_scan_status` | none | machine (guardrails API key): the API key is checked by get_user_and_integration_id; acts as its creator, who needs scan.read | machine (creator viewer+) |  |
 | GET | `/rbac/matrix` | `team.rbac_matrix` | new route | any signed-in account | authenticated |  |
 | POST | `/refresh` | `auth.refresh` | refresh_token | public: the refresh token in the body is the credential | public |  |
 | POST | `/reset_password` | `auth.reset_password` | verification_code | public: the mailed code proves the address | public |  |
@@ -88,7 +89,7 @@ a superuser. **public**: the reason is stated. **machine**: a non-person credent
 | GET | `/{team_id}/cbom/sources/aws/template` | `cbom_sources.aws_template` | team_member | cbom.read | viewer |  |
 | POST | `/{team_id}/cbom/sources/cmdb/apply` | `integrations.cmdb_apply` | team_member | team.integrations.manage | admin | yes |
 | POST | `/{team_id}/cbom/sources/cmdb/preview` | `integrations.cmdb_preview` | team_member | team.integrations.manage | admin | yes |
-| POST | `/{team_id}/cbom/sources/discovery` | `cbom_sources.discovery` | team_member | cbom.write | member | yes |
+| POST | `/{team_id}/cbom/sources/discovery` | `cbom_sources.discovery` | team_member | cbom.settings | admin | yes |
 | GET | `/{team_id}/cbom/sources/drift` | `cbom_ops.team_drift` | team_member | cbom.read | viewer |  |
 | POST | `/{team_id}/cbom/sources/estimate` | `cbom_sources.estimate` | team_member | cbom.read | viewer |  |
 | GET | `/{team_id}/cbom/sources/evidence` | `cbom_sources.get_evidence` | team_member | cbom.read | viewer |  |
