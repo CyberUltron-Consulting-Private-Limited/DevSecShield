@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import base64
-import ipaddress
 import json
 import os
 import re
@@ -27,7 +26,7 @@ from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, key_facts, load_certs
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, http_client, resolve_checked
+from zs_scan_node.netutil import Blocked, http_client, is_ip, resolve_checked
 
 PAGE = 200
 MAX_ITEMS = 5000
@@ -247,14 +246,6 @@ class _Skip(Exception):
     def __init__(self, status: str, detail: str | None = None) -> None:
         super().__init__(detail or status)
         self.status, self.detail = status, detail
-
-
-def _is_ip(text: str) -> bool:
-    try:
-        ipaddress.ip_address(text)
-        return True
-    except ValueError:
-        return False
 
 
 _PEM_KEY = re.compile(r"-----BEGIN ((?:RSA |EC |DSA |ENCRYPTED |OPENSSH )?PRIVATE KEY)-----.*?-----END \1-----", re.S)
@@ -544,7 +535,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         cluster["nodes"] = nodes[:200]
         cluster["node_count"] = len(nodes)
         # API server TLS (one full handshake + legacy version probes)
-        fh = T.s_client(ip, api.port, "tls", api.host if not _is_ip(api.host) else None) if T.have_openssl() else None
+        fh = T.s_client(ip, api.port, "tls", api.host if not is_ip(api.host) else None) if T.have_openssl() else None
         if fh is not None and fh.ok:
             versions = {}
             for v in (T.TLS10, T.TLS11):

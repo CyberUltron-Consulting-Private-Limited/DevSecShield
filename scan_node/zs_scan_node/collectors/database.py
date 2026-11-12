@@ -21,7 +21,7 @@ from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import Blocked, Target, checked_ip, checked_target, resolve_checked
+from zs_scan_node.netutil import Blocked, Target, checked_ip, checked_target, is_ip, resolve_checked
 
 SUPPORTED = ("postgres", "mysql", "redis", "mongodb", "mssql", "oracle")
 DEFAULT_PORTS = {"postgres": 5432, "mysql": 3306, "redis": 6379, "mongodb": 27017, "mssql": 1433, "oracle": 1521}
@@ -45,14 +45,6 @@ class DbFail(Exception):
         super().__init__(error)
         self.status, self.error = status, error
 
-
-
-def _is_address(text: str) -> bool:
-    try:
-        ipaddress.ip_address(text)
-        return True
-    except ValueError:
-        return False
 
 
 def _where(target) -> str:
@@ -539,7 +531,7 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
     try:  # the network gate: resolve once, apply never-scan, connect only to the checked address
         addresses = resolve_checked(host, ctx.never_scan)
         # a name keeps every address it resolved to: each connection re-checks all of them (checked_target)
-        target = Target(label, addresses[0], addresses=() if _is_address(label) else tuple(addresses))
+        target = Target(label, addresses[0], addresses=() if is_ip(label) else tuple(addresses))
     except Blocked as exc:
         return Target(label, None), "skipped_never_scan", str(exc), 0
     except OSError as exc:

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import contextlib
-import ipaddress
 import json
 import os
 import shutil
@@ -22,7 +21,7 @@ from urllib.parse import urlsplit
 from zs_scan_node import netutil
 from zs_scan_node.collectors import ConfigError, skipped_never_scan
 from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, resolve_checked
+from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, is_ip, resolve_checked
 from zs_scan_node.scrub import printable
 
 SCRIPTS = {
@@ -246,18 +245,10 @@ def endpoint(target: Target, config: dict) -> str:
     if port == 5985:
         raise _Fail("identity_unverified", "WinRM over HTTP (5985) cannot prove the server; use HTTPS (5986). "
                     "The password was not sent")
-    host = target.ip if _is_ip(target.label) else target.label
+    host = target.ip if is_ip(target.label) else target.label
     if ":" in str(host):
         host = f"[{host}]"
     return f"https://{host}:{port}/wsman"
-
-
-def _is_ip(text: str) -> bool:
-    try:
-        ipaddress.ip_address(str(text))
-        return True
-    except ValueError:
-        return False
 
 
 def check_name(ctx: JobContext, target: Target) -> str:
@@ -265,7 +256,7 @@ def check_name(ctx: JobContext, target: Target) -> str:
     the name is resolved again here and every address it has now must be allowed (resolve_checked refuses the name
     if any is listed); the session is then pinned to the first of them (_session), never to a later DNS answer."""
     try:
-        if _is_ip(target.label):
+        if is_ip(target.label):
             # checked again per target: a never-scan entry added after the job started applies to the rest of it
             return checked_ip(target.ip or target.label, ctx.never_scan)
         return resolve_checked(target.label, ctx.never_scan)[0]

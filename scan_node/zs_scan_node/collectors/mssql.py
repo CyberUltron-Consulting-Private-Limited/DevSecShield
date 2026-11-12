@@ -29,7 +29,7 @@ from zs_scan_node import drivergate, netutil
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, Target, checked_target
+from zs_scan_node.netutil import Blocked, Target, checked_target, is_ip
 
 register_asset_types("managed_key", "db_encryption", "db_login_policy", "db_crypto_policy")
 
@@ -184,16 +184,6 @@ def strict_tls(sock: socket.socket, sni: str | None, timeout: float) -> dict[str
                 "alpn": tls.selected_alpn_protocol()}
 
 
-def _is_ip(text: str) -> bool:
-    import ipaddress
-
-    try:
-        ipaddress.ip_address(text)
-        return True
-    except ValueError:
-        return False
-
-
 def probe_endpoint(ctx: JobContext, target: Target, port: int) -> dict[str, Any]:
     """Everything readable without a login: encryption policy, TLS versions, cipher and certificate chain."""
     never = ctx.never_scan
@@ -208,7 +198,7 @@ def probe_endpoint(ctx: JobContext, target: Target, port: int) -> dict[str, Any]
             facts["prelogin_error"] = exc.detail
     finally:
         sock.close()
-    sni = None if _is_ip(target.label) else target.label
+    sni = None if is_ip(target.label) else target.label
     if pre is None:
         sock = netutil.connect(target.ip, port, never, 5)
         try:

@@ -20,7 +20,7 @@ from zs_scan_node import kmip_ttlv as K
 from zs_scan_node import netutil
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, Target, resolve_checked
+from zs_scan_node.netutil import Blocked, Target, is_ip, resolve_checked
 from zs_scan_node.tlsclient import client_context
 
 register_asset_types("key_store", "managed_key")
@@ -55,7 +55,7 @@ class Client:
 
     def open(self) -> dict[str, Any]:
         raw = netutil.connect(self.target.ip, self.port, self.ctx.never_scan, 10)
-        sni = None if _is_ip(self.target.label) else self.target.label
+        sni = None if is_ip(self.target.label) else self.target.label
         try:
             self.sock = self.sslctx.wrap_socket(raw, server_hostname=sni)
         except ssl.SSLCertVerificationError:
@@ -109,16 +109,6 @@ class Client:
             # TLS 1.3 servers report a refused client certificate after the handshake, on the first read
             raise KmipFail("auth_failed", f"the KMIP server ended TLS ({exc.__class__.__name__}): is the client "
                            "certificate one it trusts?") from None
-
-
-def _is_ip(text: str) -> bool:
-    import ipaddress
-
-    try:
-        ipaddress.ip_address(text)
-        return True
-    except ValueError:
-        return False
 
 
 def negotiate(client: Client) -> list[str]:
