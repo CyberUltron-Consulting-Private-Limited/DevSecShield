@@ -15,6 +15,8 @@
   name"), the node cannot tell which address is that host, so it scans no address at all; each target is skipped
   as ``skipped_never_scan`` with a reason that names the host name.  A newly listed name is waited for, on the job's
   own thread, for at most NAME_LOOKUP_S first, so a normal lookup costs no target.
+* A listed name that is loopback by definition (``localhost``, ``*.localhost``, the hosts files' loopback aliases:
+  LOOPBACK_NAMES) blocks 127.0.0.0/8 and ::1 and nothing else: it is never looked up and never holds a target.
 * Never scanned whatever the list says: the unspecified addresses 0.0.0.0/8 and :: (a connection to them reaches the
   node itself; DNS sinkholes answer 0.0.0.0).  An IPv4-mapped (::ffff:a.b.c.d) or NAT64 (64:ff9b::/96, RFC 6052)
   IPv6 address is also checked as the IPv4 address it reaches.
@@ -51,6 +53,20 @@ _NO_HOST_NETS = _UNSPECIFIED_NETS + (ipaddress.ip_network("224.0.0.0/4"), ipaddr
 # the AMI/OVA wrapper), and hosts-file blocklists answer 127.0.0.1.  An answer of only loopback (with or without the
 # above) is no usable address; in a mixed answer the loopback addresses are blocked along with the real ones.
 _LOOPBACK_NETS = (ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128"))
+# Names that are loopback by definition, so their loopback answer is the truth, not a blocklist's: RFC 6761 section 6.3
+# (localhost and every name under .localhost) and the loopback aliases of the default hosts files (Debian/Ubuntu,
+# Docker and Kubernetes: ip6-*; RHEL, Fedora and Amazon Linux: the localhost4/6 and .localdomain ones).  Listed, such a
+# name blocks the loopback addresses in every form and is never looked up, so it never holds a target.  The backend
+# keeps the same set (backend/utilities/cbom_sources/targets.py; backend/tests/test_never_scan_node_agreement.py
+# compares them, and the UI's copy).
+LOOPBACK_NAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback", "localhost.localdomain", "localhost4",
+                            "localhost4.localdomain4", "localhost6", "localhost6.localdomain6"})
+
+
+def is_loopback_name(name: str) -> bool:
+    """Whether a host name is loopback by definition (LOOPBACK_NAMES, or a name under .localhost)."""
+    name = str(name).strip().lower().rstrip(".")
+    return name in LOOPBACK_NAMES or name.endswith(".localhost")
 
 
 def _reaches(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> tuple:
@@ -336,14 +352,16 @@ class Unresolved(str):
 class NeverScan:
     """The never-scan list of one job.  ``match_ip`` / ``blocks_ip`` answer for an address, ``blocks_host`` for a name
     exactly as listed.  Host name entries also block every address they resolve to; the node-wide NameResolver looks
-    them up, never the caller.  A name the job starts listing is looked up again for it, and the job's first check
+    them up, never the caller (a name that is loopback by definition is not looked up: it blocks the loopback
+    addresses).  A name the job starts listing is looked up again for it, and the job's first check
     waits (at most NAME_LOOKUP_S) for that lookup.  While a listed name has no known address, every address is refused
     (``Unresolved``): ``unresolved`` lists those names, ``held_by`` the ones that held a target during this job."""
 
     def __init__(self, lines: list[str] | None = None, resolver: NameResolver | None = None) -> None:
         self._lock = threading.Lock()
         self._nets: list[tuple[ipaddress._BaseNetwork, str]] = []
-        self._hosts: set[str] = set()
+        self._hosts: set[str] = set()  # listed host names the resolver looks up
+        self._loopback_names: set[str] = set()  # listed names that are loopback by definition (never looked up)
         self._resolver = resolver or name_resolver()
         self._listed: set[str] = set()  # names this list holds on the resolver (released when the list goes away)
         self._release = weakref.finalize(self, self._resolver.release, self._listed)
@@ -367,18 +385,23 @@ class NeverScan:
         this list are looked up again for it (the next check waits for that, bounded); the others soon."""
         nets: list[tuple[ipaddress._BaseNetwork, str]] = []
         hosts: set[str] = set()
+        loopback_names: set[str] = set()
         for raw in lines or []:
             text = str(raw).strip()
             if not text:
                 continue
             parsed = _parse_entry(text)
             if parsed is None:
-                hosts.add(text.lower().rstrip("."))
+                name = text.lower().rstrip(".")
+                (loopback_names if is_loopback_name(name) else hosts).add(name)
             else:
                 nets.extend((net, parsed[1]) for net in parsed[0])
+        if loopback_names:  # its own answer, without a lookup: the loopback addresses (re-review 5879769432)
+            label = f"an address of {min(loopback_names)}"
+            nets.extend((net, label) for net in _LOOPBACK_NETS)
         with self._lock:
             added, removed = hosts - self._hosts, self._hosts - hosts
-            self._nets, self._hosts = nets, hosts
+            self._nets, self._hosts, self._loopback_names = nets, hosts, loopback_names
             self._name_addrs = {n: a for n, a in self._name_addrs.items() if n in hosts}
             now = time.monotonic()
             for name in removed:
@@ -495,8 +518,9 @@ class NeverScan:
         return self.match_ip(ip) is not None
 
     def blocks_host(self, name: str) -> bool:
+        name = name.lower().rstrip(".")
         with self._lock:
-            return name.lower().rstrip(".") in self._hosts
+            return name in self._hosts or name in self._loopback_names
 
 
 @dataclass

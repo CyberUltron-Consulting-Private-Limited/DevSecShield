@@ -214,9 +214,13 @@ sockets or HTTP clients any other way, so new collectors must use it.
   threads, for at most 15 s first, so a normal lookup costs nothing. The fix is to correct the name (or the node's
   DNS), or to list that host by address instead. A mixed answer keeps its real addresses (and blocks its loopback
   addresses with them) and drops the others; an answer with no usable address keeps the addresses learned before.
-  Loopback alone is no usable answer because the node runs in its own network namespace (docker run, the Helm pod,
-  the AMI/OVA wrapper), so no remote host is on its loopback: list `127.0.0.1`, not `localhost`, to keep the node
-  off its own loopback.
+  Loopback alone is no usable answer for an ordinary name because the node runs in its own network namespace (docker
+  run, the Helm pod, the AMI/OVA wrapper), so no remote host is on its loopback.
+- *Loopback names* are the exception: `localhost`, every name under `.localhost` (RFC 6761 section 6.3) and the
+  default hosts files' loopback aliases (`ip6-localhost`, `ip6-loopback`, `localhost.localdomain`, `localhost4`,
+  `localhost4.localdomain4`, `localhost6`, `localhost6.localdomain6`) are loopback by definition. Listed, such a name
+  is not looked up: it blocks `127.0.0.0/8` and `::1` (in their IPv4-mapped and NAT64 forms too) and never holds a
+  target. Counts, credits and connection-test samples leave out the same addresses.
 - *A target name* (a server, database, registry, token service, blob redirect, database redirect, CA, KMIP or
   Kubernetes API host) is skipped as `skipped_never_scan` when the name is listed or when ANY address it resolves to
   is listed, so a dual-stack host listed by its IPv4 address is not scanned over IPv6 and the other way round. The
