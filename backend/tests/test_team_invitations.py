@@ -176,9 +176,32 @@ def test_the_invitation_mail_names_team_and_inviter_and_never_carries_a_password
     assert "password" not in mail["subject"].lower() and "Acme" not in mail["subject"]  # team names stay out of headers
     assert ADMIN in html
     assert "Acme &lt;b&gt;&quot;Security&quot;&lt;/b&gt;" in html and "<b>\"Security\"" not in html  # escaped
+    assert_this_years_brand(html, box.token("newbie@corp.test"))
     year = dt.datetime.now(dt.timezone.utc).year
-    assert f"&copy; {year} Cyberultron Consulting Pvt Ltd" in html and "2024" not in html  # same brand, this year
     assert f"&copy; {year} Cyberultron Consulting Pvt Ltd" in create_verification_email_html("123456")
+
+
+def assert_this_years_brand(html: str, token: str) -> None:
+    """Same brand, this year, and no trace of the old "(c) 2024" mail. The mail carries a random 64-hex invite token
+    (twice), which itself contains "2024" about once in 1,000 mails: look at everything but the token."""
+    year = dt.datetime.now(dt.timezone.utc).year
+    assert f"&copy; {year} Cyberultron Consulting Pvt Ltd" in html
+    assert "2024" not in html.replace(token, "<token>")
+
+
+def test_the_year_check_ignores_a_random_token_that_contains_2024(client, world, monkeypatch):
+    """F-CI-FLAKE-2: CI failed when the random token happened to contain 2024 (run 43267781895, job 131356201412)."""
+    engine, ids, box, _ = world
+    token = "2024".ljust(64, "a")
+
+    def forced():
+        return token, invitations.token_hash(token)
+
+    monkeypatch.setattr(invitations, "new_token", forced)
+    assert invite(client, ids["team"], "newbie@corp.test").status_code == 200
+    html = box.last("newbie@corp.test")["html"]
+    assert box.token("newbie@corp.test") == token and html.count(token) == 2  # the link and its text
+    assert_this_years_brand(html, token)
 
 
 def test_a_relay_failure_keeps_no_invitation(client, world):
