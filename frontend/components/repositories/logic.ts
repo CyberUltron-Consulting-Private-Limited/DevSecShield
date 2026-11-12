@@ -118,6 +118,11 @@ export function filtersError(f: ScmFilters): string | null {
   return sizeLimitError(f.max_size_mb)
 }
 
+/** "1 repository", "1,234 repositories". */
+export function repoCount(n: number): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? "repository" : "repositories"}`
+}
+
 export function formatCredits(value: number | null | undefined): string {
   const n = Math.round(Number(value ?? 0) * 100) / 100
   return `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} credit${n === 1 ? "" : "s"}`

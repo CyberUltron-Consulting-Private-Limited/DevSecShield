@@ -50,6 +50,9 @@ async function apiCall(request: APIRequestContext, method: 'GET' | 'POST' | 'PUT
 
 test.describe.configure({ mode: 'serial' });
 
+// the webhook URL and secret the wizard shows once (test 1), used by the push test at the end
+const hook = { url: '', secret: '' };
+
 test('an admin imports an organisation: connect, discover, filter with a live count and price, import', async ({ page, request }) => {
   await signIn(page, state.admin_token);
   await page.goto(PAGE);
@@ -124,7 +127,7 @@ test('an admin imports an organisation: connect, discover, filter with a live co
   // 4. Import: nothing is charged; the webhook secret is shown once
   const balanceBefore = (await apiCall(request, 'GET', `/team/${TEAM}`)).body.team_credit_balance;
   await wizard.getByRole('button', { name: `Import ${n(keptWithoutLegacy)} repositories` }).click();
-  await expect(wizard.getByTestId('import-done')).toContainText(`${n(keptWithoutLegacy)} repositories are in scope`);
+  await expect(wizard.getByTestId('import-done')).toContainText(`${n(keptWithoutLegacy)} repositories in scope`);
   expect((await apiCall(request, 'GET', `/team/${TEAM}`)).body.team_credit_balance).toBe(balanceBefore);
   const hookUrl = `${state.api}/scm/webhooks/github/`;
   await expect(wizard.getByText(hookUrl, { exact: false })).toBeVisible();
@@ -142,6 +145,8 @@ test('an admin imports an organisation: connect, discover, filter with a live co
     'X-Hub-Signature-256': sig } });
   expect((await send(sign('not-the-secret'))).status()).toBe(401);
   expect((await send(sign(secret))).status()).toBeLessThan(300);
+  hook.url = hookPath;
+  hook.secret = secret;
 
   await wizard.getByRole('button', { name: 'Done' }).click();
   await expect(wizard).toBeHidden();
@@ -241,4 +246,56 @@ test('an admin scans two repositories: price first, charged once, cancelled and 
   await expect(page.getByText(`Cancelled; ${credits(est.credits)} refunded`)).toBeVisible();
   expect(await balance()).toBeCloseTo(before, 2);
   await page.screenshot({ path: test.info().outputPath('05-run-cancelled.png') });
+});
+
+test('a scan-on-push policy: live preview and price, then a signed push queues a charged push scan', async ({ page, request }) => {
+  await signIn(page, state.admin_token);
+  const balance = async () => (await apiCall(request, 'GET', `/team/${TEAM}`)).body.team_credit_balance as number;
+  await page.goto(`${PAGE}?tab=policies`);
+  await expect(page.getByText('No scan policies')).toBeVisible();
+  await page.getByRole('button', { name: 'New policy' }).click();
+  const editor = page.getByRole('dialog', { name: 'New scan policy' });
+  await editor.locator('#pol-name').fill('PCI on push');
+  await editor.locator('#pol-sel-topics_any').fill('pci');
+  await editor.getByRole('checkbox', { name: /Scan on every push/ }).check();
+  await editor.locator('#pol-freq').click();
+  await page.getByRole('option', { name: 'Daily' }).click();
+  await editor.locator('#pol-tz').fill('Asia/Kolkata');
+
+  // oracle: in scope after test 3 (another admin's filters: legacy-* excluded, forks included), with the topic pci,
+  // and kept by the policy's own selector, whose defaults leave forks and archived repositories out (the editor shows
+  // "Also include: Forks" unticked)
+  const pci = Array.from({ length: state.repos }, (_, i) => i).filter((i) => i % 7 === 0 && !repos[i].archived
+    && !repos[i].name.startsWith('legacy-') && !repos[i].fork).length;
+  const api = await apiCall(request, 'POST', `/${TEAM}/scm/policies/preview`,
+    { selector: { topics_any: ['pci'] }, products: ['sbom_sca'], position: 100 });
+  expect(api.body.repos).toBe(pci);
+  await expect(editor.getByTestId('policy-preview')).toContainText(
+    `Covers ${n(pci)} repositories in scope; one run costs about ${credits(api.body.credits_per_run)}`);
+  await expect(editor.getByTestId('policy-preview')).toContainText('Daily at 02:00 (Asia/Kolkata); also on every push.');
+  await editor.getByRole('button', { name: 'Create policy' }).click();
+  await expect(editor).toBeHidden();
+  await expect(page.getByText(`covers ${pci} repositories`)).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('06-policy.png') });
+
+  // GitHub delivers a signed push to the default branch of acme/svc-00007 (topic pci): one push scan is queued and
+  // charged on its own
+  const before = await balance();
+  const push = JSON.stringify({ ref: 'refs/heads/main', after: 'b'.repeat(40),
+    repository: { id: 1007, full_name: `${state.org}/svc-00007`, default_branch: 'main' } });
+  const res = await request.post(hook.url, { data: push, headers: { 'Content-Type': 'application/json',
+    'X-GitHub-Event': 'push', 'X-GitHub-Delivery': crypto.randomUUID(),
+    'X-Hub-Signature-256': `sha256=${crypto.createHmac('sha256', hook.secret).update(push).digest('hex')}` } });
+  expect(res.status()).toBe(202);
+  expect((await res.json()).pushes).toEqual([{ repo: `${state.org}/svc-00007`, status: 'queued', queued: 1 }]);
+  expect(await balance()).toBeLessThan(before);
+
+  await page.goto(`${PAGE}?tab=runs`);
+  const run = page.getByRole('listitem').filter({ hasText: 'Push' });
+  await expect(run).toContainText('Waiting 1');
+  await expect(run).toContainText(`commit ${'b'.repeat(10)}`);
+  await page.goto(PAGE);
+  await page.getByRole('textbox', { name: 'Search repositories' }).fill('svc-00007');
+  await expect(page.getByRole('row').filter({ hasText: `${state.org}/svc-00007` })).toContainText('PCI on push');
+  await page.screenshot({ path: test.info().outputPath('07-push-run.png') });
 });

@@ -30,7 +30,7 @@ import { toast } from "@/utils/toast";
 
 import FiltersForm from "./FiltersForm";
 import { scmKeys } from "./keys";
-import { filtersError, filtersFrom, formatCredits, nameError, PRODUCT_LABEL, PRODUCTS, scheduleText } from "./logic";
+import { filtersError, filtersFrom, formatCredits, nameError, PRODUCT_LABEL, PRODUCTS, repoCount, scheduleText } from "./logic";
 import RunDialog from "./RunDialog";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -183,7 +183,7 @@ function PolicyEditor({ teamId, policy, nextPosition, iacModeList, onClose }: {
             {problem ? <p className="text-red-500" role="alert">{problem}</p> : preview.data ? (
               <>
                 <p className="font-semibold text-zinc-900 dark:text-white">
-                  Covers {preview.data.repos.toLocaleString("en-US")} repositories in scope; one run costs about {formatCredits(preview.data.credits_per_run)}
+                  Covers {repoCount(preview.data.repos)} in scope; one run costs about {formatCredits(preview.data.credits_per_run)}
                   {preview.isFetching && <Loader2 className="inline h-4 w-4 ml-2 animate-spin text-blue-600" />}
                 </p>
                 {Object.entries(preview.data.taken_by_other_policies).map(([name, n]) => (
@@ -248,7 +248,7 @@ export default function PoliciesTab({ teamId, isAdmin }: { teamId: number; isAdm
                 </p>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">
                   {p.products.map((x: ScmProduct) => PRODUCT_LABEL[x]).join(", ")} on {p.branch || "the default branch"} · {scheduleText(p.schedule)}
-                  {" "}· covers {p.repos_matched ?? 0} repositories
+                  {" "}· covers {repoCount(p.repos_matched ?? 0)}
                 </p>
                 {p.next_run_at && <p className="text-xs text-zinc-500">Next run {new Date(p.next_run_at).toLocaleString()}</p>}
                 {p.last_message && <p className="text-xs text-zinc-500">Last: {p.last_message}</p>}

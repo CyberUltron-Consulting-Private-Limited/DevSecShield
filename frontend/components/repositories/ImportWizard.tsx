@@ -42,6 +42,7 @@ import {
   PRODUCTS,
   PROVIDER_LABEL,
   reasonLabel,
+  repoCount,
   SCOPES,
   webhookHelp,
   webhookUrl,
@@ -152,7 +153,7 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
     onSuccess: (data) => {
       setImported(data.in_scope);
       setStep("done");
-      toast.success(`${data.in_scope} repositories are in scope`);
+      toast.success(`${repoCount(data.in_scope)} in scope`);
       qc.invalidateQueries({ queryKey: scmKeys.all(teamId) });
     },
   });
@@ -361,7 +362,7 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
                       disabled={Boolean(filterProblem) || apply.isPending || !preview.data}
                       onClick={() => apply.mutate()}>
                 {apply.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {existing ? "Save filters" : `Import ${preview.data ? preview.data.in_scope.toLocaleString("en-US") : ""} repositories`}
+                {existing ? "Save filters" : preview.data ? `Import ${repoCount(preview.data.in_scope)}` : "Import"}
               </Button>
             </DialogFooter>
           </div>
@@ -370,7 +371,7 @@ export default function ImportWizard({ teamId, open, onOpenChange, existing }: {
         {step === "done" && (
           <div className="space-y-4">
             <p className="text-sm text-zinc-800 dark:text-zinc-200" data-testid="import-done">
-              <strong>{(imported ?? 0).toLocaleString("en-US")}</strong> repositories are in scope. Nothing has been scanned or
+              <strong>{repoCount(imported ?? 0)}</strong> in scope. Nothing has been scanned or
               charged yet: create a scan policy (schedule and/or scan on push) or select repositories and choose Scan now.
             </p>
             {webhook && connection && (

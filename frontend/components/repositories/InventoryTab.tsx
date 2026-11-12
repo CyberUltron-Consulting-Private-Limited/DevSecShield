@@ -25,7 +25,7 @@ import {
 import { toast } from "@/utils/toast";
 
 import { scmKeys } from "./keys";
-import { PRODUCT_LABEL, reasonLabel, sizeLabel, toggleIds } from "./logic";
+import { PRODUCT_LABEL, reasonLabel, repoCount, sizeLabel, toggleIds } from "./logic";
 import RunDialog from "./RunDialog";
 
 const ALL = "__all__";
@@ -55,7 +55,7 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
   const bulk = useMutation({
     mutationFn: (body: Parameters<typeof bulkScmRepositories>[1]) => bulkScmRepositories(teamId, body),
     onSuccess: (data) => {
-      toast.success(`${data.changed} repositories updated`);
+      toast.success(`${repoCount(data.changed)} updated`);
       setSelected([]);
       qc.invalidateQueries({ queryKey: scmKeys.all(teamId) });
     },
@@ -223,7 +223,7 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
         </div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2 mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-        <span>{repos.data ? `${repos.data.total.toLocaleString("en-US")} repositories · page ${query.page} of ${pages}` : ""}{repos.isFetching && <Loader2 className="inline h-3.5 w-3.5 ml-2 animate-spin" />}</span>
+        <span>{repos.data ? `${repoCount(repos.data.total)} · page ${query.page} of ${pages}` : ""}{repos.isFetching && <Loader2 className="inline h-3.5 w-3.5 ml-2 animate-spin" />}</span>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" className="cursor-pointer" disabled={(query.page ?? 1) <= 1} onClick={() => setQuery((q) => ({ ...q, page: (q.page ?? 1) - 1 }))}>Previous</Button>
           <Button size="sm" variant="outline" className="cursor-pointer" disabled={(query.page ?? 1) >= pages} onClick={() => setQuery((q) => ({ ...q, page: (q.page ?? 1) + 1 }))}>Next</Button>
@@ -231,7 +231,7 @@ export default function InventoryTab({ teamId, isAdmin, connections, onImport }:
       </div>
       {runOpen && (
         <RunDialog teamId={teamId} open={runOpen} onOpenChange={setRunOpen}
-                   target={{ repo_ids: selected }} chooseProducts title={`Scan ${selected.length} repositories now`} />
+                   target={{ repo_ids: selected }} chooseProducts title={`Scan ${repoCount(selected.length)} now`} />
       )}
     </SectionCard>
   );

@@ -18,6 +18,7 @@ import {
   PRODUCTS,
   reasonLabel,
   REASON_LABEL,
+  repoCount,
   scheduleText,
   SCOPES,
   SIZE_RULE,
@@ -113,5 +114,10 @@ assert.equal(sizeLabel(268585), "262 MB")
 assert.equal(sizeLabel(3 * 1024 * 1024), "3.0 GB")
 assert.deepEqual(toggleIds([1, 2], [2, 3], true).sort(), [1, 2, 3])
 assert.deepEqual(toggleIds([1, 2, 3], [2, 3], false), [1])
+
+// counts read as English: "1 repository", "1,234 repositories" (the browser run showed "1 repositories")
+assert.equal(repoCount(1), "1 repository")
+assert.equal(repoCount(0), "0 repositories")
+assert.equal(repoCount(1234), "1,234 repositories")
 
 console.log("repositories logic: ok")
