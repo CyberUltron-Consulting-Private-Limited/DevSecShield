@@ -241,26 +241,33 @@ export default function CredentialsSection({ teamId }: FleetSectionProps) {
       {!creds.data && creds.isError && <ErrorBlock error={creds.error} onRetry={() => creds.refetch()} />}
       {creds.data && creds.data.credentials.length === 0 && <EmptyState title="No credential yet" body="A policy that collects over SSH needs one." />}
       {creds.data && creds.data.credentials.length > 0 && (
+        // below 672 px the type, login, secrets and count fold under the name, so Edit and Delete stay on screen
+        <div className="@container">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Login</TableHead>
-                <TableHead>Secrets stored</TableHead>
-                <TableHead className="text-right">Managed sources</TableHead>
+                <TableHead className="hidden @2xl:table-cell">Type</TableHead>
+                <TableHead className="hidden @2xl:table-cell">Login</TableHead>
+                <TableHead className="hidden @2xl:table-cell">Secrets stored</TableHead>
+                <TableHead className="text-right hidden @2xl:table-cell">Managed sources</TableHead>
                 <TableHead><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {creds.data.credentials.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.name}</TableCell>
-                  <TableCell>{c.credential_type}</TableCell>
-                  <TableCell className="text-sm">{String(c.config.login_user ?? "")}:{String(c.config.port ?? 22)}</TableCell>
-                  <TableCell className="text-sm">{c.secrets_set.length ? c.secrets_set.join(", ") : "none"}</TableCell>
-                  <TableCell className="text-right">{c.managed_sources ?? 0}</TableCell>
+                <TableRow key={c.id} data-testid={`fleet-credential-${c.id}`}>
+                  <TableCell className="font-medium wrap-anywhere">
+                    {c.name}
+                    <span className="block @2xl:hidden text-xs font-normal text-zinc-600 dark:text-zinc-400">
+                      {c.credential_type} · {String(c.config.login_user ?? "")}:{String(c.config.port ?? 22)} · secrets: {c.secrets_set.length ? c.secrets_set.join(", ") : "none"} · {c.managed_sources ?? 0} managed source(s)
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden @2xl:table-cell">{c.credential_type}</TableCell>
+                  <TableCell className="hidden @2xl:table-cell text-sm">{String(c.config.login_user ?? "")}:{String(c.config.port ?? 22)}</TableCell>
+                  <TableCell className="hidden @2xl:table-cell text-sm">{c.secrets_set.length ? c.secrets_set.join(", ") : "none"}</TableCell>
+                  <TableCell className="hidden @2xl:table-cell text-right">{c.managed_sources ?? 0}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Edit ${c.name}`} onClick={(e) => { opener.remember(e); setEditing(c); }}>
                       <Pencil className="h-4 w-4" />
@@ -273,6 +280,7 @@ export default function CredentialsSection({ teamId }: FleetSectionProps) {
               ))}
             </TableBody>
           </Table>
+        </div>
         </div>
       )}
       {editing !== null && (

@@ -524,10 +524,11 @@ function TargetsTable({ teamId }: { teamId: number }) {
         <>
           <p className="text-xs text-zinc-500" data-testid="fleet-target-total">{data.total.toLocaleString()} targets</p>
           <div className="overflow-x-auto">
-            <Table>
+            {/* below 672 px the columns share the width (fixed layout): a long host name is cut, not the decision */}
+            <Table className="@max-2xl:table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Target</TableHead>
+                  <TableHead className="@max-2xl:w-[55%]">Target</TableHead>
                   <TableHead className="hidden @2xl:table-cell">Kind</TableHead>
                   <TableHead className="hidden @5xl:table-cell">Tags</TableHead>
                   <TableHead className="hidden @5xl:table-cell">Where</TableHead>
@@ -539,7 +540,7 @@ function TargetsTable({ teamId }: { teamId: number }) {
                   <TableRow key={t.id} className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800" data-testid={`fleet-target-${t.id}`}
                     onClick={(e) => { opener.remember(e); setOpen(t.id); }}>
                     <TableCell className="max-w-[260px]">
-                      <button type="button" className="text-left cursor-pointer font-medium text-zinc-900 dark:text-white">
+                      <button type="button" className="block w-full text-left cursor-pointer font-medium text-zinc-900 dark:text-white">
                         <Truncate text={targetLabel(t)} />
                       </button>
                       <p className="text-xs text-zinc-500 truncate" title={t.external_id}>{t.address && t.hostname ? `${t.address} · ` : ""}{t.external_id}</p>
@@ -562,7 +563,7 @@ function TargetsTable({ teamId }: { teamId: number }) {
                           <StatusBadge tone="amber">Waiting for a running job</StatusBadge>
                         </span>
                       )}
-                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 break-words @2xl:truncate" title={t.decision.reason}>{decisionText(t.decision, data.policies)}</p>
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 wrap-anywhere @2xl:truncate" title={t.decision.reason}>{decisionText(t.decision, data.policies)}</p>
                     </TableCell>
                   </TableRow>
                 ))}

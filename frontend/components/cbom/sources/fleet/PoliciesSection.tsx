@@ -449,30 +449,37 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
       )}
       {data && data.policies.length === 0 && <EmptyState title="No policy yet" body="Add one, e.g. env is prod: collect weekly over SSH; env is pci: never scan." />}
       {data && data.policies.length > 0 && (
+        // sized from its own width, like the targets table: below 672 px (a tablet beside the sidebar, a phone) the
+        // order, the selector, the action and the counts fold under the name, so the row's buttons stay on screen
+        <div className="@container">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10">#</TableHead>
+                <TableHead className="w-10 hidden @2xl:table-cell">#</TableHead>
                 <TableHead>Policy</TableHead>
-                <TableHead>Matches</TableHead>
-                <TableHead>Does</TableHead>
-                <TableHead className="text-right">Targets (won / matched)</TableHead>
+                <TableHead className="hidden @2xl:table-cell">Matches</TableHead>
+                <TableHead className="hidden @2xl:table-cell">Does</TableHead>
+                <TableHead className="text-right hidden @2xl:table-cell">Targets (won / matched)</TableHead>
                 <TableHead><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.policies.map((p) => (
                 <TableRow key={p.id} data-testid={`fleet-policy-${p.id}`}>
-                  <TableCell>{p.precedence ?? "—"}</TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className="hidden @2xl:table-cell">{p.precedence ?? "—"}</TableCell>
+                  <TableCell className="font-medium wrap-anywhere">
+                    <span className="@2xl:hidden">{p.precedence ? `${p.precedence}. ` : ""}</span>
                     {p.name}
                     <span className="block text-xs text-zinc-500">priority {p.priority}</span>
                     {!p.enabled && <StatusBadge tone="zinc">Disabled</StatusBadge>}
+                    <span className="block @2xl:hidden text-xs font-normal text-zinc-600 dark:text-zinc-400 mt-1">
+                      {selectorText(p.selector)} · {actionText(p.action)} · {p.won_targets ?? 0} won / {p.matched_targets ?? 0} matched
+                    </span>
                   </TableCell>
-                  <TableCell className="max-w-[260px] text-sm break-words">{selectorText(p.selector)}</TableCell>
-                  <TableCell className="max-w-[260px] text-sm">{actionText(p.action)}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap">{p.won_targets ?? 0} / {p.matched_targets ?? 0}</TableCell>
+                  <TableCell className="hidden @2xl:table-cell max-w-[260px] text-sm break-words">{selectorText(p.selector)}</TableCell>
+                  <TableCell className="hidden @2xl:table-cell max-w-[260px] text-sm">{actionText(p.action)}</TableCell>
+                  <TableCell className="hidden @2xl:table-cell text-right whitespace-nowrap">{p.won_targets ?? 0} / {p.matched_targets ?? 0}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">
                     <Button variant="ghost" size="sm" className="cursor-pointer" aria-label={`${p.enabled ? "Disable" : "Enable"} ${p.name}`}
                       disabled={toggle.isPending} onClick={() => toggle.mutate(p)}>
@@ -489,6 +496,7 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
               ))}
             </TableBody>
           </Table>
+        </div>
         </div>
       )}
       {editing !== null && (
