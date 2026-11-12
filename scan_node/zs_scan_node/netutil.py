@@ -7,23 +7,28 @@
   over IPv6).  An IP literal is checked as itself; CIDR and ``a-b`` ranges are checked address by address.
 * The never-scan list can change while a job runs (heartbeat); ``NeverScan.update`` swaps it atomically.
 * Entries: an address, a CIDR, an ``a-b`` range (IPv4 or IPv6) or a host name.  IPv4-mapped entries count as their
-  IPv4 addresses.  A host name entry is matched by name AND by every address it resolves to from the node (looked up
-  when the list is set or changes, and again every few minutes), so a listed host is not reached by its short name,
-  a CNAME, an address target or a range sweep either.
+  IPv4 addresses.  A host name entry is matched by name AND by every address it resolves to from the node, so a
+  listed host is not reached by its short name, a CNAME, an address target or a range sweep either.
+* Listed host names are looked up by ONE resolver per node process (``NameResolver``), on a few background threads:
+  never on a job's claim or watcher thread, never more than LOOKUP_WORKERS lookups at once however long they hang.
+* Fail closed: while a listed host name has no known address (its lookup is pending, hangs, fails or answers "no such
+  name"), the node cannot tell which address is that host, so it scans no address at all; each target is skipped
+  as ``skipped_never_scan`` with a reason that names the host name.  A newly listed name is waited for, on the job's
+  own thread, for at most NAME_LOOKUP_S first, so a normal lookup costs no target.
 * Never scanned whatever the list says: the unspecified addresses 0.0.0.0/8 and :: (a connection to them reaches the
   node itself; DNS sinkholes answer 0.0.0.0).  An IPv4-mapped (::ffff:a.b.c.d) or NAT64 (64:ff9b::/96, RFC 6052)
   IPv6 address is also checked as the IPv4 address it reaches.
 """
 from __future__ import annotations
 
-import concurrent.futures as cf
+import heapq
 import ipaddress
 import socket
 import threading
 import weakref
 import time
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterable, Iterator
 from urllib.parse import urlsplit
 
 MAX_EXPANDED = 262_144
@@ -31,13 +36,12 @@ _UNSPECIFIED_NETS = (ipaddress.ip_network("0.0.0.0/8"), ipaddress.ip_network("::
 UNSPECIFIED = "unspecified address"  # what match_ip answers for 0.0.0.0/8 and ::
 _MAPPED = ipaddress.ip_network("::ffff:0:0/96")
 _NAT64 = ipaddress.ip_network("64:ff9b::/96")
-# Looking up the host names on the list: bounded per update (a slow resolver must not hold a job or its heartbeat),
-# then again every NAME_REFRESH_S, and a name that did not resolve every NAME_RETRY_S.
+# Listed host names: a job waits at most NAME_LOOKUP_S (on its own thread) for a newly listed name's first answer;
+# the resolver looks a name up again NAME_REFRESH_S after an answer and NAME_RETRY_S after a failure.
 NAME_LOOKUP_S = 15.0
 NAME_REFRESH_S = 300.0
 NAME_RETRY_S = 60.0
-MAX_LISTED_NAMES = 1000
-_LOOKUP_WORKERS = 16
+LOOKUP_WORKERS = 8  # lookups in flight at most, node-wide (a hung getaddrinfo cannot be cancelled, only capped)
 
 
 def _reaches(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> tuple:
@@ -57,57 +61,219 @@ def _v4_if_mapped(addr):
     return addr.ipv4_mapped if addr.version == 6 and addr.ipv4_mapped is not None else addr
 
 
+def _without_zone(net):
+    """fe80::1%eth0/128 -> fe80::1/128: a zone names the interface, not another host."""
+    if net.version == 6 and net.network_address.scope_id:
+        return ipaddress.IPv6Network((int(net.network_address), net.prefixlen))
+    return net
+
+
 def _parse_entry(text: str) -> tuple[list, str] | None:
     """(networks, canonical label) for an address, CIDR or ``a-b`` range entry (IPv4-mapped ones as IPv4; an IPv6
-    address may be in brackets); None for anything else, which is a host name entry."""
+    address may be in brackets or carry a zone, even one with a dash: fe80::1%br-ab12); None for anything else, which
+    is a host name entry."""
     try:
-        if "/" not in text and "-" in text:
+        net = _without_zone(ipaddress.ip_network(text.strip("[]"), strict=False))
+    except ValueError:
+        net = None
+    try:
+        if net is None and "/" not in text and "-" in text:
             first, last = (_v4_if_mapped(ipaddress.ip_address(p.strip().strip("[]"))) for p in text.split("-", 1))
             if first.version == last.version and last < first:  # the backend refuses these; here, never fail open
                 first, last = last, first
-            return list(ipaddress.summarize_address_range(first, last)), f"{first}-{last}"
-        net = ipaddress.ip_network(text.strip("[]"), strict=False)
+            nets = [_without_zone(n) for n in ipaddress.summarize_address_range(first, last)]
+            return nets, f"{nets[0].network_address}-{nets[-1].broadcast_address}"
     except (ValueError, TypeError):  # TypeError: the two ends of a range are not the same IP version
+        return None
+    if net is None:
         return None
     if net.version == 6 and net.prefixlen >= 96 and net.subnet_of(_MAPPED):
         net = ipaddress.ip_network(f"{net.network_address.ipv4_mapped}/{net.prefixlen - 96}")
     return [net], str(net.network_address) if net.num_addresses == 1 else str(net)
 
 
-def _look_up(names: list[str], limit: float) -> dict[str, list[str]]:
-    """Addresses of each name that answered within ``limit`` seconds (looked up in parallel)."""
-    out: dict[str, list[str]] = {}
-    pool = cf.ThreadPoolExecutor(max_workers=min(_LOOKUP_WORKERS, len(names)), thread_name_prefix="zs-never-dns")
-    try:
-        futures = {pool.submit(resolve, name): name for name in names}
-        done, _late = cf.wait(futures, timeout=limit)
-        for future in done:
+class NameResolver:
+    """Looks up the never-scan host names of every job on this node, on at most LOOKUP_WORKERS daemon threads named
+    ``zs-never-dns-N``.  A lookup that hangs holds its thread and nothing else, so no more than LOOKUP_WORKERS lookups
+    are ever outstanding, whatever the DNS does, and no job's claim or watcher thread ever waits for one.  Due names
+    are taken in the order they became due, never-tried names first, so names that hang go to the back once they
+    return and cannot keep the others from being looked up.  A name is looked up while some job lists it:
+    NAME_REFRESH_S after an answer, NAME_RETRY_S after a failure, and at once when a job's list changes."""
+
+    def __init__(self, workers: int | None = None) -> None:
+        self._cond = threading.Condition()
+        self._max_workers = max(1, int(workers or LOOKUP_WORKERS))
+        self._threads: list[threading.Thread] = []
+        self._refs: dict[str, int] = {}  # name -> how many job lists carry it
+        self._addrs: dict[str, frozenset] = {}  # name -> every address its latest answer reaches
+        self._answered: set[str] = set()  # names whose lookup has finished at least once (answer or failure)
+        self._due: dict[str, float] = {}  # name -> when it is due next (monotonic)
+        self._queue: list[tuple[float, int, str]] = []  # heap of (due, order, name); stale rows are skipped
+        self._order = 0
+        self._busy: set[str] = set()
+        self._closed = False
+        self.generation = 0  # bumped by every answer: a NeverScan merges answers only when it moved
+
+    # -------------------------------------------------------------- what jobs call (never waits for DNS)
+    def acquire(self, names: Iterable[str]) -> None:
+        with self._cond:
+            for name in names:
+                self._refs[name] = self._refs.get(name, 0) + 1
+                if self._refs[name] == 1:
+                    self._schedule(name, 0.0)
+            while len(self._threads) < self._max_workers and not self._closed:
+                thread = threading.Thread(target=self._work, name=f"zs-never-dns-{len(self._threads) + 1}",
+                                          daemon=True)
+                self._threads.append(thread)
+                thread.start()
+            self._cond.notify_all()
+
+    def release(self, names: Iterable[str]) -> None:
+        with self._cond:
+            for name in list(names):
+                left = self._refs.get(name, 0) - 1
+                if left > 0:
+                    self._refs[name] = left
+                    continue
+                for table in (self._refs, self._addrs, self._due):
+                    table.pop(name, None)
+                self._answered.discard(name)
+
+    def look_up_soon(self, names: Iterable[str]) -> None:
+        """A job's list changed: look these (already listed) names up again now."""
+        with self._cond:
+            for name in names:
+                if name in self._refs and name not in self._busy:
+                    self._schedule(name, 0.0)
+            self._cond.notify_all()
+
+    def answers(self, names: Iterable[str]) -> dict[str, tuple[frozenset, bool]]:
+        """name -> (addresses of its latest answer, whether any lookup of it has finished)."""
+        with self._cond:
+            return {n: (self._addrs.get(n, frozenset()), n in self._answered) for n in names}
+
+    def wait_answered(self, names: Iterable[str], deadline: float) -> None:
+        """Wait (on the caller's thread) until each name has been answered once, or until ``deadline``."""
+        names = list(names)
+        with self._cond:
+            while not self._closed and any(n in self._refs and n not in self._answered for n in names):
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return
+                self._cond.wait(left)
+
+    def close(self) -> None:
+        """Stop the workers (tests): idle ones at once, one in a lookup when that lookup returns."""
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+
+    # -------------------------------------------------------------- workers
+    def _schedule(self, name: str, due: float) -> None:  # with the lock held
+        self._due[name] = due
+        self._order += 1
+        heapq.heappush(self._queue, (due, self._order, name))
+
+    def _next(self) -> tuple[str | None, float]:  # with the lock held: (a due name, or None and how long to wait)
+        while self._queue:
+            due, _order, name = self._queue[0]
+            if self._due.get(name) != due or name in self._busy:  # stale row, or released, or being looked up
+                heapq.heappop(self._queue)
+                continue
+            now = time.monotonic()
+            if due > now:
+                return None, due - now
+            heapq.heappop(self._queue)
+            return name, 0.0
+        return None, 60.0
+
+    def _work(self) -> None:
+        while True:
+            with self._cond:
+                while True:
+                    if self._closed:
+                        return
+                    name, wait = self._next()
+                    if name is not None:
+                        break
+                    self._cond.wait(wait)
+                self._busy.add(name)
+            found: set = set()
             try:
-                out[futures[future]] = list(future.result())
-            except Exception:  # noqa: BLE001 - a name that does not resolve is reported as unresolved
-                pass
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)  # a lookup still running finishes on its own; it is not used
-    return out
+                for ip in resolve(name):  # the module's resolve (tests replace it)
+                    try:
+                        found.update(_reaches(ipaddress.ip_address(ip)))
+                    except ValueError:
+                        continue
+            except Exception:  # noqa: BLE001 - a name that does not resolve stays unresolved and is retried
+                found = set()
+            with self._cond:
+                self._busy.discard(name)
+                if name not in self._refs:
+                    continue  # no job lists it any more
+                self._answered.add(name)
+                if found:
+                    self._addrs[name] = frozenset(found)
+                    self._schedule(name, time.monotonic() + NAME_REFRESH_S)
+                else:  # a failed refresh keeps the addresses learned before
+                    self._schedule(name, time.monotonic() + NAME_RETRY_S)
+                self.generation += 1
+                self._cond.notify_all()
+
+
+_RESOLVER: NameResolver | None = None
+_RESOLVER_LOCK = threading.Lock()
+
+
+def name_resolver() -> NameResolver:
+    """The resolver of this node process (one for every job)."""
+    global _RESOLVER
+    with _RESOLVER_LOCK:
+        if _RESOLVER is None:
+            _RESOLVER = NameResolver()
+        return _RESOLVER
+
+
+class Unresolved(str):
+    """What ``match_ip`` answers while listed host names have no known address: the address may be one of them."""
+
+    names: tuple[str, ...] = ()
+
+    def __new__(cls, names) -> "Unresolved":
+        names = tuple(names)
+        shown = ", ".join(names[:3]) + (f" and {len(names) - 3} more" if len(names) > 3 else "")
+        self = super().__new__(cls, f"never-scan host name{'s' if len(names) > 1 else ''} {shown}")
+        self.names = names
+        return self
 
 
 class NeverScan:
     """The never-scan list of one job.  ``match_ip`` / ``blocks_ip`` answer for an address, ``blocks_host`` for a name
-    exactly as listed.  Host name entries also block every address they resolve to (``unresolved`` lists those that
-    did not resolve yet; they are retried)."""
+    exactly as listed.  Host name entries also block every address they resolve to; the node-wide NameResolver looks
+    them up, never the caller.  While a listed name has no known address, every address is refused (``Unresolved``):
+    ``unresolved`` lists those names, ``held_by`` the ones that held a target during this job."""
 
-    def __init__(self, lines: list[str] | None = None) -> None:
+    def __init__(self, lines: list[str] | None = None, resolver: NameResolver | None = None) -> None:
         self._lock = threading.Lock()
         self._nets: list[tuple[ipaddress._BaseNetwork, str]] = []
         self._hosts: set[str] = set()
+        self._resolver = resolver or name_resolver()
+        self._listed: set[str] = set()  # names this list holds on the resolver (released when the list goes away)
+        self._release = weakref.finalize(self, self._resolver.release, self._listed)
         self._name_addrs: dict[str, set] = {}  # listed name -> every address it resolved to during this job
+        self._answered: set[str] = set()  # listed names whose lookup has finished since they were listed
+        self._hold_until: dict[str, float] = {}  # listed name -> until when a check waits for its first answer
         self._by_addr: dict = {}  # address -> the listed name it belongs to
-        self._next_lookup: dict[str, float] = {}
-        self.unresolved: list[str] = []
+        self._unresolved: tuple[str, ...] = ()
+        self._waiting: tuple[str, ...] = ()  # unresolved names not answered yet, still inside their hold
+        self._hold_end = 0.0
+        self._seen = -1  # resolver generation merged so far
+        self.held_by: set[str] = set()
         self.update(lines or [])
 
     def update(self, lines: list[str]) -> None:
-        """Set the list (a new list from a heartbeat replaces the old one); its host names are looked up again."""
+        """Set the list (a new list from a heartbeat replaces the old one), at once: no DNS here.  New host names are
+        registered with the resolver; every listed name is looked up again soon."""
         nets: list[tuple[ipaddress._BaseNetwork, str]] = []
         hosts: set[str] = set()
         for raw in lines or []:
@@ -120,47 +286,70 @@ class NeverScan:
             else:
                 nets.extend((net, parsed[1]) for net in parsed[0])
         with self._lock:
+            added, removed = hosts - self._hosts, self._hosts - hosts
             self._nets, self._hosts = nets, hosts
             self._name_addrs = {n: a for n, a in self._name_addrs.items() if n in hosts}
-            self._next_lookup = {n: 0.0 for n in hosts}  # a changed list: look every name up again now
+            self._answered &= hosts
+            now = time.monotonic()
+            self._hold_until = {n: self._hold_until.get(n, now + NAME_LOOKUP_S) for n in hosts}
+            self._listed.difference_update(removed)
+            self._listed.update(added)
+            self._resolver.release(removed)
+            self._resolver.acquire(added)
+            self._resolver.look_up_soon(hosts - added)  # a changed list: its names are looked up again now
+            self._seen = -1
             self._index()
-        self.refresh()
 
-    def refresh(self) -> None:
-        """Look up the listed host names that are due (new, unresolved for NAME_RETRY_S, or resolved NAME_REFRESH_S
-        ago).  Answers add to what the name resolved to before during this job: the list never gets narrower."""
-        now = time.monotonic()
-        with self._lock:
-            due = sorted(n for n in self._hosts if self._next_lookup.get(n, 0.0) <= now)[:MAX_LISTED_NAMES]
-        if not due:
+    def close(self) -> None:
+        """The job ended: give its names back to the resolver (also done when the list is garbage collected)."""
+        self._release()
+
+    def _merge(self, hold: bool) -> None:
+        """Take the resolver's answers into this job's list.  ``hold``: first wait (bounded) for names that were
+        listed less than NAME_LOOKUP_S ago and have no answer yet, so a normal lookup costs no target."""
+        if hold and self._waiting and time.monotonic() < self._hold_end:
+            self._resolver.wait_answered(self._waiting, self._hold_end)
+        generation = self._resolver.generation
+        if generation == self._seen:
             return
-        answers = _look_up(due, NAME_LOOKUP_S)
-        now = time.monotonic()
         with self._lock:
-            for name in due:
+            hosts = list(self._hosts)
+        answers = self._resolver.answers(hosts)
+        with self._lock:
+            for name, (addrs, answered) in answers.items():
                 if name not in self._hosts:
-                    continue  # taken off the list while it was being looked up
-                found = set()
-                for ip in answers.get(name) or ():
-                    try:
-                        found.update(_reaches(ipaddress.ip_address(ip)))
-                    except ValueError:
-                        continue
-                if found:
-                    self._name_addrs.setdefault(name, set()).update(found)
-                    self._next_lookup[name] = now + NAME_REFRESH_S
-                else:
-                    self._next_lookup[name] = now + NAME_RETRY_S
+                    continue  # taken off the list meanwhile
+                if addrs:  # answers add to what the name resolved to before: never narrower during a job
+                    self._name_addrs.setdefault(name, set()).update(addrs)
+                if answered:
+                    self._answered.add(name)
+            self._seen = generation
             self._index()
 
     def _index(self) -> None:  # with the lock held
         self._by_addr = {addr: name for name, addrs in sorted(self._name_addrs.items()) for addr in addrs}
-        self.unresolved = sorted(n for n in self._hosts if not self._name_addrs.get(n))
+        self._unresolved = tuple(sorted(n for n in self._hosts if not self._name_addrs.get(n)))
+        now = time.monotonic()
+        waiting = [n for n in self._unresolved if n not in self._answered and self._hold_until.get(n, 0.0) > now]
+        self._waiting = tuple(waiting)
+        self._hold_end = max((self._hold_until[n] for n in waiting), default=0.0)
+
+    def sync(self) -> None:
+        """Take in the resolver's latest answers without waiting (the job's watcher calls this every few seconds, so
+        a job keeps every address a listed name answered while it ran, even between its own checks)."""
+        self._merge(hold=False)
+
+    @property
+    def unresolved(self) -> list[str]:
+        """Listed host names with no known address yet (every address is refused while there is one)."""
+        self._merge(hold=False)
+        return list(self._unresolved)
 
     def match_ip(self, ip: str) -> str | None:
         """Why ``ip`` must not be scanned: the matching entry (an address, CIDR or range; "an address of <name>" for
-        a listed host name; UNSPECIFIED for 0.0.0.0/8 and ::), or None when it may be scanned.  Anything that is not
-        an IP address is refused."""
+        a listed host name; UNSPECIFIED for 0.0.0.0/8 and ::; ``Unresolved`` while a listed host name has no known
+        address, since ``ip`` may be that host), or None when it may be scanned.  Anything that is not an IP address
+        is refused.  May wait up to NAME_LOOKUP_S for a newly listed name's first answer (job threads only)."""
         try:
             addr = ipaddress.ip_address(ip)
         except ValueError:
@@ -168,6 +357,7 @@ class NeverScan:
         forms = _reaches(addr)
         if any(f.version == n.version and f in n for f in forms for n in _UNSPECIFIED_NETS):
             return UNSPECIFIED
+        self._merge(hold=True)
         with self._lock:
             for f in forms:
                 for net, label in self._nets:
@@ -176,7 +366,15 @@ class NeverScan:
                 name = self._by_addr.get(f)
                 if name is not None:
                     return f"an address of {name}"
+            if self._unresolved:
+                self.held_by.update(self._unresolved)
+                return Unresolved(self._unresolved)
         return None
+
+    def held_names(self) -> list[str]:
+        """Listed host names that held a target during this job (they had no known address when it was checked)."""
+        with self._lock:
+            return sorted(self.held_by)
 
     def blocks_ip(self, ip: str) -> bool:
         return self.match_ip(ip) is not None
@@ -230,18 +428,31 @@ class Blocked(Exception):
     entry: str | None = None
 
     def __init__(self, what: str, address: str | None = None, entry: str | None = None) -> None:
-        head = f"{what} resolves to {address}, which is" if address else f"{what} is"
-        if entry == UNSPECIFIED:
-            text = f"{head} an unspecified address (0.0.0.0/8 or ::) and is never scanned"
+        if isinstance(entry, Unresolved):
+            subject = f"{what} ({address})" if address else what
+            many = len(entry.names) > 1
+            text = (f"{subject} was not scanned: the {entry} {'have' if many else 'has'} not resolved from the scan "
+                    f"node, so the node cannot tell which addresses are {'those hosts' if many else 'that host'}")
+        elif entry == UNSPECIFIED:
+            reaches = ()
+            try:
+                reaches = _reaches(ipaddress.ip_address(str(address or what).strip("[]")))
+            except ValueError:
+                pass
+            form = f"an IPv6 form of {reaches[1]}, " if len(reaches) > 1 else ""  # IPv4-mapped or NAT64
+            head = f"{what} resolves to {address}," if address else f"{what} is"
+            text = f"{head} {form}in 0.0.0.0/8 or ::, which reaches the scan node itself, so it is never scanned"
         else:
+            head = f"{what} resolves to {address}, which is" if address else f"{what} is"
             text = f"{head} on the never-scan list" + (f" ({entry})" if entry and entry not in (what, address) else "")
         super().__init__(text)
         self.what, self.address, self.entry = what, address, entry
 
 
-def _is_ip(text: str) -> bool:
+def is_ip(text) -> bool:
+    """Whether ``text`` is an IP address literal (IPv4, or IPv6 with or without a zone; no brackets)."""
     try:
-        ipaddress.ip_address(text)
+        ipaddress.ip_address(str(text))
         return True
     except ValueError:
         return False
@@ -272,7 +483,7 @@ def resolve_checked(host: str, never: NeverScan, timeout: float = 5.0) -> list[s
     (IPv4 first); connect only to one of them.  An IP literal is checked as itself.
     Raises Blocked, or OSError when the name does not resolve (or resolves to no address)."""
     text = str(host or "").strip().strip("[]")
-    if _is_ip(text):
+    if is_ip(text):
         return [checked_ip(text, never)]
     name = text.lower().rstrip(".")
     _check_name(name, (), never)  # a listed name is not looked up
@@ -330,7 +541,7 @@ def http_client(url: str, ip: str, never: NeverScan, **kwargs):
     literal = f"[{ip}]" if ":" in ip else ip
     pinned = f"{parts.scheme}://{literal}:{port}{parts.path or ''}"
     host_header = (f"[{host}]" if ":" in host else host) + ("" if default_port else f":{port}")
-    sni = None if _is_ip(host) else host
+    sni = None if is_ip(host) else host
 
     class _Pinned(httpx.HTTPTransport):
         def handle_request(self, request):
@@ -359,7 +570,7 @@ def requests_adapter(host: str, ip: str, never: NeverScan):
         raise RuntimeError("requests is too old to pin connections (2.32.2 or later is needed)")
     checked_ip(ip, never)
     want = str(host).strip("[]").lower().rstrip(".")
-    by_name = not _is_ip(want)
+    by_name = not is_ip(want)
 
     class _Pinned(HTTPAdapter):
         zs_pinned_to = (want, ip)  # what this adapter connects (for callers that must check a session is pinned)

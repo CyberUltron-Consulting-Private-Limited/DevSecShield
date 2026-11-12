@@ -340,9 +340,9 @@ class Agent:
         for s in (self.state.node_token, os.environ.get("VAULT_TOKEN")):
             scrubber.add(s)
         scope_never = [str(x) for x in scope.get("never_scan") or []]
+        # No DNS here (this is the claim thread): the node-wide resolver looks the list's host names up, and the job's
+        # own threads wait for them (bounded) when they first check an address.
         never = NeverScan(scope_never + (self.team_never or []))
-        if never.unresolved:  # those names are still skipped by name; their addresses are blocked once they resolve
-            log("never-scan host names did not resolve", job=job_id, names=never.unresolved[:20], level="warn")
         deadline, reason = _deadline(scope, int(job.get("lease_seconds") or 900))
         lease_id = str(job.get("lease_id") or "")
 
@@ -407,6 +407,9 @@ class Agent:
         ctx = running.ctx
         result = ctx.result(summary)
         result["node_version"] = VERSION
+        if result.get("never_scan_unresolved"):
+            ctx.log("never-scan host names did not resolve; targets were held", names=result["never_scan_unresolved"][:20],
+                    level="warn")
         body = {"lease_id": running.lease_id, "status": status, "result": result,
                 "error": ctx.scrubber.text(error)[:3900] if error else None}
         try:
@@ -434,10 +437,12 @@ class Agent:
                 ctx.stop_network.set()
             team = self.team_never
             if team is not None and team != running.applied_team:
+                # at once: update() does no DNS (the node-wide resolver looks names up on its own threads)
                 ctx.never_scan.update(running.scope_never + team)  # union: never narrower than at claim
                 running.applied_team = team
-            else:
-                ctx.never_scan.refresh()  # look the list's host names up again when due (cheap when none is)
+            sync = getattr(ctx.never_scan, "sync", None)
+            if sync is not None:
+                sync()  # no DNS: keep every answer the resolver got for the job's names (never narrower in a job)
             now = time.monotonic()
             if ctx.cancel.is_set() and running.cancel_seen is None:
                 running.cancel_seen = now
@@ -461,6 +466,9 @@ class Agent:
     def _done(self, running: Running) -> None:
         with self.lock:
             self.running.pop(running.job_id, None)
+        close = getattr(running.ctx.never_scan, "close", None)
+        if close is not None:
+            close()  # the resolver stops looking up names no running job lists
 
     # ------------------------------------------------------------------ main
     def run(self) -> None:

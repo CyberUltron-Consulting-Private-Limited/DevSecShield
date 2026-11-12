@@ -322,6 +322,12 @@ class JobContext:
         if summary is None:
             summary = (f"{counts['ok']} of {counts['total']} targets collected, {counts['failed']} failed, "
                        f"{counts['skipped']} skipped; {self.accepted} assets")
+        held = self.never_scan.held_names() if hasattr(self.never_scan, "held_names") else []
+        if held:  # listed host names the node could not resolve held targets back: say so where the UI looks
+            names = ", ".join(held[:5]) + (f" and {len(held) - 5} more" if len(held) > 5 else "")
+            note = (f"never-scan: {len(held)} listed host name{'s' if len(held) > 1 else ''} did not resolve from the "
+                    f"scan node ({names}); targets were held, not scanned, while unresolved")[:400]
+            summary = f"{summary[:500 - len(note) - 2]}; {note}"
         out = {
             "summary": self.scrubber.text(summary)[:500],
             "counts": counts,
@@ -331,6 +337,8 @@ class JobContext:
             "assets_lost": self.lost,
             "duration_s": int(time.monotonic() - self.started),
         }
+        if held:
+            out["never_scan_unresolved"] = held[:100]
         if self.kind == "test_connection":
             out["samples"] = self.scrubber.obj(self.samples)
         return out

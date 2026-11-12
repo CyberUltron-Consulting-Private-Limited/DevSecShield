@@ -86,6 +86,7 @@ def test_an_ipv4_mapped_answer_matches_the_listed_ipv4_address(dns):
 
 
 def test_name_without_excluded_address_is_scanned(dns):
+    DNS["other.internal"] = ["10.0.0.7"]  # a listed name must resolve, or nothing is scanned (fail closed)
     never = NeverScan(["10.0.0.6", "fd00::6", "other.internal"])
     assert resolve_checked("db.internal", never) == ["10.0.0.5", "fd00::5"]
     targets, skipped = expand_targets(["db.internal"], never)
@@ -95,7 +96,8 @@ def test_name_without_excluded_address_is_scanned(dns):
 
 def test_a_listed_name_is_skipped_without_a_lookup(dns):
     never = NeverScan(["db.internal"])
-    assert dns == ["db.internal"]  # the list's own names are looked up once, when the list is set
+    assert never.match_ip("10.0.0.5") == "an address of db.internal"  # waits for the resolver's first answer
+    assert dns == ["db.internal"]  # the list's own names are looked up once, by the node's resolver
     with pytest.raises(Blocked) as err:
         resolve_checked("DB.Internal.", never)
     assert str(err.value) == "db.internal is on the never-scan list" and dns == ["db.internal"]  # no target lookup
@@ -158,20 +160,35 @@ def test_never_scan_entries_of_every_form_apply_on_the_node(entry, inside, outsi
 
 
 def test_host_names_with_dashes_stay_host_entries(dns):
+    DNS.update({"web-01.corp": ["10.0.0.11"], "a-b": ["10.0.0.12"], "10.0.0.1-foo": ["10.0.0.13"]})
     never = NeverScan(["web-01.corp", "a-b", "10.0.0.1-foo"])
     assert all(never.blocks_host(n) for n in ("web-01.corp", "a-b", "10.0.0.1-foo"))
     assert not never.blocks_ip("10.0.0.1")
 
 
-@pytest.mark.parametrize("address", ["0.0.0.0", "0.1.2.3", "::", "::ffff:0.0.0.0", "64:ff9b::"])
-def test_unspecified_addresses_are_never_scanned_whatever_the_list_says(dns, address):
-    with pytest.raises(Blocked, match="unspecified address"):
+@pytest.mark.parametrize("address, form", [("0.0.0.0", ""), ("0.1.2.3", ""), ("::", ""),
+                                           ("::ffff:0.0.0.0", "an IPv6 form of 0.0.0.0, "),
+                                           ("64:ff9b::", "an IPv6 form of 0.0.0.0, "),
+                                           ("64:ff9b::3", "an IPv6 form of 0.0.0.3, ")])
+def test_unspecified_addresses_are_never_scanned_whatever_the_list_says(dns, address, form):
+    """The customer reads this text in outcomes and samples: it says why, also for the mapped and NAT64 forms."""
+    tail = f"{form}in 0.0.0.0/8 or ::, which reaches the scan node itself, so it is never scanned"
+    with pytest.raises(Blocked) as err:
         netutil.checked_ip(address, NeverScan())
+    assert str(err.value) == f"{address} is {tail}"
     DNS["sinkholed.internal"] = [address]  # what a DNS sinkhole answers
     with pytest.raises(Blocked) as err:
         resolve_checked("sinkholed.internal", NeverScan())
-    assert str(err.value) == (f"sinkholed.internal resolves to {address}, which is an unspecified address "
-                              "(0.0.0.0/8 or ::) and is never scanned")
+    assert str(err.value) == f"sinkholed.internal resolves to {address}, {tail}"
+
+
+@pytest.mark.parametrize("entry", ["fe80::1%br-ab12", "fe80::1%vlan-10", "[fe80::1%br-ab12]", "fe80::1%eth0"])
+def test_an_address_entry_with_a_zone_is_an_address_even_with_a_dash_in_it(dns, entry):
+    """Docker bridges are br-<hash>; vlan-10 is common.  The zone names an interface, not another host, so the entry
+    blocks the address on every interface, like the backend's count does."""
+    never = NeverScan([entry])
+    assert never.blocks_ip("fe80::1") and never.blocks_ip("fe80::1%eth1") and not never.blocks_ip("fe80::4")
+    assert not never.blocks_host(entry) and never.unresolved == []
 
 
 # ----------------------------------------------------------------------------- never-scan entries written as names
@@ -192,12 +209,21 @@ def test_a_listed_name_covers_every_address_it_resolves_to(dns):
     assert reasons["10.0.0.5"] == "10.0.0.5 is on the never-scan list (an address of db.corp.internal)"
 
 
+def _until(check, timeout: float = 5.0) -> bool:
+    end = time.monotonic() + timeout
+    while not check() and time.monotonic() < end:
+        time.sleep(0.02)
+    return check()
+
+
 def test_listed_names_are_looked_up_again_when_the_list_changes(dns):
     DNS["moving.internal"] = ["10.0.0.5"]
     never = NeverScan(["moving.internal"])
+    assert never.match_ip("10.0.0.5") == "an address of moving.internal"
     DNS["moving.internal"] = ["10.0.0.9"]
-    never.update(["moving.internal", "10.1.0.0/16"])  # a heartbeat brings a changed list
-    assert never.blocks_ip("10.0.0.9") and never.blocks_ip("10.0.0.5")  # never narrower within the job
+    never.update(["moving.internal", "10.1.0.0/16"])  # a heartbeat brings a changed list: names are looked up again
+    assert _until(lambda: never.match_ip("10.0.0.9") == "an address of moving.internal")  # by the resolver's thread
+    assert never.blocks_ip("10.0.0.5")  # never narrower within the job
     never.update(["10.1.0.0/16"])  # the name was taken off the list
     assert not never.blocks_ip("10.0.0.9") and not never.blocks_ip("10.0.0.5")
 
@@ -205,13 +231,13 @@ def test_listed_names_are_looked_up_again_when_the_list_changes(dns):
 def test_an_unresolved_listed_name_is_reported_and_retried(dns, monkeypatch):
     monkeypatch.setattr(netutil, "NAME_RETRY_S", 0.3)
     never = NeverScan(["later.internal", "10.1.0.0/16"])
+    assert never.blocks_ip("10.0.0.7")  # held: 10.0.0.7 may be later.internal (fail closed)
     assert never.unresolved == ["later.internal"] and never.blocks_host("later.internal")
     DNS["later.internal"] = ["10.0.0.8"]
-    never.refresh()  # not due yet: a failed lookup is retried after NAME_RETRY_S
-    assert not never.blocks_ip("10.0.0.8") and dns.count("later.internal") == 1
-    time.sleep(0.35)
-    never.refresh()  # the job's watcher calls this on every pass
-    assert never.blocks_ip("10.0.0.8") and never.unresolved == []
+    time.sleep(0.1)  # not due yet: a failed lookup is retried after NAME_RETRY_S, by the resolver's thread
+    assert never.unresolved == ["later.internal"] and dns.count("later.internal") == 1
+    assert _until(lambda: never.unresolved == [])
+    assert never.blocks_ip("10.0.0.8") and not never.blocks_ip("10.0.0.7")
 
 
 def test_looking_up_the_listed_names_is_bounded(monkeypatch):
@@ -222,14 +248,16 @@ def test_looking_up_the_listed_names_is_bounded(monkeypatch):
     monkeypatch.setattr(netutil, "resolve", slow)
     monkeypatch.setattr(netutil, "NAME_LOOKUP_S", 0.2)
     started = time.monotonic()
-    never = NeverScan(["slow.internal"])
+    never = NeverScan(["slow.internal"])  # setting the list does no DNS at all
     assert time.monotonic() - started < 1.5 and never.unresolved == ["slow.internal"]
 
 
 def test_sni_names_that_are_listed_or_have_a_listed_address_are_not_sent(dns):
-    never = NeverScan(["listed.internal", "fd00::7"])  # listed.internal does not resolve yet when the list is set
-    DNS.update({"listed.internal": ["10.0.0.8"], "web.internal": ["10.0.0.8"],
+    DNS.update({"listed.internal": ["10.0.0.9"], "web.internal": ["10.0.0.8"],
                 "dual.internal": ["10.0.0.8", "fd00::7"]})
+    never = NeverScan(["listed.internal", "fd00::7"])
+    assert never.match_ip("10.0.0.9") == "an address of listed.internal"  # its first answer is in
+    DNS["listed.internal"] = ["10.0.0.8"]  # it moved to the scanned address; the SNI lookup sees the new answer
     scope = {"sni_hostnames": ["listed.internal", "web.internal", "dual.internal"]}
     assert N._sni_for(scope, "10.0.0.8", {}, never) == ["web.internal"]
 

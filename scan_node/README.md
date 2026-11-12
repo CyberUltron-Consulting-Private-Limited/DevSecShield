@@ -191,11 +191,19 @@ sockets or HTTP clients any other way, so new collectors must use it.
 
 **Never-scan rule.**
 - *Entries* may be addresses, CIDRs, `a-b` ranges (IPv4 or IPv6) or host names. An IPv4-mapped entry
-  (`::ffff:10.0.0.5`) counts as its IPv4 address.
-- *A host name entry* covers the name and every address it resolves to from the scan node. The node looks the
-  names up when the job starts and whenever the list changes, then every 5 minutes (every minute while a name does
-  not resolve). A host listed by name is therefore not reached by its short name, a CNAME, a target written as its
-  address, or a range sweep either. A listed name that does not resolve is logged and still matches by name.
+  (`::ffff:10.0.0.5`) counts as its IPv4 address. A zone on an IPv6 entry (`fe80::1%br-ab12`) names an interface,
+  not a host: the entry covers that address on every interface.
+- *A host name entry* covers the name and every address it resolves to from the scan node. One resolver per node
+  process looks the listed names up on its own threads (at most 8 lookups at once, never on a job's claim or watcher
+  thread): when a job lists a name and whenever the list changes, then every 5 minutes (every minute while a name
+  does not resolve). A host listed by name is therefore not reached by its short name, a CNAME, a target written as
+  its address, or a range sweep either.
+- *Fail closed:* while a listed host name has no known address (its lookup is pending, hangs, fails, or answers
+  that the name does not exist), the node cannot tell which address is that host, so it scans no target at all:
+  each one is skipped as `skipped_never_scan` with a reason that names the host name, and the job's summary (and
+  `never_scan_unresolved` in its result) lists the names. A newly listed name is waited for, on the job's own
+  threads, for at most 15 s first, so a normal lookup costs nothing. The fix is to correct the name (or the node's
+  DNS), or to list that host by address instead.
 - *A target name* (a server, database, registry, token service, blob redirect, database redirect, CA, KMIP or
   Kubernetes API host) is skipped as `skipped_never_scan` when the name is listed or when ANY address it resolves to
   is listed, so a dual-stack host listed by its IPv4 address is not scanned over IPv6 and the other way round. The
@@ -205,8 +213,9 @@ sockets or HTTP clients any other way, so new collectors must use it.
   (one outcome each) and the rest are scanned. A range carries no names, so when one address of a dual-stack host is
   listed by address and its other address lies inside a scanned range, that other address is scanned unless it is
   listed too (listing the host by name covers both).
-- *Never scanned, whatever the list says:* the unspecified addresses `0.0.0.0/8` and `::`, which reach the node
-  itself (DNS sinkholes answer `0.0.0.0`).
+- *Never scanned, whatever the list says:* `0.0.0.0/8` and `::`, which reach the node itself (DNS sinkholes answer
+  `0.0.0.0`), also in their IPv4-mapped and NAT64 forms. A registry that sends the node to one of them (token
+  service, redirect) is refused as an error, not reported as a never-scan skip.
 - *IPv4 in IPv6:* an IPv4-mapped (`::ffff:a.b.c.d`) or NAT64 (`64:ff9b::/96`, RFC 6052 well-known prefix) answer is
   checked as the IPv4 address it reaches as well. A network-specific NAT64 prefix is not recognised.
 - *Changes during a job:* the list can change while a job runs. Every new connection, and every request of an HTTP

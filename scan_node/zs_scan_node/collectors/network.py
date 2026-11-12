@@ -31,7 +31,7 @@ from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.jobctx import JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
-from zs_scan_node.netutil import Blocked, checked_ip, iter_line_ips, node_limiter
+from zs_scan_node.netutil import Blocked, Unresolved, checked_ip, iter_line_ips, node_limiter
 
 TCP_PROTOCOLS = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
                  "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
@@ -624,8 +624,10 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
         if stop:
             ctx.outcome(ip, stop, started=started)
             return 0
-        if ctx.never_scan.blocks_ip(ip):
-            ctx.outcome(ip, "skipped_never_scan", started=started)
+        entry = ctx.never_scan.match_ip(ip)
+        if entry is not None:  # a held address says why (a listed host name the node could not resolve)
+            ctx.outcome(ip, "skipped_never_scan", str(Blocked(ip, entry=entry)) if isinstance(entry, Unresolved) else None,
+                        started=started)
             return 0
         skip, states = sweep(ip)
         if skip:
@@ -745,8 +747,12 @@ def test_range(ctx: JobContext, scope: dict) -> str:
     scan = NetworkScan(ctx, scope)
     ports = [p for p in _ports(scope) if p["protocol"] in TCP_PROTOCOLS][:4] or [{"port": 443, "protocol": "tls", "label": ""}]
     picked = []
+    held = None  # why an address was skipped, when it was a listed host name the node could not resolve
     for ip, _mode in _addresses(ctx, _scope_ranges(scope)):
-        if ctx.never_scan.blocks_ip(ip):
+        entry = ctx.never_scan.match_ip(ip)
+        if entry is not None:
+            if isinstance(entry, Unresolved):
+                held = entry
             continue
         picked.append(ip)
         if len(picked) >= 5:
@@ -776,7 +782,8 @@ def test_range(ctx: JobContext, scope: dict) -> str:
         ctx.outcome(ip, "ok" if answered else "unreachable")
     if not picked:
         ctx.samples.append({"target": "-", "status": "skipped_never_scan", "reachable": None, "login": None,
-                            "privilege": None, "note": "every address is on the never-scan list"})
+                            "privilege": None, "note": str(Blocked("every address", entry=held)) if held else
+                            "every address is on the never-scan list"})
     return f"{sum(1 for s in ctx.samples if s['status'] == 'ready')} of {len(picked)} sample addresses answered"
 
 

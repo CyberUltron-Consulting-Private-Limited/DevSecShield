@@ -367,11 +367,11 @@ def test_the_unspecified_address_never_reaches_the_node_itself(lis, dns):
     table, _ = dns
     table["sinkholed.internal"] = ["0.0.0.0"]  # what DNS sinkholes answer
     for never in ([], ["127.0.0.1"]):
-        with pytest.raises(Blocked, match="unspecified"):
+        with pytest.raises(Blocked, match="reaches the scan node itself"):
             netutil.connect("0.0.0.0", lis.port, NeverScan(never), 2)
         ctx = _ctx(never)
         assert L._targets(ctx, {"targets": ["sinkholed.internal", "0.0.0.0"]}) == []
-        assert [(o.status, "unspecified" in (o.error or "")) for o in ctx.outcomes] == [
+        assert [(o.status, "reaches the scan node itself" in (o.error or "")) for o in ctx.outcomes] == [
             ("skipped_never_scan", True)] * 2
     assert lis.hits == []
 
@@ -386,7 +386,9 @@ def test_a_host_listed_by_name_is_not_contacted_by_alias_address_range_or_sni(li
     assert L._targets(ctx, {"targets": ["db", "alias.internal", "127.0.0.2"]}) == []
     assert [o.status for o in ctx.outcomes] == ["skipped_never_scan"] * 3
     assert "db.corp.internal" in ctx.outcomes[0].error
-    assert N._sni_for({"sni_hostnames": ["db.corp.internal", "db"]}, "127.0.0.1", {}, ctx.never_scan) == []
+    # 127.0.0.2 is the address both names resolve to: with an empty list they would be sent (["db.corp.internal",
+    # "db"]); listed by name, neither is
+    assert N._sni_for({"sni_hostnames": ["db.corp.internal", "db"]}, "127.0.0.2", {}, ctx.never_scan) == []
     sweep = _ctx(["db.corp.internal"])
     sweep.source_kind = "network_range"
     N.run_network(sweep, {"ranges": ["127.0.0.0/30"], "ports": [{"port": lis.port, "protocol": "tls"}],
