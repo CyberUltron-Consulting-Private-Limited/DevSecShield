@@ -40,9 +40,23 @@ on:
         type: string
         default: "1.181.1"
       semgrep-configs:
-        description: Space-separated Semgrep registry rulesets or local rule files.
+        description: >-
+          Space-separated Semgrep registry rulesets or local rule files. No secret-detection ruleset (p/secrets):
+          the owner removed credential-exposure checks from CI on 2026-11-12.
         type: string
-        default: p/ci p/python p/typescript p/secrets p/dockerfile
+        default: p/ci p/python p/typescript p/dockerfile
+      semgrep-credential-cwes:
+        description: >-
+          Semgrep findings of rules tagged with one of these CWEs are dropped before the gate and the report (owner
+          decision 2026-11-12: no credential-exposure checks in CI). Default: hard-coded credentials, password, key.
+        type: string
+        default: CWE-798 CWE-259 CWE-321
+      semgrep-credential-rule-regex:
+        description: >-
+          Semgrep findings whose rule id matches this regex (case-insensitive) are dropped too: secret detectors,
+          hard-coded secrets tagged with another CWE (the JWT rules use CWE-522) and credential leaks into logs.
+        type: string
+        default: '(^|\.)secrets\.|hardcode|credential'
       semgrep-exclude:
         description: Space-separated --exclude globs for Semgrep.
         type: string
@@ -375,6 +389,8 @@ jobs:
           CONFIGS: ${{ inputs.semgrep-configs }}
           EXCLUDES: ${{ inputs.semgrep-exclude }}
           MIN: ${{ inputs.semgrep-min-level }}
+          CRED_CWES: ${{ inputs.semgrep-credential-cwes }}
+          CRED_RE: ${{ inputs.semgrep-credential-rule-regex }}
         run: |
           set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
           # --disable-nosem: a `# nosemgrep` comment the change adds must not hide its own finding (findings already
@@ -383,12 +399,40 @@ jobs:
           for c in $CONFIGS; do args+=(--config "$c"); done
           for e in $EXCLUDES; do args+=(--exclude "$e"); done
           if [ "$MODE" = diff ]; then args+=(--baseline-commit "$BASE_SHA"); fi
-          # stdout is Semgrep's text report, which prints each matched source line (a p/secrets match is the secret
-          # itself), so it is discarded; stderr (errors) is kept.
+          # stdout is Semgrep's text report, which prints each matched source line, so it is discarded; stderr
+          # (errors) is kept.
           uvx --from "semgrep==${V}" semgrep "${args[@]}" > /dev/null 2> "$R/semgrep.log"
           rc=$?
           tail -5 "$R/semgrep.log"
           [ "$rc" -eq 0 ] || { echo "::error::semgrep did not run (exit $rc); see $R/semgrep.log in the artifact"; exit "$rc"; }
+          # No credential-exposure checks (owner decision 2026-11-12): findings of credential rules (CRED_CWES tags or
+          # CRED_RE rule ids) leave the SARIF before the gate and the report, so a secret-shaped literal never fails
+          # this job. Every other rule still gates.
+          python3 - "$R/semgrep.sarif" <<'PY' || { echo "::error::could not filter the Semgrep report"; exit 1; }
+          import json, os, re, sys
+          path = sys.argv[1]
+          cwes = set(os.environ.get("CRED_CWES", "").split())
+          rule_re = re.compile(os.environ["CRED_RE"], re.I) if os.environ.get("CRED_RE") else None
+          with open(path, encoding="utf-8") as f:
+              sarif = json.load(f)
+          dropped = {}
+          for run in sarif.get("runs", []):
+              tags = {r.get("id"): {t.split(":")[0].strip() for t in (r.get("properties") or {}).get("tags", [])}
+                      for r in ((run.get("tool") or {}).get("driver") or {}).get("rules", [])}
+              keep = []
+              for x in run.get("results", []):
+                  rid = x.get("ruleId") or ""
+                  if cwes & tags.get(rid, set()) or (rule_re and rule_re.search(rid)):
+                      dropped[rid] = dropped.get(rid, 0) + 1
+                  else:
+                      keep.append(x)
+              run["results"] = keep
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(sarif, f)
+          print(f"credential rules: {sum(dropped.values())} finding(s) dropped (no credential checks in CI since 2026-11-12)")
+          for rid, n in sorted(dropped.items()):
+              print(f"  {n} x {rid}")
+          PY
           if [ "$MODE" = diff ]; then
             # --baseline-commit already removed findings that exist on the base commit.
             python3 "$RUNNER_TEMP/findings.py" --tool semgrep --head "$R/semgrep.sarif" --all-new --min-level "$MIN" --gate diff
@@ -587,7 +631,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Strip source snippets from the reports
-        # SARIF can carry the matched source line (Semgrep's region.snippet holds the secret for a p/secrets match).
+        # SARIF can carry the matched source line (Semgrep's region.snippet quotes the matched code).
         # Reports keep rule, file, line and message only, before anything is uploaded.
         if: always()
         run: |

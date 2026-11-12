@@ -126,7 +126,7 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
 
 The comparators are Python embedded in the workflows, so callers in other repositories need no extra files. All
 their decisions (tool exit codes, missing base, renames) are inside that Python. `.github/tests/` extracts it from
-the YAML and tests it: 90 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
+the YAML and tests it: 95 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
 They check that the same findings from two checkouts at different paths give 0 new, that an added finding is new,
 that each failure mode above fails, that ci-gate, the path map, the image list (`Decide`, run for each event),
 pr-hygiene and the image job's disk steps behave as documented, and that every reusable-workflow input is documented
@@ -154,9 +154,17 @@ for exposed credentials and asks for no review label:
   reads them.
 - `.gitleaks.toml` and `.gitleaksignore` stay in the repository for anyone who runs gitleaks by hand
   ([Running the checks locally](#running-the-checks-locally)). No workflow reads them.
-- What still reacts to secret-shaped text: Semgrep's `p/secrets` ruleset, part of the scanners job that the owner
-  kept. In diff mode, a change that adds a matching literal fails `security / scanners`. To drop that as well, remove
-  `p/secrets` from `semgrep-configs`.
+- The scanners job has no credential detection either (coordinator decision on the owner's words, same day: "no
+  security, no credential exposure issues"). Semgrep runs without `p/secrets`, and the findings of credential rules
+  in the remaining rulesets are dropped from its SARIF before the gate and the report: rules tagged
+  `semgrep-credential-cwes` (CWE-798 hard-coded credentials, CWE-259 password, CWE-321 key) or whose id matches
+  `semgrep-credential-rule-regex` (secret detectors, the hard-coded JWT secret rules tagged CWE-522, credential leaks
+  into logs). Measured on 2026-11-12 with Semgrep 1.181.1 on generated secret-shaped literals: 3 findings of the kept
+  rulesets (boto3 hard-coded token, JWT hard-coded secret in Python and JavaScript) and all 16 `p/secrets` findings
+  are dropped; Express cookie settings, password-policy, MD5-as-password and `secrets: inherit` rules still gate.
+  Trivy runs with `--scanners vuln,misconfig` on the tree and `--scanners vuln` on images (never `secret`), and
+  Checkov only with the `kubernetes terraform` frameworks (no `secrets`). A PR that adds a secret-shaped literal
+  passes `security / scanners`.
 - **Reports hold no secret values.** Semgrep's text output, which prints each matched line, is discarded. Every SARIF
   file has its `snippet` / `contextRegion` / `fixes` removed before upload, and the job fails if any snippet is left.
 
@@ -378,7 +386,8 @@ Every input of every reusable workflow is listed below. `ci-selftest` fails when
 |---|---|
 | `mode` | `auto`: PRs and pushes use diff, everything else full |
 | `exclude-regex` | `node_modules`, `.venv`, `venv`, `.next`, `dist`. `ci.yml` adds this repo's fixture roots, anchored (`^aibom/tests/fixtures/`, ...), so a future product directory named `fixtures` or `examples` is still scanned |
-| `semgrep-version`, `semgrep-configs` | `1.181.1`, `p/ci p/python p/typescript p/secrets p/dockerfile` |
+| `semgrep-version`, `semgrep-configs` | `1.181.1`, `p/ci p/python p/typescript p/dockerfile` (no `p/secrets`) |
+| `semgrep-credential-cwes`, `semgrep-credential-rule-regex` | `CWE-798 CWE-259 CWE-321`, `(^\|\.)secrets\.\|hardcode\|credential`: findings of credential rules (tagged with one of these CWEs, or whose rule id matches) are dropped from Semgrep's SARIF before the gate and the report |
 | `semgrep-exclude` | `node_modules .venv` (`ci.yml` adds the fixture roots) |
 | `semgrep-min-level`, `hadolint-min-level`, `shellcheck-severity` | `warning` |
 | `osv-version`, `osv-sha256` | `2.7.0`, pinned |
@@ -551,9 +560,9 @@ python3 -m unittest discover -s .github/tests -v
 # secrets, by hand only (no workflow runs gitleaks since 2026-11-12): the PR's commits, or the whole history
 gitleaks git --redact --ignore-gitleaks-allow --log-opts="--text --diff-merges=remerge origin/dev..HEAD" .
 gitleaks git --redact --ignore-gitleaks-allow --log-opts="--full-history --all --text --diff-merges=remerge" .
-# Semgrep, the same rulesets as CI
+# Semgrep, the same rulesets as CI (CI also drops credential-rule findings; see "No secret scanning")
 uvx --from semgrep==1.181.1 semgrep scan --metrics=off --config p/ci --config p/python --config p/typescript \
-  --config p/secrets --config p/dockerfile
+  --config p/dockerfile
 # backend tests as CI runs them (PostgreSQL optional: without the *_PG_URL variables those tests skip)
 (cd aibom && uv sync --frozen --all-extras --dev)
 cd backend && UV_PYTHON=3.12 uv sync --frozen && PYTHONPATH=.. JWT_SECRET_KEY=x JWT_REFRESH_SECRET_KEY=x \
