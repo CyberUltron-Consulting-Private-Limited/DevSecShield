@@ -388,6 +388,21 @@ def test_a_trust_token_revoked_here_is_refused_at_once_and_elsewhere_within_the_
     assert api("GET", TRUST + "/trusted-keys", None, headers=h2).status_code == 401  # this worker: at once
 
 
+def test_a_stale_read_never_brings_a_revoked_token_back():
+    """A request that read the token row just before a revoke committed caches its result after the revoke: the
+    revoke wins (a revoke is final), so the token is not live again for the cache time."""
+    from types import SimpleNamespace
+
+    from backend.utilities.cbom_sources.sshca import trust as T
+
+    secret = T.TOKEN_PREFIX + secrets.token_urlsafe(30)[:40]  # generated at run time
+    live = T.TokenInfo(5, 1, False)
+    assert T.token_for(secret, lambda digest: live) == live
+    T.token_revoked(SimpleNamespace(token_hash=T.sha256_hex(secret), id=5, team_id=1))
+    T._remember_token(T.sha256_hex(secret), live)  # the late write of the stale read
+    assert T.token_for(secret, lambda digest: live) is None
+
+
 # ============================================================================ [nit] one replica purges
 @needs_pg
 def test_pg_only_one_replica_runs_the_retention_purge(monkeypatch):
