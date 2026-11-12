@@ -48,6 +48,7 @@ default_tag() {
 DSS_TAG="${DSS_TAG:-$(default_tag)}"
 DSS_IMAGE_PREFIX="${DSS_IMAGE_PREFIX:-dss-staging}"
 
+DIRTY_SHA="" # set below only when this script finds uncommitted changes, never taken from the caller's environment
 if [[ -n "${DSS_BUILD_SHA:-}" ]]; then
   [[ "${DSS_BUILD_SHA}" =~ ^[0-9a-f]{40}$ ]] || die "DSS_BUILD_SHA must be a full 40-character commit (lowercase hex)"
   BUILD_SHA="${DSS_BUILD_SHA}"

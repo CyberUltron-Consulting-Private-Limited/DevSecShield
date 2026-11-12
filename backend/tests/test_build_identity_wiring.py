@@ -259,6 +259,23 @@ def test_dirty_version_marking_edges(tmp_path):
     assert not isinstance(too_long, str) and too_long.returncode != 0 and "-dirty" in too_long.stderr
 
 
+@pytest.mark.parametrize("case", ["clean", "commit named"])
+def test_a_stray_DIRTY_SHA_in_the_environment_marks_nothing(tmp_path, case):
+    """PR #72 r7: DIRTY_SHA is the script's own finding (uncommitted changes, no DSS_BUILD_SHA). A DIRTY_SHA that the
+    caller's environment happens to export must not mark a clean build, or one whose commit the operator named."""
+    repo, head, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
+    extra = {"DIRTY_SHA": "x"}
+    if case == "commit named":
+        _dirty(repo, "untracked")
+        extra |= {"DSS_TAG": "t1", "DSS_BUILD_SHA": head}
+    proc = subprocess.run([str(repo / "scripts/deploy/build_images.sh"), "--only", "backend"], env={**env, **extra},
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    args = [a for a in _args(_builds(env)[-1], "--build-arg") if a.startswith("DSS_BUILD")]
+    version = head[:12] if case == "clean" else "t1"
+    assert args == [f"DSS_BUILD_SHA={head}", f"DSS_BUILD_VERSION={version}"], args
+
+
 def test_staging_default_tag_uses_the_same_dirty_rule(tmp_path):
     """Both default_tag()s (build_images.sh, staging.sh) count untracked files, like the commit check."""
     repo, head, env = _repo(tmp_path, "scripts/deploy/staging.sh", "scripts/deploy/build_images.sh", ".gitignore")
