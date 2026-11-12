@@ -173,16 +173,19 @@ def test_json_import_and_the_api_source(api, world):
     r = _import(api, json.dumps({"targets": rows}), fmt="json")
     assert r.status_code == 200 and r.json()["created"] == 3
     put = api("PUT", f"{INV}/targets", json={"source_name": "cmdb sync", "targets": [
-        {"external_id": "vm-1", "address": "10.9.0.1", "tags": {"env": "stage"}},  # takes over vm-1
+        {"external_id": "vm-1", "address": "10.9.0.1", "tags": {"env": "stage"}},  # the JSON import owns vm-1
         {"external_id": "vm-9", "address": "10.9.0.9"}]})
     assert put.status_code == 200, put.text
-    assert (put.json()["created"], put.json()["updated"], put.json()["missing"]) == (1, 1, 0)  # PUT never marks missing
+    out = put.json()
+    assert (out["created"], out["updated"], out["missing"], out["skipped"]) == (1, 0, 0, 1)  # PUT never marks missing
+    assert out["errors"] == [{"external_id": "vm-1", "error": "belongs to inventory source 'JSON import' (#1)"}]
     sources = api("GET", f"{INV}/sources").json()["sources"]
     assert {(s["kind"], s["name"]) for s in sources} == {("json", "JSON import"), ("api", "cmdb sync")}
     too_many = api("PUT", f"{INV}/targets", json={"source_name": "x", "targets": [{"address": "10.0.0.1"}] * 1001})
     assert too_many.status_code == 400
-    listing = api("GET", f"{INV}/targets", params={"tag": "env:stage"}).json()
-    assert [t["external_id"] for t in listing["targets"]] == ["vm-1"] and listing["total"] == 1
+    listing = api("GET", f"{INV}/targets", params={"tag_key": "env", "tag_value": "prod"}).json()
+    assert [t["external_id"] for t in listing["targets"]] == ["vm-1", "vm-2", "vm-3"] and listing["total"] == 3
+    assert api("GET", f"{INV}/targets", params={"tag_key": "Env"}).json()["total"] == 3  # keys are lower-cased
     assert api("GET", f"{INV}/targets", params={"q": "VM-9"}).json()["total"] == 1
 
 
@@ -230,7 +233,8 @@ def test_body_and_row_caps(api):
 
 
 def test_a_concurrent_insert_of_the_same_target_is_updated_not_duplicated(world, monkeypatch):
-    """Two imports race: ours sees nothing, the other inserts first; ON CONFLICT DO NOTHING + the update pass."""
+    """Two imports of one source race: ours sees nothing, the other inserts first; ON CONFLICT DO NOTHING + the update
+    pass.  Had another source inserted it first, it would own it: ours skips it (test_one_owner_per_external_id)."""
     engine, _ = world
     from backend.utilities.cbom_sources.fleet.inventory_sources import normalize as norm
 
@@ -243,23 +247,30 @@ def test_a_concurrent_insert_of_the_same_target_is_updated_not_duplicated(world,
         s.refresh(src)
         s.refresh(other)
         now = dt.datetime(2026, 11, 11, 12, 0)
-        real = store._existing
-        calls = {"n": 0}
+        real = store.existing
+        calls = {"n": 0, "racer": src}
 
         def racing(session, team_id, ids):
             calls["n"] += 1
-            if calls["n"] == 1:  # the other import commits between our read and our insert
-                store.upsert(session, team_id, other, [norm({"external_id": "h1", "address": "10.0.0.1"})], now,
-                             engine=None)
+            if calls["n"] == 1:  # another import commits between our read and our insert
+                store.upsert(session, team_id, calls["racer"], [norm({"external_id": ids[0], "address": "10.0.0.1"})],
+                             now, engine=None)
                 return {}
             return real(session, team_id, ids)
 
-        monkeypatch.setattr(store, "_existing", racing)
+        monkeypatch.setattr(store, "existing", racing)
         result = store.upsert(s, 1, src, [norm({"external_id": "h1", "address": "10.0.0.2"})], now, engine=None)
         s.commit()
         rows = s.exec(select(CbomInventoryTarget)).all()
         assert len(rows) == 1 and rows[0].address == "10.0.0.2" and rows[0].inventory_source_id == src.id
         assert (result.created, result.updated) == (0, 1)
+        # the racer is another source: it inserted first, so it owns h2; ours skips it and never duplicates it
+        calls.update(n=0, racer=other)
+        result = store.upsert(s, 1, src, [norm({"external_id": "h2", "address": "10.0.0.3"})], now, engine=None)
+        s.commit()
+        h2 = s.exec(select(CbomInventoryTarget).where(CbomInventoryTarget.external_id == "h2")).all()
+        assert len(h2) == 1 and h2[0].inventory_source_id == other.id and h2[0].address == "10.0.0.1"
+        assert (result.created, result.updated, result.skipped) == (0, 0, 1)
 
 
 def test_team_delete_removes_the_fleet_rows(api, world):

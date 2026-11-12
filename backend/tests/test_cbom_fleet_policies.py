@@ -382,11 +382,25 @@ def test_materializer_batches_sticky_defers_busy_sources_and_manages_the_schedul
         s.add(CbomCollectionJob(team_id=1, run_id=None, source_id=sources[0].id, node_id=node_id, kind="collect",
                                 status="pending", params={}))
         s.commit()
-    rows = [{"external_id": "h0", "address": "10.2.9.9", "tags": {"env": "prod", "team": "pay"}}]
-    api("PUT", f"{INV}/targets", json={"source_name": "api", "targets": rows})
+    # h0 moves to another address while sources[0] has an open job: the old address leaves at once (removal never
+    # waits; the job, made for the old list, is cancelled) and the new one waits for the next reconcile (pending)
+    rows = [{"external_id": f"h{i}", "address": "10.2.9.9" if i == 0 else f"10.2.{i // 250}.{i % 250 + 1}",
+             "tags": {"env": "prod", "team": "pay"}} for i in range(251)]
+    api("POST", f"{INV}/import", json={"format": "json", "content": json.dumps(rows)})
     busy = api("POST", f"{FLEET}/reconcile").json()
-    assert busy["deferred"] == 1 and busy["sources_updated"] == 0
-    assert "10.2.9.9" not in _managed(engine)[0].config["targets"]
+    assert busy["deferred"] == 1 and busy["sources_updated"] == 1, busy
+    first_source = _managed(engine)[0]
+    assert "10.2.0.1" not in first_source.config["targets"] and "10.2.9.9" not in first_source.config["targets"]
+    with Session(engine) as s:
+        job = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == sources[0].id)).one()
+        assert job.status == "cancelled"
+    h0 = next(t for t in api("GET", f"{INV}/targets").json()["targets"] if t["external_id"] == "h0")
+    assert h0["pending"] is True and h0["managed_source_id"] is None
+    placed = api("POST", f"{FLEET}/reconcile").json()  # the source is free now: the waiting address goes in
+    assert (placed["deferred"], placed["sources_updated"]) == (0, 1), placed
+    assert "10.2.9.9" in _managed(engine)[0].config["targets"]
+    h0 = next(t for t in api("GET", f"{INV}/targets").json()["targets"] if t["external_id"] == "h0")
+    assert h0["pending"] is False and h0["managed_source_id"] == sources[0].id
     with Session(engine) as s:
         sched = s.exec(select(CbomCollectionSchedule).where(CbomCollectionSchedule.policy_id == policy["id"])).one()
         assert sched.source_ids == [x.id for x in sources] and sched.include == {"servers": True}
@@ -398,11 +412,19 @@ def test_materializer_batches_sticky_defers_busy_sources_and_manages_the_schedul
         assert r.status_code == 201, r.text
     assert api("POST", "/1/cbom/sources/schedules", json={"name": "s21", "frequency": "daily", "time_of_day": "03:00",
                                                            "include": {"servers": True}}).status_code == 400
-    # the policy goes: its idle sources and its schedule go; the busy one waits for its job
+    # the policy goes: its sources and its schedule go, a busy one too (its open job is cancelled: nothing a policy
+    # no longer collects is collected)
+    with Session(engine) as s:
+        s.add(CbomCollectionJob(team_id=1, run_id=None, source_id=sources[1].id, node_id=node_id, kind="collect",
+                                status="pending", params={}))
+        s.commit()
     api("DELETE", f"{FLEET}/policies/{policy['id']}")
     gone = api("POST", f"{FLEET}/reconcile").json()
-    assert (gone["sources_removed"], gone["deferred"], gone["schedules_removed"]) == (2, 1, 1)
-    assert [s.id for s in _managed(engine)] == [sources[0].id]
+    assert (gone["sources_removed"], gone["deferred"], gone["schedules_removed"]) == (3, 0, 1), gone
+    assert _managed(engine) == []
+    with Session(engine) as s:
+        job = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.status == "pending")).all()
+        assert job == []
     assert api("GET", f"{INV}/targets", params={"limit": 1}).json()["targets"][0]["managed_source_id"] is None
 
 
@@ -462,10 +484,11 @@ def test_settings_never_scan_change_is_seen_by_the_next_evaluation(api, world, m
         settings.network_exclusions = [{"cidr": "10.2.0.1"}]
         s.add(settings)
         s.commit()
+    # the never-scan list is one of the evaluation's inputs: the next read sees its digest change and re-evaluates
+    # this small team in place, so the stored decision (and the SQL filter on it) is current at once
     listing = api("GET", f"{INV}/targets", params={"decision": "never_scan"}).json()
     assert listing["total"] == 1 and listing["targets"][0]["address"] == "10.2.0.1"
-    with Session(engine) as s:  # the cached decision catches up at the next reconcile
-        assert s.exec(select(CbomInventoryTarget).where(CbomInventoryTarget.address == "10.2.0.1")).one().decision["action"] == "collect"
+    assert listing["evaluation"]["stale"] is False
     api("POST", f"{FLEET}/reconcile")
     with Session(engine) as s:
         assert s.exec(select(CbomInventoryTarget).where(CbomInventoryTarget.address == "10.2.0.1")).one().decision["action"] == "never_scan"
