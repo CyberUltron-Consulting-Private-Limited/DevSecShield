@@ -8,16 +8,15 @@
 #   vars     STAGING_DIR              directory on the host (default /opt/devsecshield-staging) holding
 #                                     deploy/staging/.env, backend.env and certs/
 #
-# Triggers: every push to `staging` (a promotion from dev merged) builds THAT commit and deploys it, with the frontend
-# built for the staging API and its build exposed (expose_build). A manual run (which GitHub only offers from the
-# default branch) keeps its inputs; it deploys only with `deploy` ticked. Only the staging host is touched: the
-# `staging` environment's secrets, `staging.sh build/save/push`; nothing here knows about production.
-#
-# Build identity (CB-03): with expose_build the frontend names its commit in <meta name="zs-build">, so the merge
-# gate's G0 can compare it with the API's /health build on staging (DSS_EXPOSE_BUILD; takes effect with the CB-03
-# build-identity change).
+# Build identity (CB-03): with expose_build (default on) the frontend names its commit in <meta name="zs-build">, so
+# the merge gate's G0 can compare it with the API's /health build on staging; the API names it there when the host's
+# deploy/staging/.env sets DSS_EXPOSE_BUILD=1 (deploy/staging/README.md, "Build identity").
 name: Deploy staging
 
+# Triggers: every push to `staging` (a promotion from dev merged) builds THAT commit and deploys it, with the frontend
+# built for the staging API and its build exposed. A manual run (GitHub offers it from the default branch only) keeps
+# its inputs and deploys only with `deploy` ticked. Only the staging host is touched: the `staging` environment's
+# secrets and `staging.sh build/save/push`; nothing here knows about production.
 on:
   push:
     branches: [staging]
