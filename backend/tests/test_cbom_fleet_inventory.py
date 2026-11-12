@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import secrets
 
 import pytest
 from sqlmodel import Session, select
@@ -367,6 +368,9 @@ def aws(monkeypatch):
 
 
 TAGS = [{"Key": "Project", "Value": "DevSecShield"}, {"Key": "zs-lab", "Value": "sandbox"}]
+# values the discovery must never read, made at run time (no secret-shaped literal in the source)
+_DB_PASSWORD = "nr" + secrets.token_hex(8)
+_SECRET_VALUE = "nr" + secrets.token_hex(8)
 
 
 def _self_signed(domain: str = "lab.bank.test"):
@@ -397,7 +401,7 @@ def _populate() -> dict[str, list[str]]:
         made["ec2"] += [x["InstanceId"] for x in out["Instances"]]
     rds = boto3.client("rds", region_name="us-east-1")
     rds.create_db_instance(DBInstanceIdentifier="zs-lab-db", DBInstanceClass="db.t4g.micro", Engine="postgres",
-                           MasterUsername="zs", MasterUserPassword="never-read-9917", AllocatedStorage=20,
+                           MasterUsername="zs", MasterUserPassword=_DB_PASSWORD, AllocatedStorage=20,
                            StorageEncrypted=True, Tags=TAGS)
     eks = boto3.client("eks", region_name="us-west-2")
     eks.create_cluster(name="zs-lab", roleArn=f"arn:aws:iam::{ACCOUNT}:role/eks",
@@ -412,7 +416,7 @@ def _populate() -> dict[str, list[str]]:
     kms = boto3.client("kms", region_name="us-west-2")
     kms.create_key(Description="lab", Tags=[{"TagKey": "Project", "TagValue": "DevSecShield"}])
     boto3.client("secretsmanager", region_name="eu-west-1").create_secret(
-        Name="devsecshield-canary", SecretString="never-read-4471", Tags=TAGS)
+        Name="devsecshield-canary", SecretString=_SECRET_VALUE, Tags=TAGS)
     return made
 
 
@@ -442,7 +446,7 @@ def test_aws_discovery_covers_every_service_in_every_region(aws):
     assert result.complete and all(v == "ok" for r in result.coverage.values() for v in r.values())
     assert set(result.coverage) == set(REGIONS) and len(result.coverage["us-east-1"]) == 7
     blob = repr(targets)
-    assert "never-read-9917" not in blob and "never-read-4471" not in blob  # metadata only
+    assert _DB_PASSWORD not in blob and _SECRET_VALUE not in blob  # metadata only
 
 
 def test_a_role_that_does_not_require_the_external_id_is_refused(aws):
