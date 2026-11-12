@@ -14,6 +14,7 @@ import {
   type AdminTeam,
 } from "@/utils/backend_api";
 import { showErrorToast } from "@/utils/error-handler";
+import { parseCreditBalance } from "@/utils/adminCredits";
 import { newPasswordProblem, NEW_PASSWORD_HINT } from "@/utils/password_rules";
 import {
   Card,
@@ -392,9 +393,9 @@ function TeamsTable() {
   };
 
   const handleSave = (team_id: number) => {
-    const val = parseInt(creditInput, 10);
-    if (isNaN(val) || val < 0) {
-      showErrorToast(new Error("Please enter a valid non-negative number"), "Invalid credit balance");
+    const val = parseCreditBalance(creditInput);
+    if (val === null) {
+      showErrorToast(new Error("Enter a credit balance of 0 or more, for example 4984.79"), "Invalid credit balance");
       return;
     }
     updateMutation.mutate({ team_id, credit_balance: val });
@@ -456,9 +457,12 @@ function TeamsTable() {
                   <Input
                     type="number"
                     min={0}
+                    step="any"
+                    inputMode="decimal"
+                    aria-label={`Credit balance of ${team.team_name}`}
                     value={creditInput}
                     onChange={(e) => setCreditInput(e.target.value)}
-                    className="h-8 w-24 bg-zinc-900 border-zinc-700 text-zinc-200"
+                    className="h-8 w-32 bg-zinc-900 border-zinc-700 text-zinc-200"
                   />
                   <Button
                     size="sm"
