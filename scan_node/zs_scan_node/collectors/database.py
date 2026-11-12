@@ -17,6 +17,8 @@ import tempfile
 import time
 from typing import Any
 
+from zs_scan_node import tls_registry as R
+from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.collectors import ConfigError
@@ -105,12 +107,17 @@ def _tls_offered(ip: str, port: int, engine: str, never) -> tuple[bool, dict]:
 
 
 def _server_tls(ctx: JobContext, target: Target, port: int, engine: str) -> tuple[dict, int]:
-    """Full handshake details + certificate for the database port."""
+    """Full handshake details + certificate for the database port, then what the server accepts: every protocol
+    version, every suite per version, the TLS 1.3 groups (CB-12), each through the engine's own TLS upgrade
+    (PostgreSQL SSLRequest, MySQL CLIENT_SSL) and within ``DB_TLS_BUDGET`` handshakes and ``DB_TLS_MAX_S`` seconds."""
     checked_ip(target.ip, ctx.never_scan)
     proto = {"postgres": "starttls-postgres", "mysql": "starttls-mysql"}.get(engine, "tls")
     fh = T.s_client(target.ip, port, proto, None) if T.have_openssl() else T.python_handshake(target.ip, port, proto, None)
-    facts = {"negotiated_version": fh.version, "negotiated_cipher": fh.cipher, "negotiated_group": fh.group,
-             "peer_signature_type": fh.peer_sig_type}
+    code = R.suite_code(fh.cipher)
+    facts: dict[str, Any] = {"negotiated_version": fh.version,
+                             "negotiated_cipher": R.suite_name(code) if code is not None else fh.cipher,
+                             "negotiated_cipher_code": R.code_hex(code) if code is not None else None,
+                             "negotiated_group": E.iana_group(fh.group), "peer_signature_type": fh.peer_sig_type}
     n = 0
     for i, der in enumerate(fh.certs_der[:5]):
         for cert in load_certs(der):
@@ -118,7 +125,104 @@ def _server_tls(ctx: JobContext, target: Target, port: int, engine: str) -> tupl
             ctx.emit("certificate", target.label, f"{_where(target)}:{port}#chain[{i}]", name=f.get("subject", ""),
                      algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i, "role": engine})
             n += 1
+    facts.update(_accepted_tls(ctx, target, port, proto, fh, code))
     return facts, n
+
+
+DB_TLS_BUDGET = 64  # handshakes per database port: versions, then suites and groups (CB-12)
+DB_TLS_MAX_S = 60.0
+
+
+def _accepted_tls(ctx: JobContext, target: Target, port: int, proto: str, fh, code: int | None) -> dict[str, Any]:
+    used = [0]
+    deadline = time.monotonic() + DB_TLS_MAX_S
+
+    def send(hello: bytes, want_kex: bool = False):
+        if used[0] >= DB_TLS_BUDGET:
+            raise E.Stop(f"handshake budget ({DB_TLS_BUDGET})")
+        if time.monotonic() > deadline or ctx.should_stop():
+            raise E.Stop("time cap")
+        checked_ip(target.ip, ctx.never_scan)  # the list can change while the job runs
+        used[0] += 1
+        return T.probe(target.ip, port, proto, hello, 8.0, want_kex)
+
+    known: dict[str, set[int]] = {}
+    if fh.ok and code is not None and fh.version in T.VERSION_NAMES.values():
+        known.setdefault(fh.version, set()).add(code)
+    versions: dict[str, bool | None] = {}
+    for v in (T.SSL3, T.TLS10, T.TLS11, T.TLS12):
+        name = T.VERSION_NAMES[v]
+        if fh.ok and fh.version == name:
+            versions[name] = True
+            continue
+        try:
+            r = send(T.build_client_hello(v, T.LEGACY_SUITES))
+        except (E.Stop, T.ProbeError, T.StarttlsUnavailable):
+            versions[name] = None
+            continue
+        versions[name] = bool(r.ok and r.version == v)
+        if versions[name] and r.cipher is not None:
+            known.setdefault(name, set()).add(r.cipher)
+    if fh.ok and fh.version == "TLSv1.3":
+        versions["TLSv1.3"] = True
+    else:
+        try:
+            r = send(T.build_client_hello(T.TLS12, T.TLS13_SUITES, tls13=True, key_share_groups=[29]))
+            versions["TLSv1.3"] = bool(r.ok and (r.version == T.TLS13 or r.hrr))
+            if versions["TLSv1.3"] and r.cipher is not None:
+                known.setdefault("TLSv1.3", set()).add(r.cipher)
+        except (E.Stop, T.ProbeError, T.StarttlsUnavailable):
+            versions["TLSv1.3"] = None
+    complete: dict[str, bool] = {}
+    not_complete: list[str] = []
+    found_groups: list[int] = []
+    groups_done = True
+    kex: dict[str, Any] = {}
+    if versions.get("TLSv1.3"):
+        for offer in (E.PQ_OFFER, E.CLASSICAL13_OFFER):
+            p = E.tls13_groups(send, offer, None)
+            found_groups += p.found
+            groups_done = groups_done and p.complete
+            if not p.complete:
+                not_complete.append(f"TLS 1.3 groups: {p.reason}")
+        p = E.tls13_suites(send, known.get("TLSv1.3", set()), None)
+        known.setdefault("TLSv1.3", set()).update(p.found)
+        complete["TLSv1.3"] = p.complete
+        if not p.complete:
+            not_complete.append(f"TLSv1.3 suites: {p.reason}")
+    for v in E.VERSION_ORDER:
+        vname = T.VERSION_NAMES[v]
+        if versions.get(vname):
+            p = E.legacy_suites(send, v, known.get(vname, set()), None, kex)
+            known.setdefault(vname, set()).update(p.found)
+            complete[vname] = p.complete
+            if not p.complete:
+                not_complete.append(f"{vname} suites: {p.reason}")
+    codes = sorted({c for s in known.values() for c in s})
+    out: dict[str, Any] = {
+        "versions": versions,
+        "ciphers": [R.suite_name(c) for c in codes],
+        "cipher_suites": {v: [E.suite_entry(c) for c in sorted(known[v])] for v in sorted(known)},
+        "cipher_suites_complete": {v: complete.get(v, False) for v in sorted(known)},
+        "groups": sorted({R.group_name(g) for g in found_groups} | {R.group_name(g) for g in kex.get("curves") or ()}),
+        "groups_complete": bool(versions.get("TLSv1.3")) and groups_done,
+        "enumeration": {"complete": not not_complete, "not_complete": not_complete[:12]},
+        "handshakes_used": used[0] + 1, "handshake_budget": DB_TLS_BUDGET + 1,
+    }
+    if versions.get("TLSv1.3"):
+        out["pq_hybrid"] = any(g in E.PQ_OFFER for g in found_groups)
+        out["pq_groups"] = [R.group_name(g) for g in found_groups if g in E.PQ_OFFER]
+    weak: dict[str, set[str]] = {}
+    for vname, cs in known.items():
+        if vname != "TLSv1.3":
+            for c in cs:
+                for label in E.suite_classes(R.suite_name(c)):
+                    weak.setdefault(label, set()).add(R.suite_name(c))
+    if any(versions.get(T.VERSION_NAMES[v]) for v in E.VERSION_ORDER):
+        out["weak_ciphers_accepted"] = {k: sorted(v) for k, v in sorted(weak.items())}
+    if kex.get("dh_bits"):
+        out["dh_bits"] = kex["dh_bits"]
+    return out
 
 
 # ----------------------------------------------------------------------------- engines

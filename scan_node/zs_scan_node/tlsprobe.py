@@ -100,6 +100,19 @@ class ProbeError(Exception):
         self.detail = detail
 
 
+class NotTls(ProbeError):
+    """The server answered with bytes that are not a TLS record (an HTTP or SSH banner on a port listed as TLS)."""
+
+    def __init__(self, first: bytes) -> None:
+        shown = "".join(chr(b) if 32 <= b < 127 else "." for b in first[:16])
+        super().__init__("error", f"not a TLS response (answered '{shown}')")
+        self.first = shown
+
+
+# what openssl prints where it has no value: never stored as a group or a suite (CB-12, #103)
+SENTINELS = frozenset({"<NULL>", "(NONE)", "NONE", "(NULL)", "NULL"})
+
+
 class StarttlsUnavailable(Exception):
     """The service is up but does not offer TLS (no STARTTLS, Postgres 'N', MySQL without CLIENT_SSL)."""
 
@@ -135,8 +148,9 @@ def _ext(ext_type: int, body: bytes) -> bytes:
 
 def build_client_hello(version: int, suites: list[int], sni: str | None = None, groups: list[int] | None = None,
                        tls13: bool = False, key_share_groups: list[int] | None = None,
-                       fallback_scsv: bool = False) -> bytes:
-    """A ClientHello record.  ``version`` is the legacy client_version (TLS 1.3 uses 0x0303 + supported_versions)."""
+                       fallback_scsv: bool = False, versions13: list[int] | None = None) -> bytes:
+    """A ClientHello record.  ``version`` is the legacy client_version (TLS 1.3 uses 0x0303 + supported_versions;
+    ``versions13`` lists more versions in supported_versions than TLS 1.3 alone)."""
     rnd = os.urandom(32)
     session_id = os.urandom(32) if tls13 else b""
     cs = list(suites) + ([0x5600] if fallback_scsv else [])
@@ -156,7 +170,8 @@ def build_client_hello(version: int, suites: list[int], sni: str | None = None, 
             exts += _ext(13, struct.pack("!H", 2 * len(SIGALGS)) + b"".join(struct.pack("!H", s) for s in SIGALGS))
         exts += _ext(0xFF01, b"\x00")  # renegotiation_info (empty)
         if tls13:
-            exts += _ext(43, b"\x02" + struct.pack("!H", TLS13))
+            sv = versions13 or [TLS13]
+            exts += _ext(43, bytes([2 * len(sv)]) + b"".join(struct.pack("!H", v) for v in sv))
             exts += _ext(45, b"\x01\x01")  # psk_key_exchange_modes: psk_dhe_ke
             shares = b""
             for grp in key_share_groups or []:
@@ -260,7 +275,7 @@ def read_flight(sock: socket.socket, deadline: float, want_kex: bool = False) ->
         if rtype not in (20, 21, 22, 23) or rlen > MAX_RECORD:
             if result is not None:
                 return result
-            raise ProbeError("error", "not a TLS response")
+            raise NotTls(header)
         total += 5 + rlen
         if total > MAX_FLIGHT:
             if result is not None:
@@ -609,6 +624,8 @@ def parse_s_client(out: str) -> FullHandshake:
     m = re.search(r"^Negotiated TLS1\.3 group: (\S+)", out, re.M)
     if m:
         fh.group = m.group(1)
+    if fh.group and fh.group.strip().upper() in SENTINELS:
+        fh.group = None  # "<NULL>" when nothing was negotiated: not a group (CB-12)
     m = re.search(r"^Peer signature type: (\S+)", out, re.M)
     if m:
         fh.peer_sig_type = m.group(1)

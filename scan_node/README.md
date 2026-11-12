@@ -187,12 +187,21 @@ resolves once and applies the never-scan list, `checked_ip()` re-checks right be
 the certificate name stay the host name). `tests/test_network_gate.py` fails when a collector module opens
 sockets or HTTP clients any other way, so new collectors must use it.
 
-**Network.** Per open endpoint a capped list of handshakes (`handshakes_per_endpoint`): one full handshake
-(`openssl s_client`), raw ClientHello per protocol version, a TLS 1.3 post-quantum group probe (ML-KEM hybrid
-via HelloRetryRequest), TLS_FALLBACK_SCSV, and weak cipher classes. STARTTLS for SMTP, IMAP, LDAP, PostgreSQL,
-MySQL; SSH algorithm lists; RDP negotiation; SQL Server PRELOGIN encryption flag. Connections are rate-limited
-(connections per second, parallel per server), the never-scan list and the stop-all switch apply live, and work
-stops at the end of the scan window.
+**Network.** Per open endpoint a capped list of handshakes (`handshakes_per_endpoint`, 128 for new teams): one full
+handshake (`openssl s_client`), raw ClientHello per protocol version, a TLS 1.3 post-quantum group probe (ML-KEM
+hybrid via HelloRetryRequest), TLS_FALLBACK_SCSV, weak cipher classes, then the enumeration of every suite each
+accepted version takes, every TLS 1.3 suite and group, and the TLS <= 1.2 curves (`tlsenum.py`; names and codes from
+the IANA registries in `tls_registry.py`). Each enumeration pass costs (accepted + 1) handshakes, (accepted + 2) for a
+legacy version (the 77-suite probe table first, then every other IANA suite); measured: a hardened TLS 1.2/1.3 server
+about 20, OpenSSL `ALL:@SECLEVEL=0` with RSA + ECDSA certificates (69 suites, 6 groups) 87. When the budget runs out
+the lists are marked incomplete (`enumeration`, `cipher_suites_complete`), never a coverage gap: the checks that judge
+findings ran first. A port that does not speak TLS (it closes, or answers HTTP) gets a `not_tls` coverage row, never a
+TLS asset; a TLS server that only alerts is a TLS endpoint with `negotiation: no_common_parameters` (or `sni_required`)
+and an incomplete coverage row. SNI-only servers are read with the team's "Hostnames for SNI" (resolved once per job,
+within 20 s, first 200 names). STARTTLS for SMTP, IMAP, LDAP, PostgreSQL, MySQL (database sources read every accepted
+version and suite through the engine's own TLS upgrade, at most 64 handshakes); SSH algorithm lists; RDP negotiation;
+SQL Server PRELOGIN encryption flag. Connections are rate-limited (connections per second, parallel per server), the
+never-scan list and the stop-all switch apply live, and work stops at the end of the scan window.
 
 **IKE / VPN (UDP 500, 4500).** `ikeprobe.py` sends only the first message of an exchange: IKEv2 IKE_SA_INIT
 (RFC 7296) and IKEv1 Main/Aggressive Mode message 1 (RFC 2409); no SA is ever completed and no credential is used.
