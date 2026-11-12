@@ -53,19 +53,23 @@ export function refundMarks(data: unknown): Map<string, string> {
  * has not seen yet: a scan that is now "failure" (backend utilities/celery/celery_connection.py refunds it in the
  * status poll that sees it fail, or in the scan list's background update), or a CBOM sources run whose refunded total
  * changed (utilities/cbom_sources/jobs.py refund_job, as its jobs fail, expire or are cancelled). A scan already failed
- * when first seen also counts: that first read may be the poll that refunded it. One GET /teams per change. */
+ * when first seen also counts: that first read may be the poll that refunded it. One GET /teams per change.
+ * The marks of a query are merged, not replaced: a record that leaves a response (another page or filter of a list) and
+ * comes back unchanged is not a new refund, while a record that changes (a re-run scan that fails again) still is.
+ * No second GET /teams while one is on its way: that one is nearly always the onSettled refresh of the action that moved
+ * the credits, sent after the server answered it, whose refetched list then shows the refund (a CBOM "Cancel run" sent
+ * GET /teams twice). The marks are recorded either way, so the same refund does not refresh later. */
 export function creditBalanceWatcher(getClient: () => QueryClient) {
   const seen = new WeakMap<Pick<Query, "queryKey">, Map<string, string>>();
   return (data: unknown, query: Pick<Query, "queryKey">): void => {
     if (isCreditBalanceQuery(query)) return;
     const marks = refundMarks(data);
-    const before = seen.get(query);
-    seen.set(query, marks);
-    for (const [key, refunded] of marks) {
-      if (refunded && before?.get(key) !== refunded) {
-        void refreshCreditBalance(getClient());
-        return;
-      }
-    }
+    const before = seen.get(query) ?? new Map<string, string>();
+    const changed = [...marks].some(([key, refunded]) => refunded !== "" && before.get(key) !== refunded);
+    for (const [key, refunded] of marks) before.set(key, refunded);
+    seen.set(query, before);
+    if (!changed) return;
+    const client = getClient();
+    if (client.isFetching({ queryKey: CREDIT_BALANCE_QUERY_KEY }) === 0) void refreshCreditBalance(client);
   };
 }

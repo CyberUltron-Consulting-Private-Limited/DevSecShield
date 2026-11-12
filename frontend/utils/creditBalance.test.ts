@@ -5,7 +5,7 @@
  * refreshCreditBalance (utils/creditBalance.ts) when it settles.
  * PR #67 review: a re-run (/reinitialize) refreshes too, so the balance follows the server whether or not the re-run
  * charges (it does once PR #57 merges); the guard's import detector is shared (utils/backendApiImports.ts) and follows
- * dynamic imports.
+ * dynamic imports; the watcher merges what it has seen and sends no second GET /teams while one is on its way.
  * Browser check: note the balance, start a SAST scan: it drops without a reload; cancel the scan: it comes back.
  * Run: npx --yes tsx utils/creditBalance.test.ts
  */
@@ -217,10 +217,12 @@ async function main() {
   const { makeQueryClient } = await import("./query_client");
   const app = makeQueryClient();
   let teamsFetches = 0;
+  let gate: Promise<void> | null = null; // while set, GET /teams has not answered yet
   const balanceView = new QueryObserver<Teams>(app, {
     queryKey: [...CREDIT_BALANCE_QUERY_KEY],
     queryFn: async () => {
       teamsFetches += 1;
+      if (gate) await gate;
       return [{ team_id: 13, team_credit_balance: 10 }];
     },
   });
@@ -266,6 +268,41 @@ async function main() {
   await app.refetchQueries({ queryKey: [...CREDIT_BALANCE_QUERY_KEY] });
   await settle();
   assert.equal(teamsFetches, 1, "refreshing the balance does not trigger itself");
+  // a record that leaves a response and comes back is not new: a paged or filtered list moving between windows sends no
+  // GET /teams for refunds it has already seen (PR #67 review: 20 in 20 polls of two alternating windows)
+  const paged = ["sast-conversations", 13, "page"];
+  const windowA = [1, 2, 3].map((id) => ({ id, scan_status: "failure" }));
+  const windowB = [4, 5, 6].map((id) => ({ id, scan_status: "failure" }));
+  assert.equal(await poll(paged, windowA), 1);
+  assert.equal(await poll(paged, windowB), 1, "other scans failed");
+  let alternating = 0;
+  for (let i = 0; i < 20; i++) alternating += await poll(paged, i % 2 ? windowB : windowA);
+  assert.equal(alternating, 0, "refunds seen before, seen again: no GET /teams");
+  // ... a record that changes still counts: a re-run scan that fails again was refunded again
+  assert.equal(await poll(paged, [{ id: 1, scan_status: "pending" }, ...windowB]), 0);
+  assert.equal(await poll(paged, [{ id: 1, scan_status: "failure" }]), 1, "re-run, failed again: refunded again");
+  // one GET /teams per change: a mutation's onSettled refreshes the balance and refetches the page, whose response then
+  // shows the refund the mutation made (one CBOM "Cancel run" sent GET /teams twice: browser QA of PR #67). While the
+  // balance is being fetched the watcher sends nothing, and still records what it saw.
+  const cancelled = ["cbom-sources", 13, "runs", "cancel"];
+  assert.equal(await poll(cancelled, { runs: [{ ...run(0), id: 20 }] }), 0);
+  let release!: () => void;
+  gate = new Promise<void>((resolve) => (release = resolve));
+  teamsFetches = 0;
+  const onSettled = refreshCreditBalance(app); // the Cancel run mutation settled: GET /teams is on its way
+  await app.fetchQuery({
+    queryKey: cancelled, queryFn: async () => ({ runs: [{ ...run(0.6, "cancelled"), id: 20 }] }), staleTime: 0,
+  });
+  await settle();
+  assert.equal(teamsFetches, 1, "the refund in the refetched runs list waits for the GET /teams already sent");
+  release();
+  gate = null;
+  await onSettled;
+  await settle();
+  assert.equal(teamsFetches, 1, "one GET /teams for one Cancel run");
+  assert.equal(await poll(cancelled, { runs: [{ ...run(0.6, "cancelled"), id: 20 }] }), 0, "recorded while it waited");
+  assert.equal(await poll(cancelled, { runs: [{ ...run(0.6, "cancelled"), id: 20 }, { ...run(0.4), id: 21 }] }), 1,
+    "the next refund refreshes again");
   stopBalance();
   // the scan pages use this client: the team layout makes it
   assert.match(read("app/[team_id]/layout.tsx"), /makeQueryClient\(\)/);
