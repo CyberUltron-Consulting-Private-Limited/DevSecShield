@@ -248,7 +248,8 @@ def fake_net(monkeypatch):
                  "auth.example.com": "203.0.113.12", "evil.example.com": "203.0.113.13",
                  "meta.example.com": "169.254.169.254", "local.example.com": "127.0.0.1",
                  "v6meta.example.com": "fd00:ec2::254", "mapped.example.com": "::ffff:127.0.0.1",
-                 "sink.example.com": "0.0.0.0", "v6sink.example.com": "::"}  # what DNS sinkholes answer
+                 "sink.example.com": "0.0.0.0", "v6sink.example.com": "::",  # what DNS sinkholes answer
+                 "zero8.example.com": "0.1.2.3", "nat64sink.example.com": "64:ff9b::"}  # the rest of 0.0.0.0/8, NAT64
     monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: [addresses[name]])
     monkeypatch.setattr(netutil, "http_client", lambda url, ip, never, **kw: _FakeClient(url, ip))
     return _FakeClient
@@ -277,7 +278,8 @@ def test_vault_credentials_reach_docker_hub_and_gitlab_token_services_only(fake_
 
 @pytest.mark.parametrize("realm_host", ["127.0.0.1", "169.254.169.254", "meta.example.com", "local.example.com",
                                         "v6meta.example.com", "mapped.example.com", "0.0.0.0", "sink.example.com",
-                                        "v6sink.example.com"])
+                                        "v6sink.example.com", "0.1.2.3", "[64:ff9b::]", "[::ffff:0.1.2.3]",
+                                        "zero8.example.com", "nat64sink.example.com"])
 def test_a_registry_cannot_send_the_node_to_loopback_or_link_local(fake_net, realm_host):
     reg = CI.Registry(_ctx(), CI.parse_ref("registry.example.com/app:1"), dict(CREDS), None)
     reg._client(reg.base + "/v2/")

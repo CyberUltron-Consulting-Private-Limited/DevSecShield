@@ -176,9 +176,12 @@ class Registry:
                 ip = netutil.resolve_checked(origin[1], self.ctx.never_scan)[0]
             except netutil.Blocked as exc:
                 if origin != self.origin and exc.entry == netutil.UNSPECIFIED:
-                    # the gate refuses 0.0.0.0/8 and :: whatever the list says; when the REGISTRY named that host it
-                    # is the registry steering the node to itself: report it as such, not as a never-scan skip
-                    self._refuse_internal(origin[1], _internal_address(exc.address or exc.what, self.registry_ip))
+                    # the gate refuses 0.0.0.0/8 and :: (also mapped and NAT64) whatever the list says; when the
+                    # REGISTRY named that host it is the registry steering the node to itself: always report it as
+                    # such, not as a never-scan skip
+                    where = exc.address or exc.what
+                    self._refuse_internal(origin[1], _internal_address(where, self.registry_ip)
+                                          or f"an address that reaches the node itself ({where})")
                 raise ImageError("skipped_never_scan", str(exc)) from None
             except OSError:
                 raise ImageError("unreachable", f"{origin[1]} does not resolve") from None
