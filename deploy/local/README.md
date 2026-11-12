@@ -39,16 +39,18 @@ Every machine that pulls an image (this one, and each scan-node machine) logs in
 | `dev` | the latest commit on `dev` (moves on every merge that changes more than docs) |
 | `staging` | the latest commit on `staging` |
 | `pr-<n>` | pull request `<n>` while it carries the label `publish-preview` (its latest head) |
-| `dev-<sha12>`, `staging-<sha12>`, `pr-<n>-<sha12>`, `manual-<sha12>` | one exact commit; never moves |
+| `dev-<sha12>`, `staging-<sha12>`, `pr-<n>-<sha12>`, `manual-<sha12>[-<hash>]` | one exact commit; written once, never moves |
 
-All six images of a tag come from the same commit: the moving tags change only after every image of the new commit is
-published. Which commit a tag is now:
+The moving tags (`dev`, `staging`, `pr-<n>`) move only after all six images of a new commit are published, and only
+forward (a re-run of an older run never moves them back). They still move **one image after another, over about
+20 seconds**, so a `pull` in that window can mix two commits. For a stack you rely on, **pin the immutable tag**: read
+it from the backend index and put it in `DSS_TAG`.
 
 ```sh
 docker buildx imagetools inspect ghcr.io/cyberultron-consulting-private-limited/devsecshield-backend:dev --raw
 ```
 prints the index: its `annotations` name the commit (`org.opencontainers.image.revision`) and the immutable tag
-(`org.opencontainers.image.version`), and `manifests` lists linux/amd64 and linux/arm64.
+(`org.opencontainers.image.version`, e.g. `dev-1a2b3c4d5e6f`), and `manifests` lists linux/amd64 and linux/arm64.
 
 The tags of a package are also listed on GitHub: the organisation's **Packages** page > `devsecshield-backend`.
 
@@ -176,7 +178,10 @@ Set in `deploy/local/.env`, then `docker compose -f deploy/local/docker-compose.
 AWS, step by step: put the collector identity in the four `CBOM_AWS_*` variables and restart; in **Cloud & Identity >
 AWS** download the CloudFormation template (it creates the read-only role `ZeroShieldCBOMReader` that trusts that
 account with the team's external id), deploy it in the account to scan, enter the role ARN and press **Validate
-connection**. Never commit those keys; `.env` is git-ignored.
+connection**. Never commit those keys; `.env` is git-ignored. The collector calls the customer's account at AWS for
+every service: it ignores `AWS_ENDPOINT_URL_S3` (here the local MinIO, for the product's own uploads). Images built
+before that fix (`pr-92-de22b950885a`, `pr-92-f4f9b8a92971`) sent the account's S3 calls to MinIO, so their CBOM shows
+no S3 buckets.
 
 Other scans: SAST, IaC and the SCA + SBOM chat need Amazon Bedrock and a Qdrant store (`QDRANT_*`, `LLM_MODEL`); without
 them they end as "failed". CBOM and AI-BOM code scans need neither.
@@ -197,7 +202,20 @@ On a test stack, `down -v` and start again; `deploy/staging/README.md` ("Rollbac
 
 The browser code calls the API at the address inlined when the frontend image was built: `http://localhost:8000`
 (Next.js `NEXT_PUBLIC_BACKEND_URL`; the code has no runtime setting for it). So the UI works in a browser on this
-machine. To use it from another computer's browser, build the frontend for this machine's address and use it instead:
+machine.
+
+**From another computer, no rebuild (recommended):** forward both ports over SSH, so the browser still uses
+`localhost`:
+
+```sh
+ssh -L 3000:localhost:3000 -L 8000:localhost:8000 <user>@<this machine>
+```
+
+then open http://localhost:3000 on that computer. Nothing changes on the stack (`UI_BIND`/`API_BIND` stay 127.0.0.1).
+
+**Alternative, a frontend built for this machine's address.** A plain-http origin other than `localhost` is not a
+secure context in the browser: features that need one fail (for example the IaC scan page, which calls
+`crypto.randomUUID()`, and copy to clipboard). Use it only behind TLS, or accept those gaps:
 
 ```sh
 docker build -t devsecshield-frontend:lan -f frontend/Dockerfile frontend \
@@ -208,7 +226,8 @@ docker build -t devsecshield-frontend:lan -f frontend/Dockerfile frontend \
 then point the `frontend` service at `devsecshield-frontend:lan` (a `docker-compose.override.yml` next to the compose
 file with `services: {frontend: {image: devsecshield-frontend:lan}}`, passed with a second `-f`), set `UI_BIND` and
 `API_BIND` to `0.0.0.0` and `CORS_ORIGINS` / `CBOM_PUBLIC_APP_URL` to `http://<address>:3000`. Once
-`publish-ghcr.yml` is on `main`, its manual run does the same in CI (inputs `ref` and `api_url`, tag `manual-<sha12>`).
+`publish-ghcr.yml` is on `main`, its manual run does the same in CI (inputs `ref` and `api_url`; for an `api_url`
+other than the default the tag is `manual-<sha12>-<8 hex of the URL's sha256>`, so two hosts never share a tag).
 
 ## Check where an image came from
 
@@ -227,6 +246,8 @@ platforms; the image labels `org.opencontainers.image.revision` / `.version` nam
 * `denied` / `unauthorized` on pull: log in (section 1); the token needs `read:packages` and SSO authorisation; your
   account needs read access to the repository.
 * `manifest unknown`: that tag was not published (a docs-only merge publishes nothing; a PR needs `publish-preview`).
+  A commit superseded by a newer push may never be published at all (only the newest waiting run on a branch runs),
+  and a run whose commit was overtaken by newer code publishes its immutable tags but leaves the moving tag alone.
 * Port already in use: stop what holds 3000, 8000 or 8025 (the frontend needs exactly 8000 for the API).
 * No mail: http://localhost:8025 shows every mail; `docker compose ... logs backend | grep -i smtp`.
 * A node stays offline: `docker logs zs-scan-node-<name>`; from the node machine `curl http://<address>:8000/health`;

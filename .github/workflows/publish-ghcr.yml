@@ -6,12 +6,15 @@
 #   push to dev / staging              <branch>-<sha12> and the moving tag <branch>
 #   pull request from THIS repository  pr-<n>-<head sha12> and pr-<n>, only while it carries the label publish-preview
 #     (labeled, synchronize, reopened) (fork pull requests never publish)
-#   workflow_dispatch (ref, api_url)   manual-<sha12>
+#   workflow_dispatch (ref, api_url)   manual-<sha12> (another api_url: manual-<sha12>-<8 hex of sha256(api_url)>)
 #
-# Jobs: meta decides (.github/ci/ghcr_meta.py) -> contexts proves no secret file can enter a build context ->
-# build pushes each image for each architecture BY DIGEST on a native runner -> merge joins the two digests into one
-# multi-architecture index under the immutable tag, checks both platforms are in it and attests it -> promote moves
-# the moving tag of every image only when all of them exist for the commit, so `dev` never mixes two commits.
+# Jobs: meta decides (.github/ci/ghcr_meta.py) -> exists checks which immutable tags are already there (all six: no
+# build at all) -> contexts proves no secret file can enter a build context -> build pushes each image for each
+# architecture BY DIGEST on a native runner -> merge joins the two digests into one multi-architecture index under the
+# immutable tag (first write wins: an existing tag is reused, never overwritten), checks both platforms and attests it
+# -> promote moves the moving tags once all six images exist for the commit, only while that commit is still the
+# newest that publishes (a re-run of an older run never moves them back), retrying each tag and rolling the moved
+# ones back when one cannot be moved. The six tags still move one after another (about 20 s): pin the immutable tag.
 #
 # Token: GITHUB_TOKEN only, no other secret. The jobs that can write packages run no repository script (only pinned
 # actions and the inline steps below): PR code runs only inside the image builds, which never see the registry login.
@@ -29,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Branch, tag or commit to build (published as manual-<sha12>)"
+        description: "Branch, tag or full 40-character commit SHA to build (published as manual-<sha12>)"
         type: string
         required: true
         default: dev
@@ -41,16 +44,19 @@ on:
 permissions: {}
 
 concurrency:
-  # One publishing run per branch / PR; a newer one cancels the older (moving tags only change in `promote`, at the
-  # very end). An event that does not publish (a `labeled` event for another label such as security-config-reviewed,
-  # a push to a PR without publish-preview) gets a group of its own, so it never cancels a running publish.
+  # One publishing run per branch, PR or manual (ref, api_url). On a PR a newer push cancels the older run; on dev and
+  # staging runs queue instead (GitHub keeps the newest pending one), so no run is killed while it moves the tags.
+  # An event that does not publish (a `labeled` event for another label, a push to a PR without publish-preview) gets
+  # a group of its own, so it never cancels a running publish.
   group: >-
-    publish-ghcr-${{ github.event.pull_request.number || github.ref }}-${{
+    publish-ghcr-${{ github.event.pull_request.number ||
+    (github.event_name == 'workflow_dispatch' && format('manual-{0}-{1}', inputs.ref, inputs.api_url)) ||
+    github.ref }}-${{
     (github.event_name != 'pull_request' ||
      (github.event.action == 'labeled' && github.event.label.name == 'publish-preview') ||
      (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'publish-preview')))
     && 'publish' || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   meta:
@@ -112,15 +118,66 @@ jobs:
         if: steps.decide.outputs.publish == 'true'
         env:
           PREFIX: ${{ steps.decide.outputs.prefix }}
+          API_URL: ${{ steps.decide.outputs.api_url }}
         run: |
           set -euo pipefail
           SHA=$(git -C target rev-parse HEAD)
           SHA="$SHA" python3 .github/ci/ghcr_meta.py tags | tee -a "$GITHUB_OUTPUT"
 
+  exists:
+    name: existing tags
+    needs: meta
+    if: >-
+      needs.meta.outputs.publish == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: read
+    outputs:
+      missing: ${{ steps.check.outputs.missing }}
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Which images already exist
+        id: check
+        # Immutable tags are written once. When all six exist (a re-run, the label added again, a reopened PR) nothing
+        # is built; promote still runs. A tag that cannot be read for any reason is built (merge decides again).
+        env:
+          REGISTRY: ${{ needs.meta.outputs.registry }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          COMPONENTS: backend frontend scan-worker dast-worker scan-node minio
+        run: |
+          set -uo pipefail
+          missing=""
+          for c in $COMPONENTS; do
+            ref="$REGISTRY/devsecshield-$c:$TAG"
+            if docker buildx imagetools inspect --raw "$ref" > /dev/null 2> "$RUNNER_TEMP/inspect.err"; then
+              echo "$ref exists: kept as it is"
+            else
+              echo "$ref: $(tail -n 1 "$RUNNER_TEMP/inspect.err")"
+              missing="$missing $c"
+            fi
+          done
+          missing="${missing# }"
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+          if [ -z "$missing" ]; then
+            echo "::notice::every image of $TAG exists already: nothing is built, the moving tag is checked"
+          fi
+
   contexts:
     name: build contexts
-    needs: meta
-    if: needs.meta.outputs.publish == 'true'
+    needs: [meta, exists]
+    if: >-
+      needs.meta.outputs.publish == 'true' && needs.exists.outputs.missing != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -138,10 +195,10 @@ jobs:
 
   build:
     name: build (${{ matrix.image.name }}, ${{ matrix.platform.arch }})
-    needs: [meta, contexts]
+    needs: [meta, exists, contexts]
     # The fork check is repeated here: this job can write packages, so it does not rely on meta's output alone.
     if: >-
-      needs.meta.outputs.publish == 'true' &&
+      needs.meta.outputs.publish == 'true' && needs.exists.outputs.missing != '' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 120
@@ -296,6 +353,10 @@ jobs:
 
       - name: Create the multi-architecture index
         id: index
+        # First write wins: an existing immutable tag is reused as it is (a re-run, a label added again), never
+        # overwritten with a rebuild of the same commit. The platform check runs on the planned index BEFORE the tag
+        # is written. Every index this job reports is attested below (also a reused one, in case its first run
+        # stopped before attesting it).
         env:
           NAME: ${{ matrix.name }}
           TAG: ${{ needs.meta.outputs.tag }}
@@ -303,23 +364,39 @@ jobs:
           SOURCE: ${{ needs.meta.outputs.source }}
         run: |
           set -euo pipefail
-          refs=()
-          for arch in amd64 arm64; do
-            f="$RUNNER_TEMP/digest/$arch"
-            [ -s "$f" ] || { echo "::error::no linux/$arch digest for $NAME"; exit 1; }
-            d=$(cat "$f")
-            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::bad digest for $arch: $d"; exit 1; }
-            refs+=("$IMAGE@$d")
-          done
-          docker buildx imagetools create \
-            --annotation "index:org.opencontainers.image.source=$SOURCE" \
-            --annotation "index:org.opencontainers.image.revision=$SHA" \
-            --annotation "index:org.opencontainers.image.version=$TAG" \
-            --annotation "index:org.opencontainers.image.title=devsecshield-$NAME" \
-            -t "$IMAGE:$TAG" "${refs[@]}"
-          docker buildx imagetools inspect --raw "$IMAGE:$TAG" > "$RUNNER_TEMP/index.json"
+          platforms_of() { jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(",")' "$1"; }
+          if docker buildx imagetools inspect --raw "$IMAGE:$TAG" > "$RUNNER_TEMP/index.json" 2> "$RUNNER_TEMP/inspect.err"; then
+            echo "::notice::$IMAGE:$TAG exists already: reused as it is (immutable tags are written once)"
+          elif grep -q ': not found' "$RUNNER_TEMP/inspect.err"; then
+            refs=()
+            for arch in amd64 arm64; do
+              f="$RUNNER_TEMP/digest/$arch"
+              [ -s "$f" ] || { echo "::error::no linux/$arch digest for $NAME"; exit 1; }
+              d=$(cat "$f")
+              [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::bad digest for $arch: $d"; exit 1; }
+              refs+=("$IMAGE@$d")
+            done
+            annotations=(
+              --annotation "index:org.opencontainers.image.source=$SOURCE"
+              --annotation "index:org.opencontainers.image.revision=$SHA"
+              --annotation "index:org.opencontainers.image.version=$TAG"
+              --annotation "index:org.opencontainers.image.title=devsecshield-$NAME"
+            )
+            docker buildx imagetools create --dry-run "${annotations[@]}" "${refs[@]}" > "$RUNNER_TEMP/planned.json"
+            planned=$(platforms_of "$RUNNER_TEMP/planned.json")
+            if [ "$planned" != "linux/amd64,linux/arm64" ]; then
+              echo "::error::the index for $IMAGE:$TAG would list [$planned], expected exactly linux/amd64 and linux/arm64"
+              exit 1
+            fi
+            docker buildx imagetools create "${annotations[@]}" -t "$IMAGE:$TAG" "${refs[@]}"
+            docker buildx imagetools inspect --raw "$IMAGE:$TAG" > "$RUNNER_TEMP/index.json"
+          else
+            cat "$RUNNER_TEMP/inspect.err"
+            echo "::error::cannot tell whether $IMAGE:$TAG exists (registry error above); nothing was written"
+            exit 1
+          fi
           digest="sha256:$(sha256sum "$RUNNER_TEMP/index.json" | cut -d' ' -f1)"
-          platforms=$(jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(",")' "$RUNNER_TEMP/index.json")
+          platforms=$(platforms_of "$RUNNER_TEMP/index.json")
           if [ "$platforms" != "linux/amd64,linux/arm64" ]; then
             echo "::error::$IMAGE:$TAG lists [$platforms], expected exactly linux/amd64 and linux/arm64"
             exit 1
@@ -336,48 +413,148 @@ jobs:
 
   promote:
     name: moving tags
-    needs: [meta, merge]
+    needs: [meta, exists, merge]
+    # After merge, or without it when every immutable tag already existed (a re-run: nothing was built).
     if: >-
-      needs.meta.outputs.publish == 'true' && needs.meta.outputs.moving != '' &&
+      !cancelled() && needs.meta.outputs.publish == 'true' && needs.meta.outputs.moving != '' &&
+      needs.exists.result == 'success' &&
+      (needs.merge.result == 'success' || (needs.merge.result == 'skipped' && needs.exists.outputs.missing == '')) &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
+      contents: read
+      pull-requests: read
       packages: write
     steps:
+      - name: Is this still the newest commit
+        id: fresh
+        # A moving tag only goes forward. If the branch (or the PR head) has moved on since this run started, and the
+        # newer commits change more than docs (so a newer run publishes them), this run leaves the moving tags alone:
+        # a re-run of an older run, or an older run that finishes last, never moves them back.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.ref_name }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ needs.meta.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            head=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)
+            where="PR #$PR"
+          else
+            head=$(gh api "repos/$REPO/commits/$BRANCH" --jq .sha)
+            where="$BRANCH"
+          fi
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::cannot read the head of $where ($head)"; exit 1; }
+          if [ "$head" = "$SHA" ]; then
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+            echo "$where is still at ${SHA:0:12}"
+            exit 0
+          fi
+          gh api "repos/$REPO/compare/$SHA...$head" > "$RUNNER_TEMP/compare.json"
+          status=$(jq -r .status "$RUNNER_TEMP/compare.json")
+          files=$(jq '.files | length' "$RUNNER_TEMP/compare.json")
+          code=$(jq '[.files[].filename | select((startswith("docs/") or endswith(".md")) | not)] | length' "$RUNNER_TEMP/compare.json")
+          # The same paths as this workflow's paths-ignore; the compare API lists at most 300 files.
+          if [ "$status" = ahead ] && [ "$code" = 0 ] && [ "$files" -lt 300 ]; then
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+            echo "$where is at ${head:0:12}, ahead of ${SHA:0:12} by docs only (no newer run publishes)"
+          else
+            echo "fresh=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$where is at ${head:0:12} ($status, $code non-doc file(s) since ${SHA:0:12}): the moving tags are left to the newer run; the immutable tags of ${SHA:0:12} stay published"
+          fi
+
       - name: Set up Docker Buildx
+        if: steps.fresh.outputs.fresh == 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GHCR
+        if: steps.fresh.outputs.fresh == 'true'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Point the moving tag at this commit's images
+      - name: Point the moving tags at this commit's images
+        if: steps.fresh.outputs.fresh == 'true'
+        # Records where every moving tag points first, moves them one by one (each a copy of the same index: same
+        # digest, same attestation), retries a failed move 3 times, and when one still fails points the tags it
+        # already moved back to where they were, so the set is never left half on a new commit by this step.
         env:
           REGISTRY: ${{ needs.meta.outputs.registry }}
           TAG: ${{ needs.meta.outputs.tag }}
           MOVING: ${{ needs.meta.outputs.moving }}
           COMPONENTS: backend frontend scan-worker dast-worker scan-node minio
         run: |
-          set -euo pipefail
-          digest_of() { docker buildx imagetools inspect --raw "$1" | sha256sum | cut -d' ' -f1; }
+          set -uo pipefail
+          digest_of() { # <ref>: sha256 of the manifest bytes; fails when it cannot be read
+            docker buildx imagetools inspect --raw "$1" > "$RUNNER_TEMP/m.json" 2> "$RUNNER_TEMP/m.err" || return 1
+            sha256sum "$RUNNER_TEMP/m.json" | cut -d' ' -f1
+          }
+          point() { # <tag ref> <source ref> <expected hex>: up to 3 attempts, each checked
+            local i
+            for i in 1 2 3; do
+              if docker buildx imagetools create -t "$1" "$2" && [ "$(digest_of "$1")" = "$3" ]; then return 0; fi
+              echo "::warning::attempt $i to point $1 at sha256:$3 failed"
+              if [ "$i" -lt 3 ]; then sleep $((i * 5)); fi
+            done
+            return 1
+          }
+          declare -A old want
+          for c in $COMPONENTS; do
+            img="$REGISTRY/devsecshield-$c"
+            if ! want[$c]=$(digest_of "$img:$TAG"); then
+              cat "$RUNNER_TEMP/m.err"
+              echo "::error::$img:$TAG cannot be read; no moving tag was changed"
+              exit 1
+            fi
+            if d=$(digest_of "$img:$MOVING"); then
+              old[$c]=$d
+            elif grep -q ': not found' "$RUNNER_TEMP/m.err"; then
+              old[$c]=none
+            else
+              cat "$RUNNER_TEMP/m.err"
+              echo "::error::$img:$MOVING cannot be read; no moving tag was changed"
+              exit 1
+            fi
+          done
+          moved=()
+          for c in $COMPONENTS; do
+            img="$REGISTRY/devsecshield-$c"
+            if [ "${old[$c]}" = "${want[$c]}" ]; then
+              echo "$img:$MOVING already = $TAG"
+              continue
+            fi
+            if point "$img:$MOVING" "$img@sha256:${want[$c]}" "${want[$c]}"; then
+              moved+=("$c")
+              continue
+            fi
+            echo "::error::$img:$MOVING could not be moved to $TAG; putting back the ${#moved[@]} tag(s) this run moved"
+            for m in "${moved[@]}"; do
+              mi="$REGISTRY/devsecshield-$m"
+              if [ "${old[$m]}" = none ]; then
+                echo "::warning::$mi:$MOVING did not exist before this run, so it stays at $TAG (imagetools cannot remove a tag)"
+              elif point "$mi:$MOVING" "$mi@sha256:${old[$m]}" "${old[$m]}"; then
+                echo "$mi:$MOVING is back at sha256:${old[$m]}"
+              else
+                echo "::error::$mi:$MOVING could not be put back to sha256:${old[$m]}; it points at $TAG"
+              fi
+            done
+            exit 1
+          done
           {
             echo "### Published ($TAG, moving tag $MOVING)"
             echo
             echo "| image | digest | platforms |"
             echo "|---|---|---|"
+            for c in $COMPONENTS; do
+              img="$REGISTRY/devsecshield-$c"
+              digest_of "$img:$MOVING" > /dev/null
+              platforms=$(jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(", ")' "$RUNNER_TEMP/m.json")
+              echo "| \`$img:$MOVING\` = \`$img:$TAG\` | \`sha256:${want[$c]}\` | $platforms |"
+            done
           } >> "$GITHUB_STEP_SUMMARY"
-          for c in $COMPONENTS; do
-            img="$REGISTRY/devsecshield-$c"
-            want=$(digest_of "$img:$TAG")
-            # One source index and no annotations: buildx copies its bytes, so the digest (and its attestation) is kept.
-            docker buildx imagetools create -t "$img:$MOVING" "$img:$TAG"
-            got=$(digest_of "$img:$MOVING")
-            [ "$got" = "$want" ] || { echo "::error::$img:$MOVING is sha256:$got, not $TAG's sha256:$want"; exit 1; }
-            platforms=$(docker buildx imagetools inspect --raw "$img:$MOVING" |
-              jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(", ")')
-            echo "| \`$img:$MOVING\` = \`$img:$TAG\` | \`sha256:$want\` | $platforms |" >> "$GITHUB_STEP_SUMMARY"
-          done

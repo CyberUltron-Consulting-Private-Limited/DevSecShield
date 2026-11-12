@@ -4,14 +4,17 @@
     ghcr_meta.py decide   reads the event from the environment, writes key=value lines (for $GITHUB_OUTPUT):
                           publish (true/false), reason, ref (what to check out), prefix, moving, api_url, owner,
                           registry, source
-    ghcr_meta.py tags     reads PREFIX and SHA (the commit actually checked out), writes sha and tag=<prefix>-<sha12>
+    ghcr_meta.py tags     reads PREFIX, SHA (the commit actually checked out) and API_URL, writes sha and
+                          tag=<prefix>-<sha12> (manual runs with another api_url: manual-<sha12>-<8 hex of its sha256>)
 
 Tag scheme:
     push to dev / staging                 <branch>-<sha12>, moving <branch>
     pull_request (labeled, synchronize, reopened) from THIS repository carrying the label publish-preview
                                           pr-<n>-<head sha12>, moving pr-<n>   (forks: never)
     workflow_dispatch (inputs ref, api_url)
-                                          manual-<sha12>, no moving tag
+                                          manual-<sha12>, or manual-<sha12>-<hash8> when api_url is not the default
+                                          (the frontend differs by api_url), no moving tag
+Immutable tags are written once: publish-ghcr.yml reuses an existing one and never overwrites it.
 
 Environment (set by the workflow from the event; never pasted into a shell script):
     EVENT, ACTION, REPO, OWNER, REF_NAME, SHA, PR_NUMBER, PR_HEAD_SHA, PR_HEAD_REPO, PR_LABELS (JSON list of names),
@@ -21,6 +24,7 @@ is an error (exit 1): the person who started the run should see it fail.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -32,6 +36,7 @@ DEFAULT_API_URL = "http://localhost:8000"
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
 API_URL_RE = re.compile(r"^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+SHORT_SHA_RE = re.compile(r"^[0-9a-f]{7,39}$")
 OWNER_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,38}$")
 
 
@@ -98,6 +103,9 @@ def decide() -> dict[str, str]:
         api_url = env("INPUT_API_URL") or DEFAULT_API_URL
         if not REF_RE.match(ref) or ".." in ref:
             raise InputError(f"input ref {ref!r}: a branch, tag or commit (letters, digits, . _ / -)")
+        if SHORT_SHA_RE.match(ref):
+            # actions/checkout takes anything but 40 hex characters as a branch or tag name.
+            raise InputError(f"input ref {ref!r} looks like an abbreviated commit: give the full 40-character commit")
         if not API_URL_RE.match(api_url):
             raise InputError(f"input api_url {api_url!r}: http(s)://host[:port], nothing else")
         return out | {"publish": "true", "reason": f"workflow_dispatch of {ref}", "ref": ref, "prefix": "manual",
@@ -108,11 +116,20 @@ def decide() -> dict[str, str]:
 def tags() -> dict[str, str]:
     prefix = env("PREFIX")
     sha = env("SHA")
+    api_url = env("API_URL") or DEFAULT_API_URL
     if not re.fullmatch(r"(dev|staging|manual|pr-[1-9][0-9]{0,6})", prefix):
         raise InputError(f"unexpected tag prefix {prefix!r}")
     if not SHA_RE.match(sha):
         raise InputError(f"unexpected commit {sha!r}")
-    return {"sha": sha, "tag": f"{prefix}-{sha[:12]}"}
+    if not API_URL_RE.match(api_url):
+        raise InputError(f"unexpected api_url {api_url!r}")
+    tag = f"{prefix}-{sha[:12]}"
+    if api_url != DEFAULT_API_URL:
+        if prefix != "manual":
+            raise InputError(f"only manual runs take another api_url ({prefix}, {api_url!r})")
+        # The frontend inlines the API URL: one tag per (commit, api_url), so two hosts never share a tag.
+        tag += "-" + hashlib.sha256(api_url.encode()).hexdigest()[:8]
+    return {"sha": sha, "tag": tag}
 
 
 def main(argv: list[str]) -> int:
