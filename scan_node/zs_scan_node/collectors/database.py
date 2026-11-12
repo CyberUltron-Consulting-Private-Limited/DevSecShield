@@ -204,14 +204,14 @@ def _accepted_tls(ctx: JobContext, target: Target, port: int, proto: str, fh, co
         "ciphers": [R.suite_name(c) for c in codes],
         "cipher_suites": {v: [E.suite_entry(c) for c in sorted(known[v])] for v in sorted(known)},
         "cipher_suites_complete": {v: complete.get(v, False) for v in sorted(known)},
-        "groups": sorted({R.group_name(g) for g in found_groups} | {R.group_name(g) for g in kex.get("curves") or ()}),
+        "groups": sorted({E.group_name(g) for g in found_groups} | {E.group_name(g) for g in kex.get("curves") or ()}),
         "groups_complete": bool(versions.get("TLSv1.3")) and groups_done,
         "enumeration": {"complete": not not_complete, "not_complete": not_complete[:12]},
         "handshakes_used": used[0] + 1, "handshake_budget": DB_TLS_BUDGET + 1,
     }
     if versions.get("TLSv1.3"):
         out["pq_hybrid"] = any(g in E.PQ_OFFER for g in found_groups)
-        out["pq_groups"] = [R.group_name(g) for g in found_groups if g in E.PQ_OFFER]
+        out["pq_groups"] = [E.group_name(g) for g in found_groups if g in E.PQ_OFFER]
     weak: dict[str, set[str]] = {}
     for vname, cs in known.items():
         if vname != "TLSv1.3":

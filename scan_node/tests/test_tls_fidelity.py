@@ -397,16 +397,19 @@ def test_registry_is_the_iana_registry_and_openssl_names():
     spec.loader.exec_module(gen)
     assert R.SUITES == gen.suites() and len(R.SUITES) == 356
     assert R.OPENSSL_NAMES == {c: v[1] for c, v in gen.openssl_names().items()}
-    assert R.GROUP_NAMES == gen.groups()
     assert R.suite_code("ECDHE-RSA-AES128-SHA") == R.suite_code("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA") == 0xC013
     assert set(T.CIPHERS) <= set(R.SUITES) and all(R.SUITES[c] == n for c, n in T.CIPHERS.items())
     assert R.suite_code("(NONE)") is None and R.suite_code(None) is None
 
 
-def test_registry_groups_are_algid_groups():
+def test_group_offers_and_names_come_from_algid():
     from zs_scan_node import algid_tables as A
 
-    assert R.GROUP_NAMES == dict(A.TLS_GROUPS)  # two tables from the same IANA registry agree code for code
+    # the PQ pass and the classical pass together offer exactly algid's TLS 1.3 offer, each group once
+    assert sorted(E.PQ_OFFER + E.CLASSICAL13_OFFER) == sorted(A.TLS13_OFFER_GROUPS)
+    assert E.PQ_OFFER == list(A.PQ_PROBE_GROUPS) and not set(E.PQ_OFFER) & set(E.CLASSICAL13_OFFER)
+    assert all(E.group_name(g) == A.TLS_GROUPS[g] for g in A.TLS13_OFFER_GROUPS)
+    assert E.group_name(0xFAFA) == "0xFAFA" and E.iana_group("prime256v1") == "secp256r1" and E.iana_group("<NULL>") is None
 
 
 def test_weak_classes_over_the_registry_are_the_node_rules():

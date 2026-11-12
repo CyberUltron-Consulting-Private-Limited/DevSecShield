@@ -428,7 +428,7 @@ class NetworkScan:
             # as the single PQ probe always read it: any answer decides; an error or no budget leaves it unknown
             facts["pq_hybrid"] = bool(pq.found) if pq.answered else None
             if pq.answered:
-                facts["pq_group"] = (T.GROUPS.get(pq.found[0]) or R.group_name(pq.found[0])) if pq.found else None
+                facts["pq_group"] = (T.GROUPS.get(pq.found[0]) or E.group_name(pq.found[0])) if pq.found else None
         elif mode != "fragile":
             facts["pq_hybrid"] = False
         # 4. downgrade protection
@@ -474,7 +474,7 @@ class NetworkScan:
                     more = E.tls13_groups(send, [g for g in E.PQ_OFFER if g not in pq.found], sni)
                     pq = E.Pass(found=pq.found + more.found, complete=more.complete, reason=more.reason, answered=True)
                 groups["pq"], groups_done["pq"] = pq.found, pq.complete
-                facts["pq_groups"] = [R.group_name(g) for g in pq.found]
+                facts["pq_groups"] = [E.group_name(g) for g in pq.found]
                 facts["pq_groups_enumerated"] = pq.complete
                 if not pq.complete:
                     not_complete.append(f"PQ groups: {pq.reason}")
@@ -512,7 +512,7 @@ class NetworkScan:
         facts["cipher_suites"] = {v: [E.suite_entry(c) for c in sorted(known[v])] for v in sorted(known)}
         facts["cipher_suites_complete"] = {v: complete.get(v, False) for v in sorted(known)}
         found_groups = [g for part in ("pq", "classical", "legacy") for g in groups.get(part, [])]
-        facts["groups"] = sorted({R.group_name(g) for g in found_groups})
+        facts["groups"] = sorted({E.group_name(g) for g in found_groups})
         facts["groups_complete"] = bool(groups_done) and all(groups_done.values()) and mode != "fragile"
         weak: dict[str, list[str]] = {}
         for vname, codes in known.items():

@@ -20,14 +20,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from zs_scan_node import algid_tables as A
 from zs_scan_node import tls_registry as R
 from zs_scan_node import tlsprobe as T
 
 TERMINAL_ALERTS = frozenset({"handshake_failure", "insufficient_security"})
-# PQ groups: today's probe groups first (the first PQ probe is the one the node always sent), then the newer codepoints
-PQ_OFFER = list(T.PQ_GROUPS) + [g for g in (0x0201, 0x0202, 0x0200, 0x11E9, 0x11EA, 0x11EE, 0x11EF) if g not in T.PQ_GROUPS]
-# classical TLS 1.3 groups (RFC 8446 4.2.7 and later registrations: FFDHE, brainpool tls13, GOST, SM2, bign)
-CLASSICAL13_OFFER = [29, 23, 24, 25, 30, 256, 257, 258, 259, 260, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]
+# TLS 1.3 groups, from algid (the one source of algorithm identity, CB-04): its post-quantum probe list, and every
+# other group its TLS 1.3 detection offer names (classical: x25519, NIST curves, FFDHE, brainpool tls13, GOST, SM2)
+PQ_OFFER = list(A.PQ_PROBE_GROUPS)
+CLASSICAL13_OFFER = [g for g in A.TLS13_OFFER_GROUPS if g not in set(A.PQ_PROBE_GROUPS)]
 # TLS <= 1.2 named curves (RFC 8422 and RFC 7027 brainpool), strongest-known first
 CURVES12_OFFER = [29, 23, 24, 25, 30, 26, 27, 28, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5,
                   4, 3, 2, 1]
@@ -186,7 +187,12 @@ def suite_entry(code: int) -> dict[str, str]:
 
 
 _OPENSSL_GROUPS = {"prime256v1": "secp256r1", "secp256r1": "secp256r1"}
-_GROUP_BY_LOWER = {n.lower(): n for n in R.GROUP_NAMES.values()}
+_GROUP_BY_LOWER = {n.lower(): n for n in A.TLS_GROUPS.values()}
+
+
+def group_name(code: int) -> str:
+    """The IANA name of a TLS supported group (algid's table); an unassigned codepoint is shown as its hex value."""
+    return A.TLS_GROUPS.get(code, f"0x{code:04X}")
 
 
 def iana_group(name: str | None) -> str | None:

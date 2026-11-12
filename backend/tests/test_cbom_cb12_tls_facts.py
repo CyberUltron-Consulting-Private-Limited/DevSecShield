@@ -96,7 +96,7 @@ def test_the_backend_suite_table_is_the_scan_node_table():
     data = json.loads((ROOT / "backend/utilities/cbom_sources/data/tls_cipher_suites.json").read_text())
     assert {int(k, 16): v["iana"] for k, v in data["suites"].items()} == reg.SUITES
     assert {int(k, 16): v["openssl"] for k, v in data["suites"].items() if "openssl" in v} == reg.OPENSSL_NAMES
-    assert {int(k): v for k, v in data["groups"].items()} == reg.GROUP_NAMES
+    assert "groups" not in data  # group names and codepoints come from algid only (CB-04 single source)
     assert data["sources"] == reg.SOURCES
     assert node_facts.iana_suite("ECDHE-RSA-AES128-SHA") == (0xC013, "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA")
     assert node_facts.iana_suite("TLS_AES_256_GCM_SHA384") == (0x1302, "TLS_AES_256_GCM_SHA384")
