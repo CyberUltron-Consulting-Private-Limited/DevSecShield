@@ -2,10 +2,11 @@
 
 Token signatures are checked by ``python-jose`` (already the app's JWT library; no hand-written crypto) against the
 IdP's published JWKS.  The ID token must be signed with an asymmetric algorithm the IdP's key declares (RS*/PS*/ES*;
-``none`` and HS* are refused, so a public key can never be used as an HMAC secret), and carry: ``iss`` = the
-configured issuer (exactly), ``aud`` containing our client id (and ``azp`` = our client id when there are several
-audiences), ``exp`` in the future and ``iat`` not in the future (with ``CLOCK_SKEW``), ``nonce`` = the one this
-browser's sign-in started with, and ``email`` with ``email_verified`` true.
+``none`` and HS* are refused, so a public key can never be used as an HMAC secret), and carry (all required):
+``iss`` = the discovery document's issuer, exactly (itself the configured issuer, a trailing "/" aside), ``aud``
+containing our client id (and ``azp`` = our client id when present or when there are several audiences), ``exp`` in
+the future, ``nbf`` (if any) and ``iat`` not in the future (each with ``CLOCK_SKEW``), ``sub``, ``nonce`` = the one
+this browser's sign-in started with, and ``email`` with ``email_verified`` true.
 
 Everything is fetched through ``http.py`` (no proxy, size and time caps, and, unless the operator listed the IdP's
 origin, https to public addresses only), so an owner's issuer URL cannot reach the server's own network.
@@ -94,6 +95,9 @@ def verify_id_token(doc: dict, id_token: str, *, issuer: str, client_id: str, no
     from jose import jwk, jwt
     from jose.exceptions import JOSEError
 
+    expected_issuer = doc.get("issuer") or ""
+    if not expected_issuer or expected_issuer.rstrip("/") != issuer.rstrip("/"):
+        raise OidcError("The issuer's discovery document names another issuer")
     header = _unverified_header(id_token)
     alg = header.get("alg")
     if alg not in ASYMMETRIC_ALGS:
@@ -110,16 +114,21 @@ def verify_id_token(doc: dict, id_token: str, *, issuer: str, client_id: str, no
             continue
         try:
             public = jwk.construct(key, algorithm=alg)
+            # iss: exactly the discovery document's issuer (checked equal to the configured one, which may end in
+            # "/").  python-jose checks exp / iat / aud / iss / sub only when present unless told to require them.
             claims = jwt.decode(id_token, public.to_dict(), algorithms=[alg], audience=client_id,
-                                issuer=issuer.rstrip("/"),
-                                options={"verify_at_hash": False, "leeway": int(CLOCK_SKEW.total_seconds())})
+                                issuer=expected_issuer,
+                                options={"verify_at_hash": False, "leeway": int(CLOCK_SKEW.total_seconds()),
+                                         "require_exp": True, "require_iat": True, "require_aud": True,
+                                         "require_iss": True, "require_sub": True})
             break
         except JOSEError:
             continue
     if claims is None:
         raise OidcError("The ID token's signature, issuer, audience or time is not valid")
     audiences = claims.get("aud") if isinstance(claims.get("aud"), list) else [claims.get("aud")]
-    if len(audiences) > 1 and claims.get("azp") != client_id:
+    azp = claims.get("azp")
+    if (len(audiences) > 1 or azp is not None) and azp != client_id:
         raise OidcError("The ID token was issued to another client (azp)")
     iat = claims.get("iat")
     if not isinstance(iat, (int, float)) or dt.datetime.fromtimestamp(iat, dt.timezone.utc).replace(tzinfo=None) > now + CLOCK_SKEW:

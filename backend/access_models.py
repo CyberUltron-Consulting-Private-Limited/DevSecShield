@@ -9,7 +9,7 @@ import datetime
 from typing import Dict
 
 from sqlalchemy import Index as _SaIndex
-from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Text, UniqueConstraint
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel
 
 __all__ = ["AuditEvent", "TeamSsoConfig", "TeamSsoDomain", "SsoLoginState", "SsoAssertionSeen", "SsoHandoff"]
@@ -53,6 +53,8 @@ class TeamSsoConfig(SQLModel, table=True):
     """One team's identity provider (OIDC or SAML).  Owners change it (team.sso.manage).  The OIDC client secret
     lives only in ``oidc_secret_encrypted`` (Fernet, cbom_sources.crypto) and is never returned."""
     __tablename__ = "teamssoconfig"
+    __table_args__ = (CheckConstraint("protocol IN ('oidc', 'saml')", name="ck_teamssoconfig_protocol"),
+                      CheckConstraint("default_role IN ('viewer', 'member')", name="ck_teamssoconfig_default_role"))
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(index=True, unique=True)
     protocol: str = Field(default="oidc", max_length=8)  # oidc | saml

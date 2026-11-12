@@ -23,7 +23,6 @@ import datetime as dt
 import hashlib
 import json
 import os
-import re
 import secrets
 import sys
 import time
@@ -122,7 +121,16 @@ class FakeIdp:
         header = {"kid": "k1", **self.next_header}
         key = self.next_key or self.pem
         alg = header.pop("alg", "RS256")
-        token = jwt.encode(claims, key, algorithm=alg, headers=header)
+        if alg.startswith("HS"):  # the forgery: python-jose itself refuses to HMAC with a PEM key, so by hand
+            import hmac as _hmac
+
+            def part(obj):
+                return base64.urlsafe_b64encode(json.dumps(obj).encode()).rstrip(b"=").decode()
+            signing_input = f"{part({'alg': alg, 'typ': 'JWT', **header})}.{part(claims)}"
+            mac = _hmac.new(key.encode() if isinstance(key, str) else key, signing_input.encode(), hashlib.sha256)
+            token = signing_input + "." + base64.urlsafe_b64encode(mac.digest()).rstrip(b"=").decode()
+        else:
+            token = jwt.encode(claims, key, algorithm=alg, headers=header)
         return {"access_token": "at", "id_token": token, "token_type": "Bearer"}
 
 
@@ -150,7 +158,7 @@ def world(tmp_path, monkeypatch):
             u = make_user(s, email, password_hash=get_hashed_password(PASSWORD))
             ids[email] = u.id
             join(s, team.id, u.id, role)
-        root = make_user(s, f"root@{DOMAIN}", superuser=True)
+        root = make_user(s, f"root@{DOMAIN}", superuser=True, password_hash=get_hashed_password(PASSWORD))
         ids["root"] = root.id
         s.add(TeamSsoConfig(team_id=team.id, protocol="oidc", enabled=True, jit=True, default_role="member",
                             oidc_issuer=ISSUER, oidc_client_id=CLIENT_ID))
@@ -370,8 +378,13 @@ def _password_login(client, codes, email):
     return client.post("/login", json={"email": email, "verification_code": codes[email], "password": PASSWORD})
 
 
-def test_enforced_sso_refuses_passwords_except_the_owners_break_glass(world, client):
+def test_enforced_sso_refuses_passwords_except_the_owners_break_glass(world, client, monkeypatch):
     engine, ids, _, codes = world
+    mailed = []
+
+    async def fake_mail(recipients, owner_email, ip, at_iso):
+        mailed.append((recipients, owner_email))
+    monkeypatch.setattr(auth_router, "send_break_glass_email", fake_mail)
     with Session(engine) as s:
         cfg = s.exec(select(TeamSsoConfig)).one()
         cfg.enforced = True
@@ -384,6 +397,11 @@ def test_enforced_sso_refuses_passwords_except_the_owners_break_glass(world, cli
     with Session(engine) as s:
         glass = s.exec(select(AuditEvent).where(AuditEvent.action == "auth.login.break_glass")).all()
     assert len(glass) == 1 and glass[0].actor_user_id == ids[OWNER]
+    assert mailed == [([OWNER], OWNER)]  # every owner of the team is told
+    with Session(engine) as s:
+        refusal = s.exec(select(AuditEvent).where(AuditEvent.action == "auth.login", AuditEvent.outcome == "denied",
+                                                  AuditEvent.actor_email == ADMIN)).all()
+    assert refusal and refusal[-1].details["reason"] == "sso required"
     ratelimit.reset_all()
     assert client.post("/send_code", json={"email": f"new@{DOMAIN}"}).status_code == 200
     ratelimit.reset_all()

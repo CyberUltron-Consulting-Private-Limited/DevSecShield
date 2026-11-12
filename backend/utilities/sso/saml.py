@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import copy
 import datetime as dt
+import re
 import secrets
 import zlib
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ BEARER = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
 EMAIL_FORMAT = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
 CLOCK_SKEW = dt.timedelta(seconds=120)
 MAX_RESPONSE_BYTES = 256 * 1024
+_FRACTION = re.compile(r"(\.\d+)")  # the fractional seconds of an xs:dateTime
 EMAIL_ATTRIBUTES = ("email", "mail", "emailaddress", "urn:oid:0.9.2342.19200300.100.1.3",
                     "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")
 
@@ -125,8 +127,10 @@ def _text(element) -> str:
 def _time(value: str | None, what: str) -> dt.datetime | None:
     if value is None:
         return None
+    # xs:dateTime may carry any number of fractional digits (ADFS writes 7); Python < 3.11 reads exactly 3 or 6
+    text = _FRACTION.sub(lambda m: "." + m.group(1)[1:7].ljust(6, "0"), value.strip(), count=1).replace("Z", "+00:00")
     try:
-        parsed = dt.datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        parsed = dt.datetime.fromisoformat(text)
     except ValueError:
         raise SamlError(f"{what} is not a valid time") from None
     if parsed.tzinfo is None:
@@ -218,8 +222,10 @@ def parse_response(saml_response_b64: str, *, idp_certs: list[str], idp_entity_i
         raise SamlError("The assertion is not valid yet (check the clocks)")
     if not_on_or_after is None or now - CLOCK_SKEW >= not_on_or_after:
         raise SamlError("The assertion has expired")
-    audiences = [_text(a) for a in conditions.findall(f"{SAML}AudienceRestriction/{SAML}Audience")]
-    if sp_entity_id not in audiences:
+    # SAML core 2.5.1.4: one AudienceRestriction lists alternatives (OR); several restrictions must all hold (AND)
+    restrictions = conditions.findall(SAML + "AudienceRestriction")
+    if not restrictions or any(sp_entity_id not in [_text(a) for a in r.findall(SAML + "Audience")]
+                               for r in restrictions):
         raise SamlError("The assertion is meant for another service (audience)")
 
     subject = assertion.find(SAML + "Subject")

@@ -38,8 +38,13 @@ router = APIRouter(tags=["sso"])
 access = Access(lambda: get_db())  # route policies (utilities/rbac), bound to this module's get_db (tests replace it)
 read_limiter = RateLimiter("sso.config.read", times=60, seconds=60)
 write_limiter = RateLimiter("sso.config.write", times=20, seconds=60)
-flow_limiter = RateLimiter("sso.flow", times=30, seconds=60, key_func=ip_key)
-exchange_limiter = RateLimiter("sso.exchange", times=20, seconds=60, key_func=ip_key)
+# Per client address, per route.  Sized for a company's sign-ins behind one NAT egress address at 9 a.m. (each sign-in
+# is one discover, one start, one callback or ACS and one exchange); a single shared bucket would allow ~10 a minute.
+discover_limiter = RateLimiter("sso.discover", times=120, seconds=60, key_func=ip_key)
+start_limiter = RateLimiter("sso.start", times=120, seconds=60, key_func=ip_key)
+callback_limiter = RateLimiter("sso.callback", times=120, seconds=60, key_func=ip_key)
+metadata_limiter = RateLimiter("sso.metadata", times=30, seconds=60, key_func=ip_key)
+exchange_limiter = RateLimiter("sso.exchange", times=120, seconds=60, key_func=ip_key)
 PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
 
 
@@ -147,14 +152,25 @@ async def superuser_verify_sso_domain(domain_id: int, request: Request):
 # ------------------------------------------------------------------------------------------- sign-in
 
 @router.get("/sso/discover", summary="Does this address sign in with single sign-on?",
-            dependencies=[Depends(flow_limiter), public("tells the sign-in page whether an address uses SSO")])
+            dependencies=[Depends(discover_limiter), public("tells the sign-in page whether an address uses SSO")])
 async def discover(email: Annotated[str, Query(max_length=254)]):
     return await run_in_threadpool(SSO.discover, get_db(), email)
 
 
+def _cookie_attributes() -> dict:
+    """The binding cookie's attributes; a delete must repeat them (a SameSite=None; Secure cookie is not replaced by
+    a Set-Cookie without Secure).  SameSite=None: the SAML IdP comes back with a cross-site POST, which a Lax cookie
+    would not join.  The cookie is only a random value checked against the server-side state; it grants nothing."""
+    try:
+        secure = SSO.cookie_secure()
+    except SSO.SsoUnavailable:
+        secure = True
+    return {"path": "/sso/", "httponly": True, "secure": secure, "samesite": "none" if secure else "lax"}
+
+
 def _back_to_app(fragment: str) -> RedirectResponse:
     response = RedirectResponse(f"{SSO.app_url()}/sso/complete#{fragment}", status_code=303, headers=PRIVATE)
-    response.delete_cookie(SSO.COOKIE, path="/sso/")
+    response.delete_cookie(SSO.COOKIE, **_cookie_attributes())
     return response
 
 
@@ -164,7 +180,7 @@ def _refused(team_id: int, protocol: str, message: str, request: Request) -> Red
 
 
 @router.get("/sso/{team}/start", summary="Start single sign-on: to the identity provider",
-            dependencies=[Depends(flow_limiter), public("starts a sign-in; the IdP authenticates")])
+            dependencies=[Depends(start_limiter), public("starts a sign-in; the IdP authenticates")])
 async def start(team: int, cn: Annotated[str, Query(max_length=64)] = "",
                 redirect: Annotated[str, Query(max_length=512)] = "/home",
                 login_hint: Annotated[str | None, Query(max_length=254)] = None):
@@ -176,16 +192,12 @@ async def start(team: int, cn: Annotated[str, Query(max_length=64)] = "",
     except SSO.SsoRefused as exc:
         return _back_to_app("error=" + quote(str(exc)[:300], safe=""))
     response = RedirectResponse(url, status_code=303, headers=PRIVATE)
-    # SameSite=None: the SAML IdP comes back with a cross-site POST, which a Lax cookie would not join.  The cookie
-    # is only a random binding value checked against the server-side state; it grants nothing on its own.
-    secure = SSO.cookie_secure()
-    response.set_cookie(SSO.COOKIE, cookie, max_age=int(SSO.STATE_TTL.total_seconds()), path="/sso/", httponly=True,
-                        secure=secure, samesite="none" if secure else "lax")
+    response.set_cookie(SSO.COOKIE, cookie, max_age=int(SSO.STATE_TTL.total_seconds()), **_cookie_attributes())
     return response
 
 
 @router.get("/sso/{team}/oidc/callback", summary="OIDC: the identity provider returns here",
-            dependencies=[Depends(flow_limiter), public("the IdP's answer; checked against the browser's state")])
+            dependencies=[Depends(callback_limiter), public("the IdP's answer; checked against the browser's state")])
 async def oidc_callback(team: int, request: Request, state: Annotated[str, Query(max_length=64)] = "",
                         code: Annotated[str, Query(max_length=2048)] = "",
                         error: Annotated[str | None, Query(max_length=200)] = None):
@@ -202,7 +214,7 @@ async def oidc_callback(team: int, request: Request, state: Annotated[str, Query
 
 
 @router.post("/sso/{team}/saml/acs", summary="SAML: the identity provider posts the response here",
-             dependencies=[Depends(flow_limiter), public("the IdP's signed response; checked against the browser's state")])
+             dependencies=[Depends(callback_limiter), public("the IdP's signed response; checked against the browser's state")])
 async def saml_acs(team: int, request: Request, SAMLResponse: Annotated[str, Form(max_length=400_000)] = "",
                    RelayState: Annotated[str, Form(max_length=64)] = ""):
     try:
@@ -217,7 +229,7 @@ async def saml_acs(team: int, request: Request, SAMLResponse: Annotated[str, For
 
 
 @router.get("/sso/{team}/saml/metadata", summary="SAML service provider metadata",
-            dependencies=[Depends(flow_limiter), public("public SP metadata for the IdP administrator")])
+            dependencies=[Depends(metadata_limiter), public("public SP metadata for the IdP administrator")])
 async def saml_metadata(team: int):
     from backend.utilities.sso import saml
     try:

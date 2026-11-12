@@ -29,8 +29,8 @@ import secrets
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from fastapi import HTTPException, status
-from sqlalchemy import delete, func, update
+from fastapi import HTTPException
+from sqlalchemy import delete, func, text, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -390,6 +390,36 @@ def enforced_for(session: Session, email: str) -> Optional[TeamSsoConfig]:
     return cfg if cfg is not None and cfg.enforced else None
 
 
+ENFORCED_MESSAGE = "Your organisation requires single sign-on for {domain}: use \"Sign in with SSO\""
+
+
+def password_sign_in(engine: Engine, email: str, user: Optional[User]) -> tuple[bool, Optional[int]]:
+    """May this address sign in (or get an account) with a password?  ``(break_glass, team_id)``:
+
+    * no enforced SSO for the address's domain: ``(False, None)``;
+    * enforced, and ``user`` is an owner of the enforcing team (break-glass, so a broken IdP never locks the
+      owners out): ``(True, team_id)``; the caller audits and mails it;
+    * enforced otherwise (superusers excepted: platform administrators never sign in through a team's IdP):
+      ``SsoRefused`` with the message to show (HTTP 403).
+    """
+    with Session(engine) as session:
+        cfg = enforced_for(session, email)
+        if cfg is None:
+            return False, None
+        if user is not None and user.is_superuser:
+            return False, None
+        if user is not None and user.id is not None and is_owner(session, cfg.team_id, user.id):
+            return True, cfg.team_id
+        raise SsoRefused(ENFORCED_MESSAGE.format(domain=domain_of(email)))
+
+
+def team_owner_emails(engine: Engine, team_id: int) -> list[str]:
+    with Session(engine) as session:
+        rows = session.exec(select(User.email).join(TeamMembership, TeamMembership.user_id == User.id)
+                            .where(TeamMembership.team_id == team_id, TeamMembership.role == "owner")).all()
+    return sorted({e for e in rows if e})
+
+
 def is_owner(session: Session, team_id: int, user_id: int) -> bool:
     return session.exec(select(TeamMembership.role).where(TeamMembership.team_id == team_id,
                                                           TeamMembership.user_id == user_id)).first() == "owner"
@@ -411,6 +441,10 @@ def start(engine: Engine, team_id: int, *, redirect: Optional[str], client_nonce
 
     if not _SHA256_HEX.match(client_nonce_hash or ""):
         raise SsoRefused("Start single sign-on from the sign-in page")
+    try:
+        purge_expired(engine)  # an indexed DELETE per start keeps the round-trip tables small
+    except Exception as exc:  # never block a sign-in on housekeeping
+        log.warning("sso: purge of expired round-trip rows failed (%s)", type(exc).__name__)
     now = utcnow()
     with Session(engine) as session:
         cfg = _active_config(session, team_id)
@@ -422,11 +456,15 @@ def start(engine: Engine, team_id: int, *, redirect: Optional[str], client_nonce
         if cfg.protocol == "oidc":
             verifier, challenge = oidc.pkce_pair()
             state.pkce_verifier, state.nonce = verifier, secrets.token_urlsafe(32)
+            from backend.utilities.sso.http import SsoHttpError
             try:
                 doc = oidc.discovery(cfg.oidc_issuer or "")
+            except (oidc.OidcError, SsoHttpError) as exc:  # their messages are written to be shown
+                log.warning("sso start: discovery failed for team %s (%s)", team_id, type(exc).__name__)
+                raise SsoRefused(f"The identity provider cannot be used: {exc}") from None
             except Exception as exc:
                 log.warning("sso start: discovery failed for team %s (%s)", team_id, type(exc).__name__)
-                raise SsoRefused(f"The identity provider cannot be reached: {exc}") from None
+                raise SsoRefused("The identity provider cannot be reached: try again later") from None
             url = oidc.authorization_url(doc, client_id=cfg.oidc_client_id or "", redirect_uri=oidc_redirect_uri(team_id),
                                          state=state.id, nonce=state.nonce, challenge=challenge,
                                          scopes=cfg.oidc_scopes, login_hint=hint)
@@ -473,6 +511,10 @@ def _sign_in(session: Session, cfg: TeamSsoConfig, email: str, display_name: Opt
     domain = domain_of(email)
     if domain not in verified_domains(session, cfg.team_id):
         raise SsoRefused(f"{domain} is not a verified domain of this team, so its single sign-on cannot sign you in")
+    if session.get_bind().dialect.name == "postgresql":
+        # user.email has no unique constraint: two first sign-ins of one new address (two tabs) must not create
+        # two accounts.  Serialised per address for this transaction.
+        session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": "sso-jit:" + email})
     user = user_by_email(session, email)
     created = joined = False
     if user is not None and user.is_superuser:
@@ -505,6 +547,17 @@ def _sign_in(session: Session, cfg: TeamSsoConfig, email: str, display_name: Opt
                  actor_type="sso", object_type="account", object_id=user.id, ip=meta.get("ip"),
                  user_agent=meta.get("user_agent"), details={k: v for k, v in details.items() if v is not None})
     return user, details
+
+
+def _sign_in_once(session: Session, cfg: TeamSsoConfig, email: str, display_name: Optional[str], protocol: str,
+                  meta: dict, now: dt.datetime) -> tuple[User, dict]:
+    """``_sign_in``; a concurrent first sign-in of the same new address (two tabs) loses the unique-email race
+    cleanly instead of a 500."""
+    try:
+        return _sign_in(session, cfg, email, display_name, protocol, meta, now)
+    except IntegrityError:
+        session.rollback()
+        raise SsoRefused("Your account was being created by another sign-in at the same moment: start again") from None
 
 
 def _handoff(session: Session, state: SsoLoginState, user: User, now: dt.datetime) -> str:
@@ -549,7 +602,7 @@ def finish_oidc(engine: Engine, team_id: int, *, state_id: str, cookie: Optional
             if isinstance(exc, SsoHttpError):
                 raise SsoRefused(str(exc)) from None
             raise
-        user, _ = _sign_in(session, cfg, identity.email, identity.name, "oidc", meta, now)
+        user, _ = _sign_in_once(session, cfg, identity.email, identity.name, "oidc", meta, now)
         result = _handoff(session, state, user, now)
         session.commit()
         return result
@@ -576,7 +629,7 @@ def finish_saml(engine: Engine, team_id: int, *, relay_state: str, cookie: Optio
         _remember_assertion(session, team_id, cfg.saml_idp_entity_id or "", identity.assertion_id, identity.expires_at)
         display = " ".join(filter(None, [(identity.attributes.get("firstName") or [None])[0],
                                          (identity.attributes.get("lastName") or [None])[0]])) or None
-        user, _ = _sign_in(session, cfg, identity.email, display, "saml", meta, now)
+        user, _ = _sign_in_once(session, cfg, identity.email, display, "saml", meta, now)
         result = _handoff(session, state, user, now)
         session.commit()
         return result

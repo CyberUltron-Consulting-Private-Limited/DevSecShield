@@ -11,7 +11,7 @@ import logging
 from typing import Annotated
 
 import psycopg2
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
 from sqlmodel import Session, select, update
 from starlette.concurrency import run_in_threadpool
 
@@ -49,6 +49,8 @@ from backend.utilities.auth.auth_utils import (
 from backend.utilities.ratelimit import RateLimiter, ip_key, user_key
 from backend.utilities.rbac import audit
 from backend.utilities.rbac.policy import Access, public, request_meta
+from backend.utilities.auth.email import send_break_glass_email
+from backend.utilities.sso import service as sso_service
 
 log = logging.getLogger("backend.auth")
 
@@ -84,6 +86,34 @@ def _audit_auth(engine, request: Request, action: str, user: User | None, outcom
                          details={k: v for k, v in details.items() if v is not None})
     except Exception as exc:
         log.error("audit: %s not recorded (%s)", action, type(exc).__name__)
+
+
+def _require_password_allowed(engine, request: Request, email: str, user: User | None, action: str):
+    """The team id when ``user`` signs in through the owners' break-glass path; None when the address's domain does
+    not require SSO.  403 (audited) when it does and ``user`` is not an owner of the team that requires it."""
+    try:
+        break_glass, team_id = sso_service.password_sign_in(engine, email, user)
+    except sso_service.SsoRefused as refused:
+        _audit_auth(engine, request, action, user, "denied", email=email, reason="sso required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(refused)) from None
+    return team_id if break_glass else None
+
+
+def _break_glass(engine, request: Request, background: BackgroundTasks, user: User, team_id: int) -> None:
+    """An owner signed in with a password although the team requires SSO: audited, and every owner is mailed (after
+    the response, so a slow mail relay never delays the sign-in)."""
+    meta = request_meta(request)
+    try:
+        audit.record_now(engine, action="auth.login.break_glass", team_id=team_id, actor_user_id=user.id,
+                         actor_email=user.email, actor_type="user", object_type="account", object_id=user.id,
+                         ip=meta["ip"], user_agent=meta["user_agent"], details={"method": "password"})
+    except Exception as exc:
+        log.error("audit: break-glass sign-in not recorded (%s)", type(exc).__name__)
+    import datetime as _dt
+    at = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()
+    background.add_task(send_break_glass_email, sso_service.team_owner_emails(engine, team_id), user.email,
+                        meta["ip"], at)
+    log.warning("break-glass password sign-in user_id=%s team_id=%s", user.id, team_id)
 
 
 def _tokens(user: User) -> dict:
@@ -128,6 +158,7 @@ async def create_user(data: UserSignup, request: Request):
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="User with this email already exist"
                 )
+        await run_in_threadpool(_require_password_allowed, engine, request, data.email, None, "auth.signup")
         hashed_password = await run_in_threadpool(get_hashed_password, data.password)
         with Session(engine) as session:
             new_team = Team(
@@ -165,7 +196,7 @@ PASSWORD_CHANGE_MESSAGE = ("Choose a new password to continue: the password you 
 @router.post('/login', summary="Create access and refresh tokens for user",
              response_model=TokenSchema | PasswordChangeRequired,
              dependencies=[Depends(credentials_ip_limiter), public("sign-in: password and the mailed code")])
-async def login(form_data: UserLogin, request: Request):
+async def login(form_data: UserLogin, request: Request, background: BackgroundTasks):
     """
     Request Fields:
     - email: str
@@ -192,6 +223,9 @@ async def login(form_data: UserLogin, request: Request):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Incorrect email or password"
             )
+        # enforced SSO: refused before the password is even checked, except an owner of the enforcing team
+        sso_team_id = await run_in_threadpool(_require_password_allowed, engine, request, form_data.email, user,
+                                              "auth.login")
         old_hash = user.password
         is_valid, new_hash = await run_in_threadpool(verify_and_update_password, form_data.password, old_hash)
         if not is_valid:
@@ -221,6 +255,8 @@ async def login(form_data: UserLogin, request: Request):
             user = session.exec(select(User).where(User.id == user.id)).first()
             log.info("user logged in user_id=%s", user.id)
         await run_in_threadpool(_audit_auth, engine, request, "auth.login", user, method="password")
+        if sso_team_id is not None:
+            await run_in_threadpool(_break_glass, engine, request, background, user, sso_team_id)
         return _tokens(user)
     except Exception as e:
         raise _db_error(e, "login user") from None
