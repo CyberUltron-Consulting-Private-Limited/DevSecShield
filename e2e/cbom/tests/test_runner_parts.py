@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import subprocess
 
+import pytest
+
 from fakerun import FakeRun
 from harness import bundle, gate, preflight
 
@@ -46,8 +48,51 @@ def test_seal_redacts_writes_g17_and_deletes_the_secrets_file(tmp_path):
     assert "Pw-very-secret-1" not in (run / "steps" / "G1" / "note.txt").read_text()
     g17 = json.loads((run / "steps" / "G17" / "step.json").read_text())
     assert {c["id"]: c["verdict"] for c in g17["checks"]} == {
-        "G17/no_residual_secrets": "PASS", "G17/manifest_complete": "PASS", "G17/oracle_hash_in_manifest": "PASS",
-        "G17/runtime_le_budget": "PASS", "G17/customers_logged_out": "PASS"}
+        "G17/no_residual_secrets": "PASS", "G17/manifest_complete": "PASS", "G17/harness_committed": "PASS",
+        "G17/oracle_hash_in_manifest": "PASS", "G17/runtime_le_budget": "PASS", "G17/customers_logged_out": "PASS"}
+
+
+@pytest.mark.parametrize("harness, ok", [
+    ({"commit": "abc1234", "dirty": False, "untracked": []}, True),
+    ({"commit": "abc1234", "dirty": True, "untracked": []}, False),               # an edited judge or ledger
+    ({"commit": "abc1234", "dirty": False, "untracked": ["e2e/cbom/harness/x.py"]}, False),  # an untracked module
+    ({"commit": "abc1234"}, False),                                               # not recorded: not proven clean
+])
+def test_g17_fails_on_an_uncommitted_judge(tmp_path, harness, ok):
+    """Review 5878413538 minor: a gate PASS from an edited or untracked judge/ledger proves nothing."""
+    run = FakeRun(tmp_path).write()
+    bundle.manifest.update(run, harness=harness)
+    bundle.seal(run, None, "2026-11-12T09:00:00Z", budget_min=10**6)
+    g17 = {c["id"]: c["verdict"] for c in json.loads((run / "steps" / "G17" / "step.json").read_text())["checks"]}
+    assert g17["G17/harness_committed"] == ("PASS" if ok else "FAIL")
+
+
+def test_harness_state_lists_untracked_files_under_e2e_cbom(tmp_path):
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "e2e" / "cbom").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "e2e" / "cbom" / "a.py").write_text("x = 1\n")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "t"], check=True)
+    assert bundle.harness_state(repo / "e2e" / "cbom")["dirty"] is False
+    (repo / "e2e" / "cbom" / "new.py").write_text("y = 2\n")
+    state = bundle.harness_state(repo / "e2e" / "cbom")
+    assert state["dirty"] is False and state["untracked"] == ["e2e/cbom/new.py"]
+    (repo / "e2e" / "cbom" / "a.py").write_text("x = 3\n")
+    assert bundle.harness_state(repo / "e2e" / "cbom")["dirty"] is True
+
+
+def test_report_and_manifest_name_the_ledger_that_judged(tmp_path):
+    """Review 5878413538 minor: the bundle proves which ledger judged it (path + sha256)."""
+    import hashlib
+    import ledgers
+    run = FakeRun(tmp_path).write()
+    led = ledgers.write(tmp_path / "l.yaml", ledgers.POSTURE)
+    _, report = gate.judge(run, led)
+    want = hashlib.sha256(led.read_bytes()).hexdigest()
+    assert report["ledger_file"]["sha256"] == want and report["ledger_file"]["path"].endswith("l.yaml")
+    assert json.loads((run / "MANIFEST.json").read_text())["ledger"]["sha256"] == want
 
 
 def test_manifest_complete_needs_node_image_id_and_lab_containers(tmp_path):

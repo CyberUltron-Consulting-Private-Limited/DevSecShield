@@ -65,9 +65,11 @@ def load_views(run: Path, k: str) -> dict[str, dict[int, dict[str, Any]] | None]
 
 
 def ui_header_total(run: Path, k: str) -> int | None:
+    """The asset count the Results header shows. It must hold exactly one number: "25 of 26 assets found" claims a
+    26th asset the table does not show, so a header with two numbers is no total (None, and ui_total fails)."""
     doc = read_json(Path(run) / "ui" / f"assets-run{k}.json") or {}
-    m = re.search(r"(\d[\d,]*)", str(doc.get("total_text") or ""))
-    return int(m.group(1).replace(",", "")) if m else None
+    numbers = re.findall(r"\d[\d,]*", str(doc.get("total_text") or ""))
+    return int(numbers[0].replace(",", "")) if len(numbers) == 1 else None
 
 
 def _is_empty(value: Any) -> bool:

@@ -54,6 +54,15 @@ def images(run: Path) -> dict[str, Any]:
     return out
 
 
+def harness_state(here: Path) -> dict[str, Any]:
+    """The judge's own source: commit, tracked changes, and untracked files under e2e/cbom (an untracked module or
+    ledger can change a verdict as much as an edited one; review 5878413538)."""
+    status = _sh("git", "-C", str(here), "status", "--porcelain", "--untracked-files=all", "--", ".").splitlines()
+    return {"commit": _sh("git", "-C", str(here), "rev-parse", "HEAD"),
+            "dirty": any(not ln.startswith("??") for ln in status if ln.strip()),
+            "untracked": sorted(ln[3:] for ln in status if ln.startswith("??"))[:50]}
+
+
 def write_manifest(run: Path, sha: str, ref: str, started: str, node_image: str | None) -> dict[str, Any]:
     status_line = ""
     if Path(STACK_MD).is_file():
@@ -83,9 +92,7 @@ def write_manifest(run: Path, sha: str, ref: str, started: str, node_image: str 
         exp = read_json(Path(run) / "exports" / f"run{k}.cdx.json") or {}
         if exp.get("serialNumber"):
             serials[k] = exp["serialNumber"]
-    here = Path(__file__).resolve().parents[1]
-    harness = {"commit": _sh("git", "-C", str(here), "rev-parse", "HEAD"),
-               "dirty": bool(_sh("git", "-C", str(here), "status", "--porcelain", "--untracked-files=no", "--", "."))}
+    harness = harness_state(Path(__file__).resolve().parents[1])
     return manifest.update(run, sha=sha, ref=ref, tier="L", started=started, stack_status=status_line, harness=harness,
                            images=images(run), node_image={"ref": node_image, "id": node_digest},
                            lab={"containers": lab_containers(run), "images": gen.get("images") or {},
@@ -110,6 +117,8 @@ def seal(run: Path, secrets_file: Path | None, started: str, budget_min: float) 
     checks = [
         _check("no_residual_secrets", not problems, "no token, password or registration token left", problems[:20]),
         _check("manifest_complete", not _incomplete(man, need), list(need), _incomplete(man, need) or "complete"),
+        _check("harness_committed", _committed(man), "the judge and ledger are committed: harness.dirty false, no "
+               "untracked file under e2e/cbom", {k: (man.get("harness") or {}).get(k) for k in ("commit", "dirty", "untracked")}),
         _check("oracle_hash_in_manifest", bool((man.get("oracle") or {}).get("sha256")), "MANIFEST.oracle.sha256",
                (man.get("oracle") or {}).get("sha256") or "<none>"),
         _check("runtime_le_budget", elapsed is not None and elapsed <= budget_min * 60, f"<= {budget_min} min",
@@ -124,6 +133,11 @@ def seal(run: Path, secrets_file: Path | None, started: str, budget_min: float) 
     manifest.update(run, gate_seconds=None if elapsed is None else round(elapsed))
     print(json.dumps({"residual_secrets": problems[:5], "elapsed_min": None if elapsed is None else round(elapsed / 60, 1)}))
     return 0
+
+
+def _committed(man: dict[str, Any]) -> bool:
+    h = man.get("harness") or {}
+    return bool(h.get("commit")) and h.get("dirty") is False and not h.get("untracked")
 
 
 def _incomplete(man: dict[str, Any], need: tuple[str, ...]) -> list[str]:
