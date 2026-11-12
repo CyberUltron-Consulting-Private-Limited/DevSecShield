@@ -339,7 +339,7 @@ def _composite_component(suffix: str) -> str:
 
 def _pkix_family(name: str) -> tuple[str | None, str | None]:
     """(family, quantum) of a non-composite PKIX row from its name."""
-    for prefix, family in (("dhPop", "DH"), ("dh-sig", "DH"), ("ecdhPop", "EC"), ("eccsi", "EC"),
+    for prefix, family in (("dhPop", "DH"), ("dh-sig", "DH"), ("ecdhPop", "ECDH"), ("eccsi", "EC"),
                            ("RSASSA-PSS", "RSA"), ("ecdsa-with", "ECDSA")):
         if name.startswith(prefix):
             return family, "vulnerable"
@@ -448,6 +448,14 @@ def test_kmip_gost_names():
     kmip = (REPO / "scan_node/zs_scan_node/kmip_ttlv.py").read_text()
     for emitted in re.findall(r'\d+: "(GOST[^"]+)"', kmip):
         assert A.resolve(emitted) is not None, emitted
+    # A spelling without a year names no version (PKCS#11 CKK_GOSTR3410 holds 2001 and 2012-256 keys alike): the
+    # version-neutral rows. A spelling with a year keeps its version.
+    names = {"GOST R 34.10": "GOST R 34.10", "GOSTR3410": "GOST R 34.10", "GOST3410": "GOST R 34.10",
+             "GOST R 34.11": "GOST R 34.11", "GOSTR3411": "GOST R 34.11", "GOSTR3410-2012": "GOST R 34.10-2012",
+             "GOST R 34.10-2012": "GOST R 34.10-2012", "GOST R 34.11-2012": "GOST R 34.11-2012",
+             "Streebog": "GOST R 34.11-2012", "GOST3410-2012-256": "GOST R 34.10-2012-256"}
+    for text, name in names.items():
+        assert A.resolve(text).name == name, text
 
 
 def test_aws_spellings_and_enums():
@@ -611,6 +619,16 @@ def test_resolution_order():
     assert A.openssl_major_minor("OpenSSL 3.5.7 9 Jun 2026") == (3, 5)
     assert A.openssl_major_minor("OpenSSL 3.0.13 30 Jan 2024") == (3, 0)
     assert A.openssl_major_minor("LibreSSL 3.8.2") is None and A.openssl_major_minor("") is None
+
+
+def test_classical_family_labels_kept():
+    """The family labels classify.family gave these names before algid: the CBOM rules key on them (_key_rules)."""
+    expect = {"ECDSA": "ECDSA", "ecdsa": "ECDSA", "EC": "EC", "ECC": "EC", "id-ecPublicKey": "EC", "ECDH": "ECDH",
+              "EdDSA": "EDDSA", "DSA": "DSA", "RSA": "RSA", "DH": "DH", "SM2": "SM2", "Ed25519": "ED25519",
+              "X25519": "X25519", "ecdsa-with-SHA256": "ECDSA", "ecdhPop-static-sha256-hmac-sha256": "ECDH",
+              "1.2.840.10045.2.1": "EC", "ssh-rsa": "RSA", "ecdsa-sha2-nistp256": "ECDSA"}
+    for text, family in expect.items():
+        assert A.family_label(text) == family, text
 
 
 def test_namespaces_are_validated_and_codepoints_agree():
@@ -778,3 +796,269 @@ def test_generator_refuses_hand_edits_and_wraps_safely(tmp_path):
     namespace: dict = {}
     exec(compile(text, "algid_tables", "exec"), namespace)  # noqa: S102  (the generated module, from our sources)
     assert namespace["S_CLIENT_GROUPS_35"] == long_tuple
+
+
+# ----------------------------------------------------------------------------- PR-1b: gcp, kmip, pkcs11, jose
+def _extract(name: str) -> dict:
+    return json.loads((SRC / name).read_text())
+
+
+def _pq_name(text: str) -> str | None:
+    """The canonical PQ name a vendor spelling names, parsed here: ML_KEM_768 / ML-KEM-768 -> ML-KEM-768,
+    ML_DSA_65 -> ML-DSA-65, SLH_DSA_SHA2_128S -> SLH-DSA-SHA2-128s, HASH(-)SLH... -> HashSLH-DSA-...-with-SHA256."""
+    up = text.upper().replace("_", "-")
+    m = re.search(r"HASH-?(SLH-DSA-(SHA2|SHAKE)-(\d{3})([SF]))-(?:WITH-)?(SHA\d+|SHAKE\d+)", up)
+    if m:
+        return f"HashSLH-DSA-{m.group(2)}-{m.group(3)}{m.group(4).lower()}-with-{m.group(5)}"
+    m = re.search(r"HASH-?ML-DSA-(\d+)-(?:WITH-)?(SHA\d+)", up)
+    if m:
+        return f"HashML-DSA-{m.group(1)}-with-{m.group(2)}"
+    m = re.search(r"SLH-DSA-(SHA2|SHAKE)-(\d{3})([SF])", up)
+    if m:
+        return f"SLH-DSA-{m.group(1)}-{m.group(2)}{m.group(3).lower()}"
+    m = re.search(r"ML-(KEM|DSA)-(\d+)", up)
+    return f"ML-{m.group(1)}-{m.group(2)}" if m else None
+
+
+def _gcp_expected(value: str) -> str | None:
+    """The row a Cloud KMS value names, read from its spelling (each description says the same)."""
+    if value in ("CRYPTO_KEY_VERSION_ALGORITHM_UNSPECIFIED", "EXTERNAL_SYMMETRIC_ENCRYPTION"):
+        return None  # a placeholder; an external key manager's choice
+    if value == "GOOGLE_SYMMETRIC_ENCRYPTION":
+        return "AES-256-GCM"  # Cloud KMS docs, key purposes and algorithms
+    if value == "KEM_XWING":
+        return "X-Wing"
+    for pattern, row in ((r"AES_(\d+)_(GCM|CBC|CTR|KWP)", "AES-{0}-{1}"), (r"HMAC_SHA(\d+)", "HMAC-SHA{0}"),
+                         (r"RSA_(?:SIGN_PSS|SIGN_PKCS1|SIGN_RAW_PKCS1|DECRYPT_OAEP)_(\d+)(?:_SHA\d+)?", "RSA-{0}"),
+                         (r"KEM_ECDH_P(256|384)", "secp{0}r1")):  # ECDH keys: the key-agree rows
+        m = re.fullmatch(pattern, value)
+        if m:
+            return row.format(*m.groups())
+    m = re.fullmatch(r"EC_SIGN_(P256|P384|SECP256K1|ED25519)(?:_SHA\d+)?", value)
+    if m:
+        return {"P256": "P-256", "P384": "P-384", "SECP256K1": "secp256k1", "ED25519": "Ed25519"}[m.group(1)]
+    name = _pq_name(value)  # ML_KEM_*, PQ_SIGN_* (an external mu signs with the same parameter set)
+    assert name, f"no expectation for the Cloud KMS value {value}: add one"
+    return name
+
+
+def test_gcp_algorithms():
+    """Every Cloud KMS CryptoKeyVersionAlgorithm value names exactly the row its spelling names."""
+    algorithms = _extract("gcp-kms-algorithms.json")["algorithms"]
+    assert len(algorithms) >= 50
+    for value, _desc in algorithms:
+        found = A.gcp(value)
+        assert (found.name if found else None) == _gcp_expected(value), (value, found)
+        assert _same(found, A.gcp(value.lower())) and _same(found, A.gcp(f" {value}\n")), value
+        if found is None:
+            continue
+        assert found.matched_by == "enum", value
+        if value.startswith(("PQ_SIGN_", "ML_KEM_")):
+            assert found.quantum == "safe", value
+        elif value.startswith("RSA_"):
+            assert (found.family_label, found.key_size, found.quantum) == ("RSA", _bits(value), "vulnerable"), value
+        elif value.startswith("KEM_ECDH_"):
+            assert (found.family_label, found.primitive, found.key_size) == ("EC", "key-agree", _bits(value)), value
+        elif value.startswith(("AES_", "GOOGLE_", "HMAC_")):
+            assert found.primitive in SYMMETRIC and found.quantum is None, value
+            assert found.key_size == (_bits(value) if value.startswith("AES_") else found.key_size), value
+    assert A.gcp("GOOGLE_SYMMETRIC_ENCRYPTION").key_size == 256
+    assert A.gcp(None) is None and A.gcp(5) is None and A.gcp("NOPE") is None
+
+
+SYMMETRIC_KMIP = re.compile(r"^(DES|3DES|Blowfish|Camellia|CAST5|IDEA|MARS|RC\d|SKIPJACK|Twofish|One Time Pad|ChaCha20"
+                            r"|Poly1305|SHA3-|HMAC-SHA3-|HMAC-MD5|SHAKE-|ARIA|SEED|SM3|SM4)")
+
+
+KMIP_PQ_EXACT = {  # name -> (row, status, standard, stateful, components, nist_category)
+    "XMSS": ("XMSS", "standard", "SP 800-208", True, (), None),
+    "SPHINCS-256": ("SPHINCS-256", "pre-standard", None, False, (), None),  # no FIPS 205 credit
+    "McEliece": ("Classic McEliece", "candidate", None, False, (), None),
+    "McEliece-6960119": ("Classic McEliece", "candidate", None, False, (), None),
+    "McEliece-8192128": ("Classic McEliece", "candidate", None, False, (), None),
+    "X25519MLKEM768": ("X25519MLKEM768", "standard", "FIPS 203", False, ("X25519", "ML-KEM-768"), 3),
+    "SECP256R1MLKEM768": ("SecP256r1MLKEM768", "standard", "FIPS 203", False, ("P-256", "ML-KEM-768"), 3),
+}
+
+
+def test_kmip_enumeration():
+    """Every KMIP 3.0 Cryptographic Algorithm value; the scan node's own table (kmip_ttlv.ALGORITHM) agrees."""
+    rows = _extract("kmip-3.0-algorithms.json")["algorithms"]
+    assert len(rows) >= 93 and dict((n, v) for n, v in rows)["ML-DSA-65"] == 0x3D
+    for name, value in rows:
+        found = A.kmip(value)
+        assert found is None or found.matched_by == "enum", name
+        if SYMMETRIC_KMIP.match(name):
+            assert found is None, name
+        elif _pq_name(name):
+            assert found.name == _pq_name(name) and found.quantum == "safe", (name, found)
+        elif name in KMIP_PQ_EXACT:
+            row, status, standard, stateful, components, category = KMIP_PQ_EXACT[name]
+            assert (found.name, found.status, found.standard, found.stateful, found.components, found.nist_category) \
+                == (row, status, standard, stateful, components, category), (name, found)
+            if status != "standard":
+                assert found.parameter_set is None, name
+        else:  # classical keys and GOST/AES/HMAC: the identity the name resolves to
+            assert _same(found._replace(oid=None), A.resolve(name)._replace(oid=None)), (name, found)
+    assert {n for n, _v in rows} >= set(KMIP_PQ_EXACT)
+    assert A.kmip(0x2E).quantum == "vulnerable" and A.kmip(0x5D).name == "SecP256r1MLKEM768"
+    node = (REPO / "scan_node/zs_scan_node/kmip_ttlv.py").read_text()
+    table = dict(re.findall(r'(\d+): "([^"]+)"', node[node.index("ALGORITHM = {"):node.index("STATE = {")]))
+    spec = {v: n for n, v in rows}
+    assert {int(k): v for k, v in table.items()} == {k: spec[k] for k in map(int, table)}
+    assert A.kmip(None) is None and A.kmip("61") is None and A.kmip(True) is None
+
+
+PKCS11_EXACT = {  # every CKK_* with a row; the HMAC types are read from their names below
+    "CKK_RSA": "RSA", "CKK_DSA": "DSA", "CKK_DH": "DH", "CKK_X9_42_DH": "DH", "CKK_EC": "EC", "CKK_ECDSA": "EC",
+    "CKK_EC_EDWARDS": "EdDSA", "CKK_EC_MONTGOMERY": "XDH", "CKK_AES": "AES",
+    "CKK_GOSTR3410": "GOST R 34.10", "CKK_GOSTR3411": "GOST R 34.11", "CKK_GOST28147": "GOST 28147-89",
+    "CKK_HSS": "HSS", "CKK_XMSS": "XMSS", "CKK_XMSSMT": "XMSS^MT", "CKK_ML_KEM": "ML-KEM", "CKK_ML_DSA": "ML-DSA",
+    "CKK_SLH_DSA": "SLH-DSA",
+}
+
+
+def test_pkcs11_key_types_and_parameter_sets():
+    doc = _extract("pkcs11-3.2-constants.json")
+    ckk = {name: value for name, value in doc["key_types"]}
+    assert {ckk[n] for n in ("CKK_HSS", "CKK_XMSS", "CKK_XMSSMT", "CKK_ML_KEM", "CKK_ML_DSA", "CKK_SLH_DSA")} \
+        == set(range(0x46, 0x4C))  # PKCS#11 3.2 adds 0x46-0x4B
+    for name, value in ckk.items():
+        m = re.fullmatch(r"CKK_SHA_?(1|224|256|384|512)_HMAC", name)
+        want = f"HMAC-SHA{m.group(1)}" if m else PKCS11_EXACT.get(name)  # anything else has no row
+        found = A.pkcs11_key_type(value)
+        assert (found.name if found else None) == want, (name, found)
+        assert found is None or found.matched_by == "enum", name
+    families = {"CKK_DSA": ("DSA", "vulnerable"), "CKK_DH": ("DH", "vulnerable"), "CKK_EC": ("EC", "vulnerable"),
+                "CKK_EC_EDWARDS": ("EDDSA", "vulnerable"), "CKK_EC_MONTGOMERY": ("ECDH", "vulnerable"),
+                "CKK_GOSTR3410": ("EC", "vulnerable"), "CKK_GOSTR3411": (None, None), "CKK_AES": (None, None),
+                "CKK_ML_DSA": ("PQ", "safe"), "CKK_XMSS": ("PQ", "safe")}
+    for name, family in families.items():
+        found = A.pkcs11_key_type(ckk[name])
+        assert (found.family_label, found.quantum) == family, name
+    assert A.pkcs11_key_type(ckk["CKK_XMSS"]).stateful and A.pkcs11_key_type(ckk["CKK_HSS"]).stateful
+    for name, value in doc["parameter_sets"]:
+        group = "CKK_" + re.match(r"CKP_(ML_DSA|SLH_DSA|ML_KEM)_", name).group(1)
+        found = A.pkcs11_key_type(ckk[group], value)
+        assert found.name == _pq_name(name[4:]) == found.parameter_set, (name, found)
+    assert A.pkcs11_key_type(ckk["CKK_ML_DSA"], 0x99).name == "ML-DSA"  # an undefined set: the family
+    assert A.pkcs11_key_type(ckk["CKK_ML_DSA"], True).name == "ML-DSA"  # a bool is not CKP_ML_DSA_44 (1)
+    assert A.pkcs11_key_type(ckk["CKK_ML_DSA"], "2").name == "ML-DSA"
+    assert A.pkcs11_key_type(ckk["CKK_RSA"], 2).name == "RSA"  # parameter sets refine PQ types only
+    assert A.pkcs11_key_type(0x80000000) is None and A.pkcs11_key_type("0x4a") is None
+
+
+def _jose_alg_expected(name: str, desc: str) -> str | None:
+    """The row a registered JWS/JWE alg names, read from its registry description."""
+    if desc.startswith(("RSASSA", "RSAES", "RSA-OAEP")):
+        return "RSA"
+    m = re.match(r"ECDSA using (P-\d+|secp256k1)", desc)
+    if m:
+        return m.group(1)
+    if name in ("EdDSA", "Ed25519", "Ed448") or "FIPS 204" in desc:
+        return name
+    return None  # HMAC, key wrap, dir, PBES2, enc, ECDH-ES (the crv names the key), HPKE suites, none
+
+
+JOSE_KTY_FOR = {"RSA": "RSA", "EC": "EC", "ED25519": "OKP", "ED448": "OKP", "EDDSA": "OKP", "PQ": "AKP"}
+
+
+def test_jose_keys():
+    key_types = [r['"kty" Parameter Value'] for r in _rows("iana-jose-key-types.csv")]
+    assert set(key_types) == {"EC", "RSA", "oct", "OKP", "AKP"}
+    assert A.jose("EC").name == "EC" and A.jose("RSA").name == "RSA"
+    for kty in ("oct", "OKP", "AKP"):
+        assert A.jose(kty) is None, kty  # symmetric, or named only by its crv / alg
+    for row in _rows("iana-jose-curves.csv"):
+        kty = "EC" if row["Curve Name"].startswith(("P-", "secp")) else "OKP"
+        assert A.jose(kty, crv=row["Curve Name"]).name == row["Curve Name"], row["Curve Name"]
+        assert A.jose("RSA", crv=row["Curve Name"]).name == "RSA" and A.jose("oct", crv=row["Curve Name"]) is None
+    for row in _rows("iana-jose-algs.csv"):
+        name = row["Algorithm Name"]
+        want = _jose_alg_expected(name, row["Algorithm Description"])
+        assert A._JOSE_ALG.get(name) == want, name  # every registered alg, mapped or not
+        if want is None:
+            continue
+        own = JOSE_KTY_FOR[A.resolve(want).family_label]
+        found = A.jose(own, name)
+        assert (found.name, found.matched_by) == (want, "enum"), name
+        for kty in key_types:  # an alg of another family never renames the key: the key type answers
+            if kty != own:
+                other = A.jose(kty, name)
+                assert (other.name if other else None) == A._JOSE_KTY.get(kty), (kty, name)
+    for name in ("RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "RS1", "RSA1_5", "RSA-OAEP-256"):
+        assert A.jose("RSA", name).family_label == "RSA", name
+    for name in ("EdDSA", "Ed25519", "Ed448"):
+        assert A.jose("OKP", name).name == name, name
+    # The review's cases: kty is REQUIRED and names the key; alg/crv are refinements of that family only.
+    assert A.jose("RSA", "ML-DSA-65").name == "RSA" and A.jose("EC", "ML-DSA-65").name == "EC"
+    assert A.jose("oct", "ES256") is None and A.jose("oct", "ML-DSA-65") is None
+    assert A.jose("RSA", None, "Ed25519").name == "RSA" and A.jose("AKP", "RS256") is None
+    # crv names the key before alg does
+    assert A.jose("EC", "ES512", "P-256").name == "P-256" and A.jose("OKP", "Ed448", "Ed25519").name == "Ed25519"
+    assert A.jose("AKP", "ML-DSA-65").parameter_set == "ML-DSA-65" and A.jose("oct", "HS256") is None
+    assert A.jose("NOPE", "ML-DSA-65") is None and A.jose(None) is None and A.jose(b"EC") is None
+
+
+def _build_algid():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("build_algid_guards", REPO / "scripts/algid/build_algid.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)  # type: ignore[union-attr]
+    return gen
+
+
+def _json_edit(name: str, edit):
+    def apply(data: dict) -> None:
+        doc = json.loads(data[name])
+        edit(doc)
+        data[name] = json.dumps(doc).encode()
+    return apply
+
+
+def _csv_append(name: str, column: str, value: str):
+    def apply(data: dict) -> None:
+        import csv
+        import io
+
+        rows = list(csv.DictReader(io.StringIO(data[name].decode("utf-8"))))
+        rows.append({**rows[-1], column: value})
+        out = io.StringIO()
+        writer = csv.DictWriter(out, fieldnames=list(rows[0]), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+        data[name] = out.getvalue().encode("utf-8")
+    return apply
+
+
+def _curated(edit):
+    return _json_edit("curated.json", edit)
+
+
+@pytest.mark.parametrize("change, refusal", [
+    (_json_edit("gcp-kms-algorithms.json", lambda d: d["algorithms"].append(["PQ_SIGN_ML_DSA_99", "new"])),
+     "gcp: curated names differ"),
+    (_json_edit("kmip-3.0-algorithms.json", lambda d: d["algorithms"].append(["ML-DSA-99", 0x5E])),
+     "kmip: curated names differ"),
+    (_json_edit("pkcs11-3.2-constants.json", lambda d: d["key_types"].append(["CKK_NEW_PQ", 0x4C])),
+     "pkcs11.key_types: curated names differ"),
+    (_json_edit("pkcs11-3.2-constants.json", lambda d: d["parameter_sets"].append(["CKP_ML_DSA_99", 0x99])),
+     "PKCS#11 parameter sets differ"),
+    (_curated(lambda c: c["pkcs11"]["key_types"].update(CKK_ECDSA="P-256")), "PKCS#11 value 0x3 maps to"),
+    (_curated(lambda c: c["pkcs11"]["parameter_sets"]["CKK_ML_DSA"].update(CKP_ML_KEM_512="ML-KEM-512")),
+     "listed under CKK_ML_DSA"),
+    (_csv_append("iana-jose-curves.csv", "Curve Name", "brainpoolP256r1"), "jose.crv: curated names differ"),
+    (_csv_append("iana-jose-algs.csv", "Algorithm Name", "SLH-DSA-SHA2-128s"), "jose.alg: curated names differ"),
+    (_curated(lambda c: c["jose"]["alg"].update({"ML-DSA-99": "ML-DSA-87"})), "jose.alg: curated names differ"),
+], ids=["gcp value", "kmip row", "pkcs11 CKK", "pkcs11 CKP", "CKK alias disagrees", "CKP group", "jose crv",
+        "jose alg", "jose alg unregistered"])
+def test_generator_refuses_an_unlisted_source_value(change, refusal):
+    """The body's promise: a new enum value in any PR-1b source fails the build until curated.json lists it."""
+    gen = _build_algid()
+    data, _digest = gen.load_sources()
+    gen.build(dict(data))  # the committed sources build
+    changed = dict(data)
+    change(changed)
+    with pytest.raises(gen.SourceError, match=re.escape(refusal)):
+        gen.build(changed)
