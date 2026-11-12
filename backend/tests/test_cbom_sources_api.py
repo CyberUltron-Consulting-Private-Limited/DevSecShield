@@ -469,11 +469,13 @@ def test_settings_permissions_and_stop_all(api, world):
 def test_the_team_never_scan_list_takes_addresses_and_ranges_only(api, world):
     """The UI's team list refuses host names (NetworkTab rangeError); the API must too. On the node a listed name that
     does not resolve holds every target of every job of the team, so names belong in a server source's own list."""
-    for name in ("printer.corp.invalid", "Web-01.Corp."):
+    for name in ("printer.corp.invalid", "Web-01.Corp.", "printer", "localhost", "bücher.corp", "10.0.0.0-24"):
         r = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
             {"cidr": "10.20.99.0/24", "reason": "OT plant"}, {"cidr": name, "reason": "printer"}]})
-        assert r.status_code == 422, r.text
-        assert "takes addresses and ranges" in r.json()["detail"] and "Never scan" in r.json()["detail"]
+        assert r.status_code == 422, (name, r.text)
+        detail = r.json()["detail"]
+        assert f"{name!r} is not an address or range (it reads as a host name)" in detail, detail
+        assert "takes addresses and ranges" in detail and "Never scan" in detail
     got = api("GET", "/1/cbom/sources/settings").json()["settings"]
     assert got["network_exclusions"] == []  # nothing of the refused request was stored
     ok = api("PATCH", "/1/cbom/sources/settings", json={"network_exclusions": [
