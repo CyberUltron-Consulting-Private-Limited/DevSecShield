@@ -69,7 +69,7 @@ def ca_world(world, api, monkeypatch):
     from backend.utilities.cbom_sources.sshca import denials, trust
 
     denials.reset()
-    trust._krl_cache.clear()  # per-worker cache keyed by team id: each test has a fresh database
+    trust.reset()  # per-worker caches keyed by team and token ids: each test has a fresh database
     return engine, ids
 
 
@@ -374,7 +374,7 @@ def _trusted(api) -> list[str]:
     return [line for line in text.splitlines() if line and not line.startswith("#")]
 
 
-def test_rotation_trusts_both_keys_during_the_overlap(api, ca_world):
+def test_rotation_trusts_both_keys_during_the_overlap(api, ca_world, monkeypatch):
     engine, _ = ca_world
     s = setup_job(api)
     old = s["ca"]
@@ -399,11 +399,13 @@ def test_rotation_trusts_both_keys_during_the_overlap(api, ca_world):
     second = cert_route(api, s["token"], s["job_id"], s["lease"]).json()  # the source follows its lineage
     assert C.read_cert(second["certificate"]).signature_key_blob == C.public_blob(nxt["public_key"])
     assert second["serial"] == 1  # serials are per CA key
+    # time passes until the retired key's overlap ends (retired_at is written once, by promote, which moved the trust
+    # generation; the trusted-keys text is cached per generation until that moment: re-review 5874161772)
     with Session(engine) as session:
-        retired = session.get(CbomSshCa, old["id"])
-        retired.retired_at = _utcnow() - R.OVERLAP - dt.timedelta(seconds=1)
-        session.add(retired)
-        session.commit()
+        ends = session.get(CbomSshCa, old["id"]).retired_at + R.OVERLAP
+    monkeypatch.setattr(cbom_sshca, "utcnow", lambda: ends - dt.timedelta(seconds=1))
+    assert len(_trusted(api)) == 2
+    monkeypatch.setattr(cbom_sshca, "utcnow", lambda: ends + dt.timedelta(seconds=1))
     assert _trusted(api) == [f"{nxt['public_key']} zs-ca-{nxt['id']}-active"]
 
 

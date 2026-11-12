@@ -377,6 +377,7 @@ def _revoke_token(engine, team_id: int, user_id: int, token_id: int) -> dict:
         row = T.revoke_token(session, team_id, token_id, user_id, now)
         session.commit()
         session.refresh(row)
+        T.token_revoked(row)  # this worker's token cache: refused at once (other workers: within T.TOKEN_CACHE_S)
         return {"trust_token": T.public_token(row)}
 
 

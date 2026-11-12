@@ -17,6 +17,12 @@ Create Date: 2026-11-12 10:00:00.000000
 
 The downgrade reverses all of it (``serial_next`` is still there for SQLite and is advanced past the sequence, so
 going back to r6f14sshca001 cannot reuse a serial).
+
+PostgreSQL: both directions run with ``lock_timeout`` 5 s (``set_config(…, is_local)``, i.e. ``SET LOCAL``; the value
+before is put back at the end, as the migrations of one run share a transaction).  ``cbomscannode`` is read and
+written by every scan node's poll: when a long transaction holds a conflicting lock, the index build fails after 5 s
+(run the migration again later) instead of waiting in the lock queue with every node request queued behind it
+(architecture re-review 5874161772).
 """
 from typing import Sequence, Union
 
@@ -41,8 +47,19 @@ _issued = sa.table("cbomsshcertissued", sa.column("serial", sa.BigInteger()))
 _ca = sa.table("cbomsshca", sa.column("serial_next", sa.BigInteger()))
 
 
+LOCK_TIMEOUT = "5s"
+
+
 def _pg() -> bool:
     return op.get_bind().dialect.name == "postgresql"
+
+
+def _lock_timeout(value: str) -> str:
+    """Set this transaction's lock_timeout (PostgreSQL); returns the value it had."""
+    bind = op.get_bind()
+    before = bind.execute(sa.select(sa.func.current_setting("lock_timeout"))).scalar()
+    bind.execute(sa.select(sa.func.set_config("lock_timeout", value, True)))
+    return str(before)
 
 
 def _highest_serial():
@@ -52,6 +69,7 @@ def _highest_serial():
 
 def upgrade() -> None:
     """Upgrade schema."""
+    before = _lock_timeout(LOCK_TIMEOUT) if _pg() else None
     if _pg():
         start = op.get_bind().execute(sa.select(sa.func.greatest(
             _highest_serial(), sa.func.coalesce(sa.select(sa.func.max(_ca.c.serial_next)).scalar_subquery(), 1) - 1)
@@ -124,10 +142,13 @@ def upgrade() -> None:
     )
     op.create_index('ix_cbomsshcatrustfetch_team_seen', 'cbomsshcatrustfetch', ['team_id', 'last_fetch_at'],
                     unique=False)
+    if before is not None:
+        _lock_timeout(before)
 
 
 def downgrade() -> None:
     """Downgrade schema."""
+    before = _lock_timeout(LOCK_TIMEOUT) if _pg() else None
     op.drop_index('ix_cbomsshcatrustfetch_team_seen', table_name='cbomsshcatrustfetch')
     op.drop_table('cbomsshcatrustfetch')
     op.drop_index(op.f('ix_cbomsshcatrusttoken_token_hash'), table_name='cbomsshcatrusttoken')
@@ -149,3 +170,5 @@ def downgrade() -> None:
         # r6f14sshca001 signs with serial_next again: move every CA past the serials the sequence handed out
         op.execute(sa.update(_ca).values(serial_next=sa.func.greatest(_ca.c.serial_next, _highest_serial() + 1)))
         op.execute(sa.schema.DropSequence(sa.Sequence(SEQUENCE)))
+    if before is not None:
+        _lock_timeout(before)

@@ -10,7 +10,8 @@ row: ``utilities/cbom_sources/sshca/issue.py``.  404 while ``CBOM_SSH_CA`` is of
 
 Answers: 200 the certificate; 400 refused (the reason); 404 not this node's job; 409 the lease is gone, or "Stop this
 job: …" (cancelled, source changed or disabled, a certificate of this run revoked); 503 + ``Retry-After`` when AWS KMS
-did not answer (the node retries).  Every refusal after authentication is audited and logged once per (node, job,
+did not answer (the node retries).  No transaction is open while KMS or Vault is called (``release``): the request's
+reads are committed first, and the lease is checked again once they answered, before anything is recorded.  Every refusal after authentication is audited and logged once per (node, job,
 reason) and minute (``sshca/denials.py``).
 """
 from __future__ import annotations
@@ -102,12 +103,29 @@ def _issue(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> d
         if reason:
             _denied(session, node, job_id, "job_must_stop", 409, job.source_id, ca_id)
             raise HTTPException(status_code=409, detail=f"Stop this job: {reason}")
+        released: list[bool] = []
+
+        def release() -> None:  # before a KMS or Vault call: end the read transaction (its connection goes back to
+            session.commit()    # the pool), so an outage holds no connection idle in a transaction
+            released.append(True)
+
+        source_id = job.source_id
         try:
-            minted = issue_for_job(session, node, job, source, now, via="refresh")
+            minted = issue_for_job(session, node, job, source, now, via="refresh", release=release)
+            if released:  # KMS or Vault answered: the job may have been cancelled or lost meanwhile
+                job = _leased_job(session, node, job_id, body.lease_id)
+                reason = J._invalid_reason(job, session.get(CbomCollectionSource, source_id) if source_id else None,
+                                           node)
+                if reason:
+                    raise IssueError(f"Stop this job: {reason}", "job_must_stop", status=409)
         except IssueError as exc:
-            _denied(session, node, job_id, exc.code, exc.status, job.source_id, ca_id)
+            _denied(session, node, job_id, exc.code, exc.status, source_id, ca_id)
             headers = {"Retry-After": str(RETRY_AFTER_S)} if exc.transient else None
             raise HTTPException(status_code=exc.status, detail=str(exc)[:300], headers=headers) from None
+        except HTTPException as exc:  # the lease went while KMS or Vault answered: nothing is recorded
+            _denied(session, node, job_id, _HTTP_CODES.get(exc.status_code, f"http_{exc.status_code}"), exc.status_code,
+                    source_id, ca_id)
+            raise
         session.commit()
         return minted.payload(now)
 

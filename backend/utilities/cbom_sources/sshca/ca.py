@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as _dt
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Callable, Protocol, Sequence
 
 from sqlalchemy import select, update
 from sqlmodel import Session
@@ -95,9 +95,20 @@ def from_db_serial(value: int) -> int:
 
 
 class _Base:
-    def __init__(self, session: Session, row: CbomSshCa):
+    """``release``: called just before a network call (AWS KMS unwrapping a key this worker has not cached, or Vault
+    signing) to end the caller's read transaction, so no pooled connection waits idle in a transaction while KMS or
+    Vault answers (architecture re-review 5874161772).  After the call the CA row is share-locked again
+    (``_lock_active``), so a revoke committed meanwhile still stops the mint.  None (the claim, which signs only with
+    a key already in memory): nothing is released."""
+
+    def __init__(self, session: Session, row: CbomSshCa, *, release: Callable[[], None] | None = None):
         self.session = session
         self.row = row
+        self.release = release
+
+    def _release_reads(self) -> None:
+        if self.release is not None:
+            self.release()
 
     def public_keys(self) -> list[str]:
         return [self.row.public_key]
@@ -171,10 +182,14 @@ class BuiltinCA(_Base):
               source_id: int | None = None, via: str = "claim", now: _dt.datetime | None = None) -> IssuedCert:
         principals, ttl_s, addresses, subject_blob = self._common(principal, ttl, public_key, source_addresses)
         row = self.row
+        ca_id, team_id, name, fingerprint = int(row.id or 0), row.team_id, row.name, row.fingerprint
+        blob = row.private_key_encrypted or ""
+        if row.key_wrap == "aws_kms" and not KW.is_cached(ca_id, fingerprint):
+            self._release_reads()  # KMS may take seconds (or fail after its timeouts): hold no transaction meanwhile
         try:
-            ca_key = KW.cached_private_key(int(row.id or 0), row.team_id, row.fingerprint, row.private_key_encrypted or "")
+            ca_key = KW.cached_private_key(ca_id, team_id, fingerprint, blob)
         except KW.WrapError as exc:
-            raise IssueError.from_wrap(row.name, exc) from None
+            raise IssueError.from_wrap(name, exc) from None
         now = now or utcnow()
         valid_after = now - _dt.timedelta(seconds=skew_s(ttl_s))
         valid_before = valid_after + _dt.timedelta(seconds=ttl_s)  # the whole window is the TTL
@@ -199,16 +214,18 @@ class VaultCA(_Base):
               source_id: int | None = None, via: str = "claim", now: _dt.datetime | None = None) -> IssuedCert:
         principals, ttl_s, addresses, subject_blob = self._common(principal, ttl, public_key, source_addresses)
         row = self.row
+        name = row.name
         key_id = key_id.replace(":{serial}", "").replace("{serial}", "")
         try:
             cfg = V.check_config(row.vault_config)
+            secret = decrypt_secrets(row.secret_encrypted)
+            self._release_reads()  # Vault answers over the network: hold no transaction meanwhile
             # Vault back-dates by its role's not_before_duration (default 30 s): ask for the TTL less our skew, so
             # its whole window stays inside the TTL (checked below)
-            text = V.sign(cfg, decrypt_secrets(row.secret_encrypted), public_key_line=public_key,
-                          principals=list(principals), ttl_s=usable_s(ttl_s), key_id=key_id,
-                          source_addresses=list(addresses))
+            text = V.sign(cfg, secret, public_key_line=public_key, principals=list(principals),
+                          ttl_s=usable_s(ttl_s), key_id=key_id, source_addresses=list(addresses))
         except V.VaultError as exc:
-            raise IssueError(f"SSH CA {row.name} (Vault): {exc}", "vault_error") from None
+            raise IssueError(f"SSH CA {name} (Vault): {exc}", "vault_error") from None
         now = now or utcnow()
         facts = self.check_returned(text, principals=principals, addresses=addresses, subject_blob=subject_blob,
                                     ttl_s=ttl_s, now=now)
@@ -260,13 +277,13 @@ class VaultCA(_Base):
 PROVIDERS: dict[str, type[_Base]] = {"builtin": BuiltinCA, "vault": VaultCA}
 
 
-def authority_for(session: Session, row: CbomSshCa) -> BuiltinCA | VaultCA:
+def authority_for(session: Session, row: CbomSshCa, *, release: Callable[[], None] | None = None) -> BuiltinCA | VaultCA:
     """The signer for a CA row; a provider this code does not know (e.g. a future customer-held CA, #61) is refused,
-    never signed as builtin by accident."""
+    never signed as builtin by accident.  ``release``: see ``_Base``."""
     cls = PROVIDERS.get(row.provider or "")
     if cls is None:
         raise IssueError(f"SSH CA {row.name}: provider {str(row.provider)[:32]!r} cannot sign here", "unknown_provider")
-    return cls(session, row)  # type: ignore[return-value]
+    return cls(session, row, release=release)  # type: ignore[return-value]
 
 
 def ca_for(session: Session, team_id: int, ca_id: int) -> CertificateAuthority:

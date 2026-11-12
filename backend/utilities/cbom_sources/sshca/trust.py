@@ -15,6 +15,11 @@ this team's three files and nothing else.
 * Fetchers (``cbomsshcatrustfetch``): the ``X-ZS-Fetcher`` header (the server's name; default ``token-<id>``) and the
   generation it last received, written when it changes or every ``FETCH_WRITE_EVERY``.  A ``next`` CA records the
   generation that added it, so ``promote`` shows how many active fetchers (seen in the last 24 h) already have it.
+* A repeated fetch costs one query (architecture re-review 5874161772): the token is cached per worker for
+  ``TOKEN_CACHE_S`` (a revoke on this worker applies at once, on another worker within that time); the
+  TrustedUserCAKeys text is cached per (team, trust generation) until the next retired key leaves its overlap; what a
+  fetcher received is remembered per worker, so only a change or ``FETCH_WRITE_EVERY`` writes.  The one query reads
+  the generations.
 """
 from __future__ import annotations
 
@@ -24,7 +29,9 @@ import os
 import re
 import secrets
 import threading
-from typing import Any
+import time
+from dataclasses import dataclass
+from typing import Any, Callable
 
 from fastapi import HTTPException
 from sqlalchemy import func, update
@@ -112,15 +119,34 @@ def trusted(row: CbomSshCa, now: _dt.datetime, overlap: _dt.timedelta) -> bool:
     return row.state == "retired" and row.retired_at is not None and now - row.retired_at < overlap
 
 
-def trusted_keys_text(session: Session, team_id: int, now: _dt.datetime, overlap: _dt.timedelta) -> str:
+_tk_cache: dict[int, tuple[int, _dt.datetime | None, str]] = {}  # team -> (trust generation, valid until, text)
+_tk_lock = threading.Lock()
+
+
+def trusted_keys_text(session: Session, team_id: int, now: _dt.datetime, overlap: _dt.timedelta,
+                      generation: int | None = None) -> str:
     """TrustedUserCAKeys: next, active and recently retired keys.  No clock in the text (it would change the ETag
-    every second); the generation names the version."""
-    generation = generations(session, team_id)[0]
+    every second); the generation names the version.  Every change of the CA rows moves the trust generation, so the
+    text is cached per (team, generation) until the first retired key in it leaves its overlap (the only change time
+    alone makes)."""
+    if generation is None:
+        generation = generations(session, team_id)[0]
+    with _tk_lock:
+        hit = _tk_cache.get(team_id)
+        if hit and hit[0] == generation and (hit[1] is None or now < hit[1]):
+            return hit[2]
     rows = session.exec(select(CbomSshCa).where(CbomSshCa.team_id == team_id).order_by(CbomSshCa.id)).all()
+    kept = [r for r in rows if trusted(r, now, overlap)]
     lines = [f"# ZeroShield SSH CA keys for TrustedUserCAKeys (team {team_id}, trust generation {generation}).",
              "# Keep this file current with the trust-fetch script (rotate, promote and revoke change it)."]
-    lines += [f"{r.public_key.strip()} zs-ca-{r.id}-{r.state}" for r in rows if trusted(r, now, overlap)]
-    return "\n".join(lines) + "\n"
+    lines += [f"{r.public_key.strip()} zs-ca-{r.id}-{r.state}" for r in kept]
+    text = "\n".join(lines) + "\n"
+    ends = [r.retired_at + overlap for r in kept if r.state == "retired" and r.retired_at is not None]
+    with _tk_lock:
+        if len(_tk_cache) >= MAX_KRL_CACHE:
+            _tk_cache.clear()
+        _tk_cache[team_id] = (generation, min(ends) if ends else None, text)
+    return text
 
 
 _krl_cache: dict[int, tuple[int, bytes]] = {}
@@ -128,13 +154,15 @@ _krl_lock = threading.Lock()
 MAX_KRL_CACHE = 10_000
 
 
-def krl_bytes(session: Session, team_id: int) -> tuple[bytes, int]:
+def krl_bytes(session: Session, team_id: int,
+              gens: tuple[int, int, _dt.datetime | None] | None = None) -> tuple[bytes, int]:
     """(the team's KRL, its revocation generation).  Every revoked CA key, and the serials of revoked certificates that
-    were still (nearly) valid when the generation moved.  Built once per generation and worker."""
+    were still (nearly) valid when the generation moved.  Built once per generation and worker.  ``gens``: the
+    generations the caller already read."""
     from backend.utilities.cbom_sources.sshca import krl
     from backend.utilities.cbom_sources.sshca.ca import from_db_serial
 
-    _trust, generation, changed_at = generations(session, team_id)
+    _trust, generation, changed_at = gens if gens is not None else generations(session, team_id)
     with _krl_lock:
         hit = _krl_cache.get(team_id)
         if hit and hit[0] == generation:
@@ -230,36 +258,136 @@ def revoke_token(session: Session, team_id: int, token_id: int, user_id: int, no
     return row
 
 
-def authenticate(session: Session, secret: str | None) -> CbomSshCaTrustToken | None:
-    """The live token for this secret, or None (unknown, malformed or revoked)."""
+TOKEN_CACHE_S = 60.0  # a token revoked on another worker is refused here within this time (on this worker: at once)
+MAX_MEMO = 50_000
+
+
+@dataclass(frozen=True)
+class TokenInfo:
+    id: int
+    team_id: int
+    revoked: bool
+
+
+_tokens: dict[str, tuple[float, TokenInfo]] = {}  # token hash -> (monotonic until, token)
+_tokens_lock = threading.Lock()
+
+
+def _remember_token(digest: str, info: TokenInfo) -> None:
+    with _tokens_lock:
+        old = _tokens.get(digest)
+        if old is not None and old[1].revoked and not info.revoked:
+            info = old[1]  # a revoke is final: a read that started before it never brings the token back
+        if len(_tokens) >= MAX_MEMO:
+            _tokens.clear()
+        _tokens[digest] = (time.monotonic() + TOKEN_CACHE_S, info)
+
+
+def load_token(session: Session, digest: str) -> TokenInfo | None:
+    row = session.exec(select(CbomSshCaTrustToken.id, CbomSshCaTrustToken.team_id, CbomSshCaTrustToken.revoked_at)
+                       .where(CbomSshCaTrustToken.token_hash == digest)).first()
+    return None if row is None else TokenInfo(int(row[0]), int(row[1]), row[2] is not None)
+
+
+def token_for(secret: str | None, load: Callable[[str], TokenInfo | None]) -> TokenInfo | None:
+    """The live token for this secret, or None (unknown, malformed or revoked).  Known tokens (live or revoked) are
+    cached per worker for ``TOKEN_CACHE_S`` and shared by the rate limiter and the handler; unknown ones are not (a
+    guesser must not fill the memory), they cost a query each under the per-address limit.  ``load(token hash)``
+    reads the row when the cache has nothing fresh."""
     if not secret or not TOKEN_RE.match(secret):
         return None
-    row = session.exec(select(CbomSshCaTrustToken).where(CbomSshCaTrustToken.token_hash == sha256_hex(secret))).first()
-    if row is None or row.revoked_at is not None:
-        return None
-    return row
+    digest = sha256_hex(secret)
+    with _tokens_lock:
+        hit = _tokens.get(digest)
+    if hit is not None and hit[0] > time.monotonic():
+        info: TokenInfo | None = hit[1]
+    else:
+        info = load(digest)
+        if info is None:
+            return None
+        _remember_token(digest, info)
+    return None if info is None or info.revoked else info
 
 
-def fetcher_name(header: str | None, token: CbomSshCaTrustToken) -> str:
+def authenticate(session: Session, secret: str | None) -> TokenInfo | None:
+    return token_for(secret, lambda digest: load_token(session, digest))
+
+
+def token_revoked(row: CbomSshCaTrustToken) -> None:
+    """After a revoke committed: this worker refuses the token at once."""
+    _remember_token(row.token_hash, TokenInfo(int(row.id or 0), row.team_id, True))
+
+
+def reset() -> None:
+    """Empty this worker's caches (tests: each has a fresh database with the same ids)."""
+    with _tokens_lock:
+        _tokens.clear()
+    with _memo_lock:
+        _fetch_memo.clear()
+        _touched.clear()
+    with _tk_lock:
+        _tk_cache.clear()
+    with _krl_lock:
+        _krl_cache.clear()
+
+
+def fetcher_name(header: str | None, token: TokenInfo | CbomSshCaTrustToken) -> str:
     name = _FETCHER_BAD.sub("", (header or "").strip())[:128]
     return name or f"token-{token.id}"
 
 
-def record_fetch(session: Session, token: CbomSshCaTrustToken, fetcher: str, ip: str, now: _dt.datetime, *,
-                 trust_generation: int | None = None, revocation_generation: int | None = None) -> None:
+# what this worker last wrote per fetcher, and when it last touched each token (monotonic)
+_fetch_memo: dict[tuple[int, str, str], tuple[float, int]] = {}
+_touched: dict[int, float] = {}
+_memo_lock = threading.Lock()
+
+
+def _memo_set(target: dict, key: Any, value: Any) -> None:
+    with _memo_lock:
+        if len(target) >= MAX_MEMO:
+            target.clear()
+        target[key] = value
+
+
+def record_fetch(session: Session, token: TokenInfo, fetcher: str, ip: str, now: _dt.datetime, *,
+                 trust_generation: int | None = None,
+                 revocation_generation: int | None = None) -> Callable[[], None] | None:
     """Remember what this fetcher received (and touch the token), in the caller's transaction.  Written only when a
     generation changed or the last write is older than ``FETCH_WRITE_EVERY`` (10,000 servers polling every few
-    minutes would otherwise write on every request)."""
-    if token.last_used_at is None or now - token.last_used_at >= TOKEN_TOUCH_EVERY:
+    minutes would otherwise write on every request); this worker remembers its own writes, so an unchanged fetch
+    reads nothing either.  Returns what to call once the caller committed (the memory of this write), or None."""
+    kind, generation = ("t", trust_generation) if trust_generation is not None else ("r", revocation_generation)
+    key = (token.id, fetcher, kind)
+    mono = time.monotonic()
+    with _memo_lock:
+        seen = _fetch_memo.get(key)
+        touched = _touched.get(token.id)
+    touch = touched is None or mono - touched >= TOKEN_TOUCH_EVERY.total_seconds()
+    fresh = seen is not None and seen[1] == generation and mono - seen[0] < FETCH_WRITE_EVERY.total_seconds()
+    if fresh and not touch:
+        return None
+    if touch:
         session.exec(update(CbomSshCaTrustToken).where(CbomSshCaTrustToken.id == token.id)  # type: ignore[call-overload]
                      .values(last_used_at=now).execution_options(synchronize_session=False))
+
+    written_at = mono  # when the row now in the database was written (monotonic), for the memory below
+
+    def done() -> None:
+        if touch:
+            _memo_set(_touched, token.id, mono)
+        if not fresh and generation is not None:
+            _memo_set(_fetch_memo, key, (written_at, int(generation)))
+
+    if fresh:
+        return done
     row = session.exec(select(CbomSshCaTrustFetch).where(CbomSshCaTrustFetch.token_id == token.id,
                                                          CbomSshCaTrustFetch.fetcher == fetcher)).first()
     if row is not None:
         same = ((trust_generation is None or row.trust_generation == trust_generation)
                 and (revocation_generation is None or row.revocation_generation == revocation_generation))
         if same and now - row.last_fetch_at < FETCH_WRITE_EVERY:
-            return
+            written_at = mono - (now - row.last_fetch_at).total_seconds()  # another worker (or earlier) wrote it
+            return done
         values: dict[str, Any] = {"last_fetch_at": now, "last_ip": ip[:64], "last_updated": now,
                                   "row_version": CbomSshCaTrustFetch.row_version + 1}
         if trust_generation is not None:
@@ -268,17 +396,18 @@ def record_fetch(session: Session, token: CbomSshCaTrustToken, fetcher: str, ip:
             values["revocation_generation"] = revocation_generation
         session.exec(update(CbomSshCaTrustFetch).where(CbomSshCaTrustFetch.id == row.id)  # type: ignore[call-overload]
                      .values(**values).execution_options(synchronize_session=False))
-        return
+        return done
     known = session.exec(select(func.count()).select_from(CbomSshCaTrustFetch)
                          .where(CbomSshCaTrustFetch.team_id == token.team_id)).one()
     if known >= MAX_FETCHERS_PER_TEAM:
-        return  # served, not tracked (the readiness counts say "of the tracked fetchers")
+        return done  # served, not tracked (the readiness counts say "of the tracked fetchers")
     table = CbomSshCaTrustFetch.__table__  # type: ignore[attr-defined]
     insert = postgresql.insert if session.get_bind().dialect.name == "postgresql" else sqlite.insert
     values = {"team_id": token.team_id, "token_id": token.id, "fetcher": fetcher, "trust_generation": trust_generation,
               "revocation_generation": revocation_generation, "first_fetch_at": now, "last_fetch_at": now,
               "last_ip": ip[:64], "row_version": 1, "created_at": now, "last_updated": now}
     session.execute(insert(table).values(**values).on_conflict_do_nothing(index_elements=["token_id", "fetcher"]))
+    return done
 
 
 # ----------------------------------------------------------------------------- promote readiness

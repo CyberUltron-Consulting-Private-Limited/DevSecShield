@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import datetime as _dt
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from sqlmodel import Session, select
 
@@ -148,10 +148,12 @@ def newest_cert(session: Session, job: CbomCollectionJob, node: CbomScanNode) ->
 
 
 def issue_for_job(session: Session, node: CbomScanNode, job: CbomCollectionJob, source: CbomCollectionSource | None,
-                  now: _dt.datetime, *, via: str) -> JobCert:
-    """Issue one certificate for this job (``IssueError`` with a safe reason otherwise)."""
+                  now: _dt.datetime, *, via: str, release: Callable[[], None] | None = None) -> JobCert:
+    """Issue one certificate for this job (``IssueError`` with a safe reason otherwise).  ``release``: ends the
+    caller's read transaction before a KMS or Vault call (``ca._Base``); the caller re-checks what it read before."""
     ca_cfg, ca = _check(session, node, job, source)
-    authority = authority_for(session, ca)
+    ca_id, fernet = int(ca.id or 0), ca.key_wrap == "fernet"
+    authority = authority_for(session, ca, release=release)
     ttl_s = clamp_ttl(ca.default_ttl_s)
     window = refresh_window(ttl_s)
     if via == "refresh":
@@ -162,13 +164,15 @@ def issue_for_job(session: Session, node: CbomScanNode, job: CbomCollectionJob, 
                              "refresh_too_early")
     _check_key_unique(session, node)
     addresses = addresses_for(ca_cfg, node)
-    key_id = f"zs:{node.team_id}:{node.id}:{job.id}:{{serial}}"
+    # read before the signer may end the transaction (``release``): no reload of these rows after KMS or Vault
+    team_id, node_id, job_id, source_id = node.team_id, node.id, job.id, job.source_id
+    key_id = f"zs:{team_id}:{node_id}:{job_id}:{{serial}}"
     cert = authority.issue(ca_cfg["ssh_principals"], ttl_s, public_key=node.ssh_public_key or "", key_id=key_id,
-                           source_addresses=addresses, node_id=node.id, job_id=job.id,
+                           source_addresses=addresses, node_id=node_id, job_id=job_id,
                            source_id=source.id if source else None, via=via, now=now)
-    log("ssh certificate issued", team=node.team_id, ca=ca.id, serial=cert.serial, node=node.id, job=job.id,
-        source=job.source_id, via=via, ttl_s=ttl_s, principals=len(cert.principals))
-    if ca.key_wrap == "fernet" and ca.id not in _fernet_warned and KW.kms_configured():
-        _fernet_warned.add(int(ca.id or 0))  # once per CA and worker: the operator should rotate it onto KMS
-        log("ssh ca key wrapped by the deployment key while KMS is configured; rotate it", team=node.team_id, ca=ca.id)
+    log("ssh certificate issued", team=team_id, ca=ca_id, serial=cert.serial, node=node_id, job=job_id,
+        source=source_id, via=via, ttl_s=ttl_s, principals=len(cert.principals))
+    if fernet and ca_id not in _fernet_warned and KW.kms_configured():
+        _fernet_warned.add(ca_id)  # once per CA and worker: the operator should rotate it onto KMS
+        log("ssh ca key wrapped by the deployment key while KMS is configured; rotate it", team=team_id, ca=ca_id)
     return JobCert(cert, ca, window)

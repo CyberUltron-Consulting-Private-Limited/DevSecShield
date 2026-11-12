@@ -14,6 +14,10 @@ generation it received, for promote readiness (``sshca/trust.py``).  404 while `
 
 Access declaration: ``x-zs-permission: machine:ssh-ca trust token`` (F4's marker for a credential that is not a
 team role; the handler checks it).  Rate limit: per token (servers of one team share it), unknown tokens per address.
+
+Cost of a repeated fetch: one query, the generations (``sshca/trust.py``: the token is cached per worker for 60 s and
+shared by the limiter and the handler; the files are cached per generation; a fetcher's unchanged generation is not
+written again).  A token revoked on another worker is refused here within 60 s; on this worker at once.
 """
 from __future__ import annotations
 
@@ -40,10 +44,14 @@ token_header = APIKeyHeader(name="X-ZS-Trust-Token", auto_error=False)
 UNAUTHORIZED = "A valid SSH CA trust token is required (X-ZS-Trust-Token)"
 
 
-def _token_id(secret: str) -> int | None:
+def _load_token(digest: str) -> T.TokenInfo | None:
     with Session(H.get_db()) as session:
-        row = T.authenticate(session, secret)
-        return row.id if row else None
+        return T.load_token(session, digest)
+
+
+def _token_id(secret: str) -> int | None:
+    token = T.token_for(secret, _load_token)  # a cache hit opens no session
+    return token.id if token else None
 
 
 async def trust_key(request: Request) -> Key:
@@ -68,17 +76,21 @@ def _serve(secret: str | None, fetcher: str | None, ip: str, what: str, groups: 
         if token is None:
             raise HTTPException(status_code=401, detail=UNAUTHORIZED)
         team_id = token.team_id
-        trust_gen, revocation_gen, _at = T.generations(session, team_id)
+        gens = T.generations(session, team_id)
+        trust_gen = gens[0]
+        done = None
         if what == "trusted-keys":
-            body = R.trusted_keys_text(session, team_id, now).encode()
-            T.record_fetch(session, token, T.fetcher_name(fetcher, token), ip, now, trust_generation=trust_gen)
+            body = T.trusted_keys_text(session, team_id, now, R.OVERLAP, trust_gen).encode()
+            done = T.record_fetch(session, token, T.fetcher_name(fetcher, token), ip, now, trust_generation=trust_gen)
         elif what == "revoked":
-            body, revocation_gen = T.krl_bytes(session, team_id)
-            T.record_fetch(session, token, T.fetcher_name(fetcher, token), ip, now,
-                           revocation_generation=revocation_gen)
+            body, revocation_gen = T.krl_bytes(session, team_id, gens)
+            done = T.record_fetch(session, token, T.fetcher_name(fetcher, token), ip, now,
+                                  revocation_generation=revocation_gen)
         else:
             body = T.principals_text(team_id, T.check_groups(groups)).encode()  # checked after the token
-        session.commit()
+        if done is not None:
+            session.commit()
+            done()  # remembered only once written
         return body, trust_gen, T.etag_of(body)
 
 
