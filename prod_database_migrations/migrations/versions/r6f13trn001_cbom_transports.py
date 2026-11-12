@@ -1,7 +1,7 @@
 """cbom transports (AWX/AAP, Salt, AWS SSM) and verified zs-collect releases (F1.3)
 
 Revision ID: r6f13trn001
-Revises: rv6p1nodename001
+Revises: r6f14sshca002
 Create Date: 2026-11-12 07:00:00.000000
 
 Two new tables, nothing changed on existing ones (contract section 2: no foreign key to another part's tables, so the
@@ -18,7 +18,7 @@ import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = 'r6f13trn001'
-down_revision: Union[str, Sequence[str], None] = 'rv6p1nodename001'
+down_revision: Union[str, Sequence[str], None] = 'r6f14sshca002'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
