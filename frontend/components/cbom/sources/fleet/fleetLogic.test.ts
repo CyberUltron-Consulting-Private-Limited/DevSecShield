@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   actionText,
   ALL_OFF,
+  conditionProblems,
   coverageGaps,
   decisionText,
   draftFromSelector,
@@ -113,7 +114,6 @@ const draft = {
     { on: "tag" as const, key: " Env ", op: "eq" as const, value: "prod" },
     { on: "tag" as const, key: "team", op: "in" as const, value: "pay, ops," },
     { on: "field" as const, key: "region", op: "prefix" as const, value: "ap-" },
-    { on: "tag" as const, key: "", op: "eq" as const, value: "ignored" },
   ],
 };
 const sel = selectorFromDraft(draft);
@@ -124,7 +124,25 @@ assert.deepEqual(sel, {
     { field: "region", op: "prefix", value: "ap-" },
   ],
 });
-assert.deepEqual(selectorFromDraft({ mode: "any", conditions: [] }), {});
+// A condition left half-done is never dropped (PR #81 UX review 4550301242): dropping it turned "Tag (empty) is prod"
+// into {}, which matches every target. The form names the condition and sends nothing.
+const halfDone = { ...draft, conditions: [...draft.conditions, { on: "tag" as const, key: "", op: "eq" as const, value: "prod" }] };
+assert.deepEqual(conditionProblems(halfDone), ["Condition 4: enter a tag key"]);
+assert.throws(() => selectorFromDraft(halfDone), /Condition 4: enter a tag key/);
+assert.deepEqual(
+  conditionProblems({
+    mode: "any",
+    conditions: [
+      { on: "tag", key: "env", op: "eq", value: " " },
+      { on: "tag", key: "team", op: "in", value: " , ," },
+      { on: "field", key: "region", op: "prefix", value: "" },
+      { on: "tag", key: "pci", op: "exists", value: "" },
+    ],
+  }),
+  ["Condition 1: enter a value", "Condition 2: enter at least one value", "Condition 3: enter a value"],
+);
+assert.deepEqual(conditionProblems(draft), []);
+assert.deepEqual(selectorFromDraft({ mode: "any", conditions: [] }), {}); // no condition at all: every target, as the form says
 assert.deepEqual(selectorFromDraft({ mode: "any", conditions: [{ on: "tag", key: "x", op: "exists", value: "zzz" }] }), { tag: "x", op: "exists" });
 assert.deepEqual(draftFromSelector(sel)?.conditions.map((c) => c.key), ["env", "team", "region"]);
 assert.equal(draftFromSelector({ not: { tag: "env", op: "exists" } }), null); // edited as JSON
@@ -141,27 +159,8 @@ assert.equal(decisionText({ action: "never_scan", policy_id: null, matched_polic
 assert.equal(decisionText({ action: "unmanaged", policy_id: null, matched_policy_ids: [] }, names), "No policy matches");
 // A policy that won a target the list has not loaded the name of still says which one won.
 assert.equal(decisionText({ action: "collect", policy_id: 9, matched_policy_ids: [9] }, names), "Policy #9");
-
-// Which policy won is shown where the customer looks: the list's decision column, the target's matching policies in
-// the order they apply (the winner marked), and the preview's overlaps.
-const inventory = readFileSync(join(__dirname, "InventorySection.tsx"), "utf8");
-assert.ok(inventory.includes("Decision (which policy won)"), "the targets table lost its decision column");
-// On a phone the decision column must be on screen: the secondary columns give way below md (browser QA at 390 px).
-// At 768 px (tablet, with the sidebar) Tags and Where pushed it off screen too: they give way below xl (QA 20-tablet).
-assert.ok(inventory.includes('<TableHead className="hidden xl:table-cell">Tags</TableHead>'), "on a tablet the decision column is pushed off screen");
-assert.ok(inventory.includes('<TableHead className="hidden xl:table-cell">Where</TableHead>'), "on a tablet the decision column is pushed off screen");
-assert.ok(inventory.includes('<TableHead className="hidden md:table-cell">Kind</TableHead>'), "on a phone the decision column is pushed off screen");
-assert.ok(inventory.includes("break-words md:truncate"), "on a phone the winning policy's line is cut");
-assert.ok(!/<TableHead className="hidden[^"]*">Decision/.test(inventory), "the decision column is hidden on small screens");
-assert.ok(inventory.includes("decisionText(t.decision, data.policies)"), "the list does not say which policy won");
-assert.ok(inventory.includes('p.won ? " · won" : " · overridden"'), "the detail does not mark the winner");
-// Search and tag are debounced: typing does not send one request per key.
-assert.ok(inventory.includes("setTimeout(") && inventory.includes("SEARCH_DEBOUNCE_MS"), "search is not debounced");
-assert.ok(!inventory.includes("onChange={(e) => set({ q: e.target.value })}"), "search sends a request per key");
-const policiesUi = readFileSync(join(__dirname, "PoliciesSection.tsx"), "utf8");
-// An edit is previewed in place of the saved policy (same id): a tie breaks as it will once saved (PR review B1/F4).
-assert.ok(policiesUi.includes("editing ? { policy: b, policy_id: editing.id } : { policy: b }"), "an edit previews as a new policy");
-assert.ok(policiesUi.includes("wins over"), "the preview does not show which policy wins an overlap");
+// How the screens show these (the decision column, the winner in the detail, the layout at 1440/1024/768/390 px) is
+// checked by rendering them (*.render.test.ts) and in a browser, not by reading the source.
 
 // An AWS sync's gaps read as words, and only the scopes that were not read are listed.
 assert.deepEqual(
@@ -188,6 +187,5 @@ assert.equal(targetLabel({ hostname: "app-1.bank.local", address: "10.0.0.1", ex
 assert.equal(targetLabel({ hostname: null, address: "10.0.0.1", external_id: "srv-1" }), "10.0.0.1");
 assert.equal(targetLabel({ hostname: null, address: null, external_id: arn, attributes: { name: "prod/db-password" } }), "prod/db-password");
 assert.equal(targetLabel({ hostname: null, address: null, external_id: arn, attributes: { key_id: "" } }), arn);
-assert.ok(inventory.includes("<Truncate text={targetLabel(t)} />") && inventory.includes("targetLabel(d.target)"), "targets are not labelled by targetLabel");
 
 console.log("fleetLogic tests passed");
