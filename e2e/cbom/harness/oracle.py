@@ -21,7 +21,8 @@ ORACLE_SCHEMA = "zs-cbom-oracle/1"
 
 
 def _location_key(value: Any) -> str:
-    return str(value or "").strip().lower().rstrip(".")
+    """The endpoint a location names: the product marks a chain position as a fragment (``host:443#chain[1]``)."""
+    return str(value or "").split("#", 1)[0].strip().lower().rstrip(".")
 
 
 def _address_of(location: str) -> str:
@@ -183,7 +184,11 @@ def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]
                 want = norm(want_raw)
                 got = None if got_raw is F.MISSING else norm(got_raw)
                 reason = "export-missing" if got_raw is F.MISSING else "wrong-value"
-                ok = got_raw is not F.MISSING and got == want
+                if key in F.SAMPLED:
+                    ok = bool(got) and set(got) <= set(want or [])
+                    reason = reason if got_raw is F.MISSING else "not-accepted-by-server" if got else "not-reported"
+                else:
+                    ok = got_raw is not F.MISSING and got == want
                 checks.verdict(f"{prefix}/{oid}/{key}", GATE, "oracle", ok, reason,
                                {**subject, "asset_id": aid, "field": key}, expected=want_raw,
                                observed="<absent>" if got_raw is F.MISSING else got_raw)

@@ -13,13 +13,6 @@
   issue: "#73"
   owner: CB-03
   why: "/health has no build field, no X-ZS-Build header, no zs-build meta, node image without ZS_NODE_BUILD (main.py:148)"
-- row: PRE-node-on-L
-  gate: [G3]
-  match: {check: [allowed_diff, node_image_served]}
-  issue: "#73"
-  owner: CB-03
-  why: "no scan-node image on L (the UI prints registry.zeroshield.ai/cbom/scan-node:1.0), api.dss.test does not
-    resolve inside a container and the lab CA is private: the runner must start the node with more than the allowed diff"
 
 # ---------------------------------------------------------------------------- product rows (DA §4.4)
 - row: KF-8
@@ -35,12 +28,6 @@
   issue: "#73"
   owner: CB-06
   why: "the run export lacks key size, curve, signature algorithm, groups, pqc_class and provenance (R4 p1)"
-- row: KF-9-oracle
-  gate: [G11]
-  match: {kind: oracle, field: pqc_class, reason: export-missing}
-  issue: "#73"
-  owner: CB-06
-  why: "pqc_class is judged against the oracle from the export, which does not carry it yet"
 - row: KF-2
   gate: [G10]
   match: {check: canary_accepts, never_scan_by: name}
@@ -115,7 +102,39 @@
   why: "evidence older than 365 days shows 'Q0' instead of E0 + a Q0 gap; the run and export carry no gap snapshot"
   not_run_ok: "G8 runs once CB-05 lands its spec"
 
+- row: KF-15
+  gate: [G11]
+  match: {kind: join, view: export, field: cipher_suites, reason: export-missing}
+  issue: "#89"
+  owner: CB-06
+  why: "the run export has no cipher suite at all: inventory reads facts.ciphers/cipher, the node writes negotiated_cipher and weak_ciphers_accepted (gate run L-3df26fd8ec02-20261112T101739Z)"
+- row: KF-16
+  gate: [G11]
+  match: {kind: join, view: export, field: protocol_versions}
+  issue: "#89"
+  owner: CB-06
+  why: "the export's protocol version is the negotiated one (TLS) or the word 'ssh': inventory reads facts.protocols, the node writes facts.versions"
+- row: KF-17
+  gate: [G11]
+  match: {kind: oracle, target_id: sshd-legacy, field: host_keys}
+  issue: "#73"
+  owner: CB-13
+  why: "an SSH server with an RSA-1024 and an Ed25519 host key: the product reads only the negotiated Ed25519 key, so the weak RSA-1024 key is invisible (CB-13: one exchange per host-key family)"
+- row: KF-4-5-derived
+  gate: [G11]
+  match: {kind: derived, field: [closed_world_type, closed_world_quantum]}
+  issue: "#73"
+  owner: CB-12
+  why: "closed-world counts recomputed from the oracle differ by exactly the KF-4 (z09: 2 certificates not read) and KF-5 (control listener stored as a TLS endpoint) assets"
+
 # ---------------------------------------------------------------------------- steps the gate spec (CB-05) adds
+- row: CB05-sources
+  gate: [G11]
+  match: {kind: oracle, verdict: NOT-RUN, source: [S-host, S-canary, S-idn, DB-pg-tls, DB-mysql-tls, HSM-softhsm]}
+  issue: "#73"
+  owner: CB-05
+  why: "the lab targets behind Servers, IDN, Database and HSM sources are judged once CB-05's G4/G5b/G6 specs configure those sources"
+  not_run_ok: "those sources are not configured by the CB-01 flow"
 - row: CB05-steps
   gate: [G4, G6, G13]
   match: {kind: flow, step: [G4, G6, G13]}

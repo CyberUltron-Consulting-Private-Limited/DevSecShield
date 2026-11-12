@@ -204,6 +204,13 @@ async function signOut(who) {
   }
 }
 
+function inCidr(ip, cidr) {
+  const [net, bits = "32"] = cidr.split("/");
+  const n = (a) => a.split(".").reduce((x, o) => x * 256 + Number(o), 0);
+  const size = 2 ** (32 - Number(bits));
+  return Math.floor(n(ip) / size) === Math.floor(n(net) / size);
+}
+
 async function overflow(page) {
   return page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth }));
 }
@@ -353,7 +360,7 @@ try {
     }
     // the network never-scan list takes addresses and ranges (the UI refuses a host name there; never-scan by name is
     // entered on Servers in G4): the canary listener's address, so the R-canary range keeps the control reachable
-    const canaries = (lab.listeners || []).filter((l) => l.role === "canary" && (state.scope.ranges || []).some((r) => r.startsWith(l.address.split(".").slice(0, 3).join("."))));
+    const canaries = (lab.listeners || []).filter((l) => l.role === "canary" && (state.scope.ranges || []).some((r) => inCidr(l.address, r)));
     for (const l of canaries) {
       await page.getByTestId("network-exclusion-cidr").fill(l.address);
       await page.getByTestId("network-exclusion-reason").fill("cbom-e2e canary");
@@ -427,27 +434,23 @@ try {
     }
     const done = jobs.length && jobs.every((j) => TERMINAL.includes(j[1]));
     s.check("run_finished_15min", !!done, { expected: "every job finished within 15 min", observed: jobs.map((j) => `${j[0]}:${j[1]}/${j[2]}`) });
+    state.jobs = jobs.map(([id, status, outcome]) => ({ id: Number(id), status, outcome }));
     const { page } = A;
     await page.reload({ waitUntil: "networkidle" });
-    await page.waitForTimeout(2000);
-    const label = { ok: "All targets read", partial: "Partly read", failed: "Nothing read" };
-    for (const [id, status, outcome] of jobs) {
-      const row = page.getByTestId(`review-job-${id}`);
-      const text = (await row.textContent().catch(() => "")) || "";
-      const want = status === "success" ? label[outcome] || outcome : status;
-      s.check(`job_${id}_ui_eq_db`, !!want && text.toLowerCase().includes(String(want).toLowerCase()), { expected: { status, outcome, label: want }, observed: text.slice(0, 200), subject: { job: id } });
-    }
     await s.shot(page, "watch");
     s.notRun("charge_after_runtime_skips", "the final charge after runtime skips follows OA-10b; CB-05 adds the check (KF-8)");
     const listeners = lab?.listeners || [];
     const count = (l) => { const p = join(RUN, l.log || ""); return existsSync(p) ? readFileSync(p, "utf8").split("\n").filter(Boolean).length : null; };
+    const controlSeen = listeners.some((x) => x.role === "control" && (count(x) || 0) > 0);
     const byName = !(state.never_scan_g5 || []).length;
-    for (const l of listeners.filter((x) => x.role === "canary")) {
-      const n = count(l);
+    for (const l of listeners.filter((x) => x.role === "canary" && (state.scope?.ranges || []).some((r) => inCidr(x.address, r)))) {
+      // no log file = no accepted connection (the listener writes a line per accept), when the control's log in the
+      // same capture proves the listeners log at all (O-8)
+      const n = count(l) ?? (controlSeen ? 0 : null);
       s.check(`canary_accepts_${l.name}`, n === 0, { expected: 0, observed: n, reason: n === null ? "listener-log-missing" : "never-scan-reached",
         subject: { check: "canary_accepts", never_scan_by: byName ? "name" : "address", listener: l.name }, evidence: [l.log] });
     }
-    for (const l of listeners.filter((x) => x.role === "control")) {
+    for (const l of listeners.filter((x) => x.role === "control" && (state.scope?.ranges || []).some((r) => inCidr(x.address, r)))) {
       const n = count(l);
       s.check(`control_accepts_${l.name}`, n !== null && n >= 1, { expected: ">= 1 (positive control)", observed: n, reason: "control-not-reached",
         subject: { check: "control_accepts", listener: l.name }, evidence: [l.log] });
@@ -478,6 +481,7 @@ try {
     writeJson(join(RUN, "api", "posture-run1.json"), posture.body);
     // the DOM: every row of every page of the Results table
     const rows = [];
+    const seen = new Set();
     for (let p = 1; p < 200; p++) {
       const got = await page.$$eval('[data-testid^="run-asset-"]', (trs) => trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
         const td = [...tr.querySelectorAll("td")];
@@ -485,13 +489,23 @@ try {
         return { id: Number(tr.dataset.testid.slice(10)), impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
           location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
       }));
-      rows.push(...got);
+      const fresh = got.filter((r) => !seen.has(r.id));
+      fresh.forEach((r) => seen.add(r.id));
+      rows.push(...fresh);
+      if (!fresh.length || rows.length >= items.length) break;
       const next = page.getByTestId("run-results").getByRole("button", { name: /next/i }).first();
       if (!(await next.count()) || (await next.isDisabled())) break;
       await next.click(); await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
     }
     const totalText = (await page.getByTestId("run-results-total").textContent().catch(() => "")) || "";
     writeJson(join(RUN, "ui", "assets-run1.json"), { run_id: runId, total_text: totalText.trim(), rows });
+    // per job: the results page's label = the DB (status, outcome) (G10's mapping, read where the customer sees it)
+    const label = { ok: "All targets read", partial: "Partly read", failed: "Nothing read" };
+    for (const j of state.jobs || []) {
+      const text = ((await page.getByTestId(`run-results-job-${j.id}`).textContent().catch(() => "")) || "").trim();
+      const want = j.status === "success" ? label[j.outcome] || j.outcome : j.status;
+      s.check(`job_${j.id}_label_eq_db`, !!want && text.toLowerCase().includes(String(want).toLowerCase()), { expected: { status: j.status, outcome: j.outcome, label: want }, observed: text.slice(0, 200), subject: { job: j.id } });
+    }
     s.check("dom_rows_eq_api", rows.length === items.length, { expected: items.length, observed: rows.length });
     await s.shot(page, "results");
     // drill-down of the first row (detail panel opens)
@@ -550,19 +564,30 @@ try {
     await B.ctx.tracing.stop({ path: join(RUN, "steps", "G14", "trace-signup-b.zip") }).catch(() => {});
     const ids = { node: state.node?.id, run: state.runs?.[0] };
     const assets = readJson(join(RUN, "api", "assets-run1.json"))?.items || [];
-    const probes = [
-      ["node", ids.node && `/${A.team}/cbom/sources/nodes/${ids.node}`],
-      ["run", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}`],
-      ["run_assets", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/assets`],
-      ["run_cbom", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/cbom`],
-      ["asset", assets[0] && `/${A.team}/cbom/sources/assets/${assets[0].id}`],
-      ["run_in_own_team", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}`],
-      ["asset_in_own_team", assets[0] && `/${B.team}/cbom/sources/assets/${assets[0].id}`],
-    ];
-    for (const [name, path] of probes) {
+    // B asks for A's objects under B's own team: 404, nothing about A (no existence oracle by id)
+    const own = [["run", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}`],
+      ["run_assets", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}/assets`],
+      ["run_cbom", ids.run && `/${B.team}/cbom/sources/runs/${ids.run}/cbom`],
+      ["node", ids.node && `/${B.team}/cbom/sources/nodes/${ids.node}`],
+      ["asset", assets[0] && `/${B.team}/cbom/sources/assets/${assets[0].id}`]];
+    for (const [name, path] of own) {
       if (!path) continue;
       const r = await apiGet(B, path);
-      s.check(`b_gets_404_${name}`, r.status === 404, { expected: 404, observed: r.status, subject: { probe: name } });
+      s.check(`b_own_team_404_${name}`, r.status === 404, { expected: 404, observed: r.status, subject: { probe: name } });
+    }
+    // B asks under A's team: refused before any lookup, so an existing id and a missing one get the same answer
+    const foreign = [["run", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}`, `/${A.team}/cbom/sources/runs/2147483000`],
+      ["node", ids.node && `/${A.team}/cbom/sources/nodes/${ids.node}`, `/${A.team}/cbom/sources/nodes/2147483000`],
+      ["asset", assets[0] && `/${A.team}/cbom/sources/assets/${assets[0].id}`, `/${A.team}/cbom/sources/assets/2147483000`],
+      ["run_cbom", ids.run && `/${A.team}/cbom/sources/runs/${ids.run}/cbom`, `/${A.team}/cbom/sources/runs/2147483000/cbom`]];
+    const leakTerms = [A.email, ...assets.slice(0, 5).map((a) => a.location)].filter(Boolean);
+    for (const [name, path, missing] of foreign) {
+      if (!path) continue;
+      const hit = await apiGet(B, path);
+      const miss = await apiGet(B, missing);
+      const body = JSON.stringify(hit.body || "");
+      s.check(`b_foreign_team_refused_${name}`, [403, 404].includes(hit.status) && hit.status === miss.status && !leakTerms.some((t) => body.includes(t)),
+        { expected: "403 or 404, the same for a missing id, no data of A", observed: { existing: hit.status, missing: miss.status, body: body.slice(0, 160) }, subject: { probe: name } });
     }
     await B.page.goto(`${UI}/${A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
     await B.page.waitForTimeout(1500);

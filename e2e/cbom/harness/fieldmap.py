@@ -63,6 +63,44 @@ GROUPS = {"prime256v1": "secp256r1", "p-256": "secp256r1", "p256": "secp256r1",
           "x25519mlkem768": "X25519MLKEM768", "secp256r1mlkem768": "SecP256r1MLKEM768",
           "secp384r1mlkem1024": "SecP384r1MLKEM1024", "mlkem512": "MLKEM512", "mlkem768": "MLKEM768",
           "mlkem1024": "MLKEM1024", "x25519": "x25519", "x448": "x448"}
+# OpenSSL's names for TLS <= 1.2 suites -> the IANA "TLS Cipher Suites" registry names (OpenSSL ciphers(1) manual,
+# "TLS v1.0/v1.2 cipher suites" tables). TLS 1.3 suites already carry their IANA names.
+OPENSSL_SUITES = {
+    "ECDHE-RSA-AES128-SHA": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+    "ECDHE-RSA-AES256-SHA": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+    "ECDHE-ECDSA-AES128-SHA": "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
+    "ECDHE-ECDSA-AES256-SHA": "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA",
+    "ECDHE-RSA-AES128-SHA256": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",
+    "ECDHE-RSA-AES256-SHA384": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",
+    "ECDHE-RSA-AES128-GCM-SHA256": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+    "ECDHE-RSA-AES256-GCM-SHA384": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+    "ECDHE-ECDSA-AES128-GCM-SHA256": "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+    "ECDHE-ECDSA-AES256-GCM-SHA384": "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+    "ECDHE-RSA-CHACHA20-POLY1305": "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+    "ECDHE-ECDSA-CHACHA20-POLY1305": "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+    "AES128-SHA": "TLS_RSA_WITH_AES_128_CBC_SHA", "AES256-SHA": "TLS_RSA_WITH_AES_256_CBC_SHA",
+    "AES128-SHA256": "TLS_RSA_WITH_AES_128_CBC_SHA256", "AES256-SHA256": "TLS_RSA_WITH_AES_256_CBC_SHA256",
+    "AES128-GCM-SHA256": "TLS_RSA_WITH_AES_128_GCM_SHA256", "AES256-GCM-SHA384": "TLS_RSA_WITH_AES_256_GCM_SHA384",
+    "DHE-RSA-AES128-SHA": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA", "DHE-RSA-AES256-SHA": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+    "DHE-RSA-AES128-GCM-SHA256": "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256",
+    "DHE-RSA-AES256-GCM-SHA384": "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384",
+    "DES-CBC3-SHA": "TLS_RSA_WITH_3DES_EDE_CBC_SHA", "ECDHE-RSA-DES-CBC3-SHA": "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA",
+    "RC4-SHA": "TLS_RSA_WITH_RC4_128_SHA", "RC4-MD5": "TLS_RSA_WITH_RC4_128_MD5",
+}
+
+
+def norm_suites(values: Any) -> list[str] | None:
+    if values in (None, ""):
+        return None
+    if not isinstance(values, list):
+        values = [values]
+    return sorted({OPENSSL_SUITES.get(str(v).strip(), str(v).strip()) for v in values if v})
+
+
+# Keys where the product reports a SAMPLE (the negotiated choice plus its probes), not an enumeration: the oracle
+# checks that what the product reports is non-empty and accepted by the server (subset), not that it lists them all.
+SAMPLED = {"cipher_suites", "groups"}
+
 IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4, None: 4}
 
 
@@ -96,6 +134,8 @@ def norm_version(value: Any) -> str | None:
 def norm_versions(values: Any) -> list[str] | None:
     if values in (None, ""):
         return None
+    if isinstance(values, dict):  # {"TLSv1.0": true, "TLSv1.3": false}: the versions the server accepted
+        values = [k for k, v in values.items() if v is True]
     if isinstance(values, str):
         values = [v for v in re.split(r"[,\s]+", values) if v]
     return sorted({v for v in (norm_version(x) for x in values) if v})
@@ -217,7 +257,7 @@ ORACLE_NORMALISERS: dict[str, Callable[[Any], Any]] = {
         None if v in (None, "") else str(v).strip().lower().replace("_", "-")),
     "protocol": lambda v: None if v in (None, "") else str(v).strip().lower(),
     "protocol_versions": norm_versions, "groups": norm_groups,
-    "cipher_suites": lambda v: None if v in (None, "") else sorted(str(x) for x in (v if isinstance(v, list) else [v])),
+    "cipher_suites": norm_suites,
     "not_before": norm_time, "not_after": norm_time, "subject": norm_dn, "issuer": norm_dn,
     "serial": lambda v: None if v in (None, "") else str(v).lower().lstrip("0") or "0",
     "fingerprint_sha256": lambda v: None if v in (None, "") else re.sub(r"[^0-9a-f]", "", str(v).lower()),
@@ -313,8 +353,14 @@ def protocol_family(value: Any) -> str | None:
 
 def _versions_of(facts: dict[str, Any], item: dict[str, Any]) -> Any:
     for key in ("protocols", "accepted_versions", "versions"):
-        if facts.get(key):
-            return facts[key]
+        value = facts.get(key)
+        if isinstance(value, dict):  # the node's {"TLSv1.0": true, ...}: the versions the server accepted
+            return sorted(k for k, v in value.items() if v is True) or None
+        if value:
+            return value
+    banner = str(facts.get("banner") or "")
+    if banner.startswith(("SSH-2.0-", "SSH-1.99-")):
+        return ["SSHv2"]
     if facts.get("negotiated_version"):
         return [facts["negotiated_version"]]
     return [item["protocol"]] if item.get("protocol") and str(item["protocol"]).lower().startswith(("tls", "ssl")) else None
@@ -328,12 +374,15 @@ def _groups_of(facts: dict[str, Any]) -> Any:
 
 
 def _ciphers_of(facts: dict[str, Any]) -> Any:
+    """TLS suites the product saw accepted: its list if it has one, else the negotiated suite plus the suites its
+    weak-cipher probes found accepted (``weak_ciphers_accepted``: {"cbc": [...], "static_rsa": [...]})."""
     if facts.get("ciphers"):
         return facts["ciphers"]
-    for key in ("cipher", "negotiated_cipher"):
-        if facts.get(key):
-            return [facts[key]]
-    return None
+    out = [facts[k] for k in ("cipher", "negotiated_cipher") if facts.get(k)][:1]
+    weak = facts.get("weak_ciphers_accepted")
+    if isinstance(weak, dict):
+        out += [c for v in weak.values() if isinstance(v, list) for c in v]
+    return sorted(set(out)) or None
 
 
 def run_verdict(item: dict[str, Any], key: str) -> Any:

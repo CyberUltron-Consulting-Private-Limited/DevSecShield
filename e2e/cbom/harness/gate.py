@@ -26,8 +26,9 @@ from .checks import Check, Checks
 from .rundir import iso, read_json, run_steps, utc_now, write_json
 
 GATES = [f"G{i}" for i in range(18)] + ["G5b", "G13b"]
-# the steps whose checks come from the flow / runner (step.json); G11, G15, G16 are judged here from the evidence
-FLOW_STEPS = ["G0", "G1", "G2", "G3", "G4", "G5", "G5b", "G6", "G7", "G8", "G9", "G10", "G12", "G13", "G13b", "G14",
+# the steps whose checks come from the flow / runner (step.json); G11 also gets the join, oracle and derived checks
+# judged here from the evidence, G15 and G16 only those
+FLOW_STEPS = ["G0", "G1", "G2", "G3", "G4", "G5", "G5b", "G6", "G7", "G8", "G9", "G10", "G11", "G12", "G13", "G13b", "G14",
               "G17"]
 DEFAULT_LEDGER = Path(__file__).resolve().parents[1] / "known-fail.yaml"
 
