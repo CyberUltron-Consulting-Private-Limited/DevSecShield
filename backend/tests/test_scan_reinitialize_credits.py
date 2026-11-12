@@ -824,6 +824,26 @@ def test_a_poll_whose_task_is_replaced_while_it_runs_reports_the_stored_scan(htt
     assert calls["findings"] == [] and _balance(engine) == 93.5
 
 
+def test_any_run_sent_but_not_recorded_is_withdrawn(http, monkeypatch):
+    """start_scan_and_update_db's own promise, for every caller (a /start as much as a reinitialize, whose give-back
+    also withdraws its run): a run that reached the broker but could not be recorded never runs (QA mutant N1)."""
+    from backend.utilities.scan import start_scan as start_mod
+
+    _client, engine, celery, _calls = http
+
+    def broken_metadata(**_kw):
+        raise RuntimeError("database error while recording the run")
+
+    monkeypatch.setattr(start_mod, "get_scan_metadata_for_type", broken_metadata)
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(start_mod.start_scan_and_update_db(
+            scan_type="cbom", engine=engine, scan_id=1, team_id=1,
+            start_scan_payload=StartScanPayload.model_validate_json(ZIP_PAYLOAD), scan_kwargs={"zip_dict_context": {}}))
+    assert err.value.status_code == 500
+    assert [t for *_x, t in celery.sent] == ["new-1"] and celery.revoked == ["new-1"] and "new-1" in celery.marks.docs
+    assert _scan(engine, 1).task_id == "t-1"
+
+
 # ===================================================================================== the claim: crash window (#57 review)
 def test_the_claim_carries_what_a_give_back_needs(http):
     """The claim's own UPDATE names the run being sent and the run it replaces, and keeps the replaced task, charge and
