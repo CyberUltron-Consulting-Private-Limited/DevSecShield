@@ -126,6 +126,14 @@ def node_limiter():
     return _LIMITER[0]
 
 
+def threads_queued() -> bool:
+    """True while node requests of this worker wait for a node thread (the dispatcher then grants no new work)."""
+    try:
+        return node_limiter().statistics().tasks_waiting > 0
+    except Exception:
+        return False
+
+
 async def to_node_thread(fn, *args):
     """Run a node route's synchronous body on the node limiter; the wait for a thread is the request's ``tp``."""
     scheduled = time.perf_counter()

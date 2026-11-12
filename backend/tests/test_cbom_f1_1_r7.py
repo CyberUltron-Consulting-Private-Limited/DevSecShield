@@ -1071,6 +1071,41 @@ def test_d2_one_team_draining_the_bucket_cannot_starve_another_team():
     assert b_granted is not None and b_granted - b_at <= 72.0
 
 
+def test_d2_a_worker_whose_node_threads_are_all_queued_grants_no_new_work():
+    """EC2 E2a/E4a (round 7): at the default rate the bucket granted 75 claims/s while the box served about 24 jobs/s
+    of the 5.2 mix, so node requests queued for threads until clients timed out.  A worker whose node requests wait
+    for a thread gives no new permits (grant 0, a fresh claim 204); grants it already gave stay valid."""
+    _t, clock = _virtual()
+    busy = [False]
+    d = D.Dispatcher(10, clock=clock, busy=lambda: busy[0])
+    assert d.grant(1, 1, 2) == 2
+    busy[0] = True
+    assert d.grant(2, 1, 2) == 0
+    assert d.admit(3, 1) is None
+    assert d.admit(1, 1) == "grant"  # already paid: honoured
+    assert d.grant(1, 1, 2) == 1  # the remaining held grant, nothing new
+    counters = d.take_counters()
+    assert counters["dispatch_held_busy"] == 3
+    busy[0] = False
+    assert d.grant(2, 1, 2) == 2
+
+
+def test_d2_the_workers_dispatcher_is_busy_while_node_requests_wait_for_a_thread(monkeypatch):
+    class _Stats:
+        tasks_waiting = 0
+
+    class _Limiter:
+        def statistics(self):
+            return _Stats
+
+    monkeypatch.setattr(OBS, "node_limiter", lambda: _Limiter())
+    assert OBS.threads_queued() is False
+    _Stats.tasks_waiting = 3
+    assert OBS.threads_queued() is True
+    D.reset(None)
+    assert D.get().grant(1, 1, 2) == 0
+
+
 # ============================================================================= D3, D4, D5
 def test_d3_an_undelivered_claim_is_handed_back_at_once_without_counting_the_attempt(api, world):
     """cx4 P2: the node gave up (disconnected) while its claim was being served; the job used to stay claimed for

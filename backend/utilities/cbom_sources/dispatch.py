@@ -14,6 +14,11 @@ claims a deployment serves are bounded by rate x workers, whatever the fleet siz
   team whose use in the last second is below rate / active teams.  A team with one job waiting therefore gets it
   within a heartbeat even while another team's 10,000-node run drains the bucket.
 
+* Headroom: the rate is a ceiling, not a promise.  While this worker's node requests wait for a thread (``busy``), it
+  gives no NEW permits (grants already given stay valid), so the claim rate follows what the worker actually serves.
+  EC2 round 7: at 25/s per worker the bucket granted 75 claims/s while the box served about 24 jobs/s of the 5.2
+  mix; the surplus queued in front of the node threads until clients timed out (E2a, E4a).
+
 No database, no queue, a lock around a few floats.  Load shaping only: a node that claims without a permit simply gets
 204, and every correctness rule (leases, guards, SKIP LOCKED) is unchanged.
 """
@@ -34,8 +39,9 @@ ACTIVE_TEAM_S = 2.0
 
 class Dispatcher:
     def __init__(self, rate: float, burst: float | None = None, clock: Callable[[], float] = time.monotonic,
-                 start_full: bool = True) -> None:
+                 start_full: bool = True, busy: Callable[[], bool] | None = None) -> None:
         self.rate = float(rate)
+        self.busy = busy
         self.burst = float(burst if burst is not None else max(1.0, rate))
         self.clock = clock
         self.lock = threading.Lock()
@@ -45,7 +51,7 @@ class Dispatcher:
         self.team_use: dict[int, deque] = {}
         self.team_seen: dict[int, float] = {}
         self.counters = {"dispatch_granted": 0, "dispatch_taken": 0, "dispatch_returned": 0,
-                         "dispatch_denied": 0, "dispatch_204_after_grant": 0}
+                         "dispatch_denied": 0, "dispatch_204_after_grant": 0, "dispatch_held_busy": 0}
 
     # -- bucket
     def _refill(self, now: float) -> None:
@@ -73,6 +79,12 @@ class Dispatcher:
             q.popleft()
         return len(q)
 
+    def _saturated(self) -> bool:
+        if self.busy is not None and self.busy():
+            self.counters["dispatch_held_busy"] += 1
+            return True
+        return False
+
     def _permit(self, team: int, now: float) -> bool:
         """Take one permit for ``team`` if the bucket and the team's fair share allow it (lock held)."""
         if self.tokens < 1.0:
@@ -97,8 +109,9 @@ class Dispatcher:
             held, expires = self.grants.get(node_id, (0, 0.0))
             held = held if expires > now else 0
             n = min(held, want)
-            while n < want and self._permit(team_id, now):
-                n += 1
+            if n < want and not self._saturated():
+                while n < want and self._permit(team_id, now):
+                    n += 1
             if n > held:
                 self.counters["dispatch_granted"] += n - held
             if n:
@@ -122,7 +135,7 @@ class Dispatcher:
                 self.counters["dispatch_taken"] += 1
                 return "grant"
             self.grants.pop(node_id, None)
-            if self._permit(team_id, now):
+            if not self._saturated() and self._permit(team_id, now):
                 self.counters["dispatch_taken"] += 1
                 return "permit"
             self.counters["dispatch_denied"] += 1
@@ -158,7 +171,9 @@ def get() -> Dispatcher:
         with _INSTANCE_LOCK:
             if _INSTANCE[0] is None:
                 rate = LIM.dispatch_per_worker()
-                _INSTANCE[0] = Dispatcher(rate)
+                from backend.utilities.cbom_sources import node_obs as OBS
+
+                _INSTANCE[0] = Dispatcher(rate, busy=OBS.threads_queued)
                 import os
 
                 workers = os.environ.get("BACKEND_WORKERS") or os.environ.get("WEB_CONCURRENCY")
