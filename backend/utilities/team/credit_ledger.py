@@ -36,7 +36,7 @@ settlement moves later. #52 routes every other movement through this module.
 Append-only: the database refuses UPDATE, DELETE and TRUNCATE of the table by a trigger (``zs_append_only()``,
 migration r6t2ledger001). That is not a control against the database role itself: a role that owns the table (or a
 superuser) can disable or drop the trigger. A least-privilege role (a NOLOGIN owner, the application granted INSERT and
-SELECT only) is a follow-up. Corrections are compensating lines.
+SELECT only) is #85. Corrections are compensating lines.
 """
 from __future__ import annotations
 

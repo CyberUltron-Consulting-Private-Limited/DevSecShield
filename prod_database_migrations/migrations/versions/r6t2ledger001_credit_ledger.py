@@ -15,7 +15,7 @@ Table ``creditledger`` (backend/new_models.py CreditLedgerEntry; written by back
 These columns exist from the first revision because the table cannot be backfilled later: it is append-only. UPDATE,
 DELETE and TRUNCATE are refused by triggers calling ``zs_append_only()``, one function shared by every append-only
 table (it names the table and raises SQLSTATE 42501 insufficient_privilege). That is not a control against the
-database role itself: the table's owner or a superuser can disable or drop a trigger (least-privilege role: follow-up).
+database role itself: the table's owner or a superuser can disable or drop a trigger (least-privilege role: #85).
 No foreign keys: a line outlives a deleted scan or team. Nothing is backfilled: movements before this revision have no
 line. Other databases (SQLite in tests) get the table without the triggers.
 
