@@ -129,8 +129,8 @@ class Api:
         certificate is still checked against the name in api_url)."""
         try:
             ip = resolve_checked(self.host, self.ctx.never_scan)[0]
-        except Blocked:
-            raise _Skip("skipped_never_scan") from None
+        except Blocked as exc:
+            raise _Skip("skipped_never_scan", str(exc)) from None
         except OSError:
             raise ConfigError(f"could not resolve {self.host}") from None
         if self.client is not None:
@@ -153,6 +153,8 @@ class Api:
                     if stop:
                         raise _Skip(stop)
                     raw += chunk
+        except Blocked as exc:  # the API server's address was listed while the job ran
+            raise _Skip("skipped_never_scan", str(exc)) from None
         except httpx.ConnectError as exc:
             msg = str(exc)
             if "CERTIFICATE_VERIFY_FAILED" in msg or "certificate" in msg.lower():
@@ -175,6 +177,8 @@ class Api:
         try:
             r = self.client.post(path, json=body)
             return r.status_code, r.json()
+        except Blocked as exc:
+            raise _Skip("skipped_never_scan", str(exc)) from None
         except (httpx.HTTPError, ValueError) as exc:
             return 0, {"error": exc.__class__.__name__}
 
@@ -240,9 +244,9 @@ class _TooLarge(_Fail):
 
 
 class _Skip(Exception):
-    def __init__(self, status: str) -> None:
-        super().__init__(status)
-        self.status = status
+    def __init__(self, status: str, detail: str | None = None) -> None:
+        super().__init__(detail or status)
+        self.status, self.detail = status, detail
 
 
 def _is_ip(text: str) -> bool:
@@ -520,8 +524,8 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         try:
             ip = api.check_scope()
         except _Skip as skip:
-            ctx.outcome(loc, skip.status, started=started)
-            return "API server is on the never-scan list"
+            ctx.outcome(loc, skip.status, skip.detail, started=started)
+            return skip.detail or "API server is on the never-scan list"
         status, version = api.get("/version")
         if status == 401:
             raise _Fail("auth_failed", "the API server refused the credential")
@@ -661,8 +665,8 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     except _Fail as fail:
         ctx.outcome(loc, fail.status, fail.error, started=started, assets=n)
         return fail.error
-    except _Skip as skip:  # cancelled, window closed or deadline reached between pages
-        ctx.outcome(loc, skip.status, started=started, assets=n)
+    except _Skip as skip:  # cancelled, window closed or deadline reached between pages, or the address was listed
+        ctx.outcome(loc, skip.status, skip.detail, started=started, assets=n)
         return f"stopped ({skip.status}) after {n} assets"
     finally:
         api.close()
@@ -703,8 +707,8 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     except ConfigError as exc:
         sample.update(status="error", note=str(exc))
     except _Skip as skip:
-        sample.update(status=skip.status, note="the API server address is on the never-scan list"
-                      if skip.status == "skipped_never_scan" else "the test was stopped")
+        sample.update(status=skip.status, note=skip.detail or ("the API server address is on the never-scan list"
+                      if skip.status == "skipped_never_scan" else "the test was stopped"))
     except _Fail as fail:
         sample.update(status=fail.status, note=fail.error)
     finally:

@@ -103,6 +103,8 @@ class Vault:
             raise CaFail(self.ctx.should_stop() or "skipped_deadline", "stopped")
         try:
             r = self.client.get(f"/v1/{path.lstrip('/')}", params={"list": "true"} if listing else None)
+        except Blocked as exc:  # the address was listed while the job ran
+            raise CaFail("skipped_never_scan", str(exc)) from None
         except Exception as exc:  # httpx.HTTPError, ssl errors
             raise _http_error(exc, "Vault") from None
         try:
@@ -273,6 +275,8 @@ def collect_ejbca(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target,
                 raise CaFail(ctx.should_stop() or "skipped_deadline", "stopped")
             try:
                 return client.get(sub)  # relative to the pinned base URL (.../ejbca/ejbca-rest-api/)
+            except Blocked as exc:
+                raise CaFail("skipped_never_scan", str(exc)) from None
             except Exception as exc:
                 text = str(exc).lower()
                 if "alert" in text or "handshake" in text and "certificate" in text:

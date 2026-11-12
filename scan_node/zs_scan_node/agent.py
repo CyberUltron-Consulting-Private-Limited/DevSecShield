@@ -341,6 +341,8 @@ class Agent:
             scrubber.add(s)
         scope_never = [str(x) for x in scope.get("never_scan") or []]
         never = NeverScan(scope_never + (self.team_never or []))
+        if never.unresolved:  # those names are still skipped by name; their addresses are blocked once they resolve
+            log("never-scan host names did not resolve", job=job_id, names=never.unresolved[:20], level="warn")
         deadline, reason = _deadline(scope, int(job.get("lease_seconds") or 900))
         lease_id = str(job.get("lease_id") or "")
 
@@ -434,6 +436,8 @@ class Agent:
             if team is not None and team != running.applied_team:
                 ctx.never_scan.update(running.scope_never + team)  # union: never narrower than at claim
                 running.applied_team = team
+            else:
+                ctx.never_scan.refresh()  # look the list's host names up again when due (cheap when none is)
             now = time.monotonic()
             if ctx.cancel.is_set() and running.cancel_seen is None:
                 running.cancel_seen = now

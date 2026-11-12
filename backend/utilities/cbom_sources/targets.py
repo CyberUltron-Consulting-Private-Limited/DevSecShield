@@ -82,7 +82,9 @@ def _normalize_hostname(text: str) -> str:
 
 def parse_line(text: str, *, max_v4_prefix: int = MAX_V4_PREFIX, max_v6_prefix: int = MAX_V6_PREFIX):
     """Return ``("net", Interval, canonical)`` or ``("host", name, name)``.  Raises TargetError."""
-    if "-" in text and "/" not in text and any(ch.isdigit() for ch in text.split("-", 1)[0][-1:]):
+    # an "a-b" range of either IP version (an IPv6 address may end in a hex letter: fd00::a-fd00::f); a host name
+    # with a dash fails to parse as two addresses and falls through to the host name rules below
+    if "-" in text and "/" not in text:
         first, _, last = text.partition("-")
         try:
             start = _as_v4_if_mapped(ipaddress.ip_address(first.strip()))

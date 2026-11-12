@@ -19,7 +19,7 @@ from typing import Any
 
 from zs_scan_node import drivergate
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, Target, checked_ip
+from zs_scan_node.netutil import Blocked, Target, checked_target
 
 register_asset_types("db_encryption", "db_login_policy", "db_crypto_policy", "key_store")
 
@@ -109,7 +109,8 @@ def connect(ctx: JobContext, target: Target, port: int, config: dict, password: 
 
     drivergate.install(thin_impl)
     drivergate.install(base_impl)
-    checked_ip(target.ip, ctx.never_scan)  # the network gate; the driver's own lookups and sockets pass it in scope()
+    # the network gate, every address of a name; the driver's own lookups and sockets pass it in scope()
+    checked_target(target, ctx.never_scan)
     kwargs: dict[str, Any] = dict(user=config.get("login"), password=password, host=target.label, port=port,
                                   service_name=config.get("database_name") or None, tcp_connect_timeout=10,
                                   protocol="tcps" if tls else "tcp", disable_oob=True, program="zeroshield-cbom",
