@@ -22,12 +22,13 @@
     resolve inside a container and the lab CA is private: the runner must start the node with more than the allowed diff"
 
 # ---------------------------------------------------------------------------- product rows (DA §4.4)
-- row: KF-2
-  gate: [G4, G5]
-  match: {check: canary_accepts}
-  issue: "#17"
-  owner: "#32"
-  why: "a never-scan entry given by host name still reaches the canary (DA-P2: 7 connections on dev); #32 fixes it"
+- row: KF-8
+  gate: [G10]
+  match: {check: charge_after_runtime_skips}
+  issue: "#TRACKING"
+  owner: CB-14
+  why: "targets skipped at run time (window, stop, never-scan) are charged in full (R2 billing.json, R3 test_f4)"
+  not_run_ok: "CB-05 adds the charge check to G10; the row then holds until CB-14"
 - row: KF-9
   gate: [G11]
   match: {kind: join, view: export, field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id]}
@@ -40,3 +41,91 @@
   issue: "#TRACKING"
   owner: CB-06
   why: "pqc_class is judged against the oracle from the export, which does not carry it yet"
+- row: KF-2
+  gate: [G10]
+  match: {check: canary_accepts, never_scan_by: name}
+  issue: "#17"
+  owner: "#32"
+  why: "a never-scan entry given by host name still reaches the canary (DA-P2: 7 connections on dev); #32 fixes it"
+- row: KF-3
+  gate: [G11]
+  match: {kind: oracle, target_id: z05b}
+  issue: "#TRACKING"
+  owner: CB-04
+  why: "ML-DSA-65 certificate: key algorithm stored as an OID, quantum verdict missing; false NO_PQ_KEX on z05b"
+- row: KF-4
+  gate: [G11]
+  match: {kind: oracle, target_id: z09}
+  issue: "#TRACKING"
+  owner: CB-12
+  why: "an SNI-only server (ssl_reject_handshake on) shows 'ok' and nothing collected"
+- row: KF-5
+  gate: [G11]
+  match: {kind: oracle, target_id: [canary, control], reason: [extra, fabricated]}
+  issue: "#TRACKING"
+  owner: CB-12
+  why: "a non-TLS TCP listener is stored as a tls_endpoint asset (DA-P2, R2 L1)"
+- row: KF-6
+  gate: [G11]
+  match: {kind: oracle, target_id: sshd-pq}
+  issue: "#TRACKING"
+  owner: CB-13
+  why: "a PQ-only OpenSSH (mlkem768x25519-sha256 only): the host key is not read"
+- row: KF-7
+  gate: [G5b]
+  match: {step: G5b}
+  issue: "#TRACKING"
+  owner: CB-09
+  why: "faß.lab is resolved as fass.lab (IDNA 2003); the G5b step itself is CB-05's spec"
+  not_run_ok: "G5b runs once CB-05 lands its spec; the row then holds until CB-09"
+- row: KF-10
+  gate: [G11]
+  match: {kind: derived, field: posture}
+  issue: "#TRACKING"
+  owner: CB-18
+  why: "no 'unknown' PQC class (shown as not applicable) and no Q-grade; the posture oracle (OA-10a) is not written yet"
+  not_run_ok: "posture numbers are judged once CB-05 writes the posture oracle; then the row holds until CB-18/CB-19"
+- row: KF-11
+  gate: [G12]
+  match: {check: vex_states}
+  issue: "#TRACKING"
+  owner: CB-22
+  why: "every VEX entry is 'exploitable' (R2 M2)"
+  not_run_ok: "VEX states are judged once CB-05 adds the G12 VEX check"
+- row: KF-12
+  gate: [G13b]
+  match: {step: G13b}
+  issue: "#TRACKING"
+  owner: CB-11
+  why: "a range with a never-scan entry is never compared (not_compared, collection partial)"
+  not_run_ok: "G13b runs once CB-05 lands the drift steps"
+- row: KF-13
+  gate: [G7]
+  match: {step: G7}
+  issue: "#TRACKING"
+  owner: CB-08
+  why: "the Zeek ssl.log option is offered although nothing reads it (R1 X4)"
+  not_run_ok: "G7 runs once CB-05 lands its spec"
+- row: KF-14
+  gate: [G8]
+  match: {step: G8}
+  issue: "#TRACKING"
+  owner: CB-18
+  why: "evidence older than 365 days shows 'Q0' instead of E0 + a Q0 gap; the run and export carry no gap snapshot"
+  not_run_ok: "G8 runs once CB-05 lands its spec"
+
+# ---------------------------------------------------------------------------- steps the gate spec (CB-05) adds
+- row: CB05-steps
+  gate: [G4, G6, G13]
+  match: {kind: flow, step: [G4, G6, G13]}
+  issue: "#TRACKING"
+  owner: CB-05
+  why: "Servers (G4), Database (G6) and drift (G13) customer steps are CB-05's Playwright specs"
+  not_run_ok: "CB-01 ships the runner and judge; CB-05 adds these specs"
+- row: CB05-g12-schema
+  gate: [G12]
+  match: {check: schema_validation}
+  issue: "#TRACKING"
+  owner: CB-05
+  why: "JSON schema + cyclonedx-python-lib strict, XML XSD and OSCAL validation of the downloads"
+  not_run_ok: "CB-05 adds the validators to G12"
