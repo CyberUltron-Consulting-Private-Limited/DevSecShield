@@ -52,6 +52,7 @@ import {
   useMenuReveal,
   usePolledJob,
 } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type Engine = "postgres" | "mysql" | "mssql" | "oracle" | "mongodb" | "redis";
@@ -301,7 +302,10 @@ export default function ClustersDatabasesTab({ teamId, onNavigate }: { teamId: n
       setEditingKm((cur) => (cur && cur.id === source.id ? null : cur));
       setActiveTest((cur) => (cur && cur.sourceId === source.id ? null : cur));
     },
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // deleting a source refunds its pending collect jobs
+    },
   });
 
   const newCluster = () => {
@@ -819,7 +823,10 @@ function ClusterForm({
       const status = httpStatus(err);
       if (source && (status === 409 || status === 404)) onStale();
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const validate = (): ClusterErrors => {
@@ -1295,7 +1302,10 @@ function DatabaseForm({
       const status = httpStatus(err);
       if (source && (status === 409 || status === 404)) onStale();
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const validate = (): DbErrors => {
@@ -1703,7 +1713,10 @@ function KeyManagerForm({
       const status = httpStatus(err);
       if (source && (status === 409 || status === 404)) onStale();
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const validate = (): KmErrors => {

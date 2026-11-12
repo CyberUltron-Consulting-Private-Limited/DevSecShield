@@ -24,6 +24,7 @@ import {
 
 import { cbomSourcesKeys } from "./keys";
 import { ConfirmDialog, EmptyState, Field, NodeSelect, SecretField, SectionCard, TestStatusBadge, Truncate } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 
 type Vendor = "cisco_ios" | "cisco_asa" | "fortios" | "panos" | "f5_bigip";
 const VENDORS: { value: Vendor; label: string; transport: "ssh" | "api"; reads: string }[] = [
@@ -53,7 +54,7 @@ export default function AppliancesSection({ teamId, nodes, onNavigate }: { teamI
   const appliances = (query.data?.sources ?? []).filter((s) => s.kind === "appliance");
   const invalidate = () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
   const test = useMutation({ mutationFn: (id: number) => testCbomSource(teamId, id), onSettled: invalidate });
-  const remove = useMutation({ mutationFn: (id: number) => deleteCbomSource(teamId, id), onSettled: invalidate, onSuccess: () => setDeleting(null) });
+  const remove = useMutation({ mutationFn: (id: number) => deleteCbomSource(teamId, id), onSettled: () => { invalidate(); refreshCreditBalance(queryClient); }, onSuccess: () => setDeleting(null) });
 
   return (
     <SectionCard

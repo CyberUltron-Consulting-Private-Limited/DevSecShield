@@ -58,6 +58,7 @@ import {
   usePolledJob,
   type Tone,
 } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 
 // ---------------------------------------------------------------------------- constants
 type Provider = "aws" | "azure" | "gcp";
@@ -301,6 +302,7 @@ export const AWS_NOT_CONFIGURED =
 
 export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
   const invalidate = useInvalidate(teamId);
+  const queryClient = useQueryClient();
   const enabled = Number.isFinite(teamId);
   const [form, setForm] = useState<{ provider: Provider; source: CbomSource | null; nonce: number }>({ provider: "aws", source: null, nonce: 0 });
   const [validation, setValidation] = useState<ValidationView | null>(null);
@@ -364,7 +366,10 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     onError: (err, v) => {
       if (v.source && (httpStatus(err) === 409 || httpStatus(err) === 404)) resetForm("aws");
     },
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const testMutation = useMutation({
@@ -382,7 +387,10 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
       if (form.source?.id === source.id) resetForm();
       if (validation?.sourceId === source.id) setValidation(null);
     },
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // deleting a source refunds its pending collect jobs
+    },
   });
 
   if (settingsQuery.isLoading || cloudQuery.isLoading || identityQuery.isLoading) return <LoadingBlock />;
@@ -1273,6 +1281,7 @@ function AzureForm({
   onCancel: () => void;
 }) {
   const invalidate = useInvalidate(teamId);
+  const queryClient = useQueryClient();
   const [name, setName] = useState(source?.name ?? "");
   const [tenantId, setTenantId] = useState(cfgString(source, "tenant_id"));
   const [clientId, setClientId] = useState(cfgString(source, "client_id"));
@@ -1292,7 +1301,10 @@ function AzureForm({
     onError: (err) => {
       if (source && (httpStatus(err) === 409 || httpStatus(err) === 404)) onCancel();
     },
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const submit = () => {
@@ -1427,6 +1439,7 @@ function GcpForm({
   onCancel: () => void;
 }) {
   const invalidate = useInvalidate(teamId);
+  const queryClient = useQueryClient();
   const [name, setName] = useState(source?.name ?? "");
   const [orgId, setOrgId] = useState(cfgString(source, "organization_id"));
   const [projects, setProjects] = useState(cfgList(source, "project_ids").join("\n"));
@@ -1445,7 +1458,10 @@ function GcpForm({
     onError: (err) => {
       if (source && (httpStatus(err) === 409 || httpStatus(err) === 404)) onCancel();
     },
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const keyError = (text: string): string | null => {
@@ -1862,6 +1878,7 @@ function CaDialog({
   onNavigate: (tab: string) => void;
 }) {
   const invalidate = useInvalidate(teamId);
+  const queryClient = useQueryClient();
   const savedProvider = cfgString(source, "provider") as CaProvider;
   const initialProvider: CaProvider = row.providers.includes(savedProvider) ? savedProvider : row.providers[0];
   const [provider, setProvider] = useState<CaProvider>(initialProvider);
@@ -1925,7 +1942,10 @@ function CaDialog({
     onError: (err) => {
       if (source && (httpStatus(err) === 409 || httpStatus(err) === 404)) onClose();
     },
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const submit = (test: boolean) => {
@@ -2204,6 +2224,7 @@ function IdpDialog({
   onClose: () => void;
 }) {
   const invalidate = useInvalidate(teamId);
+  const queryClient = useQueryClient();
   const provider = row.provider;
   const [name, setName] = useState(source?.name ?? uniqueName(row.defaultName, takenNames));
   const [tenantId, setTenantId] = useState(cfgString(source, "tenant_id"));
@@ -2231,7 +2252,10 @@ function IdpDialog({
     onError: (err) => {
       if (source && (httpStatus(err) === 409 || httpStatus(err) === 404)) onClose();
     },
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // a changed connection refunds the source's pending collect jobs
+    },
   });
 
   const submit = () => {

@@ -17,6 +17,7 @@ import { listCbomSources, updateCbomSource, type CbomSource } from "@/utils/back
 import { cbomSourcesKeys } from "./keys";
 import { EXPOSURE_CHOICES, exposureFrom, withMetadata, type ExposureChoice } from "./logic";
 import { Field, SectionCard, StatusBadge, Truncate } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 
 export const CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
@@ -116,7 +117,10 @@ export function SourceMetadataDialog({ teamId, source, onClose }: {
     },
     onError: (err) => setError(err instanceof Error && !("response" in err)
       ? err.message : "Could not save: the source changed or was removed. Reload and try again."),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      refreshCreditBalance(queryClient); // every source edit (only a changed connection refunds; utils/creditBalance.ts)
+    },
   });
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -188,7 +192,10 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
       setError(null);
     },
     onError: (err) => setError(err instanceof Error && !("response" in err) ? err.message : "Some sources could not be saved; reload and try again"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      refreshCreditBalance(queryClient); // every source edit (only a changed connection refunds; utils/creditBalance.ts)
+    },
   });
   if (query.isLoading || sources.length === 0) return null;
   const toggle = (id: number) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
