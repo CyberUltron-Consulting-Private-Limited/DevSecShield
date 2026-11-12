@@ -6,6 +6,7 @@ The table, the counts on the run and the export are built from the same query ov
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import re
 import uuid
@@ -22,6 +23,7 @@ from backend.utilities.cbom_sources.common import iso_z
 from backend.utilities.cbom_sources import provenance as PROV
 from backend.utilities.cbom_sources.classify import family, quantum_vulnerable
 from backend.utilities.cbom_sources.posture import pqc_class
+from backend.utilities.cbom_sources import tls_suites
 
 EXPORT_CAP = 50_000
 # serialNumber = uuid5(this namespace, "<run id>:<KB version>"): the same run exported with the same knowledge base is
@@ -324,8 +326,10 @@ def _date_time(value: Any) -> str | None:
             _dt.datetime.strptime(text[:19], "%Y-%m-%dT%H:%M:%S")
         except ValueError:
             return None
-        if match.group(3) is not None and (int(match.group(3)) > 14 or int(match.group(4)) > 59):
-            return None  # xs:dateTime offsets stop at 14:00
+        if match.group(3) is not None:
+            hours, minutes = int(match.group(3)), int(match.group(4))
+            if hours > 14 or minutes > 59 or (hours == 14 and minutes):
+                return None  # xs:dateTime offsets stop at 14:00 (RFC 3339 allows +14:30, the XSD does not)
         return text
     try:
         moment = _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
@@ -355,15 +359,45 @@ def _protocol_versions(row: CbomCollectedAsset, facts: dict[str, Any]) -> list[s
     return _names(facts.get("negotiated_version")) or _names(row.protocol)
 
 
-def _cipher_suites(facts: dict[str, Any]) -> list[str]:
+def _named(values: list[str]) -> list[str]:
+    """``values`` without the sentinels tools print for "none" (``<NULL>``, ``(NONE)`` ...)."""
+    return [v for v in values if not tls_suites.is_sentinel(v)]
+
+
+def _database_suites(facts: dict[str, Any]) -> list[Any]:
+    """Suites of the database collector's own connection and of the live connections it saw (PostgreSQL
+    ``pg_stat_ssl``: {"version", "cipher"}; MySQL status variables: {"Ssl_cipher"} / {"variable", "value"})."""
+    own = facts.get("own_connection")
+    out: list[Any] = []
+    if isinstance(own, dict):
+        out += [own.get("cipher"), own.get("Ssl_cipher")]
+    live = facts.get("live_connections")
+    for conn in live if isinstance(live, list) else []:
+        if isinstance(conn, dict):
+            out.append(conn.get("cipher"))
+            if conn.get("variable") == "Ssl_cipher":
+                out.append(conn.get("value"))
+    return out
+
+
+def _cipher_suites(facts: dict[str, Any], tls: bool) -> list[dict[str, Any]]:
     """Every suite the collector saw the server accept: its own list (a list, or sshd's comma-separated string), else
-    the negotiated suite plus the suites the weak-class probes found accepted (``weak_ciphers_accepted``)."""
-    listed = _names(facts.get("ciphers"))
-    if listed:
-        return listed
-    weak = facts.get("weak_ciphers_accepted")
-    extra = [v for v in weak.values() if isinstance(v, (list, tuple))] if isinstance(weak, dict) else []
-    return _names(facts.get("cipher") or facts.get("negotiated_cipher"), *extra)
+    the negotiated suite, the suites the weak-class probes found accepted (``weak_ciphers_accepted``) and the
+    database connections' suites. TLS suites are listed once each by their IANA name with their code
+    (``tls_suites``): one suite stored under its OpenSSL and its IANA name is one suite."""
+    names = _names(facts.get("ciphers"))
+    if not names:
+        weak = facts.get("weak_ciphers_accepted")
+        extra = [v for v in weak.values() if isinstance(v, (list, tuple))] if isinstance(weak, dict) else []
+        names = _names(facts.get("cipher") or facts.get("negotiated_cipher"), *extra, _database_suites(facts))
+    if not tls:
+        return [{"name": name} for name in names]
+    out: dict[str, dict[str, Any]] = {}
+    for name in _named(names):
+        iana, code = tls_suites.canonical(name)
+        if iana not in out:
+            out[iana] = {"name": iana, **({"identifiers": tls_suites.identifiers(code)} if code else {})}
+    return list(out.values())
 
 
 def _key_primitive(algorithm: str) -> str:
@@ -391,35 +425,76 @@ def _algorithm(ref: str, name: str, primitive: str, *, oid: str | None = None, c
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": name[:255], "cryptoProperties": crypto}
 
 
-def _certificate_parts(ref: str, row: CbomCollectedAsset, facts: dict[str, Any], size: int | None,
-                       curve: str | None, signature: str | None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """CycloneDX 1.6 certificate references and the components they point at, nested in the certificate:
-    ``signatureAlgorithmRef`` -> the signature algorithm; ``subjectPublicKeyRef`` -> the public key (size), whose
-    ``algorithmRef`` -> the key algorithm (curve, or the size as its parameter set)."""
+class CertificateParts:
+    """One export's certificate parts: the signature algorithms, public keys and key algorithms its certificates
+    reference (CycloneDX 1.6 ``signatureAlgorithmRef`` / ``subjectPublicKeyRef`` / ``algorithmRef``), one component per
+    distinct content, shared by bom-ref by every certificate that has it. An estate's certificates share a handful of
+    (signature algorithm, key algorithm, size, curve) tuples, so 50,000 certificates need a few dozen parts, not
+    150,000 nested copies (review 5879114669: 2.2 GB to write such an export as XML).
+
+    The parts are top-level components after the assets, with bom-refs ``zs-signature-algorithm-<hash>``,
+    ``zs-public-key-<hash>`` and ``zs-public-key-algorithm-<hash>`` (a hash of the content: the same content has the
+    same ref in every export) and one property, ``zs:part_of`` = ``certificate``: they describe parts of
+    certificates, not assets of their own (no ``zs-asset-`` ref, no provenance, not in ``zs:asset_count``)."""
+
+    PART_OF = {"name": "zs:part_of", "value": "certificate"}
+
+    def __init__(self) -> None:
+        self._by_key: dict[tuple, str] = {}
+        self._refs: set[str] = set()
+        self._components: list[dict[str, Any]] = []
+
+    def ref(self, kind: str, key: tuple, build) -> str:
+        """The bom-ref of the ``kind`` part with content ``key``; ``build(ref)`` makes its component the first time."""
+        full = (kind, *key)
+        ref = self._by_key.get(full)
+        if ref is None:
+            digest = hashlib.sha256(json.dumps(full, default=str).encode()).hexdigest()[:16]
+            ref = f"zs-{kind}-{digest}"
+            while ref in self._refs:  # a 64-bit prefix collision: never in practice, still never a shared ref
+                ref += "x"
+            self._refs.add(ref)
+            self._by_key[full] = ref
+            component = build(ref)
+            component["properties"] = [self.PART_OF]
+            self._components.append(component)
+        return ref
+
+    def components(self) -> list[dict[str, Any]]:
+        return self._components
+
+
+def _certificate_parts(row: CbomCollectedAsset, facts: dict[str, Any], size: int | None, curve: str | None,
+                       signature: str | None, parts: CertificateParts) -> dict[str, Any]:
+    """The certificate's CycloneDX 1.6 references into the export's shared ``parts``: ``signatureAlgorithmRef`` ->
+    the signature algorithm; ``subjectPublicKeyRef`` -> the public key (size), whose ``algorithmRef`` -> the key
+    algorithm (curve, or the size as its parameter set)."""
     refs: dict[str, Any] = {}
-    nested: list[dict[str, Any]] = []
     if signature and signature.lower() != "unknown":
-        refs["signatureAlgorithmRef"] = f"{ref}-signature-algorithm"
-        nested.append(_algorithm(refs["signatureAlgorithmRef"], signature, "signature",
-                                 oid=_first(facts, "sig_alg_oid")))
+        sig_oid = _first(facts, "sig_alg_oid")
+        refs["signatureAlgorithmRef"] = parts.ref("signature-algorithm", (signature, sig_oid), lambda ref: _algorithm(
+            ref, signature, "signature", oid=sig_oid))
     key_alg = _first(facts, "key_alg") or _text(row.algorithm)
     key_alg = key_alg if key_alg and key_alg.lower() != "unknown" else None
     if key_alg or size:
-        refs["subjectPublicKeyRef"] = f"{ref}-public-key"
-        material: dict[str, Any] = {"type": "public-key"}
-        if size:
-            material["size"] = size
+        alg_ref = None
         if key_alg:
-            material["algorithmRef"] = f"{ref}-public-key-algorithm"
-        label = "-".join(str(part) for part in (key_alg, curve or size) if part) or "public key"
-        nested.append({"type": "cryptographic-asset", "bom-ref": refs["subjectPublicKeyRef"], "name": label[:255],
-                       "cryptoProperties": {"assetType": "related-crypto-material",
-                                            "relatedCryptoMaterialProperties": material}})
-        if key_alg:
-            nested.append(_algorithm(material["algorithmRef"], key_alg, _key_primitive(key_alg),
-                                     oid=_first(facts, "key_alg_oid"), curve=curve,
-                                     parameter=None if curve or not size else str(size)))
-    return refs, nested
+            key_oid, parameter = _first(facts, "key_alg_oid"), None if curve or not size else str(size)
+            alg_ref = parts.ref("public-key-algorithm", (key_alg, key_oid, curve, parameter), lambda ref: _algorithm(
+                ref, key_alg, _key_primitive(key_alg), oid=key_oid, curve=curve, parameter=parameter))
+        label = ("-".join(str(part) for part in (key_alg, curve or size) if part) or "public key")[:255]
+
+        def public_key(ref: str) -> dict[str, Any]:
+            material: dict[str, Any] = {"type": "public-key"}
+            if size:
+                material["size"] = size
+            if alg_ref:
+                material["algorithmRef"] = alg_ref
+            return {"type": "cryptographic-asset", "bom-ref": ref, "name": label, "cryptoProperties": {
+                "assetType": "related-crypto-material", "relatedCryptoMaterialProperties": material}}
+
+        refs["subjectPublicKeyRef"] = parts.ref("public-key", (label, size, alg_ref), public_key)
+    return refs
 
 
 def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: dict[str, Any], size: int | None,
@@ -441,18 +516,23 @@ def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: d
                 ("zs:macs", ",".join(_names(facts.get("macs"), facts.get("macs_s2c"), facts.get("macs_c2s"))) or None)]
     elif crypto.get("assetType") == "protocol":
         # every group the server was seen to offer or accept: its own lists, the negotiated one, the PQ probe's
-        groups = sorted(set(_names(*(facts.get(k) for k in ("groups", "supported_groups", "accepted_groups",
-                                                           "pq_groups", "negotiated_group", "group", "pq_group")))))
-        out += [("zs:groups", ",".join(groups) or None),
-                ("zs:groups_negotiated", _first(facts, "negotiated_group", "group"))]
+        # ("<NULL>" is what s_client prints when no handshake completed: not a group)
+        groups = sorted(set(_named(_names(*(facts.get(k) for k in ("groups", "supported_groups", "accepted_groups",
+                                                                   "pq_groups", "negotiated_group", "group",
+                                                                   "pq_group"))))))
+        negotiated = _named([v for v in (_text(facts.get("negotiated_group")), _text(facts.get("group"))) if v])
+        out += [("zs:groups", ",".join(groups) or None), ("zs:groups_negotiated", negotiated[0] if negotiated else None)]
     return [{"name": name, "value": value} for name, value in out if value]
 
 
 def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None,
-               prov: PROV.JobProvenance | None = None, shared: dict[tuple, list] | None = None) -> dict[str, Any]:
+               prov: PROV.JobProvenance | None = None, shared: dict[tuple, list] | None = None,
+               parts: CertificateParts | None = None) -> dict[str, Any]:
     """One asset as a CycloneDX component. ``shared``: one export's cache of provenance property lists. Rows of one
     job attempt stored in one batch have the same provenance, so their components share the same (read-only)
-    property objects: a 50k-asset export then holds a few hundred provenance lists instead of 50,000."""
+    property objects: a 50k-asset export then holds a few hundred provenance lists instead of 50,000. ``parts``: the
+    export's certificate parts; a certificate references them, and the document lists ``parts.components()`` after
+    the assets."""
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
@@ -501,9 +581,8 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
             out["purl"] = purl
         return out
     crypto: dict[str, Any] = {"assetType": row.cdx_type if row.cdx_type in ("certificate", "protocol", "related-crypto-material") else "algorithm"}
-    nested: list[dict[str, Any]] = []
     if crypto["assetType"] == "certificate":
-        refs, nested = _certificate_parts(ref, row, facts, size, curve, signature)
+        refs = _certificate_parts(row, facts, size, curve, signature, parts if parts is not None else CertificateParts())
         crypto["certificateProperties"] = {
             "subjectName": _text(facts.get("subject"), 2048), "issuerName": _text(facts.get("issuer"), 2048),
             "notValidBefore": _date_time(facts.get("not_before")), "notValidAfter": _date_time(facts.get("not_after")),
@@ -516,7 +595,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         crypto["protocolProperties"] = {
             "type": "ssh" if proto.startswith("ssh") else ("tls" if "tls" in proto or "ssl" in proto or proto == "tls" else "other"),
             "version": ",".join(versions)[:255] if versions else None,
-            "cipherSuites": [{"name": name} for name in _cipher_suites(facts)],
+            "cipherSuites": _cipher_suites(facts, tls=not proto.startswith("ssh")),
         }
         crypto["protocolProperties"] = {k: v for k, v in crypto["protocolProperties"].items() if v}
     elif crypto["assetType"] == "related-crypto-material":
@@ -535,12 +614,11 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         }.items() if v is not None and v != ""}
     if row.algorithm:
         props.append({"name": "zs:algorithm", "value": row.algorithm})
+    if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
+        props.append({"name": "zs:protocol", "value": row.protocol})
     props += _detail_properties(row, facts, crypto, size, curve, signature, view) + provenance
-    out = {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
-           "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
-    if nested:
-        out["components"] = nested
-    return out
+    return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
+            "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
 
 
 def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_names: dict[int, Any],
@@ -582,6 +660,7 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     provs = PROV.load(session, run.team_id, jobs)
     shared: dict[tuple, list] = {}
+    parts = CertificateParts()
     gaps = []
     for job in jobs:
         info = _job_targets(job, names)
@@ -610,7 +689,8 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                 *coverage_gaps(coverage, names, job_names, provs),
             ],
         },
+        # the assets (one zs-asset-<id> component each), then the certificate parts they reference
         "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
-                                  provs.get(row.job_id), shared) for row in rows],
+                                  provs.get(row.job_id), shared, parts) for row in rows] + parts.components(),
         "vulnerabilities": vulnerabilities(list(rows), views),
     }

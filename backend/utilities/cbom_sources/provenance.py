@@ -25,8 +25,9 @@ judged field by field, and a missing field must read as a defect, not as "not ap
 * ``collected_at``: when ZeroShield stored the row (UTC, ``YYYY-MM-DDTHH:MM:SSZ``): within seconds of the read.
 * ``signed``: ``true`` when the row came from a node that has held an Ed25519 request-signing key since before the row
   was stored (such a node must sign every request: ``node_auth``); ``false`` for the cloud worker (server-side, there
-  is no node to sign; by design) and for a node enrolled without a key (legacy); ``unknown`` when the node was deleted
-  or enrolled again after the row (what signed it then is no longer known).
+  is no node to sign; by design) and for a node enrolled without a key (legacy); ``unknown`` when the node was deleted,
+  reset and not enrolled again (a reset clears ``enrolled_at``), or enrolled again after the row (what signed it then
+  is no longer known).
 """
 from __future__ import annotations
 
@@ -104,7 +105,7 @@ class JobProvenance:
         if self.runner == "cloud":
             return "false"
         if self.runner != "node" or self.node_has_key is None or self.node_enrolled_at is None or stored_at is None:
-            return UNKNOWN
+            return UNKNOWN  # node deleted, or reset (enrolled_at cleared) and not enrolled again
         if self.node_enrolled_at > stored_at:
             return UNKNOWN  # enrolled again since: the key (or its absence) now on file says nothing about the row
         return "true" if self.node_has_key else "false"
