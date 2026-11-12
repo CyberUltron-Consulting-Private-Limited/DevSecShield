@@ -184,7 +184,13 @@ class SaltTransport:
 
     @staticmethod
     def _lookup_allowed(resp, jid: str) -> None:
-        control.raise_for_auth(resp, WHAT)
+        """After a good login and a started job, a 401/403 here is salt-api refusing the jobs runner to this account
+        (rest_cherrypy answers a runner eauth denial with 401), not a bad password: say which permission it needs."""
+        if resp.status_code in (401, 403):
+            raise TransportError("refused", f"salt-api refused this account the jobs runner for job {jid} "
+                                            f"({resp.status_code}) after the login and the job start: grant it '@jobs' "
+                                            "(jobs.exit_success and jobs.list_job); the job may still be running on "
+                                            "the minions")
         if resp.status_code >= 400:  # e.g. the runner client is not enabled: waiting would not help
             raise TransportError("error", f"salt-api could not look up job {jid} ({resp.status_code}): enable the "
                                           "'runner' client (netapi_enable_clients) and '@jobs' for this account")

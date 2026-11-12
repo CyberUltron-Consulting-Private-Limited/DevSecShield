@@ -206,13 +206,14 @@ class LocalSession:
 RUN_WINDOW_S = 120  # how long before zs-collect a transport's own process for this run may have started
 
 
-def _stat(pid: int, proc: str = "/proc") -> tuple[int, int] | None:
-    """(parent pid, start time in clock ticks since boot) from ``/proc/<pid>/stat`` (fields 4 and 22)."""
+def _stat(pid: int, proc: str = "/proc") -> tuple[int, int, str] | None:
+    """(parent pid, start time in clock ticks since boot, command name) from ``/proc/<pid>/stat`` (fields 4, 22, 2)."""
     try:
         with open(f"{proc}/{pid}/stat", encoding="ascii", errors="replace") as f:
             text = f.read()
+        comm = text[text.index("(") + 1:text.rindex(")")]
         fields = text[text.rindex(")") + 2:].split()  # after "pid (comm) ": state is field 3
-        return int(fields[1]), int(fields[19])
+        return int(fields[1]), int(fields[19]), comm
     except (OSError, ValueError, IndexError):
         return None
 
@@ -220,19 +221,24 @@ def _stat(pid: int, proc: str = "/proc") -> tuple[int, int] | None:
 def transient_ancestors(pid: int | None = None, proc: str = "/proc", limit: int = 64,
                         window_s: float = RUN_WINDOW_S) -> list[int]:
     """The processes that launched zs-collect for this run: its ancestors (from its parent, or from ``pid``) that
-    started at most ``window_s`` before zs-collect itself (or before ``pid``).  They are the transport's own short-lived processes (the SSH
-    session Ansible or salt-ssh opened, salt-call, a salt-minion job, sudo, the launcher's shell), which the SSH path
-    never sees on the host.  A parent never starts after its child, so the walk stops at the first older ancestor: a
-    service (sshd, the salt-minion and its long-lived workers, the SSM agent), wherever it sits in the tree, and
-    everything above it, is kept.  PID 1 is never excluded, and an ancestor whose start time cannot be read ends the
-    walk (it is kept).  The window is a bound, not a proof: a service (re)started less than ``window_s`` before the
-    run that is itself an ancestor (a salt-minion restarted just before its job) is treated as part of the run, and a
-    transport slower than the window to start zs-collect leaves its oldest process in."""
+    started at most ``window_s`` before zs-collect itself (or before ``pid``).  They are the transport's own
+    short-lived processes (the SSH session Ansible or salt-ssh opened, salt-call, a salt-minion job, sudo, the
+    launcher's shell), which the SSH path never sees on the host.  A parent never starts after its child, so the walk
+    stops at the first older ancestor: a service (sshd, the salt-minion and its long-lived workers, the SSM agent),
+    wherever it sits in the tree, and everything above it, is kept.
+
+    The window alone would also take a service (re)started less than ``window_s`` before the run (an agent that just
+    updated itself, a host that just booted).  So the walk also stops, keeping it, at a direct child of PID 1 that is
+    not a copy of PID 1 itself: what the service manager started is a service by construction.  A child of PID 1
+    with PID 1's own command name is PID 1 forking per connection or per job (sshd or a salt-minion running as a
+    container's PID 1) and is part of the run.  PID 1 is never excluded, and an ancestor whose stat cannot be read
+    ends the walk (it is kept).  A transport slower than the window to start zs-collect leaves its oldest process in."""
     out: list[int] = []
     anchor = _stat(os.getpid() if pid is None else pid, proc)
     if anchor is None:
         return out
     since = anchor[1] - window_s * (os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100)
+    init = _stat(1, proc)
     current = os.getppid() if pid is None else pid
     for _ in range(limit):
         if current is None or current <= 1:
@@ -240,6 +246,8 @@ def transient_ancestors(pid: int | None = None, proc: str = "/proc", limit: int 
         info = _stat(current, proc)
         if info is None or info[1] < since:
             break
+        if info[0] == 1 and (init is None or info[2] != init[2]):
+            break  # started by the service manager (PID 1): a service, however young
         out.append(current)
         current = info[0]
     return out

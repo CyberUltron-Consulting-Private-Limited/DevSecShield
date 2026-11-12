@@ -3,6 +3,7 @@ fleet glue (never-scan before dispatch, relabelling, outcomes) and the generated
 from __future__ import annotations
 
 import copy
+import io
 import json
 import os
 import re
@@ -11,7 +12,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -573,12 +574,13 @@ def test_zsdoc_parse_output_takes_json_or_chunks():
         zsdoc.parse_output("nothing here", NONCE)
 
 
-def _fake_proc(root: Path, tree: dict[int, tuple[int, float]], hz: int) -> str:
-    """A /proc with ``stat`` files: {pid: (parent pid, start time in seconds since boot)}."""
-    for pid, (ppid, start) in tree.items():
+def _fake_proc(root: Path, tree: dict[int, tuple], hz: int) -> str:
+    """A /proc with ``stat`` files: {pid: (parent pid, start time in seconds since boot[, command name])}."""
+    for pid, (ppid, start, *comm) in tree.items():
         (root / str(pid)).mkdir(parents=True)
         rest = " ".join(["0"] * 13) + f" {int(start * hz)} 0 0"  # fields 9..21 (flags..itrealvalue), starttime (22)
-        (root / str(pid) / "stat").write_text(f"{pid} (proc name) S {ppid} 1 1 0 -1 {rest}\n")
+        name = comm[0] if comm else "proc name"
+        (root / str(pid) / "stat").write_text(f"{pid} ({name}) S {ppid} 1 1 0 -1 {rest}\n")
     return str(root)
 
 
@@ -593,19 +595,51 @@ def test_zs_collect_ignores_the_transports_own_processes_but_keeps_services(tmp_
     minion = _fake_proc(tmp_path / "minion", {21: (1, 1000), 79: (21, 1001), 86: (79, 1002), 700: (86, 1180),
                                               710: (700, 1185), 720: (710, 1186)}, HZ)
     assert Z.transient_ancestors(720, proc=minion) == [720, 710, 700]
-    # sshd as PID 1 (a container): the transport's own SSH session (695 [priv], 696) is excluded too, while it hangs
-    # off PID 1 directly; the SSH path does not report its own session either
-    lab = _fake_proc(tmp_path / "lab", {1: (0, 5), 695: (1, 3000), 696: (695, 3000.2), 697: (696, 3001),
-                                        698: (697, 3001.1), 699: (698, 3002)}, HZ)
+    # sshd as PID 1 (a container, the lab's targets): the transport's own SSH session (695 [priv], 696) is excluded
+    # too, though 695 hangs off PID 1 directly: it is PID 1 (sshd) forking per connection, the same command name.
+    # The SSH path does not report its own session either.
+    lab = _fake_proc(tmp_path / "lab", {1: (0, 5, "sshd"), 695: (1, 3000, "sshd"), 696: (695, 3000.2, "sshd"),
+                                        697: (696, 3001, "sh"), 698: (697, 3001.1, "sh"), 699: (698, 3002, "zs")}, HZ)
     assert Z.transient_ancestors(699, proc=lab) == [699, 698, 697, 696, 695]
     # a systemd host: init <- 500 sshd (since boot) <- 695 session ... : sshd itself is a service and is kept
-    host = _fake_proc(tmp_path / "host", {500: (1, 12), 695: (500, 90000), 696: (695, 90000), 699: (696, 90002)}, HZ)
+    host = _fake_proc(tmp_path / "host", {1: (0, 1, "systemd"), 500: (1, 12, "sshd"), 695: (500, 90000, "sshd"),
+                                          696: (695, 90000, "sshd"), 699: (696, 90002, "zs")}, HZ)
     assert Z.transient_ancestors(699, proc=host) == [699, 696, 695]
     assert Z.transient_ancestors(699, proc=host, window_s=1) == [699]  # the window is what bounds the chain
-    assert Z.transient_ancestors(500, proc=host) == [500]  # the walk always starts at the given pid
+    assert Z.transient_ancestors(695, proc=host) == [695]  # the walk always starts at the given pid
+    assert Z.transient_ancestors(500, proc=host) == []  # ... and the given pid can itself be a service
     assert Z.transient_ancestors(999, proc=minion) == []  # unknown pid: nothing
     (tmp_path / "minion" / "79" / "stat").write_text("garbage")
     assert Z.transient_ancestors(720, proc=minion) == [720, 710, 700]  # an unreadable ancestor ends the walk
+
+
+def test_a_young_service_started_by_pid_1_is_kept_and_pid_1_never_goes(tmp_path):
+    """Review 5879001771 (zscollect.py:241): the start-time window alone took a service (re)started just before the
+    run.  A direct child of PID 1 that is not PID 1's own command is a service, however young; PID 1 is never
+    excluded, however young."""
+    from zs_scan_node import zscollect as Z
+
+    # sshd, a salt-minion or the SSM agent restarted 10 s before the run (an agent self-update): kept, with its parent
+    restarted = _fake_proc(tmp_path / "restarted", {1: (0, 1, "systemd"), 500: (1, 89990, "sshd"),
+                                                    695: (500, 90000, "sshd"), 696: (695, 90000.1, "sshd"),
+                                                    699: (696, 90002, "zs")}, HZ)
+    assert Z.transient_ancestors(699, proc=restarted) == [699, 696, 695]
+    minion = _fake_proc(tmp_path / "minion", {1: (0, 2, "systemd"), 21: (1, 4000, "salt-minion"),
+                                              700: (21, 4030, "salt-minion"), 710: (700, 4031, "sh"),
+                                              720: (710, 4032, "zs")}, HZ)
+    assert Z.transient_ancestors(720, proc=minion) == [720, 710, 700]  # the minion's job is the run; 21 stays
+    # a host booted 30 s ago: every ancestor is young; the services under PID 1 are still kept
+    booted = _fake_proc(tmp_path / "booted", {1: (0, 0.5, "systemd"), 400: (1, 20, "amazon-ssm-agen"),
+                                              410: (400, 25, "ssm-agent-worke"), 420: (410, 29, "sh"),
+                                              430: (420, 30, "zs")}, HZ)
+    assert Z.transient_ancestors(430, proc=booted) == [430, 420, 410]
+    # a container that just started, sshd its PID 1: the session (PID 1's own fork) goes, PID 1 itself never does
+    young = _fake_proc(tmp_path / "young", {1: (0, 50, "sshd"), 695: (1, 52, "sshd"), 696: (695, 52.1, "sshd"),
+                                            699: (696, 53, "zs")}, HZ)
+    assert Z.transient_ancestors(699, proc=young) == [699, 696, 695]
+    # /proc/1 not readable (hidepid): a child of PID 1 counts as a service
+    (Path(young) / "1" / "stat").unlink()
+    assert Z.transient_ancestors(699, proc=young) == [699, 696]
 
 
 @pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc")
@@ -660,12 +694,25 @@ def test_nested_or_corrupt_output_is_a_value_error_not_a_crash():
     import gzip
     import hashlib
 
-    blob = bytearray(gzip.compress(json.dumps(doc_for("10.0.0.1")).encode(), mtime=0))
-    blob[len(blob) // 2] ^= 0xFF
-    blob = bytes(blob)
-    line = f"ZSC1 {NONCE} 1/1 {hashlib.sha256(blob).hexdigest()} {base64.b64encode(blob).decode()}"
-    with pytest.raises(zsdoc.ChunkError):
-        zsdoc.reassemble([line], NONCE)
+    import zlib
+
+    good = gzip.compress(json.dumps(doc_for("10.0.0.1")).encode(), mtime=0)
+
+    def line_of(blob: bytes) -> str:
+        return f"ZSC1 {NONCE} 1/1 {hashlib.sha256(blob).hexdigest()} {base64.b64encode(blob).decode()}"
+
+    blob = bytearray(good)
+    blob[len(blob) // 2] ^= 0xFF  # a byte in the middle: gzip's CRC check fails (BadGzipFile, an OSError)
+    with pytest.raises(zsdoc.ChunkError, match="decompress"):
+        zsdoc.reassemble([line_of(bytes(blob))], NONCE)
+    # the deflate stream itself broken (review 5879001771, zsdoc.py:153): the first byte after the 10-byte gzip header
+    # gives an invalid block type, which raises zlib.error, not an OSError
+    blob = bytearray(good)
+    blob[10] = 0xFF
+    with pytest.raises(zlib.error):
+        gzip.GzipFile(fileobj=io.BytesIO(bytes(blob))).read()
+    with pytest.raises(zsdoc.ChunkError, match="decompress"):
+        zsdoc.reassemble([line_of(bytes(blob))], NONCE)
 
 
 def test_awx_a_host_with_a_nested_document_is_its_own_error(mock_http):
@@ -908,3 +955,149 @@ def test_salt_request_timeout_covers_the_per_host_timeout(monkeypatch):
     out = list(salt().run_collect(targets(1), cred, opts))
     assert out[0].status == "ok"
     assert fake.calls[0]["timeout"] == 660 and seen == [720]  # salt waits 600 + 60 s; the request 60 s more
+
+
+# ----------------------------------------------------------------------------- review 5879001771
+def test_fleet_a_lost_lease_stops_the_job_and_the_transport(monkeypatch):
+    """The server answers an asset post with 409 (LeaseLost: the job was re-queued to another node).  fleet.collect
+    raises it (the agent then stops the job without a result), the transport is closed and never launches its next
+    batch on the customer's hosts, and nothing more is posted or recorded."""
+    from zs_scan_node import jobctx
+    from zs_scan_node.jobctx import LeaseLost
+    from zs_scan_node.transports.base import TargetResult
+
+    monkeypatch.setattr(jobctx, "BATCH", 1)  # every emit posts (a real job posts every 500 assets or 15 s)
+    posts = []
+
+    def poster(batch, batch_id, *progress):
+        posts.append(batch_id)
+        raise LeaseLost("job 7 is leased to another node (409)")
+
+    class TwoBatches:
+        launched, closed = 0, False
+
+        def run_collect(self, targets, credential, options):
+            try:
+                for start in range(0, len(targets), 2):
+                    self.launched += 1  # one AWX launch / salt batch on the customer's hosts
+                    for t in targets[start:start + 2]:
+                        yield TargetResult(t, "ok", None, doc_for("lab-hostname", options.run_nonce))
+            finally:
+                self.closed = True
+
+    fake = TwoBatches()
+    monkeypatch.setattr(fleet, "_transport", lambda name, ctx, check_options=None: fake)
+    ctx = ctx_for()
+    ctx.poster = poster
+    cfg = {**SOURCE_CFG, "targets": ["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4"], "addresses": {}}
+    with pytest.raises(LeaseLost):
+        run_job(ctx, {"kind": "collect"}, {"targets": cfg["targets"]}, {"kind": "awx_hosts", "config": cfg,
+                                                                         "secrets": {"token": "t"}})
+    assert fake.launched == 1 and fake.closed  # no second batch, and the transport's run was ended
+    assert len(posts) == 1 and ctx.outcomes == []  # no host row claims an error the job no longer owns
+
+
+def test_fleet_a_document_that_cannot_be_read_is_that_hosts_row_but_posting_is_never_guarded(monkeypatch):
+    """Only reading a host's document is guarded per host: an exception from posting (any, not only LeaseLost) ends
+    the job (the agent records "scan node error"), instead of a host row while the next batches run."""
+    from zs_scan_node import jobctx
+
+    fake = FakeTransport({"10.0.0.1": "doc", "db.internal": "doc"})
+    monkeypatch.setattr(fleet, "_transport", lambda name, ctx, check_options=None: fake)
+    monkeypatch.setattr(jobctx, "BATCH", 1)
+    ctx = ctx_for()
+
+    def poster(batch, batch_id, *progress):
+        raise ConnectionResetError("the API connection broke")
+
+    ctx.poster = poster
+    cfg = {**SOURCE_CFG, "targets": ["10.0.0.1", "db.internal"]}
+    with pytest.raises(ConnectionResetError):
+        fleet.collect(ctx, cfg, {}, {"targets": cfg["targets"]})
+    assert ctx.outcomes == []
+
+
+def _raise_for(cls, handle: str):
+    """``cls._result`` (a static method on AWX, a method on salt) raising for one host, as is for the others."""
+    real = cls.__dict__["_result"]
+    static = isinstance(real, staticmethod)
+    real = real.__func__ if static else real
+
+    def result(*args, **kwargs):
+        t = args[0] if static else args[1]
+        if t.handle == handle:
+            raise RuntimeError("an unexpected shape in this host's output")
+        return real(*args, **kwargs)
+    return staticmethod(result) if static else result
+
+
+def test_awx_one_hosts_unreadable_result_is_its_own_error(mock_http, monkeypatch):
+    """The adapter's own per-host guard (awx.py): _result raising for one host gives that host an error row, and the
+    other host of the same launch is still collected (review 5879001771, mutant N5)."""
+    mock_http(FakeAwx({"host-1": {"lines": chunked("10.0.0.1")}, "host-2": {"lines": chunked("10.0.0.2")}}))
+    monkeypatch.setattr(AWX.AwxTransport, "_result", _raise_for(AWX.AwxTransport, "host-1"))
+    out = {r.target.handle: r for r in awx().run_collect(targets(2), AWX_CRED, options())}
+    assert out["host-1"].status == "error" and "RuntimeError" in out["host-1"].error
+    assert out["host-2"].status == "ok" and out["host-2"].document is not None
+
+
+@pytest.mark.parametrize("client", ["local", "local_async", "ssh"])
+def test_salt_one_minions_unreadable_result_is_its_own_error(mock_http, monkeypatch, client):
+    """The same for the salt adapter's per-host guard (salt.py, mutant N6)."""
+    mock_http(FakeSalt({"host-1": {"stdout": doc_line("10.0.0.1")}, "host-2": {"stdout": doc_line("10.0.0.2")}},
+                       client=client))
+    monkeypatch.setattr(SALT.SaltTransport, "_result", _raise_for(SALT.SaltTransport, "host-1"))
+    out = {r.target.handle: r for r in salt().run_collect(targets(2), salt_cred(client=client), options())}
+    assert out["host-1"].status == "error" and "RuntimeError" in out["host-1"].error
+    assert out["host-2"].status == "ok" and out["host-2"].document is not None
+
+
+def test_salt_a_stop_during_the_async_wait_ends_it_at_the_next_poll(mock_http, monkeypatch):
+    """A cancelled job does not wait out timeout + grace for a minion that never returns (mutant N11): the stop is
+    seen at the first status poll, the returned minion is kept and the silent one is reported with the stop."""
+    fake = FakeSalt({"host-1": {"stdout": doc_line("10.0.0.1")}, "host-2": {"stdout": doc_line("10.0.0.2")}},
+                    slow={"host-2"})
+    mock_http(fake)
+    clock = FakeClock()
+    monkeypatch.setattr(SALT, "time", clock)
+    started = clock.t
+    stop = options(deadline_s=3600, stop=lambda: "skipped_cancelled" if fake.polls >= 1 else None)
+    out = {r.target.handle: r for r in SALT.SaltTransport(NeverScan([]), poll_s=3.0, grace_s=30).run_collect(
+        targets(2), salt_cred(), stop)}
+    assert clock.t - started <= 2 * 3.0 and fake.polls <= 2  # not 60 + 60 + 30 s
+    assert out["host-1"].status == "ok" and out["host-2"].status == "skipped_cancelled"
+
+
+@pytest.mark.parametrize("code", [401, 403])
+@pytest.mark.parametrize("fun", ["jobs.exit_success", "jobs.list_job"])
+def test_salt_a_runner_refused_after_login_names_the_permission(mock_http, code, fun):
+    """rest_cherrypy answers a runner eauth denial with 401.  After a good login and a started job that is a missing
+    '@jobs' permission, not a bad password: the error says so (salt.py:169)."""
+    fake = FakeSalt({"host-1": {"stdout": doc_line("10.0.0.1")}, "host-2": {"stdout": doc_line("10.0.0.2")}})
+    calls = []
+
+    def handler(request):
+        body = json.loads(request.content) if request.content[:1] == b"[" else None
+        runner = body and body[0].get("client") == "runner"
+        calls.append(("runner" if runner else request.method, request.url.path))
+        lookup = request.url.path.startswith("/jobs/")  # GET /jobs/<jid> is the jobs.list_job runner
+        if (fun == "jobs.exit_success" and runner) or (fun == "jobs.list_job" and lookup):
+            return httpx.Response(code, text='Authentication failure of type "token" occurred.')
+        return fake(request)
+
+    mock_http(handler)
+    with pytest.raises(TransportError) as e:
+        list(salt().run_collect(targets(2), salt_cred(), options()))
+    assert e.value.status == "refused" and "'@jobs'" in e.value.detail and "jobs.exit_success" in e.value.detail
+    assert "login was refused" not in e.value.detail
+    assert calls[:2] == [("POST", "/login"), ("POST", "/")]  # it happened after the login and the job start
+    # through the node's fleet glue, every host of the job carries that reason
+    from zs_scan_node.collectors import fleet as F
+
+    ctx = ctx_for("salt_hosts")
+    cfg = {**SOURCE_CFG, "targets": ["10.0.0.1", "10.0.0.2"], "handles": {"10.0.0.1": "host-1", "10.0.0.2": "host-2"},
+           "transport": dict(salt_cred().config)}
+    calls.clear()
+    F.collect(ctx, cfg, {"username": "zs", "password": "pw"}, {"targets": cfg["targets"]})
+    assert {(o.status, "'@jobs'" in (o.error or "")) for o in ctx.outcomes} == {("refused", True)}
+

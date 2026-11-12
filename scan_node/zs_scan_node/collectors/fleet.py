@@ -22,7 +22,7 @@ import time
 from typing import Any
 
 from zs_scan_node.collectors import ConfigError
-from zs_scan_node.jobctx import ASSET_TYPES, JobContext
+from zs_scan_node.jobctx import ASSET_TYPES, JobContext, LeaseLost
 from zs_scan_node.netutil import NeverScan
 from zs_scan_node.transports import zsdoc
 from zs_scan_node.transports.base import CollectOptions, CollectTarget, TargetResult, TransportCredential, TransportError
@@ -106,24 +106,50 @@ def _admit(ctx: JobContext, targets: list[CollectTarget]) -> list[CollectTarget]
     return out
 
 
-def _post(ctx: JobContext, res: TargetResult, started: float) -> int:
-    """Emit one host's assets and record its outcome; returns the number of assets."""
+def _assets(ctx: JobContext, res: TargetResult) -> tuple[list[dict], tuple[str, str | None, int | None]]:
+    """One host's assets as the node posts them, and its outcome (status, error, zs-collect's count).  Pure: posts
+    nothing, so whatever it raises is about this host's document, never about ZeroShield or the job."""
     t = res.target
-    if res.document is None:
-        ctx.outcome(t.label, res.status, res.error, started=started)
-        return 0
-    n = 0
+    assets = []
     for a in zsdoc.relabel(res.document, t.label):
         if a.get("type") not in ASSET_TYPES:
             ctx.log("zs-collect asset type unknown to this node; dropped", target=t.label, type=str(a.get("type"))[:32],
                     level="warn")
             continue
+        assets.append(a)
+    return assets, zsdoc.target_outcome(res.document)
+
+
+def _post(ctx: JobContext, label: str, assets: list[dict], outcome: tuple[str, str | None, int | None],
+          started: float) -> int:
+    """Emit one host's assets and record its outcome; returns the number of assets."""
+    for a in assets:
         ctx.emit(a["type"], a["target"], a["location"], **{k: a.get(k) for k in _FIELDS})
-        n += 1
-    status, error, counted = zsdoc.target_outcome(res.document)
+    status, error, counted = outcome
     # the outcome row carries zs-collect's own count (what the SSH path records for the same host)
-    ctx.outcome(t.label, status, error, started=started, assets=n if counted is None else counted)
-    return n
+    ctx.outcome(label, status, error, started=started, assets=len(assets) if counted is None else counted)
+    return len(assets)
+
+
+def _take(ctx: JobContext, res: TargetResult, transport_name: str, started: float) -> None:
+    """One reported host: its row, and its assets posted.  Only reading its document is guarded (one host's document
+    is that host's error row, never the job's); posting is not, so a lost lease (LeaseLost from ``ctx.emit``) or any
+    other failure to post ends the job, as everywhere else on the node, instead of becoming host rows while the
+    transport goes on to launch its next batch on the customer's hosts."""
+    t = res.target
+    if res.document is None:
+        ctx.outcome(t.label, res.status, res.error, started=started)
+        return
+    try:
+        assets, outcome = _assets(ctx, res)
+    except LeaseLost:
+        raise
+    except Exception as exc:
+        ctx.log("fleet host result not usable", target=t.label, error=exc.__class__.__name__, level="warn")
+        ctx.outcome(t.label, "error", f"the zs-collect document from {transport_name} could not be read "
+                                      f"({exc.__class__.__name__})", started=started)
+        return
+    _post(ctx, t.label, assets, outcome, started)
 
 
 def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | None:
@@ -135,32 +161,42 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
     done: set[str] = set()
     started = time.monotonic()
     ctx.log("fleet collection start", transport=transport_name, targets=len(todo), tier=options.tier)
+
+    def reported():  # the transport's call itself, not only its iteration, is inside the guard below
+        yield from transport.run_collect(todo, credential, options)
+
+    def fail_the_rest(status: str, error: str) -> None:
+        for t in todo:
+            if t.label not in done:
+                done.add(t.label)
+                ctx.outcome(t.label, status, error, started=started)
+
+    results = reported()
     try:
-        for res in transport.run_collect(todo, credential, options):
+        while True:
+            try:  # guarded: the transport's own step only (posting happens in _take, outside this)
+                res = next(results)
+            except StopIteration:
+                break
+            except LeaseLost:
+                raise
+            except TransportError as exc:
+                ctx.log("fleet transport refused the run", transport=transport_name, status=exc.status, level="warn")
+                fail_the_rest(exc.status, exc.detail)
+                break
+            except Exception as exc:  # the transport itself broke: the hosts it reported keep their rows
+                ctx.log("fleet transport failed", transport=transport_name, error=exc.__class__.__name__,
+                        level="warn")
+                fail_the_rest("error", f"the {transport_name} transport failed before this host was reported "
+                                       f"({exc.__class__.__name__})")
+                break
             if res.target.label in done:
                 continue
             done.add(res.target.label)
-            try:
-                _post(ctx, res, started)
-            except Exception as exc:  # one host's document is that host's error row, never the job's
-                ctx.log("fleet host result not usable", target=res.target.label, error=exc.__class__.__name__,
-                        level="warn")
-                ctx.outcome(res.target.label, "error", f"the zs-collect document from {transport_name} could not be "
-                                                       f"posted ({exc.__class__.__name__})", started=started)
+            _take(ctx, res, transport_name, started)
             started = time.monotonic()
-    except TransportError as exc:
-        ctx.log("fleet transport refused the run", transport=transport_name, status=exc.status, level="warn")
-        for t in todo:
-            if t.label not in done:
-                done.add(t.label)
-                ctx.outcome(t.label, exc.status, exc.detail, started=started)
-    except Exception as exc:  # the transport itself broke: the hosts it reported keep their rows
-        ctx.log("fleet transport failed", transport=transport_name, error=exc.__class__.__name__, level="warn")
-        for t in todo:
-            if t.label not in done:
-                done.add(t.label)
-                ctx.outcome(t.label, "error", f"the {transport_name} transport failed before this host was reported "
-                                              f"({exc.__class__.__name__})", started=started)
+    finally:
+        results.close()  # whatever ended the loop (a lost lease too) ends the transport's run: no next batch
     for t in todo:  # anything the transport did not report (stopped, or a tool that skipped it)
         if t.label not in done:
             ctx.outcome(t.label, ctx.should_stop() or "error", None if ctx.should_stop() else
