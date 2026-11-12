@@ -514,9 +514,33 @@ def test_cold_cache_unwraps_once_for_many_threads(api, ca_world, monkeypatch, mo
 
 
 # ============================================================================ major 7: autogenerate sees the tables
-def test_alembic_env_imports_every_table_model():
-    """QA models.py:29: env.py's imports must register every ``table=True`` model under backend/ (else autogenerate
-    emits drop_table for them)."""
+def _table_models(paths) -> dict[str, str]:
+    """table name -> file of every SQLModel ``table=True`` class in ``paths`` (AST: the class keyword, then its
+    ``__tablename__`` or SQLModel's default name, the class name in lower case)."""
+    found: dict[str, str] = {}
+    for path in paths:
+        try:
+            tree = ast.parse(Path(path).read_text(errors="replace"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if not any(k.arg == "table" and isinstance(k.value, ast.Constant) and k.value.value is True
+                       for k in node.keywords):
+                continue
+            name = node.name.lower()
+            for stmt in node.body:
+                if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "__tablename__"
+                                                        for t in stmt.targets) \
+                        and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
+                    name = stmt.value.value
+            found[name] = str(path)
+    return found
+
+
+def _env_tables() -> set[str]:
+    """The tables SQLModel knows after importing exactly what migrations/env.py imports (in a subprocess)."""
     env = ROOT / "prod_database_migrations" / "migrations" / "env.py"
     modules = []
     for node in ast.walk(ast.parse(env.read_text())):
@@ -524,22 +548,31 @@ def test_alembic_env_imports_every_table_model():
             modules.append(node.module)
         elif isinstance(node, ast.Import):
             modules += [a.name for a in node.names if a.name.startswith("backend")]
-    tables = set()
-    for path in (ROOT / "backend").rglob("*.py"):
-        if ".venv" in path.parts or "tests" in path.parts:
-            continue
-        text = path.read_text(errors="replace")
-        if "table=True" not in text:
-            continue
-        tables |= set(re.findall(r'__tablename__\s*=\s*["\']([a-z0-9_]+)["\']', text))
     code = ("import json, sys\n" + "".join(f"import {m}\n" for m in modules)
             + "from sqlmodel import SQLModel\nprint(json.dumps(sorted(SQLModel.metadata.tables)))\n")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(ROOT),
                          env={**os.environ, "PYTHONPATH": str(ROOT)}, timeout=120)
     assert out.returncode == 0, out.stderr[-2000:]
-    registered = set(json.loads(out.stdout.strip().splitlines()[-1]))
-    assert {"cbomsshca", "cbomsshcertissued"} <= tables
-    assert sorted(tables - registered) == []
+    return set(json.loads(out.stdout.strip().splitlines()[-1]))
+
+
+def test_alembic_env_imports_every_table_model(tmp_path):
+    """QA models.py:29 (+ re-check 5874197917): env.py's imports must register every ``table=True`` model under
+    backend/, whether it names its table or takes SQLModel's default name (else autogenerate emits drop_table)."""
+    paths = [p for p in (ROOT / "backend").rglob("*.py") if ".venv" not in p.parts and "tests" not in p.parts]
+    models = _table_models(paths)
+    assert {"cbomsshca", "cbomsshcertissued", "cbomsshcatrust"} <= set(models)
+    assert any(name == "team" for name in models)  # a default-named model of new_models.py is found too
+    registered = _env_tables()
+    assert sorted(set(models) - registered) == []
+    # negative control: a module env.py does not import, one model with each naming style, is reported
+    stray = tmp_path / "stray_models.py"
+    stray.write_text("from sqlmodel import Field, SQLModel\n\n\n"
+                     "class RvDefaultName(SQLModel, table=True):\n    id: int | None = Field(default=None, primary_key=True)\n\n\n"
+                     "class RvExplicit(SQLModel, table=True):\n    __tablename__ = 'rvexplicit'\n"
+                     "    id: int | None = Field(default=None, primary_key=True)\n")
+    missing = set(_table_models(paths + [stray])) - registered
+    assert missing == {"rvdefaultname", "rvexplicit"}, missing
 
 
 # ============================================================================ major 8: serials and the CA row (PostgreSQL)
@@ -902,11 +935,14 @@ def test_a_job_that_must_stop_gets_no_new_certificate(api, ca_world):
 
 
 def test_a_reclaimed_job_gets_its_first_certificate(api, ca_world):
-    """QA nit issue.py:110 (mutant T15): after a lease timeout and a re-claim by the same node, the old attempt's
-    certificate does not count."""
+    """QA nit issue.py:110 (mutant T15) and re-check issue.py:119 (mutant T16): after a lease timeout and a re-claim
+    by the same node, the old attempt's certificates do not count, not even one an admin revoked (that stopped the old
+    attempt only)."""
     engine, _ = ca_world
     s = F.setup_job(api)
     assert F.cert_route(api, s["token"], s["job_id"], s["lease"]).status_code == 200
+    cert_id = api("GET", BASE + "/certificates").json()["certificates"][0]["id"]
+    assert api("POST", f"{BASE}/certificates/{cert_id}/revoke", json={"reason": "attempt 1"}).status_code == 200
     with Session(engine) as session:  # the lease ran out and the job went back to pending
         job = session.get(CbomCollectionJob, s["job_id"])
         job.status, job.lease_id, job.claimed_at = "pending", None, None
