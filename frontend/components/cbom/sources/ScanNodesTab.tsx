@@ -458,8 +458,9 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                       </summary>
                       <p className="mt-2">
                         Use this on a host without access to the image registry (air-gapped sites, or before the image is
-                        published there). The file and its SHA-256 checksum come from{" "}
-                        <span className="font-mono">make node-image</span>; check the checksum before you load it.
+                        published there). The steps say where the file and its SHA-256 checksum come from (ZeroShield,
+                        or <span className="font-mono">make node-image</span> for a release version); check the checksum
+                        before you load it.
                       </p>
                       <div className="mt-2"><CodeSnippet code={offlineSteps} language="bash" /></div>
                     </details>

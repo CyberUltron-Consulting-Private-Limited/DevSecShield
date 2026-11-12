@@ -185,8 +185,13 @@ export function installCommand(
 /** The published node image's name (scripts/release/scan_node_image.sh builds and saves it under this name). */
 export const PUBLISHED_NODE_IMAGE = "registry.zeroshield.ai/cbom/scan-node"
 
+/** The versions `make node-image` builds: scripts/release/scan_node_image.sh's NODE_VERSION_RE (the versions the
+ * node reports; logic.test.ts reads the script to keep the two equal). */
+const NODE_VERSION_RE = /^[0-9][0-9A-Za-z.-]{0,18}$/
+
 /** For a site that cannot pull the node image: the image file from `make node-image` (or the release workflow),
- * checked with its .sha256 and loaded with `docker load` (scan_node/README.md, "Without registry access"). Helm also
+ * checked with its .sha256 and loaded with `docker load` (scan_node/README.md, "Without registry access"). A tag that
+ * `make node-image` refuses (e.g. GHCR's dev-<commit>, or latest) gets the file from ZeroShield instead. Helm also
  * needs the image in a registry the cluster can pull from, and the chart from the repository. Null for the AMI and
  * the OVA, which carry the image inside. */
 export function offlineImageSteps(method: DeployMethod, image: string): string | null {
@@ -195,8 +200,15 @@ export function offlineImageSteps(method: DeployMethod, image: string): string |
   const version = cut > image.lastIndexOf("/") ? image.slice(cut + 1) : "latest"
   const archive = `scan-node-${version}.tar.gz`
   const lines = [
-    `# 1. Get the image file: in the DevSecShield repository run  make node-image VERSION=${version}`,
-    `#    (it writes dist/scan-node/${archive} and ${archive}.sha256), or ask ZeroShield for both files.`,
+    ...(NODE_VERSION_RE.test(version)
+      ? [
+        `# 1. Get the image file: in the DevSecShield repository run  make node-image VERSION=${version}`,
+        `#    (it writes dist/scan-node/${archive} and ${archive}.sha256), or ask ZeroShield for both files.`,
+      ]
+      : [
+        `# 1. Get the image file: ask ZeroShield for ${archive} and ${archive}.sha256`,
+        "#    (make node-image builds only release versions that start with a digit, such as 1.1.0).",
+      ]),
     "# 2. Copy both files to the host, check the file, then load it:",
     `sha256sum -c ${archive}.sha256`,
     `docker load -i ${archive}`,

@@ -175,6 +175,43 @@ assert.equal(mixedGroupScope("databases", { key_manager: 2 }, 2), "2 HSMs or key
   assert.ok(/^node-image:/m.test(readFileSync(join("..", "Makefile"), "utf8")));
 }
 
+// PR #72 r7: `make node-image VERSION=<v>` runs scripts/release/scan_node_image.sh, which refuses a version the node
+// would not report (NODE_VERSION_RE). Every VERSION= the steps print passes the script's own rule, read from the
+// script; an image whose tag fails it (GHCR's dev-<sha12>, the local stack's k-<sha12>, no tag = latest) gets the
+// file from ZeroShield instead.
+{
+  const script = readFileSync(join("..", "scripts", "release", "scan_node_image.sh"), "utf8");
+  const rule = /^NODE_VERSION_RE="(.+)"$/m.exec(script)?.[1];
+  assert.ok(rule, "scan_node_image.sh defines NODE_VERSION_RE");
+  const nodeRule = new RegExp(rule);
+  const tags = ["1.0", "1.1.0", "2.0.0-rc.1", "1234567890123456789", "12345678901234567890", "dev-0a1b2c3d4e5f",
+    "k-dafe012cdd8a", "v1.2", "1.2_rc1", "1.2+meta", "latest"];
+  const images: [string, string][] = [
+    ...tags.map((t): [string, string] => [`ghcr.io/cyberultron/devsecshield-scan-node:${t}`, t]),
+    ["registry.example/scan-node", "latest"],  // no tag
+    ["localhost:5000/scan-node", "latest"],  // a registry port is not a tag
+  ];
+  let printed = 0;
+  for (const [image, tag] of images) {
+    for (const method of ["docker", "helm"] as const) {
+      const steps = offlineImageSteps(method, image)!;
+      const versions = [...steps.matchAll(/VERSION=(\S*)/g)].map((m) => m[1]);
+      for (const v of versions) assert.ok(nodeRule.test(v), `${image}: prints make node-image VERSION=${v}, which scan_node_image.sh refuses`);
+      if (nodeRule.test(tag)) {
+        assert.deepEqual(versions, [tag], `${image}: make node-image VERSION=${tag}`);
+        printed += 1;
+      } else {
+        assert.deepEqual(versions, [], `${image}: no make node-image for ${tag}`);
+        assert.ok(!steps.includes("make node-image VERSION"), steps);
+        assert.ok(steps.includes(`ask ZeroShield for scan-node-${tag}.tar.gz`), steps);
+      }
+      // either way the same file is checked, then loaded
+      assert.ok(steps.indexOf(`sha256sum -c scan-node-${tag}.tar.gz.sha256`) < steps.indexOf(`docker load -i scan-node-${tag}.tar.gz`));
+    }
+  }
+  assert.equal(printed, 8, "the four node-shaped tags print the make line for docker and helm");
+}
+
 fileChecks.then(
   () => console.log("logic.test.ts: all checks passed"),
   (err) => {
