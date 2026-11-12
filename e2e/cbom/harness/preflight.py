@@ -83,8 +83,8 @@ def same_sha(a: str | None, sha: str) -> bool:
     return len(a) >= 7 and (sha.lower().startswith(a) or a.startswith(sha.lower()))
 
 
-# Paths that never go into an image: a commit touching only these runs the same images (restack.sh reuses them by
-# build key, so the image's revision label stays the earlier SHA).
+# Paths that never go into an image (plus *.md and root-level dotfiles): a commit touching only these runs the same
+# images (restack.sh reuses them by build key, so the image's revision label stays the earlier SHA).
 NON_IMAGE = (".github/", "docs/", "e2e/", "bench/", ".kiro/")
 
 
@@ -98,7 +98,8 @@ def equivalent_build(repo: str, rev: str | None, sha: str) -> tuple[bool, str]:
     if code:
         return False, f"git diff failed: {out.strip()[:120]}"
     changed = [p for p in out.split("\n") if p.strip()]
-    image_paths = [p for p in changed if not (p.startswith(NON_IMAGE) or p.endswith(".md"))]
+    # root-level dotfiles (.coderabbit.yaml, .gitleaks.toml, ...) configure tools, not images
+    image_paths = [p for p in changed if not (p.startswith(NON_IMAGE) or p.endswith(".md") or ("/" not in p and p.startswith(".")))]
     if image_paths:
         return False, f"{len(image_paths)} image path(s) differ, e.g. {image_paths[0]}"
     return True, f"{len(changed)} changed path(s), none an image input ({', '.join(sorted({p.split('/')[0] for p in changed}))})"

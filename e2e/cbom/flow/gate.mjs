@@ -194,17 +194,25 @@ async function sourcesTab(page, team, tab) {
 
 // G17: both customers sign out through the UI (user menu > Sign out); proven by the login page and a 401 afterwards
 async function signOut(who) {
-  try {
-    const { page } = who;
-    await page.goto(`${UI}/${who.team}/cbom/sources`, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: new RegExp(who.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).first().click();
-    await page.getByRole("menuitem", { name: /sign out/i }).first().click();
-    await page.waitForURL(/\/login/, { timeout: 20000 });
-    const after = await apiGet(who, `/${who.team}/cbom/sources/runs`);
-    return after.status === 401 || after.status === 403;
-  } catch {
-    return false;
+  // the proof is the API refusing the customer's token afterwards; the UI path is tried twice with generous timeouts
+  // (a loaded shared machine made the 20 s wait miss a logout that had happened), and its error is kept
+  const { page } = who;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      for (let i = 0; i < 3 && (await page.getByRole("dialog").count()); i++) await page.keyboard.press("Escape");
+      await page.goto(`${UI}/${who.team}/cbom/sources`, { waitUntil: "networkidle", timeout: 90000 });
+      if (/\/login/.test(page.url())) break;
+      await page.getByRole("button", { name: new RegExp(who.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).first().click({ timeout: 60000 });
+      await page.getByRole("menuitem", { name: /sign out/i }).first().click({ timeout: 60000 });
+      await page.waitForURL(/\/login/, { timeout: 60000 });
+      break;
+    } catch (e) {
+      who.logoutError = String(e.message || e).split("\n")[0].slice(0, 200);
+    }
   }
+  const after = await apiGet(who, `/${who.team}/cbom/sources/runs`).catch(() => ({ status: null }));
+  if (!(after.status === 401 || after.status === 403)) state.logout_errors = { ...(state.logout_errors || {}), [who.name]: who.logoutError || `API ${after.status}` };
+  return after.status === 401 || after.status === 403;
 }
 
 function inCidr(ip, cidr) {
