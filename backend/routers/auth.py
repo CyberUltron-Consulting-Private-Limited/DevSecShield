@@ -113,7 +113,7 @@ def _break_glass(engine, request: Request, background: BackgroundTasks, user: Us
     at = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat()
     background.add_task(send_break_glass_email, sso_service.team_owner_emails(engine, team_id), user.email,
                         meta["ip"], at)
-    log.warning("break-glass password sign-in user_id=%s team_id=%s", user.id, team_id)
+    log.warning("break-glass sign-in by an owner of the team that requires SSO user_id=%s team_id=%s", user.id, team_id)
 
 
 def _tokens(user: User) -> dict:
