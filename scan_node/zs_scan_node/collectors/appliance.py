@@ -164,6 +164,8 @@ def _api_outputs(ctx: JobContext, target: Target, vendor: str, config: dict, sec
                 raise TargetFail(stop)
             try:
                 r = client.get(path)
+            except Blocked as exc:  # the address was listed while the job ran
+                raise TargetFail("skipped_never_scan", str(exc)) from None
             except Exception as exc:
                 msg = str(exc)
                 if "CERTIFICATE_VERIFY_FAILED" in msg or "certificate" in msg.lower():
@@ -242,7 +244,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
 
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     vendor = _vendor(config)
-    for target in _targets(ctx, scope)[:5]:
+    for target in _targets(ctx, scope, samples=True)[:5]:
         sample = {"target": target.label, "status": "ready", "reachable": False, "login": False, "privilege": None,
                   "note": ""}
         try:

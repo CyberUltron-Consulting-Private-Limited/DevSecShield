@@ -31,7 +31,7 @@ import paramiko
 from zs_scan_node import commands as C
 from zs_scan_node import linux_parsers as P
 from zs_scan_node.certparse import public_key_facts_from_pem
-from zs_scan_node.collectors import ConfigError
+from zs_scan_node.collectors import ConfigError, skipped_never_scan
 from zs_scan_node.jobctx import JobContext
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Target, expand_targets
@@ -730,11 +730,12 @@ def _service_and_config_crypto(sess: Session, loc: str, emit) -> None:
 
 
 # ----------------------------------------------------------------------------- entry points
-def _targets(ctx: JobContext, scope: dict) -> list[Target]:
-    reasons: dict[str, str] = {}  # a skipped name says which of its addresses is listed
+def _targets(ctx: JobContext, scope: dict, samples: bool = False) -> list[Target]:
+    """The targets to collect; each skipped one gets an outcome naming the address and entry that matched (and in a
+    connection test, ``samples=True``, a sample)."""
+    reasons: dict[str, str] = {}
     targets, skipped = expand_targets(scope.get("targets") or [], ctx.never_scan, reasons=reasons)
-    for label in skipped:
-        ctx.outcome(label, "skipped_never_scan", reasons.get(label))
+    skipped_never_scan(ctx, skipped, reasons, samples=samples)
     return targets
 
 
@@ -777,7 +778,7 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                                 "privilege": None, "note": str(exc)})
         return str(exc)
     tier = int(config.get("tier") or 1)
-    for target in _targets(ctx, scope)[:5]:
+    for target in _targets(ctx, scope, samples=True)[:5]:
         sample = {"target": target.label, "status": "ready", "reachable": False, "login": False,
                   "privilege": None if tier < 2 else False, "note": ""}
         if target.ip is None:

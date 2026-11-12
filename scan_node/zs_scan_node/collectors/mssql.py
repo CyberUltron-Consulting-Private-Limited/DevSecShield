@@ -29,7 +29,7 @@ from zs_scan_node import drivergate, netutil
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, Target, checked_ip
+from zs_scan_node.netutil import Blocked, Target, checked_target
 
 register_asset_types("managed_key", "db_encryption", "db_login_policy", "db_crypto_policy")
 
@@ -344,7 +344,8 @@ def collect_login(ctx: JobContext, target: Target, port: int, config: dict, pass
     import pytds
 
     drivergate.install(pytds)
-    checked_ip(target.ip, ctx.never_scan)  # the network gate; the driver's own sockets pass it in drivergate.scope
+    # the network gate, every address of a name; the driver's own sockets pass it in drivergate.scope
+    checked_target(target, ctx.never_scan)
     kwargs = dict(server=target.label, port=port, user=config.get("login"), password=password, cafile=ca_path,
                   validate_host=False, login_timeout=15, timeout=30, autocommit=True, appname="zeroshield-cbom",
                   database=config.get("database_name") or "master", disable_connect_retry=True)

@@ -206,6 +206,8 @@ class Registry:
             try:
                 request = client.build_request(method, path, headers=hdrs)
                 response = client.send(request, stream=stream)
+            except netutil.Blocked as exc:  # the address was listed while the pull ran
+                raise ImageError("skipped_never_scan", str(exc)) from None
             except httpx.HTTPError as exc:
                 raise ImageError(_http_status(exc), f"{parts.hostname}: {exc.__class__.__name__}") from None
             except ssl.SSLError as exc:
@@ -265,6 +267,8 @@ class Registry:
         parts = urlsplit(url)
         try:
             r = client.get(parts.path + "?" + parts.query, headers=headers)
+        except netutil.Blocked as exc:
+            raise ImageError("skipped_never_scan", str(exc)) from None
         except Exception as exc:  # httpx.HTTPError, ssl errors
             raise ImageError("unreachable", f"token service: {exc.__class__.__name__}") from None
         if r.status_code != 200:

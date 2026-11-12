@@ -91,7 +91,9 @@ def _ports(scope: dict) -> list[dict]:
     return ports
 
 
-def _sni_for(scope: dict, ip: str, cache: dict) -> list[str]:
+def _sni_for(scope: dict, ip: str, cache: dict, never) -> list[str]:
+    """SNI names from the team settings that resolve to ``ip``.  A name that is on the never-scan list, or that has
+    any address on it, is never sent (the rule for names, as everywhere else)."""
     names = scope.get("sni_hostnames") or []
     out = []
     for name in names[:200]:
@@ -100,7 +102,7 @@ def _sni_for(scope: dict, ip: str, cache: dict) -> list[str]:
                 cache[name] = set(netutil.resolve(name))
             except OSError:
                 cache[name] = set()
-        if ip in cache[name]:
+        if ip in cache[name] and not never.blocks_host(name) and not any(never.blocks_ip(a) for a in cache[name]):
             out.append(name)
     return out
 
@@ -380,7 +382,7 @@ class NetworkScan:
                      algorithm=c.get("key_alg"), key_size=c.get("key_size"), facts={**c, "chain_index": i})
             assets += 1
         # SNI variants
-        for name in _sni_for(self.scope, ep.ip, self.sni_cache):
+        for name in _sni_for(self.scope, ep.ip, self.sni_cache, self.ctx.never_scan):
             if ep.protocol == "rdp" or not T.have_openssl():
                 break
             try:

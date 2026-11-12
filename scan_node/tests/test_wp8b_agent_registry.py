@@ -520,19 +520,20 @@ def test_never_scan_applies_to_the_registry_and_to_redirect_targets(lab_factory,
     _s, _e, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:1.0", ctx=_ctx(never=["127.0.0.2"]))
     assert ctx.outcomes[0].status == "skipped_never_scan" and "127.0.0.2" in ctx.outcomes[0].error
     assert not [s for s in lab.seen if s[0] == "other"]  # the redirect target was never contacted
+    before = len(lab.seen)
     _s, _e, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:1.0", ctx=_ctx(never=["127.0.0.1"]))
     assert ctx.outcomes[0].status == "skipped_never_scan"
-    assert not [s for s in lab.seen if s[0] == "other"]
+    assert lab.seen[before:] == []  # neither the registry nor the redirect target got a request
     # Regression for #17: "localhost" is 127.0.0.1 AND ::1 on a dual-stack host (GitHub's runners), and the node used
     # to drop the listed 127.0.0.1 and connect to ::1. One listed address skips the whole name; force the dual-stack
-    # answer so this is proven on IPv4-only hosts too.
+    # answer so this is proven on IPv4-only hosts too (tests/test_never_scan_sockets.py proves it at socket level).
     real = netutil.resolve
     monkeypatch.setattr(netutil, "resolve", lambda name, timeout=5.0: list(dict.fromkeys(
         real(name, timeout) + (["::1"] if name == "localhost" else []))))
     assert netutil.resolve("localhost") == ["127.0.0.1", "::1"]
     _s, _e, ctx = _collect(lab, f"localhost:{lab.registry.server_port}/team/app:1.0", ctx=_ctx(never=["127.0.0.1"]))
     assert ctx.outcomes[0].status == "skipped_never_scan" and "127.0.0.1" in ctx.outcomes[0].error
-    assert not [s for s in lab.seen if s[0] == "other"]
+    assert lab.seen[before:] == []
 
 
 def test_image_size_cap_is_checked_before_download(lab_factory):

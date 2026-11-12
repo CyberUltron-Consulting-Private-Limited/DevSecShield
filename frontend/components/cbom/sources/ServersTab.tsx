@@ -998,7 +998,7 @@ function ServerForm({
               label="Never scan"
               htmlFor="servers-exclusions"
               error={errors.exclusions ?? (countErrorOnExclusions ? countError : null)}
-              hint="IP addresses, ranges or hostnames, one per line or separated by commas. Never-scan always wins."
+              hint="IP addresses, ranges or hostnames, one per line or separated by commas. A listed hostname also covers every address it resolves to. A target name is skipped if any address it resolves to is listed; ranges are checked one address at a time. Never-scan always wins."
             >
               <Textarea
                 id="servers-exclusions"
