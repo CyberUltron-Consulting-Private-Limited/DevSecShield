@@ -12,7 +12,10 @@ Per region, per batch of at most 50 instance ids (the SendCommand limit):
 2. ``SendCommand`` with explicit ``InstanceIds`` (never tags or a fleet-wide target), the document, the parameters
    ``nonce`` / ``tier`` / ``output`` (SSM checks them against the document's allowed patterns), the S3 output location
    when one is configured, and a comment naming the ZeroShield job.
-3. ``ListCommandInvocations`` until every invocation is final, cancelled at the job's deadline (``CancelCommand``).
+3. ``ListCommandInvocations`` until every invocation is final.  SSM runs the batch in waves of ``MaxConcurrency``, so
+   the wait is one per-target timeout per wave plus slack (``wait_budget``), never past the job's deadline, and
+   ``TimeoutSeconds`` (after which SSM never starts a waiting instance) is at least that wait; at its end the command
+   is cancelled (``CancelCommand``).
 4. The output: from S3 when a bucket is configured (``GetCommandInvocation`` truncates stdout at 24,000 characters),
    otherwise inline from ``GetCommandInvocation`` with ``output=chunks`` (one gzip+base64 line); inline output that hits
    the 24,000-character cap is refused with "configure an output bucket", never half-read.
@@ -20,6 +23,7 @@ Every document is validated (format, nonce, version, schema) before it is handed
 """
 from __future__ import annotations
 
+import math
 import time
 from typing import Any, Callable, ClassVar, Iterator, Sequence
 
@@ -33,6 +37,29 @@ INLINE_CAP = 24_000
 FINAL = {"Success", "Failed", "TimedOut", "Cancelled", "Undeliverable", "Terminated", "InvalidPlatform",
          "AccessDenied", "DeliveryTimedOut", "ExecutionTimedOut", "Incomplete", "RateExceeded", "Cancelling"}
 STEP = "zsCollect"
+DEFAULT_MAX_CONCURRENCY = "10%"  # contract section 3: the customer's blast radius, honoured rather than overridden
+SLACK_S = 120  # SSM delivery, the launcher's checks and the output upload, once per batch
+MAX_TIMEOUT_SECONDS = 2_592_000  # SendCommand's TimeoutSeconds range is 30..2592000
+DELIVERY_MARGIN_S = 60  # TimeoutSeconds runs this much past the wait: the command is cancelled first
+NOT_STARTED = ("Pending", "Delayed")
+
+
+def concurrency(max_concurrency: str, n: int) -> int:
+    """How many of ``n`` instances SSM runs at once under ``MaxConcurrency`` (a count or a percentage of the
+    command's targets).  A percentage is rounded down here (at least 1): the smaller reading gives the longer, safe
+    wait budget."""
+    text = str(max_concurrency or DEFAULT_MAX_CONCURRENCY).strip()
+    try:
+        value = n * int(text[:-1]) // 100 if text.endswith("%") else int(text)
+    except ValueError:
+        value = 1
+    return max(1, min(max(n, 1), value))
+
+
+def wait_budget(n: int, max_concurrency: str, per_target_s: int) -> int:
+    """Seconds one command over ``n`` instances may need: one per-target timeout per wave, plus slack."""
+    waves = math.ceil(max(n, 1) / concurrency(max_concurrency, n))
+    return waves * int(per_target_s) + SLACK_S
 
 
 def _code(exc: Exception) -> str:
@@ -138,12 +165,24 @@ class SsmTransport:
         bucket = str(cfg.get("output_s3_bucket") or "")
         prefix = str(cfg.get("output_s3_prefix") or "").strip("/")
         timeout = max(60, min(int(options.timeout_per_target_s or 300), 3600))
+        max_concurrency = str(cfg.get("max_concurrency") or DEFAULT_MAX_CONCURRENCY)
+        # the whole command's wait: SSM runs the batch in waves, each host within its own timeout; never past the
+        # job's deadline (what is still running then is cancelled and reported, the next batches are not sent)
+        wait_s = min(wait_budget(len(ready), max_concurrency, timeout), options.deadline - time.monotonic())
+        if wait_s <= 0:
+            for t in ready:
+                yield TargetResult(t, options.should_stop() or "skipped_deadline",
+                                   "the job's deadline passed before this batch was sent", None)
+            return
         kw: dict[str, Any] = {
             "InstanceIds": [t.handle for t in ready], "DocumentName": document,
             "Parameters": {"nonce": [options.run_nonce], "tier": [str(int(options.tier))],
                            "output": ["json" if bucket else "chunks"]},
-            "TimeoutSeconds": 600, "Comment": f"ZeroShield CBOM collection {options.run_nonce}"[:100],
-            "MaxConcurrency": str(cfg.get("max_concurrency") or "10%"),
+            # SSM never starts an instance still waiting for its wave when this runs out, and calls it
+            # DeliveryTimedOut: past the wait (plus a margin), so a healthy instance is never reported unreachable
+            "TimeoutSeconds": max(30, min(MAX_TIMEOUT_SECONDS, math.ceil(wait_s) + DELIVERY_MARGIN_S)),
+            "Comment": f"ZeroShield CBOM collection {options.run_nonce}"[:100],
+            "MaxConcurrency": max_concurrency,
             "MaxErrors": str(cfg.get("max_errors") or "100%"),
         }
         if bucket:
@@ -159,12 +198,17 @@ class SsmTransport:
                 raise TransportError("auth_failed", f"the run-command role may not send {document} ({code})") from None
             raise TransportError("error", f"SSM SendCommand: {code}") from None
         self.log("ssm command sent", region=region, command=command_id, instances=len(ready))
-        status = self._wait(ssm, command_id, {t.handle for t in ready}, options, timeout)
+        status = self._wait(ssm, command_id, {t.handle for t in ready}, options, wait_s)
         for t in ready:
-            yield self._result(ssm, region, command_id, t, status.get(t.handle), bucket, prefix, options)
+            try:
+                res = self._result(ssm, region, command_id, t, status.get(t.handle), bucket, prefix, options)
+            except Exception as exc:  # one instance's output is that instance's error, never the batch's
+                res = TargetResult(t, "error", f"the SSM output of this instance could not be read "
+                                               f"({exc.__class__.__name__})", None)
+            yield res
 
-    def _wait(self, ssm, command_id: str, ids: set[str], options: CollectOptions, timeout: int) -> dict[str, dict]:
-        until = min(options.deadline, time.monotonic() + timeout + 120)
+    def _wait(self, ssm, command_id: str, ids: set[str], options: CollectOptions, wait_s: float) -> dict[str, dict]:
+        until = min(options.deadline, time.monotonic() + wait_s)
         seen: dict[str, dict] = {}
         while True:
             token = None
@@ -191,6 +235,10 @@ class SsmTransport:
     def _result(self, ssm, region: str, command_id: str, t: CollectTarget, inv: dict | None, bucket: str, prefix: str,
                 options: CollectOptions) -> TargetResult:
         status = (inv or {}).get("Status")
+        if status in NOT_STARTED:  # still waiting for its wave when the wait ran out: it never ran
+            return TargetResult(t, options.should_stop() or "skipped_deadline",
+                                f"SSM had not started command {command_id} on this instance when the job's time ran "
+                                "out", None)
         if status is None or status not in FINAL or status in ("Cancelled", "Cancelling"):
             return TargetResult(t, options.should_stop() or "timeout", f"SSM command {command_id} did not finish", None)
         if status in ("Undeliverable", "Terminated", "DeliveryTimedOut", "InvalidPlatform"):

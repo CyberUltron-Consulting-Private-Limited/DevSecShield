@@ -350,7 +350,7 @@ def doc_for(label: str, nonce: str = NONCE) -> dict:
 
 
 def options(stop=None) -> CollectOptions:
-    return CollectOptions(tier=2, run_nonce=NONCE, deadline=time.monotonic() + 60, timeout_per_target_s=60,
+    return CollectOptions(tier=2, run_nonce=NONCE, deadline=time.monotonic() + 3600, timeout_per_target_s=60,
                           max_concurrency="10%", zs_collect_sha256={"amd64": "a" * 64},
                           should_stop=stop or (lambda: None), collector_version=FIXTURE["collector_version"])
 
@@ -374,6 +374,16 @@ CRED = TransportCredential("aws_role", {"role_arn": "arn:aws:iam::111122223333:r
                                         "document_name": "devsecshield-zs-collect-1.0.0"}, {})
 
 
+def timeout_seconds(n_sent: int, max_concurrency: str = "10%", per_target_s: int = 60) -> int:
+    """What SendCommand's TimeoutSeconds must be: SSM runs n instances in waves of MaxConcurrency (a percentage is
+    read rounded down, at least 1), each within the per-target timeout, plus 120 s of slack."""
+    import math
+
+    pct = int(max_concurrency[:-1]) if max_concurrency.endswith("%") else None
+    at_once = max(1, min(n_sent, n_sent * pct // 100 if pct is not None else int(max_concurrency)))
+    return math.ceil(n_sent / at_once) * per_target_s + 120 + 60  # + the margin before DeliveryTimedOut
+
+
 def _stub_common(c: Clients, online: list[str], sent: list[str], bucket=None, ids=None):
     c.ssm_stub.add_response("describe_document", {"Document": {"Name": "devsecshield-zs-collect-1.0.0"}},
                             {"Name": "devsecshield-zs-collect-1.0.0"})
@@ -384,7 +394,8 @@ def _stub_common(c: Clients, online: list[str], sent: list[str], bucket=None, id
         return
     params = {"InstanceIds": sent, "DocumentName": "devsecshield-zs-collect-1.0.0",
               "Parameters": {"nonce": [NONCE], "tier": ["2"], "output": ["json" if bucket else "chunks"]},
-              "TimeoutSeconds": 600, "Comment": f"ZeroShield CBOM collection {NONCE}", "MaxConcurrency": "10%",
+              "TimeoutSeconds": timeout_seconds(len(sent)), "Comment": f"ZeroShield CBOM collection {NONCE}",
+              "MaxConcurrency": "10%",
               "MaxErrors": "100%"}
     if bucket:
         params.update(OutputS3BucketName=bucket, OutputS3KeyPrefix="zs")
@@ -516,3 +527,226 @@ def test_cloud_worker_runs_an_ssm_job_end_to_end(api, world, release_key, monkey
         assert job.status == "success", (job.status, job.error)
         targets = {a.target for a in s.exec(select(CbomCollectedAsset)).all()}
         assert targets == {"10.30.0.1", "10.30.0.2"}
+
+
+# ----------------------------------------------------------------------------- SSM: one instance never fails the batch
+def nested_line(depth: int = 11_500) -> str:
+    """A JSON line nested past the parser's recursion limit, still under SSM's 24,000-character inline cap."""
+    return '{"format":"zs-collect/1","x":' + "[" * depth + "]" * depth + "}"
+
+
+def test_ssm_an_instance_with_a_nested_document_is_its_own_error_and_the_others_are_kept():
+    text = nested_line()
+    assert len(text) < 24_000
+    with pytest.raises(RecursionError):  # the hazard: json.loads alone would raise out of the transport
+        json.loads(text)
+    c = Clients()
+    _stub_common(c, online=IDS, sent=IDS)
+    c.ssm_stub.add_response("list_command_invocations", {"CommandInvocations": [
+        {"InstanceId": i, "Status": "Success"} for i in IDS]}, {"CommandId": CMD, "Details": False, "MaxResults": 50})
+    for i, instance in enumerate(IDS):
+        out = text if i == 1 else "\n".join(zsdoc.encode_chunks(doc_for(f"10.0.0.{i + 1}"), NONCE, 512 * 1024))
+        c.ssm_stub.add_response("get_command_invocation", {"StandardOutputContent": out,
+                                                           "StandardErrorContent": "ZSRC 0\n"},
+                                {"CommandId": CMD, "InstanceId": instance, "PluginName": "zsCollect"})
+    config = {"targets": ["10.0.0.1", "10.0.0.2", "10.0.0.3"], "handles": dict(zip(["10.0.0.1", "10.0.0.2", "10.0.0.3"], IDS)),
+              "tier": 2, "timeout_s": 60, "transport": dict(CRED.config),
+              "zs_collect": {"version": FIXTURE["collector_version"], "sha256": {}}}
+    emitted = []
+    import backend.utilities.cbom_sources.transports.cloud as CLOUD
+
+    real_nonce = CLOUD._secrets.token_hex
+    try:  # the nonce collect_ssm makes is NONCE, so the stubbed parameters match
+        CLOUD._secrets.token_hex = lambda n: NONCE.rsplit("-", 1)[1]
+        with c.ssm_stub:
+            result = collect_ssm({"id": 7, "attempt": 1, "kind": "collect"}, config, [], SsmTransport(c, poll_s=0),
+                                 emitted.append, lambda: None, time.monotonic() + 3600)
+            c.ssm_stub.assert_no_pending_responses()
+    finally:
+        CLOUD._secrets.token_hex = real_nonce
+    rows = {r["target"]: r for r in result["targets"]}
+    assert rows["10.0.0.1"]["status"] == rows["10.0.0.3"]["status"] == "ok"
+    assert rows["10.0.0.2"]["status"] == "error" and "not a JSON document" in rows["10.0.0.2"]["error"]
+    assert {a["target"] for a in emitted} == {"10.0.0.1", "10.0.0.3"}
+    assert result["summary"].startswith("2 of 3 instances collected")
+
+
+def test_cloud_one_instances_failure_never_fails_the_others():
+    from backend.utilities.cbom_sources.transports.base import TargetResult
+
+    class Dies:
+        def run_collect(self, targets, credential, options):
+            yield TargetResult(targets[0], "ok", None, doc_for("h", options.run_nonce))
+            raise RuntimeError("the boto3 client broke")
+
+    config = {"targets": ["10.0.0.1", "10.0.0.2"], "handles": {"10.0.0.1": IDS[0], "10.0.0.2": IDS[1]}, "tier": 2,
+              "transport": dict(CRED.config), "zs_collect": {"version": FIXTURE["collector_version"], "sha256": {}}}
+    emitted = []
+    result = collect_ssm({"id": 5, "attempt": 1, "kind": "collect"}, config, [], Dies(), emitted.append,
+                         lambda: None, time.monotonic() + 60)
+    rows = {r["target"]: r for r in result["targets"]}
+    assert rows["10.0.0.1"]["status"] == "ok" and emitted
+    assert rows["10.0.0.2"]["status"] == "error" and "RuntimeError" in rows["10.0.0.2"]["error"]
+
+
+# ----------------------------------------------------------------------------- SSM: waves, statuses, batches
+class FakeClock:
+    def __init__(self):
+        self.t = 10_000.0
+
+    def monotonic(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
+
+
+class WaveSsm:
+    """An SSM that runs a command in waves of MaxConcurrency (a percentage rounded up, as SSM does at least as fast
+    as the transport assumes) and never starts an instance after TimeoutSeconds (DeliveryTimedOut)."""
+
+    def __init__(self, clock: FakeClock, per_host_s: float):
+        self.clock, self.per_host_s, self.sent, self.cancelled = clock, per_host_s, [], []
+
+    def describe_document(self, Name):
+        return {"Document": {"Name": Name}}
+
+    def describe_instance_information(self, **kw):
+        return {"InstanceInformationList": [{"InstanceId": i, "PingStatus": "Online"}
+                                            for i in kw["Filters"][0]["Values"]]}
+
+    def send_command(self, **kw):
+        import math
+
+        mc, n = kw["MaxConcurrency"], len(kw["InstanceIds"])
+        self.at_once = max(1, math.ceil(n * int(mc[:-1]) / 100)) if mc.endswith("%") else int(mc)
+        self.sent.append({**kw, "t0": self.clock.t})
+        return {"Command": {"CommandId": f"cmd-{len(self.sent)}"}}
+
+    def _status(self, k: int) -> str:
+        cmd = self.sent[-1]
+        start = (k // self.at_once) * self.per_host_s
+        elapsed = self.clock.t - cmd["t0"]
+        if self.cancelled:
+            return "Success" if elapsed >= start + self.per_host_s else "Cancelled"
+        if start > cmd["TimeoutSeconds"] and elapsed > cmd["TimeoutSeconds"]:
+            return "DeliveryTimedOut"
+        return "Pending" if elapsed < start else "InProgress" if elapsed < start + self.per_host_s else "Success"
+
+    def list_command_invocations(self, **kw):
+        ids = self.sent[-1]["InstanceIds"]
+        return {"CommandInvocations": [{"InstanceId": i, "Status": self._status(k)} for k, i in enumerate(ids)]}
+
+    def cancel_command(self, CommandId):
+        self.cancelled.append((CommandId, self.clock.t))
+
+    def get_command_invocation(self, CommandId, InstanceId, PluginName):
+        label = f"10.1.{int(InstanceId[-4:], 16) // 256}.{int(InstanceId[-4:], 16) % 256}"
+        nonce = self.sent[-1]["Parameters"]["nonce"][0]
+        return {"StandardOutputContent": json.dumps(doc_for(label, nonce)), "StandardErrorContent": "ZSRC 0\n"}
+
+
+def wave_targets(n: int) -> list[CollectTarget]:
+    return [CollectTarget(f"10.1.{k // 256}.{k % 256}", f"i-{k:017x}") for k in range(n)]
+
+
+@pytest.mark.parametrize("per_host_s", [8.5, 60, 120, 280])
+def test_ssm_50_instances_at_10_percent_all_finish_inside_the_wait(monkeypatch, per_host_s):
+    """50 instances, MaxConcurrency 10% (5 at a time, 10 waves), each host well inside its 300 s timeout: every one
+    is collected.  Before the wave-aware budget (one timeout + 120 s for the whole command, TimeoutSeconds 600) the
+    same run gave 35 ok / 15 timeout at 60 s per host and 15 ok / 35 timeout at 120 s (review 5874466030)."""
+    from backend.utilities.cbom_sources.transports import ssm as SSM_MOD
+
+    clock = FakeClock()
+    monkeypatch.setattr(SSM_MOD, "time", clock)
+    fake = WaveSsm(clock, per_host_s)
+    opts = CollectOptions(tier=1, run_nonce=NONCE, deadline=clock.t + 8 * 3600, timeout_per_target_s=300,
+                          max_concurrency="10%", zs_collect_sha256={}, should_stop=lambda: None,
+                          collector_version=FIXTURE["collector_version"])
+    started = clock.t
+    out = list(SsmTransport(lambda svc, region: fake, poll_s=3.0).run_collect(wave_targets(50), CRED, opts))
+    assert [r.status for r in out].count("ok") == 50, sorted({(r.status, r.error) for r in out if r.status != "ok"})
+    (cmd,) = fake.sent
+    assert cmd["MaxConcurrency"] == "10%" and len(cmd["InstanceIds"]) == 50
+    assert cmd["TimeoutSeconds"] >= 10 * 300 + 120  # 10 waves of a 300 s timeout, plus slack
+    assert fake.cancelled == [] and clock.t - started <= 10 * per_host_s + 3 * 2
+
+
+def test_ssm_wait_never_passes_the_job_deadline(monkeypatch):
+    """A budget longer than the job has left: the command is cancelled at the deadline, what finished is kept, the
+    rest is reported, and TimeoutSeconds still covers the whole wait."""
+    from backend.utilities.cbom_sources.transports import ssm as SSM_MOD
+
+    clock = FakeClock()
+    monkeypatch.setattr(SSM_MOD, "time", clock)
+    fake = WaveSsm(clock, 120)
+    opts = CollectOptions(tier=1, run_nonce=NONCE, deadline=clock.t + 700, timeout_per_target_s=300,
+                          max_concurrency="10%", zs_collect_sha256={}, should_stop=lambda: None,
+                          collector_version=FIXTURE["collector_version"])
+    out = list(SsmTransport(lambda svc, region: fake, poll_s=3.0).run_collect(wave_targets(50), CRED, opts))
+    statuses = [r.status for r in out]
+    # waves 1-5 done by 600 s; wave 6 running at 700 s (timeout); waves 7-10 never started (skipped, not unreachable)
+    assert (statuses.count("ok"), statuses.count("timeout"), statuses.count("skipped_deadline")) == (25, 5, 20)
+    assert fake.sent[0]["TimeoutSeconds"] >= 700 and fake.cancelled and fake.cancelled[0][1] <= opts.deadline + 3
+    clock.t = opts.deadline + 1  # nothing is sent once the deadline has passed
+    out = list(SsmTransport(lambda svc, region: fake, poll_s=3.0).run_collect(wave_targets(2), CRED, opts))
+    assert {r.status for r in out} == {"skipped_deadline"} and len(fake.sent) == 1
+
+
+@pytest.mark.parametrize("final,expected", [
+    ("Undeliverable", "unreachable"), ("Terminated", "unreachable"), ("DeliveryTimedOut", "unreachable"),
+    ("InvalidPlatform", "unreachable"), ("TimedOut", "timeout"), ("ExecutionTimedOut", "timeout"),
+    ("AccessDenied", "refused"), ("Cancelled", "timeout"), ("Cancelling", "timeout"),
+])
+def test_ssm_final_statuses_map_to_target_statuses_without_reading_output(final, expected):
+    c = Clients()
+    _stub_common(c, online=IDS[:1], sent=IDS[:1], ids=IDS[:1])
+    c.ssm_stub.add_response("list_command_invocations", {"CommandInvocations": [
+        {"InstanceId": IDS[0], "Status": final}]}, {"CommandId": CMD, "Details": False, "MaxResults": 50})
+    with c.ssm_stub:  # no GetCommandInvocation is stubbed: reading output for these would be an unstubbed call
+        (out,) = SsmTransport(c, poll_s=0).run_collect([CollectTarget("10.0.0.1", IDS[0])], CRED, options())
+        c.ssm_stub.assert_no_pending_responses()
+    assert out.status == expected and out.document is None
+
+
+def test_ssm_failed_reads_the_launchers_exit_status():
+    c = Clients()
+    _stub_common(c, online=IDS[:1], sent=IDS[:1], ids=IDS[:1])
+    c.ssm_stub.add_response("list_command_invocations", {"CommandInvocations": [
+        {"InstanceId": IDS[0], "Status": "Failed"}]}, {"CommandId": CMD, "Details": False, "MaxResults": 50})
+    c.ssm_stub.add_response("get_command_invocation", {"StandardOutputContent": "",
+                                                       "StandardErrorContent": "zs-collect: ... is missing\nZSRC 3\n"},
+                            {"CommandId": CMD, "InstanceId": IDS[0], "PluginName": "zsCollect"})
+    with c.ssm_stub:
+        (out,) = SsmTransport(c, poll_s=0).run_collect([CollectTarget("10.0.0.1", IDS[0])], CRED, options())
+    assert out.status == "error" and "not installed" in out.error
+
+
+def test_ssm_51_instances_are_two_send_commands_of_50_and_1():
+    from botocore.stub import ANY
+
+    ids = [f"i-{k:017x}" for k in range(51)]
+    targets = [CollectTarget(f"10.2.0.{k}", i) for k, i in enumerate(ids)]
+    c = Clients()
+    c.ssm_stub.add_response("describe_document", {"Document": {"Name": "devsecshield-zs-collect-1.0.0"}},
+                            {"Name": "devsecshield-zs-collect-1.0.0"})
+    for batch, cmd in ((ids[:50], CMD), (ids[50:], CMD.replace("0f3c", "1f3c"))):
+        c.ssm_stub.add_response("describe_instance_information", {"InstanceInformationList": [
+            {"InstanceId": i, "PingStatus": "Online"} for i in batch]},
+            {"Filters": [{"Key": "InstanceIds", "Values": batch}], "MaxResults": 50})
+        c.ssm_stub.add_response("send_command", {"Command": {"CommandId": cmd}},
+                                {"InstanceIds": batch, "DocumentName": "devsecshield-zs-collect-1.0.0",
+                                 "Parameters": ANY, "TimeoutSeconds": timeout_seconds(len(batch)), "Comment": ANY,
+                                 "MaxConcurrency": "10%", "MaxErrors": "100%"})
+        c.ssm_stub.add_response("list_command_invocations", {"CommandInvocations": [
+            {"InstanceId": i, "Status": "Success"} for i in batch]},
+            {"CommandId": cmd, "Details": False, "MaxResults": 50})
+        for i in batch:
+            label = targets[ids.index(i)].label
+            c.ssm_stub.add_response("get_command_invocation", {
+                "StandardOutputContent": json.dumps(doc_for(label)), "StandardErrorContent": "ZSRC 0\n"},
+                {"CommandId": cmd, "InstanceId": i, "PluginName": "zsCollect"})
+    with c.ssm_stub:
+        out = list(SsmTransport(c, poll_s=0).run_collect(targets, CRED, options()))
+        c.ssm_stub.assert_no_pending_responses()
+    assert len(out) == 51 and {r.status for r in out} == {"ok"}
