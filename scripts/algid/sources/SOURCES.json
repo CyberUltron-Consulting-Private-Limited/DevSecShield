@@ -28,9 +28,9 @@
   {
    "file": "curated.json",
    "url": "hand-curated; every section cites its document",
-   "retrieved_utc": "2026-11-12T11:45:00Z",
-   "sha256": "0ab812c8d56789dc82c8f85ea00720410329480f059e273e345bccaa545aeaf8",
-   "tool": "hand, second-agent review (O-9) recorded in the PR",
+   "retrieved_utc": "2026-11-12T13:15:00Z",
+   "sha256": "b06858f1f0e22f98e6c6d208b674befc6d54c74b619980687d08a67dc79a86e8",
+   "tool": "hand, second-agent review (O-9) recorded in PR #94 (review 5874701640: all 20 categories agree)",
    "licence": "this repository"
   },
   {
@@ -78,7 +78,7 @@
    "url": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration",
    "retrieved_utc": "2026-11-12T11:27:12Z",
    "sha256": "45604e938b037cf3e49c0cf1039196ee9a4286285958709920c127eda61bab5f",
-   "tool": "scripts/algid/extract_html.py from the raw capture nist-csor.html (raw sha256 inside the extract; raw pages are kept with the CB-04 evidence, not committed)",
+   "tool": "scripts/algid/extract_html.py from the raw capture nist-csor.html (raw sha256 inside the extract; raw pages are kept with the CB-04 evidence, not committed). The CSOR page is dynamic: its bytes, and so the raw sha256, differ on every fetch, while the extract (the 105 OID definitions) reproduces from any fresh capture. The extract, not the raw hash, is the reproducible artefact.",
    "licence": "US government work (public domain)"
   },
   {

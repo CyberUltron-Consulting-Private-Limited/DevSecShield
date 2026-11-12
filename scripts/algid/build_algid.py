@@ -1,22 +1,25 @@
-"""Generate the tables of algid.py (the one algorithm-identity module) from the captured sources.
+"""Generate algid_tables.py (the tables of algid, the one algorithm-identity module) from the captured sources.
 
-    python3 scripts/algid/build_algid.py           # rewrite the generated region of all three copies
+    python3 scripts/algid/build_algid.py           # write algid_tables.py next to each of the three algid.py
     python3 scripts/algid/build_algid.py --check   # exit 1 if any copy differs from what the sources give
+    python3 scripts/algid/build_algid.py --sync    # also copy the master algid.py over the two other copies
 
-algid.py is vendored byte-identical in three places (the scan node, the backend and aibom cannot import each
-other). Hand-written resolver code sits outside the region between the BEGIN/END GENERATED markers; this script
-rewrites only that region, taking the hand-written parts from the backend copy. Every input file is listed in
-sources/SOURCES.json with its sha256; a missing entry or a changed file is an error. Third-party HTML pages are
-not committed: sources/ holds normalised extracts of them (extract_html.py), each with the raw page's sha256.
-Stdlib only.
+algid.py and algid_tables.py are vendored byte-identical in three places (the scan node, the backend and aibom
+cannot import each other). algid.py is hand-written: edit the master, backend/utilities/cbom_sources/algid.py, only;
+this script refuses to write while another copy differs from it, and --sync copies the master over the others.
+algid_tables.py is generated whole, never edited. Every input file is listed in sources/SOURCES.json with its
+sha256; a missing entry or a changed file is an error. Third-party HTML pages are not committed: sources/ holds
+normalised extracts of them (extract_html.py), each with the raw page's sha256. Stdlib only.
 """
 from __future__ import annotations
 
 import csv
+import difflib
 import hashlib
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,8 +27,7 @@ SRC = Path(__file__).resolve().parent / "sources"
 COPIES = (ROOT / "backend/utilities/cbom_sources/algid.py", ROOT / "scan_node/zs_scan_node/algid.py",
           ROOT / "aibom/src/aibom/cbom/algid.py")
 MASTER = COPIES[0]
-BEGIN = "# --- BEGIN GENERATED (scripts/algid/build_algid.py) ---\n"
-END = "# --- END GENERATED ---\n"
+TABLES = tuple(p.with_name("algid_tables.py") for p in COPIES)
 WIDTH = 88
 
 
@@ -56,10 +58,27 @@ def _csv(raw: bytes) -> list[dict[str, str]]:
     return list(csv.DictReader(raw.decode("utf-8").splitlines()))
 
 
+_RFC = re.compile(r"\[RFC (\d+)\]")
+
+
 def _status(reference: str, description: str = "") -> str:
-    if "OBSOLETE" in description:
+    """The one status rule for every registry row (curated.json "status_rule"), first match wins:
+    "obsolete" (any case) in the reference or description -> obsolete; a published "[RFC NNNN]" -> standard; an
+    RFC-to-be "RFC-ietf-*" -> draft (coordinator decision: no credit for unpublished text); "draft-*" -> draft;
+    anything else -> standard."""
+    if "obsolete" in f"{reference} {description}".lower():
         return "obsolete"
-    return "draft" if "draft-" in reference else "standard"
+    if _RFC.search(reference):
+        return "standard"
+    if "RFC-ietf-" in reference or "draft-" in reference:
+        return "draft"
+    return "standard"
+
+
+def _rfc(reference: str) -> str | None:
+    """'RFC NNNN' when the reference names a published RFC (the row's `standard`), else None."""
+    m = _RFC.search(reference)
+    return f"RFC {m.group(1)}" if m else None
 
 
 def _digits(text: str) -> int | None:
@@ -104,7 +123,10 @@ def _cat(param: str | None, curated: dict) -> int | None:
 def _pq(family: str, primitive: str, standard: str | None, status: str, param: str | None,
         construction: str, components: tuple = (), curated: dict | None = None) -> list:
     quantum = "hybrid" if construction in ("hybrid", "composite") else "safe"
-    # a NIST category is claimed only for FIPS 203/204/205 (206 draft) algorithms, never for obsolete,
+    if status in ("pre-standard", "obsolete"):
+        # neither a FIPS parameter set nor a standard is claimed for a round-3 or obsolete identity (OA-CB04-2/4)
+        param = standard = None
+    # a NIST category is claimed only for FIPS 203/204/205 (and FN-DSA) parameter sets, never for obsolete,
     # pre-standard or candidate identities (OA-CB04-2/4)
     category = _cat(param, curated or {}) if status in ("standard", "draft") else None
     return [family, primitive, standard, status, param, category, construction, quantum, None,
@@ -122,8 +144,11 @@ def build_curated_rows(t: Tables) -> None:
     c = t.curated
     for section in ("fips_algorithms", "other_pq", "classical_algorithms"):
         for name, attrs in c[section].items():
-            if not name.startswith("_"):
-                t.add(name, attrs)
+            if name.startswith("_"):
+                continue
+            if attrs[3] in ("pre-standard", "obsolete") and attrs[4] is not None:
+                raise SourceError(f"{name}: a {attrs[3]} row carries parameter set {attrs[4]!r}")
+            t.add(name, attrs)
     for oid, name in c["classical_oids"].items():
         if oid.startswith("_"):
             continue
@@ -185,6 +210,22 @@ def build_csor(t: Tables, extract: bytes) -> None:
 _COMPOSITE = re.compile(r"(ML(?:DSA|KEM)\d+)-(.+)")
 
 
+def _component(suffix: str, t: Tables) -> str:
+    """The canonical row of a composite's classical part ("RSA2048-PSS-SHA256" -> "RSA-2048",
+    "ECDSA-brainpoolP256r1-SHA512" -> "brainpoolP256r1"); the hash and padding stay in the composite's name."""
+    m = re.match(r"RSA(\d{4})-", suffix)
+    name = f"RSA-{m.group(1)}" if m else None
+    m = re.match(r"(?:ECDSA|ECDH)-(P(\d{3})|brainpoolP\d{3}r1)-", suffix)
+    if m:
+        name = f"P-{m.group(2)}" if m.group(2) else m.group(1)
+    m = re.match(r"(Ed25519|Ed448|X25519|X448)-", suffix)
+    if m:
+        name = m.group(1)
+    if name is None or name not in t.algs:
+        raise SourceError(f"composite component with no row: {suffix}")
+    return name
+
+
 def build_pkix(t: Tables, raw: bytes) -> None:
     for row in _csv(raw):
         dec, desc, ref = row["Decimal"], row["Description"], row["Reference"]
@@ -192,42 +233,40 @@ def build_pkix(t: Tables, raw: bytes) -> None:
             continue
         oid = f"1.3.6.1.5.5.7.6.{dec}"
         name = re.sub(r"^id-(alg-)?", "", desc)
+        status = _status(ref, desc)
         m = _COMPOSITE.fullmatch(name)
         if m:
             kem = m.group(1).startswith("MLKEM")
             param = re.sub(r"ML(DSA|KEM)(\d+)", r"ML-\1-\2", m.group(1))
-            published = "RFC 10073" in ref
-            attrs = _pq("PQ", "kem" if kem else "signature", "RFC 10073" if published else None,
-                        "standard" if published else "draft", param, "composite", (param, m.group(2)),
-                        t.curated)
+            attrs = _pq("PQ", "kem" if kem else "signature", _rfc(ref), status, param, "composite",
+                        (param, _component(m.group(2), t)), t.curated)
             t.oid[oid] = t.add(name, attrs)
         elif name == "xmss-hashsig":
             t.oid[oid] = "XMSS"
         elif name == "xmssmt-hashsig":
             t.oid[oid] = "XMSS^MT"
         elif name.startswith(("dhPop", "dh-sig")):
-            t.oid[oid] = t.add(name, _classical("DH", "signature"))
+            t.oid[oid] = t.add(name, _classical("DH", "signature", status=status))
         elif name.startswith(("ecdhPop", "eccsi")):
-            t.oid[oid] = t.add(name, _classical("EC", "signature"))
+            t.oid[oid] = t.add(name, _classical("EC", "signature", status=status))
         elif name.startswith("RSASSA-PSS"):
-            t.oid[oid] = t.add(name, _classical("RSA", "signature"))
+            t.oid[oid] = t.add(name, _classical("RSA", "signature", status=status))
         elif name.startswith("ecdsa-with"):
-            t.oid[oid] = t.add(name, _classical("ECDSA", "signature"))
-        else:  # des40, noSignature, unsigned, mtcProof: identifiers, not key algorithms
-            t.oid[oid] = t.add(name, [None, "other", None, _status(ref, desc), None, None, "classical",
-                                      None, None, []])
+            t.oid[oid] = t.add(name, _classical("ECDSA", "signature", status=status))
+        else:  # des40, noSignature, unsigned, mtcProof: identifiers, not key algorithms (no family, no verdict)
+            t.oid[oid] = t.add(name, _classical(None, "other", status=status))
 
 
-def _group_attrs(desc: str) -> list | None:
+def _group_attrs(desc: str, status: str) -> list | None:
     low = desc.lower()
     if low.startswith(("sect", "secp", "brainpool", "gc256", "gc512", "bign-", "arbitrary_explicit")):
-        return _classical("EC", "key-agree", _digits(desc))
+        return _classical("EC", "key-agree", _digits(desc), status)
     if low == "curvesm2":
-        return _classical("SM2", "key-agree", 256)
+        return _classical("SM2", "key-agree", 256, status)
     if low in ("x25519", "x448"):
-        return _classical(desc.upper(), "key-agree", 256 if low == "x25519" else 448)
+        return _classical(desc.upper(), "key-agree", 256 if low == "x25519" else 448, status)
     if low.startswith("ffdhe"):
-        return _classical("DH", "key-agree", _digits(desc))
+        return _classical("DH", "key-agree", _digits(desc), status)
     return None
 
 
@@ -244,12 +283,13 @@ def build_tls_groups(t: Tables, raw: bytes) -> None:
         if desc.startswith(("Reserved", "Unassigned")):
             continue
         name = desc.replace(" (OBSOLETE)", "")
+        status = _status(ref, desc)
         if name in pq:
-            status, param, components = pq[name]
+            param, components = pq[name]
             construction = "hybrid" if components else "pure"
             attrs = _pq("PQ", "kem", "FIPS 203", status, param, construction, components, t.curated)
         else:
-            attrs = _group_attrs(name)
+            attrs = _group_attrs(name, status)
             if attrs is None:
                 raise SourceError(f"TLS group with no rule: {cp} {desc}")
         same = t.algs.get(name)
@@ -264,14 +304,14 @@ def build_tls_groups(t: Tables, raw: bytes) -> None:
 
 def _sigscheme_attrs(desc: str, ref: str, curated: dict) -> list:
     low = desc.lower()
+    status = _status(ref, desc)
     m = re.fullmatch(r"mldsa(\d+)", low)
     if m:
-        return _pq("PQ", "signature", "FIPS 204", "standard", f"ML-DSA-{m.group(1)}", "pure", (), curated)
+        return _pq("PQ", "signature", "FIPS 204", status, f"ML-DSA-{m.group(1)}", "pure", (), curated)
     m = re.fullmatch(r"slhdsa_(sha2|shake)_(\d{3}[sf])", low)
     if m:
         param = f"SLH-DSA-{m.group(1).upper()}-{m.group(2)}"
-        return _pq("PQ", "signature", "FIPS 205", _status(ref), param, "pure", (), curated)
-    status = _status(ref)
+        return _pq("PQ", "signature", "FIPS 205", status, param, "pure", (), curated)
     if low.startswith("rsa_"):
         return _classical("RSA", "signature", status=status)
     if low.startswith("ecdsa_"):
@@ -293,22 +333,23 @@ def build_tls_sigschemes(t: Tables, raw: bytes) -> None:
         t.tls_sigscheme[int(value, 16)] = t.add(desc, _sigscheme_attrs(desc, ref, t.curated))
 
 
-def _ssh_attrs(name: str) -> list | None:
+def _ssh_attrs(name: str, status: str) -> list | None:
     if name.startswith(("diffie-hellman-", "gss-group", "gss-gex")) or name.startswith("rsa"):
         if name.startswith("rsa"):
-            return _classical("RSA", "key-agree", _digits(name))
+            return _classical("RSA", "key-agree", _digits(name), status)
+        # RFC 4253 s8.1-8.2 (group1: Oakley group 2, 1024 bit; group14: 2048) and RFC 8268 s3 / RFC 3526
         size = {"group1": 1024, "group14": 2048, "group15": 3072, "group16": 4096, "group17": 6144,
                 "group18": 8192}
         m = re.search(r"(group\d+)", name)
-        return _classical("DH", "key-agree", size.get(m.group(1)) if m else None)
+        return _classical("DH", "key-agree", size.get(m.group(1)) if m else None, status)
     if name.startswith(("ecdh-sha2-", "gss-nistp")):
-        return _classical("ECDH", "key-agree", _digits(name.replace("sha2", "").replace("sha", "")))
+        return _classical("ECDH", "key-agree", _digits(name.replace("sha2", "").replace("sha", "")), status)
     if name.startswith("ecmqv"):
-        return _classical("EC", "key-agree")
+        return _classical("EC", "key-agree", status=status)
     if "curve25519" in name:
-        return _classical("X25519", "key-agree", 256)
+        return _classical("X25519", "key-agree", 256, status)
     if "curve448" in name:
-        return _classical("X448", "key-agree", 448)
+        return _classical("X448", "key-agree", 448, status)
     return None
 
 
@@ -318,12 +359,13 @@ def build_ssh_kex(t: Tables, raw: bytes, openssh: bytes) -> None:
         name = row["Method Name"]
         if name in ("ext-info-s", "ext-info-c", "gss-"):
             continue  # extension signals and the reserved gss- prefix: not key exchanges
+        status = _status(row["Reference"])
         if name in pq:
-            status, param, components = pq[name]
+            param, components = pq[name]
             attrs = _pq("PQ", "kem", "FIPS 203" if param.startswith("ML-KEM") else None, status, param,
                         "hybrid" if components else "pure", components, t.curated)
         else:
-            attrs = _ssh_attrs(name)
+            attrs = _ssh_attrs(name, status)
             if attrs is None:
                 raise SourceError(f"SSH KEX with no rule: {name}")
         t.ssh_kex[name] = t.add(name, attrs)
@@ -351,18 +393,19 @@ def build_ike(t: Tables, raw: bytes) -> None:
             raise SourceError(f"IKEv2 transform type 4 id {n} ({desc}) has no product name")
         seen.add(n)
         name, low = names[n], desc.lower()
+        status = _status(row["Reference"], desc)
         m = re.fullmatch(r"ml-kem-(\d+)", low)
         if m:
-            attrs = _pq("PQ", "kem", "FIPS 203", "standard", f"ML-KEM-{m.group(1)}", "pure", (), t.curated)
+            attrs = _pq("PQ", "kem", "FIPS 203", status, f"ML-KEM-{m.group(1)}", "pure", (), t.curated)
         elif "modp" in low:
-            attrs = _classical("DH", "key-agree", _digits(desc))
+            attrs = _classical("DH", "key-agree", _digits(desc), status)
         elif low.startswith("gost"):
-            attrs = _classical("EC", "key-agree", int(desc.rsplit("_", 1)[1]))
+            attrs = _classical("EC", "key-agree", int(desc.rsplit("_", 1)[1]), status)
         elif "ecp" in low or low.startswith("brainpool"):
-            attrs = _classical("EC", "key-agree", _digits(desc))
+            attrs = _classical("EC", "key-agree", _digits(desc), status)
         elif low in ("curve25519", "curve448"):
             attrs = _classical("X25519" if low == "curve25519" else "X448", "key-agree",
-                               256 if low == "curve25519" else 448)
+                               256 if low == "curve25519" else 448, status)
         else:
             raise SourceError(f"IKEv2 group with no rule: {n} {desc}")
         t.ike_ke[n] = t.add(name, attrs)
@@ -381,6 +424,10 @@ def build_aws(t: Tables, enums: bytes, elb_extract: bytes, apigw_extract: bytes)
         for value, name in mapping.items():
             if name not in t.algs:
                 raise SourceError(f"aws {key} {value} names unknown {name!r}")
+        names = list(mapping.values())
+        shared = sorted({n for n in names if names.count(n) > 1})
+        if shared:  # compare_key canonicalises enums: two values of one field must never compare equal
+            raise SourceError(f"aws {key}: several values name {shared}")
         t.aws[key] = dict(mapping)
     quote = t.curated["aws_tls_policy"]["elbv2_quote"]
     elb = json.loads(elb_extract)
@@ -412,7 +459,8 @@ def build_openssl_text(t: Tables, *captures: bytes) -> None:
 
 
 def norm(text: str) -> str:
-    return re.sub(r"[-_ /.()]", "", text).casefold()
+    """algid._norm: Unicode NFKC, every non-alphanumeric character removed, case-folded."""
+    return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", text)).casefold()
 
 
 def build_aliases(t: Tables) -> None:
@@ -428,6 +476,10 @@ def build_aliases(t: Tables) -> None:
             t.alias[key] = canonical
     for name in t.algs:  # every row is also reachable by its own normalised name (curated aliases win)
         t.alias.setdefault(norm(name), name)
+    # registry and OpenSSL spellings too, so a lookup never depends on letter case or separators
+    for table in (t.ssh_kex, t.openssl_text):
+        for spelling, name in table.items():
+            t.alias.setdefault(norm(spelling), name)
 
 
 def build(data: dict[str, bytes]) -> Tables:
@@ -446,6 +498,10 @@ def build(data: dict[str, bytes]) -> Tables:
     for oid, name in t.oid.items():
         if name not in t.algs:
             raise SourceError(f"oid {oid} names unknown row {name!r}")
+    for name, attrs in t.algs.items():
+        missing = [c for c in attrs[9] if c not in t.algs]
+        if missing:
+            raise SourceError(f"{name}: components {missing} are not rows")
     return t
 
 
@@ -517,104 +573,134 @@ def _hex(v: int) -> str:
     return f"0x{v:04X}"
 
 
+HEADER = '''"""GENERATED by scripts/algid/build_algid.py from scripts/algid/sources: do not edit.
+
+The tables algid.py reads, vendored byte-identical next to each algid.py copy.
+Change a source (or curated.json) and run build_algid.py; a backend test fails when
+a copy differs from what the sources give. Every table is read-only.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Any
+'''
+
+
+def _mapping(name: str, annotation: str, items: list[tuple[str, str]], indent: int = 0) -> list[str]:
+    pad = " " * indent
+    head = f"{pad}{name}: {annotation} = MappingProxyType(" if annotation else f"{pad}{name}: MappingProxyType("
+    out = [head + "{"]
+    for key, value in items:
+        out += _entry(key, value, indent + 4)
+    out.append(pad + "})")
+    return out
+
+
 def emit(t: Tables, digest: str) -> str:
     c = t.curated
-    lines = [BEGIN.rstrip("\n"), f'SOURCES_SHA256 = "{digest}"', "",
+    lines = HEADER.rstrip("\n").split("\n") + ["", f'SOURCES_SHA256 = "{digest}"', "",
              "# canonical name -> (family_label, primitive, standard, status, parameter_set,",
-             "#                    nist_category, construction, quantum, key_size, components)",
-             "_RAW_ALGS: dict[str, tuple[Any, ...]] = {"]
-    for name in sorted(t.algs):
-        lines += _entry(_lit(name), _lit(t.algs[name]))
-    lines += ["}", "", "_RAW_OIDS: dict[str, str] = {"]
-    for oid in sorted(t.oid, key=lambda o: [int(x) for x in o.split(".")]):
-        lines += _entry(_lit(oid), _lit(t.oid[oid]))
-    lines += ["}", "", "_RAW_TLS_GROUPS: dict[int, str] = {"]
-    for cp in sorted(t.tls_group):
-        lines += _entry(_hex(cp), _lit(t.tls_group[cp]))
-    lines += ["}", "", "_RAW_TLS_SIGSCHEMES: dict[int, str] = {"]
-    for cp in sorted(t.tls_sigscheme):
-        lines += _entry(_hex(cp), _lit(t.tls_sigscheme[cp]))
-    lines += ["}", "", "_RAW_SSH_KEX: dict[str, str] = {"]
-    for name in sorted(t.ssh_kex):
-        lines += _entry(_lit(name), _lit(t.ssh_kex[name]))
-    lines += ["}", "", "_RAW_IKE_KE: dict[int, str] = {"]
-    for n in sorted(t.ike_ke):
-        lines += _entry(str(n), _lit(t.ike_ke[n]))
-    lines += ["}", "", "_RAW_AWS: dict[str, dict[str, str]] = {"]
+             "#                    nist_category, construction, quantum, key_size, components)"]
+    lines += _mapping("ALGS", "Mapping[str, tuple[Any, ...]]",
+                      [(_lit(n), _lit(t.algs[n])) for n in sorted(t.algs)])
+    oids = sorted(t.oid, key=lambda o: [int(x) for x in o.split(".")])
+    lines += [""] + _mapping("OIDS", "Mapping[str, str]", [(_lit(o), _lit(t.oid[o])) for o in oids])
+    lines += [""] + _mapping("TLS_GROUPS", "Mapping[int, str]",
+                             [(_hex(cp), _lit(t.tls_group[cp])) for cp in sorted(t.tls_group)])
+    lines += [""] + _mapping("TLS_SIGSCHEMES", "Mapping[int, str]",
+                             [(_hex(cp), _lit(t.tls_sigscheme[cp])) for cp in sorted(t.tls_sigscheme)])
+    lines += [""] + _mapping("SSH_KEX", "Mapping[str, str]",
+                             [(_lit(n), _lit(t.ssh_kex[n])) for n in sorted(t.ssh_kex)])
+    lines += [""] + _mapping("IKE_KE", "Mapping[int, str]",
+                             [(str(n), _lit(t.ike_ke[n])) for n in sorted(t.ike_ke)])
+    lines += ["", "AWS: Mapping[str, Mapping[str, str]] = MappingProxyType({"]
     for key in sorted(t.aws):
-        lines.append(f"    {_lit(key)}: {{")
+        lines.append(f"    {_lit(key)}: MappingProxyType({{")
         for value in sorted(t.aws[key]):
             lines += _entry(_lit(value), _lit(t.aws[key][value]), 8)
-        lines.append("    },")
-    lines += ["}", "", "_RAW_AWS_TLS_POLICY: dict[str, dict[str, tuple[str, ...]]] = {"]
+        lines.append("    }),")
+    lines += ["})", "", "AWS_TLS_POLICY: Mapping[str, Mapping[str, tuple[str, ...]]] = MappingProxyType({"]
     for service in sorted(t.aws_tls_policy):
-        lines.append(f"    {_lit(service)}: {{")
+        lines.append(f"    {_lit(service)}: MappingProxyType({{")
         for name in sorted(t.aws_tls_policy[service]):
             lines += _entry(_lit(name), _lit(t.aws_tls_policy[service][name]), 8)
-        lines.append("    },")
-    lines += ["}", "", "_RAW_OPENSSL_TEXT: dict[str, str] = {"]
-    for text in sorted(t.openssl_text):
-        lines += _entry(_lit(text), _lit(t.openssl_text[text]))
-    lines += ["}", "", "_RAW_ALIASES: dict[str, str] = {"]
-    for key in sorted(t.alias):
-        lines += _entry(_lit(key), _lit(t.alias[key]))
-    lines += ["}", "", "_OID_PREFIXES: tuple[tuple[str, str, str | None], ...] = ("]
+        lines.append("    }),")
+    lines += ["})", ""]
+    lines += _mapping("OPENSSL_TEXT", "Mapping[str, str]",
+                      [(_lit(x), _lit(t.openssl_text[x])) for x in sorted(t.openssl_text)])
+    lines += [""] + _mapping("ALIASES", "Mapping[str, str]", [(_lit(k), _lit(t.alias[k])) for k in sorted(t.alias)])
+    lines += ["", "OID_PREFIXES: tuple[tuple[str, str, str | None], ...] = ("]
     for prefix, spec in c["oid_prefixes"].items():
         if not prefix.startswith("_"):
             lines.append(f"    ({_lit(prefix)}, {_lit(spec[0])}, {_lit(spec[1])}),")
-    lines += [")", "", "_RAW_CODE_LANE_X509_NAMES: dict[str, str] = {"]
-    for oid, name in c["code_lane_x509"]["names"].items():
-        lines += _entry(_lit(oid), _lit(name))
-    lines += ["}", "", "_RAW_CODE_LANE_X509_KEYS: dict[str, str] = {"]
-    for oid, name in c["code_lane_x509"]["keys"].items():
-        lines += _entry(_lit(oid), _lit(name))
-    lines += ["}", ""]
-    lines += _seq("_GREASE", sorted(t.grease), _hex)
+    lines += [")", ""]
+    x509 = c["code_lane_x509"]
+    lines += _mapping("CODE_LANE_X509_NAMES", "Mapping[str, str]",
+                      [(_lit(o), _lit(n)) for o, n in x509["names"].items()])
+    lines += [""] + _mapping("CODE_LANE_X509_KEYS", "Mapping[str, str]",
+                             [(_lit(o), _lit(n)) for o, n in x509["keys"].items()])
+    lines += [""] + _seq("GREASE", sorted(t.grease), _hex)
     markers = c["markers"]
-    lines += [""] + _seq("_PQ_MARKERS", markers["pq"], per_line=6)
-    lines += [""] + _seq("_PRE_STANDARD_MARKERS", markers["pre_standard"], per_line=6)
-    lines += [""] + _seq("_CLASSICAL_MARKERS", markers["classical"], per_line=6)
+    lines += [""] + _seq("PQ_MARKERS", markers["pq"], per_line=6)
+    lines += [""] + _seq("PRE_STANDARD_MARKERS", markers["pre_standard"], per_line=6)
+    lines += [""] + _seq("CLASSICAL_MARKERS", markers["classical"], per_line=6)
     p = c["prober"]
-    lines += [""] + _seq("TLS13_OFFER_GROUPS", p["TLS13_OFFER_GROUPS"], _hex)
+    lines += ["", "# DA s5's pinned lists govern over s0's wording \"every IANA TLS 1.3 group\":",
+              "# the offer stops at 42, so bign-curve384v1/512v1 (43/44) are not offered",
+              "# (coordinator decision, 2026-11-12)."]
+    lines += _seq("TLS13_OFFER_GROUPS", p["TLS13_OFFER_GROUPS"], _hex)
     lines += [""] + _seq("PQ_PROBE_GROUPS", p["PQ_PROBE_GROUPS"], _hex)
     lines += [""] + _seq("TLS13_SIGSCHEMES", p["TLS13_SIGSCHEMES"], _hex)
     lines += ["", "S_CLIENT_GROUPS_35 = ("]
     rest = p["S_CLIENT_GROUPS_35"]
     while rest:
-        cut = len(rest) if len(rest) <= 72 else rest.rfind(":", 0, 72) + 1
+        # cut after the last ':' that fits, else at the width (pieces are concatenated literals)
+        cut = len(rest) if len(rest) <= 72 else (rest.rfind(":", 0, 72) + 1 or 72)
         lines.append(f"    {_lit(rest[:cut])}")
         rest = rest[cut:]
     lines += [")", ""]
     lines += _seq("TLS_CLASSICAL_SIGSCHEME_NAMES", p["TLS_CLASSICAL_SIGSCHEME_NAMES"], per_line=2)
-    lines.append(END.rstrip("\n"))
     for line in lines:
         if len(line) > WIDTH:
             raise SourceError(f"generated line over {WIDTH} columns: {line}")
     return "\n".join(lines) + "\n"
 
 
-def render(master_text: str, region: str) -> str:
-    head, sep, rest = master_text.partition(BEGIN)
-    _, sep2, tail = rest.partition(END)
-    if not sep or not sep2:
-        raise SourceError("the master copy lacks the BEGIN/END GENERATED markers")
-    return head + region + tail
+def _differs(path: Path, text: str) -> bool:
+    return not path.exists() or path.read_text(encoding="utf-8") != text
 
 
 def main(argv: list[str]) -> int:
     data, digest = load_sources()
-    region = emit(build(data), digest)
-    text = render(MASTER.read_text(encoding="utf-8"), region)
+    tables = emit(build(data), digest)
+    master = MASTER.read_text(encoding="utf-8")
+    drifted = [p for p in COPIES[1:] if _differs(p, master)]
     if "--check" in argv:
-        bad = [str(p.relative_to(ROOT)) for p in COPIES if not p.exists() or p.read_text(encoding="utf-8") != text]
+        bad = [str(p.relative_to(ROOT)) for p in TABLES if _differs(p, tables)]
+        bad += [str(p.relative_to(ROOT)) for p in drifted]
         if bad:
             print("algid: out of date: " + ", ".join(bad), file=sys.stderr)
             return 1
-        print("algid: all copies match the sources")
+        print("algid: all copies match the sources and the master")
         return 0
-    for p in COPIES:
-        p.write_text(text, encoding="utf-8")
-    print(f"algid: wrote {len(COPIES)} copies ({len(text.splitlines())} lines)")
+    if drifted and "--sync" not in argv:
+        for p in drifted:
+            old = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+            diff = list(difflib.unified_diff(master.splitlines(), old, str(MASTER.relative_to(ROOT)),
+                                             str(p.relative_to(ROOT)), lineterm=""))
+            print("\n".join(diff[:60]), file=sys.stderr)
+        print("algid: a copy of algid.py differs from the master (backend/utilities/cbom_sources/algid.py). "
+              "Edit the master only; --sync copies it over the others (and discards their edits).",
+              file=sys.stderr)
+        return 1
+    for p in TABLES:
+        p.write_text(tables, encoding="utf-8")
+    for p in drifted:
+        p.write_text(master, encoding="utf-8")
+    print(f"algid: wrote {len(TABLES)} copies of algid_tables.py ({len(tables.splitlines())} lines)"
+          + (f"; synced {len(drifted)} algid.py from the master" if drifted else ""))
     return 0
 
 
