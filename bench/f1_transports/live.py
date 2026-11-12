@@ -152,6 +152,10 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--ssh-max-procs", type=int, default=50)
     ap.add_argument("--target-memory", default="160m")  # salt-ssh runs a Python salt-call on the host
+    # The salt master runs up to --ssh-max-procs salt-ssh processes at once (~70 MB each, measured on the sandbox
+    # EC2): a fixed 768 MB was OOM-killed at 50 (salt-api exited 137 and every target failed), so it scales with them.
+    ap.add_argument("--master-memory", default=None, help="salt master container memory (default 512m + 80m per "
+                                                          "salt-ssh process)")
     ap.add_argument("--awx-forks", type=int, default=10)
     ap.add_argument("--awx-memory", default="1g")
     ap.add_argument("--skip", default="", help="comma list of: salt-ssh, salt-minions, awx")
@@ -186,7 +190,7 @@ def main() -> int:
         mnames = [f"{PREFIX}m{i:03d}" for i in range(args.minions)]
         t0 = time.monotonic()
         run_container(MASTER, "master", {"ZS_SALT_PASSWORD": salt_pw, "ZS_SSH_MAX_PROCS": str(args.ssh_max_procs)},
-                      [], "768m")
+                      [], args.master_memory or f"{512 + 80 * args.ssh_max_procs}m")
         names.append(MASTER)
         run_container(AWX, "awx", {"ZS_AWX_TOKEN": awx_token, "ZS_AWX_FORKS": str(args.awx_forks)}, [], args.awx_memory)
         names.append(AWX)
