@@ -449,7 +449,10 @@ def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: d
 
 
 def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None,
-               prov: PROV.JobProvenance | None = None) -> dict[str, Any]:
+               prov: PROV.JobProvenance | None = None, shared: dict[tuple, list] | None = None) -> dict[str, Any]:
+    """One asset as a CycloneDX component. ``shared``: one export's cache of provenance property lists. Rows of one
+    job attempt stored in one batch have the same provenance, so their components share the same (read-only)
+    property objects: a 50k-asset export then holds a few hundred provenance lists instead of 50,000."""
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
@@ -476,7 +479,12 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
                  if isinstance(v, int) and not isinstance(v, bool) and 0 < v < 1_000_000), None)
     curve = _first(facts, "curve", "crv")
     signature = _first(facts, "sig_alg", "signature_alg", "signature_algorithm")
-    provenance = [{"name": key, "value": value} for key, value in PROV.values(row, prov).items()]
+    key = (row.job_id, row.attempt, row.created_at)
+    provenance = shared.get(key) if shared is not None else None
+    if provenance is None:
+        provenance = [{"name": name, "value": value} for name, value in PROV.values(row, prov).items()]
+        if shared is not None:
+            shared[key] = provenance
     if row.cdx_type == "library":
         from backend.utilities.cbom_sources.sbom_link import ecosystem_of, library_purl
 
@@ -573,6 +581,7 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
     names = _source_names(session, run.team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     provs = PROV.load(session, run.team_id, jobs)
+    shared: dict[tuple, list] = {}
     gaps = []
     for job in jobs:
         info = _job_targets(job, names)
@@ -602,6 +611,6 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
             ],
         },
         "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
-                                  provs.get(row.job_id)) for row in rows],
+                                  provs.get(row.job_id), shared) for row in rows],
         "vulnerabilities": vulnerabilities(list(rows), views),
     }

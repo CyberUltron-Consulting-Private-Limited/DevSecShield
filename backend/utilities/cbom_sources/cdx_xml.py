@@ -161,7 +161,8 @@ def clean_text(value: Any) -> str:
     """The value as XML 1.0 text: booleans as true/false, characters XML cannot carry removed."""
     if isinstance(value, bool):
         return "true" if value else "false"
-    return _INVALID_XML.sub("", str(value))
+    text = value if isinstance(value, str) else str(value)
+    return _INVALID_XML.sub("", text) if _INVALID_XML.search(text) else text
 
 
 EMPTY_REF = "zs-empty-ref"  # stands in for a bom-ref that is empty once cleaned (the XSD refType has minLength 1)
@@ -192,18 +193,35 @@ class _Writer:
         self.etree = etree
         self.dropped: list[str] = []
         self.renamed: list[str] = []
-        # a rename never takes a ref the document already holds (bom-refs a, a, a#2: the second a becomes a#3, not a
-        # second a#2), nor one given out earlier
-        self.taken: set[str] = _all_refs(bom)
         self.used: set[str] = set()
-        self.empty_ref = self._free(EMPTY_REF)
-        self.taken.add(self.empty_ref)
+        self._bom = bom
+        self._taken: set[str] | None = None
+        self._empty_ref = EMPTY_REF
+        self._tags: dict[str, str] = {}
+
+    @property
+    def taken(self) -> set[str]:
+        """Every bom-ref the document holds, the empty-ref placeholder, and every name a rename gave out: a rename
+        never takes one of them (bom-refs a, a, a#2: the second a becomes a#3, not a second a#2). Built on first need,
+        that is at the first repeated or empty ref: a full walk of a large document costs as much as writing a third
+        of it, and most documents have neither."""
+        if self._taken is None:
+            self._taken = _all_refs(self._bom)
+            self._empty_ref = self._free(EMPTY_REF)
+            self._taken.add(self._empty_ref)
+        return self._taken
+
+    @property
+    def empty_ref(self) -> str:
+        _ = self.taken  # building the ref set names the placeholder
+        return self._empty_ref
 
     def _free(self, base: str) -> str:
-        if base not in self.taken:
+        taken = self.taken
+        if base not in taken:
             return base
         n = 2
-        while f"{base}#{n}" in self.taken:
+        while f"{base}#{n}" in taken:
             n += 1
         return f"{base}#{n}"
 
@@ -213,8 +231,14 @@ class _Writer:
         text = clean_text(value)
         return text or self.empty_ref
 
+    def tag(self, name: str) -> str:
+        tag = self._tags.get(name)
+        if tag is None:
+            tag = self._tags[name] = f"{{{NS}}}{name}"
+        return tag
+
     def el(self, parent: Any, name: str) -> Any:
-        return self.etree.SubElement(parent, f"{{{NS}}}{name}")
+        return self.etree.SubElement(parent, self.tag(name))
 
     def text(self, parent: Any, name: str, value: Any) -> None:
         if value is None or isinstance(value, (dict, list)):
@@ -301,12 +325,12 @@ class _Writer:
         if not isinstance(value, list) or not value:
             return
         wrapper = self.el(node, "properties")
+        tag, sub = self.tag("property"), self.etree.SubElement
         for item in value:
             if not isinstance(item, dict) or item.get("name") is None:
                 self.dropped.append(path + "[]")
                 continue
-            prop = self.el(wrapper, "property")
-            prop.set("name", clean_text(item["name"]))
+            prop = sub(wrapper, tag, name=clean_text(item["name"]))
             if item.get("value") is not None:
                 prop.text = clean_text(item["value"])
 
