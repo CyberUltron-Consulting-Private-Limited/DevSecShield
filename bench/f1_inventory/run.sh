@@ -31,9 +31,12 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 export PG_USER=postgres PG_USER_PASS="$pw" PG_DB=f12bench PG_HOST=127.0.0.1 PG_PORT="$PG_PORT"
-export JWT_SECRET_KEY=$(openssl rand -hex 32) JWT_REFRESH_SECRET_KEY=$(openssl rand -hex 32)
+JWT_SECRET_KEY=$(openssl rand -hex 32)
+JWT_REFRESH_SECRET_KEY=$(openssl rand -hex 32)
+export JWT_SECRET_KEY JWT_REFRESH_SECRET_KEY
 export AWS_ACCESS_KEY_ID=bench AWS_SECRET_ACCESS_KEY=bench AWS_DEFAULT_REGION=us-east-1 CBOM_SCHEDULER=0
-export ENCRYPTION_KEY=$("${PY[@]}" python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+ENCRYPTION_KEY=$("${PY[@]}" python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+export ENCRYPTION_KEY
 (cd "$src/prod_database_migrations" && PYTHONPATH="$src" "${PY[@]}" alembic upgrade head 2>&1 | tail -3)
 (cd "$src/prod_database_migrations" && PYTHONPATH="$src" "${PY[@]}" alembic heads 2>/dev/null)
 cd "$src/backend"
