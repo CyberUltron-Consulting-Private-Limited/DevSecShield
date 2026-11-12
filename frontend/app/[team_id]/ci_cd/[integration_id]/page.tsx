@@ -18,13 +18,14 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/utils/toast";
 import { showErrorToast } from "@/utils/error-handler";
-import { getCicdIntegrationDashboard, CicdIntegrationDashboard, updateCicdIntegration, UpdateCicdIntegrationData, type SastAppLang } from "@/utils/backend_api";
+import { getCicdIntegrationDashboard, CicdIntegrationDashboard, updateCicdIntegration, UpdateCicdIntegrationData, type CicdLog, type SastAppLang } from "@/utils/backend_api";
 import { formatDateIst as formatDate, formatDateOnlyIst, formatMediumDateIst } from "@/utils/datetime";
 import Link from "next/link";
 import { GitHubActionsGuide } from "@/components/GitHubActionsIntegrationGuide";
 import { JenkinsGuide } from "@/components/JenkinsIntegrationGuide";
 import { JenkinsDastGuide } from "@/components/JenkinsDastGuide";
 import { BambooGuide } from "@/components/BambooIntegrationGuide";
+import { GitLabCiGuide } from "@/components/GitLabCiIntegrationGuide";
 import { DastProfilesTab } from "@/components/dast/DastProfilesTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -72,7 +73,7 @@ export default function CicdIntegrationDashboardPage() {
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"dashboard" | "integration-guide" | "scan-settings" | "ticketing">("dashboard");
-  const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo">("jenkins");
+  const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo" | "gitlab">("jenkins");
   const [logsPage, setLogsPage] = useState(1);
   const logsOffset = (logsPage - 1) * LOGS_PAGE_SIZE;
 
@@ -165,6 +166,18 @@ export default function CicdIntegrationDashboardPage() {
     return <Badge variant="outline">{status}</Badge>;
   };
 
+  // CBOM policy gate verdict as the pipeline received it (stored on the log); older logs have none.
+  const getGateBadge = (gate: CicdLog["gate"]) => {
+    if (!gate) return <span className="text-zinc-400">—</span>;
+    if (gate.verdict === "pass") {
+      return <Badge className="bg-green-500 hover:bg-green-600 text-white" title={gate.reason}><CheckCircle2 className="w-3 h-3 mr-1" />Passed</Badge>;
+    }
+    if (gate.verdict === "fail") {
+      return <Badge className="bg-red-600 hover:bg-red-700 text-white" title={gate.reason}><XCircle className="w-3 h-3 mr-1" />Blocked ({gate.failing_count})</Badge>;
+    }
+    return <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white" title={gate.reason}><AlertCircle className="w-3 h-3 mr-1" />No verdict</Badge>;
+  };
+
   const handleViewResults = (log: { id: string; scan_id?: number | null; scan_kind?: string | null }) => {
     if (log.scan_kind === "dast" && log.scan_id) {
       router.push(`/${team_id}/dast/${log.scan_id}/results`);
@@ -185,6 +198,7 @@ export default function CicdIntegrationDashboardPage() {
     dashboard_data: undefined,
   };
   const isDast = (dashboardData.scan_type || "").toLowerCase() === "dast";
+  const isCbomIntegration = (dashboardData.scan_type || "").toLowerCase() === "cbom";
 
   const vulnsOverTimeChartArray = useMemo(() => {
     const raw = dashboardData.dashboard_data;
@@ -564,6 +578,7 @@ export default function CicdIntegrationDashboardPage() {
                         <TableHead>Scan ID</TableHead>
                         <TableHead>Kind</TableHead>
                         <TableHead>Status</TableHead>
+                        {isCbomIntegration && <TableHead>Policy gate</TableHead>}
                         <TableHead>Credits</TableHead>
                         <TableHead>Error</TableHead>
                         <TableHead>Created At</TableHead>
@@ -582,6 +597,11 @@ export default function CicdIntegrationDashboardPage() {
                           <TableCell>
                             {getStatusBadge(log.status)}
                           </TableCell>
+                          {isCbomIntegration && (
+                            <TableCell>
+                              {getGateBadge(log.gate)}
+                            </TableCell>
+                          )}
                           <TableCell className="text-zinc-600 dark:text-zinc-400 font-mono tabular-nums">
                             {log.credits_consumed != null ? log.credits_consumed : "—"}
                           </TableCell>
@@ -773,6 +793,16 @@ export default function CicdIntegrationDashboardPage() {
                 >
                   Atlassian Bamboo
                 </button>
+                <button
+                  onClick={() => setActiveSubTab("gitlab")}
+                  className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+                    activeSubTab === "gitlab"
+                      ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                      : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  }`}
+                >
+                  GitLab CI
+                </button>
               </div>
 
               {/* Sub-tab Content */}
@@ -786,6 +816,10 @@ export default function CicdIntegrationDashboardPage() {
 
               {activeSubTab === "bamboo" && (
                 <BambooGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
+              )}
+
+              {activeSubTab === "gitlab" && (
+                <GitLabCiGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
               )}
                 </>
               )}
