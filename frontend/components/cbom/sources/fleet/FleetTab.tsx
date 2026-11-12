@@ -2,7 +2,7 @@
 
 // Fleet: onboard servers, databases and clusters from an inventory (AWS discovery, CSV/JSON import, API) and let tag
 // policies decide how each one is collected. Every part is behind a server flag; the tab and each section show only
-// what this deployment has turned on.
+// what the server has turned on.
 
 import { useQuery } from "@tanstack/react-query";
 
@@ -35,10 +35,11 @@ export default function FleetTab({ teamId }: { teamId: number; onNavigate?: (tab
   // input in their forms survives a 429 or a network blip.
   const sections = visibleSections(FLEET_SECTIONS, status.data);
   if (sections.length === 0) {
+    // The page hides the tab in this case (fleetTabMode); this only shows if the flags change while the tab is open.
     return (
       <EmptyState
-        title="Nothing to show yet"
-        body="Fleet onboarding is turned on for this deployment, but none of its sections is available in this version."
+        title="Fleet onboarding isn't available yet"
+        body="Ask your administrator if you expected to see it here."
       />
     );
   }
