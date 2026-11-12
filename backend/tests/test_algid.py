@@ -724,3 +724,120 @@ def test_generator_refuses_hand_edits_and_wraps_safely(tmp_path):
     namespace: dict = {}
     exec(compile(text, "algid_tables", "exec"), namespace)  # noqa: S102  (the generated module, from our sources)
     assert namespace["S_CLIENT_GROUPS_35"] == long_tuple
+
+
+# ----------------------------------------------------------------------------- PR-1b: gcp, kmip, pkcs11, jose
+def _extract(name: str) -> dict:
+    return json.loads((SRC / name).read_text())
+
+
+def _pq_name(text: str) -> str | None:
+    """The canonical PQ name a vendor spelling names, parsed here: ML_KEM_768 / ML-KEM-768 -> ML-KEM-768,
+    ML_DSA_65 -> ML-DSA-65, SLH_DSA_SHA2_128S -> SLH-DSA-SHA2-128s, HASH(-)SLH... -> HashSLH-DSA-...-with-SHA256."""
+    up = text.upper().replace("_", "-")
+    m = re.search(r"HASH-?(SLH-DSA-(SHA2|SHAKE)-(\d{3})([SF]))-(?:WITH-)?(SHA\d+|SHAKE\d+)", up)
+    if m:
+        return f"HashSLH-DSA-{m.group(2)}-{m.group(3)}{m.group(4).lower()}-with-{m.group(5)}"
+    m = re.search(r"HASH-?ML-DSA-(\d+)-(?:WITH-)?(SHA\d+)", up)
+    if m:
+        return f"HashML-DSA-{m.group(1)}-with-{m.group(2)}"
+    m = re.search(r"SLH-DSA-(SHA2|SHAKE)-(\d{3})([SF])", up)
+    if m:
+        return f"SLH-DSA-{m.group(1)}-{m.group(2)}{m.group(3).lower()}"
+    m = re.search(r"ML-(KEM|DSA)-(\d+)", up)
+    return f"ML-{m.group(1)}-{m.group(2)}" if m else None
+
+
+def test_gcp_algorithms():
+    """Every Cloud KMS CryptoKeyVersionAlgorithm value, judged from its own spelling and description."""
+    algorithms = _extract("gcp-kms-algorithms.json")["algorithms"]
+    assert len(algorithms) >= 50
+    for value, desc in algorithms:
+        found = A.gcp(value)
+        assert _same(found, A.gcp(value.lower())), value
+        if value in ("CRYPTO_KEY_VERSION_ALGORITHM_UNSPECIFIED", "EXTERNAL_SYMMETRIC_ENCRYPTION"):
+            assert found is None, value
+        elif value == "KEM_XWING":
+            assert (found.name, found.construction, found.quantum) == ("X-Wing", "hybrid", "hybrid")
+        elif value.startswith(("PQ_SIGN_", "ML_KEM_")):
+            assert found.name == _pq_name(value) and found.quantum == "safe", (value, found)
+        elif value.startswith("RSA_"):
+            assert (found.family_label, found.key_size, found.quantum) == ("RSA", _bits(value), "vulnerable"), value
+        elif value.startswith(("EC_SIGN_", "KEM_ECDH_")):
+            curve = {"P256": "P-256", "P384": "P-384", "SECP256K1": "secp256k1", "ED25519": "Ed25519"}
+            assert found.name == curve[value.split("_")[2]] and found.quantum == "vulnerable", value
+        else:  # AES, HMAC, Google symmetric (AES-256-GCM per the Cloud KMS docs): no public-key verdict
+            assert found.primitive in SYMMETRIC and found.quantum is None, value
+            if value.startswith("AES_"):
+                assert found.key_size == _bits(value), value
+    assert A.gcp(None) is None and A.gcp(5) is None and A.gcp("NOPE") is None
+
+
+SYMMETRIC_KMIP = re.compile(r"^(DES|3DES|Blowfish|Camellia|CAST5|IDEA|MARS|RC\d|SKIPJACK|Twofish|One Time Pad|ChaCha20"
+                            r"|Poly1305|SHA3-|HMAC-SHA3-|HMAC-MD5|SHAKE-|ARIA|SEED|SM3|SM4)")
+
+
+def test_kmip_enumeration():
+    """Every KMIP 3.0 Cryptographic Algorithm value; the scan node's own table (kmip_ttlv.ALGORITHM) agrees."""
+    rows = _extract("kmip-3.0-algorithms.json")["algorithms"]
+    assert len(rows) >= 93 and dict((n, v) for n, v in rows)["ML-DSA-65"] == 0x3D
+    for name, value in rows:
+        found = A.kmip(value)
+        if SYMMETRIC_KMIP.match(name):
+            assert found is None, name
+        elif _pq_name(name):
+            assert found.name == _pq_name(name) and found.quantum == "safe", (name, found)
+        elif name.startswith(("McEliece", "XMSS", "SPHINCS")) or "MLKEM" in name.upper():
+            assert found.family_label == "PQ" and found.quantum in ("safe", "hybrid"), (name, found)
+        else:  # classical keys and GOST/AES/HMAC: the identity the name resolves to
+            assert _same(found._replace(oid=None), A.resolve(name)._replace(oid=None)), (name, found)
+    assert A.kmip(0x2E).quantum == "vulnerable" and A.kmip(0x5D).name == "SecP256r1MLKEM768"
+    node = (REPO / "scan_node/zs_scan_node/kmip_ttlv.py").read_text()
+    table = dict(re.findall(r'(\d+): "([^"]+)"', node[node.index("ALGORITHM = {"):node.index("STATE = {")]))
+    spec = {v: n for n, v in rows}
+    assert {int(k): v for k, v in table.items()} == {k: spec[k] for k in map(int, table)}
+    assert A.kmip(None) is None and A.kmip("61") is None and A.kmip(True) is None
+
+
+def test_pkcs11_key_types_and_parameter_sets():
+    doc = _extract("pkcs11-3.2-constants.json")
+    ckk = {name: value for name, value in doc["key_types"]}
+    pq = {"CKK_HSS": "HSS", "CKK_XMSS": "XMSS", "CKK_XMSSMT": "XMSS^MT", "CKK_ML_KEM": "ML-KEM", "CKK_ML_DSA": "ML-DSA",
+          "CKK_SLH_DSA": "SLH-DSA"}
+    assert {ckk[n] for n in pq} == set(range(0x46, 0x4C))  # PKCS#11 3.2 adds 0x46-0x4B
+    for name, value in ckk.items():
+        found = A.pkcs11_key_type(value)
+        if name in pq:
+            assert found.name == pq[name] and found.quantum == "safe", name
+        elif name in ("CKK_RSA", "CKK_DSA", "CKK_DH", "CKK_EC", "CKK_ECDSA", "CKK_X9_42_DH", "CKK_EC_EDWARDS",
+                      "CKK_EC_MONTGOMERY", "CKK_GOSTR3410"):
+            assert found.quantum == "vulnerable", name
+        elif found is not None:  # symmetric types with a row (AES, HMAC, GOST 28147/34.11)
+            assert found.quantum is None and found.primitive in SYMMETRIC, name
+    for name, value in doc["parameter_sets"]:
+        group = "CKK_" + re.match(r"CKP_(ML_DSA|SLH_DSA|ML_KEM)_", name).group(1)
+        found = A.pkcs11_key_type(ckk[group], value)
+        assert found.name == _pq_name(name[4:]) == found.parameter_set, (name, found)
+    assert A.pkcs11_key_type(ckk["CKK_ML_DSA"], 0x99).name == "ML-DSA"  # an undefined set: the family
+    assert A.pkcs11_key_type(ckk["CKK_RSA"], 2).name == "RSA"  # parameter sets refine PQ types only
+    assert A.pkcs11_key_type(0x80000000) is None and A.pkcs11_key_type("0x4a") is None
+
+
+def test_jose_keys():
+    key_types = [r['"kty" Parameter Value'] for r in _rows("iana-jose-key-types.csv")]
+    assert {"EC", "RSA", "oct", "OKP", "AKP"} <= set(key_types)
+    assert A.jose("EC").name == "EC" and A.jose("RSA").name == "RSA"
+    for kty in ("oct", "OKP", "AKP"):
+        assert A.jose(kty) is None, kty  # symmetric, or named only by its crv / alg
+    for row in _rows("iana-jose-curves.csv"):
+        kty = "EC" if row["Curve Name"].startswith(("P-", "secp")) else "OKP"
+        assert A.jose(kty, crv=row["Curve Name"]).name == row["Curve Name"], row["Curve Name"]
+    for row in _rows("iana-jose-algs.csv"):
+        name, desc = row["Algorithm Name"], row["Algorithm Description"]
+        if "FIPS 204" in desc:  # RFC 9964: AKP keys are named by alg
+            assert A.jose("AKP", name).name == name and A.jose("AKP", name).quantum == "safe", name
+        m = re.match(r"ECDSA using (P-\d+|secp256k1)", desc)
+        if m:
+            assert A.jose("EC", name).name == m.group(1), name
+    assert A.jose("AKP", "ML-DSA-65").parameter_set == "ML-DSA-65" and A.jose("oct", "HS256") is None
+    assert A.jose("NOPE", "ML-DSA-65") is None and A.jose(None) is None and A.jose(b"EC") is None

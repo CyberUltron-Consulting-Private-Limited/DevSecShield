@@ -69,6 +69,14 @@ _OPENSSL_TEXT: Mapping[str, str] = _t.OPENSSL_TEXT
 _ALIASES: Mapping[str, str] = _t.ALIASES
 _X509_NAMES: Mapping[str, str] = _t.CODE_LANE_X509_NAMES
 _X509_KEYS: Mapping[str, str] = _t.CODE_LANE_X509_KEYS
+_GCP: Mapping[str, str] = _t.GCP
+_KMIP: Mapping[int, str] = _t.KMIP
+_PKCS11_KEY_TYPES: Mapping[int, str] = _t.PKCS11_KEY_TYPES
+_PKCS11_PARAMETER_SETS: Mapping[int, Mapping[int, str]] = _t.PKCS11_PARAMETER_SETS
+_JOSE_KEY_TYPES: tuple[str, ...] = _t.JOSE_KEY_TYPES
+_JOSE_KTY: Mapping[str, str] = _t.JOSE_KTY
+_JOSE_CRV: Mapping[str, str] = _t.JOSE_CRV
+_JOSE_ALG: Mapping[str, str] = _t.JOSE_ALG
 _OID_PREFIXES: tuple[tuple[str, str, str | None], ...] = _t.OID_PREFIXES
 _GREASE: tuple[int, ...] = _t.GREASE
 _PQ_MARKERS: tuple[str, ...] = _t.PQ_MARKERS
@@ -330,6 +338,55 @@ def aws_tls_policy(service: str, name: object) -> tuple[str, ...] | None:
     if table is None or not isinstance(name, str):
         return None
     return table.get(name)
+
+
+def gcp(value: object) -> Identity | None:
+    """A Cloud KMS CryptoKeyVersionAlgorithm value, e.g. "KEM_XWING" or
+    "PQ_SIGN_ML_DSA_65" (case-insensitive). The identity is the key's: the signing
+    scheme and digest an enum names stay in the enum."""
+    if not isinstance(value, str):
+        return None
+    name = _GCP.get(value.strip().upper())
+    return _identity(name, "enum") if name else None
+
+
+def kmip(value: int) -> Identity | None:
+    """A KMIP Cryptographic Algorithm enumeration value (KMIP 3.0: 0x3D is ML-DSA-65).
+    Symmetric ciphers, hashes and MACs with no algid row give None."""
+    if not _codepoint(value):
+        return None
+    name = _KMIP.get(value)
+    return _identity(name, "enum") if name else None
+
+
+def pkcs11_key_type(key_type: int, parameter_set: int | None = None) -> Identity | None:
+    """A PKCS#11 CKA_KEY_TYPE (CKK_*), refined by CKA_PARAMETER_SET (CKP_*) for ML-DSA,
+    SLH-DSA and ML-KEM keys: pkcs11_key_type(0x4A, 2) is ML-DSA-65, and 0x4A alone (or
+    with a parameter set PKCS#11 3.2 does not define) is the ML-DSA family."""
+    if not _codepoint(key_type):
+        return None
+    name = _PKCS11_KEY_TYPES.get(key_type)
+    if name is None:
+        return None
+    sets = _PKCS11_PARAMETER_SETS.get(key_type) or {}
+    if isinstance(parameter_set, int) and not isinstance(parameter_set, bool):
+        name = sets.get(parameter_set, name)
+    return _identity(name, "enum")
+
+
+def jose(kty: object, alg: object = None, crv: object = None) -> Identity | None:
+    """A JSON Web Key's algorithm: ``kty`` must be a registered key type; its ``crv``
+    (EC, OKP) or ``alg`` names the key when given (an AKP key, RFC 9964, is named by its
+    alg: ML-DSA-44/65/87), else the key type alone (EC, RSA). A symmetric ``oct`` key,
+    or an OKP/AKP key without crv/alg, gives None."""
+    if not isinstance(kty, str) or kty not in _JOSE_KEY_TYPES:
+        return None
+    for table, member in ((_JOSE_CRV, crv), (_JOSE_ALG, alg)):
+        name = table.get(member) if isinstance(member, str) else None
+        if name:
+            return _identity(name, "enum")
+    name = _JOSE_KTY.get(kty)
+    return _identity(name, "enum") if name else None
 
 
 def openssl_text(text: str) -> Identity | None:
