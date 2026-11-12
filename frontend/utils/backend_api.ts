@@ -4034,6 +4034,17 @@ const createCicdIntegration = async (team_id: number, data: CreateCicdIntegratio
     }
 }
 
+/** CBOM policy gate of the hosted CI path (backend utilities/cicd/cbom_gate.py) */
+export interface CicdCbomGate {
+    policy: string
+    verdict: "pass" | "fail" | "no_result"
+    fail_codes: string[]
+    failing_count: number
+    failing: { codes: string[]; title: string; location: string; line: number | null; impact: string | null }[]
+    truncated: boolean
+    reason: string
+}
+
 export interface CicdLog {
     id: string
     created_at: string
@@ -4050,6 +4061,8 @@ export interface CicdLog {
     profile_id?: number | null
     trigger?: string | null
     scan_kind?: string | null
+    /** CBOM policy gate verdict the pipeline received (POST /cicd/cbom/scan); null for logs made before the gate */
+    gate?: CicdCbomGate | null
     cbom_page?: {
         data?: unknown
         dashboard?: CbomScanDashboardData | null
