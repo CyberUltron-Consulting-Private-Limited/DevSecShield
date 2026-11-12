@@ -7,7 +7,7 @@ import { Copy, Check } from "lucide-react";
 import { toast } from "@/utils/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiBaseURL } from "@/utils/interceptors";
-import { scanRequestScript, zipCommand } from "@/components/cicd/ciScanScript";
+import { CBOM_GATE_NOTE, isCbom, jenkinsfile } from "@/components/cicd/ciTemplates";
 
 interface JenkinsIntegrationGuideProps {
   apiKey: string;
@@ -15,88 +15,29 @@ interface JenkinsIntegrationGuideProps {
   scanType?: string;
 }
 
+// Masks an API key for display (first 4 and last 4 characters)
+const maskApiKey = (key: string) => {
+  if (key.length <= 8) {
+    return "•".repeat(key.length);
+  }
+  const start = key.substring(0, 4);
+  const end = key.substring(key.length - 4);
+  return `${start}${"•".repeat(12)}${end}`;
+};
+
 export function JenkinsGuide({ apiKey, scanType = "sast" }: JenkinsIntegrationGuideProps) {
   const [copied, setCopied] = useState(false);
   const kind = (scanType || "sast").toLowerCase();
   const label = kind.toUpperCase();
   const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
 
-  // Helper function to mask API key (show first 4 and last 4 characters)
-  const maskApiKey = (key: string) => {
-    if (key.length <= 8) {
-      return "•".repeat(key.length);
-    }
-    const start = key.substring(0, 4);
-    const end = key.substring(key.length - 4);
-    return `${start}${"•".repeat(12)}${end}`;
-  };
-
-  // One Jenkinsfile builder: the copied file carries the key, the displayed one a masked key.
-  const buildJenkinsfile = (key: string) => {
-    // Escape $ to prevent template literal interpolation
-    const dollar = '$';
-    const zipPath = `${dollar}{WORKSPACE_TMP:-/tmp}/devsecshield-project.zip`;
-    const scan = scanRequestScript({
-      zipPath,
-      url: `${dollar}{SCAN_API_URL}`,
-      keyRef: `${dollar}{CICD_API_KEY}`,
-      responseFile: "devsecshield-response.json",
-    });
-    return `pipeline {
-    agent any
-
-    environment {
-        CICD_API_KEY = '${key}'
-        SCAN_API_URL = '${endpoint}'
-    }
-
-    stages {
-        stage('Checkout Code') {
-            steps {
-                checkout scm
-            }
-        }
-
-        // Everything but .git is scanned (vendored code, build output and nested archives included); installed
-        // dependency trees stay out. The zip is written outside the workspace. Uploads are capped at 50 MB.
-        stage('Create ZIP File') {
-            steps {
-                sh '''#!/bin/sh
-set -eu
-rm -f "${zipPath}"
-${zipCommand(zipPath)}
-'''
-            }
-        }
-
-        stage('Perform ${label} Scan') {
-            steps {
-                sh '''#!/bin/sh
-${scan}
-'''
-                script {
-                    def jsonResponse = readJSON(file: 'devsecshield-response.json')
-                    def payload = jsonResponse.results
-                    def findings = payload instanceof Map ? payload.results : payload
-
-                    echo "Findings found during ${label}: ${dollar}{jsonResponse.finding_count}"
-                    (findings ?: []).each { echo "${dollar}{it.impact} ${dollar}{it.title}" }
-
-                    env.FINDINGS = jsonResponse.finding_count?.toString()
-                }
-            }
-        }
-
-        // Additional stages (e.g., deploy) can be added here
-    }
-}`;
-  };
-
-  // Generate Jenkinsfile content based on selections (full content for copying)
-  const jenkinsfileContent = useMemo(() => buildJenkinsfile(apiKey), [apiKey, endpoint, label]);
-
-  // Generate masked Jenkinsfile content for display
-  const displayedJenkinsfileContent = useMemo(() => buildJenkinsfile(maskApiKey(apiKey)), [apiKey, endpoint, label]);
+  // The Jenkinsfile (components/cicd/ciTemplates.ts): the copied file carries the key, the displayed one a masked
+  // key. A CBOM Jenkinsfile ends with the policy gate stage.
+  const jenkinsfileContent = useMemo(() => jenkinsfile({ kind, endpoint, apiKey }), [apiKey, endpoint, kind]);
+  const displayedJenkinsfileContent = useMemo(
+    () => jenkinsfile({ kind, endpoint, apiKey: maskApiKey(apiKey) }),
+    [apiKey, endpoint, kind],
+  );
 
   const copyToClipboard = async () => {
     try {
@@ -201,6 +142,7 @@ ${scan}
             </li>
             <li>
               Run the pipeline. The {label} scan will execute automatically as part of the pipeline.
+              {isCbom(kind) && <> {CBOM_GATE_NOTE}</>}
             </li>
           </ol>
         </CardContent>
