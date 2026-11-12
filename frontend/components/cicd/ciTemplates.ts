@@ -8,6 +8,10 @@ import { cbomGateDetailsJq, cbomGateScript, indent, scanRequestScript, zipComman
 
 const D = "$"; // writes a shell/Groovy "${" without starting a JS template interpolation
 
+// actions/checkout pinned to a commit, not the movable tag (a tag can be repointed: supply-chain risk). Commit of the
+// v4.4.0 tag (git ls-remote https://github.com/actions/checkout refs/tags/v4.4.0), as in this repository's workflows.
+export const CHECKOUT_PIN = "11d5960a326750d5838078e36cf38b85af677262 # v4.4.0";
+
 export interface TemplateOptions {
   kind: string; // the integration's scan type: sast, cbom, ai_bom
   endpoint: string; // full URL of POST /cicd/<kind>/scan
@@ -44,7 +48,7 @@ jobs:
   ${kind}-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@${CHECKOUT_PIN}
 
       # Everything but .git is scanned (vendored code, build output and nested archives included); installed
       # dependency trees stay out. The zip is written outside the workspace. Uploads are capped at 50 MB.
