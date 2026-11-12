@@ -1,0 +1,1063 @@
+{
+ "schema": "zs-cbom-d1-floors/1",
+ "version": 1,
+ "baseline": {
+  "product_git_sha": "3df26fd8ec020f44d9cdbec1e793b29327e03d39",
+  "kb_version": "2026.11.10.1",
+  "codemap_version": 1,
+  "observed": "bench/cbom/d1/baseline/observed-*.json (the product rows these numbers came from)",
+  "rule": "non-regression = the numbers on this build; a PR that changes them edits this file in the same PR"
+ },
+ "floors": [
+  {
+   "id": "NR-CAB-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {},
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.2889,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-precision",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {},
+   "metric": "precision",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.8298,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-detected",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "vulnerable": true
+   },
+   "metric": "flagged_ids",
+   "mode": "matched",
+   "op": "superset",
+   "value": [
+    "11.1.1",
+    "11.2.1",
+    "11.3.1",
+    "11.4.1",
+    "11.6.1",
+    "11.8.1",
+    "14.1.1",
+    "14.1.2",
+    "14.1.3",
+    "14.1.4",
+    "14.2.2",
+    "14.2.3",
+    "14.2.4",
+    "14.3.2",
+    "14.3.3",
+    "14.3.4",
+    "14.4.2",
+    "14.4.3",
+    "14.4.4",
+    "14.6.2",
+    "14.6.3",
+    "14.6.4",
+    "14.8.2",
+    "14.8.3",
+    "14.8.4",
+    "16.1.1",
+    "16.1.2",
+    "16.1.3",
+    "16.2.1",
+    "16.2.2",
+    "16.3.1",
+    "16.3.2",
+    "16.4.1",
+    "16.4.2",
+    "16.6.1",
+    "16.6.2",
+    "16.8.1",
+    "16.8.2",
+    "4.1.1"
+   ],
+   "why": "every vulnerable case detected on dev 3df26fd stays detected"
+  },
+  {
+   "id": "NR-OWASP-recall",
+   "kind": "non-regression",
+   "bench": "owasp-benchmark",
+   "where": {},
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.4591,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-OWASP-precision",
+   "kind": "non-regression",
+   "bench": "owasp-benchmark",
+   "where": {},
+   "metric": "precision",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.8902,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-OWASP-detected",
+   "kind": "non-regression",
+   "bench": "owasp-benchmark",
+   "where": {
+    "vulnerable": true
+   },
+   "metric": "flagged_ids",
+   "mode": "matched",
+   "op": "superset",
+   "value": [
+    "BenchmarkTest00005",
+    "BenchmarkTest00019",
+    "BenchmarkTest00020",
+    "BenchmarkTest00035",
+    "BenchmarkTest00046",
+    "BenchmarkTest00050",
+    "BenchmarkTest00053",
+    "BenchmarkTest00055",
+    "BenchmarkTest00056",
+    "BenchmarkTest00057",
+    "BenchmarkTest00070",
+    "BenchmarkTest00071",
+    "BenchmarkTest00073",
+    "BenchmarkTest00119",
+    "BenchmarkTest00120",
+    "BenchmarkTest00123",
+    "BenchmarkTest00124",
+    "BenchmarkTest00125",
+    "BenchmarkTest00141",
+    "BenchmarkTest00208",
+    "BenchmarkTest00210",
+    "BenchmarkTest00223",
+    "BenchmarkTest00254",
+    "BenchmarkTest00256",
+    "BenchmarkTest00257",
+    "BenchmarkTest00258",
+    "BenchmarkTest00266",
+    "BenchmarkTest00267",
+    "BenchmarkTest00268",
+    "BenchmarkTest00269",
+    "BenchmarkTest00272",
+    "BenchmarkTest00346",
+    "BenchmarkTest00354",
+    "BenchmarkTest00355",
+    "BenchmarkTest00356",
+    "BenchmarkTest00371",
+    "BenchmarkTest00372",
+    "BenchmarkTest00445",
+    "BenchmarkTest00446",
+    "BenchmarkTest00448",
+    "BenchmarkTest00449",
+    "BenchmarkTest00462",
+    "BenchmarkTest00464",
+    "BenchmarkTest00465",
+    "BenchmarkTest00521",
+    "BenchmarkTest00522",
+    "BenchmarkTest00531",
+    "BenchmarkTest00532",
+    "BenchmarkTest00533",
+    "BenchmarkTest00534",
+    "BenchmarkTest00536",
+    "BenchmarkTest00537",
+    "BenchmarkTest00608",
+    "BenchmarkTest00609",
+    "BenchmarkTest00610",
+    "BenchmarkTest00611",
+    "BenchmarkTest00614",
+    "BenchmarkTest00615",
+    "BenchmarkTest00616",
+    "BenchmarkTest00617",
+    "BenchmarkTest00631",
+    "BenchmarkTest00634",
+    "BenchmarkTest00635",
+    "BenchmarkTest00636",
+    "BenchmarkTest00637",
+    "BenchmarkTest00684",
+    "BenchmarkTest00685",
+    "BenchmarkTest00688",
+    "BenchmarkTest00691",
+    "BenchmarkTest00692",
+    "BenchmarkTest00693",
+    "BenchmarkTest00703",
+    "BenchmarkTest00704",
+    "BenchmarkTest00705",
+    "BenchmarkTest00708",
+    "BenchmarkTest00779",
+    "BenchmarkTest00781",
+    "BenchmarkTest00789",
+    "BenchmarkTest00790",
+    "BenchmarkTest00794",
+    "BenchmarkTest00853",
+    "BenchmarkTest00855",
+    "BenchmarkTest00856",
+    "BenchmarkTest00857",
+    "BenchmarkTest00859",
+    "BenchmarkTest00868",
+    "BenchmarkTest00869",
+    "BenchmarkTest00870",
+    "BenchmarkTest00871",
+    "BenchmarkTest00872",
+    "BenchmarkTest00945",
+    "BenchmarkTest00946",
+    "BenchmarkTest00961",
+    "BenchmarkTest00963",
+    "BenchmarkTest01015",
+    "BenchmarkTest01016",
+    "BenchmarkTest01017",
+    "BenchmarkTest01018",
+    "BenchmarkTest01020",
+    "BenchmarkTest01038",
+    "BenchmarkTest01099",
+    "BenchmarkTest01102",
+    "BenchmarkTest01103",
+    "BenchmarkTest01105",
+    "BenchmarkTest01106",
+    "BenchmarkTest01107",
+    "BenchmarkTest01123",
+    "BenchmarkTest01148",
+    "BenchmarkTest01149",
+    "BenchmarkTest01150",
+    "BenchmarkTest01165",
+    "BenchmarkTest01166",
+    "BenchmarkTest01167",
+    "BenchmarkTest01228",
+    "BenchmarkTest01229",
+    "BenchmarkTest01230",
+    "BenchmarkTest01244",
+    "BenchmarkTest01246",
+    "BenchmarkTest01247",
+    "BenchmarkTest01317",
+    "BenchmarkTest01318",
+    "BenchmarkTest01320",
+    "BenchmarkTest01322",
+    "BenchmarkTest01323",
+    "BenchmarkTest01325",
+    "BenchmarkTest01333",
+    "BenchmarkTest01334",
+    "BenchmarkTest01398",
+    "BenchmarkTest01411",
+    "BenchmarkTest01480",
+    "BenchmarkTest01483",
+    "BenchmarkTest01484",
+    "BenchmarkTest01486",
+    "BenchmarkTest01489",
+    "BenchmarkTest01503",
+    "BenchmarkTest01504",
+    "BenchmarkTest01565",
+    "BenchmarkTest01566",
+    "BenchmarkTest01577",
+    "BenchmarkTest01634",
+    "BenchmarkTest01637",
+    "BenchmarkTest01638",
+    "BenchmarkTest01639",
+    "BenchmarkTest01641",
+    "BenchmarkTest01649",
+    "BenchmarkTest01650",
+    "BenchmarkTest01651",
+    "BenchmarkTest01653",
+    "BenchmarkTest01740",
+    "BenchmarkTest01741",
+    "BenchmarkTest01742",
+    "BenchmarkTest01757",
+    "BenchmarkTest01761",
+    "BenchmarkTest01822",
+    "BenchmarkTest01823",
+    "BenchmarkTest01829",
+    "BenchmarkTest01830",
+    "BenchmarkTest01844",
+    "BenchmarkTest01845",
+    "BenchmarkTest01846",
+    "BenchmarkTest01895",
+    "BenchmarkTest01897",
+    "BenchmarkTest01898",
+    "BenchmarkTest01900",
+    "BenchmarkTest01911",
+    "BenchmarkTest01978",
+    "BenchmarkTest01980",
+    "BenchmarkTest01981",
+    "BenchmarkTest02017",
+    "BenchmarkTest02018",
+    "BenchmarkTest02019",
+    "BenchmarkTest02020",
+    "BenchmarkTest02022",
+    "BenchmarkTest02023",
+    "BenchmarkTest02042",
+    "BenchmarkTest02101",
+    "BenchmarkTest02118",
+    "BenchmarkTest02192",
+    "BenchmarkTest02193",
+    "BenchmarkTest02194",
+    "BenchmarkTest02195",
+    "BenchmarkTest02211",
+    "BenchmarkTest02212",
+    "BenchmarkTest02213",
+    "BenchmarkTest02217",
+    "BenchmarkTest02290",
+    "BenchmarkTest02291",
+    "BenchmarkTest02292",
+    "BenchmarkTest02293",
+    "BenchmarkTest02294",
+    "BenchmarkTest02295",
+    "BenchmarkTest02307",
+    "BenchmarkTest02308",
+    "BenchmarkTest02311",
+    "BenchmarkTest02373",
+    "BenchmarkTest02374",
+    "BenchmarkTest02375",
+    "BenchmarkTest02385",
+    "BenchmarkTest02386",
+    "BenchmarkTest02387",
+    "BenchmarkTest02388",
+    "BenchmarkTest02458",
+    "BenchmarkTest02474",
+    "BenchmarkTest02475",
+    "BenchmarkTest02476",
+    "BenchmarkTest02548",
+    "BenchmarkTest02549",
+    "BenchmarkTest02550",
+    "BenchmarkTest02573",
+    "BenchmarkTest02574",
+    "BenchmarkTest02575",
+    "BenchmarkTest02658",
+    "BenchmarkTest02660",
+    "BenchmarkTest02661",
+    "BenchmarkTest02663",
+    "BenchmarkTest02670",
+    "BenchmarkTest02671",
+    "BenchmarkTest02674",
+    "BenchmarkTest02675"
+   ],
+   "why": "every vulnerable case detected on dev 3df26fd stays detected"
+  },
+  {
+   "id": "NR-CORPUS-recall",
+   "kind": "non-regression",
+   "bench": "corpus",
+   "where": {},
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.6491,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CORPUS-precision",
+   "kind": "non-regression",
+   "bench": "corpus",
+   "where": {},
+   "metric": "precision",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9737,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CORPUS-detected",
+   "kind": "non-regression",
+   "bench": "corpus",
+   "where": {
+    "vulnerable": true
+   },
+   "metric": "flagged_ids",
+   "mode": "matched",
+   "op": "superset",
+   "value": [
+    "C1",
+    "C10",
+    "C2",
+    "C5",
+    "C8",
+    "C9",
+    "F1",
+    "F2",
+    "F3",
+    "G1",
+    "G10",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6",
+    "G8",
+    "G9",
+    "J1",
+    "J10",
+    "J11",
+    "J13",
+    "J2",
+    "J5",
+    "J6",
+    "J8",
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N5",
+    "N7",
+    "N9",
+    "T1",
+    "T2",
+    "T3",
+    "T4"
+   ],
+   "why": "every vulnerable case detected on dev 3df26fd stays detected"
+  },
+  {
+   "id": "NR-CAB-no-new-fp",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "vulnerable": false
+   },
+   "metric": "fp_ids",
+   "mode": "matched",
+   "op": "subset",
+   "value": [
+    "11.7.1",
+    "14.7.1",
+    "14.7.2",
+    "14.7.3",
+    "14.7.4",
+    "16.7.1",
+    "16.7.2",
+    "16.7.3"
+   ],
+   "why": "no secure case flagged that was not flagged on dev 3df26fd"
+  },
+  {
+   "id": "NR-OWASP-no-new-fp",
+   "kind": "non-regression",
+   "bench": "owasp-benchmark",
+   "where": {
+    "vulnerable": false
+   },
+   "metric": "fp_ids",
+   "mode": "matched",
+   "op": "subset",
+   "value": [
+    "BenchmarkTest00059",
+    "BenchmarkTest00127",
+    "BenchmarkTest00128",
+    "BenchmarkTest00129",
+    "BenchmarkTest00130",
+    "BenchmarkTest00213",
+    "BenchmarkTest00214",
+    "BenchmarkTest00357",
+    "BenchmarkTest00358",
+    "BenchmarkTest00450",
+    "BenchmarkTest00451",
+    "BenchmarkTest00524",
+    "BenchmarkTest00618",
+    "BenchmarkTest01021",
+    "BenchmarkTest01022",
+    "BenchmarkTest01108",
+    "BenchmarkTest01153",
+    "BenchmarkTest01401",
+    "BenchmarkTest01567",
+    "BenchmarkTest01901",
+    "BenchmarkTest01982",
+    "BenchmarkTest02024",
+    "BenchmarkTest02103",
+    "BenchmarkTest02296",
+    "BenchmarkTest02297",
+    "BenchmarkTest02298",
+    "BenchmarkTest02552"
+   ],
+   "why": "no secure case flagged that was not flagged on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-brokencrypto-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "category": "brokencrypto"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.6333,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-brokenhash-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "category": "brokenhash"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.5417,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-dummyhostnameverifier-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "category": "dummyhostnameverifier"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-ecbcrypto-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "category": "ecbcrypto"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-basis-benchmark-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.3333,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-field-sensitive-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "field-sensitive"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.3158,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-interprocedural-2-methods-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "interprocedural-2-methods"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.3,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-interprocedural-field-sensitive-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "interprocedural-field-sensitive"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.3,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-multiple-java-classes-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "multiple-java-classes"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.3158,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-pure-interprocedural-cases-recall",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "pure-interprocedural-cases"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.3,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-OWASP-crypto-recall",
+   "kind": "non-regression",
+   "bench": "owasp-benchmark",
+   "where": {
+    "category": "crypto"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-OWASP-crypto-precision",
+   "kind": "non-regression",
+   "bench": "owasp-benchmark",
+   "where": {
+    "category": "crypto"
+   },
+   "metric": "precision",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.828,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-OWASP-hash-recall",
+   "kind": "non-regression",
+   "bench": "owasp-benchmark",
+   "where": {
+    "category": "hash"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.6899,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-OWASP-hash-precision",
+   "kind": "non-regression",
+   "bench": "owasp-benchmark",
+   "where": {
+    "category": "hash"
+   },
+   "metric": "precision",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "today on dev 3df26fd"
+  },
+  {
+   "id": "NR-CORPUS-no-new-extras",
+   "kind": "non-regression",
+   "bench": "corpus",
+   "where": {},
+   "metric": "extras",
+   "mode": "matched",
+   "op": "subset",
+   "value": [
+    "c/tls_client.c|11|WEAK_ALGORITHM|MD5",
+    "c/tls_client.c|11|WEAK_ALGORITHM|RC4",
+    "go/main.go|23|HARDCODED_KEY|secret-key (inline, main.go)",
+    "iac/terraform/main.tf|5|WEAK_CIPHER_SUITE|TLS",
+    "iac/terraform/main.tf|5|WEAK_PROTOCOL|TLS",
+    "java/src/main/java/com/bank/Crypto.java|22|WEAK_ALGORITHM|3DES",
+    "java/src/main/java/com/bank/Crypto.java|46|WEAK_ALGORITHM|RSA"
+   ],
+   "why": "no corpus finding off the labelled items beyond those on dev 3df26fd (CB-28: no new false positives)"
+  },
+  {
+   "id": "NR-LIB-detected",
+   "kind": "non-regression",
+   "bench": "libraries",
+   "where": {
+    "vulnerable": true
+   },
+   "metric": "flagged_ids",
+   "mode": "matched",
+   "op": "superset",
+   "value": [
+    "L1",
+    "L5"
+   ],
+   "why": "OSV-vulnerable libraries flagged on dev 3df26fd stay flagged",
+   "not_run_ok": "OSV.dev did not answer: library rows need the live oracle (O-2) and are reported NOT-RUN"
+  },
+  {
+   "id": "T27-CAB-BB-brokencrypto",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "brokencrypto"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 4/5)"
+  },
+  {
+   "id": "T27-CAB-BB-brokenhash",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "brokenhash"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 3/4)"
+  },
+  {
+   "id": "T27-CAB-BB-dummycertvalidation",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "dummycertvalidation"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/3)"
+  },
+  {
+   "id": "NR-CAB-BB-dummyhostnameverifier",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "dummyhostnameverifier"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit (BB recall >= 0.9 in every misuse category) already holds on dev 3df26fd"
+  },
+  {
+   "id": "NR-CAB-BB-ecbcrypto",
+   "kind": "non-regression",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "ecbcrypto"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit (BB recall >= 0.9 in every misuse category) already holds on dev 3df26fd"
+  },
+  {
+   "id": "T27-CAB-BB-http",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "http"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-BB-impropersslsocketfactory",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "impropersslsocketfactory"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-BB-insecureasymmetriccrypto",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "insecureasymmetriccrypto"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-BB-pbeiteration",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "pbeiteration"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-BB-predictablecryptographickey",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "predictablecryptographickey"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-BB-predictablekeystorepassword",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "predictablekeystorepassword"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-BB-predictablepbepassword",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "predictablepbepassword"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/2)"
+  },
+  {
+   "id": "T27-CAB-BB-predictableseeds",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "predictableseeds"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/2)"
+  },
+  {
+   "id": "T27-CAB-BB-staticinitializationvector",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "staticinitializationvector"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-BB-staticsalts",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "staticsalts"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-BB-untrustedprng",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {
+    "complexity": "basis-benchmark",
+    "category": "untrustedprng"
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: BB recall >= 0.9 in every misuse category (today 0/1)"
+  },
+  {
+   "id": "T27-CAB-recall",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {},
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.6,
+   "why": "CB-27 exit: overall recall >= 0.6 (today 39/135)"
+  },
+  {
+   "id": "T27-CAB-precision",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "cryptoapi-bench",
+   "where": {},
+   "metric": "precision",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: precision on the correct files >= 0.9 (today 39/47)"
+  },
+  {
+   "id": "T27-OWASP-precision",
+   "kind": "target",
+   "owner": "CB-27",
+   "bench": "owasp-benchmark",
+   "where": {},
+   "metric": "precision",
+   "mode": "matched",
+   "op": ">=",
+   "value": 0.9,
+   "why": "CB-27 exit: precision with the OWASP false cases >= 0.9 (today 219/246)"
+  },
+  {
+   "id": "T28-dotnet-items",
+   "kind": "target",
+   "owner": "CB-28",
+   "bench": "corpus",
+   "where": {
+    "case_id": [
+     "N6",
+     "N8",
+     "N10",
+     "N11",
+     "N12"
+    ]
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+  },
+  {
+   "id": "T28-c-items",
+   "kind": "target",
+   "owner": "CB-28",
+   "bench": "corpus",
+   "where": {
+    "case_id": [
+     "C3",
+     "C4",
+     "C7"
+    ]
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+  },
+  {
+   "id": "T28-iac-items",
+   "kind": "target",
+   "owner": "CB-28",
+   "bench": "corpus",
+   "where": {
+    "case_id": [
+     "T5",
+     "T7",
+     "K1",
+     "K2"
+    ]
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "CB-28 exit: per-item corpus recall 100 % on its failing-first items (R2 corpus)"
+  },
+  {
+   "id": "T28-dotnet-trustall-fp",
+   "kind": "target",
+   "owner": "CB-28",
+   "bench": "corpus",
+   "where": {
+    "case_id": [
+     "NFP1"
+    ]
+   },
+   "metric": "specificity",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "CB-28: remove the C# TrustAll() false positive labelled java.trustall"
+  },
+  {
+   "id": "T29-libraries",
+   "kind": "target",
+   "owner": "CB-29",
+   "bench": "libraries",
+   "where": {
+    "case_id": [
+     "L3",
+     "L4",
+     "L6"
+    ]
+   },
+   "metric": "recall",
+   "mode": "matched",
+   "op": ">=",
+   "value": 1.0,
+   "why": "CB-29 failing-first: BouncyCastle 1.8.1 (NuGet), System.IdentityModel.Tokens.Jwt 5.1.4, dgrijalva/jwt-go v3.2.0 flagged (oracle: OSV at test time)",
+   "not_run_ok": "OSV.dev did not answer: library rows need the live oracle (O-2) and are reported NOT-RUN"
+  }
+ ]
+}

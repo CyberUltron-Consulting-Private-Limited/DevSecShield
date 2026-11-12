@@ -1,0 +1,43 @@
+{
+ "schema": "zs-cbom-d1-codemap/1",
+ "version": 1,
+ "note": "How a product finding is read in the benchmarks' vocabulary: for each lane category, the product finding codes (and, where a code is shared by several weaknesses, the algorithm the row names) that count as reporting that weakness. This translates product output; it never states an expected value. Every code the product emits on a judged file must be accepted by some category or listed in `ignored`, or the lane stops (exit 2), so a new code is never silently dropped. A category with no accepted code scores 0 until the product has a code for it: the PR that adds the code adds it here, and its reviewers check the row (O-9). Patterns are case-insensitive regular expressions on the row's `algorithm`.",
+ "categories": {
+  "broken_cipher": {"cwe": "CWE-327", "what": "DES, 3DES, RC2, RC4, Blowfish, IDEA and similar broken or legacy ciphers",
+   "accept": [{"code": "WEAK_ALGORITHM", "algorithm": "^(3?DES|DESEDE|TDEA|TRIPLE-?DES|RC2|RC4|ARC4|ARCFOUR|BLOWFISH|IDEA|CAST5|CAST-?128)([^A-Z0-9]|$)"}]},
+  "cwe327_cipher": {"cwe": "CWE-327", "what": "OWASP Benchmark `crypto`: a broken or risky cipher choice, ECB included (CWE-327)",
+   "accept": [{"code": "WEAK_ALGORITHM", "algorithm": "^(3?DES|DESEDE|TDEA|TRIPLE-?DES|RC2|RC4|ARC4|ARCFOUR|BLOWFISH|IDEA|CAST5|CAST-?128)([^A-Z0-9]|$)"},
+              {"code": "WEAK_CIPHER_MODE"}]},
+  "broken_hash": {"cwe": "CWE-328", "what": "MD2, MD4, MD5, SHA-1 (also as a signature digest)",
+   "accept": [{"code": "WEAK_ALGORITHM", "algorithm": "^(MD2|MD4|MD5|SHA-?1|RIPEMD-?128)([^A-Z0-9]|$)"}]},
+  "ecb_mode": {"cwe": "CWE-327", "what": "ECB mode, including Cipher.getInstance(\"AES\")",
+   "accept": [{"code": "WEAK_CIPHER_MODE"}]},
+  "weak_key_size": {"cwe": "CWE-326", "what": "RSA/DSA/DH keys below 2048 bits",
+   "accept": [{"code": "WEAK_KEY_SIZE"}, {"code": "WEAK_ALGORITHM", "algorithm": "^(RSA|DSA|DH|DHE|ELGAMAL)-?[0-9]+$"}]},
+  "weak_rsa_exponent": {"cwe": "CWE-326", "what": "RSA public exponent 3", "accept": []},
+  "weak_padding": {"cwe": "CWE-780", "what": "RSA encryption with PKCS#1 v1.5 padding", "accept": [{"code": "WEAK_PADDING"}]},
+  "static_iv": {"cwe": "CWE-329", "what": "constant or zero IV / nonce", "accept": [{"code": "STATIC_IV"}, {"code": "REUSED_NONCE"}]},
+  "hardcoded_key": {"cwe": "CWE-321", "what": "constant key material", "accept": [{"code": "HARDCODED_KEY"}]},
+  "hardcoded_password": {"cwe": "CWE-259", "what": "constant PBE or keystore password (the product's code for constant secret material is HARDCODED_KEY)",
+   "accept": [{"code": "HARDCODED_KEY"}]},
+  "static_salt": {"cwe": "CWE-760", "what": "constant PBE salt", "accept": []},
+  "weak_kdf_iterations": {"cwe": "CWE-916", "what": "too few PBE / PBKDF2 iterations", "accept": []},
+  "predictable_seed": {"cwe": "CWE-337", "what": "constant SecureRandom seed", "accept": [{"code": "WEAK_RNG"}]},
+  "weak_rng": {"cwe": "CWE-330", "what": "non-cryptographic random generator (java.util.Random, math/rand, rand())", "accept": [{"code": "WEAK_RNG"}]},
+  "cert_validation_off": {"cwe": "CWE-295", "what": "trust-all TrustManager / validation callback, SSL_VERIFY_NONE, InsecureSkipVerify",
+   "accept": [{"code": "TLS_VERIFICATION_DISABLED"}]},
+  "hostname_verification_off": {"cwe": "CWE-297", "what": "accept-all HostnameVerifier, SSLSocket without hostname verification",
+   "accept": [{"code": "TLS_VERIFICATION_DISABLED"}]},
+  "plaintext_http": {"cwe": "CWE-319", "what": "http:// instead of https://", "accept": [{"code": "UNENCRYPTED_IN_TRANSIT"}]},
+  "weak_tls_version": {"cwe": "CWE-326", "what": "SSL/TLS 1.0/1.1 allowed", "accept": [{"code": "WEAK_PROTOCOL"}]},
+  "weak_cipher_suite": {"cwe": "CWE-327", "what": "weak TLS cipher suites configured", "accept": [{"code": "WEAK_CIPHER_SUITE"}]},
+  "kms_rotation_off": {"cwe": "CWE-320", "what": "KMS key rotation off", "accept": [{"code": "KMS_KEY_ROTATION_DISABLED"}]},
+  "unencrypted_at_rest": {"cwe": "CWE-311", "what": "storage without encryption at rest, or only the provider's default key",
+   "accept": [{"code": "UNENCRYPTED_AT_REST"}, {"code": "PROVIDER_MANAGED_KEY"}, {"code": "AT_REST_ENCRYPTION_WEAK"}]},
+  "vulnerable_library": {"cwe": "CWE-1395", "what": "a crypto library version with a published advisory (OSV)",
+   "accept": [{"code": "VULNERABLE_CRYPTO_LIBRARY"}, {"code": "LIBRARY_CVE_RANGE"}]}
+ },
+ "ignored": {
+  "QUANTUM_VULNERABLE": "PQC posture of an algorithm family (RSA-4096 has it too): not a misuse verdict"
+ }
+}

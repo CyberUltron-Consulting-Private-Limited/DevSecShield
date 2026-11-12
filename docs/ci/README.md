@@ -27,7 +27,7 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
         ├── ci-selftest (pipeline changes)  backend      aibom        worker       scan-node    frontend
         ├── pr-checks (PRs only)            (pytest +    (pytest +    dast-worker  (pytest)     (tsc, eslint,
         │     ├── branch-flow               PostgreSQL,  ruff/mypy,   (pytest)     cbom-action   tests, build)
-        │     └── pr-hygiene                ruff)        true-miss)   worker-locks              codeql
+        │     └── pr-hygiene                ruff)        true-miss)   worker-locks  cbom-d1      codeql
         ├── security                          images (backend, frontend, scan-node, scan-worker, dast-worker)
         │     ├── secrets  (gitleaks, ggshield)
         │     └── scanners (semgrep, osv, trivy, checkov, hadolint, shellcheck, actionlint)
@@ -289,6 +289,7 @@ Every promotion that carries a `.github/` change needs the label too.
 | dast-worker | `RabbitMQ/dast_worker/` | `uv lock --check`; `uv sync --frozen`; `pytest helpers/tests/test_*.py` (6 files, including test_egress_pinning). Deselect list: `.github/ci/pytest-deselect-dast-worker.txt` |
 | worker-locks | `RabbitMQ/guardrail_worker/` | `uv lock --check` (it has no pytest suite) |
 | cbom-action | `.github/actions/cbom-scan` | The composite action passes on `code-supply/clean` and returns exit code 1 on `code-supply/vulnerable` |
+| cbom-d1 | `aibom/` (runs `bench/cbom/d1/ci.sh`) | `uv sync --frozen --all-extras --dev`; fetches CryptoAPI-Bench and the OWASP Benchmark Java crypto/hash/weakrand subset at pinned commits, runs the CBOM code engine as the scan-worker does, scores it against the benchmarks' own labels, the labelled corpus in `e2e/fixtures/cbom-d1-corpus/` and OSV; fails on a non-regression floor or on a target floor that starts passing (`bench/cbom/d1/README.md`). `report.md` goes to the job summary, the report and work files to the `cbom-d1-artifacts` artifact. Needs network to github.com and api.osv.dev |
 | scan-node | `scan_node/` | Hash-pinned `requirements.lock` install, `pytest tests` |
 | frontend | `frontend/` | `npm ci`, `tsc --noEmit`, ESLint (no new errors), 47 `*.test.ts` files run with `npx tsx`, `next build` |
 | images | repository root | `scripts/deploy/check_image_contexts.sh`, then a buildx build and a Trivy scan of each changed image |
@@ -301,6 +302,7 @@ Every promotion that carries a `.github/` change needs the label too.
 | backend | everything except `docs/`, `*.md`, `.github/`, root CI configs and `frontend/` outside `app/`, `components/`, `utils/` | its tests read deploy/staging compose and nginx, scripts/deploy and scripts/crypto_kb, e2e/, compose/, RabbitMQ Dockerfiles and helpers, scan_node collectors, aibom, bench/certin, migrations, and search the frontend sources for banned words |
 | aibom | `aibom/`, `bench/`, every `.py` under `backend/`, `RabbitMQ/`, `e2e/`; `backend/utilities/cbom_sources/data/crypto_kb.json`; the CBOM, CERT-In and SEBI ledgers under `docs/` | test_only_cbom_code_imports_posture reads all that Python; other tests compare the KB and the ledgers |
 | cbom-action | the action, the aibom CLI and CBOM code, its fixtures, `aibom/pyproject.toml`, `aibom/uv.lock` | |
+| cbom-d1 | `bench/cbom/d1/`, `e2e/fixtures/cbom-d1-corpus/`, `aibom/src/aibom/cbom/`, `aibom/src/aibom/integrations/cbom_devsecshield.py`, `RabbitMQ/worker/helpers/tools/cbom_agent/`, `aibom/pyproject.toml`, `aibom/uv.lock` | the engine, the scan-worker's call into it, and the lane (round 7 wave W-D1) |
 | scan-node | `scan_node/`, `deploy/node-images/`, `backend/utilities/cbom_sources/{node_auth,templates}.py`, `aibom/src/aibom/cbom/pkgdb.py`, `frontend/components/cbom/sources/logic.ts` | the node tests pin those server and wizard files |
 | worker | `RabbitMQ/worker/`, `aibom/src/`, its deselect list | the SBOM agent tests import aibom from source |
 | dast-worker | `RabbitMQ/dast_worker/`, `compose/worker-compose/docker-compose.yml`, its deselect list | test_nuclei_process_cleanup reads the compose file |
