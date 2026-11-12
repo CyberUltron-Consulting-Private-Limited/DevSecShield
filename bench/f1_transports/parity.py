@@ -4,7 +4,9 @@
     python bench/f1_transports/parity.py --release-dir DIR --count 20 [--readonly-check] [--keep]
         [--base-image IMG --apt-https] [--out DIR]
 
-1. Builds ``f1-3-lab-target`` (lab/Dockerfile.target, with the exact zs-cbom sudoers file from zs_scan_node.commands)
+1. Builds ``f1-3-lab-target`` (scan_node/tests/fixtures/zs-collect/lab/Dockerfile.target: a deliberately weak host,
+   so it lives with the other detector fixtures; lab/entrypoint.sh; the exact zs-cbom sudoers file from
+   zs_scan_node.commands)
    and starts ``--count`` containers ``f1-3-parity-<i>`` on network ``f1-3-parity``, each with its own host keys.
 2. SSH path: ``python -m zs_scan_node.collect --kind linux_servers`` (Tier 2, node key, trust on first use) against
    every container address, from this machine, exactly as a scan node runs it.
@@ -32,6 +34,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+LAB_DOCKERFILE = ROOT / "scan_node" / "tests" / "fixtures" / "zs-collect" / "lab" / "Dockerfile.target"
 sys.path.insert(0, str(ROOT / "scan_node"))
 sys.path.insert(0, str(HERE))
 
@@ -53,7 +56,7 @@ def sh(*args: str, check: bool = True, **kw) -> subprocess.CompletedProcess:
 def build_image(base: str | None, apt_https: bool) -> None:
     ctx = Path(tempfile.mkdtemp(prefix="f1-3-lab."))
     try:
-        shutil.copy(HERE / "lab" / "Dockerfile.target", ctx / "Dockerfile")
+        shutil.copy(LAB_DOCKERFILE, ctx / "Dockerfile")
         shutil.copy(HERE / "lab" / "entrypoint.sh", ctx / "entrypoint.sh")
         (ctx / "sudoers.zs-cbom").write_text(C.sudoers_file("zs-cbom"))
         args = ["docker", "build", "-q", "-t", IMAGE]

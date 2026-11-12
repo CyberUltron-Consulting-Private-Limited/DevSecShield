@@ -1,7 +1,9 @@
 # A Linux target for the zs-collect parity proof: sshd, sudo with the exact zs-cbom sudoers file, and a few planted
 # crypto findings (a world-readable private key, an RSA-1024/SHA-1 certificate, nginx TLS directives, openssl enc in
 # cron). Host keys are generated when each container starts, so every container is a distinct host.
-# Built by bench/f1_transports/parity.py (it writes sudoers.zs-cbom from zs_scan_node.commands.sudoers_file()).
+# Built by bench/f1_transports/parity.py (it writes sudoers.zs-cbom from zs_scan_node.commands.sudoers_file() and adds
+# bench/f1_transports/lab/entrypoint.sh). This is a deliberately weak host, like the other detector fixtures here:
+# sshd runs as root (it must, to log the scan user in) and nothing in it is shipped or built by CI.
 ARG BASE_IMAGE=debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 FROM ${BASE_IMAGE}
 ARG APT_HTTPS=0

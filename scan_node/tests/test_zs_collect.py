@@ -18,6 +18,7 @@ import pwd
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -383,10 +384,56 @@ def test_own_temp_dir_is_private_and_removed(fake_popen, monkeypatch, capsys):
 
 def test_given_temp_dir_is_left_as_found(fake_popen, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(Z, "drop_privileges", lambda user, tmp: None)
-    before = sorted(os.listdir(tmp_path))
-    assert Z.main(["--nonce", NONCE, "--tier", "1", "--tmp-dir", str(tmp_path)]) == 0
+    given = tmp_path / "zs-collect.AbC123xy"
+    given.mkdir(mode=0o700)
+    before = sorted(os.listdir(given))
+    assert Z.main(["--nonce", NONCE, "--tier", "1", "--tmp-dir", str(given)]) == 0
     capsys.readouterr()
-    assert sorted(os.listdir(tmp_path)) == before
+    assert sorted(os.listdir(given)) == before and given.is_dir()
+
+
+def _shared_dirs(tmp_path: Path) -> dict[str, Path]:
+    """Directories zs-collect must refuse as --tmp-dir: not made for it, shared, a link, someone else's, missing."""
+    dirs = {}
+    for name, mode in (("shared-like-tmp", 0o1777), ("home-like", 0o700), ("zs-collect.open", 0o755),
+                       ("zs-collect.group", 0o770)):
+        d = tmp_path / name
+        d.mkdir()
+        d.chmod(mode)
+        dirs[name] = d
+    target = tmp_path / "zs-collect.real"
+    target.mkdir(mode=0o700)
+    dirs["zs-collect.link"] = tmp_path / "zs-collect.link"
+    dirs["zs-collect.link"].symlink_to(target)
+    dirs["zs-collect.missing"] = tmp_path / "zs-collect.missing"
+    return dirs
+
+
+def test_tmp_dir_not_made_for_the_run_is_refused_and_left_untouched(fake_popen, monkeypatch, tmp_path, capsys):
+    # zs-collect hands its working directory to the run-as user when started as root; it must never do that to /tmp,
+    # a home directory or anything else it was not given for this run, and it never changes a directory's mode.
+    dropped = []
+    monkeypatch.setattr(Z, "drop_privileges", lambda user, tmp: dropped.append(tmp))
+    for name, d in _shared_dirs(tmp_path).items():
+        before = os.lstat(d) if os.path.lexists(d) else None
+        code = Z.main(["--nonce", NONCE, "--tier", "1", "--tmp-dir", str(d)])
+        out, err = capsys.readouterr()
+        assert code == 2, name
+        assert out == "" and err.startswith("zs-collect: --tmp-dir"), (name, err)
+        after = os.lstat(d) if os.path.lexists(d) else None
+        if before is not None:
+            assert (after.st_mode, after.st_uid, after.st_gid) == (before.st_mode, before.st_uid, before.st_gid), name
+    assert dropped == [] and not fake_popen.calls
+
+
+def test_tmp_dir_check_accepts_the_wrappers_directory(tmp_path):
+    made = tempfile.mkdtemp(prefix="zs-collect.", dir=tmp_path)  # what mktemp -d .../zs-collect.XXXXXXXX gives
+    assert Z.tmp_dir_problem(made) is None
+    other = tmp_path / "zs-collect.other-owner"
+    other.mkdir(mode=0o700)
+    if os.geteuid() == 0:
+        os.chown(other, 65534, 65534)
+        assert "private" in Z.tmp_dir_problem(str(other))
 
 
 # ----------------------------------------------------------------------------- chunked output (AWX events)
@@ -434,10 +481,10 @@ def _tmp_for_run(tmp_path: Path) -> Path:
         import atexit
         import tempfile
 
-        d = Path(tempfile.mkdtemp(prefix="zs-collect-test."))
+        d = Path(tempfile.mkdtemp(prefix="zs-collect.test-"))
         atexit.register(shutil.rmtree, str(d), True)
         return d
-    d = tmp_path / "run"
+    d = tmp_path / "zs-collect.run"
     d.mkdir(mode=0o700)
     return d
 
