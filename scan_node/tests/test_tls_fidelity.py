@@ -272,6 +272,21 @@ def test_a_listener_that_does_not_speak_tls_is_not_a_tls_asset(lab, mode, said):
     assert cov[0]["facts"]["scope"] == [f"127.0.0.1:{srv.port}"] and cov[0]["facts"]["incomplete"] is False
 
 
+def test_parallel_endpoints_each_keep_their_own_not_tls_reason(lab):
+    import concurrent.futures as cf
+
+    closes, http = lab(mode="close"), lab(mode="http")
+    ctx = _ctx()
+    scan = N.NetworkScan(ctx, {"rate_limits": {"connections_per_second": 500, "parallel_per_server": 8}})
+    eps = [N.Endpoint("127.0.0.1", s.port, "tls", "") for s in (closes, http) for _ in range(6)]
+    with cf.ThreadPoolExecutor(8) as pool:
+        list(pool.map(lambda ep: scan.scan_endpoint(ep, "full"), eps))
+    ctx.flush()
+    for row in ctx.collected:
+        port = int(row["facts"]["scope"][0].rsplit(":", 1)[1])
+        assert ("answered 'HTTP/'" in row["facts"]["detail"]) is (port == http.port), row["facts"]["detail"]
+
+
 def test_a_tls_server_that_only_alerts_is_tls_with_no_common_parameters(lab):
     srv = lab(mode="alert")
     (status, err, n), rows, scan = _scan(srv)

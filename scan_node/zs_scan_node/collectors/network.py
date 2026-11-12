@@ -164,7 +164,6 @@ class NetworkScan:
         self._sni_addresses: dict[str, set[str]] = {}
         self.sni_left_out = ""  # names never tried anywhere in this job (over the cap, unresolved), said per endpoint
         self.own_rows: set[str] = set()  # endpoints whose read wrote its own coverage row (no generic second row)
-        self._not_tls_detail = ""
 
     def sni_names_for(self, ip: str) -> list[str]:
         """The team's SNI names that resolve to ``ip`` and are not on the never-scan list (by name or address)."""
@@ -314,16 +313,16 @@ class NetworkScan:
             # 1b. TLS at all?  Any TLS alert = it speaks TLS (it may want a server name); only a close or non-TLS
             # bytes, to a modern and to a legacy hello, mean "not TLS" (CB-04 EC-4: alert != closed)
             try:
-                kind, seen = self._speaks_tls(ep, budget, None)
+                kind, seen, not_tls = self._speaks_tls(ep, budget, None)
                 if kind == "not_tls" and names:
-                    kind, seen = self._speaks_tls(ep, budget, names[0], legacy=False)
+                    kind, seen, not_tls = self._speaks_tls(ep, budget, names[0], legacy=False)
             except T.StarttlsUnavailable as exc:
                 return plaintext(exc)
             alerts += seen
             if kind == "not_tls":
                 ctx.coverage(ep.ip, f"not TLS {ep.where}", "not_tls",
                              f"{ep.label or ep.protocol} {ep.where} answered TCP on a port listed as TLS but did not "
-                             f"speak TLS: {self._not_tls_detail}", scope=[ep.where], incomplete=False)
+                             f"speak TLS: {not_tls}", scope=[ep.where], incomplete=False)
                 self.own_rows.add(ep.where)
                 return "ok", None, 0
             if kind == "alert" and names and T.have_openssl() and ep.protocol != "rdp":
@@ -548,9 +547,11 @@ class NetworkScan:
             assets += 1
         return "ok", None, assets + self._sni_variants(ep, names, sni, chain, Budget(reserve) if reserve else budget)
 
-    def _speaks_tls(self, ep: Endpoint, budget: Budget, sni: str | None, legacy: bool = True) -> tuple[str, list[str]]:
-        """('hello' | 'alert' | 'not_tls', alerts seen) from a modern ClientHello (TLS 1.0-1.3 offered) and, when that
-        gets no TLS answer, a legacy TLS 1.0 one (some old stacks drop TLS 1.3-style hellos).  A timeout raises."""
+    def _speaks_tls(self, ep: Endpoint, budget: Budget, sni: str | None,
+                    legacy: bool = True) -> tuple[str, list[str], str]:
+        """('hello' | 'alert' | 'not_tls', alerts seen, what a non-TLS answer was) from a modern ClientHello (TLS
+        1.0-1.3 offered) and, when that gets no TLS answer, a legacy TLS 1.0 one (some old stacks drop TLS 1.3-style
+        hellos).  A timeout raises."""
         hellos = [T.build_client_hello(T.TLS12, T.TLS13_SUITES + T.LEGACY_SUITES, sni=sni, tls13=True,
                                        groups=T.CLASSICAL_GROUPS + T.PQ_GROUPS, key_share_groups=[29],
                                        versions13=[T.TLS13, T.TLS12, T.TLS11, T.TLS10])]
@@ -569,15 +570,15 @@ class NetworkScan:
                 details.append("reset the connection without a TLS answer")
                 continue
             if r == "budget":
-                return "alert", []  # not decided: never call it "not TLS" without the evidence
+                return "alert", [], ""  # not decided: never call it "not TLS" without the evidence
             if r.ok:
-                return "hello", []
+                return "hello", [], ""
             if r.alert:
-                return "alert", [r.alert]
+                return "alert", [r.alert], ""
             details.append("closed the connection without a TLS answer")
-        self._not_tls_detail = (f"{details[0]} ({len(details)} handshake{'s' if len(details) > 1 else ''})"
-                                if len(set(details)) == 1 else "; ".join(details))
-        return "not_tls", []
+        said = (f"{details[0]} ({len(details)} handshake{'s' if len(details) > 1 else ''})"
+                if len(set(details)) == 1 else "; ".join(details))
+        return "not_tls", [], said
 
     def _no_common_parameters(self, ep: Endpoint, facts: dict[str, Any], alerts: list[str], names: list[str],
                               sni_refused: bool) -> tuple[str, str | None, int]:
