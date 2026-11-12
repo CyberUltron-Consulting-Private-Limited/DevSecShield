@@ -1,0 +1,60 @@
+name: CBOM CT discovery live proof
+
+# Certificate Transparency discovery reads public CT search providers over the internet. The development box has no
+# outbound internet, so the provider responses used as test fixtures, and the live proof that the collector stores
+# exactly what the provider returned, are recorded here, on a GitHub runner.
+#
+# Not part of ci-gate (a separate workflow; nothing requires it): a provider outage or rate limit must not block a
+# merge. It runs only when the CT files change, or by hand once this file is on the default branch.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/cbom-ct-live.yml"
+      - "bench/ct/**"
+      - "backend/utilities/cbom_sources/ct_*.py"
+      - "backend/scripts/ct_live_proof.py"
+  push:
+    branches: ["feature/cbom-ct-discovery"]
+    paths:
+      - ".github/workflows/cbom-ct-live.yml"
+      - "bench/ct/**"
+      - "backend/utilities/cbom_sources/ct_*.py"
+      - "backend/scripts/ct_live_proof.py"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbom-ct-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    name: record provider responses
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record Cert Spotter, crt.sh and RFC 6962 log responses
+        run: python3 bench/ct/capture.py "$RUNNER_TEMP/ct-capture" --cases all
+      - name: Summary
+        if: always()
+        run: |
+          python3 - "$RUNNER_TEMP/ct-capture/MANIFEST.json" >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          import json, sys
+          m = json.load(open(sys.argv[1]))
+          print("| case | status | ms | bytes |\n|---|---|---|---|")
+          for c in m["cases"]:
+              print(f"| {c['case']} | {c['status']} | {c.get('duration_ms', '')} | {c['bytes']} |")
+          EOF
+      - name: Upload recordings
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ct-capture
+          path: ${{ runner.temp }}/ct-capture
+          retention-days: 30
