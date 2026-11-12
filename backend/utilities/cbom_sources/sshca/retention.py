@@ -8,7 +8,8 @@ the CBOM scheduler tick calls it (``backend/workers/cbom_scheduler.py``).
 One replica at a time (architecture re-review 5874161772): on PostgreSQL a run first takes the session-level advisory
 lock ``LOCK_KEY`` with ``pg_try_advisory_lock`` on a connection of its own (committed at once, so that connection
 waits idle, not in a transaction); a replica that does not get it skips the run (``{"skipped": True}``), and the
-lock is released when the run ends (or with its connection).
+lock is released when the run ends (or with its connection: a run whose guard connection broke still returns what it
+deleted, and that connection is dropped, never pooled with the lock).
 """
 from __future__ import annotations
 
@@ -46,8 +47,19 @@ def purge(engine, now: _dt.datetime, *, batch: int = BATCH, max_batches: int = M
         try:
             return _purge(engine, now, batch, max_batches)
         finally:
-            guard.execute(select(func.pg_advisory_unlock(LOCK_KEY)))
-            guard.commit()
+            _unlock(guard)
+
+
+def _unlock(guard) -> None:
+    """Release the lock.  If that fails (the guard connection broke during the run: PostgreSQL released the lock with
+    it), the purge's result stands and the connection is dropped rather than returned to the pool still holding the
+    lock (re-review 5877293709)."""
+    try:
+        guard.execute(select(func.pg_advisory_unlock(LOCK_KEY)))
+        guard.commit()
+    except Exception as exc:  # any failure here: drop the connection, keep the run's result
+        log("ssh ca audit retention: lock connection lost; it is dropped", error=type(exc).__name__)
+        guard.invalidate()
 
 
 def _purge(engine, now: _dt.datetime, batch: int, max_batches: int) -> dict[str, int]:

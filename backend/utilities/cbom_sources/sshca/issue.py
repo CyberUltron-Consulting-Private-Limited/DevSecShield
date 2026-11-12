@@ -51,10 +51,14 @@ class JobCert:
     refresh_before_s: int
 
     def payload(self, now: _dt.datetime) -> dict[str, Any]:
+        """``backdated_s``: how far before ``now`` the certificate starts, i.e. how far behind a server's clock may be
+        and still accept it: ``skew_s(TTL)`` for the builtin CA, the role's ``not_before_duration`` for Vault (the node
+        names it when a login is refused: re-review 5877293709)."""
         return {"certificate": self.cert.certificate, "serial": self.cert.serial,
                 "valid_after": iso_z(self.cert.valid_after), "valid_before": iso_z(self.cert.valid_before),
                 "expires_in_s": max(0, int((self.cert.valid_before - now).total_seconds())),
                 "refresh_before_s": self.refresh_before_s, "principals": list(self.cert.principals),
+                "backdated_s": max(0, round((now - self.cert.valid_after).total_seconds())),
                 "ca_id": self.ca.id}
 
 

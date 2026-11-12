@@ -81,7 +81,8 @@ def claim_extras(session: Session, source: CbomCollectionSource, node: CbomScanN
         return {"config": config, "secrets": secrets}
     payload = minted.payload(now)
     secrets["ssh_certificate"] = payload.pop("certificate")
-    config["ssh_ca"] = {k: payload[k] for k in ("serial", "expires_in_s", "refresh_before_s", "valid_before", "ca_id")}
+    config["ssh_ca"] = {k: payload[k] for k in ("serial", "expires_in_s", "refresh_before_s", "valid_before",
+                                                "backdated_s", "ca_id")}
     return {"config": config, "secrets": secrets}
 
 

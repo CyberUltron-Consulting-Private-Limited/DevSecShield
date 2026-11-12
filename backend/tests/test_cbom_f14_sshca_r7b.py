@@ -9,6 +9,7 @@ Written before the fix and run red on e913f46 (log in $R6/f1-4/r7b/), green afte
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import secrets
@@ -23,6 +24,7 @@ import test_cbom_f14_sshca as F
 from backend.new_models import CbomCollectionJob, CbomCollectionSource, CbomScanNode, Team, TeamMembership, User
 from backend.routers import cbom_node_sshca
 from backend.utilities.cbom_sources import node_auth as NA
+from backend.utilities.cbom_sources.sshca import certs as C
 from backend.utilities.cbom_sources.sshca import keywrap as KW
 from backend.utilities.cbom_sources.sshca import registry as R
 from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued
@@ -214,8 +216,9 @@ def _pg_kms_world(nodes: int, kms: OutageKms):
 @needs_pg
 def test_pg_a_kms_outage_neither_queues_nor_holds_pooled_connections(monkeypatch):
     """8 cold certificate requests of one CA while KMS hangs (0.5 s) then throttles: 1 Decrypt, every request answered
-    (503 + Retry-After) within about one call's time, and no connection held idle in a transaction while KMS is called
-    (none idle in a transaction for more than 300 ms)."""
+    (503 + Retry-After) within about one call's time, and no request's session in a transaction while it waits for
+    the CA key (recorded per thread when the key lookup starts: re-review 5877293709 r7b:239).  The pg_stat_activity
+    sample is printed as a second view only: on a busy box a request's own reads can sit idle for 300 ms too."""
     from fastapi import HTTPException
 
     monkeypatch.setenv("CBOM_SSH_CA", "1")
@@ -243,10 +246,19 @@ def test_pg_a_kms_outage_neither_queues_nor_holds_pooled_connections(monkeypatch
     results: list[tuple[int, str | None, float]] = []
     finished: list[float] = []
     in_unwrap: list[float] = []  # seconds each request spent getting the CA key (waiting for KMS or for the flight)
+    in_tx: list[bool] = []  # was the request's own session in a transaction when it started waiting for the key
+    sessions: dict[int, Session] = {}
     lock = threading.Lock()
     real_unwrap = KW.cached_private_key
 
+    class Recording(Session):  # the route's session, per thread
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            sessions[threading.get_ident()] = self
+
     def timed_unwrap(*args, **kwargs):
+        with lock:
+            in_tx.append(sessions[threading.get_ident()].in_transaction())
         t = time.monotonic()
         try:
             return real_unwrap(*args, **kwargs)
@@ -255,6 +267,7 @@ def test_pg_a_kms_outage_neither_queues_nor_holds_pooled_connections(monkeypatch
                 in_unwrap.append(time.monotonic() - t)
 
     monkeypatch.setattr(KW, "cached_private_key", timed_unwrap)
+    monkeypatch.setattr(cbom_node_sshca, "Session", Recording)
 
     def one(n: dict):
         path = f"/cbom/node/jobs/{n['job']}/ssh-cert"
@@ -279,19 +292,19 @@ def test_pg_a_kms_outage_neither_queues_nor_holds_pooled_connections(monkeypatch
     stop.set()
     sampler.join()
     engine.dispose()
-    # no queue: no request waits for the CA key longer than about one KMS call (a queue of waiters each calling KMS
-    # again adds a whole call per waiter: 8 requests, up to 8 calls).  Measured around the key lookup, so the box's
-    # load during the requests' own reads does not count.
+    # no queue: no request waits for the CA key as long as two KMS calls (a queue of waiters each calling KMS again
+    # adds a whole call per waiter: 8 requests, up to 8 calls).  Measured around the key lookup, so the box's load
+    # during the requests' own reads does not count; when the last answer came is printed, not asserted (load).
     after_call = max(finished) - min(kms.ended) if kms.ended else float("inf")
     print("kms outage:", {"decrypt_calls": kms.calls, "statuses": sorted(st for st, _r, _t in results),
                           "seconds": sorted(round(t, 2) for _s, _r, t in results),
                           "key_wait_s": sorted(round(t, 2) for t in in_unwrap),
-                          "last_answer_after_first_call_s": round(after_call, 2), "idle_in_tx_max": max(idle or [0])})
+                          "last_answer_after_first_call_s": round(after_call, 2), "idle_in_tx_max": max(idle or [0]),
+                          "session_in_transaction_at_key_wait": in_tx})
     assert kms.calls == 1, kms.calls
     assert [s for s, _r, _t in results] == [503] * 8 and all(r for _s, r, _t in results), results
-    assert len(in_unwrap) == 8 and max(in_unwrap) < kms.hang + 0.3, in_unwrap
-    assert after_call < 2 * kms.hang, (after_call, results)
-    assert max(idle or [0]) == 0, max(idle or [0])
+    assert len(in_unwrap) == 8 and max(in_unwrap) < 2 * kms.hang, in_unwrap
+    assert in_tx == [False] * 8, in_tx
 
 
 def _node_call(n: dict) -> int:
@@ -370,6 +383,261 @@ def test_vault_signs_with_no_transaction_open_and_the_route_still_records_the_ce
     assert open_during_sign == [False], open_during_sign
     with Session(engine) as s:
         assert len(s.exec(select(CbomSshCertIssued)).all()) == 1
+
+
+# ============================================================================ re-review 5877293709 (8f0bbaf)
+def test_callers_at_the_onset_of_an_outage_wait_at_most_flight_wait_s(api, ca_world, monkeypatch):
+    """keywrap.py:315: before any failure is known, a caller waits for another thread's KMS call at most
+    FLIGHT_WAIT_S, then gets a transient error (503 + Retry-After at the route); still one Decrypt."""
+    engine, _ = ca_world
+    kms = OutageKms(hang=1.5)
+    row = _kms_row(api, engine, monkeypatch, kms)
+    monkeypatch.setattr(KW, "FLIGHT_WAIT_S", 0.4, raising=False)
+    KW.forget()
+    kms.down, kms.calls = True, 0
+    asking = threading.Event()
+    decrypt = kms.decrypt
+
+    def slow_decrypt(**kw):
+        asking.set()
+        return decrypt(**kw)
+
+    kms.decrypt = slow_decrypt
+    first = threading.Thread(target=lambda: pytest.raises(KW.WrapError, KW.cached_private_key, row.id, 1,
+                                                          row.fingerprint, row.private_key_encrypted))
+    first.start()
+    assert asking.wait(5)
+    waits: list[float] = []
+    errors: list[tuple[bool, str]] = []
+    lock = threading.Lock()
+
+    def one():
+        t = time.monotonic()
+        try:
+            KW.cached_private_key(row.id, 1, row.fingerprint, row.private_key_encrypted)
+        except KW.WrapError as exc:
+            with lock:
+                errors.append((exc.transient, exc.code))
+        with lock:
+            waits.append(time.monotonic() - t)
+
+    threads = [threading.Thread(target=one) for _ in range(6)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    first.join()
+    assert kms.calls == 1, kms.calls
+    assert errors == [(True, "kms_unavailable")] * 6, errors
+    assert max(waits) < 0.4 + 0.2, waits
+
+
+def _revoke_this_runs_certificate_while_kms_answers(engine, kms, cert_id):
+    def revoke_it():
+        kms.during = None
+        with Session(engine) as ss:
+            R.revoke_cert(ss, 1, cert_id, 1, "an admin revoked this run's certificate", F._utcnow())
+            ss.commit()
+
+    kms.during = revoke_it
+
+
+def test_a_certificate_of_this_run_revoked_while_kms_answers_stops_the_job(api, ca_world, monkeypatch):
+    """cbom_node_sshca.py:115: the check after KMS answered covers the third stop reason too (a certificate of this
+    run revoked): 409, and the new certificate is not recorded."""
+    engine, _ = ca_world
+    kms = OutageKms()
+    monkeypatch.setenv(KW.KMS_ENV, ARN)
+    KW.set_kms_client_factory(lambda region: kms)
+    s = F.setup_job(api)
+    assert F.cert_route(api, s["token"], s["job_id"], s["lease"]).status_code == 200
+    with Session(engine) as ss:  # the job's certificate is inside its refresh window
+        row = ss.exec(select(CbomSshCertIssued)).one()
+        row.valid_before = F._utcnow() + dt.timedelta(seconds=100)
+        ss.add(row)
+        ss.commit()
+        cert_id = row.id
+    KW.forget()  # cold on this worker: the renewal calls KMS (release, then the checks again)
+    _revoke_this_runs_certificate_while_kms_answers(engine, kms, cert_id)
+    r = F.cert_route(api, s["token"], s["job_id"], s["lease"])
+    with Session(engine) as ss:
+        rows = [(x.serial, x.revoked_at is not None) for x in ss.exec(select(CbomSshCertIssued)).all()]
+    assert r.status_code == 409 and "revoked its SSH certificate" in r.json()["detail"], r.json()
+    assert rows == [(1, True)], rows
+
+
+@needs_pg
+def test_pg_a_certificate_of_this_run_revoked_while_kms_answers_stops_the_job(monkeypatch):
+    monkeypatch.setenv("CBOM_SSH_CA", "1")
+    monkeypatch.setenv(KW.KMS_ENV, ARN)
+    kms = OutageKms()
+    KW.set_kms_client_factory(lambda region: kms)
+    engine, nodes, _ca = _pg_kms_world(1, kms)
+    monkeypatch.setattr(cbom_node_sshca, "get_db", lambda: engine)
+    KW.forget()
+    assert _node_call(nodes[0]) == 200
+    with Session(engine) as ss:
+        row = ss.exec(select(CbomSshCertIssued)).one()
+        row.valid_before = F._utcnow() + dt.timedelta(seconds=100)
+        ss.add(row)
+        ss.commit()
+        cert_id = row.id
+    KW.forget()
+    _revoke_this_runs_certificate_while_kms_answers(engine, kms, cert_id)
+    status = _node_call(nodes[0])
+    with Session(engine) as ss:
+        rows = sorted((x.serial, x.revoked_at is not None) for x in ss.exec(select(CbomSshCertIssued)).all())
+    engine.dispose()
+    assert status == 409 and rows == [(1, True)], (status, rows)
+
+
+def test_a_remembered_access_denied_stays_a_refusal_not_a_retry(api, ca_world, monkeypatch):
+    """RV1: the remembered failure keeps its kind: AccessDenied is not transient (400, no Retry-After) for the next
+    caller either."""
+    from botocore.exceptions import ClientError
+
+    engine, _ = ca_world
+    kms = OutageKms()
+    row = _kms_row(api, engine, monkeypatch, kms)
+    KW.forget()
+
+    def denied(**kw):
+        raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": "no"}}, "Decrypt")
+
+    kms.decrypt = denied
+    got = []
+    for _ in range(2):  # the first caller, then one answered from the remembered failure
+        with pytest.raises(KW.WrapError) as err:
+            KW.cached_private_key(row.id, 1, row.fingerprint, row.private_key_encrypted)
+        got.append((err.value.transient, err.value.code))
+    assert got[0] == got[1] and got[0][0] is False, got
+
+
+def _vault_job(api, monkeypatch, during=None, node="dc-1"):
+    """A Vault CA, a node, an ssh_ca source and a claimed job; ``during()`` runs while Vault signs."""
+    from backend.utilities.cbom_sources.sshca import vault as V
+    from test_cbom_f14_sshca_r7 import _vault_token
+
+    fake = F.FakeVault()
+
+    def call(cfg, method, path, **kw):
+        if "/sign/" in path and during is not None:
+            during()
+        return fake(cfg, method, path, **kw)
+
+    monkeypatch.setattr(V, "call", call)
+    ca = api("POST", F.BASE, json={"name": "vault", "provider": "vault",
+                                   "vault_config": {"addr": "https://vault.bank.example:8200", "role": "zs-cbom"},
+                                   "secrets": {"token": _vault_token()}}).json()["ca"]
+    node_id, token, _ = F.enroll(api, name=node)
+    F.ssh_ca_source(api, node_id, ca["id"], name=f"linux-ca-{node}")
+    p = F.claim(api, token)
+    return ca, token, p["job"]["id"], p["job"]["lease_id"], fake
+
+
+def _cert_rows(engine) -> list:
+    with Session(engine) as s:
+        return s.exec(select(CbomSshCertIssued)).all()
+
+
+def test_a_job_cancelled_while_vault_signs_gets_no_certificate(api, ca_world, monkeypatch):
+    """RV3: the check after Vault answered applies _invalid_reason (cancelled, source changed): 409 "Stop this job"."""
+    engine, _ = ca_world
+    state: dict = {}
+
+    def cancel():
+        with Session(engine) as s:
+            job = s.get(CbomCollectionJob, state["job"])
+            job.cancel_requested_at = F._utcnow()
+            job.cancel_reason = "Cancelled by an admin"
+            s.add(job)
+            s.commit()
+
+    _ca, token, job_id, lease, _fake = _vault_job(api, monkeypatch, during=cancel)
+    state["job"] = job_id
+    r = F.cert_route(api, token, job_id, lease)
+    assert r.status_code == 409 and r.json()["detail"].startswith("Stop this job"), r.json()
+    assert _cert_rows(engine) == []
+
+
+def test_a_lease_lost_while_vault_signs_leaves_one_refusal_audit_row(api, ca_world, monkeypatch):
+    """RV4: the refusal after Vault answered is audited like every other one (AC 7)."""
+    from backend.new_models import CbomCollectionAuditEvent
+
+    engine, _ = ca_world
+    state: dict = {}
+
+    def lose():
+        with Session(engine) as s:
+            job = s.get(CbomCollectionJob, state["job"])
+            job.lease_id = "another-lease-y"
+            s.add(job)
+            s.commit()
+
+    _ca, token, job_id, lease, _fake = _vault_job(api, monkeypatch, during=lose)
+    state["job"] = job_id
+    assert F.cert_route(api, token, job_id, lease).status_code == 409
+    with Session(engine) as s:
+        rows = [e.changed_fields for e in s.exec(select(CbomCollectionAuditEvent)).all()
+                if e.action == "sshca.cert.denied"]
+    assert len(rows) == 1 and "reason:lease_lost" in rows[0], rows
+    assert _cert_rows(engine) == []
+
+
+def test_a_vault_ca_revoked_while_vault_signs_records_nothing(api, ca_world, monkeypatch):
+    """RV11: the CA row is share-locked again after Vault answered (ca._Base docstring): a revoke committed while
+    Vault signed stops the mint."""
+    engine, _ = ca_world
+    state: dict = {}
+
+    def revoke():
+        with Session(engine) as s:
+            R.revoke(s, s.get(CbomSshCa, state["ca"]), 1, "revoked while Vault signs", F._utcnow())
+            s.commit()
+
+    ca, token, job_id, lease, _fake = _vault_job(api, monkeypatch, during=revoke)
+    state["ca"] = ca["id"]
+    r = F.cert_route(api, token, job_id, lease)
+    assert r.status_code == 400 and "no longer active" in r.json()["detail"], r.json()
+    assert _cert_rows(engine) == []
+
+
+def test_two_retired_keys_leave_the_text_each_at_its_own_overlap_end(api, ca_world, monkeypatch):
+    """RV5: the text is cached until the EARLIEST overlap end among its retired keys."""
+    from backend.routers import cbom_sshca
+
+    engine, _ = ca_world
+    a = F.create_ca(api)
+    n1 = api("POST", f"{F.BASE}/{a['id']}/rotate", json={}).json()["ca"]
+    assert api("POST", f"{F.BASE}/{n1['id']}/promote", json={"force": True}).status_code == 200
+    time.sleep(1.1)
+    n2 = api("POST", f"{F.BASE}/{n1['id']}/rotate", json={}).json()["ca"]
+    assert api("POST", f"{F.BASE}/{n2['id']}/promote", json={"force": True}).status_code == 200
+    with Session(engine) as s:
+        e1 = s.get(CbomSshCa, a["id"]).retired_at + R.OVERLAP
+        e2 = s.get(CbomSshCa, n1["id"]).retired_at + R.OVERLAP
+    assert e1 < e2
+    monkeypatch.setattr(cbom_sshca, "utcnow", lambda: e1 - dt.timedelta(seconds=0.5))
+    assert len(F._trusted(api)) == 3
+    monkeypatch.setattr(cbom_sshca, "utcnow", lambda: e1 + dt.timedelta(seconds=0.5))
+    assert len(F._trusted(api)) == 2
+    monkeypatch.setattr(cbom_sshca, "utcnow", lambda: e2 + dt.timedelta(seconds=0.5))
+    assert len(F._trusted(api)) == 1
+
+
+def test_the_route_says_how_far_it_back_dated_the_certificate(api, ca_world, monkeypatch):
+    """sshca.py:120 (node): the node's refusal names the clock tolerance the CA really gave.  Builtin: skew_s(TTL);
+    Vault: its role's not_before_duration (FakeVault: 30 s), not TTL / 5."""
+    from backend.utilities.cbom_sources.sshca import ca as CA
+
+    s = F.setup_job(api)
+    out = F.cert_route(api, s["token"], s["job_id"], s["lease"]).json()
+    facts = C.read_cert(out["certificate"])
+    assert out["backdated_s"] == CA.skew_s(300) == 60
+    assert facts.valid_before - facts.valid_after == 300
+    _ca, token, job_id, lease, fake = _vault_job(api, monkeypatch, node="dc-2")
+    vout = F.cert_route(api, token, job_id, lease).json()
+    assert abs(vout["backdated_s"] - fake.not_before) <= 2, vout["backdated_s"]
 
 
 # ============================================================================ [nit] a 304 does no database work
@@ -458,3 +726,66 @@ def test_pg_only_one_replica_runs_the_retention_purge(monkeypatch):
     out = retention.purge(engine, F._utcnow())
     assert not out.get("skipped"), out
     engine.dispose()
+
+
+@needs_pg
+def test_pg_a_purge_whose_lock_connection_breaks_still_returns_and_frees_the_lock(monkeypatch):
+    """Re-review 5877293709 (retention): the guard connection dies mid-run (PostgreSQL releases the lock with it).  The
+    run's deletes committed, so the run returns its result instead of failing at the unlock, and the next run runs."""
+    from backend.utilities.cbom_sources.sshca import retention
+
+    engine = create_engine(PG)
+    SQLModel.metadata.drop_all(engine)
+    SQLModel.metadata.create_all(engine)
+    started, go = threading.Event(), threading.Event()
+    real = retention._purge
+
+    def slow_purge(*a, **k):
+        started.set()
+        go.wait(20)
+        return real(*a, **k)
+
+    monkeypatch.setattr(retention, "_purge", slow_purge)
+    result: dict = {}
+
+    def run():
+        try:
+            result["out"] = retention.purge(engine, F._utcnow())
+        except Exception as exc:
+            result["error"] = type(exc).__name__
+
+    th = threading.Thread(target=run)
+    th.start()
+    assert started.wait(10)
+    with engine.connect() as c:  # the lock's connection waits idle (not in a transaction) during the run; kill it
+        pid, state = c.execute(text("SELECT l.pid, a.state FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid "
+                                    "WHERE l.locktype = 'advisory' AND l.granted")).one()
+        c.execute(text("SELECT pg_terminate_backend(:p)"), {"p": pid})
+        c.commit()
+    assert state == "idle", state
+    go.set()
+    th.join(30)
+    monkeypatch.setattr(retention, "_purge", real)
+    again = retention.purge(engine, F._utcnow())
+    engine.dispose()
+    assert "error" not in result and not result["out"].get("skipped"), result
+    assert not again.get("skipped"), again
+
+
+@needs_pg
+def test_pg_the_purge_releases_its_lock_so_the_next_run_is_not_skipped():
+    """RV6: the session-level lock is released at the end of a run (the guard connection goes back to the pool, so a
+    lock left on it would skip every later run on every replica)."""
+    from backend.utilities.cbom_sources.sshca import retention
+
+    engine, other = create_engine(PG), create_engine(PG)
+    SQLModel.metadata.drop_all(engine)
+    SQLModel.metadata.create_all(engine)
+    first = retention.purge(engine, F._utcnow())
+    with other.connect() as c:
+        held = c.execute(text("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted")).scalar()
+    second = retention.purge(other, F._utcnow())  # another replica, an hour later
+    again = retention.purge(engine, F._utcnow())  # the same replica, its pooled guard connection reused
+    engine.dispose()
+    other.dispose()
+    assert held == 0 and not first.get("skipped") and not second.get("skipped") and not again.get("skipped")

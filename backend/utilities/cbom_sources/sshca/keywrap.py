@@ -20,7 +20,10 @@ outcome is shared: when the unwrap fails, the threads that waited for it get the
 for the next ``NEGATIVE_CACHE_S`` (10 s) gets it without calling KMS again; after that one caller asks KMS again while
 the others keep getting the last error at once instead of queueing behind that call (a failing call can take 16 s
 with ``client_config()``'s timeouts and retries).  So an outage costs one KMS call per CA and worker at a time, and
-only that one thread waits for it (architecture re-review 5874161772).  An entry lives at
+only that one thread waits for it (architecture re-review 5874161772).  At the onset of an outage no failure is known
+yet: a caller waits for another thread's call at most ``FLIGHT_WAIT_S`` (2 s; a healthy unwrap takes far less), then
+gets a transient error (503 + ``Retry-After``) instead of parking its threadpool thread for the whole call (re-review
+5877293709).  An entry lives at
 most ``CACHE_SECONDS`` (contract: 10 minutes): expired entries are removed on every call and by a background sweeper
 every ``SWEEP_EVERY_S`` while anything is cached, so no key stays in memory more than ``CACHE_SECONDS +
 SWEEP_EVERY_S`` after it was unwrapped.  A CA that is no longer active drops its entry when this worker sees it
@@ -48,6 +51,7 @@ CACHE_SECONDS = 600
 SWEEP_EVERY_S = 30
 NEGATIVE_CACHE_S = 10.0  # a failed unwrap is answered from memory this long (no KMS call per request in an outage)
 FAILURE_KEEP_S = 300.0  # ... and while KMS is asked again within this time, the others get it instead of waiting
+FLIGHT_WAIT_S = 2.0  # the longest a caller waits for another thread's unwrap of the same key
 KMS_ENV = "CBOM_SSHCA_KMS_KEY_ARNS"
 _ARN = re.compile(r"^arn:aws(-cn|-us-gov)?:kms:([a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-\d):(\d{12}):(key|alias)/[A-Za-z0-9/_+=,.@:-]{1,256}$")
 
@@ -303,7 +307,7 @@ def is_cached(ca_id: int, ca_fingerprint: str) -> bool:
 
 def cached_private_key(ca_id: int, team_id: int, ca_fingerprint: str, blob: str):
     """The CA's private key object, unwrapped at most once per ``CACHE_SECONDS`` in this worker (one thread unwraps,
-    the others wait for it)."""
+    the others wait for it, at most ``FLIGHT_WAIT_S``)."""
     key = (ca_id, ca_fingerprint)
     with _cache_lock:
         now = time.monotonic()
@@ -315,35 +319,47 @@ def cached_private_key(ca_id: int, team_id: int, ca_fingerprint: str, blob: str)
         failed = _failure_locked(key, now, retrying=flight.locked())
         if failed is not None:
             raise failed  # an unwrap failed a moment ago, or KMS is being asked again right now: no wait, no call
-    with flight:
+    if not flight.acquire(timeout=FLIGHT_WAIT_S):
+        # another thread's KMS call is slow (the onset of an outage: no failure is known yet): answer now rather than
+        # hold this request's thread for the whole call
+        raise WrapError("AWS KMS is slow to answer right now; try again in a moment", transient=True,
+                        code="kms_unavailable")
+    try:
+        return _unwrap_in_flight(key, team_id, ca_fingerprint, blob)
+    finally:
+        flight.release()
+
+
+def _unwrap_in_flight(key: tuple[int, str], team_id: int, ca_fingerprint: str, blob: str):
+    """The body of ``cached_private_key`` for the thread that holds the key's flight."""
+    with _cache_lock:
+        now = time.monotonic()
+        hit = _cache.get(key)  # another thread unwrapped it while this one waited
+        if hit and hit[0] > now:
+            return hit[1]
+        failed = _failure_locked(key, now)  # ... or failed to: share its outcome
+        if failed is not None:
+            raise failed
+    try:
+        pem = unwrap(blob, team_id=team_id, ca_fingerprint=ca_fingerprint)
+    except WrapError as exc:
         with _cache_lock:
             now = time.monotonic()
-            hit = _cache.get(key)  # another thread unwrapped it while this one waited
-            if hit and hit[0] > now:
-                return hit[1]
-            failed = _failure_locked(key, now)  # ... or failed to: share its outcome
-            if failed is not None:
-                raise failed
-        try:
-            pem = unwrap(blob, team_id=team_id, ca_fingerprint=ca_fingerprint)
-        except WrapError as exc:
-            with _cache_lock:
-                now = time.monotonic()
-                _failed[key] = (now + NEGATIVE_CACHE_S, now + FAILURE_KEEP_S, str(exc), exc.transient, exc.code)
-            raise
-        try:
-            private = C.private_from_openssh(pem)
-        except Exception:
-            raise WrapError("the unwrapped CA key could not be read") from None
-        finally:
-            pem = b""
-        if C.fingerprint(C.public_line(private)) != ca_fingerprint:
-            raise WrapError("the unwrapped CA key does not match the CA's public key")
-        with _cache_lock:
-            _cache[key] = (time.monotonic() + CACHE_SECONDS, private)
-            _failed.pop(key, None)
-            _ensure_sweeper_locked()
-        return private
+            _failed[key] = (now + NEGATIVE_CACHE_S, now + FAILURE_KEEP_S, str(exc), exc.transient, exc.code)
+        raise
+    try:
+        private = C.private_from_openssh(pem)
+    except Exception:
+        raise WrapError("the unwrapped CA key could not be read") from None
+    finally:
+        pem = b""
+    if C.fingerprint(C.public_line(private)) != ca_fingerprint:
+        raise WrapError("the unwrapped CA key does not match the CA's public key")
+    with _cache_lock:
+        _cache[key] = (time.monotonic() + CACHE_SECONDS, private)
+        _failed.pop(key, None)
+        _ensure_sweeper_locked()
+    return private
 
 
 def forget(ca_id: int | None = None) -> None:
