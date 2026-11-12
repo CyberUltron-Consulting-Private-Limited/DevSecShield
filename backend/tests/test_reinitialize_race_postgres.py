@@ -182,18 +182,32 @@ def _state(engine, scan_id):
 
 
 def test_several_reinitializes_of_one_scan_charge_the_difference_once(pg):
-    engine, _celery = pg
+    """Six requests released together. Whatever the interleaving: the difference is charged exactly once; a request
+    that ran after another had finished sees the input already paid for and is charged 0 (more than one 200 is
+    legal); every other request is refused; and only the scan's final run is left to go ahead."""
+    engine, celery = pg
+    seen = {}
     for i in range(ROUNDS):
         scan_id = 100 + i
+        sent_before = len(celery.sent)
         _new_scan(engine, scan_id, balance=100.0)
         out = _together(*[(f"r:{n}", lambda: _reinit(engine, scan_id)) for n in range(6)])
-        winners = [v for v in out.values() if v[0] == 200]
-        losers = [v for v in out.values() if v[0] != 200]
-        assert len(winners) == 1 and winners[0][1]["credits_charged"] == 6.5, out
-        assert all(v[0] == 409 and v[1] in ("reinitialize_conflict", "already_started") for v in losers), out
+        ok = [v[1]["credits_charged"] for v in out.values() if v[0] == 200]
+        refused = [v for v in out.values() if v[0] != 200]
+        assert sorted(ok)[-1:] == [6.5] and sorted(ok)[:-1] == [0.0] * (len(ok) - 1), out
+        assert all(v[0] == 409 and v[1] in ("reinitialize_conflict", "already_started", "superseded")
+                   for v in refused), out
         status, task, charged, balance, deltas = _state(engine, scan_id)
         assert (status, charged, balance, deltas) == ("pending", 7.5, 93.5, [-6.5]), (i, out)
         assert task.startswith("new-")
+        # no free duplicate run: every run sent for this scan except the one it now holds was withdrawn, and so
+        # was the run it had before
+        runs = celery.sent[sent_before:]
+        assert set(runs) - {task} <= set(celery.revoked) and f"t-{scan_id}" in celery.revoked, (i, out, task)
+        for v in out.values():
+            key = f"200 charged {v[1]['credits_charged']}" if v[0] == 200 else f"{v[0]} {v[1]}"
+            seen[key] = seen.get(key, 0) + 1
+    print(f"\nsix reinitializes at once over {ROUNDS} rounds: {dict(sorted(seen.items()))}")
 
 
 def test_two_scans_competing_for_one_difference_never_overdraw(pg):

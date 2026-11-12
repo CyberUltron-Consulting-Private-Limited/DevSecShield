@@ -24,7 +24,9 @@ The rules:
    of several concurrent reinitializes can win the claim; a debit the balance no longer covers rolls the claim back.
 7. The run is recorded only while the claim is still ours (``start_scan_and_update_db(expected_task_id=...)``). If it
    cannot be sent, the claim is given back with the difference (and a ledger line), in one transaction, only while
-   it is still ours: a cancel that won meanwhile has already refunded everything the scan paid.
+   it is still ours: a cancel that won meanwhile has already refunded everything the scan paid. A claim taken over
+   while the run was being sent (a cancel, or another reinitialize priced against this one's charge) answers 409
+   ``superseded``: this request's run is withdrawn and its charge stays with the scan.
 8. The replaced run is withdrawn (revoke + the cancel mark, as a cancel does) unless the scan got it back, and the
    poller ignores it (``get_status_and_update_db`` only acts for the scan's current task).
 
@@ -88,6 +90,16 @@ def _conflict() -> ReinitializeRefused:
         status.HTTP_409_CONFLICT, "reinitialize_conflict",
         "This scan changed while it was being reinitialized (it started, finished, was cancelled or was "
         "reinitialized by another request). Nothing was charged. Reload the scan and try again.")
+
+
+def _superseded() -> ReinitializeRefused:
+    """Our claim was taken while the run was being sent: by a cancel (which refunded everything the scan paid) or by
+    another reinitialize (which priced its input against what the scan, this request's charge included, had paid)."""
+    return ReinitializeRefused(
+        status.HTTP_409_CONFLICT, "superseded",
+        "This scan was cancelled or reinitialized by another request while this one was sending its run, so this "
+        "run was withdrawn. Anything this request charged stays with the scan: the other request priced against it, "
+        "and a cancel or a failure refunds all of it. Reload the scan.")
 
 
 def _load(session: Session, scan_id: int, team_id: int, scan_type: str) -> Scan | None:
@@ -250,7 +262,7 @@ async def reinitialize_scan(engine: Engine, *, scan_type: str, scan_id: int, tea
         new_task = await start_scan_and_update_db(scan_type=scan_type, engine=engine, scan_id=scan_id, team_id=team_id,
                                                   start_scan_payload=start_scan_payload, uploaded_file=uploaded_file,
                                                   scan_kwargs=scan_kwargs, expected_task_id=token)
-    except BaseException:
+    except BaseException as failure:
         try:
             restored = _give_back(engine, scan_id=scan_id, team_id=team_id, user_id=user_id, token=token,
                                   previous=previous, difference=difference, detail=detail)
@@ -264,6 +276,9 @@ async def reinitialize_scan(engine: Engine, *, scan_type: str, scan_id: int, tea
         if not restored:
             tell_workers(old_task)  # our claim replaced it and nothing gave it back to the scan
         _remove_upload(scan_kwargs)
+        # start_scan_and_update_db answers 409 when the claim was no longer ours at the moment it recorded the run
+        if isinstance(failure, HTTPException) and failure.status_code == status.HTTP_409_CONFLICT and not restored:
+            raise _superseded() from failure
         raise
 
     # ---- 8. the replaced run never runs

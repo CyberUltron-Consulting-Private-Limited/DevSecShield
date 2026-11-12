@@ -280,6 +280,29 @@ def _unchanged(engine, celery, scan_id=1, task="t-1", charged=1.0, balance=100.0
 
 
 # ===================================================================================== the price of the new input
+def _sent_upload_sizes(celery, calls) -> list[int]:
+    """The size of the archive each run sent to the worker carries (fake_upload names its objects obj-<n>.zip)."""
+    sizes = []
+    for _name, kwargs, _queue, _task in celery.sent:
+        obj = (kwargs.get("zip_dict_context") or {}).get("object_name", "")
+        if obj.startswith("obj-"):
+            sizes.append(calls["uploads"][int(obj[4:].split(".")[0]) - 1])
+    return sizes
+
+
+def test_issue_33_a_bigger_input_is_never_sent_to_the_worker_unpaid(http):
+    """#33 as reported, using only what dev already had (no ledger, no new response fields), so it runs on both trees:
+    pay 1 credit for a small archive, reinitialize with a 7.5-credit one. On dev 3399452 the route answered 200, sent
+    the big archive to the worker, and the team was charged nothing more (balance 100, credit_charged 1)."""
+    client, engine, celery, calls = http
+    r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
+    assert r.status_code == 200, r.text
+    assert _sent_upload_sizes(celery, calls) == [len(BIG)]  # the costlier input is the run the worker gets
+    paid = round(1.0 + (100.0 - _balance(engine)), 2)  # 1 credit at /start plus whatever the reinitialize took
+    assert paid >= 7.5, f"a 7.5-credit run was sent while the scan has paid {paid} credit(s) in total"
+    assert _scan(engine, 1).credit_charged == paid  # a cancel or failure would give back exactly what was paid
+
+
 def test_a_bigger_input_charges_the_difference_once_and_records_it(http):
     client, engine, celery, calls = http
     r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)  # paid 1 credit; the new archive costs 7.5
@@ -496,7 +519,8 @@ def test_a_reinitialize_during_another_ones_dispatch_takes_over_and_the_total_is
     a = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
     b_status, b_body = inner["b"]
     assert b_status == 200 and (b_body["credits_charged"], b_body["credits_total"]) == (2.5, 10.0)
-    assert a.status_code == 409, a.text
+    assert a.status_code == 409 and a.json()["code"] == "superseded", a.text
+    assert "stays with the scan" in a.json()["detail"]  # A's 6.5 is part of what B priced against, never "not charged"
     assert _scan(engine, 1).task_id == "new-2" and _scan(engine, 1).credit_charged == 10.0
     assert _balance(engine) == 91.0 and [e["delta"] for e in _ledger(engine)] == [-6.5, -2.5]
     # A's own run and the run A replaced are withdrawn; B withdraws what it replaced (A's claim, never a real run)
@@ -536,7 +560,7 @@ def test_a_reinitialize_racing_a_cancel_ends_cancelled_and_refunded_once(http):
     celery.on_send = lambda _task: outcome.update(
         cancel=cancel_scan(engine, scan_id=1, team_id=1, scan_type="cbom", user_id=1))
     r = _reinit(client, 1, "cbom", ZIP_PAYLOAD, BIG)
-    assert r.status_code == 409, r.text
+    assert r.status_code == 409 and r.json()["code"] == "superseded", r.text
     assert outcome["cancel"]["refunded_credits"] == 7.5  # what the scan had paid, the top-up included
     scan = _scan(engine, 1)
     assert scan.scan_status == "cancelled" and _balance(engine) == 101.0  # 93.5 + 7.5: refunded once, in full

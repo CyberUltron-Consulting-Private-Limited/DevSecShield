@@ -955,7 +955,8 @@ async def reinitialize_scan(
     The input is priced like a new scan's and the scan pays the positive difference against what it has already paid
     (never a refund for a cheaper input), recorded in the credits ledger; the same input costs nothing. The target
     checks of a new scan run before any credit moves. Refusals: 402 ``insufficient_credits``, 409 ``starting`` /
-    ``already_started`` / ``reinitialize_conflict`` (nothing charged or sent); 400/413/422 for the input, as for a
+    ``already_started`` / ``reinitialize_conflict`` (nothing charged or sent), 409 ``superseded`` (another request
+    took the scan over while this one sent its run); 400/413/422 for the input, as for a
     new scan. Rules and races: utilities/scan/reinitialize.py.
     """
     try:
