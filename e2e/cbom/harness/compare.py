@@ -5,7 +5,8 @@
 Each run is a new customer, so the product's ids (team, run, job, asset, node, source) differ between runs. Check ids
 are normalised to stable keys before comparing, using only the run's own evidence:
   * asset ids  -> "<type>@<location>" (api/assets-run<k>.json);
-  * job ids    -> "<source name>" (api/assets-run<k>.json "targets", and the jobs' source names);
+  * job ids    -> "<source name>" (api/assets-run<k>.json "targets"), in `job_<id>`, `_<id>_skipped` and G16's
+                  `assets-stored/<job>-<attempt>-<line>` (the log-line index is dropped);
   * any other number that is a known id of the run (team, run, node) -> "<team>", "<run>", "<node>".
 Two checks that normalise to the same id are compared as a sorted list of verdicts. The verdict compared is the
 judged one (after the ledger: PASS, FAIL, KNOWN-FAIL(row), NOT-RUN, NOT-JUDGED); the ledger row statuses too.
@@ -49,6 +50,8 @@ def normalise(check_id: str, maps: dict[str, dict[str, str]]) -> str:
     out = re.sub(r"/extra/(\d+)$", lambda m: f"/extra/{maps['asset'].get(m.group(1), 'asset?')}", out)
     out = re.sub(r"job_(\d+)", lambda m: maps["job"].get(m.group(1), "job?"), out)
     out = re.sub(r"_(\d+)_skipped$", lambda m: f"_{maps['job'].get(m.group(1), 'job?')}_skipped", out)
+    # G16 "<job>-<attempt>-<line index>": the job by its source, the attempt kept, the log-line index dropped
+    out = re.sub(r"assets-stored/(\d+)-(\d+)-\d+$", lambda m: f"assets-stored/{maps['job'].get(m.group(1), 'job?')}-{m.group(2)}", out)
     return _NUM.sub(lambda m: maps["other"].get(m.group(1), m.group(1)), out)
 
 
