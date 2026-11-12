@@ -368,7 +368,7 @@ def bind_api_key(request: Request, engine_getter: EngineGetter, *, user_id: int,
         role = session.exec(select(TeamMembership.role).where(
             TeamMembership.team_id == team_id, TeamMembership.user_id == user_id)).first()
     if user is None or role is None:
-        log.info("api key refused: its creator is no longer a member (team_id=%s)", team_id)
+        log.info("access refused: the creator of this credential left team_id=%s", team_id)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=KEY_HOLDER_GONE)
     if not role_has(role, permission.name):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,

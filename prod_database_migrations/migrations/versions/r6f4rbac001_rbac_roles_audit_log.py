@@ -52,18 +52,38 @@ BEGIN
   RAISE EXCEPTION 'auditevent is append-only: % refused', TG_OP USING ERRCODE = 'insufficient_privilege';
 END $$
 """
-# one admin per ownerless team: the one whose default team it is, else the lowest user id; ``why`` names the rule
-OWNER_PICK = """
-SELECT team_id, user_id, why FROM (
-  SELECT m.team_id, m.user_id,
-         CASE WHEN u.default_team_id = m.team_id THEN 'default'
-              WHEN count(*) OVER (PARTITION BY m.team_id) = 1 THEN 'only' ELSE 'lowest' END AS why,
-         row_number() OVER (PARTITION BY m.team_id
-                            ORDER BY CASE WHEN u.default_team_id = m.team_id THEN 0 ELSE 1 END, m.user_id) AS rn
-  FROM teammembership m JOIN "user" u ON u.id = m.user_id
-  WHERE m.role = 'admin'
-    AND NOT EXISTS (SELECT 1 FROM teammembership o WHERE o.team_id = m.team_id AND o.role = 'owner')
-) ranked WHERE rn = 1
+# one admin per ownerless team: the one whose default team it is, else the lowest user id; ``why`` names the rule.
+# Two complete SQL literals (no string building, not even of constants).
+OWNER_PICK_COUNTS = """
+WITH pick AS (
+  SELECT team_id, user_id, why FROM (
+    SELECT m.team_id, m.user_id,
+           CASE WHEN u.default_team_id = m.team_id THEN 'default'
+                WHEN count(*) OVER (PARTITION BY m.team_id) = 1 THEN 'only' ELSE 'lowest' END AS why,
+           row_number() OVER (PARTITION BY m.team_id
+                              ORDER BY CASE WHEN u.default_team_id = m.team_id THEN 0 ELSE 1 END, m.user_id) AS rn
+    FROM teammembership m JOIN "user" u ON u.id = m.user_id
+    WHERE m.role = 'admin'
+      AND NOT EXISTS (SELECT 1 FROM teammembership o WHERE o.team_id = m.team_id AND o.role = 'owner')
+  ) ranked WHERE rn = 1
+)
+SELECT why, count(*) FROM pick GROUP BY why
+"""
+OWNER_PICK_APPLY = """
+WITH pick AS (
+  SELECT team_id, user_id, why FROM (
+    SELECT m.team_id, m.user_id,
+           CASE WHEN u.default_team_id = m.team_id THEN 'default'
+                WHEN count(*) OVER (PARTITION BY m.team_id) = 1 THEN 'only' ELSE 'lowest' END AS why,
+           row_number() OVER (PARTITION BY m.team_id
+                              ORDER BY CASE WHEN u.default_team_id = m.team_id THEN 0 ELSE 1 END, m.user_id) AS rn
+    FROM teammembership m JOIN "user" u ON u.id = m.user_id
+    WHERE m.role = 'admin'
+      AND NOT EXISTS (SELECT 1 FROM teammembership o WHERE o.team_id = m.team_id AND o.role = 'owner')
+  ) ranked WHERE rn = 1
+)
+UPDATE teammembership SET role = 'owner'
+WHERE (team_id, user_id) IN (SELECT team_id, user_id FROM pick)
 """
 INVITE_ROLES = ("admin", "member", "viewer")
 
@@ -90,10 +110,8 @@ def upgrade() -> None:
     # the admin whose default team it is (its creator on dev), else the only admin, else the admin with the lowest
     # user id.  Teams with members but no admin are counted: a superuser assigns their owner (POST
     # /admin/teams/{id}/owner, audited).
-    picks = bind.execute(sa.text(f"SELECT why, count(*) FROM ({OWNER_PICK}) p GROUP BY why")).all()
-    counts = {why: n for why, n in picks}
-    bind.execute(sa.text("UPDATE teammembership SET role = 'owner' "
-                         f"WHERE (team_id, user_id) IN (SELECT team_id, user_id FROM ({OWNER_PICK}) p)"))
+    counts = {why: n for why, n in bind.execute(sa.text(OWNER_PICK_COUNTS)).all()}
+    bind.execute(sa.text(OWNER_PICK_APPLY))
     no_admin = bind.execute(sa.text(
         "SELECT count(DISTINCT m.team_id) FROM teammembership m WHERE NOT EXISTS ("
         "SELECT 1 FROM teammembership o WHERE o.team_id = m.team_id AND o.role IN ('owner', 'admin'))")).scalar() or 0
