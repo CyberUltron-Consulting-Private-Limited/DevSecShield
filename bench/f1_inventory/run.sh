@@ -17,6 +17,7 @@ src=$(cd "${1:?src root}" && pwd)
 report=${2:?report path}
 PG_NAME=${F12_PG_NAME:-f12bench-pg}
 PG_PORT=${F12_PG_PORT:-55450}
+export UV_PYTHON=${UV_PYTHON:-3.12}  # what backend CI and the production image run (backend/.python-version says 3.10)
 PY=(uv run --frozen --project "$src/backend" --with moto==5.2.5)
 umask 077
 pw=$(openssl rand -hex 16)
