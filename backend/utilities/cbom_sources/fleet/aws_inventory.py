@@ -8,8 +8,10 @@ external ID (confused-deputy protection); the assumed identity must be in the ac
 material, no object is read.
 
 Every (region, service) gets a status in ``coverage``: ``ok``, ``truncated`` (more than the cap), ``denied``,
-``not_enabled`` (opt-in region), ``not_available`` (the service has no endpoint there) or ``error:<code>``.  Only an
-``ok`` scope lets a sync mark targets that disappeared as missing.
+``not_enabled`` (opt-in region), ``not_available`` (the service has no endpoint there), ``unreachable`` (no answer:
+reset, timeout, TLS or proxy), ``skipped:region_unreachable`` (EC2 of that region was unreachable, so the region's
+other services are not tried), ``cancelled`` (the sync ran out of time) or ``error:<code>``.  Only an ``ok`` scope
+lets a sync mark targets that disappeared as missing.
 """
 from __future__ import annotations
 
@@ -218,6 +220,13 @@ class _Lister:
         return rows, cut
 
 
+def _connection_level(exc: Exception) -> bool:
+    """The request never got an AWS answer (reset, timeout, TLS, proxy, DNS)."""
+    from botocore.exceptions import ConnectionError as _BotoConnectionError, HTTPClientError
+
+    return isinstance(exc, (_BotoConnectionError, HTTPClientError))
+
+
 def _status(exc: Exception) -> str:
     code = _code(exc)
     if code in _DENIED:
@@ -226,6 +235,8 @@ def _status(exc: Exception) -> str:
         return "not_enabled"
     if type(exc).__name__ in ("EndpointConnectionError", "UnknownEndpointError"):
         return "not_available"
+    if _connection_level(exc):
+        return "unreachable"
     return f"error:{code}"[:64]
 
 
@@ -237,14 +248,21 @@ def discover_account(acct: _Account, regions: list[str], services: list[str],
     for region in regions:
         lister = _Lister(acct, region, partition)
         out.coverage[region] = {}
+        region_down = False
         for service in services:
             if should_stop():
                 out.coverage[region][service] = "cancelled"
+                continue
+            if region_down:  # one call told us: the region's endpoints cannot be reached from here
+                out.coverage[region][service] = "skipped:region_unreachable"
                 continue
             try:
                 rows, cut = getattr(lister, service)()
             except Exception as exc:  # one service or region never hides the others
                 out.coverage[region][service] = _status(exc)
+                # EC2 is offered in every region: no connection to it means none to the region (an opt-in region
+                # behind an egress filter, a blocked endpoint).  Each further call would cost its retries again.
+                region_down = service == "ec2" and _connection_level(exc)
                 continue
             out.coverage[region][service] = "truncated" if cut else "ok"
             for row in rows:

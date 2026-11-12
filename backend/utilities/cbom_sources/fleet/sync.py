@@ -6,6 +6,7 @@ Only AWS sources sync; CSV, JSON and API sources are written when their data is 
 from __future__ import annotations
 
 import datetime as _dt
+import time
 from typing import Any, Callable
 
 from sqlalchemy import or_, update
@@ -23,7 +24,12 @@ from backend.utilities.cbom_sources.fleet.refs import build_refs
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 LEASE = _dt.timedelta(minutes=30)
+# Listing stops (what is left becomes "cancelled") this long after the claim, so the sync saves and releases the
+# source before its lease runs out and another worker could claim it.  A call already started can still take its
+# retries (about a minute at worst), hence the margin.
+SYNC_BUDGET = LEASE - _dt.timedelta(minutes=5)
 MIN_EVERY_MIN = 15
+_monotonic = time.monotonic
 
 
 def request_sync(session: Session, source: CbomInventorySource, now: _dt.datetime) -> str:
@@ -90,7 +96,9 @@ def run_sync(engine, source_id: int, *, now_fn: Callable[[], _dt.datetime] = utc
             session.commit()
         except (InventoryError, ValueError) as exc:
             return _finish(engine, source_id, now_fn(), "failed", {"sync_id": sync_id, "error": str(exc)[:300]}, {})
-    lister = AwsInventorySource(team_id, role_arn, external_id, cfg.regions, cfg.services)
+    deadline = _monotonic() + SYNC_BUDGET.total_seconds()
+    lister = AwsInventorySource(team_id, role_arn, external_id, cfg.regions, cfg.services,
+                                should_stop=lambda: "out of time" if _monotonic() > deadline else None)
     try:
         if discover is not None:
             result = discover(lister)

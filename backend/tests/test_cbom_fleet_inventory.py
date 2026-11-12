@@ -505,3 +505,66 @@ def test_the_sync_tick_runs_queued_sources(aws, api, world):
     ran = cbom_inventory_sync.tick(engine)
     assert len(ran) == 1 and ran[0]["status"] == "ok" and ran[0]["created"] == 2
     assert cbom_inventory_sync.tick(engine) == []  # not due again for an hour
+
+
+def test_an_unreachable_region_costs_one_call_and_never_marks_targets_missing(aws, api, world):
+    """Live sandbox finding (bench/f1_inventory/aws_live.py, Nov 12): an endpoint the network resets (an opt-in region,
+    an egress allow-list) failed every service of the region one by one, each after its retries (~15 s x 5 per call),
+    so one blocked region cost minutes and a sync could outlive its 30-minute lease.  EC2 is offered in every region:
+    a connection-level failure there means the region cannot be reached, and its other services are skipped (a gap,
+    not silence; nothing in that region is marked missing)."""
+    from botocore.exceptions import ConnectionClosedError, EndpointConnectionError
+
+    engine, _ = world
+    _populate()
+    acct = _aws_account(engine)
+    src = api("POST", f"{INV}/sources", json={"kind": "aws", "name": "lab", "config": {
+        "aws_account_source_id": acct, "regions": REGIONS}}).json()["source"]
+    assert SYNC.run_sync(engine, src["id"])["created"] == 12
+    calls: list[tuple[str, str]] = []
+    real = {name: getattr(aws_inventory._Lister, name) for name in aws_inventory.SERVICES}
+
+    def wrap(name):
+        def method(self):
+            calls.append((self.region, name))
+            if self.region == "us-west-2" and name == "ec2":
+                raise ConnectionClosedError(endpoint_url="https://ec2.us-west-2.amazonaws.com/")
+            if self.region == "eu-west-1" and name == "eks":  # one service without an endpoint: only that one
+                raise EndpointConnectionError(endpoint_url="https://eks.eu-west-1.amazonaws.com/")
+            return real[name](self)
+        return method
+
+    for name in aws_inventory.SERVICES:
+        aws.setattr(aws_inventory._Lister, name, wrap(name))
+    out = SYNC.run_sync(engine, src["id"])
+    assert out["status"] == "partial" and out["missing"] == 0 and out["unchanged"] == 12 - 2 - 1 - 1, out
+    assert [c for c in calls if c[0] == "us-west-2"] == [("us-west-2", "ec2")]  # one call, not seven
+    with Session(engine) as s:
+        cov = s.get(CbomInventorySource, src["id"]).coverage
+        assert cov["us-west-2"]["ec2"] == "unreachable"
+        assert {cov["us-west-2"][svc] for svc in aws_inventory.SERVICES if svc != "ec2"} == {"skipped:region_unreachable"}
+        assert cov["eu-west-1"]["eks"] == "not_available" and cov["eu-west-1"]["elb"] == "ok"  # the rest of eu-west-1 read
+        assert all(v == "ok" for v in cov["us-east-1"].values())
+        rows = s.exec(select(CbomInventoryTarget).where(CbomInventoryTarget.region == "us-west-2")).all()
+        assert len(rows) == 4 and all(r.missing_since is None for r in rows)  # 2 hosts, the cluster, the key
+
+
+def test_a_sync_stops_listing_before_its_lease_runs_out(aws, api, world):
+    """Every (region, service) left when the time budget (lease minus a margin) is spent is 'cancelled': the sync
+    saves what it read, marks nothing of the rest missing and ends before another worker could claim the source."""
+    engine, _ = world
+    _populate()
+    acct = _aws_account(engine)
+    src = api("POST", f"{INV}/sources", json={"kind": "aws", "name": "lab", "config": {
+        "aws_account_source_id": acct, "regions": REGIONS}}).json()["source"]
+    assert SYNC.run_sync(engine, src["id"])["created"] == 12
+    assert SYNC.SYNC_BUDGET < SYNC.LEASE
+    ticks = iter([0.0, 0.0] + [1e9] * 1000)  # claim, first (region, service), then past the budget
+    aws.setattr(SYNC, "_monotonic", lambda: next(ticks))
+    out = SYNC.run_sync(engine, src["id"])
+    assert out["status"] == "partial" and out["missing"] == 0, out
+    with Session(engine) as s:
+        cov = s.get(CbomInventorySource, src["id"]).coverage
+        statuses = [v for r in REGIONS for v in cov[r].values()]
+        assert statuses.count("cancelled") == len(statuses) - 1 and cov["eu-west-1"]["ec2"] == "ok"
+        assert s.exec(select(CbomInventoryTarget).where(CbomInventoryTarget.missing_since.is_not(None))).all() == []
