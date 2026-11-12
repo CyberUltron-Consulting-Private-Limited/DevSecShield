@@ -37,15 +37,16 @@ NOT_PRODUCT = re.compile(r"(^|/)(tests?|__tests__)/|\.test\.tsx?$|(^|/)(uv\.lock
 def _marker_pattern() -> re.Pattern[str]:
     """algid's PQ markers as algid reads them (on NFKC text). A marker of five letters or more may have any
     non-alphanumeric characters between its letters (ML-KEM, ml_kem, ML.KEM, ML/DSA) and may follow digits
-    (X25519MLKEM768, rsa3072_dilithium2). A marker of four letters or fewer (LMS, HSS, HQC, BIKE, XMSS) must start a
-    token, as in algid's _marker; LMS/HSS/HQC/BIKE must also not run on into letters ("bikes", "realms")."""
+    (X25519MLKEM768, rsa3072_dilithium2); XMSS may also follow letters (SHA256withXMSS), as algid matches it anywhere.
+    LMS, HSS, HQC and BIKE (algid's _TOKEN_MARKERS) must start a token and be followed only by digits or a level
+    (hqc128, p256_bikel1), as in algid's _marker, so "bikes", "LMSYS" and "realms" do not count."""
     parts = []
     for marker in sorted(A._PQ_MARKERS, key=len, reverse=True):
-        if len(marker) <= 4:
-            tail = "" if marker == "XMSS" else "(?![a-z])"  # XMSSMT is XMSS^MT
-            parts.append(f"(?<![0-9a-z]){re.escape(marker)}{tail}")
+        if marker in A._TOKEN_MARKERS:
+            parts.append(rf"(?<![^\W_]){re.escape(marker)}(?:(?![^\W\d_])|(?=L\d))")
         else:
-            parts.append("(?<![a-z])" + r"[\W_]*".join(re.escape(ch) for ch in marker))
+            head = "" if marker == "XMSS" else "(?<![a-z])"
+            parts.append(head + r"[\W_]*".join(re.escape(ch) for ch in marker))
     return re.compile("|".join(parts), re.IGNORECASE)
 
 
@@ -84,7 +85,7 @@ ALLOWED = {
     "aibom/src/aibom/cbom/compliance.py": 55,
     "aibom/src/aibom/cbom/data/crypto_kb.json": 71,
     "aibom/src/aibom/cbom/data/named_groups.json": 10,
-    "aibom/src/aibom/cbom/detect.py": 59,
+    "aibom/src/aibom/cbom/detect.py": 60,
     "aibom/src/aibom/cbom/ingest.py": 29,
     "aibom/src/aibom/cbom/normalize.py": 4,
     "aibom/src/aibom/cbom/pqc.py": 45,
@@ -165,5 +166,9 @@ def test_the_guard_catches_what_algid_recognises():
     for text in ("ML.KEM-768", "ML/DSA/44", "ML\u2011DSA\u201165", "SLH\u2010DSA"):  # every spelling algid resolves
         assert count(text) == 1 and A.family_label(text) == "PQ", text
     for text in ("realms", "bikes", "0x0200", "0x0201", "0x0202", "512", "sha256:0a4588ff", "2.16.840.1.101.3.4.3.2",
-                 "helms 2310ms", "SHA1 with SSH", "client_caps = 0x0800 | 0x0200"):
+                 "helms 2310ms", "SHA1 with SSH", "client_caps = 0x0800 | 0x0200", "LMSYS", "Bikeshed", "HSSI"):
         assert count(text) == 0, text
+    # The short-marker rule is algid's own: the guard counts a string exactly when algid reads it as PQ.
+    for text in ("bikel1", "p256_bikel1", "HQC128", "SHA256withXMSS", "SHA512WITHXMSSMT", "ＬＭＳ_SHA256",
+                 "bikes", "LMSYS", "hqcfoo", "HSSI", "realms", "HELMS", "bikes2", "HSSB1"):
+        assert (count(text) == 1) == (A.family_label(text) == "PQ"), text

@@ -633,13 +633,21 @@ def test_namespaces_are_validated_and_codepoints_agree():
 
 
 def test_short_markers_are_tokens():
-    """LMS, HSS, HQC, BIKE and XMSS count only at the start of a token: classical text never reads as PQ."""
-    for text in ("SHA1 with SSH", "HELMS", "realms", "WITHSSH", "x25519 WITH HMAC"):
+    """LMS, HSS, HQC and BIKE count only where they start a token and nothing but digits or a NIST level (L1, as in
+    oqs-provider's bikel1) follows them in it: classical text and English words never read as PQ. XMSS, like the
+    longer markers, counts anywhere once separators are removed ("SHA256withXMSS")."""
+    for text in ("SHA1 with SSH", "HELMS", "realms", "WITHSSH", "x25519 WITH HMAC", "bikes", "Bikeshed", "LMSYS",
+                 "HSSI", "hqcfoo", "bikes2", "HSSB1"):
         found = A.resolve(text)
         assert found is None or found.family_label != "PQ", text
-    for text in ("LMS_SHA256_M32_H10", "HSS/LMS", "hqc-128", "BIKE-L1", "XMSS^MT", "xmssmt_sha2_20/2_256"):
+    for text in ("LMS_SHA256_M32_H10", "HSS/LMS", "hqc-128", "HQC128", "BIKE-L1", "bikel1", "p256_bikel1", "XMSS^MT",
+                 "xmssmt_sha2_20/2_256", "ＬＭＳ_SHA256"):  # the last is fullwidth LMS (NFKC first)
         found = A.resolve(text)
         assert found is not None and found.family_label == "PQ", text
+    for text in ("SHA256withXMSS", "SHA512WITHXMSSMT", "SHAKE128withXMSS", "LMS_SHA256_M32_H10", "HSS/LMS"):
+        found = A.resolve(text)
+        assert found is not None and found.family_label == "PQ" and found.stateful, text
+    assert not A.resolve("hqc-128").stateful and not A.resolve("bikel1").stateful
 
 
 def test_names_do_not_depend_on_case():

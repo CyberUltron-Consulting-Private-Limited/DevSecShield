@@ -94,6 +94,11 @@ _SENTINELS = frozenset(
 _OID_RE = re.compile(r"^[0-2](\.(0|[1-9][0-9]*))+$")
 _SEPARATORS = re.compile(r"[\W_]+")
 _STATEFUL = frozenset({"LMS", "HSS", "XMSS", "XMSS^MT"})
+# Markers short enough to sit inside ordinary words ("realms", "bikes", "SHA1 with
+# SSH"): each must start a token and be followed in it by nothing, digits, or a
+# NIST level (oqs-provider's "bikel1", "hqc128").
+_TOKEN_MARKERS = frozenset({"LMS", "HSS", "HQC", "BIKE"})
+_TOKEN_TAIL = re.compile(r"(?:L?\d.*)?")
 _KEM_MARKERS = frozenset(
     {"MLKEM", "KYBER", "FRODO", "HQC", "MCELIECE", "BIKE", "XWING", "SNTRUP"}
 )
@@ -156,16 +161,24 @@ def _by_oid(oid: str) -> Identity | None:
     return None
 
 
+def _starts_token(marker: str, tokens: list[str]) -> bool:
+    return any(
+        tok.startswith(marker) and _TOKEN_TAIL.fullmatch(tok, len(marker))
+        for tok in tokens
+    )
+
+
 def _marker(text: str) -> Identity | None:
-    """A PQ marker in the text: a marker of four letters or fewer (LMS, HSS, HQC,
-    BIKE, XMSS) must start a token ("LMS_SHA256_M32_H10", "HSS/LMS"), so classical
-    text such as "SHA1 with SSH" or "HELMS" never reads as post-quantum; a longer
-    marker may sit anywhere in the text with its separators removed."""
+    """A PQ marker in the text. LMS, HSS, HQC and BIKE must start a token and be
+    followed in it only by digits or a level ("LMS_SHA256_M32_H10", "HSS/LMS",
+    "hqc128", "p256_bikel1"), so "SHA1 with SSH", "realms" or "bikes" never read as
+    post-quantum. Every other marker, XMSS included, may sit anywhere in the text
+    with its separators removed ("SHA256withXMSS", "X25519MLKEM768")."""
     compact = _norm(text).upper()
     tokens = _SEPARATORS.split(unicodedata.normalize("NFKC", text).upper())
     found = [
         m for m in _PQ_MARKERS
-        if (any(tok.startswith(m) for tok in tokens) if len(m) <= 4 else m in compact)
+        if (_starts_token(m, tokens) if m in _TOKEN_MARKERS else m in compact)
     ]
     if not found:
         return None
