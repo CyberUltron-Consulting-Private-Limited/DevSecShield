@@ -38,8 +38,16 @@ from backend.utilities.cbom_sources.sshca import keywrap as KW
 from backend.utilities.cbom_sources.sshca import registry as R
 from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued
 
+try:  # F1.2's shared dependency (fleet/http.py); until it is on dev an identical local one (seam, see flags.route_class)
+    from backend.utilities.cbom_sources.fleet.http import Member  # type: ignore[import-not-found]
+except ImportError:
+    async def require_member(team_id: TeamId, Authorization: Annotated[str | None, Header()] = None) -> tuple:
+        """The caller is a member of the path's team: ``(engine, user)`` (401 / the existing 403 otherwise)."""
+        return await authorize(team_id, Authorization)
+
+    Member = Annotated[tuple, Depends(require_member)]  # type: ignore[misc]
+
 router = APIRouter(tags=["cbom-ssh-ca"], route_class=flags.route_class())
-AuthHeader = Annotated[str | None, Header()]
 BASE = "/{team_id}/cbom/sources/fleet/ssh-ca"
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
@@ -116,8 +124,8 @@ def _list(engine, team_id: int) -> dict:
 
 
 @router.get(BASE, dependencies=READ, openapi_extra=PERM_READ, summary="SSH CA keys of this team (never a private key)")
-async def list_cas(team_id: TeamId, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def list_cas(team_id: TeamId, ctx: Member):
+    engine, _user = ctx
     return _json(await _run("list", team_id, _list, engine, team_id))
 
 
@@ -128,8 +136,8 @@ def _trusted(engine, team_id: int) -> str:
 
 @router.get(BASE + "/trusted-keys", dependencies=READ, openapi_extra=PERM_READ,
             summary="Public keys for sshd TrustedUserCAKeys (next, active and recently retired)")
-async def trusted_keys(team_id: TeamId, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def trusted_keys(team_id: TeamId, ctx: Member):
+    engine, _user = ctx
     return Response(await _run("trusted keys", team_id, _trusted, engine, team_id), headers=TEXT)
 
 
@@ -142,9 +150,8 @@ def _revoked(engine, team_id: int, fmt: str) -> bytes | str:
 
 @router.get(BASE + "/revoked", dependencies=READ, openapi_extra=PERM_READ,
             summary="OpenSSH KRL for sshd RevokedKeys (format=keys: revoked CA keys as text)")
-async def revoked(team_id: TeamId, format: Literal["krl", "keys"] = Query(default="krl"),
-                  Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def revoked(team_id: TeamId, ctx: Member, format: Literal["krl", "keys"] = Query(default="krl")):
+    engine, _user = ctx
     body = await _run("revoked", team_id, _revoked, engine, team_id, format)
     if format == "keys":
         return Response(body, headers=TEXT)
@@ -172,12 +179,12 @@ def _certificates(engine, team_id: int, ca_id: int | None, node_id: int | None, 
 
 @router.get(BASE + "/certificates", dependencies=READ, openapi_extra=PERM_READ,
             summary="Issued-certificate audit, newest first")
-async def certificates(team_id: TeamId, ca_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
+async def certificates(team_id: TeamId, ctx: Member, ca_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                        node_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                        job_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
                        before_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
-                       limit: int = Query(default=100, ge=1, le=500), Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+                       limit: int = Query(default=100, ge=1, le=500)):
+    engine, _user = ctx
     return _json(await _run("certificates", team_id, _certificates, engine, team_id, ca_id, node_id, job_id,
                             before_id, limit))
 
@@ -223,9 +230,9 @@ def _principals_template(engine, team_id: int, group: str | None) -> str:
 
 @router.get(BASE + "/templates/{name}", dependencies=READ, openapi_extra=PERM_READ,
             summary="sshd configuration snippet or principals file for the servers")
-async def template(team_id: TeamId, name: Literal["sshd-config", "principals"],
-                   group: str | None = Query(default=None, max_length=48), Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def template(team_id: TeamId, name: Literal["sshd-config", "principals"], ctx: Member,
+                   group: str | None = Query(default=None, max_length=48)):
+    engine, _user = ctx
     if group is not None and not _GROUP.match(group):
         raise HTTPException(status_code=400, detail="group: lowercase letters, digits and . _ -")
     if name == "sshd-config":
@@ -245,8 +252,8 @@ def _revoke_cert(engine, team_id: int, user_id: int, cert_id: int, body: Revoke)
 
 @router.post(BASE + "/certificates/{cert_id}/revoke", dependencies=WRITE, openapi_extra=PERM_ADMIN,
              summary="Revoke one issued certificate (listed in the KRL)")
-async def revoke_certificate(team_id: TeamId, cert_id: ObjectId, body: Revoke, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def revoke_certificate(team_id: TeamId, cert_id: ObjectId, ctx: Member, body: Revoke):
+    engine, user = ctx
     return _json(await _run("revoke certificate", team_id, _revoke_cert, engine, team_id, user.id, cert_id, body))
 
 
@@ -262,8 +269,8 @@ def _create(engine, team_id: int, user_id: int, body: CaCreate) -> dict:
 
 
 @router.post(BASE, dependencies=WRITE, openapi_extra=PERM_ADMIN, summary="Create an SSH CA (builtin key or Vault)")
-async def create_ca(team_id: TeamId, body: CaCreate, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def create_ca(team_id: TeamId, ctx: Member, body: CaCreate):
+    engine, user = ctx
     return _json(await _run("create", team_id, _create, engine, team_id, user.id, body), 201)
 
 
@@ -275,8 +282,8 @@ def _get(engine, team_id: int, ca_id: int) -> dict:
 
 
 @router.get(BASE + "/{ca_id}", dependencies=READ, openapi_extra=PERM_READ, summary="One SSH CA")
-async def get_ca(team_id: TeamId, ca_id: ObjectId, Authorization: AuthHeader = None):
-    engine, _user = await authorize(team_id, Authorization)
+async def get_ca(team_id: TeamId, ca_id: ObjectId, ctx: Member):
+    engine, _user = ctx
     return _json(await _run("get", team_id, _get, engine, team_id, ca_id))
 
 
@@ -299,22 +306,22 @@ def _lifecycle(engine, team_id: int, user_id: int, ca_id: int, action: str, body
 
 @router.post(BASE + "/{ca_id}/rotate", dependencies=WRITE, openapi_extra=PERM_ADMIN,
              summary="Start a rotation: a new CA key, trusted at once, signing after promote")
-async def rotate_ca(team_id: TeamId, ca_id: ObjectId, body: CaRotate | None = None, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def rotate_ca(team_id: TeamId, ca_id: ObjectId, ctx: Member, body: CaRotate | None = None):
+    engine, user = ctx
     return _json(await _run("rotate", team_id, _lifecycle, engine, team_id, user.id, ca_id, "rotate",
                             body or CaRotate()), 201)
 
 
 @router.post(BASE + "/{ca_id}/promote", dependencies=WRITE, openapi_extra=PERM_ADMIN,
              summary="Make the rotated CA active (the old one is retired, trusted for the overlap)")
-async def promote_ca(team_id: TeamId, ca_id: ObjectId, body: CaPromote | None = None, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def promote_ca(team_id: TeamId, ca_id: ObjectId, ctx: Member, body: CaPromote | None = None):
+    engine, user = ctx
     return _json(await _run("promote", team_id, _lifecycle, engine, team_id, user.id, ca_id, "promote",
                             body or CaPromote()))
 
 
 @router.post(BASE + "/{ca_id}/revoke", dependencies=WRITE, openapi_extra=PERM_ADMIN,
              summary="Revoke a CA key: it signs nothing more and goes into the KRL")
-async def revoke_ca(team_id: TeamId, ca_id: ObjectId, body: Revoke, Authorization: AuthHeader = None):
-    engine, user = await authorize(team_id, Authorization)
+async def revoke_ca(team_id: TeamId, ca_id: ObjectId, ctx: Member, body: Revoke):
+    engine, user = ctx
     return _json(await _run("revoke", team_id, _lifecycle, engine, team_id, user.id, ca_id, "revoke", body))

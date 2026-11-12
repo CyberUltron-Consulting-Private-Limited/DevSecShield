@@ -41,7 +41,7 @@ if os.environ.get("ZS_F14_SSHD_PROOF") == "1":
     import paramiko
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
-    from sqlmodel import Session, select
+    from sqlmodel import Session
 
     import test_cbom_sources_api as _base
     from backend.main import app
