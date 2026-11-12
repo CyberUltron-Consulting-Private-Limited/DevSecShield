@@ -152,6 +152,7 @@ services:
         aliases: [host.lab]
   canary:
     <<: *target
+    entrypoint: ["/bin/sh", "/lab/listen.sh"]
     container_name: cb02-canary
     profiles: [core]
     volumes:
@@ -163,6 +164,7 @@ services:
         aliases: [canary.lab, cbom-e2e-canary]
   control:
     <<: *target
+    entrypoint: ["/bin/sh", "/lab/listen.sh"]
     container_name: cb02-control
     profiles: [core]
     volumes:
@@ -174,6 +176,7 @@ services:
         aliases: [control.lab, cbom-e2e-control]
   idn-fass:
     <<: *target
+    entrypoint: ["/bin/sh", "/lab/listen.sh"]
     container_name: cb02-idn-fass
     profiles: [core]
     volumes:
@@ -185,6 +188,7 @@ services:
         aliases: [idn-fass.lab, fass.lab]
   idn-punycode:
     <<: *target
+    entrypoint: ["/bin/sh", "/lab/listen.sh"]
     container_name: cb02-idn-punycode
     profiles: [core]
     volumes:

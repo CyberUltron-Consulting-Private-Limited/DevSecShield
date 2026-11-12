@@ -111,6 +111,7 @@ def compose_text() -> str:
             out.append("    <<: *target")
             if t["kind"] == "listener":
                 vols.append("${CB_LAB_DIR:?}/listeners:/logs")
+                out.append("    entrypoint: [\"/bin/sh\", \"/lab/listen.sh\"]")
             if t["kind"] == "host":
                 vols.append("${CB_LAB_DIR:?}/forcecommand.log:/var/log/cb02/commands.log")
         out += [f"    container_name: cb02-{tid}", f"    profiles: [{t['profile']}]",
