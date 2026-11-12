@@ -8,9 +8,11 @@
  *  - "control": every control (Input, Textarea, SelectTrigger, Switch, Checkbox, native input/select/textarea,
  *               PathArraysInput, NodeSelect, and DropdownMenuTrigger except icon-only row menus) is matched with an
  *               info marker of its own (`infoId=`, `infoId:` or `<InfoTip`, or an `infotip-shared: <reason>` comment
- *               when it shares the tip of the control before it): one in its opening tag, else between the previous
- *               control and it, else between it and the next control, at most CONTROL_WINDOW_LINES lines away. A
- *               marker serves one control only.
+ *               when it shares the tip of the control before it or of the heading above it): one in its opening tag,
+ *               else the `<FieldLabel htmlFor=…>` whose htmlFor is the control's id, else between the previous control
+ *               and it, else between it and the next control, at most CONTROL_WINDOW_LINES lines away. A marker serves
+ *               one control only, and a tip inside a heading, column header, card description or KPI label (see
+ *               HEADING_ELEMENTS) explains that text and never serves a control.
  *  - "heading": every `<CardTitle>`, every `<TableHead>` with visible text (except SELF_EXPLANATORY_HEADERS), and
  *               every `<p>` styled `font-medium` with visible literal text (KPI and metric labels) contains `<InfoTip`,
  *               or an `infotip-shared: <reason>` comment when the field right below it carries the tip.
@@ -27,6 +29,9 @@ export const CONTROL_WINDOW_LINES = 25;
 
 /** Table headers whose meaning is the word itself; everything else gets a tip. */
 export const SELF_EXPLANATORY_HEADERS = new Set(["Actions", "Title", "Name", "#"]);
+
+/** Elements whose (i) explains their own text; a tip inside one never counts as the tip of a nearby control. */
+export const HEADING_ELEMENTS = ["CardTitle", "CardDescription", "TableHead", "DialogTitle", "DialogDescription", "h1", "h2", "h3", "h4", "h5", "h6"];
 
 const CONTROL = /<(Input|Textarea|SelectTrigger|Switch|Checkbox|input|select|textarea|PathArraysInput|NodeSelect|DropdownMenuTrigger)\b/g;
 const MARKER = /infoId\s*[=:]|<InfoTip\b|__INFOTIP_SHARED__/g;
@@ -85,6 +90,49 @@ export function visibleText(jsx: string): string {
   return out.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** The raw value of a JSX attribute in an opening tag ("x", {expr} with nested braces), or null. */
+export function attrValue(opening: string, name: string): string | null {
+  const m = new RegExp(`\\s${name}=`).exec(opening);
+  if (!m) return null;
+  let i = m.index + m[0].length;
+  const q = opening[i];
+  if (q === '"' || q === "'") {
+    const end = opening.indexOf(q, i + 1);
+    return end < 0 ? null : opening.slice(i, end + 1);
+  }
+  if (q !== "{") return null;
+  let depth = 0;
+  for (let j = i; j < opening.length; j++) {
+    if (opening[j] === "{") depth++;
+    else if (opening[j] === "}" && --depth === 0) return opening.slice(i, j + 1).replace(/\s+/g, "");
+  }
+  return null;
+}
+
+function openingOf(el: string): string {
+  let depth = 0;
+  for (let i = 0; i < el.length; i++) {
+    const ch = el[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+    else if (ch === ">" && depth === 0) return el.slice(0, i + 1);
+  }
+  return el;
+}
+
+/** Spans [start, end) of the elements whose tip explains their own text: HEADING_ELEMENTS and KPI labels. */
+function headingSpans(src: string): [number, number][] {
+  const spans: [number, number][] = [];
+  for (const name of [...HEADING_ELEMENTS, "p"]) {
+    for (const m of src.matchAll(new RegExp(`<${name}\\b`, "g"))) {
+      const el = elementAt(src, m.index!, name);
+      if (name === "p" && !/className=["'][^"']*\bfont-medium\b/.test(openingOf(el))) continue;
+      spans.push([m.index!, m.index! + el.length]);
+    }
+  }
+  return spans;
+}
+
 function innerOf(el: string): string {
   // the element without its opening tag
   let depth = 0;
@@ -107,25 +155,48 @@ export function findGaps(source: string, opts: { dashboard?: boolean } = {}): Ga
   // Each control is matched with ONE info marker of its own: one inside its opening tag (infoId=…), else the nearest
   // unused marker after the previous control and before it, else the first unused one after it and before the next
   // control; always within CONTROL_WINDOW_LINES lines. So two controls can never share one tip by accident.
-  const markers = [...src.matchAll(MARKER)].map((m) => ({ at: m.index!, line: lineOf(src, m.index!), used: false }));
-  const controls: { at: number; end: number; line: number }[] = [];
+  // A tip inside a heading, column header or KPI label belongs to that text, so it is not offered to controls.
+  const spans = headingSpans(src);
+  const inHeading = (at: number) => spans.some(([s, e]) => at >= s && at < e);
+  const markers = [...src.matchAll(MARKER)]
+    .filter((m) => !inHeading(m.index!))
+    .map((m) => ({ at: m.index!, line: lineOf(src, m.index!), used: false, htmlFor: null as string | null }));
+  // a FieldLabel's tip goes first to the control its htmlFor names
+  for (const m of src.matchAll(/<FieldLabel\b/g)) {
+    const opening = openingOf(elementAt(src, m.index!, "FieldLabel"));
+    const k = markers.find((x) => x.at > m.index! && x.at < m.index! + opening.length);
+    if (k) k.htmlFor = attrValue(opening, "htmlFor");
+  }
+  const controls: { at: number; end: number; line: number; id: string | null }[] = [];
   for (const m of src.matchAll(CONTROL)) {
     const at = m.index!;
     const el = elementAt(src, at, m[1]);
-    const opening = el.slice(0, el.indexOf(">") + 1);
+    const opening = openingOf(el);
     if (/type=["'](hidden)["']/.test(opening)) continue;
     // a row's icon-only action menu ("…") is not a filter or a field
     if (m[1] === "DropdownMenuTrigger" && /size=["']icon["']/.test(el)) continue;
-    controls.push({ at, end: at + opening.length, line: lineOf(src, at) });
+    controls.push({ at, end: at + opening.length, line: lineOf(src, at), id: attrValue(opening, "id") });
   }
+  const done = new Set<number>();
   controls.forEach((c, i) => {
+    const own = markers.find((k) => !k.used && k.at > c.at && k.at < c.end);
+    const label = c.id ? markers.find((k) => !k.used && k.htmlFor === c.id) : undefined;
+    const pick = own ?? label;
+    if (pick) {
+      pick.used = true;
+      done.add(i);
+    }
+  });
+  controls.forEach((c, i) => {
+    if (done.has(i)) return;
     const prevEnd = i > 0 ? controls[i - 1].end : 0;
     const nextAt = i + 1 < controls.length ? controls[i + 1].at : src.length;
-    const near = (k: { line: number; used: boolean }) => !k.used && Math.abs(k.line - c.line) <= CONTROL_WINDOW_LINES;
-    const own = markers.find((k) => near(k) && k.at > c.at && k.at < c.end);
+    // a FieldLabel that names another control by htmlFor is that control's, not a neighbour's
+    const near = (k: { line: number; used: boolean; htmlFor: string | null }) =>
+      !k.used && Math.abs(k.line - c.line) <= CONTROL_WINDOW_LINES && (k.htmlFor === null || k.htmlFor === c.id);
     const before = markers.filter((k) => near(k) && k.at >= prevEnd && k.at < c.at).pop();
     const after = markers.find((k) => near(k) && k.at >= c.end && k.at < nextAt);
-    const pick = own ?? before ?? after;
+    const pick = before ?? after;
     if (pick) pick.used = true;
     else gaps.push({ rule: "control", line: c.line, snippet: snippet(c.at) });
   });
