@@ -1,28 +1,24 @@
-# Reusable security scanning: secrets, SAST, dependency vulnerabilities, IaC and lint of Dockerfiles, shell
-# scripts and workflows.
+# Reusable security scanning: SAST, dependency vulnerabilities, IaC and lint of Dockerfiles, shell scripts and
+# workflows.
 #
 #   jobs:
 #     security:
 #       uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-security.yml@<ref>
-#       secrets:
-#         GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}   # optional
 #
-# Two jobs:
-#   secrets   gitleaks (commits of the PR / push; whole history in full mode) and GitGuardian ggshield (only when
-#             the GITGUARDIAN_API_KEY secret is passed; otherwise it is skipped with a notice).
+# One job:
 #   scanners  Semgrep OSS, OSV-Scanner, Trivy filesystem, Checkov (Helm / Kubernetes / Terraform), Hadolint,
 #             ShellCheck and actionlint.
+# There is no secret scanning: the owner removed the gitleaks / GitGuardian job on 2026-11-12 (private repository on
+# the Enterprise plan). .gitleaks.toml and .gitleaksignore stay in the repository, but no workflow runs them.
 #
 # Gating ("diff" mode, the default for pull requests and pushes): a tool fails the job only on findings the change
 # ADDS. Each scanner also runs on the base commit and the two result sets are compared, ignoring line numbers, so
-# existing debt is reported but does not block unrelated work. Semgrep uses its own --baseline-commit. gitleaks
-# scans only the new commits, and blocks on anything it finds there.
-# "full" mode (schedule, workflow_dispatch, or a push with no usable base) scans everything and only reports,
-# except gitleaks, which fails on any finding in the whole history when `gitleaks-fail-full` is true.
+# existing debt is reported but does not block unrelated work. Semgrep uses its own --baseline-commit.
+# "full" mode (schedule, workflow_dispatch, or a push with no usable base) scans everything and only reports.
 #
 # Every tool writes SARIF (ShellCheck and actionlint write JSON / text). All reports are uploaded as the
-# `security-reports` artifact. Set `upload-sarif: true` to also send SARIF to GitHub code scanning; that needs
-# code scanning on the repository (public repo, or GitHub Code Security on an organisation repo) and the caller
+# `security-reports-scanners` artifact. Set `upload-sarif: true` to also send SARIF to GitHub code scanning; that
+# needs code scanning on the repository (public repo, or GitHub Code Security on an organisation repo) and the caller
 # must grant `security-events: write`.
 #
 # Tool binaries are downloaded from their GitHub releases and checked against the SHA-256 pinned below. If you
@@ -37,48 +33,9 @@ on:
         type: string
         default: auto
       exclude-regex:
-        description: Paths (regex on repo-relative paths) whose findings are ignored by every scanner except gitleaks.
+        description: Paths (regex on repo-relative paths) whose findings are ignored by every scanner.
         type: string
         default: '(^|/)(node_modules|\.venv|venv|\.next|dist)/'
-      gitleaks-version:
-        type: string
-        default: "8.30.1"
-      gitleaks-sha256:
-        description: SHA-256 of gitleaks_<version>_linux_x64.tar.gz
-        type: string
-        default: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
-      gitleaks-config:
-        description: gitleaks config file, used when it exists.
-        type: string
-        default: .gitleaks.toml
-      gitleaks-fail-full:
-        description: >-
-          In full mode, fail when gitleaks finds anything in the history. Off by default: until the history is
-          cleaned, a full scan that is always red gets ignored; new secrets are blocked by the diff-mode scans of
-          every pull request and push.
-        type: boolean
-        default: false
-      trusted-heads:
-        description: >-
-          Space-separated head branches whose gitleaks config and .gitleaksignore are trusted on a PR (promotion PRs:
-          that content already passed review on its way in), but only while the branch is PROTECTED (the API's
-          `protected` flag) and the PR comes from this repository. Otherwise they come from the base commit, because
-          an unprotected branch can take a direct push that allowlists its own secret.
-        type: string
-        default: dev staging
-      secret-fixture-label:
-        description: >-
-          Pull-request label that lets diff-mode gitleaks findings pass when EVERY one of them is in a file matching
-          secret-fixture-regex (fabricated values for detector tests). Findings anywhere else always fail.
-        type: string
-        default: secret-fixtures-reviewed
-      secret-fixture-regex:
-        description: Paths where a reviewed, labelled pull request may add fabricated secrets.
-        type: string
-        default: '(^|/)tests?/fixtures/'
-      ggshield-version:
-        type: string
-        default: "1.56.1"
       semgrep-version:
         type: string
         default: "1.181.1"
@@ -109,7 +66,7 @@ on:
         type: string
         default: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
       trivy-scanners:
-        description: Trivy scanners (secrets are left to gitleaks / ggshield).
+        description: Trivy scanners (no secret scanner; secret scanning was removed from CI on 2026-11-12).
         type: string
         default: vuln,misconfig
       trivy-severity:
@@ -167,10 +124,6 @@ on:
         description: Also upload SARIF to GitHub code scanning (needs code scanning and security-events write).
         type: boolean
         default: false
-    secrets:
-      GITGUARDIAN_API_KEY:
-        description: GitGuardian API key. Without it the ggshield step is skipped with a notice.
-        required: false
 
 # No workflow-level permissions: every job sets its own, and upload-sarif inherits what the caller grants.
 
@@ -181,202 +134,6 @@ env:
   REQUESTED_MODE: ${{ inputs.mode }}
 
 jobs:
-  secrets:
-    name: secrets (gitleaks, ggshield)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      pull-requests: read # the secret-fixture label, read live (a re-run sees a label added after the push)
-    env:
-      HAS_GG_KEY: ${{ secrets.GITGUARDIAN_API_KEY != '' }}
-    steps:
-      - name: Checkout (full history)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Scope
-        id: scope
-        run: |
-          set -euo pipefail
-          mode=$REQUESTED_MODE
-          if [ "$mode" = auto ]; then mode="diff"; fi
-          if [ "$mode" = diff ]; then
-            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = 0000000000000000000000000000000000000000 ] \
-               || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-              echo "::notice::No usable base commit (event ${GITHUB_EVENT_NAME}); scanning in full mode."
-              mode="full"
-            fi
-          fi
-          echo "MODE=$mode" >> "$GITHUB_ENV"
-          echo "mode=$mode base=${BASE_SHA:-none} head=$HEAD_SHA"
-
-      - name: Install gitleaks ${{ inputs.gitleaks-version }}
-        env:
-          V: ${{ inputs.gitleaks-version }}
-          SHA: ${{ inputs.gitleaks-sha256 }}
-        run: |
-          set -euo pipefail
-          f="gitleaks_${V}_linux_x64.tar.gz"
-          curl -sSfL --retry 3 -o "$RUNNER_TEMP/$f" "https://github.com/gitleaks/gitleaks/releases/download/v${V}/${f}"
-          if [ -n "$SHA" ]; then echo "$SHA  $RUNNER_TEMP/$f" | sha256sum -c -; fi
-          mkdir -p "$RUNNER_TEMP/bin" && tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP/bin" gitleaks
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-
-      - name: gitleaks
-        env:
-          CONFIG: ${{ inputs.gitleaks-config }}
-          FAIL_FULL: ${{ inputs.gitleaks-fail-full }}
-          FIXTURE_LABEL: ${{ inputs.secret-fixture-label }}
-          FIXTURE_RE: ${{ inputs.secret-fixture-regex }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          TRUSTED_HEADS: ${{ inputs.trusted-heads }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set +e -uo pipefail # the runner starts bash with -e; exit codes are checked explicitly
-          mkdir -p security-reports "$RUNNER_TEMP/gl-ignore"
-          # A change must not be able to exempt its own secret, so:
-          #  - inline `gitleaks:allow` comments are ignored;
-          #  - every file is diffed as text (a `.gitattributes` "-diff" would hide it as "Binary files differ");
-          #  - merge commits are diffed against their automatic merge (`--diff-merges=remerge`), so a secret added
-          #    while resolving a merge is seen, and content merged in from elsewhere is not reported twice;
-          #  - in diff mode the config and the .gitleaksignore come from the BASE commit, never from the change.
-          args=(git --redact --no-banner --report-format sarif --report-path security-reports/gitleaks.sarif --exit-code 0
-                --ignore-gitleaks-allow --gitleaks-ignore-path "$RUNNER_TEMP/gl-ignore")
-          if [ "$MODE" = diff ]; then
-            # Promotion PRs (dev -> staging -> main) re-scan every commit since the last release. Their head's
-            # config and ignore list are trusted only if that branch is protected (so nothing reached it without a
-            # reviewed PR), the PR comes from this repository and the branch is in trusted-heads. Any other change
-            # gets the base commit's.
-            protected=false
-            if [ -n "$PR_NUMBER" ] && [ -n "$HEAD_REF" ]; then
-              protected=$(gh api "repos/$GITHUB_REPOSITORY/branches/$(jq -rn --arg b "$HEAD_REF" '$b | @uri')" --jq .protected 2>/dev/null || echo false)
-            fi
-            trust=$(PROTECTED="$protected" python3 - <<'PY'
-          import os
-          e = os.environ
-          # the gitleaks config source for a diff scan: "head" only for a protected, same-repository, listed head
-          ok = (bool(e.get("PR_NUMBER")) and e.get("HEAD_REPO") == e.get("GITHUB_REPOSITORY")
-                and e.get("HEAD_REF", "") in e.get("TRUSTED_HEADS", "").split() and e.get("PROTECTED") == "true")
-          print("head" if ok else "base")
-          PY
-            )
-            src=$BASE_SHA; from="the base commit"
-            if [ "$trust" = head ]; then
-              src=$HEAD_SHA; from="the protected promotion head ($HEAD_REF)"
-            elif [[ " $TRUSTED_HEADS " == *" $HEAD_REF "* ]] && [ -n "$PR_NUMBER" ]; then
-              echo "::notice::'$HEAD_REF' is a trusted head but not a protected branch (or the PR is from a fork), so the base commit's gitleaks config and .gitleaksignore are used. See docs/ci/README.md, Branch protection."
-            fi
-            if git cat-file -e "${src}:${CONFIG}" 2>/dev/null; then
-              git show "${src}:${CONFIG}" > "$RUNNER_TEMP/gitleaks-base.toml"
-              args+=(--config "$RUNNER_TEMP/gitleaks-base.toml")
-              cfg="$CONFIG from $from"
-            else
-              cfg="gitleaks' built-in rules (no $CONFIG on $from)"
-            fi
-            git show "${src}:.gitleaksignore" > "$RUNNER_TEMP/gl-ignore/.gitleaksignore" 2>/dev/null || : > "$RUNNER_TEMP/gl-ignore/.gitleaksignore"
-            args+=("--log-opts=--text --diff-merges=remerge ${BASE_SHA}..${HEAD_SHA}")
-            scope="commits ${BASE_SHA:0:12}..${HEAD_SHA:0:12} ($(git rev-list --count "${BASE_SHA}..${HEAD_SHA}") commits)"
-          else
-            if [ -f "$CONFIG" ]; then args+=(--config "$CONFIG"); cfg="$CONFIG"; else cfg="gitleaks' built-in rules"; fi
-            cp .gitleaksignore "$RUNNER_TEMP/gl-ignore/.gitleaksignore" 2>/dev/null || : > "$RUNNER_TEMP/gl-ignore/.gitleaksignore"
-            args+=("--log-opts=--full-history --all --text --diff-merges=remerge")
-            scope="the whole history ($(git rev-list --count --all) commits on all fetched refs)"
-          fi
-          # Only 4-field fingerprints (commit:file:rule:line) may stay: a 3-field line (file:rule:line) matches that
-          # line in EVERY commit, so it would silence a future secret there.
-          python3 - "$RUNNER_TEMP/gl-ignore/.gitleaksignore" <<'PY'
-          import re, sys
-          path = sys.argv[1]
-          keep, dropped = [], []
-          for line in open(path, encoding="utf-8", errors="replace"):
-              s = line.strip()
-              if not s or s.startswith("#") or re.match(r"[0-9a-f]{40}:", s):
-                  keep.append(line)
-              else:
-                  dropped.append(s)
-          for d in dropped[:20]:
-              print(f"::warning file=.gitleaksignore::ignored entry without a commit SHA (it would apply to every commit): {d[:120]}")
-          open(path, "w", encoding="utf-8").writelines(keep)
-          print(f"gitleaksignore: {len(keep)} line(s) kept, {len(dropped)} without a commit SHA dropped")
-          PY
-          # gitleaks also reads ./.gitleaksignore from the scanned directory; only the copy chosen above may count.
-          rm -f .gitleaksignore
-          gitleaks "${args[@]}" .
-          rc=$?
-          [ "$rc" -eq 0 ] || { echo "::error::gitleaks did not run (exit $rc)"; exit "$rc"; }
-          n=$(jq '[.runs[].results[]] | length' security-reports/gitleaks.sarif)
-          ignored=$(grep -cvE '^\s*(#|$)' "$RUNNER_TEMP/gl-ignore/.gitleaksignore")
-          # File and rule only; the values are redacted in the report and never printed.
-          jq -r '.runs[].results[] | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine // 1)::gitleaks \(.ruleId) (commit \((.partialFingerprints.commitSha // "")[0:12]))"' \
-            security-reports/gitleaks.sarif | head -50
-          {
-            echo "### gitleaks"
-            echo
-            echo "Scanned $scope with $cfg and $ignored fingerprint(s) in .gitleaksignore: **$n finding(s)**."
-            echo "Values are redacted; see the \`security-reports-secrets\` artifact."
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$n" -gt 0 ] && [ "$MODE" = diff ] && [ -n "$PR_NUMBER" ]; then
-            outside=$(jq -r --arg re "$FIXTURE_RE" '[.runs[].results[] | select(.locations[0].physicalLocation.artifactLocation.uri | test($re) | not)] | length' security-reports/gitleaks.sarif)
-            labelled=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels" --jq "[.[].name] | index(\"$FIXTURE_LABEL\") != null" 2>/dev/null || echo false)
-            if [ "$outside" -eq 0 ] && [ "$labelled" = true ]; then
-              echo "::warning::gitleaks: all $n finding(s) are in test fixtures and the PR has the '$FIXTURE_LABEL' label; passing. Reviewers: confirm every value is fabricated."
-              echo "Passed on the \`$FIXTURE_LABEL\` label: all $n finding(s) are under test fixtures." >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            [ "$outside" -eq 0 ] && echo "::notice::All findings are under test fixtures. If every value is fabricated, a reviewer can add the '$FIXTURE_LABEL' label and re-run this job."
-          fi
-          if [ "$n" -gt 0 ] && { [ "$MODE" = diff ] || [ "$FAIL_FULL" = true ]; }; then
-            echo "::error::gitleaks found $n secret(s) in $scope. Remove them and rotate the credential."
-            exit 1
-          fi
-
-      - name: Set up uv (for ggshield)
-        if: ${{ !cancelled() && steps.scope.outcome == 'success' && env.HAS_GG_KEY == 'true' && env.MODE == 'diff' }}
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: ${{ inputs.uv-version }}
-          enable-cache: false
-
-      - name: GitGuardian ggshield
-        if: ${{ !cancelled() && steps.scope.outcome == 'success' }}
-        env:
-          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
-          GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
-          GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
-          GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          V: ${{ inputs.ggshield-version }}
-        run: |
-          set -euo pipefail
-          if [ "$HAS_GG_KEY" != true ]; then
-            echo "::notice::GitGuardian skipped: the GITGUARDIAN_API_KEY secret is not set (see docs/ci/README.md)."
-            printf '### GitGuardian\n\nSkipped: no GITGUARDIAN_API_KEY secret.\n' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if [ "$MODE" != diff ]; then
-            echo "::notice::GitGuardian runs on pull requests and pushes only (full-history scans use API quota)."
-            exit 0
-          fi
-          # Only the base commit's GitGuardian config counts: a change must not exempt its own secret.
-          rm -f .gitguardian.yaml .gitguardian.yml
-          git show "${BASE_SHA}:.gitguardian.yaml" > .gitguardian.yaml 2>/dev/null || rm -f .gitguardian.yaml
-          uvx --from "ggshield==${V}" ggshield secret scan ci
-          printf '### GitGuardian\n\nggshield %s: no secret in the new commits.\n' "$V" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload report
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: security-reports-secrets
-          path: security-reports/
-          if-no-files-found: ignore
-          retention-days: 14
-
   scanners:
     name: scanners (semgrep, osv, trivy, checkov, hadolint, shellcheck, actionlint)
     runs-on: ubuntu-latest
@@ -865,14 +622,13 @@ jobs:
     # grant it fail at startup, even with upload-sarif false.
     name: upload SARIF to code scanning
     if: ${{ inputs.upload-sarif && !cancelled() }}
-    needs: [secrets, scanners]
+    needs: [scanners]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         report:
-          - { artifact: security-reports-secrets, file: gitleaks.sarif, category: gitleaks }
           - { artifact: security-reports-scanners, file: semgrep.sarif, category: semgrep }
           - { artifact: security-reports-scanners, file: osv.sarif, category: osv-scanner }
           - { artifact: security-reports-scanners, file: trivy.sarif, category: trivy-fs }

@@ -73,8 +73,7 @@ on:
       deselect-file:
         description: >-
           Optional repository-relative file of pytest node ids to deselect, one per line (`#` comments). Each one
-          is a test that fails today for a reason tracked elsewhere; the list is printed in the job summary. Keep
-          it under .github/ so changing it needs the security-config-reviewed label.
+          is a test that fails today for a reason tracked elsewhere; the list is printed in the job summary.
         type: string
         default: ""
       env:

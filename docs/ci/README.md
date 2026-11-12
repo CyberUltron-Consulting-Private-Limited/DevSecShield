@@ -5,11 +5,11 @@ they are written so that other repositories can reuse them.
 
 - [How a change is checked](#how-a-change-is-checked)
 - [The gating rule: no new findings](#the-gating-rule-no-new-findings)
-- [The secret gate](#the-secret-gate)
+- [No secret scanning and no review labels](#no-secret-scanning-and-no-review-labels)
 - [Branch flow and hotfixes](#branch-flow-and-hotfixes)
 - [Workflows](#workflows)
 - [Reusing the workflows in another repository](#reusing-the-workflows-in-another-repository)
-- [Secrets, variables, labels and apps](#secrets-variables-labels-and-apps)
+- [Secrets, variables and apps](#secrets-variables-and-apps)
 - [Branch protection (release manager)](#branch-protection-release-manager)
 - [Audit of the workflows this replaced](#audit-of-the-workflows-this-replaced)
 - [Current debt the pipelines report](#current-debt-the-pipelines-report)
@@ -29,7 +29,6 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
         │     ├── branch-flow               PostgreSQL,  ruff/mypy,   (pytest)     cbom-action   tests, build)
         │     └── pr-hygiene                ruff)        true-miss)   worker-locks              codeql
         ├── security                          images (backend, frontend, scan-node, scan-worker, dast-worker)
-        │     ├── secrets  (gitleaks, ggshield)
         │     └── scanners (semgrep, osv, trivy, checkov, hadolint, shellcheck, actionlint)
         ▼
      ci-gate  ← the one required status check: passes when every job passed, or was skipped because `changes`
@@ -63,14 +62,13 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
   may get no result of their own. Merge-queue runs are never cancelled by this workflow, because each queue entry
   has its own ref. GitHub does not cancel them either when it rebuilds or drops a queue group: those runs finish and
   use runner minutes. Keep the queue's *Maximum pull requests to build* small (a cancel job is #71).
-- **Permissions.** The workflow defaults to `contents: read`, and each job asks only for what it needs. Only two jobs
-  get a write token, `pull-requests: write`, and neither checks out PR code: the label job, and
-  `pr-checks / review labels`, which removes review labels that new commits outdate. Every checkout uses
-  `persist-credentials: false`.
+- **Permissions.** The workflow defaults to `contents: read`, and each job asks only for what it needs. Only one job
+  gets a write token, `pull-requests: write`: the label job (`pr-labels.yml`), which checks out no PR code. Every
+  checkout uses `persist-credentials: false`.
 - **Pinned actions.** Every action is pinned to a full commit SHA with the version in a comment. Tool binaries
-  (gitleaks, Trivy, OSV-Scanner, Hadolint, ShellCheck, actionlint) are pinned by version and SHA-256. Dependabot
+  (Trivy, OSV-Scanner, Hadolint, ShellCheck, actionlint) are pinned by version and SHA-256. Dependabot
   updates the action SHAs only. It cannot see the `*-version` / `*-sha256` inputs, or the PyPI and npm tools
-  (Semgrep, Checkov, ggshield, tsx), which are pinned by top-level version only, so bump those by hand
+  (Semgrep, Checkov, tsx), which are pinned by top-level version only, so bump those by hand
   (hash-locking them is #20). The PostgreSQL service image is pinned by digest. Bump it by hand too: Dependabot does
   not update workflow service images.
 
@@ -114,9 +112,7 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
   change renamed is compared under its new name (`git diff -M`). So identical code at another path, moved or
   renamed code, a shortened line that is still too long, and a dependency bump that leaves a CVE open are never
   "new". Several occurrences of one rule in one file are counted. Semgrep uses its own `--baseline-commit`, and
-  runs with `--disable-nosem`, so a `# nosemgrep` comment a change adds does not hide its own finding (pr-hygiene
-  also asks for the security label when a PR adds any inline scanner suppression). The secret gate is stricter;
-  see the next section.
+  runs with `--disable-nosem`, so a `# nosemgrep` comment a change adds does not hide its own finding.
 - **A gate that could not run never passes.** A linter that exits with anything but 0 or 1 (crashed, missing,
   rejected its config), or exits 1 without a finding the gate can read, fails the step, on every event. The Python
   lint runs each line of `lint-diff-command` as its own command, so aibom's ruff and mypy each keep their exit
@@ -124,14 +120,13 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
   base commit (for example an upgrade whose new version cannot load the base's config), every finding in a file
   the PR adds or modifies counts as new, never every finding in the repository.
 - **`workflow_dispatch` and the weekly scan ("full" mode):** everything is scanned and **reported**: SARIF and JSON
-  in the artifacts, counts in the run summary. Nothing is gated, gitleaks included (`gitleaks-fail-full: false`).
-  New secrets are already blocked by the diff-mode scan of every pull request and push.
+  in the artifacts, counts in the run summary. Nothing is gated.
 - **Tests, type checks and builds always block.** pytest, `tsc --noEmit`, the tsx tests, `next build`, `uv lock
   --check` and the image builds have no "existing debt" mode. They must pass.
 
 The comparators are Python embedded in the workflows, so callers in other repositories need no extra files. All
 their decisions (tool exit codes, missing base, renames) are inside that Python. `.github/tests/` extracts it from
-the YAML and tests it: 104 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
+the YAML and tests it: 90 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
 They check that the same findings from two checkouts at different paths give 0 new, that an added finding is new,
 that each failure mode above fails, that ci-gate, the path map, the image list (`Decide`, run for each event),
 pr-hygiene and the image job's disk steps behave as documented, and that every reusable-workflow input is documented
@@ -144,68 +139,26 @@ rule in a file and adds another nets to zero (#19).
 
 Every run's summary page shows a table per tool: findings now, on the base commit, new, and the result.
 
-## The secret gate
+## No secret scanning and no review labels
 
-gitleaks scans **commits**, not the tree. A PR is scanned commit by commit from base to head; a push from the
-commit before the push to the pushed one. Anything found there blocks, except what the base already knew about.
+Owner decision, 2026-11-12 ("my repo, my data, everything is private on the Enterprise plan"). CI no longer checks
+for exposed credentials and asks for no review label:
 
-**A change cannot exempt its own secret.** A pull request runs its own workflows and configs, so gitleaks is set up
-as follows. Each row was reproduced with fabricated tokens (security review on PR #16) and is caught:
-
-| A change that... | is still caught because |
-|---|---|
-| adds a `[[allowlists]]` entry to `.gitleaks.toml` | diff mode reads `.gitleaks.toml` from the **base** commit |
-| adds its own fingerprint to `.gitleaksignore` | diff mode reads `.gitleaksignore` from the base commit and deletes the checkout's copy |
-| adds a 3-field line (`file:rule:line`) to `.gitleaksignore`, which gitleaks would apply to every commit | only 4-field fingerprints that start with a full commit SHA are kept; any other line is dropped with a warning |
-| ends the line with `# gitleaks:allow` | `--ignore-gitleaks-allow` |
-| marks the file `-diff` in `.gitattributes` | `git log --text` |
-| hides the secret in a merge's conflict resolution | `git log --diff-merges=remerge` shows what a merge adds beyond the automatic merge |
-| puts a real `.env` under `tests/fixtures/` | there is no path allowlist; fixtures need a label (below) |
-
-GitGuardian gets the same treatment: `.gitguardian.yaml` is taken from the base commit.
-
-**Promotion PRs** (`dev → staging`, `staging → main`) re-scan every commit since the last release. gitleaks reads
-the config and `.gitleaksignore` from the promotion head only when all three hold: the head is listed in
-`trusted-heads` (default `dev staging`), the PR comes from this repository, and the GitHub API reports the head
-branch as **protected**. Only then is it certain that every change to those files arrived through a reviewed PR
-with the `security-config-reviewed` label. On an unprotected branch a direct push could allowlist its own secret, so
-the base commit's files are used and a notice says why. Today `dev`, `staging` and `main` are not protected (see
-[Branch protection](#branch-protection-release-manager)), so promotions use the base's files. `dev → staging`
-works, because the range holds only new commits. The first `staging → main` promotion also needs `main` to carry the
-baseline first, through a labelled `hotfix/*` PR that adds `.gitleaksignore` (or branch protection turned on).
-
-**Secret baseline (`.gitleaksignore`).** This file lists the fingerprints (`commit:file:rule:line`, no values) of
-all 829 findings, 396 fingerprints, that gitleaks reports on the full history of every branch as of 2026-11-11. A
-fingerprint names one finding in one commit, so it can never cover a new secret (and lines without a commit SHA
-are dropped before the scan, see the table above). These findings are **known, not
-accepted**: most are live credentials that must be rotated. The baseline only stops them from blocking every
-promotion. To regenerate it, run on a full (not shallow) clone:
-
-```bash
-gitleaks git --redact --ignore-gitleaks-allow --log-opts="--full-history --all --text --diff-merges=remerge" \
-  --report-format json --report-path baseline.json .
-jq -r '.[].Fingerprint' baseline.json | sort -u     # append to .gitleaksignore, below the header
-```
-
-**Fabricated secrets for detector tests.** A gitleaks finding whose file is under a `tests/fixtures/` directory
-passes only when the PR carries the **`secret-fixtures-reviewed`** label. A reviewer adds it after checking that
-every value is fabricated, then re-runs the failed jobs. A finding anywhere else can never be waived by a label.
-pr-hygiene applies the same rule to key files (`*.pem`, `*.key`, ...) under fixture directories. A push run has no
-PR and no label, so **after merging a labelled fixture PR, the push run on `dev` is red by design**: follow it with
-a PR that adds the fixture's fingerprints to `.gitleaksignore` (with the `security-config-reviewed` label). Making
-push runs apply the merged PR's label is #24.
-
-**Reports hold no secret values.** gitleaks runs with `--redact`. Semgrep's text output, which prints each matched
-line, is discarded. Every SARIF file has its `snippet` / `contextRegion` / `fixes` removed before upload, and the
-job fails if any snippet is left. Secrets inside binary and archive files (.docx, .zip) are not seen (#21).
-
-**The first `staging → main` promotion is blocked until #18 lands.** `main` (15 July) is 347 commits behind
-`dev`, and those commits modify tracked `.env` files (`backend/.env`, `backend/utilities/ai/.env`,
-`RabbitMQ/worker/.env`, `RabbitMQ/worker/helpers/context/.env`). pr-hygiene refuses a PR that adds or modifies
-secret-bearing files, and it is deliberately **not** relaxed for promotion PRs. #18 removes the tracked `.env`
-files from `dev` (replacing them with `.env.example`) without breaking the staging deploy. Once it is merged, the
-promotion diff shows them as removed, which is allowed. gitleaks findings in those commits are covered by the
-baseline.
+- The `secrets` job (gitleaks and GitGuardian ggshield) is gone from `reusable-security.yml`, and with it from
+  `ci.yml` and the weekly `security-scheduled.yml`. The `security` job that `ci-gate` depends on now runs the
+  scanners only.
+- pr-hygiene no longer refuses secret-bearing files (`.env`, keys, keystores, credential files), and no longer asks
+  for the `security-config-reviewed` label when a PR changes `.github/**`, a scanner config or an ignore file, or
+  adds an inline scanner suppression. The `pr-checks / review labels` job, which removed outdated review labels, is
+  gone too. The labels `security-config-reviewed` and `secret-fixtures-reviewed` may stay in the repository; nothing
+  reads them.
+- `.gitleaks.toml` and `.gitleaksignore` stay in the repository for anyone who runs gitleaks by hand
+  ([Running the checks locally](#running-the-checks-locally)). No workflow reads them.
+- What still reacts to secret-shaped text: Semgrep's `p/secrets` ruleset, part of the scanners job that the owner
+  kept. In diff mode, a change that adds a matching literal fails `security / scanners`. To drop that as well, remove
+  `p/secrets` from `semgrep-configs`.
+- **Reports hold no secret values.** Semgrep's text output, which prints each matched line, is discarded. Every SARIF
+  file has its `snippet` / `contextRegion` / `fixes` removed before upload, and the job fails if any snippet is left.
 
 ## Branch flow and hotfixes
 
@@ -235,31 +188,13 @@ baseline.
   compare URL (`.github/PULL_REQUEST_TEMPLATE/promotion.md`). Its table asks for the promotion's own evidence: every
   change merged through a green `ci-gate`, `ci-gate` green on the promoted commit, the target checked, migrations
   and secrets in place, and a rollback plan.
-- No secret-bearing file is added or modified. This is case-insensitive and covers `.env` and `*.env`, `.envrc`,
-  `.npmrc`, `.pypirc`, `.netrc`, `.git-credentials`, `.pgpass`, `.htpasswd`, `.s3cfg`, `kubeconfig`,
-  `credentials` (also `.json`, `.csv`), `accessKeys.csv`, `.docker/config.json`, private keys and keystores,
-  `*.ovpn`, `*.keytab`, `.tfvars` / `.tfstate` / `.tfstate.backup`, `id_rsa*` and service-account JSON. Deleting
-  one is allowed.
-- Changes to the gates themselves (`.github/**`, `.gitleaks.toml`, `.gitleaksignore`, `.gitattributes`,
-  `CODEOWNERS`, `.coderabbit.yaml`, `.semgrepignore`, `.trivyignore`, `trivy.yaml`, `osv-scanner.toml`,
-  `.hadolint.yaml`, `.shellcheckrc`, `.checkov.yaml`, `.gitguardian.yaml`) need the `security-config-reviewed`
-  label, whether the file is added, modified, renamed (either name) or **deleted**. So does an added line with an
-  inline scanner suppression (`nosemgrep`, `checkov:skip`, `hadolint ignore`, `shellcheck disable`,
-  `trivy:ignore`; `suppression-regex`). The files are listed in the job summary. (A file whose patch the API omits,
-  binary or very large, is listed as unchecked for suppressions.)
-- **Review labels cover the commits they were given for.** On every new push, `pr-checks / review labels` runs
-  before pr-hygiene. It removes `security-config-reviewed` when the new commits touch gate files or add a
-  suppression, and `secret-fixtures-reviewed` when they touch a fixture path (both, if the change cannot be read).
-  The reviewer checks the new commits and adds the label again. This runs inside `pr-checks`, not in
-  `pr-labels.yml`, so the same push can never be judged with the old label.
 
-It reads the title, body and labels from the API when it runs, so after editing the PR or adding a label, use
-*Re-run failed jobs* (no new commit needed).
-
-**Dependabot's github-actions PRs** change `.github/workflows/`, so they fail pr-hygiene until a person checks the
-bump (the action's release notes and the new commit SHA) and adds the `security-config-reviewed` label, then
-re-runs the failed jobs. That is deliberate: an action update runs new third-party code with the workflow's token.
-Every promotion that carries a `.github/` change needs the label too.
+It reads the title and body from the API when it runs, so after editing the PR, use *Re-run failed jobs* (no new
+commit needed). pr-hygiene does not look at the changed files: secret-bearing files, changes to `.github/**` or
+scanner configs, and inline scanner suppressions need no label (see
+[No secret scanning and no review labels](#no-secret-scanning-and-no-review-labels)). Dependabot's github-actions
+PRs therefore pass pr-hygiene on their own; still check the action's release notes and the new commit SHA before
+merging one, because an action update runs new third-party code with the workflow's token.
 
 ## Workflows
 
@@ -268,11 +203,11 @@ Every promotion that carries a `.github/` change needs the label too.
 | `ci.yml` | PR / push to dev, staging, main; manual | Orchestrator: the jobs above and `ci-gate` |
 | `reusable-python-tests.yml` | `workflow_call` | uv + Python, lock check, install, blocking lint, no-new-findings lint, tests, optional PostgreSQL |
 | `reusable-frontend.yml` | `workflow_call` | npm ci, tsc, ESLint (diff / blocking / off), every `*.test.ts` via tsx, next build |
-| `reusable-security.yml` | `workflow_call` | gitleaks, ggshield, Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint |
+| `reusable-security.yml` | `workflow_call` | Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint (no secret scanning) |
 | `reusable-codeql.yml` | `workflow_call` | CodeQL for python and javascript-typescript (licence-gated) |
 | `reusable-image-build.yml` | `workflow_call` | Pre-build check, buildx build without push, Trivy image scan, matrix over images |
 | `reusable-pr-checks.yml` | `workflow_call` | branch-flow and pr-hygiene |
-| `security-scheduled.yml` | weekly (Mon 03:17 UTC), manual | Full-history gitleaks and a full scanner report |
+| `security-scheduled.yml` | weekly (Mon 03:17 UTC), manual | A full scanner report (report mode) |
 | `pr-labels.yml` | PR; also `workflow_call` | Area labels (actions/labeler) and a size label, in one job |
 | `aibom-nightly.yml` | **weekly** (Mon 07:00 UTC), manual | Live AI-BOM benchmark against the Trusera and Cisco oracles (Bedrock spend). Was nightly, 86 min a night on July code |
 | `cbom-nightly.yml` | **weekly** (Mon 07:30 UTC), manual | Live CBOM benchmark against IBM cbomkit-theia |
@@ -315,10 +250,10 @@ labels pull requests. `pr-labels.yml` does this with **actions/labeler**: area l
 under 1,000, `XL` above). It needs no app, no external service and no token beyond `GITHUB_TOKEN`.
 
 - **Danger** was not chosen. It needs a Dangerfile in Ruby or JS plus its own runtime. Its typical checks (title
-  format, description sections, forbidden files) already live in `pr-hygiene`.
+  format, description sections) already live in `pr-hygiene`.
 - **Mergify** was not chosen. It is a hosted GitHub App with write access, and merging here is a release-manager
   decision.
-- **CodeRabbit** provides AI review comments. **GitGuardian** provides secret alerts.
+- **CodeRabbit** provides AI review comments.
 - Dependabot opens the dependency PRs.
 
 ## Reusing the workflows in another repository
@@ -359,10 +294,8 @@ jobs:
     with:
       working-directory: web
   security:
-    permissions: { contents: read, pull-requests: read }
+    permissions: { contents: read }
     uses: AnshSinghal-CyberUltron/devsecshield/.github/workflows/reusable-security.yml@<sha-or-tag>
-    secrets:
-      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
   pr:
     if: github.event_name == 'pull_request'
     permissions: { contents: read, pull-requests: read }
@@ -380,8 +313,8 @@ scans `path` in the caller's workspace:
           path: .
 ```
 
-Each workflow reads only the caller's checkout. Repo-specific files are used when present: `.gitleaks.toml`,
-`.gitleaksignore`, `.semgrepignore`, `.trivyignore`, `.hadolint.yaml`, `.github/labeler.yml`. The workflows declare
+Each workflow reads only the caller's checkout. Repo-specific files are used when present: `.semgrepignore`,
+`.trivyignore`, `.hadolint.yaml`, `.github/labeler.yml`. The workflows declare
 no `outputs:` yet; results are in the job summaries and artifacts (#22). Notices that point to `docs/ci/README.md`
 refer to this file.
 
@@ -393,7 +326,7 @@ Every input of every reusable workflow is listed below. `ci-selftest` fails when
 
 | Input | Default | Meaning |
 |---|---|---|
-| `deselect-file` | empty | Repository-relative file of pytest node ids to deselect (`# reason` per line), for tests that fail today for a tracked reason. Listed in the job summary. Keep it under `.github/`, so a change needs the `security-config-reviewed` label |
+| `deselect-file` | empty | Repository-relative file of pytest node ids to deselect (`# reason` per line), for tests that fail today for a tracked reason. Listed in the job summary |
 | `suite-name` | `python` | Job title and summary name |
 | `working-directory` | `.` | Project directory |
 | `python-version` | `3.12` | Sets `UV_PYTHON` (overrides `.python-version`) |
@@ -444,18 +377,13 @@ Every input of every reusable workflow is listed below. `ci-selftest` fails when
 | Input | Default |
 |---|---|
 | `mode` | `auto`: PRs and pushes use diff, everything else full |
-| `exclude-regex` | `node_modules`, `.venv`, `venv`, `.next`, `dist` (not applied to gitleaks). `ci.yml` adds this repo's fixture roots, anchored (`^aibom/tests/fixtures/`, ...), so a future product directory named `fixtures` or `examples` is still scanned |
-| `gitleaks-version`, `gitleaks-sha256` | `8.30.1`, pinned |
-| `gitleaks-config`, `gitleaks-fail-full` | `.gitleaks.toml` (taken from the base commit in diff mode), `false` |
-| `trusted-heads` | `dev staging`: promotion heads whose gitleaks files are trusted |
-| `secret-fixture-label`, `secret-fixture-regex` | `secret-fixtures-reviewed`, `(^\|/)tests?/fixtures/` |
-| `ggshield-version` | `1.56.1` |
+| `exclude-regex` | `node_modules`, `.venv`, `venv`, `.next`, `dist`. `ci.yml` adds this repo's fixture roots, anchored (`^aibom/tests/fixtures/`, ...), so a future product directory named `fixtures` or `examples` is still scanned |
 | `semgrep-version`, `semgrep-configs` | `1.181.1`, `p/ci p/python p/typescript p/secrets p/dockerfile` |
 | `semgrep-exclude` | `node_modules .venv` (`ci.yml` adds the fixture roots) |
 | `semgrep-min-level`, `hadolint-min-level`, `shellcheck-severity` | `warning` |
 | `osv-version`, `osv-sha256` | `2.7.0`, pinned |
 | `trivy-version`, `trivy-sha256` | `0.76.1`, pinned |
-| `trivy-scanners`, `trivy-severity` | `vuln,misconfig`, `HIGH,CRITICAL` (secrets are left to gitleaks) |
+| `trivy-scanners`, `trivy-severity` | `vuln,misconfig`, `HIGH,CRITICAL` (no `secret` scanner) |
 | `trivy-skip-dirs` | `**/node_modules,**/.venv` (`ci.yml` adds the fixture roots) |
 | `checkov-version`, `checkov-frameworks` | `3.3.30`, `kubernetes terraform` |
 | `helm-charts` | One chart per line, `<dir> [helm template args]`. Each is rendered for head and base and scanned as Kubernetes manifests. A chart that fails to render, input Checkov cannot process, or a rendered chart with zero evaluated checks fails the step. `ci.yml` passes `deploy/helm/cbom-scan-node` with CI placeholder values and the DaemonSet switched on |
@@ -465,11 +393,7 @@ Every input of every reusable workflow is listed below. `ci-selftest` fails when
 | `uv-version` | `0.13.6` |
 | `upload-sarif` | `false`. Set `true` only where code scanning exists, and grant `security-events: write` |
 
-| Secret | Meaning |
-|---|---|
-| `GITGUARDIAN_API_KEY` | Optional. Without it, ggshield is skipped with a notice |
-
-The caller grants `contents: read` and `pull-requests: read` (the fixture label).
+No secrets. The caller grants `contents: read`.
 
 **reusable-codeql.yml**: `enabled` (`true`), `languages` (`["python","javascript-typescript"]`), `queries`
 (`security-extended`), `paths-ignore`, `upload` (`false`). The caller grants `contents: read`, `actions: read`, plus
@@ -484,25 +408,19 @@ Builds use Buildx's `docker` driver; with `cache: true` the runner's Docker must
 (GitHub's Ubuntu runners do), and the job fails early with the reason if it does not.
 
 **reusable-pr-checks.yml**: `flows` (`staging:dev main:staging|hotfix/*`), `title-regex`, `title-max-length` (100),
-`require-acceptance-criteria` (`true`; bots are exempt), `acceptance-heading-regex`, `forbidden-files-regex`,
-`allowed-files-regex` (`*.pub`, `.env.example` / `.sample` / `.template` / `.dist`), `secret-fixture-label`,
-`secret-fixture-regex`, `security-config-regex`, `security-config-label`, `suppression-regex`
-(`nosemgrep|checkov:skip|hadolint ignore|shellcheck disable|trivy:ignore`). The caller grants `contents: read` and
-`pull-requests: write` (the review-labels job removes outdated labels; it checks out nothing).
+`require-acceptance-criteria` (`true`; bots are exempt), `acceptance-heading-regex`. The caller grants
+`contents: read` and `pull-requests: read` (pr-hygiene reads the PR's title and body; nothing is checked out).
 
 **pr-labels.yml**: `configuration-path` (`.github/labeler.yml`), `size-thresholds` (`10 50 250 1000`). The caller
 grants `pull-requests: write`.
 
-## Secrets, variables, labels and apps
+## Secrets, variables and apps
 
 | Name | Kind | Needed by | Without it |
 |---|---|---|---|
-| `GITGUARDIAN_API_KEY` | repository secret | security / ggshield | Step skipped with a notice |
 | `CODEQL_ENABLED` | repository variable (`true`) | codeql | CodeQL job skipped (see [Known limits](#known-limits)) |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | repository secrets | aibom-nightly (Bedrock) | Weekly benchmark cannot call Bedrock |
 | `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`, `STAGING_SSH_TARGET`; `STAGING_DIR` | `staging` environment secrets / variable | deploy-staging | Deploy step unavailable (the build still works). Give the environment deployment-branch rules (`staging` only) |
-| `security-config-reviewed` | PR label | pr-hygiene | A PR that changes CI or scanner configs fails |
-| `secret-fixtures-reviewed` | PR label | gitleaks, pr-hygiene | Fabricated secrets and key files under `tests/fixtures/` fail |
 
 No other workflow needs a secret. CI tests use dummy values that are marked as such.
 
@@ -523,23 +441,11 @@ installed:**
 
 The free tier covers open-source repositories. A private repository needs a paid seat for the PR author.
 
-### GitGuardian (secret detection, second engine)
-
-1. Create an account at <https://dashboard.gitguardian.com> (the free plan covers small teams).
-2. *API → Personal access tokens* (or *Service accounts*): create a token with the `scan` scope.
-3. GitHub → this repository → *Settings → Secrets and variables → Actions → New repository secret*: name
-   `GITGUARDIAN_API_KEY`, value the token.
-4. The next PR runs `ggshield secret scan ci` on the PR's commits, which blocks on any secret.
-
-Optionally, also install the GitGuardian GitHub App for real-time alerts on every push to every branch (after the
-credentials are rotated).
-
 ## Branch protection (release manager)
 
 **This needs GitHub Pro (user-owned repository) or GitHub Team (organisation) on a private repository.** Today the
 rulesets API answers "Upgrade to GitHub Pro or make this repository public", and `dev`, `staging` and `main` report
-`"protected": false`. Until protection is on, nothing stops a direct push or the merge of a PR with a red `ci-gate`,
-and the secret gate does not trust promotion heads (see [The secret gate](#the-secret-gate)).
+`"protected": false`. Until protection is on, nothing stops a direct push or the merge of a PR with a red `ci-gate`.
 
 Settings → Branches (or Rules → Rulesets), for each of `dev`, `staging` and `main`:
 
@@ -552,11 +458,10 @@ Settings → Branches (or Rules → Rulesets), for each of `dev`, `staging` and 
 | Allow force pushes | off |
 | Allow deletions | off |
 
-`ci-gate` already depends on every other job, including `pr-checks / branch-flow`, `pr-checks / review labels` and
-`pr-checks / pr-hygiene` on PRs. Requiring the individual jobs as well would break: path filtering skips them on
+`ci-gate` already depends on every other job, including `pr-checks / branch-flow` and `pr-checks / pr-hygiene` on
+PRs. Requiring the individual jobs as well would break: path filtering skips them on
 many PRs, and a skipped required check blocks the merge. Do **not** turn on *Require review from Code Owners* while
-all authors and reviewers post through one account (see `.github/CODEOWNERS`). Once `dev` and `staging` are
-protected, the secret gate trusts them as promotion heads automatically (it reads the API's `protected` flag).
+all authors and reviewers post through one account (see `.github/CODEOWNERS`).
 
 **Merge queue (optional).** In the same ruleset, *Require merge queue* tests each PR merged onto the latest base
 before it lands, so two PRs that pass alone cannot break `dev` together. `ci.yml` already runs on `merge_group` and
@@ -571,7 +476,7 @@ and the suites' lint-diff steps report without blocking (see [Known limits](#kno
 merged tree therefore passes the queue, and the push run reports it only after the merge. The merged tree differs
 from the tree the PR's own run gated when:
 - the base moved after the PR's last run, or PRs ahead in the queue add commits;
-- the base changed the Semgrep, Checkov or gitleaks rules or configuration;
+- the base changed the Semgrep or Checkov rules or configuration;
 - the OSV or Trivy advisory data changed.
 
 So keep *Require branches to be up to date* on `staging` and `main` even with a queue: it makes the PR run's
@@ -625,7 +530,7 @@ Measured on `dev` 8314739. These findings do not block a PR (only new ones do), 
 
 | Area | Count | Notes |
 |---|---:|---|
-| **Secrets** (gitleaks) | 829 in the history of all branches (396 fingerprints, baselined in `.gitleaksignore`); 81 in today's tree across 42 tracked files | 12 of the tracked files are `.env` files. The secrets include OpenAI, AWS, GitHub classic and fine-grained PATs, Atlassian, Azure AD and GCP keys, and `cu-devsecshield-key.pem` at the root. Main places: `backend/.env`, `backend/utilities/ai/` (`.env`, `llm.py`, `chatbot.py`, `testing.py`), `RabbitMQ/.env`, `RabbitMQ/{worker,dast_worker,guardrail_worker}/.env`, `RabbitMQ/worker/helpers/context/.env`, `RabbitMQ/worker/helpers/tests/*`, `RabbitMQ/worker/celery_test.py`, `RabbitMQ/worker/Dockerfile`, `RabbitMQ/dast_worker/Dockerfile`, `RabbitMQ/guardrail_worker/ticketing/jira.py`, `docs/Docs.md`, `.playwright-mcp/scan367_api.json`, `backend/*.db`. **Rotate every credential first.** Then remove the files (#18), and decide whether to rewrite history. |
+| **Secrets** (gitleaks, by hand: CI has not scanned secrets since 2026-11-12) | 829 in the history of all branches (396 fingerprints, baselined in `.gitleaksignore`); 81 in today's tree across 42 tracked files | 12 of the tracked files are `.env` files. The secrets include OpenAI, AWS, GitHub classic and fine-grained PATs, Atlassian, Azure AD and GCP keys, and `cu-devsecshield-key.pem` at the root. Main places: `backend/.env`, `backend/utilities/ai/` (`.env`, `llm.py`, `chatbot.py`, `testing.py`), `RabbitMQ/.env`, `RabbitMQ/{worker,dast_worker,guardrail_worker}/.env`, `RabbitMQ/worker/helpers/context/.env`, `RabbitMQ/worker/helpers/tests/*`, `RabbitMQ/worker/celery_test.py`, `RabbitMQ/worker/Dockerfile`, `RabbitMQ/dast_worker/Dockerfile`, `RabbitMQ/guardrail_worker/ticketing/jira.py`, `docs/Docs.md`, `.playwright-mcp/scan367_api.json`, `backend/*.db`. **Rotate every credential first.** Then remove the files (#18), and decide whether to rewrite history. |
 | Dependency vulnerabilities (OSV-Scanner) | 1,547 | Distinct (advisory, lockfile, package) findings across 12 lockfiles, benchmark fixtures excluded. OSV-Scanner writes many results twice; the gate counts each once (it reported 2,608 before) |
 | ESLint errors (frontend) | 208 | 113 `no-explicit-any`, 77 react-hooks |
 | ruff (aibom `src` + `tests`) | about 2,690 | Mostly E501 at 88 columns. Either set line-length to 120 or reformat |
@@ -643,7 +548,7 @@ the file and the rule.
 # workflows, and the CI self-tests
 pipx run actionlint-py==1.7.12.25                                 # or: uvx --from actionlint-py actionlint
 python3 -m unittest discover -s .github/tests -v
-# secrets (gitleaks 8.30.1), as CI runs them: the PR's commits, or the whole history
+# secrets, by hand only (no workflow runs gitleaks since 2026-11-12): the PR's commits, or the whole history
 gitleaks git --redact --ignore-gitleaks-allow --log-opts="--text --diff-merges=remerge origin/dev..HEAD" .
 gitleaks git --redact --ignore-gitleaks-allow --log-opts="--full-history --all --text --diff-merges=remerge" .
 # Semgrep, the same rulesets as CI
@@ -679,10 +584,8 @@ cd frontend && npm ci && npx tsc --noEmit && npx eslint . && \
   OSV-Scanner and Trivy fs block new ones in the lockfiles.
 - **Checkov** renders Helm charts into `ci-rendered-charts/` (not a dot directory: Checkov skips those) and fails
   when a rendered chart produced no evaluated check.
-- **Merge-queue runs scan security in report mode.** The secret and scanner gates compare with a base commit taken
+- **Merge-queue runs scan security in report mode.** The scanner gates compare with a base commit taken
   from the pull request or push event; a `merge_group` event has neither, so they scan in full mode and report
   without blocking. The suites' lint-diff steps run in report mode only too, as on a push. The PR's own run already gated
   its diff, but a finding that exists only in the merged tree passes the queue (see Branch protection). Gating the
   queue commit against `merge_group.base_sha` is #70.
-- **The pull-request files API lists at most 3,000 files**, so pr-hygiene does not see files beyond that in a huge
-  PR. gitleaks still scans those commits.
