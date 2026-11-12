@@ -17,13 +17,13 @@ for name in "${@:-L1 L2 L3 L4 L5}"; do
         sim=(--run --run-before-nodes --work-s 2 --warmup 0 --spread 1 --duration 1 --run-timeout 400) ;;
     L2) seed=(--nodes 10 --sources 1000 --assign segment); ideal=(--ideal-s 250)
         sim=(--run --run-before-nodes --work-s 5 --warmup 0 --spread 1 --duration 1 --run-timeout 600) ;;
-    L3) seed=(--nodes 3000 --sources 3000 --team-b-nodes 5 --team-b-sources 50 --assign segment)
+    L3) seed=(--nodes ${F1_LOCAL_NODES:-3000} --sources ${F1_LOCAL_NODES:-3000} --team-b-nodes 5 --team-b-sources 50 --assign segment)
         sim=(--run --runs "0:1,10:2" --warmup 60 --duration 1 --run-timeout 900) ;;
     L4) export F1_BENCH_CAP_KIND=linux_servers:bench_x
-        seed=(--nodes 3000 --sources 3000 --team-b-nodes 201 --team-b-sources 300 --closed-window-team 1 --assign segment)
-        sim=(--run --runs "0:1,0:2" --cap-x bench_x --cap-x-ranges "0:3000,3200:3201" --warmup 60 --duration 180
+        seed=(--nodes ${F1_LOCAL_NODES:-3000} --sources ${F1_LOCAL_NODES:-3000} --team-b-nodes 201 --team-b-sources 300 --closed-window-team 1 --assign segment)
+        sim=(--run --runs "0:1,0:2" --cap-x bench_x --cap-x-ranges "0:${F1_LOCAL_NODES:-3000},$(( ${F1_LOCAL_NODES:-3000} + 200 )):$(( ${F1_LOCAL_NODES:-3000} + 201 ))" --warmup 60 --duration 180
              --run-timeout 170) ;;
-    L5) seed=(--nodes 3000 --sources 3000 --assign segment)
+    L5) seed=(--nodes ${F1_LOCAL_NODES:-3000} --sources ${F1_LOCAL_NODES:-3000} --assign segment)
         sim=(--run --mix --warmup 60 --duration 1 --run-timeout 900) ;;
     *) echo "unknown $name" >&2; exit 2 ;;
   esac

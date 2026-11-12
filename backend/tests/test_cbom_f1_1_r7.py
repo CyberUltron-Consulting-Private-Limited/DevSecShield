@@ -695,9 +695,11 @@ def test_c3_queue_run_holds_the_team_row_only_from_the_charge_to_the_commit(monk
     F._segment_sources(engine, 3000)
     charged = threading.Event()
     real = J.charge_team
+    marks: dict[str, float] = {}
 
     def charge(session, team_id, centi):
         ok = real(session, team_id, centi)
+        marks["charged"] = time.perf_counter()
         charged.set()
         return ok
 
@@ -718,6 +720,7 @@ def test_c3_queue_run_holds_the_team_row_only_from_the_charge_to_the_commit(monk
     with Session(engine) as s:
         settings = get_or_create_settings(s, 1)
         body = RunCreate(include={"servers": True}, client_request_id="c3-" + str(time.time_ns()), soc_ack=True)
+        marks["start"] = time.perf_counter()
         run, replayed = RUNS.queue_run(s, 1, 1, body, settings, dt.datetime.utcnow())
         run_id = run.id
         s.commit()
@@ -725,7 +728,10 @@ def test_c3_queue_run_holds_the_team_row_only_from_the_charge_to_the_commit(monk
     t.join(60)
     with Session(engine) as s:
         assert len(s.exec(select(CbomCollectionJob.id).where(CbomCollectionJob.run_id == run_id)).all()) == 3000
-    assert waited and waited[0] < 0.1, waited
+    insert_s = marks["charged"] - marks["start"]  # planning and inserting 3,000 jobs: before the charge now
+    # the team row is held from the charge to the commit only: the waiter (issued 50 ms after the charge) waits for
+    # the commit, never for the insert (before: it waited for all of it, 2.41 s)
+    assert waited and waited[0] < max(0.1, 0.25 * insert_s) and waited[0] < 0.5, (waited, insert_s)
 
 
 @needs_pg
