@@ -15,6 +15,7 @@ from backend.routers.cbom_sources import router as cbom_sources_router
 from backend.routers.cbom_ops import router as cbom_ops_router
 from backend.routers.cbom_node import router as cbom_node_router
 from backend.routers.cbom_node_pools import router as cbom_node_pools_router
+from backend.routers.cbom_fleet import router as cbom_fleet_router
 from backend.utilities.cbom_sources.node_auth import NodeDeploymentHeader
 from backend.routers.cbom_vendor_public import router as cbom_vendor_public_router
 from backend.routers.integrations import router as integrations_router
@@ -133,6 +134,7 @@ app.include_router(cbom_ops_router)
 app.include_router(cbom_node_router)
 app.include_router(cbom_node_pools_router)  # agent pool tokens for the Helm DaemonSet (WP8b)
 app.include_router(cbom_vendor_public_router)
+app.include_router(cbom_fleet_router)  # F1 fleet onboarding: inventory, policies, transports, SSH CA (each behind a flag)
 # Integrations: ServiceNow, SIEM (syslog, Splunk HEC), signed webhooks, OSCAL export / push, CMDB import.
 app.include_router(integrations_router)
 # DEPRECATED: Guardrails routers remain for legacy/API callers; product UI no longer exposes Guardrails.
