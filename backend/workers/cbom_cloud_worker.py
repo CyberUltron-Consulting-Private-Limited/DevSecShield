@@ -122,6 +122,8 @@ class _Job:
                 for asset in out.pop("assets"):
                     self.emit(asset)
                 result = out
+            elif kind == "ssm_hosts":  # F1.3: zs-collect through the customer's AWS Systems Manager
+                result = self._ssm()
             else:
                 status, error = "failure", f"The cloud worker cannot collect {kind}"
         except _Refused as exc:
@@ -159,6 +161,37 @@ class _Job:
             return collect_aws(self.job["team_id"], self.source["config"], external_id, self.emit, self.should_stop)
         except AwsCollectError as exc:
             raise _Refused(str(exc)) from exc
+
+
+    def _ssm(self) -> dict[str, Any]:
+        from backend.new_models import CbomCollectionSource
+        from backend.utilities.cbom_sources.transports.claim import payload_for_cloud
+        from backend.utilities.cbom_sources.transports.cloud import SsmRefused, collect_ssm
+        from backend.utilities.cbom_sources.transports.ssm import SsmTransport, role_client_factory
+
+        team_id = self.job["team_id"]
+        with Session(self.engine) as session:
+            settings = get_or_create_settings(session, team_id)
+            external_id = settings.aws_external_id
+            exclusions = [str(i.get("cidr")) for i in (settings.network_exclusions or []) if isinstance(i, dict)]
+            row = session.get(CbomCollectionSource, self.source["id"])
+            if row is None or row.team_id != team_id:
+                raise _Refused("The source was deleted")
+            config = dict(self.source.get("config") or {})
+            if "transport" not in config:  # the claim did not apply the F1.3 plugin (secret_refs not present)
+                config, _secrets = payload_for_cloud(session, row)
+        exclusions += list(config.get("exclusions") or []) + list((self.job.get("params") or {}).get("exclusions") or [])
+        transport_cfg = config.get("transport") or {}
+        try:
+            factory = role_client_factory(team_id, str(transport_cfg.get("role_arn") or ""), external_id)
+            return collect_ssm(self.job, config, exclusions, SsmTransport(factory, log=lambda *a, **k: None), self.emit,
+                               self.should_stop, self.deadline)
+        except SsmRefused as exc:
+            raise _Refused(str(exc)) from exc
+        except Exception as exc:
+            if exc.__class__.__name__ == "NoZeroShieldCredentials":
+                raise _Refused("ZeroShield's AWS principal is not configured in this deployment") from exc
+            raise
 
 
 class _Refused(Exception):
