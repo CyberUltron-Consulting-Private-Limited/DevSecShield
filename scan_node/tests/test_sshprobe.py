@@ -637,3 +637,13 @@ def test_rfc8731_name_is_added_to_one_transport_only():
     finally:
         a.close()
         b.close()
+
+
+def test_every_key_exchange_the_reader_speaks_is_a_registered_name():
+    """The reader's names are the IANA / OpenSSH ones algid (CB-04) resolves: PQ ones safe or hybrid, the rest not."""
+    from zs_scan_node import algid
+
+    for name in S.PQ_KEX:
+        assert algid.ssh_kex(name).quantum in ("safe", "hybrid"), name
+    for name in S.CLASSICAL_KEX:
+        assert algid.ssh_kex(name).quantum == "vulnerable", name
