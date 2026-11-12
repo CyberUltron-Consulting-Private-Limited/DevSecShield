@@ -22,6 +22,7 @@ from backend.new_models import (
     IntegrationDelivery,
     TeamIntegration,
 )
+from backend.utilities.cbom_sources.transports.models import CbomTransport  # F1.3
 
 _ORDER = (
     IntegrationDelivery,  # integrations (WP11): deliveries before their integration
@@ -36,6 +37,7 @@ _ORDER = (
     CbomScanNode,
     CbomNodePool,  # agent pool tokens (WP8b): after the nodes that point at them
     CbomCollectionSettings,
+    CbomTransport,  # F1.3 transports (the deployment-wide zs-collect releases are not a team's)
     CbomEvidenceVendor,
     CbomEvidenceArea,
     CbomCollectionAuditEvent,

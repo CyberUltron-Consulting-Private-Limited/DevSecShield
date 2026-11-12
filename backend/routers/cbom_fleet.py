@@ -30,6 +30,7 @@ from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, read
 
 # F1.2 imports
 # F1.3 imports
+from backend.routers.cbom_transports import router as transports_router
 # F1.4 imports
 
 router = APIRouter(tags=["cbom-fleet"], route_class=CbomRoute)
@@ -45,5 +46,6 @@ async def fleet_status(team_id: TeamId, ctx: Member):
 # F1.2 routers
 
 # F1.3 routers
+router.include_router(transports_router)  # /fleet/transports* (CBOM_FLEET_TRANSPORTS)
 
 # F1.4 routers
