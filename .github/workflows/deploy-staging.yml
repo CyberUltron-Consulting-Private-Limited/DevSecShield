@@ -121,6 +121,35 @@ jobs:
     timeout-minutes: 45
     environment: staging
     steps:
+      # A re-run keeps the original run's commit (GITHUB_SHA) for up to 30 days, so re-running an older push would put
+      # that older commit over a newer one. A push deploys only while its commit is still the tip of `staging`; the
+      # concurrency group keeps a newer push from deploying between this check and the copy below. The ref is read
+      # with the job's token (passed in git's environment config, never on a command line), so a private repo works.
+      - name: Still the tip of staging
+        if: github.event_name == 'push'
+        env:
+          SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          if ! out=$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/staging); then
+            echo "::error::could not read the tip of staging; not deploying $SHA"
+            exit 1
+          fi
+          tip=${out%%[[:space:]]*}
+          if [ -z "$tip" ]; then
+            echo "::error::staging has no tip; not deploying $SHA"
+            exit 1
+          fi
+          if [ "$tip" != "$SHA" ]; then
+            echo "::error::superseded: staging is at $tip; this run built $SHA and will not deploy it"
+            exit 1
+          fi
+          echo "staging is still at $SHA: deploying it"
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
