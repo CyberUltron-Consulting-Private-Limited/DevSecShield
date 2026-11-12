@@ -1,0 +1,7 @@
+# G12 export validators (validate_exports.py). Run with: uv run --no-project --with-requirements <this file> python3 -I ...
+cyclonedx-python-lib[json-validation,xml-validation]==11.12.0
+jsonschema==4.26.0
+referencing==0.37.0
+xmlschema==4.3.2
+regex==2026.9.29
+lxml==6.1.3

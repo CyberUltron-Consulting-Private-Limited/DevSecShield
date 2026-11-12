@@ -16,6 +16,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allowedDiff, splitCommand } from "./command.mjs";
+import * as cb05 from "./cb05.mjs";
 
 const R6 = process.env.R6 || "/home/claude/round6";
 const { chromium } = createRequire(process.env.CBOM_E2E_PW || `${R6}/local/pw/`)("playwright");
@@ -38,6 +39,8 @@ const TERMINAL = ["success", "failure", "failed", "cancelled", "expired"];
 const ALL = ["G1", "G2", "G3", "G4", "G5", "G5b", "G6", "G7", "G8", "G9", "G10", "G11", "G12", "G13", "G13b", "G14"];
 const STEPS = new Set(args.steps ? args.steps.split(",") : ALL);
 const SECRETS_FILE = args["secrets-file"] || `/tmp/cbom-e2e-secrets-${process.pid}.json`;
+const HERE = dirname(fileURLToPath(import.meta.url));
+const LAB_DIR = args["lab-dir"] || join(HERE, "..", "..", "..");
 const lab = readJson(join(RUN, "lab", "lab.json"));
 const stateFile = join(RUN, "flow-state.json");
 const state = readJson(stateFile) || { started: iso() };
@@ -326,11 +329,11 @@ try {
     writeFileSync(join(s.dir, "node.log"), ((logs.stdout || "") + (logs.stderr || "")).split(token || "\u0000").join("<token>"));
   });
 
-  // G4 servers, G5b IDNA, G6 database, G7 cloud & identity, G8 evidence: CB-05 writes these specs
-  for (const [g, why] of [["G4", "Servers sources (S-ubuntu, S-canary) are CB-05's spec"], ["G5b", "IDNA source is CB-05's spec (KF-7)"],
-    ["G6", "Database source is CB-05's spec"], ["G7", "Cloud & identity is CB-05's spec"], ["G8", "Evidence + vendor link is CB-05's spec"]]) {
-    if (STEPS.has(g)) notRun(g, why);
-  }
+  // CB-05 steps (cb05.mjs; INTERFACES.md v5): one context object for them
+  const ctx = { RUN, R6, UI, API, SHA, HERE, LAB_DIR, TERMINAL, lab, state, browser, node, get A() { return A; }, get B() { return B; },
+    step: (g, c, fn) => (STEPS.has(g) ? step(g, c, fn) : undefined), db, apiGet, sourcesTab, remember, inCidr, sleep, iso, writeJson, readJson, sha256 };
+  // G4 servers (CB-05)
+  await cb05.g4(ctx);
 
   // G5 network ----------------------------------------------------------------------------------------------
   await step("G5", A.ctx, async (s) => {
@@ -395,6 +398,12 @@ try {
     }
   });
 
+  // G5b IDNA, G6 database, G7 cloud & identity, G8 evidence (CB-05)
+  await cb05.g5b(ctx);
+  await cb05.g6(ctx);
+  await cb05.g7(ctx);
+  await cb05.g8(ctx);
+
   // G9 review & run -----------------------------------------------------------------------------------------
   await step("G9", A.ctx, async (s) => {
     const { page } = A;
@@ -404,6 +413,7 @@ try {
     await req.waitFor({ timeout: 30000 });
     const estimate = Number(((await req.textContent()) || "").replace(/[^\d.]/g, ""));
     state.estimate = estimate;
+    cb05.g9Rates(ctx, s, estimate);
     const ack = page.locator("#review-soc-ack");
     if (await ack.count()) await ack.check();
     await s.shot(page, "review");
@@ -438,23 +448,8 @@ try {
     const { page } = A;
     await page.reload({ waitUntil: "networkidle" });
     await s.shot(page, "watch");
-    s.notRun("charge_after_runtime_skips", "the final charge after runtime skips follows OA-10b; CB-05 adds the check (KF-8)");
-    const listeners = lab?.listeners || [];
-    const count = (l) => { const p = join(RUN, l.log || ""); return existsSync(p) ? readFileSync(p, "utf8").split("\n").filter(Boolean).length : null; };
-    const controlSeen = listeners.some((x) => x.role === "control" && (count(x) || 0) > 0);
-    const byName = !(state.never_scan_g5 || []).length;
-    for (const l of listeners.filter((x) => x.role === "canary" && (state.scope?.ranges || []).some((r) => inCidr(x.address, r)))) {
-      // no log file = no accepted connection (the listener writes a line per accept), when the control's log in the
-      // same capture proves the listeners log at all (O-8)
-      const n = count(l) ?? (controlSeen ? 0 : null);
-      s.check(`canary_accepts_${l.name}`, n === 0, { expected: 0, observed: n, reason: n === null ? "listener-log-missing" : "never-scan-reached",
-        subject: { check: "canary_accepts", never_scan_by: byName ? "name" : "address", listener: l.name }, evidence: [l.log] });
-    }
-    for (const l of listeners.filter((x) => x.role === "control" && (state.scope?.ranges || []).some((r) => inCidr(x.address, r)))) {
-      const n = count(l);
-      s.check(`control_accepts_${l.name}`, n !== null && n >= 1, { expected: ">= 1 (positive control)", observed: n, reason: "control-not-reached",
-        subject: { check: "control_accepts", listener: l.name }, evidence: [l.log] });
-    }
+    // charge after runtime skips (OA-10b) and the never-scan listeners over the run's window, by path (CB-05)
+    await cb05.g10(ctx, s);
   });
 
   // G11 results (DOM + API pages with the same token), G12 exports -------------------------------------------
@@ -514,6 +509,8 @@ try {
       await page.waitForTimeout(1000);
       await s.shot(page, "drilldown");
     }
+    // posture: Mosca X/Y/Z, Q-grade, calendar and heat-map against the oracle (CB-05)
+    await cb05.g11Posture(ctx, s, "1");
   });
 
   await step("G12", A.ctx, async (s) => {
@@ -549,13 +546,12 @@ try {
       writeFileSync(`${p}.sha256`, `${sha256(file)}  ${name}\n`);
     }
     page.off("response", onResp);
-    s.notRun("schema_validation", "JSON schema + cyclonedx-python-lib strict, XML against the vendored XSD and the OSCAL validator are CB-05's G12 spec");
-    s.notRun("vex_states", "VEX states per OA-10c are judged once CB-22 defines them (KF-11)");
+    // schema validation, engine version, VEX states (OA-10c) and G8's gap snapshot (CB-05)
+    cb05.g12Validate(ctx, s, "1");
   });
 
-  for (const [g, why] of [["G13", "drift (lab mutate + Run again) is CB-05's spec"], ["G13b", "drift with a never-scan in range is CB-05's spec (KF-12)"]]) {
-    if (STEPS.has(g)) notRun(g, why);
-  }
+  // G13 drift and G13b drift with a never-scan entry in range (CB-05)
+  await cb05.g13(ctx);
 
   // G14 tenancy ---------------------------------------------------------------------------------------------
   await step("G14", null, async (s) => {

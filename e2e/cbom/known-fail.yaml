@@ -8,11 +8,11 @@
 
 # ---------------------------------------------------------------------------- preconditions on L (CB-03)
 - row: PRE-build-identity
-  gate: [G0]
-  match: {check: [build_health, build_header, build_frontend_meta, build_node_label]}
+  gate: [G0, G12]
+  match: {check: [build_health, build_header, build_frontend_meta, build_node_label, engine_version]}
   issue: "#73"
   owner: CB-03
-  why: "/health has no build field, no X-ZS-Build header, no zs-build meta, node image without ZS_NODE_BUILD (main.py:148)"
+  why: "/health has no build field, no X-ZS-Build header, no zs-build meta, node image without ZS_NODE_BUILD (main.py:148); the export's zs:engine_version is 'unknown', not the build (common.py:46-59)"
 
 # ---------------------------------------------------------------------------- product rows (DA §4.4)
 - row: KF-8
@@ -21,7 +21,6 @@
   issue: "#73"
   owner: CB-14
   why: "targets skipped at run time (window, stop, never-scan) are charged in full (R2 billing.json, R3 test_f4)"
-  not_run_ok: "CB-05 adds the charge check to G10; the row then holds until CB-14"
 - row: KF-9
   gate: [G11]
   match: {kind: join, view: export, field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id]}
@@ -29,12 +28,11 @@
   owner: CB-06
   why: "the run export lacks key size, curve, signature algorithm, groups, pqc_class and provenance (R4 p1)"
 - row: KF-2
-  gate: [G10]
-  match: {check: canary_accepts, never_scan_by: name}
+  gate: [G4, G10]
+  match: {check: [canary_accepts, canary_sample], never_scan_by: name}
   issue: "#17"
   owner: "#32"
-  why: "a never-scan entry given by host name still reaches the canary (DA-P2: 7 connections on dev); #32 fixes it"
-  not_run_ok: "the never-scan by name is entered on Servers in G4 (CB-05's spec); G5 enters the canary by address"
+  why: "a never-scan entry given by host name (S-canary's own Never scan, G4) still reaches the canary (DA-P2: 7 connections on dev); #32 fixes it"
 - row: KF-3
   gate: [G11]
   match: {kind: oracle, target_id: z05b}
@@ -61,46 +59,40 @@
   why: "a PQ-only OpenSSH (mlkem768x25519-sha256 only): the host key is not read"
 - row: KF-7
   gate: [G5b]
-  match: {step: G5b}
+  match: {check: [idna_2003_name_untouched, idna_punycode_reached]}
   issue: "#73"
   owner: CB-09
-  why: "faß.lab is resolved as fass.lab (IDNA 2003); the G5b step itself is CB-05's spec"
-  not_run_ok: "G5b runs once CB-05 lands its spec; the row then holds until CB-09"
+  why: "faß.lab is resolved as fass.lab (IDNA 2003): the punycode host (IDNA 2008) is never reached"
 - row: KF-10
   gate: [G11]
-  match: {kind: derived, field: posture}
+  match: {id_prefix: [G11/q_grade_present, G11/derived/run1/posture, G11/derived/run2/posture]}
   issue: "#73"
   owner: CB-18
-  why: "no 'unknown' PQC class (shown as not applicable) and no Q-grade; the posture oracle (OA-10a) is not written yet"
-  not_run_ok: "posture numbers are judged once CB-05 writes the posture oracle; then the row holds until CB-18/CB-19"
+  why: "no Q-grade on any asset (OA-10a) and no 'unknown' PQC class (shown as not applicable); the posture numbers wait for the harness Q-grade formula"
 - row: KF-11
   gate: [G12]
   match: {check: vex_states}
   issue: "#73"
   owner: CB-22
-  why: "every VEX entry is 'exploitable' (R2 M2)"
-  not_run_ok: "VEX states are judged once CB-05 adds the G12 VEX check"
+  why: "every VEX entry is 'exploitable' (R2 M2); OA-10c puts QUANTUM_VULNERABLE / NO_PQ_KEX / SSH_NO_PQ_KEX in in_triage"
 - row: KF-12
   gate: [G13b]
-  match: {step: G13b}
+  match: {check: range_with_never_scan_compared}
   issue: "#73"
   owner: CB-11
-  why: "a range with a never-scan entry is never compared (not_compared, collection partial)"
-  not_run_ok: "G13b runs once CB-05 lands the drift steps"
+  why: "a range with a never-scan entry is never compared (not_compared, collection partial), so its change is never recorded"
 - row: KF-13
   gate: [G7]
-  match: {step: G7}
+  match: {check: zeek_option_absent}
   issue: "#73"
   owner: CB-08
   why: "the Zeek ssl.log option is offered although nothing reads it (R1 X4)"
-  not_run_ok: "G7 runs once CB-05 lands its spec"
 - row: KF-14
-  gate: [G8]
-  match: {step: G8}
+  gate: [G8, G12]
+  match: {check: [evidence_effective_label_stale, evidence_effective_label_fresh, evidence_gap_snapshot]}
   issue: "#73"
   owner: CB-18
-  why: "evidence older than 365 days shows 'Q0' instead of E0 + a Q0 gap; the run and export carry no gap snapshot"
-  not_run_ok: "G8 runs once CB-05 lands its spec"
+  why: "evidence older than 365 days shows 'Q0' instead of E0 + a Q0 gap, self-attested shows 'Q1' instead of E1; the run and export carry no gap snapshot"
 
 - row: KF-15
   gate: [G11]
@@ -127,25 +119,35 @@
   owner: CB-12
   why: "closed-world counts recomputed from the oracle differ by exactly the KF-4 (z09: 2 certificates not read) and KF-5 (control listener stored as a TLS endpoint) assets"
 
-# ---------------------------------------------------------------------------- steps the gate spec (CB-05) adds
-- row: CB05-sources
-  gate: [G11]
-  match: {kind: oracle, verdict: NOT-RUN, source: [S-host, S-canary, S-idn, DB-pg-tls, DB-mysql-tls, HSM-softhsm]}
+# ---------------------------------------------------------------------------- lab parts CB-02 defers (lab.json deferred[])
+# Reported NOT-RUN by the step that owns the row, with the marking's reason (INTERFACES v5.6); never pass, never silent.
+# Issue draft: round6/cbom/cb-02/issue-deferred.md (filing was refused for agents: External System Writes); tracked in #73.
+- row: DEF-ubuntu-tier2
+  gate: [G4, G15]
+  match: {check: deferred, part: ubuntu-tier2}
   issue: "#73"
-  owner: CB-05
-  why: "the lab targets behind Servers, IDN, Database and HSM sources are judged once CB-05's G4/G5b/G6 specs configure those sources"
-  not_run_ok: "those sources are not configured by the CB-01 flow"
-- row: CB05-steps
-  gate: [G4, G6, G13]
-  match: {kind: flow, step: [G4, G6, G13]}
+  owner: CB-02
+  why: "no Ubuntu .40 with the product's Tier-2 sudoers: S-host runs Tier 1 (G4) and the ForceCommand allow-list row (G15) waits"
+  not_run_ok: "lab part deferred by CB-02 (lab.json deferred[] ubuntu-tier2)"
+- row: DEF-idp
+  gate: [G7]
+  match: {check: deferred, part: idp}
   issue: "#73"
-  owner: CB-05
-  why: "Servers (G4), Database (G6) and drift (G13) customer steps are CB-05's Playwright specs"
-  not_run_ok: "CB-01 ships the runner and judge; CB-05 adds these specs"
-- row: CB05-g12-schema
-  gate: [G12]
-  match: {check: schema_validation}
+  owner: CB-02
+  why: "no lab OIDC IdP at .42: 'IdP keys = JWKS oracle' (G7) waits"
+  not_run_ok: "lab part deferred by CB-02 (lab.json deferred[] idp)"
+- row: DEF-receiver
+  gate: [G13]
+  match: {check: deferred, part: receiver}
   issue: "#73"
-  owner: CB-05
-  why: "JSON schema + cyclonedx-python-lib strict, XML XSD and OSCAL validation of the downloads"
-  not_run_ok: "CB-05 adds the validators to G12"
+  owner: CB-02
+  why: "no lab webhook receiver at .43: drift events delivered and signed (G13) wait"
+  not_run_ok: "lab part deferred by CB-02 (lab.json deferred[] receiver)"
+
+# ---------------------------------------------------------------------------- new findings of the CB-05 gate (drafts in round6/cbom/cb-05/bugs/)
+- row: CB05-B1
+  gate: [G7]
+  match: {check: cloud_not_available, provider: [azure, gcp]}
+  issue: "#73"
+  owner: CB-08
+  why: "Azure and Google Cloud forms promise 'signs in and lists what it would read' instead of an honest 'not available' (OA-7c); draft round6/cbom/cb-05/bugs/BUG-CB05-1-azure-gcp-not-honest.md"

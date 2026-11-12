@@ -5,6 +5,7 @@
     python3 -m harness.gate redact  <run> [--secrets-file F]                       scrub har/ api/ ui/ steps/ logs/
     python3 -m harness.gate sums    <run>                                          SHA256SUMS; prints its sha256
     python3 -m harness.gate verify  <run>                                          re-hash; exit 1 on any change
+    python3 -m harness.gate compare <run_a> <run_b>                                same-SHA verdicts identical (CB-05 F)
 
 Run from ``e2e/cbom`` (``cd e2e/cbom && python3 -m harness.gate ...``) or with ``PYTHONPATH=e2e/cbom``.
 
@@ -21,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import SCHEMA_REPORT, canary, derived, join, ledger, logs, manifest, oracle, redact
+from . import SCHEMA_REPORT, canary, compare, derived, join, ledger, logs, manifest, oracle, redact
 from .checks import Check, Checks
 from .rundir import iso, read_json, run_steps, utc_now, write_json
 
@@ -171,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
     j.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER)
     for name in ("freeze-oracle", "sums", "verify"):
         sub.add_parser(name).add_argument("run", type=Path)
+    c = sub.add_parser("compare")
+    c.add_argument("run", type=Path)
+    c.add_argument("other", type=Path)
     r = sub.add_parser("redact")
     r.add_argument("run", type=Path)
     r.add_argument("--secrets-file", type=Path, help="JSON list of raw secret values the run used (deleted after)")
@@ -178,6 +182,13 @@ def main(argv: list[str] | None = None) -> int:
     if not args.run.is_dir():
         print(f"no such run directory: {args.run}", file=sys.stderr)
         return 2
+    if args.cmd == "compare":
+        if not args.other.is_dir():
+            print(f"no such run directory: {args.other}", file=sys.stderr)
+            return 2
+        result = compare.compare(args.run, args.other)
+        print(json.dumps(result, indent=1))
+        return 0 if result["identical"] else 1
     if args.cmd == "judge":
         passed, report = judge(args.run, args.ledger)
         print(json.dumps({"passed": passed, "counts": report["counts"], "blocking": report["blocking_total"],
