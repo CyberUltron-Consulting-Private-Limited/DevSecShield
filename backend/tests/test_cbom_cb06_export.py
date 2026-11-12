@@ -533,7 +533,8 @@ def test_zs_protocol_is_the_stored_protocol_column(exported):
 
 def test_large_exports_wait_for_a_free_export_slot(exported, monkeypatch, tmp_path):
     """[major 2a] A large export holds one of a few host-wide slots while it is built; with every slot taken the
-    route answers 503 with Retry-After instead of building another multi-GB document."""
+    route answers 429 with Retry-After (what the UI's error handler turns into "try again in N seconds") instead of
+    building another document of a gigabyte or more."""
     from backend.utilities.cbom_sources import export_slots as ES
 
     monkeypatch.setattr(ES, "LOCK_DIR", str(tmp_path))
@@ -544,13 +545,24 @@ def test_large_exports_wait_for_a_free_export_slot(exported, monkeypatch, tmp_pa
     with ES.slot():  # another worker process is building a large export
         for fmt in ("json", "xml"):
             busy = call("GET", f"/1/cbom/sources/runs/{run_id}/cbom?format={fmt}")
-            assert busy.status_code == 503, busy.text
+            assert busy.status_code == 429, busy.text
             assert int(busy.headers["retry-after"]) > 0 and "busy" in busy.json()["detail"]
         monkeypatch.setattr(ES, "LARGE_ASSETS", 10_000)  # a small run is never held up
         assert call("GET", f"/1/cbom/sources/runs/{run_id}/cbom").status_code == 200
     monkeypatch.setattr(ES, "LARGE_ASSETS", 1)
     assert call("GET", f"/1/cbom/sources/runs/{run_id}/cbom?format=xml").status_code == 200  # the slot is free again
     assert call("GET", "/1/cbom/sources/runs/999999/cbom").status_code == 404  # ownership is checked first
+
+
+def test_a_browser_can_read_retry_after():
+    """The busy answer's Retry-After reaches the UI only when CORS exposes it (it is not a safelisted header)."""
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+
+    r = TestClient(app).get("/health", headers={"Origin": "http://localhost:3000"})
+    exposed = {h.strip().lower() for h in r.headers.get("access-control-expose-headers", "").split(",")}
+    assert "retry-after" in exposed
 
 
 def _import_with_the_product(doc: dict, tmp_path: Path) -> dict:

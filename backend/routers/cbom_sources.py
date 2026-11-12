@@ -1430,11 +1430,11 @@ async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(defaul
                     **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.xml"'})
             return JSONResponse(payload, headers={
                 **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
-    except EXPORT_SLOTS.Busy:
+    except EXPORT_SLOTS.Busy:  # 429 + Retry-After: the UI's error handler already says "try again in N seconds"
         log("run cbom export busy", team=team_id, run=run_id, rows=rows, slots=EXPORT_SLOTS.SLOTS)
         return JSONResponse(
             {"detail": f"The server is busy building other large CBOM exports; retry in {EXPORT_SLOTS.RETRY_AFTER_S} s."},
-            status_code=503, headers={**PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)})
+            status_code=429, headers={**PRIVATE, "Retry-After": str(EXPORT_SLOTS.RETRY_AFTER_S)})
 
 
 def _run_posture(engine, team_id: int, run_id: int) -> dict:

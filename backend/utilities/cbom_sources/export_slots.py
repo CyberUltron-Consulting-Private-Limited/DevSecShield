@@ -6,8 +6,8 @@ host it shares with Postgres, Mongo and RabbitMQ, so a few concurrent large down
 
 A large export (``LARGE_ASSETS`` stored rows or more) first takes one of ``SLOTS`` slots. A slot is an exclusive
 ``flock`` on a file in ``LOCK_DIR``: it is shared by every worker process of the container, and the kernel releases it
-when its holder ends, even when the process is killed. With every slot taken the route answers 503 with Retry-After;
-smaller exports never wait. Configuration (environment, read at import): ``ZS_CBOM_EXPORT_SLOTS`` (default 2),
+when its holder ends, even when the process is killed. With every slot taken the route answers 429 with Retry-After
+(the UI's error handler then says when to retry); smaller exports never wait. Configuration (environment, read at import): ``ZS_CBOM_EXPORT_SLOTS`` (default 2),
 ``ZS_CBOM_EXPORT_LARGE_ASSETS`` (default 10,000), ``ZS_CBOM_EXPORT_LOCK_DIR`` (default the system temp directory).
 """
 from __future__ import annotations
