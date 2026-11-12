@@ -627,6 +627,19 @@ print(json.dumps({{"banner": banner, "dropped": dropped}}))
 """
 
 
+def burst_verdict(counts: dict, sshd_log: str, exempt_served: bool, source: str = S.BURST_IP) -> tuple[bool, str]:
+    """Did sshd penalise the burst source? Either it logged a penalty for that source during this burst, or the source
+    is still penalised from an earlier burst (OpenSSH rate-limits that logging): every connection from it dropped while
+    the exempt self-check source is served in the same capture. sshd has no other per-source refusal configured."""
+    dropped, banner = counts.get("dropped", 0), counts.get("banner", 0)
+    logged = any("penalty" in ln and source in ln for ln in sshd_log.splitlines())
+    if dropped and logged:
+        return True, f"sshd logged a penalty for {source}; {banner} banners, {dropped} dropped"
+    if dropped and banner == 0 and exempt_served:
+        return True, f"{source} still penalised: all {dropped} dropped, no banner, while the exempt source is served"
+    return False, f"{banner} banners, {dropped} dropped, penalty logged: {logged}, exempt source served: {exempt_served}"
+
+
 def check_penalties(ctx: Ctx, o: dict, t: Target) -> None:
     """PerSourcePenalties: the server's own effective configuration (`sshd -T`), and on the target that keeps the
     default, a positive control: a burst of connections that never authenticate, from a throwaway source address
@@ -659,16 +672,14 @@ def check_penalties(ctx: Ctx, o: dict, t: Target) -> None:
         counts = {"banner": 0, "dropped": 0, "error": (burst.stderr or burst.stdout)[-300:]}
     time.sleep(1)
     logs = subprocess.run(["docker", "logs", "--since", since, o["container"]], capture_output=True, text=True)
-    text = logs.stdout + logs.stderr
-    activated = any("penalty" in ln and S.BURST_IP in ln for ln in text.splitlines())
-    t.check(oid, "unauthenticated burst from the throwaway source is penalised", "python3 socket burst (.12) + sshd log",
-            True, activated and counts.get("dropped", 0) > 0 and counts.get("banner", 0) > 0,
-            note=f"{counts.get('banner')} connections got an SSH banner, {counts.get('dropped')} were dropped")
     after = ctx.exec("python3", "-c", f"import socket; s=socket.create_connection(('{o['address']}', {o['port']}), 3); "
                      "s.settimeout(3); print(s.recv(64)[:8])")
-    t.check(oid, "the exempt self-check source is served right after the burst", "python3 socket (.11)", True,
-            "SSH-" in after.stdout)
-    t.control("penalty active (O-8)", o["target"], activated, f"sshd logs a penalty for {S.BURST_IP} after the burst")
+    served = "SSH-" in after.stdout
+    penalised, how = burst_verdict(counts, logs.stdout + logs.stderr, served)
+    t.check(oid, "unauthenticated burst from the throwaway source is penalised", "python3 socket burst (.12) + sshd log",
+            True, penalised, note=how)
+    t.check(oid, "the exempt self-check source is served right after the burst", "python3 socket (.11)", True, served)
+    t.control("penalty active (O-8)", o["target"], penalised, how)
 
 
 def check_host(ctx: Ctx, o: dict) -> Target:

@@ -733,3 +733,15 @@ def test_negative_proofs_cover_the_review_mutations() -> None:
     for m in labnegative.PARSER_MUTATIONS.values():
         assert m["old"] in (LAB / m["file"]).read_text()          # every mutation anchor still exists
     assert "z02-extra-group" in labgen.VARIANTS
+
+
+def test_psp_burst_counts_banners_and_accepts_a_still_penalised_source() -> None:
+    log = "drop connection #0 from [10.231.0.12]:60454 on [10.231.0.28]:22 penalty: connections without attempting auth"
+    assert selfcheck.burst_verdict({"banner": 17, "dropped": 23}, log, True)[0] is True
+    # second self-check within the penalty: every connection dropped, sshd logs nothing new, .11 still served
+    ok, how = selfcheck.burst_verdict({"banner": 0, "dropped": 40}, "", True)
+    assert ok is True and "still penalised" in how
+    assert selfcheck.burst_verdict({"banner": 0, "dropped": 40}, "", False)[0] is False      # sshd down, not a penalty
+    assert selfcheck.burst_verdict({"banner": 40, "dropped": 0}, "", True)[0] is False       # no penalty at all
+    assert selfcheck.burst_verdict({"banner": 10, "dropped": 30}, log.replace(".12", ".13"), True)[0] is False
+    assert "banner" in selfcheck.BURST and "dropped" in selfcheck.BURST
