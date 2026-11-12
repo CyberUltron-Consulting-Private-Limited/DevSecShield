@@ -65,8 +65,12 @@ def test_three_copies_are_identical():
         first = (FOLDERS[0] / name).read_bytes()
         assert all((folder / name).read_bytes() == first for folder in FOLDERS[1:]), name
     # exactly these copies: no fourth algid anywhere in the product trees
-    found = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "backend",
-                            "scan_node", "aibom/src", "RabbitMQ"], cwd=REPO, capture_output=True, text=True).stdout.split()
+    try:  # the backend image has no git: the byte check above still runs, the stray-copy scan needs a checkout
+        found = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "backend",
+                                "scan_node", "aibom/src", "RabbitMQ"], cwd=REPO, capture_output=True,
+                               text=True).stdout.split()
+    except OSError:
+        found = []
     stray = [p for p in found if Path(p).name in ("algid.py", "algid_tables.py")]
     if found:
         assert sorted(stray) == sorted(str(p.relative_to(REPO)) for p in COPIES), stray

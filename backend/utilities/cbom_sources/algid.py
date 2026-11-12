@@ -455,6 +455,12 @@ def hint(value: object) -> str | None:
     return None
 
 
+def is_sentinel(value: object) -> bool:
+    """True for the placeholder texts tools print where there is no algorithm
+    ("<NULL>", "(NONE)", "Unknown OID", "none", ""): absent, not unknown."""
+    return isinstance(value, str) and value.strip().casefold() in _SENTINELS
+
+
 def family_label(value: object) -> str | None:
     found = resolve(value)
     return found.family_label if found else None

@@ -50,6 +50,7 @@ from backend.new_models import (
     CbomDriftEvent,
     Scan,
 )
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources.cbom_metrics import code_row_quantum_vulnerable, quantum_readiness_pct
 from backend.utilities.cbom_sources.cbom_rows import display_row, is_finding
@@ -138,7 +139,9 @@ def node_views(rows: Iterable[CbomCollectedAsset], source_ref: str, *, reclassif
             identity=ident, key=ID.stable_key("node", source_ref, ident), label=ID.node_label(row),
             asset_type=row.asset_type, codes=clean, impact=impact if clean or impact else None,
             quantum_vulnerable=qv, finding=bool(clean), judged=cls != "not-applicable",
-            algorithm=row.algorithm, key_size=row.key_size, protocol=row.protocol,
+            # an OID or a cloud enum compares as its canonical name: a node upgrade that names an algorithm it used
+            # to report as an OID is not a change (S-2); any other text compares as stored
+            algorithm=algid.compare_key(row.algorithm), key_size=row.key_size, protocol=row.protocol,
             fingerprint=(str(facts.get("fingerprint_sha256")) if cert and facts.get("fingerprint_sha256") else None),
             not_after=(str(facts.get("not_after")) if cert and facts.get("not_after") else None),
             certificate=cert, asset_id=row.id,
@@ -370,9 +373,18 @@ def _versions(run: CbomCollectionRun | None) -> dict[str, Any]:
 
 
 def rules_differ(a: CbomCollectionRun | None, b: CbomCollectionRun | None) -> bool:
-    """The knowledge base or the classifier that judged the two runs differ (unknown counts as different)."""
+    """Whether the two runs must be re-judged before they are compared: the knowledge base or the classifier that
+    judged them differ (unknown counts as different), or either one was judged by rules other than the current ones.
+    The second case covers a run created before a deploy and ingested after it (its label is the old rules' while its
+    assets were judged by the new ones), so both sides are always compared by the same, current, rules (ST-1)."""
+    from backend.utilities.cbom_sources import crypto_kb
+    from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
+
     va, vb = _versions(a), _versions(b)
-    return any(va.get(k) is None or va.get(k) != vb.get(k) for k in ("kb_version", "classifier_version"))
+    if any(va.get(k) is None or va.get(k) != vb.get(k) for k in ("kb_version", "classifier_version")):
+        return True
+    current = {"kb_version": crypto_kb.version(), "classifier_version": CLASSIFIER_VERSION}
+    return any(side.get(k) != current[k] for side in (va, vb) for k in current)
 
 
 def _job_assets(session: Session, job: CbomCollectionJob) -> list[CbomCollectedAsset]:

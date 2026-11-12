@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.utilities.cbom_sources import algid
 from backend.utilities.cbom_sources import classify as C
 
 # Names as the node reports them (zs_scan_node/ikeprobe.py) and as the appliance parsers normalise them.
@@ -171,6 +172,18 @@ def mesh_server_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: 
     return None
 
 
+_IKE_GROUP_NUMBER = re.compile(r"(?:group|dh-group|dh)\s*(\d{1,3})", re.I)
+
+
+def _pq_ike_group(group: Any) -> bool:
+    """A configured IKE group that is a post-quantum key exchange, in any spelling a parser keeps: the IKEv2
+    Transform Type 4 name or number ("group N"), whichever syntax the vendor used."""
+    text = str(group or "").strip()
+    m = _IKE_GROUP_NUMBER.fullmatch(text)
+    found = algid.ike_ke(int(m.group(1))) if m else algid.resolve(text, "ike_ke") or algid.resolve(text)
+    return found is not None and found.quantum in ("safe", "hybrid")
+
+
 def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
     kind = str(facts.get("kind") or "")
     vendor = str(facts.get("vendor_label") or facts.get("vendor") or "Appliance")
@@ -186,7 +199,7 @@ def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: An
         if facts.get("aggressive") is True:
             out.add("IKE_AGGRESSIVE", "High", f"{what}: IKEv1 Aggressive Mode is allowed"
                     + (f" ({facts.get('aggressive_reason')})" if facts.get("aggressive_reason") else ""))
-        if facts.get("pq") is True:
+        if facts.get("pq") is True or any(_pq_ike_group(g) for g in facts.get("groups") or []):
             return False  # an ML-KEM additional key exchange is configured (RFC 9370)
         if facts.get("pq") is False:
             out.add("IKE_NO_PQ", "Low", f"{what} has no post-quantum (ML-KEM) key exchange")

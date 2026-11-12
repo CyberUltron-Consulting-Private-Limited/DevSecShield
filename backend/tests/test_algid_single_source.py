@@ -101,7 +101,6 @@ ALLOWED = {
     "aibom/src/aibom/schemas/bom-1.6.schema.json": 2,
     "aibom/src/aibom/schemas/spdx-3.0.1.schema.json": 3,
     "backend/utilities/ai/remediation.py": 1,
-    "backend/utilities/cbom_sources/classify.py": 12,
     "backend/utilities/cbom_sources/classify_ext/node_net.py": 5,
     "backend/utilities/cbom_sources/data/crypto_kb.json": 71,
     "backend/utilities/cbom_sources/data/cyclonedx/bom-1.6.xsd": 2,
