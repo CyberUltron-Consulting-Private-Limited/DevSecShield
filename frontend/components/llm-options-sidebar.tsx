@@ -340,7 +340,7 @@ export function LLMOptionsSidebar({
                   onValueChange={(value) => updateCreationData("model_type", value)}
                   required
                 >
-                  <SelectTrigger className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white">
+                  <SelectTrigger id="modelType" className="w-full cursor-pointer bg-zinc-700 border-zinc-600 text-white">
                     <SelectValue placeholder="Select model provider" />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-800 border-zinc-700">
@@ -472,6 +472,7 @@ export function LLMOptionsSidebar({
               <div className="grid grid-cols-1 gap-2 pr-4">
                 {AVAILABLE_PROBES.map((probe) => (
                   <div key={probe} className="flex items-center space-x-2">
+                    {/* infotip-shared: one benchmark of the list the Security Benchmarks (i) explains; its label's title describes it */}
                     <Checkbox
                       className="cursor-pointer"
                       id={probe}

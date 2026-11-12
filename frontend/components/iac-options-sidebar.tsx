@@ -378,6 +378,7 @@ export function IACOptionsSidebar({
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-4 pt-0">
+                {/* infotip-shared: the card's only field, explained by the (i) on the Environment card title */}
                 <Select value={environment} onValueChange={(v) => setEnvironment(v as IACEnvironment)}>
                   <SelectTrigger aria-label="Environment" className="h-8 bg-zinc-800 border-zinc-700 text-white text-xs cursor-pointer">
                     <SelectValue />

@@ -524,10 +524,10 @@ export const INFO_TIPS = {
     what: "The kinds of infrastructure code in the repository, one context each. Each kind reads its own files: Terraform .tf/.tfvars/.tfstate/.tf.json, Kubernetes and Helm .yaml/.yml, Ansible .yml/.yaml/.ini, CloudFormation .yaml/.yml/.json, Pulumi and CDK their program files.",
     example: "A repository with Terraform and Helm charts: add both contexts.",
   },
-  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:60-80 — terraform finds its files by extension; the others also need include patterns
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-88, RabbitMQ/worker/helpers/context/codebase_context.py:228-233 — the format decides the extensions; Terraform adds its own .tf patterns; the other formats' include patterns narrow their files (merged across formats: see iac.cfg.include)
   "iac.cfg.context_type": {
     label: "Context type",
-    what: "The infrastructure format of this context. Terraform files are found anywhere by their extension; for the other formats only files matching the include patterns below are read.",
+    what: "The infrastructure format of this context; it decides which file extensions are read. Terraform needs no pattern: its files are found by extension anywhere. For the other formats, the include patterns below narrow which files are read.",
     example: "Kubernetes, with the include pattern \"k8s\".",
   },
   // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:207-227, backend/utilities/scan/estimate_scan.py:210 — 1 credit per 0.5 MB of matched files, rounded to 0.01
@@ -1182,11 +1182,11 @@ export const INFO_TIPS = {
     what: "A short name for the MCP server, taken from its URL's host.",
     example: "example for https://mcp.example.com.",
   },
-  // src: backend/utilities/db/scan_list_item.py:259-261, frontend/app/[team_id]/mcp/page.tsx:1004-1005 — weighted average on a 1-4 scale (issue #35)
+  // src: backend/utilities/db/scan_list_item.py:200-261, frontend/app/[team_id]/mcp/page.tsx:1007-1011 — weighted average scaled to 0-10 (/4*10, as SAST) with #35 (T3b); starts at 0, so a scan without findings shows 0
   "mcp.table.risk": {
     label: "Risk Score",
-    what: "This scan's average severity weight, from 1 to 4: Critical 4, High 3, Medium 2, Low 1, averaged over its findings.",
-    example: "1 Critical and 1 Low finding: 2.5.",
+    what: "This scan's severity-weighted average, 0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings. 0 when it found nothing.",
+    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.0.",
   },
   // src: backend/utilities/db/scan_list_item.py:199-210, backend/utilities/db/scan_list_item.py:279-284 — tools, prompts and resources the server exposed
   "mcp.table.discovery": {
@@ -1270,7 +1270,7 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── LLM red teaming: list page (app/[team_id]/llm/page.tsx)
-  // src: backend/utilities/dashboard/scan_list.py:1500-1518 — the same status counters as SAST (UTC day for today)
+  // src: backend/utilities/dashboard/scan_list.py:1500-1518 — the same status counters as SAST (UTC day for today); "changed" means a real status or progress change once #47 stops polls and chat moving last_updated (T3a)
   "llm.kpi.status": {
     label: "Scan counts by status",
     what: "LLM scans of this team per status (Not started, Pending, Started, Success, Failure), and how many were created or changed since 00:00 UTC today.",
