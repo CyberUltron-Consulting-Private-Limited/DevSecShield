@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
-SOURCES_SHA256 = "7257136b181273ea4067ba70f36df1180130868f70bc4f723ee9c493b0f613dc"
+SOURCES_SHA256 = "1366e8556dd3eabd60347440345199647be1ea105f7cce8e928d5b2b7e4fc3d8"
 
 # canonical name -> (family_label, primitive, standard, status, parameter_set,
 #                    nist_category, construction, quantum, key_size, components)
@@ -1799,6 +1799,37 @@ IKE_KE: Mapping[int, str] = MappingProxyType({
     35: "ml-kem-512",
     36: "ml-kem-768",
     37: "ml-kem-1024",
+})
+
+# the spellings the product emits for each IKE id (ikeprobe.GROUPS, appliance_parsers)
+IKE_KE_NAMES: Mapping[int, str] = MappingProxyType({
+    1: "MODP-768",
+    2: "MODP-1024",
+    5: "MODP-1536",
+    14: "MODP-2048",
+    15: "MODP-3072",
+    16: "MODP-4096",
+    17: "MODP-6144",
+    18: "MODP-8192",
+    19: "ECP-256",
+    20: "ECP-384",
+    21: "ECP-521",
+    22: "MODP-1024-S160",
+    23: "MODP-2048-S224",
+    24: "MODP-2048-S256",
+    25: "ECP-192",
+    26: "ECP-224",
+    27: "BRAINPOOL-P224R1",
+    28: "BRAINPOOL-P256R1",
+    29: "BRAINPOOL-P384R1",
+    30: "BRAINPOOL-P512R1",
+    31: "CURVE25519",
+    32: "CURVE448",
+    33: "GOST3410-2012-256",
+    34: "GOST3410-2012-512",
+    35: "ML-KEM-512",
+    36: "ML-KEM-768",
+    37: "ML-KEM-1024",
 })
 
 AWS: Mapping[str, Mapping[str, str]] = MappingProxyType({

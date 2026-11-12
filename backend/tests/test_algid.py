@@ -261,16 +261,31 @@ def test_iana_ikev2_t4_exact():
         names[int(num)] = found.name
         m = re.fullmatch(r"ml-kem-(\d+)", desc)
         if m:
-            # the registry spelling: the IKE binding (an RFC-to-be: draft), not the FIPS 203 algorithm row
+            # the binding row keeps the registry spelling (an RFC-to-be: draft); the product spelling ML-KEM-NNN is
+            # the FIPS 203 algorithm row (standard) and is what ike_name() returns
             assert (found.name, found.parameter_set, found.quantum, found.status) == (
                 desc, f"ML-KEM-{m.group(1)}", "safe", "draft")
             assert A.resolve(f"ML-KEM-{m.group(1)}").status == "standard"
+            assert A.ike_name(int(num)) == f"ML-KEM-{m.group(1)}"
+            assert A.resolve(f"ML-KEM-{m.group(1)}", "ike_ke") == found._replace(matched_by="name")
         else:
             assert (found.family_label, found.key_size, found.quantum) == (*_ike_expect(desc), "vulnerable"), desc
-    # the product's existing spellings (ikeprobe.GROUPS, classify_ext/node_net WEAK_GROUPS) are unchanged
-    assert (names[1], names[14], names[19], names[22], names[31]) == (
-        "MODP-768", "MODP-2048", "ECP-256", "MODP-1024-S160", "CURVE25519")
+            assert A.ike_name(int(num)) == found.name
     assert names[27] == "BRAINPOOL-P224R1" and names[36] == "ml-kem-768" and A.ike_ke(38) is None
+    assert A.ike_name(38) is None and A.ike_name("36") is None and A.ike_name(True) is None
+
+
+def test_ike_names_are_what_the_product_emits():
+    """ike_name() returns exactly the spellings the scan node emits today: ikeprobe.GROUPS (stored as
+    ikev2.pq.method, e.g. "ML-KEM-768") and appliance_parsers.GROUP_NAMES. No stored fact changes."""
+    for rel, start, end in (("scan_node/zs_scan_node/ikeprobe.py", "GROUPS = {", "}"),
+                            ("scan_node/zs_scan_node/appliance_parsers.py", "GROUP_NAMES = {", "}")):
+        text = (REPO / rel).read_text()
+        block = text[text.index(start):]
+        block = block[:block.index(end) + 1]
+        table = {int(k): v for k, v in re.findall(r'(\d+): "([^"]+)"', block)}
+        assert table, rel
+        assert {k: A.ike_name(k) for k in table} == table, rel
 
 
 def _csor_oids() -> dict[str, str]:
@@ -528,6 +543,8 @@ def test_der_readers():
     bit_string_key = _tlv(0x30, _tlv(0x02, b"\x00") + _tlv(0x30, _oid("2.16.840.1.101.3.4.3.18"))
                           + _tlv(0x03, os.urandom(32)))
     assert A.pkcs8_alg(bit_string_key) is None  # the private key must be an OCTET STRING
+    two_children = _tlv(0x30, _tlv(0x02, b"\x00") + _tlv(0x30, _oid("2.16.840.1.101.3.4.3.18")))
+    assert A.pkcs8_alg(two_children) is None  # no privateKey at all
     name = _tlv(0x30, _tlv(0x31, _tlv(0x30, _oid("2.5.4.3") + _tlv(0x0C, b"lab"))))
     validity = _tlv(0x30, _tlv(0x17, b"260101000000Z") * 2)
     tbs = _tlv(0x30, _tlv(0xA0, _tlv(0x02, b"\x02")) + _tlv(0x02, b"\x01") + _tlv(0x30, _oid("2.16.840.1.101.3.4.3.18"))
@@ -604,6 +621,35 @@ def test_classical_family_labels_kept():
               "1.2.840.10045.2.1": "EC", "ssh-rsa": "RSA", "ecdsa-sha2-nistp256": "ECDSA"}
     for text, family in expect.items():
         assert A.family_label(text) == family, text
+
+
+def test_namespaces_are_validated_and_codepoints_agree():
+    """resolve(value, namespace) is the namespace function for every codepoint, and a namespace that does not exist
+    is an error whatever the value (it used to return None, an OID's row or raise, depending on the value)."""
+    for namespace, function in (("tls_group", A.tls_group), ("tls_sigscheme", A.tls_sigscheme),
+                                ("ike_ke", A.ike_ke)):
+        for codepoint in range(0x10000):
+            assert A.resolve(codepoint, namespace) == function(codepoint), (namespace, codepoint)
+    for bad in ("tls_groups", "bogus", ""):
+        for value in (36, "1.2.840.113549.1.1.1", "<NULL>", "RSA", None):
+            with pytest.raises(ValueError):
+                A.resolve(value, bad)
+    assert A.resolve("mldsa65x", "name") is None  # strict: no marker fallback
+    assert A.resolve("ML-DSA-65").matched_by == "name" and A.resolve("mldsa65").matched_by == "alias"
+    assert A.aws("kms", "KeySpec", " RSA_2048 ").name == "RSA-2048"
+    assert A.compare_key(" RSASSA_PSS_SHA_256 ") == "RSASSA-PSS-SHA256"
+    assert A.resolve("xwing768").quantum == "hybrid" and A.resolve("xwing768").matched_by == "marker"
+    assert A.resolve("HSS-SHA256-N32").stateful and A.resolve("HSS-SHA256-N32").matched_by == "marker"
+
+
+def test_short_markers_are_tokens():
+    """LMS, HSS, HQC, BIKE and XMSS count only at the start of a token: classical text never reads as PQ."""
+    for text in ("SHA1 with SSH", "HELMS", "realms", "WITHSSH", "x25519 WITH HMAC"):
+        found = A.resolve(text)
+        assert found is None or found.family_label != "PQ", text
+    for text in ("LMS_SHA256_M32_H10", "HSS/LMS", "hqc-128", "BIKE-L1", "XMSS^MT", "xmssmt_sha2_20/2_256"):
+        found = A.resolve(text)
+        assert found is not None and found.family_label == "PQ", text
 
 
 def test_names_do_not_depend_on_case():

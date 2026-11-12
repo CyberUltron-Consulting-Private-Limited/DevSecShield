@@ -197,13 +197,17 @@
   "mlkem1024-sha384": ["ML-KEM-1024", []]
  },
  "ike_ke_names": {
-  "_cite": "IANA IKEv2 Transform Type 4 (iana-ikev2-t4.csv). Names are the product's existing spellings (scan_node/zs_scan_node/ikeprobe.py GROUPS, appliance_parsers.py GROUP_NAMES), which classify_ext/node_net.py WEAK_GROUPS compares; 27, 33 and 34 are new. ML-KEM ids: RFC-ietf-ipsecme-ikev2-mlkem s2.2 (used as RFC 9370 additional key exchanges); they keep the registry spelling ml-kem-NNN, because the IKE binding is an RFC-to-be (status draft by status_rule) while the algorithm ML-KEM-NNN (FIPS 203) is standard: ike_ke(36) gives the binding, resolve(\"ML-KEM-768\") the algorithm.",
+  "_cite": "IANA IKEv2 Transform Type 4 (iana-ikev2-t4.csv). Names are the product's existing spellings (scan_node/zs_scan_node/ikeprobe.py GROUPS, appliance_parsers.py GROUP_NAMES), which classify_ext/node_net.py WEAK_GROUPS compares and ikeprobe stores as ikev2.pq.method; 27, 33 and 34 are new. algid.ike_name(id) returns them unchanged. ML-KEM ids: RFC-ietf-ipsecme-ikev2-mlkem s2.2 (used as RFC 9370 additional key exchanges); the product spelling ML-KEM-NNN is also the FIPS 203 algorithm row (standard), so their IKE binding rows (an RFC-to-be: draft by status_rule) are keyed by the registry spelling in ike_ke_binding_rows: ike_ke(36) is the binding row ml-kem-768, ike_name(36) the product spelling ML-KEM-768.",
   "1": "MODP-768", "2": "MODP-1024", "5": "MODP-1536", "14": "MODP-2048", "15": "MODP-3072", "16": "MODP-4096",
   "17": "MODP-6144", "18": "MODP-8192", "19": "ECP-256", "20": "ECP-384", "21": "ECP-521", "22": "MODP-1024-S160",
   "23": "MODP-2048-S224", "24": "MODP-2048-S256", "25": "ECP-192", "26": "ECP-224", "27": "BRAINPOOL-P224R1",
   "28": "BRAINPOOL-P256R1", "29": "BRAINPOOL-P384R1", "30": "BRAINPOOL-P512R1", "31": "CURVE25519",
-  "32": "CURVE448", "33": "GOST3410-2012-256", "34": "GOST3410-2012-512", "35": "ml-kem-512", "36": "ml-kem-768",
-  "37": "ml-kem-1024"
+  "32": "CURVE448", "33": "GOST3410-2012-256", "34": "GOST3410-2012-512", "35": "ML-KEM-512", "36": "ML-KEM-768",
+  "37": "ML-KEM-1024"
+ },
+ "ike_ke_binding_rows": {
+  "_cite": "Row keys for the ids whose product spelling (ike_ke_names) already names another row: the IKEv2 ML-KEM bindings (RFC-ietf-ipsecme-ikev2-mlkem, draft) keep the registry spelling, so the FIPS 203 rows ML-KEM-512/768/1024 (standard) stay as they are.",
+  "35": "ml-kem-512", "36": "ml-kem-768", "37": "ml-kem-1024"
  },
  "aws": {
   "_cite": "botocore service models (botocore-enums.json, the backend's pinned botocore): acm/acm-pca KeyAlgorithm, acm-pca SigningAlgorithm, kms KeySpec / SigningAlgorithmSpec. KMS ML_DSA_SHAKE_256 signs with every ML-DSA key size (KMS developer guide, ML-DSA), so it names no parameter set. SYMMETRIC_DEFAULT is AES-256-GCM (KMS developer guide, key spec reference).",

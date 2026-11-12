@@ -95,6 +95,7 @@ class Tables:
         self.tls_sigscheme: dict[int, str] = {}
         self.ssh_kex: dict[str, str] = {}
         self.ike_ke: dict[int, str] = {}
+        self.ike_names: dict[int, str] = {}
         self.aws: dict[str, dict[str, str]] = {}
         self.aws_tls_policy: dict[str, dict[str, tuple[str, ...]]] = {}
         self.openssl_text: dict[str, str] = {}
@@ -393,6 +394,8 @@ def build_ssh_kex(t: Tables, raw: bytes, openssh: bytes) -> None:
 
 def build_ike(t: Tables, raw: bytes) -> None:
     names = {int(k): v for k, v in t.curated["ike_ke_names"].items() if not k.startswith("_")}
+    # an id whose product spelling already names another row (ML-KEM-768, FIPS 203) keys its row by the registry name
+    rows = {int(k): v for k, v in t.curated["ike_ke_binding_rows"].items() if not k.startswith("_")}
     seen = set()
     for row in _csv(raw):
         num, desc = row["Number"], row["Name"]
@@ -402,7 +405,7 @@ def build_ike(t: Tables, raw: bytes) -> None:
         if n not in names:
             raise SourceError(f"IKEv2 transform type 4 id {n} ({desc}) has no product name")
         seen.add(n)
-        name, low = names[n], desc.lower()
+        name, low = rows.get(n, names[n]), desc.lower()
         status = _status(row["Reference"], desc)
         m = re.fullmatch(r"ml-kem-(\d+)", low)
         if m:
@@ -419,7 +422,8 @@ def build_ike(t: Tables, raw: bytes) -> None:
         else:
             raise SourceError(f"IKEv2 group with no rule: {n} {desc}")
         t.ike_ke[n] = t.add(name, attrs)
-    if set(names) - seen:
+        t.ike_names[n] = names[n]
+    if set(names) - seen or set(rows) - seen:
         raise SourceError(f"ike_ke_names not in the registry: {sorted(set(names) - seen)}")
 
 
@@ -683,6 +687,9 @@ def emit(t: Tables, digest: str) -> str:
                              [(_lit(n), _lit(t.ssh_kex[n])) for n in sorted(t.ssh_kex)])
     lines += [""] + _mapping("IKE_KE", "Mapping[int, str]",
                              [(str(n), _lit(t.ike_ke[n])) for n in sorted(t.ike_ke)])
+    lines += ["", "# the spellings the product emits for each IKE id (ikeprobe.GROUPS, appliance_parsers)"]
+    lines += _mapping("IKE_KE_NAMES", "Mapping[int, str]",
+                      [(str(n), _lit(t.ike_names[n])) for n in sorted(t.ike_names)])
     lines += ["", "AWS: Mapping[str, Mapping[str, str]] = MappingProxyType({"]
     for key in sorted(t.aws):
         lines.append(f"    {_lit(key)}: MappingProxyType({{")
