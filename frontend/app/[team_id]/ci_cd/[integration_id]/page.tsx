@@ -25,6 +25,8 @@ import { GitHubActionsGuide } from "@/components/GitHubActionsIntegrationGuide";
 import { JenkinsGuide } from "@/components/JenkinsIntegrationGuide";
 import { JenkinsDastGuide } from "@/components/JenkinsDastGuide";
 import { BambooGuide } from "@/components/BambooIntegrationGuide";
+import { GitLabCiGuide } from "@/components/GitLabCiIntegrationGuide";
+import { PolicyGateBadge } from "@/components/cicd/PolicyGateBadge";
 import { DastProfilesTab } from "@/components/dast/DastProfilesTab";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -72,7 +74,7 @@ export default function CicdIntegrationDashboardPage() {
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"dashboard" | "integration-guide" | "scan-settings" | "ticketing">("dashboard");
-  const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo">("jenkins");
+  const [activeSubTab, setActiveSubTab] = useState<"github-actions" | "jenkins" | "bamboo" | "gitlab">("jenkins");
   const [logsPage, setLogsPage] = useState(1);
   const logsOffset = (logsPage - 1) * LOGS_PAGE_SIZE;
 
@@ -185,6 +187,7 @@ export default function CicdIntegrationDashboardPage() {
     dashboard_data: undefined,
   };
   const isDast = (dashboardData.scan_type || "").toLowerCase() === "dast";
+  const isCbomIntegration = (dashboardData.scan_type || "").toLowerCase() === "cbom";
 
   const vulnsOverTimeChartArray = useMemo(() => {
     const raw = dashboardData.dashboard_data;
@@ -564,6 +567,7 @@ export default function CicdIntegrationDashboardPage() {
                         <TableHead>Scan ID</TableHead>
                         <TableHead>Kind</TableHead>
                         <TableHead>Status</TableHead>
+                        {isCbomIntegration && <TableHead>Policy gate</TableHead>}
                         <TableHead>Credits</TableHead>
                         <TableHead>Error</TableHead>
                         <TableHead>Created At</TableHead>
@@ -582,6 +586,11 @@ export default function CicdIntegrationDashboardPage() {
                           <TableCell>
                             {getStatusBadge(log.status)}
                           </TableCell>
+                          {isCbomIntegration && (
+                            <TableCell>
+                              <PolicyGateBadge gate={log.gate} />
+                            </TableCell>
+                          )}
                           <TableCell className="text-zinc-600 dark:text-zinc-400 font-mono tabular-nums">
                             {log.credits_consumed != null ? log.credits_consumed : "—"}
                           </TableCell>
@@ -773,6 +782,16 @@ export default function CicdIntegrationDashboardPage() {
                 >
                   Atlassian Bamboo
                 </button>
+                <button
+                  onClick={() => setActiveSubTab("gitlab")}
+                  className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+                    activeSubTab === "gitlab"
+                      ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                      : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  }`}
+                >
+                  GitLab CI
+                </button>
               </div>
 
               {/* Sub-tab Content */}
@@ -786,6 +805,10 @@ export default function CicdIntegrationDashboardPage() {
 
               {activeSubTab === "bamboo" && (
                 <BambooGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
+              )}
+
+              {activeSubTab === "gitlab" && (
+                <GitLabCiGuide apiKey={dashboardData.api_key} scanType={dashboardData.scan_type} />
               )}
                 </>
               )}
