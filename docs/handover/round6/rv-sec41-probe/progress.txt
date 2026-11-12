@@ -1,0 +1,7 @@
+12:24 resumed after restart; head 344d908 (only bench/sim.py changed vs 8beb824). Worktree $R6/rv-sec41 at 344d908.
+Findings so far (code read):
+ F1 [major] node_auth._record_seq commits even on refusal -> _rebind_pool_node replay/replay_window refusal commits the rebind (new token hash + key) -> breaks "nothing is kept if it fails"; protocol-1 path rolls back. Fix: rollback on refusal. TO PROBE.
+ F2 [minor] mixed-version (rolling deploy / rollback): s2_ nonces stored in nonce table by old server, window by new -> replay across versions within 300s.
+ F3 [minor] limits not cross-validated: CBOM_JOB_LEASE_S (30..86400) vs heartbeat (up to 3600) -> leases expire during run -> requeue -> duplicate execution + secrets to 2nd node. TO PROBE.
+ F4 [minor] capabilities are node-self-declared (heartbeat) -> not an authz control; doc it.
+ F5 [minor] contract: _authenticate alias now returns tuple (contract said keep alias) -> F1.4 callers break (fail-closed).

@@ -1,0 +1,8 @@
+2026-11-11T11:49:59Z f1-4 kms-key arn:aws:kms:ap-south-1:935951870001:key/59416634-9568-4534-a00b-3feacd8b3043 region=ap-south-1 tags=Project=DevSecShield,zs-lab=sandbox,zs-owner=f1-4 status=created
+2026-11-11T11:50:48Z | f1-1 | devsecshield-f1-bench-61b2688f | s3 bucket | created | F1.1 bench tarball
+2026-11-11T11:50:55Z f1-4 kms-key arn:aws:kms:ap-south-1:935951870001:key/59416634-9568-4534-a00b-3feacd8b3043 status=Enabled (NOT deleted): kms:ScheduleKeyDeletion AccessDenied for user devsecshield-developer (no identity-based policy allows it); kms:GenerateDataKey/Encrypt/GetKeyPolicy also AccessDenied, so the live wrap could not run. OWNER ACTION: schedule deletion (7 days) of this key, or grant the sandbox user kms:GenerateDataKey,kms:Decrypt,kms:ScheduleKeyDeletion on keys tagged zs-lab=sandbox. Cost ~USD 1/month prorated until deleted.
+2026-11-11T11:51:18Z | f1-1 | devsecshield-f1-bench-61b2688f | s3 bucket | DELETED (empty; tagging and public-access-block were refused by IAM) | F1.1
+2026-11-11T11:52:29Z | f1-1 | i-0c69a7da3e4b747a3 | ec2 c6i.xlarge (AL2023, 30GB gp3, subnet-0a933715183eeedc8, sg-0c617f55ec5ff0bbd) | created 11:52:20Z, terminate by 13:52Z | F1.1 bench
+2026-11-11T11:52:52Z | f1-1 | devsecshield-f1-bench | ssm document (Command) | created | F1.1 bench
+2026-11-12T04:02:27Z | f1-1 | i-0c69a7da3e4b747a3 | ec2 c6i.xlarge | TERMINATED by coordinator (ran ~16h past its 13:52Z cap after the builder died in a session interruption; results fetched via SSM first, sha256 899a8b99...) | F1.1
+2026-11-12T04:02:27Z | f1-1 | devsecshield-f1-bench | ssm document | DELETED | F1.1

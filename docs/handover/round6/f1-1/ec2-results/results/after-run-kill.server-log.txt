@@ -1,0 +1,63 @@
+tracebacks: 52
+lines: 32665
+--- tail
+cbom sources node back team=1 node=6355 gap_s=174
+cbom sources node back team=1 node=7841 gap_s=167
+cbom sources node back team=1 node=1667 gap_s=166
+cbom sources node back team=1 node=6299 gap_s=172
+cbom sources node back team=1 node=2538 gap_s=170
+cbom sources node back team=1 node=942 gap_s=172
+cbom sources node back team=1 node=5795 gap_s=172
+cbom sources node back team=1 node=6323 gap_s=170
+cbom sources node back team=1 node=9711 gap_s=165
+cbom sources node back team=1 node=9801 gap_s=163
+cbom sources node back team=1 node=3727 gap_s=172
+cbom sources node back team=1 node=991 gap_s=172
+cbom sources node back team=1 node=235 gap_s=170
+cbom sources node back team=1 node=392 gap_s=170
+cbom sources node back team=1 node=6423 gap_s=170
+cbom sources node back team=1 node=1094 gap_s=172
+cbom sources node back team=1 node=7396 gap_s=170
+cbom sources node back team=1 node=141 gap_s=172
+cbom sources node back team=1 node=6661 gap_s=172
+cbom sources node back team=1 node=1319 gap_s=167
+cbom sources node back team=1 node=5797 gap_s=172
+cbom sources node back team=1 node=6577 gap_s=172
+cbom sources node back team=1 node=8690 gap_s=174
+cbom sources node back team=1 node=1195 gap_s=172
+cbom sources node back team=1 node=9845 gap_s=174
+cbom sources node back team=1 node=6091 gap_s=167
+cbom sources node back team=1 node=1237 gap_s=167
+cbom sources node back team=1 node=9567 gap_s=174
+cbom sources node back team=1 node=8025 gap_s=174
+cbom sources node back team=1 node=4797 gap_s=172
+cbom sources node back team=1 node=6718 gap_s=172
+cbom sources node back team=1 node=4066 gap_s=172
+cbom sources node back team=1 node=3449 gap_s=172
+cbom sources node back team=1 node=4548 gap_s=172
+cbom sources node back team=1 node=1193 gap_s=172
+cbom sources node back team=1 node=4153 gap_s=172
+cbom sources node back team=1 node=699 gap_s=172
+cbom sources node back team=1 node=775 gap_s=172
+cbom sources node back team=1 node=8309 gap_s=174
+cbom sources node back team=1 node=8949 gap_s=172
+cbom sources node back team=1 node=260 gap_s=174
+cbom sources node back team=1 node=9290 gap_s=172
+cbom sources node back team=1 node=3238 gap_s=174
+cbom sources node back team=1 node=4604 gap_s=174
+cbom sources node back team=1 node=9307 gap_s=174
+cbom sources node back team=1 node=2441 gap_s=172
+cbom sources node back team=1 node=375 gap_s=169
+cbom sources node back team=1 node=1286 gap_s=175
+cbom sources node back team=1 node=4098 gap_s=172
+cbom sources job released team=1 job=4276 node=7192 retry=True refunded_c=0
+cbom sources node back team=1 node=1628 gap_s=175
+cbom sources job claimed team=1 run=1 job=4276 node=5140 kind=collect attempt=2 segment=bench-seg
+cbom sources node back team=1 node=5710 gap_s=175
+cbom sources node back team=1 node=9516 gap_s=175
+cbom sources job finished team=1 run=1 job=4276 node=5140 kind=collect attempt=2 status=success outcome=ok ok=1 failed=0 skipped=0 assets=0 duration_s=0 refunded_c=0
+cbom sources job claimed team=1 run=1 job=4484 node=9527 kind=collect attempt=2 segment=bench-seg
+cbom sources job finished team=1 run=1 job=4484 node=9527 kind=collect attempt=2 status=success outcome=ok ok=1 failed=0 skipped=0 assets=0 duration_s=0 refunded_c=0
+cbom sources job claimed team=1 run=1 job=251 node=4596 kind=collect attempt=3 segment=bench-seg
+cbom sources run status team=1 run=1 status=done
+cbom sources job finished team=1 run=1 job=251 node=4596 kind=collect attempt=3 status=success outcome=ok ok=1 failed=0 skipped=0 assets=0 duration_s=0 refunded_c=0

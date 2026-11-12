@@ -1,0 +1,55 @@
+{
+  "at": "2026-11-11T11:49:51Z",
+  "api": "https://api.github.com",
+  "user_listing": {
+    "ok": false,
+    "kind": "auth",
+    "status": 403,
+    "message": "The credential cannot read this (HTTP 403); check its permissions"
+  },
+  "repositories": [
+    {
+      "ok": true,
+      "external_id": "1075929875",
+      "full_name": "AnshSinghal-CyberUltron/DevSecShield",
+      "default_branch": "main",
+      "visibility": "private",
+      "archived": false,
+      "fork": false,
+      "language": "HTML",
+      "topics": [],
+      "size_kb": 268585,
+      "pushed_at": "2026-11-11T11:49:21",
+      "web_url": "https://github.com/AnshSinghal-CyberUltron/DevSecShield"
+    }
+  ],
+  "pagination": {
+    "pages_read": 1,
+    "items": 2,
+    "next_link_path": "/repositories/1075929875/branches",
+    "next_page_refused": {
+      "url_path": "/repositories/1075929875/branches",
+      "kind": "auth",
+      "status": 403
+    }
+  },
+  "client_stats": {
+    "api_calls": 3,
+    "pages": 0,
+    "retries": 0,
+    "waits": 0,
+    "rate_limit": 15000,
+    "rate_remaining": 14323
+  },
+  "inventory": [
+    {
+      "full_name": "AnshSinghal-CyberUltron/DevSecShield",
+      "outcome": "added",
+      "in_scope": true,
+      "scope_reason": "matched"
+    }
+  ],
+  "inventory_resync_outcomes": [
+    "same"
+  ]
+}

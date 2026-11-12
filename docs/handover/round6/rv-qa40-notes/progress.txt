@@ -1,0 +1,2 @@
+step0: fetched PR meta, files
+2026-11-11T12:31:42Z started qa40-pg (port 55440, user/pw qa40)

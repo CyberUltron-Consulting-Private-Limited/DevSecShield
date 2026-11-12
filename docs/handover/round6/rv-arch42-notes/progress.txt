@@ -1,0 +1,2 @@
+2026-11-11T12:26:05Z start: reading PR 42
+2026-11-11T12:27:35Z worktree at b2933fc, pg container rv-arch42-pg 127.0.0.1:55642 (rv/rvpass/rv42)

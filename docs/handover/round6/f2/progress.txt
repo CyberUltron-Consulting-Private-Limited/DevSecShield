@@ -1,0 +1,15 @@
+2026-11-11T10:51:20Z step0: branched feat/f2-info-tips from origin/dev 3399452
+2026-11-11T10:56:17Z step1: SPEC.md written (design: Radix tooltip toggletip, registry content/infotips.ts, coverage test)
+2026-11-11T11:26:30Z step3: PR1 code committed c399569 + pushed; tsc ok, eslint no new, 49 tests pass
+2026-11-11T11:32:39Z step4: harness 20/20 (hover, focus+Esc, Enter toggle, tap 390x844, tap outside, aria, axe 0 serious) at f2/harness/run.sh; next: issues + PR1
+2026-11-11T11:34:25Z step5: PR #38 opened (head c399569); issues #35 #36 #37 filed. next: PR2 branch feat/f2-info-tips-2 (other products)
+2026-11-11T11:37:38Z step6: PR2 branch: IaC done 4d1e69f
+2026-11-11T11:45:23Z step7: DAST done eb955ef (+ backend DAST urls fix + test)
+2026-11-11T11:45:35Z PR38 CI green: run 43013049008 (ci-gate success) on c399569
+2026-11-11T11:47:44Z step8: AI BOM done 2a373a1; branch feat/f2-info-tips-2 pushed
+2026-11-11T11:51:04Z step9: MCP done
+2026-11-11T11:53:20Z step10: LLM done
+2026-11-11T11:57:22Z step11: CBOM code done; all 8 products covered
+2026-11-11T12:02:29Z step12: settings/account/admin done; 282 entries 27 files
+2026-11-11T12:26:01Z relaunch: worktree clean at 11fb71a; origin has up to 0539ed3 (2 unpushed: dashboard, settings); issues #35-37,#43,#44 filed; next: verify part-2 tips vs backend
+2026-11-11T12:29:21Z coordinator relayed #38 content review 5858670025 (27 comments); plan: part-1 fixes in wt-part1, merge into part 2

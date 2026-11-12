@@ -1,0 +1,8 @@
+2026-11-11T10:51:15Z start: read brief, TEAM-PROCESS, PARALLEL-PLAN
+2026-11-11T10:59:31Z explore done: auth/team/admin/invitations/cbom http read; route inventory generated (routes-dev.json, 151 routes); SPEC.md written; branch feat/f4-rbac from origin/dev 3399452
+2026-11-11T11:10:17Z PR1 tests written and committed red (240a0d5): 50 failed / 45 passed; rbac lib (permissions/policy/audit/coverage) written, not committed; next: migration + wire routes
+2026-11-11T11:28:16Z PR1 impl committed fc6b47a + pushed feat/f4-rbac; new tests green (97 + 3 PG on local pg16 at 127.0.0.1:55444, path in f4/pgdata.path); coordinator msg handled: x-zs-permission marker enforced (PermissionMarker), F1/F3 perm names in matrix, SPEC 'For other tracks' published, migration r6f4rbac001, tables in backend/access_models.py; next: full backend suite under heavy lock, fix existing tests
+2026-11-11T11:56:43Z PR1: existing tests updated (eed425e), targeted 411 passed; full suite run 1 had 139 failures (all addressed or env: aibom venv); bench running; SSO modules drafted untracked (utilities/sso/{saml,oidc,http,service}.py, e2e/sso/keycloak_lab.py, scratch sso_models_snippet.py). Stack lock held by qa-pr30.
+2026-11-11T12:02:50Z PR1 OPENED: #42 head afad595 (feat/f4-rbac). bench numbers in body. Next: watch CI; start PR2 branch feat/f4-sso from feat/f4-rbac
+2026-11-11T12:09:06Z PR1 #42: title shortened, semgrep fix b2933fc pushed, CI rerun watching. On feat/f4-sso (signxml commit + merged rbac).
+2026-11-11T12:26:23Z relaunch: read briefs; PG restarted on 127.0.0.1:55444 (/tmp/f4-pg.GHsX2A); reviewing uncommitted SSO work on feat/f4-sso (access_models diff, routers/sso.py, utilities/sso/*, tests test_sso_flow/test_sso_saml, e2e/sso)

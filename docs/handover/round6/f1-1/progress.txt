@@ -1,0 +1,18 @@
+2026-11-11T10:51:16Z step0: read brief, TEAM-PROCESS, PARALLEL-PLAN
+2026-11-11T10:59:32Z step1: explored (node API, jobs, runs, caps, node client); SPEC.md written; branch feat/f1-node-api from origin/dev 3399452
+2026-11-11T11:05:57Z step2: bench written (common/seed/sim/stack/run_bench); smoke 200 nodes on dev OK (p99 4.4s at 50 req/s, 20 stmts/req)
+2026-11-11T11:18:39Z baseline base-target-steady done
+2026-11-11T11:19:22Z baseline base-p1-steady done
+2026-11-11T11:21:03Z step3: baseline target-steady (dev, 10k nodes 60s HB, no claims): 128 req/s achieved, p50 30.8s, 61303/77106 timeouts (80% errors); p1-steady failed (pg init race, fixed in stack.sh, rerun later)
+2026-11-11T11:24:55Z baseline base-run-1k done
+2026-11-11T11:25:54Z step4: coordinator approved EC2 (c6i.xlarge<=2h); stopped local 10k bench; base-run-1k: 1000 jobs/200 nodes p1 279s (load avg 42)
+2026-11-11T11:38:50Z step5: code (node_auth window, lean hb/claim, segment jobs, recompute_run, reaper, caps, secret_refs, capabilities, migration r6f11node001, node p2) + tests written; new tests 24 pass incl PG; P6 repro: dev stuck running, branch done
+2026-11-11T11:49:28Z step6: committed f07c828, pushed feat/f1-node-api
+2026-11-11T11:51:18Z step7: EC2 bench blocked: s3:PutBucketTagging and s3:PutBucketPublicAccessBlock AccessDenied; bucket devsecshield-f1-bench-61b2688f created then deleted (head-bucket 404)
+2026-11-11T11:52:29Z step8: EC2 i-0c69a7da3e4b747a3 launched 11:52:20Z (2h cap -> 13:52Z)
+2026-11-11T11:55:40Z step9: tarball shipped via SSM (77 chunks), sha256 1f2582dd... verified on box
+2026-11-11T12:00:02Z step10: PR #41 opened (head 8beb824), scale rows pending EC2
+2026-11-11T12:03:15Z step11: EC2 smoke ok (after 300-job run done 4.3s; before run stuck 'running' with 300 success = P6 live); launched chain after-steady before-steady after-run before-run after-run-kill
+2026-11-11T12:25:47Z relaunch: read briefs; EC2 running, chain unit f1bench active: after-steady done (166 req/s p99 45ms 0 err), before-steady running since 12:17
+2026-11-11T12:28:08Z old-node live (image scan-node:1.0 vs branch, local docker): PASSED; enrolled signed, test passed, segment job claimed+finished by old node, 9 p1 nonce rows, hwm 0; /tmp/claude-0/-home-claude/976896a4-2e24-5405-8100-31f07ced9160/scratchpad/round6/f1-1/old-node-live.json
+2026-11-11T12:29:51Z EC2: before-steady done (p99 183ms 0 err, 99968 nonce INSERTs); after-run started 12:28; queued unit f1bench2 (before-real 300s, after-steady-p1 180s) to run after f1bench

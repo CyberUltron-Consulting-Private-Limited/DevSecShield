@@ -1,0 +1,7 @@
+2026-11-11T10:37:47Z branch fix/r2-polish created from origin/dev 3399452
+2026-11-11T10:48:32Z 4 tests written, all fail before fix (teamSettingsToasts, creditBalance, user-menu, adminCreateUser)
+2026-11-11T10:53:38Z fixes for #12-#15 implemented; node_modules symlinked to main clone per coordinator
+2026-11-11T11:00:02Z 4 commits pushed to fix/r2-polish (head f068dc2)
+2026-11-11T11:02:28Z PR #30 opened, head f068dc2; filed issues #27 #28 #29; waiting for CI
+2026-11-11T11:02:49Z CI run 43008614356: pr-hygiene/branch-flow/review-labels green; frontend/backend/security running
+2026-11-11T11:09:29Z CI run 43008614356 all green incl ci-gate; PR body updated; symlink + tsbuildinfo removed; done

@@ -1,0 +1,29 @@
+reap moved=0 ms=52
+reap moved=0 ms=6
+reap moved=0 ms=6
+reap moved=0 ms=14
+reap moved=0 ms=12
+reap moved=0 ms=12
+reap moved=0 ms=16
+cbom sources job lease expired team=1 job=8 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=13 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=16 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=20 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=89 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=157 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=169 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=176 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=189 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=251 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=375 status=pending attempt=1 refunded_c=0
+reap moved=11 ms=64
+cbom sources job lease expired team=1 job=500 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=574 status=pending attempt=1 refunded_c=0
+cbom sources job lease expired team=1 job=3147 status=pending attempt=1 refunded_c=0
+reap moved=3 ms=121
+cbom sources job lease expired team=1 job=4484 status=pending attempt=1 refunded_c=0
+reap moved=1 ms=10
+reap moved=0 ms=4
+reap moved=0 ms=4
+cbom sources job lease expired team=1 job=251 status=pending attempt=2 refunded_c=0
+reap moved=1 ms=12

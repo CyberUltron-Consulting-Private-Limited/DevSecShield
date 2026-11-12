@@ -1,0 +1,8 @@
+2026-11-11T10:11Z PR #16 criteria 1-5 verified on head 10ada89 (ci-gate run 42998568590 success; 57/57 threads resolved; AC table ok; label + review 5857047381 on head; mergeable clean)
+2026-11-11T10:11Z merged PR #16 -> dev: 3399452d6692bc729dd668f91c9195bfbd143cfd
+2026-11-11T10:11Z default_branch PATCH -> HTTP 403 "Repository settings writes are not permitted through this proxy." (not retried; coordinator will ask owner)
+2026-11-11T10:18Z dev push run 43001525518 success (ci-gate job 130461670162); paths-filter 8314739..3399452 = 62 files
+2026-11-11T10:18Z opened promotion PR #26 dev->staging
+2026-11-11T10:26Z PR #26 run 43002571893 attempt 1: only pr-hygiene (label) + ci-gate failed; trees verified; comment 6793363517 + label added 10:26:41Z; rerun-failed-jobs
+2026-11-11T10:27Z attempt 2 success (ci-gate job 130465898464); merged PR #26 -> staging: fdf9bb492d43075337920b2f86e494368e605e45
+2026-11-11T10:28Z watching staging push run 43003860117

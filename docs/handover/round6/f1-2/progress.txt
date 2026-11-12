@@ -1,0 +1,8 @@
+2026-11-11T11:13:50Z step0: read brief, TEAM-PROCESS, PARALLEL-PLAN, CONTRACT
+2026-11-11T11:26:56Z step1: scaffold PR #34 opened (feat/f1-inventory-scaffold @0132aaa); 22 backend tests + fleetLogic.test.ts pass
+2026-11-11T11:31:49Z step2: SPEC.md written; starting feat/f1-inventory (models, migrations, inventory, policy, materializer)
+2026-11-11T11:51:33Z step3: WIP feat/f1-inventory @638d8b8 pushed (inv 17 pass, pol 16+1 fixed); switched to scaffold to address PR #34 reviews
+2026-11-11T11:56:38Z step4: PR #34 review fixes pushed c4f6f57; 7 threads replied+resolved
+2026-11-11T12:01:00Z step5: PR #34 CI green on c4f6f57, reported to coordinator; feat/f1-inventory @09d4dbd (Member conversion, bench); bench running
+2026-11-11T12:25:38Z relaunch: read briefs, TEAM-PROCESS, PARALLEL-PLAN, CONTRACT, SPEC; worktree @09d4dbd + uncommitted frontend sections (Inventory/Policies/Credentials)
+2026-11-11T12:30:22Z step6: fleet backend tests 59 passed (scaffold+inventory+policies, SQLite, 231 s)

@@ -1,0 +1,7 @@
+2026-11-11T11:14:23Z step0: read brief/contract/process/plan; branched feat/f1-ssh-ca from origin/dev 3399452
+2026-11-11T11:26:51Z step1: explored (node API, jobs, kinds, linux_ssh, F1.1/F1.2 drafts); paramiko host-cert spike done (negotiates, does not verify); SPEC.md written
+2026-11-11T11:29:50Z note: coordinator: PR #32 (T1) changes netutil/linux_ssh; keep open_session change additive; merge dev after #32 lands
+2026-11-11T11:43:34Z step3: backend+node code and tests (25 backend, 5 node passing); commit 35db032 pushed to feat/f1-ssh-ca. Next: sshd proof (stack.lock), issue bench, KMS live, frontend, PR
+2026-11-11T11:50:55Z step4: KMS live BLOCKED: created key 59416634-9568-4534-a00b-3feacd8b3043 (tagged) but GenerateDataKey/Encrypt and ScheduleKeyDeletion are AccessDenied; ledger updated; report to coordinator
+2026-11-11T12:00:22Z step5: sshd proof PASSED (all 7 cases + long job), UI (tsc/eslint clean), commit 82f66cb pushed. Next: PG 10k bench, merge dev status, PR
+2026-11-11T12:29:57Z step6: relaunched builder; restarting PG 10k issue bench (f1-4-bench-pg) under heavy-tests.lock -> runs/bench2

@@ -1,0 +1,41 @@
+tracebacks: 0
+lines: 38
+--- tail
+[2026-11-11 12:17:09 +0000] [32952] [INFO] Starting gunicorn 25.3.0
+[2026-11-11 12:17:09 +0000] [32952] [INFO] Listening at: http://127.0.0.1:18080 (32952)
+[2026-11-11 12:17:09 +0000] [32952] [INFO] Using worker: uvicorn.workers.UvicornWorker
+[2026-11-11 12:17:09 +0000] [32956] [INFO] Booting worker with pid: 32956
+[2026-11-11 12:17:09 +0000] [32957] [INFO] Booting worker with pid: 32957
+[2026-11-11 12:17:09 +0000] [32958] [INFO] Booting worker with pid: 32958
+[2026-11-11 12:17:09 +0000] [32952] [INFO] Control socket listening at /root/.gunicorn/gunicorn.ctl
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+AWS credentials found
+[2026-11-11 12:17:10 +0000] [32957] [INFO] Started server process [32957]
+[2026-11-11 12:17:10 +0000] [32957] [INFO] Waiting for application startup.
+✓ Threadpool tokens increased to 100
+[2026-11-11 12:17:10 +0000] [32957] [INFO] Application startup complete.
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+[2026-11-11 12:17:11 +0000] [32956] [INFO] Started server process [32956]
+[2026-11-11 12:17:11 +0000] [32956] [INFO] Waiting for application startup.
+cbom sources deployment id created
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+✓ Threadpool tokens increased to 100
+[2026-11-11 12:17:11 +0000] [32956] [INFO] Application startup complete.
+[2026-11-11 12:17:11 +0000] [32958] [INFO] Started server process [32958]
+[2026-11-11 12:17:11 +0000] [32958] [INFO] Waiting for application startup.
+✓ Threadpool tokens increased to 100
+[2026-11-11 12:17:12 +0000] [32958] [INFO] Application startup complete.

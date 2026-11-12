@@ -1,0 +1,160 @@
+{
+  "config": {
+    "api": "http://127.0.0.1:18080",
+    "creds": "/opt/f1/work/creds.json",
+    "pg_container": "f1bench-pg",
+    "server_pids": [
+      31604,
+      31608,
+      31609,
+      31610
+    ],
+    "protocol": 2,
+    "nodes": 10000,
+    "duration": 600.0,
+    "warmup": 60.0,
+    "spread": 60.0,
+    "hb_override": null,
+    "claims": true,
+    "p2_poll_fallback": false,
+    "conns": 256,
+    "run": false,
+    "run_timeout": 900,
+    "work_s": 0.0,
+    "kill_frac": 0.0,
+    "out": "/opt/f1/work/after-steady.json",
+    "host": "ip-10-50-10-139.ap-south-1.compute.internal"
+  },
+  "measured_s": 600.0,
+  "total_s": 660.4,
+  "requests": 99515,
+  "req_per_s": 165.9,
+  "latency": {
+    "heartbeat": {
+      "n": 99515,
+      "p50_ms": 11.5,
+      "p95_ms": 25.7,
+      "p99_ms": 45.0,
+      "max_ms": 239.9
+    },
+    "all": {
+      "n": 99515,
+      "p50_ms": 11.5,
+      "p95_ms": 25.7,
+      "p99_ms": 45.0,
+      "max_ms": 239.9
+    }
+  },
+  "errors": 0,
+  "error_rate": 0.0,
+  "error_kinds": {},
+  "error_samples": [],
+  "codes": {
+    "heartbeat:200": 99515
+  },
+  "sim_loop_lag_ms": {
+    "p50": 0.1,
+    "p99": 1.1,
+    "max": 72.8
+  },
+  "cpu_pct_of_one_cpu": {
+    "server_avg": 93.9,
+    "server_peak": 107.4,
+    "postgres_avg": 33.0,
+    "postgres_peak": 37.7,
+    "host_avg": 153.3,
+    "host_cpus": 4
+  },
+  "db": {
+    "tps_avg": 946.9,
+    "tps_peak": 1036.4,
+    "statements_per_s": 2555.9,
+    "calls": 1533567,
+    "exec_ms": 15622.2,
+    "top": [
+      {
+        "calls": 283863,
+        "ms": 143.4,
+        "query": "BEGIN"
+      },
+      {
+        "calls": 283800,
+        "ms": 906.2,
+        "query": "SELECT $1"
+      },
+      {
+        "calls": 199014,
+        "ms": 112.1,
+        "query": "COMMIT"
+      },
+      {
+        "calls": 99507,
+        "ms": 583.6,
+        "query": "SELECT cbomcollectionjob.id, cbomcollectionjob.team_id, cbomcollectionjob.run_id, cbomcollectionjob.source_id, cbomcollectionjob.node_id, cb"
+      },
+      {
+        "calls": 99507,
+        "ms": 1768.8,
+        "query": "SELECT cbomcollectionsettings.id, cbomcollectionsettings.team_id, cbomcollectionsettings.aws_external_id, cbomcollectionsettings.cert_domain"
+      },
+      {
+        "calls": 99507,
+        "ms": 4991.8,
+        "query": "UPDATE cbomscannode SET last_heartbeat_at=$1::timestamp, last_seen_ip=$2, replay_hwm=CASE WHEN ($3 - cbomscannode.replay_hwm > $4) THEN $5 E"
+      },
+      {
+        "calls": 99507,
+        "ms": 493.3,
+        "query": "SELECT count(*) AS count_1 FROM (SELECT cbomcollectionjob.id AS id FROM cbomcollectionjob WHERE cbomcollectionjob.team_id = $1 AND cbomcolle"
+      },
+      {
+        "calls": 99507,
+        "ms": 3300.2,
+        "query": "SELECT cbomscannode.id, cbomscannode.team_id, cbomscannode.owner_user_id, cbomscannode.updated_by_user_id, cbomscannode.name, cbomscannode.s"
+      },
+      {
+        "calls": 99507,
+        "ms": 483.4,
+        "query": "SELECT count(*) AS count_1 FROM (SELECT cbomcollectionjob.id AS id FROM cbomcollectionjob WHERE cbomcollectionjob.team_id = $1 AND cbomcolle"
+      },
+      {
+        "calls": 84849,
+        "ms": 2788.0,
+        "query": "SELECT cbomscannode.id FROM cbomscannode WHERE cbomscannode.node_token_hash = $1"
+      },
+      {
+        "calls": 84849,
+        "ms": 47.5,
+        "query": "ROLLBACK"
+      },
+      {
+        "calls": 120,
+        "ms": 3.6,
+        "query": "SELECT xact_commit + xact_rollback FROM pg_stat_database WHERE datname = current_database()"
+      },
+      {
+        "calls": 30,
+        "ms": 0.1,
+        "query": "DELETE FROM cbomnodenonce WHERE cbomnodenonce.expires_at < $1::timestamp"
+      },
+      {
+        "calls": 2,
+        "ms": 0.1,
+        "query": "UPDATE cbomscannode SET source_ips=$1::JSON, capabilities=$2::JSON, clock_skew_s=$3 WHERE cbomscannode.id = $4"
+      },
+      {
+        "calls": 1,
+        "ms": 0.1,
+        "query": "SELECT pg_stat_statements_reset()"
+      },
+      {
+        "calls": 1,
+        "ms": 0.1,
+        "query": "SELECT coalesce(sum(calls),$1), coalesce(sum(total_exec_time),$2) FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE da"
+      }
+    ],
+    "nonce_inserts": 0,
+    "nonce_rows": 0
+  },
+  "run": {}
+}

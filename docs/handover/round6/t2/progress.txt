@@ -1,0 +1,5 @@
+2026-11-11T11:26:37Z step0: read brief, team process, plan, issue #33
+2026-11-11T11:38:25Z step1: explored (scans.py reinitialize/start/estimate, cancel, poller, dast dispatch, cicd, cbom runs, frontend reinit + run again); no ledger table exists; SPEC.md written; branch fix/reinitialize-credits from origin/dev 3399452
+2026-11-11T11:59:49Z step3: tests written (backend/tests/test_scan_reinitialize_credits.py): before fix 18 failed/14 passed (t2/tests-before-fix.txt; the passes are target-check regressions + run-again confirmation); fix implemented (reinitialize.py, credit_ledger.py, CreditLedgerEntry + migration r6t2ledger001, start_scan expected_task_id, poller task guard); new file 32 passed. Throwaway PG started: /var/tmp/zs-t2-pg port 55466 db t2 (stop when done)
+2026-11-11T12:25:21Z relaunch: read briefs; worktree intact (6 modified, 5 untracked, branch at dev 3399452); origin/dev unchanged 3399452
+2026-11-11T12:26:44Z relaunch: restarted throwaway PG /var/tmp/zs-t2-pg port 55466

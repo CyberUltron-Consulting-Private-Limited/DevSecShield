@@ -1,0 +1,956 @@
+scm run created team=1 run=1 trigger=schedule scans=1000 credits_c=1000
+scm schedule fired policy=1 team=1 status=queued queued=1000
+scm dispatched count=4 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm run created team=2 run=2 trigger=manual scans=50 credits_c=50
+scm dispatched count=4 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=3 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=3 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=2 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=3 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=3 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=2 teams=3
+scm dispatched count=2 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=3 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=2 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=4 teams=3
+scm dispatched count=1 teams=3
+scm dispatched count=2 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=3 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=3 teams=2
+scm dispatched count=3 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=3 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=2 teams=2
+scm dispatched count=1 teams=2
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=3 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=1 teams=1
+scm dispatched count=2 teams=1
+scm dispatched count=1 teams=1
+scm run created team=1 run=1 trigger=schedule scans=1000 credits_c=1000
+scm schedule fired policy=1 team=1 status=queued queued=1000
+scm run created team=2 run=2 trigger=manual scans=50 credits_c=50
+{
+  "db": "postgresql",
+  "cap": 8,
+  "team_cap": 4,
+  "fair": {
+    "mode": "fair",
+    "ticks": 1901,
+    "virtual_minutes": 158.4,
+    "schedule_fire_s": 0.342,
+    "dispatch_tick_ms": {
+      "p50": 45.6,
+      "p95": 183.4,
+      "max": 890.0
+    },
+    "max_inflight_total": 8,
+    "max_inflight_one_team": 4,
+    "jain_fairness_while_contended": 0.988,
+    "mean_slot_share_while_contended": {
+      "A (1,000 scheduled)": 0.462,
+      "B (50 manual)": 0.466,
+      "C (10 push)": 0.27
+    },
+    "teams": {
+      "A (1,000 scheduled)": {
+        "scans": 1000,
+        "done": 1000,
+        "wait_ticks_p50": 927.0,
+        "wait_ticks_p95": 1780.0,
+        "wait_ticks_max": 1895.0,
+        "last_finished_tick": 1900.0
+      },
+      "B (50 manual)": {
+        "scans": 50,
+        "done": 50,
+        "wait_ticks_p50": 51.0,
+        "wait_ticks_p95": 91.0,
+        "wait_ticks_max": 94.0,
+        "last_finished_tick": 117.0
+      },
+      "C (10 push)": {
+        "scans": 10,
+        "done": 10,
+        "wait_ticks_p50": 10.0,
+        "wait_ticks_p95": 25.0,
+        "wait_ticks_max": 25.0,
+        "last_finished_tick": 74.0
+      }
+    },
+    "rollup": {
+      "findings": 96,
+      "occurrences": 2647
+    }
+  },
+  "fifo_baseline": {
+    "mode": "fifo",
+    "ticks": 995,
+    "virtual_minutes": 82.9,
+    "schedule_fire_s": 0.195,
+    "dispatch_tick_ms": {
+      "p50": 134.2,
+      "p95": 522.6,
+      "max": 1131.7
+    },
+    "max_inflight_total": 8,
+    "max_inflight_one_team": 8,
+    "jain_fairness_while_contended": 0.346,
+    "mean_slot_share_while_contended": {
+      "A (1,000 scheduled)": 1.0,
+      "B (50 manual)": 0.056,
+      "C (10 push)": 0.0
+    },
+    "teams": {
+      "A (1,000 scheduled)": {
+        "scans": 1000,
+        "done": 1000,
+        "wait_ticks_p50": 452.0,
+        "wait_ticks_p95": 875.0,
+        "wait_ticks_max": 921.0,
+        "last_finished_tick": 931.0
+      },
+      "B (50 manual)": {
+        "scans": 50,
+        "done": 50,
+        "wait_ticks_p50": 926.0,
+        "wait_ticks_p95": 950.0,
+        "wait_ticks_max": 954.0,
+        "last_finished_tick": 984.0
+      },
+      "C (10 push)": {
+        "scans": 10,
+        "done": 10,
+        "wait_ticks_p50": 938.0,
+        "wait_ticks_p95": 944.0,
+        "wait_ticks_max": 944.0,
+        "last_finished_tick": 994.0
+      }
+    },
+    "rollup": {
+      "findings": 94,
+      "occurrences": 2655
+    }
+  },
+  "wall_s": 344.4,
+  "pass": true
+}

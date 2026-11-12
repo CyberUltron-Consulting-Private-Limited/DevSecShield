@@ -1,0 +1,3 @@
+2026-11-11T11:44:59Z start QA PR#38 head c399569; worktrees wt (head) wt-dev (dev 3399452)
+2026-11-11T12:23:23Z setup: next dev --webpack (turbopack refuses symlinked node_modules) on :3838; Playwright proxies https://devsec.dss.test -> :3838 (HMR WS relayed, LNA checks off), API = stack; r2c signed in (team 16)
+2026-11-11T12:23:23Z container restart ~12:14; resuming (relaunch dev server + pwserver)

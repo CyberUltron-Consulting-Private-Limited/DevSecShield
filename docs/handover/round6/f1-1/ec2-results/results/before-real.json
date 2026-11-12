@@ -1,0 +1,224 @@
+{
+  "config": {
+    "api": "http://127.0.0.1:18080",
+    "creds": "/opt/f1/work/creds.json",
+    "pg_container": "f1bench-pg",
+    "server_pids": [
+      52522,
+      52526,
+      52527,
+      52528
+    ],
+    "protocol": 1,
+    "nodes": 10000,
+    "duration": 300.0,
+    "warmup": 60.0,
+    "spread": null,
+    "hb_override": null,
+    "claims": true,
+    "p2_poll_fallback": false,
+    "conns": 256,
+    "run": false,
+    "run_timeout": 900,
+    "work_s": 0.0,
+    "kill_frac": 0.0,
+    "out": "/opt/f1/work/before-real.json",
+    "host": "ip-10-50-10-139.ap-south-1.compute.internal"
+  },
+  "measured_s": 300.0,
+  "total_s": 361.5,
+  "requests": 142893,
+  "req_per_s": 476.3,
+  "latency": {
+    "claim": {
+      "n": 91729,
+      "p50_ms": 30632.0,
+      "p95_ms": 30945.4,
+      "p99_ms": 31023.3,
+      "max_ms": 31981.7
+    },
+    "heartbeat": {
+      "n": 51164,
+      "p50_ms": 30655.6,
+      "p95_ms": 30965.9,
+      "p99_ms": 31065.9,
+      "max_ms": 31810.8
+    },
+    "all": {
+      "n": 142893,
+      "p50_ms": 30640.6,
+      "p95_ms": 30952.8,
+      "p99_ms": 31055.3,
+      "max_ms": 31981.7
+    }
+  },
+  "errors": 109807,
+  "error_rate": 0.768456,
+  "error_kinds": {
+    "claim:timeout": 67376,
+    "heartbeat:timeout": 42431
+  },
+  "error_samples": [
+    "claim node=3712 timeout ",
+    "claim node=8939 timeout ",
+    "claim node=4077 timeout ",
+    "claim node=7083 timeout ",
+    "claim node=9977 timeout ",
+    "claim node=6840 timeout ",
+    "claim node=7694 timeout ",
+    "claim node=2117 timeout ",
+    "claim node=5826 timeout ",
+    "claim node=457 timeout ",
+    "claim node=662 timeout ",
+    "claim node=6979 timeout ",
+    "claim node=5286 timeout ",
+    "claim node=7138 timeout ",
+    "claim node=1928 timeout ",
+    "claim node=3105 timeout ",
+    "claim node=3802 timeout ",
+    "claim node=8871 timeout ",
+    "claim node=1506 timeout ",
+    "claim node=4575 timeout ",
+    "claim node=6661 timeout ",
+    "claim node=6193 timeout ",
+    "claim node=519 timeout ",
+    "heartbeat node=9365 timeout ",
+    "heartbeat node=3934 timeout ",
+    "claim node=4218 timeout ",
+    "claim node=2268 timeout ",
+    "claim node=6607 timeout ",
+    "claim node=2470 timeout ",
+    "claim node=8366 timeout "
+  ],
+  "codes": {
+    "claim:204": 24353,
+    "heartbeat:200": 8733,
+    "claim:timeout": 67376,
+    "heartbeat:timeout": 42431
+  },
+  "sim_loop_lag_ms": {
+    "p50": 1.4,
+    "p99": 677.6,
+    "max": 1297.2
+  },
+  "cpu_pct_of_one_cpu": {
+    "server_avg": 200.9,
+    "server_peak": 231.4,
+    "postgres_avg": 128.3,
+    "postgres_peak": 145.5,
+    "host_avg": 385.9,
+    "host_cpus": 4
+  },
+  "db": {
+    "tps_avg": 1461.1,
+    "tps_peak": 1972.9,
+    "statements_per_s": 4208.4,
+    "calls": 1262536,
+    "exec_ms": 88480.9,
+    "top": [
+      {
+        "calls": 219093,
+        "ms": 297.3,
+        "query": "BEGIN"
+      },
+      {
+        "calls": 202644,
+        "ms": 1175.3,
+        "query": "SELECT $1"
+      },
+      {
+        "calls": 122160,
+        "ms": 118.5,
+        "query": "COMMIT"
+      },
+      {
+        "calls": 96945,
+        "ms": 86.9,
+        "query": "ROLLBACK"
+      },
+      {
+        "calls": 87424,
+        "ms": 7562.0,
+        "query": "SELECT cbomscannode.id AS cbomscannode_id, cbomscannode.team_id AS cbomscannode_team_id, cbomscannode.owner_user_id AS cbomscannode_owner_us"
+      },
+      {
+        "calls": 79561,
+        "ms": 6668.3,
+        "query": "SELECT cbomscannode.id FROM cbomscannode WHERE cbomscannode.node_token_hash = $1"
+      },
+      {
+        "calls": 61086,
+        "ms": 3325.6,
+        "query": "SELECT cbomcollectionsettings.id, cbomcollectionsettings.team_id, cbomcollectionsettings.aws_external_id, cbomcollectionsettings.cert_domain"
+      },
+      {
+        "calls": 61078,
+        "ms": 1732.2,
+        "query": "SELECT cbomcollectionjob.id, cbomcollectionjob.team_id, cbomcollectionjob.run_id, cbomcollectionjob.source_id, cbomcollectionjob.node_id, cb"
+      },
+      {
+        "calls": 61069,
+        "ms": 39003.8,
+        "query": "INSERT INTO cbomnodenonce (node_id, nonce, expires_at) VALUES ($1, $2, $3::timestamp)"
+      },
+      {
+        "calls": 61068,
+        "ms": 7603.2,
+        "query": "SELECT cbomscannode.id, cbomscannode.team_id, cbomscannode.owner_user_id, cbomscannode.updated_by_user_id, cbomscannode.name, cbomscannode.s"
+      },
+      {
+        "calls": 43711,
+        "ms": 10030.8,
+        "query": "UPDATE cbomscannode SET last_heartbeat_at=$1::timestamp, last_seen_ip=$2 WHERE cbomscannode.id = $3"
+      },
+      {
+        "calls": 43705,
+        "ms": 2974.0,
+        "query": "SELECT cbomcollectionjob.id, cbomcollectionjob.team_id, cbomcollectionjob.run_id, cbomcollectionjob.source_id, cbomcollectionjob.node_id, cb"
+      },
+      {
+        "calls": 34753,
+        "ms": 200.5,
+        "query": "SELECT cbomcollectionjob.id FROM cbomcollectionjob WHERE cbomcollectionjob.node_id = $1 AND cbomcollectionjob.status = $2"
+      },
+      {
+        "calls": 34742,
+        "ms": 898.5,
+        "query": "SELECT cbomcollectionjob.id, cbomcollectionjob.team_id, cbomcollectionjob.run_id, cbomcollectionjob.source_id, cbomcollectionjob.node_id, cb"
+      },
+      {
+        "calls": 18697,
+        "ms": 1843.9,
+        "query": "SELECT cbomscannode.id AS cbomscannode_id, cbomscannode.team_id AS cbomscannode_team_id, cbomscannode.owner_user_id AS cbomscannode_owner_us"
+      },
+      {
+        "calls": 17382,
+        "ms": 931.4,
+        "query": "SELECT cbomcollectionsettings.id AS cbomcollectionsettings_id, cbomcollectionsettings.team_id AS cbomcollectionsettings_team_id, cbomcollect"
+      },
+      {
+        "calls": 12704,
+        "ms": 2853.6,
+        "query": "UPDATE cbomscannode SET clock_skew_s= $1, last_heartbeat_at=$2::timestamp WHERE cbomscannode.id = $3"
+      },
+      {
+        "calls": 2970,
+        "ms": 737.3,
+        "query": "UPDATE cbomscannode SET last_heartbeat_at=$1::timestamp WHERE cbomscannode.id = $2"
+      },
+      {
+        "calls": 1237,
+        "ms": 342.0,
+        "query": "UPDATE cbomscannode SET source_ips=$1::JSON, capabilities=$2::JSON, clock_skew_s=$3, last_heartbeat_at=$4::timestamp WHERE cbomscannode.id ="
+      },
+      {
+        "calls": 457,
+        "ms": 94.1,
+        "query": "UPDATE cbomscannode SET source_ips=$1::JSON, capabilities=$2::JSON, clock_skew_s=$3, last_heartbeat_at=$4::timestamp, last_seen_ip=$5 WHERE "
+      }
+    ],
+    "nonce_inserts": 61070,
+    "nonce_rows": 76970
+  },
+  "run": {}
+}

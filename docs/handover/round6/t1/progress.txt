@@ -1,0 +1,13 @@
+2026-11-11T10:51:19Z step0: read brief, TEAM-PROCESS, PARALLEL-PLAN T1, issue #17
+2026-11-11T10:57:34Z step1: explored; SPEC.md written; branch fix/never-scan-dual-stack from origin/dev 3399452; baseline 83 passed (gate/safety/registry/images)
+2026-11-11T10:59:54Z step3a: tests written (tests/test_never_scan_names.py, registry test restored + forced dual stack, gate test updated); before fix 16 failed / 16 passed, registry regression reproduces CI 'unreachable' locally; log t1/tests-before-fix.txt
+2026-11-11T11:09:36Z step3b: fix done (netutil/linux_ssh/appliance/winrm/container_images/kmip/ca/database + README); new tests 22 pass; on base code 19 fail; full scan_node suite 289 passed 22 skipped (live-only); ruff E/F/W/B no new findings
+2026-11-11T11:09:44Z correction: full scan_node suite is 286 passed, 22 skipped (not 289)
+2026-11-11T11:19:36Z step5: committed d0270dd and pushed fix/never-scan-dual-stack
+2026-11-11T11:20:27Z step5b: filing follow-up issue (pinned HTTP clients) DENIED by permission classifier; draft at t1/issue-pinned-clients.md; not retried
+2026-11-11T11:21:30Z step6: PR #32 opened (head d0270dd); waiting for CI
+2026-11-11T11:28:42Z step7: CI run 43011275408 all green on d0270dd (scan-node 285 passed/23 skipped on runner; 22 new tests + registry regression pass); PR body updated with run links; reporting to coordinator
+2026-11-11T11:43:34Z step8: security review 5858175182 (changes needed) received; coordinator decision: fix whole control in PR #32 (items 1-6)
+2026-11-11T11:54:31Z step9: review tests written (names +, sockets new, backend agreement new); before fixes: scan_node 27 failed/26 passed, backend 5 failed/1 passed (t1/r2-tests-before-fix.txt)
+2026-11-11T12:26:25Z relaunch: read briefs, reviews 5858175182 + 5858439966, uncommitted diff (19 files + 2 new tests) reviewed; running targeted tests
+2026-11-11T12:32:00Z step10: finishing review fixes: k8s collect() summary uses Blocked detail; NeverScan reversed range never fails open, zone ids dropped; requests_adapter refuses requests<2.32.2; UI hints corrected (team list takes no hostnames)

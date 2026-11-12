@@ -1,0 +1,14 @@
+2026-11-11T10:51:16Z start: read brief, TEAM-PROCESS, PARALLEL-PLAN
+2026-11-11 explore: scans.py create->estimate->start (owner-only, PAT per repo); format_input_for_scan builds celery kwargs; start_scan sends to scan_worker_queue; get_status_and_update_db = completion + findings + refund-on-failure; credits = atomic UPDATE (team/credits.py); DAST beat + cbom_scheduler thread pattern; CbomRoute/authorize/require_admin conventions; alembic head rv6p1nodename001
+2026-11-11 live probe: api.github.com reachable via agent proxy (auth injected by proxy); list endpoints (/user/repos, /users/x/repos, /orgs/x/repos) answer 403 "sessions are bound to their configured repositories"; repo-scoped endpoints (repos/{o}/{r}, branches) answer 200
+2026-11-11 branch feat/f3-repos-at-scale created from origin/dev 3399452 (worktree agent-a8c6feb6d649734df)
+2026-11-11 SPEC.md written ($R6/f3/SPEC.md)
+2026-11-11 local PG16 for bench/migration: /var/tmp/zs-f3-pg (port 55433, trust, dbs f3mig f3bench f3test; postgres user; /tmp/claude-0 is 700 so not in scratchpad). Stop: su postgres -c "pg_ctl -D /var/tmp/zs-f3-pg/data stop"; delete dir at the end
+2026-11-11 commit 236e140 pushed: models + migration f3a0scm001 (0 autogen diffs, down/up ok) + providers + filters + inventory; tests/test_scm_discovery.py 18 pass (1,000 repos 5.1 s)
+2026-11-11 coordinator: shared files additive at END; own model module; migration prefix r6f3repo; no new deps (F4 edits lock). Done in 1a98eeb: backend/utilities/scm/models.py, new_models.py = 4-line import block at end, migration r6f3repo001 (team FK cascade). Routes must declare openapi_extra x-zs-permission (F1 contract sec.3) for F4.
+2026-11-11 964cc1b queue/pricing/policies/rollup (test_scm_queue 16 + PG race pass); cd3fed3 router+webhooks+repo_scheduler+worker ghs_ clone (116 pass incl cbom_sources_api, integrations_api); 6d2834b benches + live smoke + recorded fixture
+2026-11-11 import bench PG: 1,000 repos 48.2 s (hostile fake: 0.8 s/call, 6 calls/20 s, secondary every 4th, one 502) -> $R6/f3/import_1000.json
+2026-11-11 live GitHub via proxy: /user/repos 403 (proxy binds session to repos); GET /repos/o/r OK -> inventory added/same; Link next = /repositories/{id}/branches refused by proxy -> $R6/f3/live_github.json
+2026-11-11 fairness bench queued behind heavy-tests.lock (bg task bq83pdgax) -> $R6/f3/fairness_1000.json
+2026-11-11 NEXT: frontend (feat/f3-repos-ui stacked PR), then PRs via gh api
+2026-11-11T12:26:11Z relaunch: worktree clean except prior builder's frontend WIP (uncommitted); fairness_1000_v2.log empty (bench died in restart); PG restarted: pg_ctl -D /var/tmp/zs-f3-pg/data -o '-p 55433 -k /var/tmp/zs-f3-pg' start; superuser is f3 (not postgres)

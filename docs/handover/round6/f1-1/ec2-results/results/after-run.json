@@ -1,0 +1,548 @@
+{
+  "config": {
+    "api": "http://127.0.0.1:18080",
+    "creds": "/opt/f1/work/creds.json",
+    "pg_container": "f1bench-pg",
+    "server_pids": [
+      35886,
+      35890,
+      35891,
+      35892
+    ],
+    "protocol": 2,
+    "nodes": 10000,
+    "duration": 1.0,
+    "warmup": 75.0,
+    "spread": 60.0,
+    "hb_override": null,
+    "claims": true,
+    "p2_poll_fallback": false,
+    "conns": 256,
+    "run": true,
+    "run_timeout": 600.0,
+    "work_s": 0.0,
+    "kill_frac": 0.0,
+    "out": "/opt/f1/work/after-run.json",
+    "host": "ip-10-50-10-139.ap-south-1.compute.internal"
+  },
+  "measured_s": 197.6,
+  "total_s": 273.0,
+  "requests": 48356,
+  "req_per_s": 244.7,
+  "latency": {
+    "claim": {
+      "n": 10795,
+      "p50_ms": 1055.8,
+      "p95_ms": 8680.1,
+      "p99_ms": 30772.4,
+      "max_ms": 31007.2
+    },
+    "heartbeat": {
+      "n": 27561,
+      "p50_ms": 4946.4,
+      "p95_ms": 30861.2,
+      "p99_ms": 30972.2,
+      "max_ms": 31107.3
+    },
+    "result": {
+      "n": 10000,
+      "p50_ms": 1110.4,
+      "p95_ms": 2738.3,
+      "p99_ms": 4075.2,
+      "max_ms": 14143.7
+    },
+    "all": {
+      "n": 48356,
+      "p50_ms": 1261.1,
+      "p95_ms": 30777.0,
+      "p99_ms": 30951.3,
+      "max_ms": 31107.3
+    }
+  },
+  "errors": 10286,
+  "error_rate": 0.212714,
+  "error_kinds": {
+    "heartbeat:timeout": 9795,
+    "claim:timeout": 491
+  },
+  "error_samples": [
+    "heartbeat node=7398 timeout ",
+    "heartbeat node=6926 timeout ",
+    "heartbeat node=4051 timeout ",
+    "claim node=1103 timeout ",
+    "claim node=2891 timeout ",
+    "claim node=8207 timeout ",
+    "heartbeat node=1483 timeout ",
+    "claim node=4281 timeout ",
+    "heartbeat node=4524 timeout ",
+    "heartbeat node=8963 timeout ",
+    "heartbeat node=7373 timeout ",
+    "claim node=8536 timeout ",
+    "heartbeat node=6788 timeout ",
+    "claim node=2166 timeout ",
+    "claim node=329 timeout ",
+    "claim node=2716 timeout ",
+    "claim node=9750 timeout ",
+    "heartbeat node=6540 timeout ",
+    "heartbeat node=4714 timeout ",
+    "heartbeat node=40 timeout ",
+    "heartbeat node=1031 timeout ",
+    "heartbeat node=8397 timeout ",
+    "heartbeat node=6526 timeout ",
+    "heartbeat node=4297 timeout ",
+    "claim node=5831 timeout ",
+    "claim node=974 timeout ",
+    "heartbeat node=7194 timeout ",
+    "heartbeat node=7440 timeout ",
+    "claim node=5197 timeout ",
+    "heartbeat node=1981 timeout "
+  ],
+  "codes": {
+    "heartbeat:200": 17766,
+    "claim:200": 10000,
+    "result:200": 10000,
+    "heartbeat:timeout": 9795,
+    "claim:timeout": 491,
+    "claim:204": 304
+  },
+  "sim_loop_lag_ms": {
+    "p50": 0.4,
+    "p99": 86.3,
+    "max": 696.9
+  },
+  "cpu_pct_of_one_cpu": {
+    "server_avg": 202.4,
+    "server_peak": 239.2,
+    "postgres_avg": 91.7,
+    "postgres_peak": 136.4,
+    "host_avg": 339.4,
+    "host_cpus": 4
+  },
+  "db": {
+    "tps_avg": 1044.3,
+    "tps_peak": 1763.7,
+    "statements_per_s": 3462.7,
+    "calls": 684239,
+    "exec_ms": 470810.1,
+    "top": [
+      {
+        "calls": 103242,
+        "ms": 95.4,
+        "query": "BEGIN"
+      },
+      {
+        "calls": 99650,
+        "ms": 497.6,
+        "query": "SELECT $1"
+      },
+      {
+        "calls": 76275,
+        "ms": 61.0,
+        "query": "COMMIT"
+      },
+      {
+        "calls": 40006,
+        "ms": 2074.5,
+        "query": "SELECT cbomcollectionjob.id, cbomcollectionjob.team_id, cbomcollectionjob.run_id, cbomcollectionjob.source_id, cbomcollectionjob.node_id, cb"
+      },
+      {
+        "calls": 38133,
+        "ms": 2888.2,
+        "query": "SELECT cbomscannode.id, cbomscannode.team_id, cbomscannode.owner_user_id, cbomscannode.updated_by_user_id, cbomscannode.name, cbomscannode.s"
+      },
+      {
+        "calls": 28134,
+        "ms": 1056.8,
+        "query": "SELECT cbomcollectionsettings.id, cbomcollectionsettings.team_id, cbomcollectionsettings.aws_external_id, cbomcollectionsettings.cert_domain"
+      },
+      {
+        "calls": 28133,
+        "ms": 4231.5,
+        "query": "UPDATE cbomscannode SET last_heartbeat_at=$1::timestamp, last_seen_ip=$2, replay_hwm=CASE WHEN ($3 - cbomscannode.replay_hwm > $4) THEN $5 E"
+      },
+      {
+        "calls": 26967,
+        "ms": 31.4,
+        "query": "ROLLBACK"
+      },
+      {
+        "calls": 20025,
+        "ms": 939.4,
+        "query": "SELECT cbomcollectionsource.id AS cbomcollectionsource_id, cbomcollectionsource.team_id AS cbomcollectionsource_team_id, cbomcollectionsourc"
+      },
+      {
+        "calls": 20007,
+        "ms": 2609.7,
+        "query": "INSERT INTO cbomcollectionauditevent (team_id, at, actor_type, actor_id, action, object_type, object_id, changed_fields) VALUES ($1, $2::tim"
+      },
+      {
+        "calls": 17825,
+        "ms": 668.7,
+        "query": "SELECT cbomcollectionjob.id, cbomcollectionjob.team_id, cbomcollectionjob.run_id, cbomcollectionjob.source_id, cbomcollectionjob.node_id, cb"
+      },
+      {
+        "calls": 17825,
+        "ms": 455.1,
+        "query": "SELECT count(*) AS count_1 FROM (SELECT cbomcollectionjob.id AS id FROM cbomcollectionjob WHERE cbomcollectionjob.team_id = $1 AND cbomcolle"
+      },
+      {
+        "calls": 17825,
+        "ms": 974.2,
+        "query": "SELECT count(*) AS count_1 FROM (SELECT cbomcollectionjob.id AS id FROM cbomcollectionjob WHERE cbomcollectionjob.team_id = $1 AND cbomcolle"
+      },
+      {
+        "calls": 16964,
+        "ms": 1139.9,
+        "query": "SELECT cbomscannode.id FROM cbomscannode WHERE cbomscannode.node_token_hash = $1"
+      },
+      {
+        "calls": 10308,
+        "ms": 461.4,
+        "query": "SELECT cbomcollectionjob.id, cbomcollectionjob.team_id, cbomcollectionjob.run_id, cbomcollectionjob.source_id, cbomcollectionjob.node_id, cb"
+      },
+      {
+        "calls": 10308,
+        "ms": 2382.4,
+        "query": "SELECT cbomcollectionjob.id, cbomcollectionjob.team_id, cbomcollectionjob.run_id, cbomcollectionjob.source_id, cbomcollectionjob.node_id, cb"
+      },
+      {
+        "calls": 10183,
+        "ms": 129.8,
+        "query": "SELECT cbomcollectionrun.status FROM cbomcollectionrun WHERE cbomcollectionrun.id = $1"
+      },
+      {
+        "calls": 10005,
+        "ms": 526.3,
+        "query": "SELECT cbomcollectionjob.id FROM cbomcollectionjob WHERE cbomcollectionjob.run_id = $1 AND cbomcollectionjob.status = $2 LIMIT $3"
+      },
+      {
+        "calls": 10003,
+        "ms": 780.0,
+        "query": "UPDATE cbomscannode SET last_claim_at=$1::timestamp WHERE cbomscannode.id = $2"
+      },
+      {
+        "calls": 10003,
+        "ms": 2983.0,
+        "query": "UPDATE cbomcollectionjob SET node_id=$1, status=$2, attempts=(cbomcollectionjob.attempts + $3), lease_id=$4, lease_expires_at=$5::timestamp,"
+      }
+    ],
+    "nonce_inserts": 0,
+    "nonce_rows": 0
+  },
+  "run": {
+    "run_id": 1,
+    "create_ms": 16169.5,
+    "status": "done",
+    "seconds_to_finish": 197.6,
+    "jobs_done_s": 197.6,
+    "run_stuck_open": false,
+    "progress": [
+      {
+        "t": 197.6,
+        "run": "done",
+        "success": 10000
+      }
+    ],
+    "timeline": [
+      {
+        "t": 16.2,
+        "run": "running",
+        "claimed": 88,
+        "pending": 9528,
+        "success": 384
+      },
+      {
+        "t": 20.5,
+        "run": "running",
+        "claimed": 116,
+        "pending": 9140,
+        "success": 744
+      },
+      {
+        "t": 24.5,
+        "run": "running",
+        "claimed": 105,
+        "pending": 8749,
+        "success": 1146
+      },
+      {
+        "t": 28.9,
+        "run": "running",
+        "claimed": 127,
+        "pending": 8305,
+        "success": 1568
+      },
+      {
+        "t": 32.9,
+        "run": "running",
+        "claimed": 125,
+        "pending": 7925,
+        "success": 1950
+      },
+      {
+        "t": 37.0,
+        "run": "running",
+        "claimed": 110,
+        "pending": 7530,
+        "success": 2360
+      },
+      {
+        "t": 41.2,
+        "run": "running",
+        "claimed": 115,
+        "pending": 7113,
+        "success": 2772
+      },
+      {
+        "t": 45.3,
+        "run": "running",
+        "claimed": 124,
+        "pending": 6700,
+        "success": 3176
+      },
+      {
+        "t": 49.3,
+        "run": "running",
+        "claimed": 137,
+        "pending": 6284,
+        "success": 3579
+      },
+      {
+        "t": 53.4,
+        "run": "running",
+        "claimed": 124,
+        "pending": 5893,
+        "success": 3983
+      },
+      {
+        "t": 57.5,
+        "run": "running",
+        "claimed": 133,
+        "pending": 5483,
+        "success": 4384
+      },
+      {
+        "t": 61.5,
+        "run": "running",
+        "claimed": 124,
+        "pending": 5072,
+        "success": 4804
+      },
+      {
+        "t": 65.6,
+        "run": "running",
+        "claimed": 126,
+        "pending": 4655,
+        "success": 5219
+      },
+      {
+        "t": 69.8,
+        "run": "running",
+        "claimed": 116,
+        "pending": 4279,
+        "success": 5605
+      },
+      {
+        "t": 73.8,
+        "run": "running",
+        "claimed": 143,
+        "pending": 3859,
+        "success": 5998
+      },
+      {
+        "t": 77.9,
+        "run": "running",
+        "claimed": 126,
+        "pending": 3461,
+        "success": 6413
+      },
+      {
+        "t": 81.9,
+        "run": "running",
+        "claimed": 127,
+        "pending": 3052,
+        "success": 6821
+      },
+      {
+        "t": 85.9,
+        "run": "running",
+        "claimed": 132,
+        "pending": 2639,
+        "success": 7229
+      },
+      {
+        "t": 90.0,
+        "run": "running",
+        "claimed": 138,
+        "pending": 2229,
+        "success": 7633
+      },
+      {
+        "t": 94.0,
+        "run": "running",
+        "claimed": 127,
+        "pending": 1821,
+        "success": 8052
+      },
+      {
+        "t": 98.0,
+        "run": "running",
+        "claimed": 130,
+        "pending": 1406,
+        "success": 8464
+      },
+      {
+        "t": 102.0,
+        "run": "running",
+        "claimed": 129,
+        "pending": 996,
+        "success": 8875
+      },
+      {
+        "t": 106.1,
+        "run": "running",
+        "claimed": 141,
+        "pending": 585,
+        "success": 9274
+      },
+      {
+        "t": 110.1,
+        "run": "running",
+        "claimed": 129,
+        "pending": 181,
+        "success": 9690
+      },
+      {
+        "t": 114.1,
+        "run": "running",
+        "claimed": 50,
+        "success": 9950
+      },
+      {
+        "t": 118.2,
+        "run": "running",
+        "claimed": 18,
+        "success": 9982
+      },
+      {
+        "t": 122.2,
+        "run": "running",
+        "claimed": 12,
+        "success": 9988
+      },
+      {
+        "t": 126.3,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 130.4,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 134.4,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 138.4,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 142.4,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 146.5,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 150.5,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 154.5,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 158.5,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 162.5,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 166.5,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 170.5,
+        "run": "running",
+        "claimed": 3,
+        "success": 9997
+      },
+      {
+        "t": 174.5,
+        "run": "running",
+        "claimed": 2,
+        "success": 9998
+      },
+      {
+        "t": 178.5,
+        "run": "running",
+        "claimed": 2,
+        "success": 9998
+      },
+      {
+        "t": 182.5,
+        "run": "running",
+        "claimed": 2,
+        "success": 9998
+      },
+      {
+        "t": 186.5,
+        "run": "running",
+        "claimed": 1,
+        "success": 9999
+      },
+      {
+        "t": 190.6,
+        "run": "running",
+        "claimed": 1,
+        "success": 9999
+      },
+      {
+        "t": 194.6,
+        "run": "running",
+        "claimed": 1,
+        "success": 9999
+      }
+    ],
+    "claimed_jobs": 10000,
+    "finished_by_sim": 10000,
+    "killed_nodes": 0,
+    "jobs_held_by_killed_nodes": 0,
+    "killed_jobs_finished_by_others": 0
+  }
+}

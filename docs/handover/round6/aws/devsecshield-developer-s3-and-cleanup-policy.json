@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TagAndLockDownOwnTestBuckets",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutBucketTagging", "s3:GetBucketTagging",
+        "s3:PutBucketPublicAccessBlock", "s3:GetBucketPublicAccessBlock",
+        "s3:PutEncryptionConfiguration", "s3:GetEncryptionConfiguration",
+        "s3:PutLifecycleConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::devsecshield-*"
+    },
+    {
+      "Sid": "CleanUpTheOldLabReaderStack",
+      "Effect": "Allow",
+      "Action": ["cloudformation:DeleteStack", "cloudformation:DescribeStacks"],
+      "Resource": "arn:aws:cloudformation:ap-south-1:935951870001:stack/u1-zs-cbom-reader/*"
+    },
+    {
+      "Sid": "LetThatStackRemoveItsRole",
+      "Effect": "Allow",
+      "Action": ["iam:DeleteRole", "iam:DeleteRolePolicy", "iam:DetachRolePolicy", "iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"],
+      "Resource": "arn:aws:iam::935951870001:role/u1-ZeroShieldCBOMReader"
+    }
+  ]
+}

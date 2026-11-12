@@ -1,0 +1,41 @@
+tracebacks: 0
+lines: 38
+--- tail
+[2026-11-11 12:05:57 +0000] [31604] [INFO] Starting gunicorn 25.3.0
+[2026-11-11 12:05:57 +0000] [31604] [INFO] Listening at: http://127.0.0.1:18080 (31604)
+[2026-11-11 12:05:57 +0000] [31604] [INFO] Using worker: uvicorn.workers.UvicornWorker
+[2026-11-11 12:05:57 +0000] [31608] [INFO] Booting worker with pid: 31608
+[2026-11-11 12:05:57 +0000] [31609] [INFO] Booting worker with pid: 31609
+[2026-11-11 12:05:57 +0000] [31610] [INFO] Booting worker with pid: 31610
+[2026-11-11 12:05:57 +0000] [31604] [INFO] Control socket listening at /root/.gunicorn/gunicorn.ctl
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+[2026-11-11 12:05:59 +0000] [31609] [INFO] Started server process [31609]
+[2026-11-11 12:05:59 +0000] [31609] [INFO] Waiting for application startup.
+AWS credentials found
+✓ Threadpool tokens increased to 100
+[2026-11-11 12:05:59 +0000] [31609] [INFO] Application startup complete.
+AWS credentials found
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+✓ Credential redaction filter applied to logging
+⚠ CORS_ORIGINS not set, defaulting to localhost + production
+✓ CORS allowed origins: ['http://localhost:3000', 'http://localhost:4000', 
+'http://127.0.0.1:3000', 'http://127.0.0.1:4000', 
+'https://devsecshield.zeroshield.ai']
+cbom sources deployment id created
+[2026-11-11 12:06:00 +0000] [31608] [INFO] Started server process [31608]
+[2026-11-11 12:06:00 +0000] [31608] [INFO] Waiting for application startup.
+[2026-11-11 12:06:00 +0000] [31610] [INFO] Started server process [31610]
+[2026-11-11 12:06:00 +0000] [31610] [INFO] Waiting for application startup.
+✓ Threadpool tokens increased to 100
+[2026-11-11 12:06:00 +0000] [31608] [INFO] Application startup complete.
+✓ Threadpool tokens increased to 100
+[2026-11-11 12:06:00 +0000] [31610] [INFO] Application startup complete.

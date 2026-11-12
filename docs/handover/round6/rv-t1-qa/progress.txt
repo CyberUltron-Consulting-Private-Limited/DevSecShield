@@ -1,0 +1,7 @@
+2026-11-11T11:28:54Z start review PR32
+2026-11-11T11:34:59Z unit tests done (head 58 pass, dev 19 fail); waiting for stack.lock for live proof
+2026-11-11T11:38:15Z code review done; findings: k8s outcome reason (minor), UI hint (minor), SNI follow-up (nit), PR footer (nit); waiting for locks
+2026-11-11T11:48:38Z full suite head local: 286 passed 22 skipped
+2026-11-11T11:51:59Z cancelled stack.lock wait per coordinator; running live proof without it
+2026-11-11T12:01:40Z live proof done: evidence in live/evidence
+2026-11-11T12:07:19Z posted review 5858439966 on d0270dd (approve, 2 minor)
