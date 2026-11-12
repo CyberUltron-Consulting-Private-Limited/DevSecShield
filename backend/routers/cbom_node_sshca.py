@@ -7,6 +7,11 @@ Same authentication as every node route (token, then client certificate and requ
 anything is parsed), then the lease: only the node that holds the job, under the lease it was given, gets a
 certificate, and only for that job's source (its principals, its CA, the node's own key).  Issue rules and the audit
 row: ``utilities/cbom_sources/sshca/issue.py``.  404 while ``CBOM_SSH_CA`` is off.
+
+Answers: 200 the certificate; 400 refused (the reason); 404 not this node's job; 409 the lease is gone, or "Stop this
+job: …" (cancelled, source changed or disabled, a certificate of this run revoked); 503 + ``Retry-After`` when AWS KMS
+did not answer (the node retries).  Every refusal after authentication is audited and logged once per (node, job,
+reason) and minute (``sshca/denials.py``).
 """
 from __future__ import annotations
 
@@ -26,23 +31,19 @@ from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import node_auth as NA
 from backend.utilities.cbom_sources.common import utcnow
 from backend.utilities.cbom_sources.http import PRIVATE, bad_request, node_limiter, parse_json, read_capped_body, server_error
+from backend.utilities.cbom_sources.common import log
+from backend.utilities.cbom_sources.sshca import denials as DEN
 from backend.utilities.cbom_sources.sshca import flags
 from backend.utilities.cbom_sources.sshca.ca import IssueError
 from backend.utilities.cbom_sources.sshca.issue import issue_for_job
 
 router = APIRouter(tags=["cbom-node"], route_class=flags.route_class())
 
-# Access declaration.  A scan node is not a person with a team role, so under F4 (feat/f4-rbac) this route declares a
-# machine() policy like every route of cbom_node.py, and no x-zs-permission marker (F4's coverage check refuses a team
-# permission on a path without {team_id}).  Until F4 is on dev, the fleet aggregator's route guard (PR #34) asks every
-# route for a cbom.* marker.  Optional-import seam, removed in the F1/F4 integration.
-try:
-    from backend.utilities.rbac.policy import machine as _machine  # type: ignore[import-not-found]
-except ImportError:
-    _machine = None
-ACCESS = [_machine("scan-node token", "X-ZS-Node-Token, the request signature (node_auth) and the job's lease")] \
-    if _machine is not None else []
-OPENAPI_EXTRA = {} if _machine is not None else {"x-zs-permission": "cbom.node"}
+# Access declaration: a scan node is not a person with a team role.  F4's marker form for such a credential is
+# "machine:<credential>" (rbac/policy.py, no import needed); the handler checks the credential (node token, request
+# signature, the job's lease).  #34's fleet route guard accepts machine: markers on /cbom/node/ paths.
+OPENAPI_EXTRA = {"x-zs-permission": "machine:scan-node token"}
+RETRY_AFTER_S = 15
 node_token_header = APIKeyHeader(name="X-ZS-Node-Token", auto_error=False)
 SMALL_BODY = 4 * 1024
 
@@ -66,30 +67,53 @@ class CertBody(BaseModel):
     lease_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
+_HTTP_CODES = {400: "bad_request", 404: "not_this_node", 409: "lease_lost"}
+
+
+def _denied(session: Session, node: CbomScanNode, job_id: int, code: str, status: int,
+            source_id: int | None = None, ca_id: int | None = None) -> None:
+    """One audit row and one log line for a refusal, in its own transaction (the request's was rolled back)."""
+    try:
+        session.rollback()
+        if DEN.record(session, team_id=node.team_id, node_id=int(node.id or 0), job_id=job_id, code=code,
+                      via="route", source_id=source_id, ca_id=ca_id, status=status):
+            session.commit()
+    except Exception as exc:  # the refusal itself must still reach the node
+        session.rollback()
+        log("ssh certificate refusal not audited", node=node.id, job=job_id, reason=code, error=type(exc).__name__)
+
+
 def _issue(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
     with Session(get_db()) as session:
-        node = authenticate_node(session, token, req, raw, now)
+        node = authenticate_node(session, token, req, raw, now)  # before anything: no node, nothing to attribute
         try:
-            body = CertBody.model_validate(parse_json(raw))
-        except ValidationError as exc:
-            raise bad_request(exc) from None
-        job = _leased_job(session, node, job_id, body.lease_id)
+            try:
+                body = CertBody.model_validate(parse_json(raw))
+            except ValidationError as exc:
+                raise bad_request(exc) from None
+            job = _leased_job(session, node, job_id, body.lease_id)
+        except HTTPException as exc:
+            _denied(session, node, job_id, _HTTP_CODES.get(exc.status_code, f"http_{exc.status_code}"), exc.status_code)
+            raise
         source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
+        ca_id = (source.config or {}).get("ssh_ca_id") if source is not None and isinstance(source.config, dict) else None
         reason = J._invalid_reason(job, source, node)  # a job that must stop gets no new certificate
         if reason:
+            _denied(session, node, job_id, "job_must_stop", 409, job.source_id, ca_id)
             raise HTTPException(status_code=409, detail=f"Stop this job: {reason}")
         try:
             minted = issue_for_job(session, node, job, source, now, via="refresh")
         except IssueError as exc:
-            session.rollback()
-            raise HTTPException(status_code=400, detail=str(exc)[:300]) from None
+            _denied(session, node, job_id, exc.code, exc.status, job.source_id, ca_id)
+            headers = {"Retry-After": str(RETRY_AFTER_S)} if exc.transient else None
+            raise HTTPException(status_code=exc.status, detail=str(exc)[:300], headers=headers) from None
         session.commit()
         return minted.payload(now)
 
 
-@router.post("/cbom/node/jobs/{job_id}/ssh-cert", dependencies=[Depends(node_limiter), *ACCESS],
-             openapi_extra=OPENAPI_EXTRA or None,
+@router.post("/cbom/node/jobs/{job_id}/ssh-cert", dependencies=[Depends(node_limiter)],
+             openapi_extra=OPENAPI_EXTRA,
              summary="A short-lived SSH certificate for the node's own key, for a job it holds")
 async def ssh_cert(job_id: int, request: Request,
                    token: Annotated[str | None, Security(node_token_header)] = None):

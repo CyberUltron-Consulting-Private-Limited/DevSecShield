@@ -4,8 +4,10 @@ A certificate is issued only:
 * while ``CBOM_SSH_CA`` is on;
 * to an agentless scan node, for a job that node holds (the caller checked the lease), of a source in the same team
   whose ``credential_type`` is ``ssh_ca``;
-* when the source was last saved by a team admin (like vault credentials: the CA is a team-wide login credential, so a
-  member cannot point it at new servers or principals);
+* when the source was last saved by someone who is still a team admin (only admins save ``ssh_ca`` sources,
+  ``sources.py``; an offboarded admin's sources wait for another admin's save, which the refusal says);
+* while no certificate of this job attempt was revoked (an admin revoked one: the job stops, 409);
+* when no other scan node with a live token (in any team) has the same SSH key (a cloned image: re-key the node);
 * for the principals the source names, all ``zs-<team>-<group>`` (never ``root`` or a real login name);
 * for the node's own public key (its private key never leaves the node), bound with ``source-address`` to the
   addresses the source lists, else to the addresses the node reports (none known: refused, never an unbound cert);
@@ -24,10 +26,11 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionJob, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources.common import iso_z, log
-from backend.utilities.cbom_sources.http import is_team_admin
 from backend.utilities.cbom_sources.sshca import certs as C
 from backend.utilities.cbom_sources.sshca import flags
-from backend.utilities.cbom_sources.sshca.ca import BuiltinCA, IssueError, IssuedCert, VaultCA, clamp_ttl, usable_s
+from backend.utilities.cbom_sources.sshca import keywrap as KW
+from backend.utilities.cbom_sources.sshca import sources as SRC
+from backend.utilities.cbom_sources.sshca.ca import IssueError, IssuedCert, authority_for, clamp_ttl, usable_s
 from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued
 from backend.utilities.cbom_sources.sshca.registry import signing_ca
 
@@ -66,27 +69,60 @@ def source_ca_config(source: CbomCollectionSource) -> dict[str, Any] | None:
             "ssh_source_addresses": list(cfg.get("ssh_source_addresses") or [])}
 
 
+NEEDS_ADMIN_SAVE = ("SSH CA certificates are issued only for sources last saved by a team admin, and this source was "
+                    "last saved by someone who is no longer a team admin. A team admin must open the source and click "
+                    "Save (no change is needed)")
+_fernet_warned: set[int] = set()
+
+
 def _check(session: Session, node: CbomScanNode, job: CbomCollectionJob,
            source: CbomCollectionSource | None) -> tuple[dict[str, Any], CbomSshCa]:
     if not flags.enabled():
-        raise IssueError(flags.OFF_MESSAGE)
+        raise IssueError(flags.OFF_MESSAGE, "flag_off")
     if (node.mode or "agentless") == "agent":
-        raise IssueError("Agent-mode scan nodes are never given certificates")
+        raise IssueError("Agent-mode scan nodes are never given certificates", "agent_node")
     if job.node_id != node.id or job.team_id != node.team_id:
-        raise IssueError("This job is not this scan node's")
+        raise IssueError("This job is not this scan node's", "not_this_node")
     if source is None or job.source_id != source.id or source.team_id != node.team_id:
-        raise IssueError("The job's source no longer exists")
+        raise IssueError("The job's source no longer exists", "source_gone")
     ca_cfg = source_ca_config(source)
     if ca_cfg is None:
-        raise IssueError("This source does not use SSH CA certificates")
-    saved_by = source.updated_by_user_id or source.owner_user_id
-    if not saved_by or not is_team_admin(session, saved_by, source.team_id):
-        raise IssueError("SSH CA certificates are issued only for sources a team admin saved; ask an admin to save "
-                         "this source again")
+        raise IssueError("This source does not use SSH CA certificates", "not_ssh_ca")
+    if SRC.needs_admin_save(session, source):
+        raise IssueError(NEEDS_ADMIN_SAVE, "saved_by_non_admin")
     ca = signing_ca(session, source.team_id, ca_cfg["ssh_ca_id"])
     if ca is None:
-        raise IssueError("The source's SSH CA has no active key (missing, revoked or not promoted)")
+        raise IssueError("The source's SSH CA has no active key (missing, revoked or not promoted)", "no_active_ca")
     return ca_cfg, ca
+
+
+def _check_key_unique(session: Session, node: CbomScanNode) -> None:
+    """Another enrolled node (any team) with the same SSH key could use this node's certificates (a cloned VM image),
+    and the audit's node would no longer say who logged in.  Hash index ``ix_cbomscannode_ssh_public_key``."""
+    key = (node.ssh_public_key or "").strip()
+    if not key:
+        return
+    other = session.exec(select(CbomScanNode.id).where(
+        CbomScanNode.ssh_public_key == node.ssh_public_key, CbomScanNode.id != node.id,
+        CbomScanNode.node_token_hash.is_not(None)).limit(1)).first()  # type: ignore[union-attr]
+    if other is not None:
+        raise IssueError("Another scan node uses this node's SSH key (a cloned image?). Re-key this node: stop it, "
+                         "delete its state directory's id_ed25519 and enroll it again", "key_shared")
+
+
+def _check_not_revoked(session: Session, job: CbomCollectionJob, node: CbomScanNode) -> None:
+    """An admin revoked a certificate of this job attempt: the attempt gets no new one (it stops)."""
+    query = select(CbomSshCertIssued.serial).where(
+        CbomSshCertIssued.team_id == job.team_id, CbomSshCertIssued.job_id == job.id,
+        CbomSshCertIssued.node_id == node.id, CbomSshCertIssued.revoked_at.is_not(None))  # type: ignore[union-attr]
+    if job.claimed_at is not None:
+        query = query.where(CbomSshCertIssued.issued_at >= job.claimed_at)
+    revoked = session.exec(query.limit(1)).first()
+    if revoked is not None:
+        from backend.utilities.cbom_sources.sshca.ca import from_db_serial
+
+        raise IssueError(f"Stop this job: an admin revoked its SSH certificate (serial {from_db_serial(int(revoked))}); "
+                         "this run gets no new certificate", "cert_revoked", status=409)
 
 
 def addresses_for(ca_cfg: dict[str, Any], node: CbomScanNode) -> tuple[str, ...]:
@@ -94,10 +130,10 @@ def addresses_for(ca_cfg: dict[str, Any], node: CbomScanNode) -> tuple[str, ...]
     try:
         addresses = C.source_address_list(wanted)
     except C.CertError as exc:
-        raise IssueError(f"source addresses: {exc}") from None
+        raise IssueError(f"source addresses: {exc}", "source_addresses") from None
     if not addresses:
         raise IssueError("The scan node has not reported its addresses; enter the addresses the servers see it as "
-                         "(source addresses) on the source")
+                         "(source addresses) on the source", "source_addresses")
     return addresses
 
 
@@ -115,18 +151,24 @@ def issue_for_job(session: Session, node: CbomScanNode, job: CbomCollectionJob, 
                   now: _dt.datetime, *, via: str) -> JobCert:
     """Issue one certificate for this job (``IssueError`` with a safe reason otherwise)."""
     ca_cfg, ca = _check(session, node, job, source)
+    authority = authority_for(session, ca)
     ttl_s = clamp_ttl(ca.default_ttl_s)
     window = refresh_window(ttl_s)
     if via == "refresh":
+        _check_not_revoked(session, job, node)
         current = newest_cert(session, job, node)
         if current is not None and (current.valid_before - now).total_seconds() > window:
-            raise IssueError(f"This job's certificate is valid for more than {window} s; ask again when less is left")
+            raise IssueError(f"This job's certificate is valid for more than {window} s; ask again when less is left",
+                             "refresh_too_early")
+    _check_key_unique(session, node)
     addresses = addresses_for(ca_cfg, node)
-    authority = VaultCA(session, ca) if ca.provider == "vault" else BuiltinCA(session, ca)
     key_id = f"zs:{node.team_id}:{node.id}:{job.id}:{{serial}}"
     cert = authority.issue(ca_cfg["ssh_principals"], ttl_s, public_key=node.ssh_public_key or "", key_id=key_id,
                            source_addresses=addresses, node_id=node.id, job_id=job.id,
                            source_id=source.id if source else None, via=via, now=now)
     log("ssh certificate issued", team=node.team_id, ca=ca.id, serial=cert.serial, node=node.id, job=job.id,
         source=job.source_id, via=via, ttl_s=ttl_s, principals=len(cert.principals))
+    if ca.key_wrap == "fernet" and ca.id not in _fernet_warned and KW.kms_configured():
+        _fernet_warned.add(int(ca.id or 0))  # once per CA and worker: the operator should rotate it onto KMS
+        log("ssh ca key wrapped by the deployment key while KMS is configured; rotate it", team=node.team_id, ca=ca.id)
     return JobCert(cert, ca, window)

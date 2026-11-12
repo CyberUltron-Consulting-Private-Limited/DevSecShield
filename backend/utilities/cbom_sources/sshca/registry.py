@@ -5,6 +5,12 @@ lineage (any CA id of it); the lineage's ``active`` CA signs.  Rotation: ``rotat
 once, signs nothing), the customer distributes ``trusted-keys``, ``promote`` makes it ``active`` and the old one
 ``retired``.  A retired CA stays in ``trusted-keys`` for ``OVERLAP`` (the longest certificate it could still have
 live), then drops out.  ``revoke`` takes a CA (or one certificate) out for good: it goes into the KRL.
+
+Every change of what servers must trust moves the team's trust generation (``trust.bump``), which the machine read
+path serves with the files; ``promote`` waits until the ``next`` key is at least ``CBOM_SSHCA_PROMOTE_MIN_AGE_S`` old
+(900 s) unless forced, and shows how many fetchers already have it.  Key wrap: a new key (create or rotate) gets the
+deployment's wrap: AWS KMS whenever ``CBOM_SSHCA_KMS_KEY_ARNS`` is set (``fernet`` is then refused), the row's own KMS
+key on rotation only while the allow-list still has it.
 """
 from __future__ import annotations
 
@@ -20,6 +26,7 @@ from backend.utilities.cbom_sources.crypto import encrypt_secrets
 from backend.utilities.cbom_sources.sshca import certs as C
 from backend.utilities.cbom_sources.sshca import flags
 from backend.utilities.cbom_sources.sshca import keywrap as KW
+from backend.utilities.cbom_sources.sshca import trust as T
 from backend.utilities.cbom_sources.sshca import vault as V
 from backend.utilities.cbom_sources.sshca.ca import from_db_serial
 from backend.utilities.cbom_sources.sshca.models import (
@@ -68,24 +75,23 @@ def usable_ca(session: Session, team_id: int, ca_id: int) -> bool:
 
 
 def trusted(row: CbomSshCa, now: _dt.datetime) -> bool:
-    if row.revoked_at is not None or row.state == "revoked":
-        return False
-    if row.state in ("next", "active"):
-        return True
-    return row.state == "retired" and row.retired_at is not None and now - row.retired_at < OVERLAP
+    return T.trusted(row, now, OVERLAP)
 
 
 def trusted_keys_text(session: Session, team_id: int, now: _dt.datetime) -> str:
-    rows = session.exec(select(CbomSshCa).where(CbomSshCa.team_id == team_id).order_by(CbomSshCa.id)).all()
-    lines = [f"# ZeroShield SSH CA keys for TrustedUserCAKeys (team {team_id}), generated {iso_z(now)}",
-             "# Refresh this file after every rotate / promote / revoke; revoked keys also go in RevokedKeys (the KRL)."]
-    for row in rows:
-        if trusted(row, now):
-            lines.append(f"{row.public_key.strip()} zs-ca-{row.id}-{row.state}")
-    return "\n".join(lines) + "\n"
+    return T.trusted_keys_text(session, team_id, now, OVERLAP)
 
 
-def public_ca(row: CbomSshCa, now: _dt.datetime, issued: int | None = None) -> dict[str, Any]:
+def wrap_warning(row: CbomSshCa) -> str | None:
+    if row.provider == "builtin" and row.key_wrap == "fernet" and row.state in ("next", "active") \
+            and KW.kms_configured():
+        return ("This CA key is wrapped by the deployment key, but this deployment wraps SSH CA keys with AWS KMS: "
+                "rotate the CA to move it onto KMS")
+    return None
+
+
+def public_ca(row: CbomSshCa, now: _dt.datetime, issued: int | None = None,
+              readiness: dict[str, Any] | None = None) -> dict[str, Any]:
     vault_cfg = dict(row.vault_config or {})
     if vault_cfg.get("ca_pem"):
         vault_cfg["ca_pem_set"] = True
@@ -93,10 +99,12 @@ def public_ca(row: CbomSshCa, now: _dt.datetime, issued: int | None = None) -> d
     return {
         "id": row.id, "name": row.name, "provider": row.provider, "key_alg": row.key_alg,
         "public_key": row.public_key, "fingerprint": row.fingerprint, "key_wrap": row.key_wrap,
-        "kms_key_ref": row.kms_key_ref, "vault_config": vault_cfg if row.provider == "vault" else None,
+        "kms_key": KW.kms_label(row.kms_key_ref), "wrap_warning": wrap_warning(row),
+        "vault_config": vault_cfg if row.provider == "vault" else None,
         "secrets_set": sorted(row.secret_fields or []), "state": row.state, "trusted": trusted(row, now),
         "default_ttl_s": row.default_ttl_s, "rotated_from_id": row.rotated_from_id, "lineage_id": lineage_of(row),
         "retired_at": iso_z(row.retired_at), "revoked_at": iso_z(row.revoked_at), "revoked_reason": row.revoked_reason,
+        "trust_generation": row.trust_generation, "readiness": readiness,
         "issued_count": issued, "row_version": row.row_version, "created_at": iso_z(row.created_at),
         "last_updated": iso_z(row.last_updated),
     }
@@ -131,11 +139,15 @@ def _new_key_material(team_id: int, provider: str, key_alg: str, key_wrap: str |
         wrap_default, ref_default = KW.default_wrap()
         key_wrap = key_wrap or wrap_default
         if key_wrap == "aws_kms":
-            kms_key_ref = kms_key_ref or ref_default
-            if not kms_key_ref or kms_key_ref not in KW.allowed_kms_keys():
-                raise HTTPException(status_code=400, detail=f"kms_key_ref: choose one of the KMS keys this deployment "
+            arn = KW.resolve_kms_key(kms_key_ref) if kms_key_ref else ref_default
+            if not arn:
+                raise HTTPException(status_code=400, detail=f"kms_key: choose one of the KMS keys this deployment "
                                                             f"allows ({KW.KMS_ENV})")
+            kms_key_ref = arn
         elif key_wrap == "fernet":
+            if KW.kms_configured():  # contract section 9: KMS whenever it is configured; no opt-out (sec M2)
+                raise HTTPException(status_code=400, detail="key_wrap: this deployment wraps SSH CA keys with AWS KMS; "
+                                                            "the deployment key cannot be chosen")
             kms_key_ref = None
         else:
             raise HTTPException(status_code=400, detail="key_wrap: fernet or aws_kms")
@@ -159,7 +171,7 @@ def _new_key_material(team_id: int, provider: str, key_alg: str, key_wrap: str |
         try:
             cfg = V.check_config(vault_config)
             checked = V.check_secrets(secrets)
-            public = C.public_line_of(V.public_key(cfg))
+            public = C.public_line_of(V.public_key(cfg))  # the issuer's key when issuer_ref is set
             C.load_subject_key(public)  # a plain Ed25519 / ECDSA / RSA >= 3072 key, never a certificate
         except V.VaultError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from None
@@ -184,6 +196,7 @@ def create_ca(session: Session, team_id: int, user_id: int, body: Any, now: _dt.
     session.add(row)
     session.flush()
     row.lineage_id = row.id
+    row.trust_generation = T.bump(session, team_id, now)
     session.add(row)
     audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="sshca.create", object_type="ssh_ca",
           object_id=row.id, changed_fields=["name", "provider", "key_alg", "key_wrap", "default_ttl_s"]
@@ -193,8 +206,21 @@ def create_ca(session: Session, team_id: int, user_id: int, body: Any, now: _dt.
     return row
 
 
-def rotate(session: Session, row: CbomSshCa, user_id: int, now: _dt.datetime, secrets: dict | None = None) -> CbomSshCa:
-    """A ``next`` CA in the same lineage (same provider, wrap and TTL).  One pending rotation at a time."""
+VAULT_ROTATE_KEYS = ("mount", "role", "issuer_ref")
+
+
+def _rotation_wrap(row: CbomSshCa) -> tuple[str | None, str | None]:
+    """The wrap of the next key: the deployment's (``KW.default_wrap``), except that a KMS-wrapped CA keeps its KMS
+    key while the allow-list still has it.  A fernet CA moves onto KMS once KMS is configured; a CA whose KMS key left
+    the allow-list moves onto the default key (the old key still unwraps the old row)."""
+    if row.key_wrap == "aws_kms" and row.kms_key_ref in KW.allowed_kms_keys():
+        return "aws_kms", row.kms_key_ref
+    return KW.default_wrap()
+
+
+def rotate(session: Session, row: CbomSshCa, user_id: int, now: _dt.datetime, secrets: dict | None = None,
+           vault_overrides: dict | None = None) -> CbomSshCa:
+    """A ``next`` CA in the same lineage (same provider and TTL).  One pending rotation at a time."""
     lineage = lineage_of(row)
     rows = lineage_rows(session, row.team_id, lineage)
     if any(r.state == "next" for r in rows):
@@ -202,21 +228,33 @@ def rotate(session: Session, row: CbomSshCa, user_id: int, now: _dt.datetime, se
     if row.state != "active":
         raise HTTPException(status_code=400, detail="Rotate the lineage's active CA")
     if row.provider == "vault":
-        # Vault rotates its own key; a new row records the new public key once the mount has it
+        # the next key lives in another issuer (issuer_ref) or mount, with a role that signs with it; the active row
+        # keeps signing through its own mount and role until promote (no gap)
         from backend.utilities.cbom_sources.crypto import decrypt_secrets
 
-        material = _new_key_material(row.team_id, "vault", row.key_alg, None, None, row.vault_config,
+        overrides = dict(vault_overrides or {})
+        if set(overrides) - set(VAULT_ROTATE_KEYS):
+            raise HTTPException(status_code=400, detail="vault_config: only mount, role and issuer_ref can change "
+                                                        "on rotation")
+        cfg = {**dict(row.vault_config or {}), **{k: v for k, v in overrides.items() if v is not None}}
+        material = _new_key_material(row.team_id, "vault", row.key_alg, None, None, cfg,
                                      secrets or decrypt_secrets(row.secret_encrypted))
         if material["fingerprint"] == row.fingerprint:
-            raise HTTPException(status_code=400, detail="Vault still returns the same CA key; rotate the key in Vault "
-                                                        "first (POST <mount>/config/ca), then rotate here")
+            raise HTTPException(status_code=400, detail="Vault returns the same CA key as the active one: point the "
+                                                        "rotation at the issuer (issuer_ref) or mount that holds the "
+                                                        "new key, with a role that signs with it")
     else:
-        material = _new_key_material(row.team_id, "builtin", row.key_alg, row.key_wrap, row.kms_key_ref, None, None)
+        if vault_overrides:
+            raise HTTPException(status_code=400, detail="vault_config: only for provider vault")
+        wrap, ref = _rotation_wrap(row)
+        material = _new_key_material(row.team_id, "builtin", row.key_alg, wrap, ref, None, None)
     new = CbomSshCa(team_id=row.team_id, owner_user_id=user_id, updated_by_user_id=user_id, name=row.name[:56] + "-next",
                     provider=row.provider, state="next", default_ttl_s=row.default_ttl_s, rotated_from_id=row.id,
                     lineage_id=lineage, created_at=now, last_updated=now, **material)
     session.add(new)
     session.flush()
+    new.trust_generation = T.bump(session, row.team_id, now)
+    session.add(new)
     audit(session, team_id=row.team_id, actor_type="user", actor_id=user_id, action="sshca.rotate",
           object_type="ssh_ca", object_id=new.id, changed_fields=["rotated_from_id"])
     log("ssh ca rotation started", team=row.team_id, ca=new.id, rotated_from=row.id, by=user_id)
@@ -234,9 +272,17 @@ def _bump(session: Session, row: CbomSshCa, values: dict[str, Any], *, expect_st
     return changed == 1
 
 
-def promote(session: Session, row: CbomSshCa, user_id: int, now: _dt.datetime) -> CbomSshCa:
+def promote(session: Session, row: CbomSshCa, user_id: int, now: _dt.datetime, force: bool = False) -> CbomSshCa:
     if row.state != "next" or row.revoked_at is not None:
         raise HTTPException(status_code=400, detail="Only a CA waiting in rotation (state next) can be promoted")
+    ready = T.readiness(session, row, now) or {}
+    if not force and ready.get("age_s", 0) < ready.get("min_age_s", 0):
+        fetchers = (f"{ready['fetchers_ready']} of {ready['fetchers_total']} servers that fetch the trust bundle "
+                    "have it" if ready.get("fetchers_total") else "no server fetches the trust bundle with a trust token")
+        raise HTTPException(status_code=400, detail=(
+            f"This CA key was added {ready['age_s'] // 60} min ago and servers may not trust it yet ({fetchers}). "
+            f"Promote it after {ready['promote_after']}, or promote with force once every server has the new "
+            "trusted keys"))
     for other in lineage_rows(session, row.team_id, lineage_of(row)):
         if other.id != row.id and other.state == "active":
             if not _bump(session, other, {"state": "retired", "retired_at": now, "last_updated": now,
@@ -246,9 +292,11 @@ def promote(session: Session, row: CbomSshCa, user_id: int, now: _dt.datetime) -
     if not _bump(session, row, {"state": "active", "last_updated": now, "updated_by_user_id": user_id},
                  expect_state="next"):
         raise HTTPException(status_code=409, detail="This was changed elsewhere. Reload to see the latest version.")
+    T.bump(session, row.team_id, now)
     audit(session, team_id=row.team_id, actor_type="user", actor_id=user_id, action="sshca.promote",
-          object_type="ssh_ca", object_id=row.id, changed_fields=["state"])
-    log("ssh ca promoted", team=row.team_id, ca=row.id, by=user_id)
+          object_type="ssh_ca", object_id=row.id, changed_fields=["state"] + (["force"] if force else []))
+    log("ssh ca promoted", team=row.team_id, ca=row.id, by=user_id, forced=int(force),
+        fetchers_ready=ready.get("fetchers_ready"), fetchers_total=ready.get("fetchers_total"))
     return row
 
 
@@ -259,6 +307,7 @@ def revoke(session: Session, row: CbomSshCa, user_id: int, reason: str, now: _dt
                                 "last_updated": now, "updated_by_user_id": user_id}):
         raise HTTPException(status_code=409, detail="This was changed elsewhere. Reload to see the latest version.")
     KW.forget(row.id)
+    T.bump(session, row.team_id, now, revocation=True)
     audit(session, team_id=row.team_id, actor_type="user", actor_id=user_id, action="sshca.revoke",
           object_type="ssh_ca", object_id=row.id, changed_fields=["state", "revoked_reason"])
     log("ssh ca revoked", team=row.team_id, ca=row.id, by=user_id)
@@ -280,6 +329,7 @@ def revoke_cert(session: Session, team_id: int, cert_id: int, user_id: int, reas
     if changed != 1:
         raise HTTPException(status_code=409, detail="This was changed elsewhere. Reload to see the latest version.")
     session.expire(row)
+    T.bump(session, team_id, now, revocation=True)
     audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="sshca.cert.revoke",
           object_type="ssh_cert", object_id=row.id, changed_fields=["revoked_at", "revoked_reason"])
     log("ssh certificate revoked", team=team_id, cert=row.id, ca=row.ca_id, by=user_id)
@@ -287,26 +337,9 @@ def revoke_cert(session: Session, team_id: int, cert_id: int, user_id: int, reas
 
 
 # ----------------------------------------------------------------------------- revocation list
-KRL_KEEP_EXPIRED = _dt.timedelta(hours=1)  # a revoked certificate stays listed this long after it expired (clock skew)
-
-
-def krl_bytes(session: Session, team_id: int, now: _dt.datetime) -> bytes:
-    """The team's KRL: every revoked CA key, and the serials of revoked certificates still (nearly) valid."""
-    from backend.utilities.cbom_sources.sshca import krl
-
-    cas = {row.id: row for row in session.exec(select(CbomSshCa).where(CbomSshCa.team_id == team_id)).all()}
-    revoked_cas = [C.public_blob(row.public_key) for row in cas.values() if row.revoked_at is not None]
-    certs = session.exec(select(CbomSshCertIssued).where(
-        CbomSshCertIssued.team_id == team_id, CbomSshCertIssued.revoked_at.is_not(None),  # type: ignore[union-attr]
-        CbomSshCertIssued.valid_before > now - KRL_KEEP_EXPIRED)).all()
-    serials: dict[bytes, list[int]] = {}
-    for cert in certs:
-        ca = cas.get(cert.ca_id)
-        if ca is not None:
-            serials.setdefault(C.public_blob(ca.public_key), []).append(from_db_serial(int(cert.serial)))
-    stamp = int(now.replace(tzinfo=_dt.timezone.utc).timestamp())
-    return krl.build(revoked_ca_blobs=revoked_cas, revoked_serials=serials, krl_version=stamp, generated=stamp,
-                     comment=f"ZeroShield SSH CA revocations, team {team_id}")
+def krl_bytes(session: Session, team_id: int, now: _dt.datetime | None = None) -> bytes:
+    """The team's KRL (``trust.krl_bytes``: cached per revocation generation)."""
+    return T.krl_bytes(session, team_id)[0]
 
 
 def revoked_keys_text(session: Session, team_id: int, now: _dt.datetime) -> str:

@@ -7,7 +7,15 @@ the connection goes to the checked addresses, the certificate is verified for th
 no proxy, no redirects (point it at the active node), 1 MB body cap, 30 s per call.
 
 Endpoints: ``GET /v1/<mount>/public_key`` (the CA key, unauthenticated), ``POST /v1/<mount>/sign/<role>`` (sign),
-``POST /v1/auth/approle/login`` (AppRole).  Tokens are sent only in ``X-Vault-Token`` and never logged.
+``POST /v1/auth/approle/login`` (AppRole), ``POST /v1/auth/token/revoke-self`` (the AppRole login's token is revoked
+as soon as the certificate is signed, so a run of 10,000 certificates leaves no live tokens; give the AppRole a short
+``token_ttl`` and ``token_num_uses`` anyway).  Tokens are sent only in ``X-Vault-Token`` and never logged.
+
+Rotation without a gap: an SSH engine with several issuers (``issuer_ref``, e.g. OpenBao's SSH engine; the role's
+``issuer_ref`` picks the signing key) or a second mount holds the next key; ZeroShield's ``rotate`` registers it
+(``vault_config`` overrides ``mount`` / ``role`` / ``issuer_ref``), servers get it through the trust bundle, and the
+lineage's ACTIVE row keeps signing through its own mount and role until ``promote``.  ``issuer_ref`` set: the CA's
+public key is read from ``/v1/<mount>/issuer/<issuer_ref>/public_key``.
 """
 from __future__ import annotations
 
@@ -61,10 +69,17 @@ def check_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
         ca_pem = check_pem_certificates(cfg.get("ca_pem") or None)
     except ValueError as exc:
         raise VaultError(f"vault_config.ca_pem: {exc}") from None
-    extra = set(cfg) - {"addr", "mount", "role", "namespace", "ca_pem"}
+    issuer_ref = str(cfg.get("issuer_ref") or "").strip() or None
+    if issuer_ref and not _ROLE.match(issuer_ref):
+        raise VaultError("vault_config.issuer_ref: the SSH engine issuer that holds this CA key (letters, digits and "
+                         ". _ -)")
+    extra = set(cfg) - {"addr", "mount", "role", "namespace", "ca_pem", "issuer_ref"}
     if extra:
         raise VaultError(f"vault_config.{sorted(extra)[0]}: not a Vault setting")
-    return {"addr": addr, "mount": mount, "role": role, "namespace": namespace, "ca_pem": ca_pem}
+    out = {"addr": addr, "mount": mount, "role": role, "namespace": namespace, "ca_pem": ca_pem}
+    if issuer_ref:
+        out["issuer_ref"] = issuer_ref
+    return out
 
 
 def check_secrets(secrets: dict[str, str] | None) -> dict[str, str]:
@@ -163,22 +178,38 @@ def login(cfg: dict[str, Any], secrets: dict[str, str]) -> str:
 
 
 def public_key(cfg: dict[str, Any]) -> str:
-    status, data = call(cfg, "GET", f"/v1/{cfg['mount']}/public_key")
+    issuer = cfg.get("issuer_ref")
+    path = f"/v1/{cfg['mount']}/issuer/{issuer}/public_key" if issuer else f"/v1/{cfg['mount']}/public_key"
+    status, data = call(cfg, "GET", path)
     text = data if isinstance(data, str) else ""
     if status != 200 or not text.strip():
-        raise VaultError(f"Vault did not return the SSH CA public key of mount {cfg['mount']} ({status})")
+        what = f"issuer {issuer} of mount {cfg['mount']}" if issuer else f"mount {cfg['mount']}"
+        raise VaultError(f"Vault did not return the SSH CA public key of {what} ({status})")
     return text.strip().splitlines()[0].strip()
+
+
+def revoke_self(cfg: dict[str, Any], token: str) -> bool:
+    """Best effort: revoke a token this code obtained (AppRole).  Never raises; True when Vault accepted it."""
+    try:
+        status, _data = call(cfg, "POST", "/v1/auth/token/revoke-self", token=token, body={})
+        return status in (200, 204)
+    except Exception:  # a token left to expire on its own TTL is not worth failing the certificate for
+        return False
 
 
 def sign(cfg: dict[str, Any], secrets: dict[str, str], *, public_key_line: str, principals: list[str], ttl_s: int,
          key_id: str, source_addresses: list[str]) -> str:
-    """The signed certificate text (checked by the caller)."""
+    """The signed certificate text (checked by the caller).  An AppRole login's token is revoked right after."""
     token = login(cfg, secrets)
     body: dict[str, Any] = {"public_key": public_key_line, "valid_principals": ",".join(principals),
                             "ttl": f"{int(ttl_s)}s", "cert_type": "user", "key_id": key_id, "extensions": {}}
     if source_addresses:
         body["critical_options"] = {"source-address": ",".join(source_addresses)}
-    status, data = call(cfg, "POST", f"/v1/{cfg['mount']}/sign/{cfg['role']}", token=token, body=body)
+    try:
+        status, data = call(cfg, "POST", f"/v1/{cfg['mount']}/sign/{cfg['role']}", token=token, body=body)
+    finally:
+        if not secrets.get("token"):
+            revoke_self(cfg, token)
     signed = ((data.get("data") or {}).get("signed_key") if isinstance(data, dict) else None)
     if status != 200 or not isinstance(signed, str):
         detail = _errors(data)

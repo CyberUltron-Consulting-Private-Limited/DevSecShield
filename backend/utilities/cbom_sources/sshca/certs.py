@@ -28,8 +28,12 @@ from cryptography.hazmat.primitives.serialization import (
 
 MAX_PRINCIPALS = 16
 MAX_SOURCE_ADDRESSES = 32
-# zs-<team id>-<group>: a certificate can never carry root, a real login name or another team's principal
-_PRINCIPAL = re.compile(r"^zs-(\d{1,10})-[a-z0-9][a-z0-9._-]{0,47}$")
+# source-address must bind the certificate to the scan node, not to the internet: no prefix shorter than these
+MIN_PREFIX_V4 = 16
+MIN_PREFIX_V6 = 48
+# zs-<team id>-<group>: a certificate can never carry root, a real login name or another team's principal.  The team
+# id has one spelling (no leading zeros): sshd compares principals as strings, so zs-01-prod would be another group.
+_PRINCIPAL = re.compile(r"^zs-(0|[1-9]\d{0,9})-[a-z0-9][a-z0-9._-]{0,47}$")
 _PUBLIC_LINE = re.compile(r"^(ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|ssh-rsa) "
                           r"([A-Za-z0-9+/]+={0,2})(?: [^\r\n]{0,256})?$")
 
@@ -92,6 +96,10 @@ def source_address_list(values: Sequence[str]) -> tuple[str, ...]:
             net = ipaddress.ip_network(text, strict=False)
         except ValueError:
             raise CertError(f"{text[:64]!r} is not an IP address or CIDR") from None
+        shortest = MIN_PREFIX_V4 if net.version == 4 else MIN_PREFIX_V6
+        if net.prefixlen < shortest:
+            raise CertError(f"{text[:64]!r}: a source address must be an address or a network with a prefix of at "
+                            f"least /{shortest} (it binds the certificate to the scan node)")
         if net.prefixlen == net.max_prefixlen:
             text = str(net.network_address)
         else:

@@ -29,7 +29,7 @@ from sqlmodel import Session, select
 import test_cbom_sources_api as _base
 from backend.main import app
 from backend.new_models import CbomCollectionAuditEvent, CbomCollectionJob, CbomCollectionSource, CbomScanNode
-from backend.routers import cbom_node_sshca, cbom_sshca
+from backend.routers import cbom_node_sshca, cbom_sshca, cbom_sshca_trust
 from backend.utilities.cbom_sources import common
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources.cleanup import delete_cbom_sources_for_team
@@ -62,8 +62,14 @@ def ca_world(world, api, monkeypatch):
     engine, ids = world
     monkeypatch.setenv("CBOM_SSH_CA", "1")
     monkeypatch.delenv(KW.KMS_ENV, raising=False)
+    # these tests promote right after rotating; the minimum age (900 s) has its own test (test_cbom_f14_sshca_r7)
+    monkeypatch.setenv("CBOM_SSHCA_PROMOTE_MIN_AGE_S", "0")
     monkeypatch.setattr(cbom_node_sshca, "get_db", lambda: engine)
     KW.forget()
+    from backend.utilities.cbom_sources.sshca import denials, trust
+
+    denials.reset()
+    trust._krl_cache.clear()  # per-worker cache keyed by team id: each test has a fresh database
     return engine, ids
 
 
@@ -161,15 +167,16 @@ def test_flag_off_every_route_is_a_404_and_nothing_is_issued(api, ca_world, monk
     does not exist); the claim plugin and the issuing code do nothing."""
     engine, _ = ca_world
     s = setup_job(api)
-    routes = [r for m in (cbom_sshca, cbom_node_sshca) for r in m.router.routes]
-    assert len(routes) == 12
+    routes = [r for m in (cbom_sshca, cbom_node_sshca, cbom_sshca_trust) for r in m.router.routes]
+    assert len(routes) == 18  # 12 + trust tokens (3) + the servers' trust-bundle fetch (3), review round 7
     for value in ("0", "", "off", "false"):
         monkeypatch.setenv("CBOM_SSH_CA", value)
         for route in routes:
             for method in sorted(route.methods):
                 for who in (None, "alice"):
                     r = api(method, _concrete(route.path), who, json={"lease_id": s["lease"]},
-                            headers={"X-ZS-Node-Token": s["token"]} if route.path.startswith("/cbom/node") else {})
+                            headers={"X-ZS-Node-Token": s["token"]} if route.path.startswith("/cbom/node") else
+                            {"X-ZS-Trust-Token": "zst_" + "0" * 40} if route.path.startswith("/cbom/ssh-ca-trust") else {})
                     assert r.status_code == 404, (value, method, route.path, who, r.status_code)
     monkeypatch.delenv("CBOM_SSH_CA")
     assert api("GET", BASE).status_code == 404  # unset = off
@@ -280,11 +287,14 @@ def test_agent_nodes_and_finished_jobs_never_get_certificates(api, ca_world):
 
 
 def test_only_sources_an_admin_saved_get_certificates(api, ca_world):
+    """A member cannot save an ssh_ca source at all (review round 7: refused at save, like the vault credential); the
+    offboarding side (the saver is no longer an admin) is in test_cbom_f14_sshca_r7."""
     node_id, token, _ = enroll(api)
     ca = create_ca(api)
-    source, test = ssh_ca_source(api, node_id, ca["id"], who="bob")  # a member saved it
-    payload = claim(api, token)
-    r = cert_route(api, token, payload["job"]["id"], payload["job"]["lease_id"])
+    r = api("POST", "/1/cbom/sources/items", "bob", json={
+        "kind": "linux_servers", "name": "m", "node_id": node_id, "test_after_save": True,
+        "config": {"targets": ["10.20.0.5"], "credential_type": "ssh_ca", "ssh_ca_id": ca["id"],
+                   "ssh_principals": ["zs-1-prod"]}})
     assert r.status_code == 400 and "team admin" in r.json()["detail"]
 
 
@@ -541,7 +551,7 @@ def test_kms_envelope_wrap_with_moto(api, ca_world, monkeypatch):
             monkeypatch.setenv(KW.KMS_ENV, arn)
             assert api("GET", BASE).json()["default_key_wrap"] == "aws_kms"
             ca = create_ca(api, name="kms")  # KMS is the default once the deployment configures a key
-            assert ca["key_wrap"] == "aws_kms" and ca["kms_key_ref"] == arn
+            assert ca["key_wrap"] == "aws_kms" and ca["kms_key"] == KW.kms_label(arn)  # a label, never the ARN
             engine, _ = ca_world
             with Session(engine) as session:
                 row = session.get(CbomSshCa, ca["id"])
@@ -584,6 +594,8 @@ class FakeVault:
             return 200, self.public + "\n"
         if path.endswith("/approle/login"):
             return 200, {"auth": {"client_token": "hvs.fake-approle-token-000000000000"}}
+        if path.endswith("/token/revoke-self"):
+            return 204, ""
         now = int(dt.datetime.now(dt.timezone.utc).timestamp())
         ttl = int(body["ttl"].rstrip("s"))
         principals = body["valid_principals"].split(",")
@@ -758,26 +770,25 @@ def test_every_route_is_mounted_flagged_rate_limited_authenticated_and_declares_
     fleet_routes = {(r.path, m) for r in cbom_fleet.router.routes if isinstance(r, APIRoute) for m in r.methods}
     expected = {"GET": "cbom.fleet.read", "POST": "cbom.sshca.admin"}
     seen = 0
-    for module in (cbom_sshca, cbom_node_sshca):
+    for module in (cbom_sshca, cbom_node_sshca, cbom_sshca_trust):
         for route in module.router.routes:
             for method in route.methods:
                 assert (route.path, method) in app_routes and (route.path, method) in fleet_routes, route.path
             assert isinstance(route, CbomRoute) and getattr(route, "flag_env", None) == "CBOM_SSH_CA", route.path
             permission = (route.openapi_extra or {}).get("x-zs-permission")
-            if route.path.startswith("/cbom/node/"):  # a scan-node token, not a person's team role
-                if cbom_node_sshca._machine is None:  # before F4: the fleet route guard's cbom.* marker
-                    assert permission == "cbom.node", route.path
-                else:  # with F4: a machine() policy and no team permission marker
-                    assert permission is None and len(cbom_node_sshca.ACCESS) == 1, route.path
+            if route.path.startswith("/cbom/node/"):  # a scan-node token, not a person's team role (F4's marker form)
+                assert permission == "machine:scan-node token", route.path
+            elif route.path.startswith("/cbom/ssh-ca-trust/"):  # a server's trust token
+                assert permission == "machine:ssh-ca trust token", route.path
             else:
                 (method,) = route.methods
                 assert permission == expected[method], (method, route.path, permission)
-            assert any(d.dependency in limiters for d in route.dependencies), route.path
+            assert any(d.dependency in limiters | {cbom_sshca_trust.trust_limiter} for d in route.dependencies), route.path
             for method in route.methods:
                 r = api(method, _concrete(route.path), None, json={})
                 assert r.status_code == 401, (method, route.path, r.status_code)
                 seen += 1
-    assert seen == 12
+    assert seen == 18
 
 
 # ----------------------------------------------------------------------------- round 7: the F1.4 criteria, one by one
@@ -881,9 +892,24 @@ def test_a_node_cannot_get_a_certificate_for_another_teams_group(api, ca_world):
     assert cert_route(api, t2_token, s["job_id"], s["lease"]).status_code == 404
     t2_ca = api("POST", "/2/cbom/sources/fleet/ssh-ca", "carol", json={"name": "t2-ca"}).json()["ca"]
     assert api("GET", f"{BASE}/{t2_ca['id']}").status_code == 404  # team 1 cannot even see it
-    # a source of team 1 that names team 2's group (stored as is: the shape is valid) ...
+    # a source of team 1 that names team 2's group is refused at save (review round 7) ...
     node_id, token, _ = enroll(api, name="dc-3")
-    other_group, _ = ssh_ca_source(api, node_id, s["ca"]["id"], name="other-group", principals=("zs-2-prod",))
+    refused = api("POST", "/1/cbom/sources/items", json={
+        "kind": "linux_servers", "name": "other-group", "node_id": node_id,
+        "config": {"targets": ["10.20.0.5"], "credential_type": "ssh_ca", "ssh_ca_id": s["ca"]["id"],
+                   "ssh_principals": ["zs-2-prod"]}})
+    assert refused.status_code == 400 and "another team" in refused.json()["detail"]
+    # ... and one stored anyway (before that check existed) is still refused when the certificate would be signed
+    other_group, _ = ssh_ca_source(api, node_id, s["ca"]["id"], name="other-group")
+    with Session(engine) as session:
+        src = session.get(CbomCollectionSource, other_group["id"])
+        src.config = {**src.config, "ssh_principals": ["zs-2-prod"]}
+        session.add(src)
+        session.flush()
+        job = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == src.id)).one()
+        job.params = {**(job.params or {}), "conn_v": J.connection_version(src)}  # the job follows the stored config
+        session.add(job)
+        session.commit()
     payload = claim(api, token)
     r = cert_route(api, token, payload["job"]["id"], payload["job"]["lease_id"])
     assert r.status_code == 400 and "another team" in r.json()["detail"]
@@ -1053,8 +1079,9 @@ def test_kms_access_denied_is_reported_safely(api, ca_world, monkeypatch):
     try:
         with stub:
             r = api("POST", BASE, json={"name": "kms-denied"})
-        assert r.status_code == 400 and "AWS KMS refused to create a data key" in r.json()["detail"]
-        assert "iam::" not in r.text and "sandbox-user" not in r.text
+        assert r.status_code == 400 and "may not use the SSH CA's KMS key" in r.json()["detail"]
+        assert "kms:GenerateDataKey" in r.json()["detail"]  # what the operator must allow
+        assert "iam::" not in r.text and "sandbox-user" not in r.text and "arn:aws" not in r.text
     finally:
         KW.set_kms_client_factory(None)
     engine, _ = ca_world

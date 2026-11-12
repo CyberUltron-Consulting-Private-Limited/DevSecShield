@@ -2,19 +2,30 @@
 
 ``fernet``  the deployment's ``ENCRYPTION_KEY`` (``backend/utilities/db/encryption.py``).  The plaintext carries the
             team and the CA fingerprint, checked on unwrap, so a wrapped key copied onto another CA row or team is
-            refused.
+            refused.  Refused for new keys while the deployment configures KMS (no opt-out, sec M2).
 ``aws_kms`` envelope encryption: ``GenerateDataKey`` (AES-256) under a KMS key from the deployment's allow-list
             ``CBOM_SSHCA_KMS_KEY_ARNS`` (comma-separated; the first one is the default for new CAs), with the
             EncryptionContext ``{zs:purpose, zs:team, zs:ca_fp}``; the CA key is sealed with AES-GCM using that context
             as associated data.  Only the KMS-encrypted data key, the nonce and the ciphertext are stored.  A team admin
-            can only pick an ARN the deployment listed (no confused deputy over the backend's KMS permissions).
+            can only pick a key the deployment listed (no confused deputy over the backend's KMS permissions), and sees
+            it only as an opaque label (``kms-<8 hex>``), never the ARN (account id, region, key id).
 
-Unwrapped keys are cached in this worker for at most ``CACHE_SECONDS`` (contract: 10 minutes).  Nothing here logs
-key material: errors carry the error class only.
+KMS client: one per region, ``connect_timeout`` 2 s, ``read_timeout`` 5 s, standard retries, 3 attempts in all.  Errors
+reach the customer as plain text (``WrapError``): a missing grant, a disabled key and the like are configuration
+faults; throttling, KMS internal errors, timeouts and connection failures are ``transient`` (the node route answers
+503 with ``Retry-After``, the claim leaves the certificate to the route).
+
+Unwrapped keys (per worker): one thread unwraps a key while the others wait for it (single flight).  An entry lives at
+most ``CACHE_SECONDS`` (contract: 10 minutes): expired entries are removed on every call and by a background sweeper
+every ``SWEEP_EVERY_S`` while anything is cached, so no key stays in memory more than ``CACHE_SECONDS +
+SWEEP_EVERY_S`` after it was unwrapped.  A CA that is no longer active drops its entry when this worker sees it
+(``ca._Base``), and revoke / promote drop it on the worker that served them.  Nothing here logs key material: errors
+carry no key, no ARN and no exception text from AWS.
 """
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -29,12 +40,19 @@ from backend.utilities.cbom_sources.sshca import certs as C
 
 PURPOSE = "devsecshield-sshca"
 CACHE_SECONDS = 600
+SWEEP_EVERY_S = 30
 KMS_ENV = "CBOM_SSHCA_KMS_KEY_ARNS"
 _ARN = re.compile(r"^arn:aws(-cn|-us-gov)?:kms:([a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-\d):(\d{12}):(key|alias)/[A-Za-z0-9/_+=,.@:-]{1,256}$")
 
 
 class WrapError(Exception):
-    """``str(err)`` is safe to show."""
+    """``str(err)`` is safe to show.  ``transient``: AWS KMS did not answer (throttled, internal error, timeout);
+    asking again later may work.  ``code``: a short reason code for the audit and the log."""
+
+    def __init__(self, message: str, *, transient: bool = False, code: str = "ca_key_unavailable") -> None:
+        super().__init__(message)
+        self.transient = transient
+        self.code = code
 
 
 def allowed_kms_keys() -> list[str]:
@@ -42,10 +60,36 @@ def allowed_kms_keys() -> list[str]:
     return [part.strip() for part in raw.split(",") if _ARN.match(part.strip())]
 
 
+def kms_label(arn: str | None) -> str | None:
+    """The opaque name a browser sees for a KMS key ARN (stable for one ARN; reveals nothing about it)."""
+    if not arn:
+        return None
+    return "kms-" + hashlib.sha256(arn.encode()).hexdigest()[:8]
+
+
+def kms_choices() -> list[dict[str, object]]:
+    """``[{"label", "default"}]`` of the deployment's allow-list, for the CA form (never the ARNs)."""
+    return [{"label": kms_label(arn), "default": i == 0} for i, arn in enumerate(allowed_kms_keys())]
+
+
+def resolve_kms_key(ref: str | None) -> str | None:
+    """A label (or, for operators, the ARN itself) -> an allowed ARN, or None."""
+    if not ref:
+        return None
+    for arn in allowed_kms_keys():
+        if ref in (arn, kms_label(arn)):
+            return arn
+    return None
+
+
 def default_wrap() -> tuple[str, str | None]:
     """("aws_kms", arn) when the deployment configured KMS keys, else ("fernet", None)."""
     keys = allowed_kms_keys()
     return ("aws_kms", keys[0]) if keys else ("fernet", None)
+
+
+def kms_configured() -> bool:
+    return bool(allowed_kms_keys())
 
 
 def kms_region(arn: str) -> str:
@@ -63,8 +107,11 @@ def _aad(context: dict[str, str]) -> bytes:
     return json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
 
 
-# A factory so tests (moto) and the live proof can hand in their own client; production uses boto3's default chain.
+# A factory so tests (moto, Stubber) and the live proof can hand in their own client; production uses boto3's default
+# credential chain, one client per region (a client is thread-safe; creating one is not, and costs 15-20 ms).
 _kms_factory: Callable[[str], Any] | None = None
+_clients: dict[str, Any] = {}
+_clients_lock = threading.Lock()
 
 
 def set_kms_client_factory(factory: Callable[[str], Any] | None) -> None:
@@ -72,12 +119,60 @@ def set_kms_client_factory(factory: Callable[[str], Any] | None) -> None:
     _kms_factory = factory
 
 
+def client_config():
+    from botocore.config import Config
+
+    # 3 attempts in all (botocore: max_attempts counts retries, total_max_attempts every attempt)
+    return Config(connect_timeout=2, read_timeout=5, retries={"mode": "standard", "total_max_attempts": 3})
+
+
 def _kms(region: str):
     if _kms_factory is not None:
         return _kms_factory(region)
-    import boto3
+    with _clients_lock:
+        client = _clients.get(region)
+        if client is None:
+            import boto3
 
-    return boto3.client("kms", region_name=region)
+            client = boto3.client("kms", region_name=region, config=client_config())
+            _clients[region] = client
+        return client
+
+
+_TRANSIENT_CODES = frozenset({
+    "ThrottlingException", "Throttling", "RequestLimitExceeded", "TooManyRequestsException", "LimitExceededException",
+    "KMSInternalException", "InternalFailure", "InternalError", "ServiceUnavailable", "ServiceUnavailableException",
+    "DependencyTimeoutException", "RequestTimeout", "RequestTimeoutException"})
+
+
+def _kms_failure(exc: BaseException, action: str, key_ref: str | None) -> WrapError:
+    """Plain text for a failed KMS call (no ARN, no AWS message, no exception class)."""
+    label = kms_label(key_ref) or "the KMS key"
+    code = None
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        code = str((response.get("Error") or {}).get("Code") or "") or None
+    if code in ("AccessDeniedException", "AccessDenied", "UnauthorizedOperation"):
+        return WrapError(f"the backend's AWS role may not use the SSH CA's KMS key {label} (operator: allow "
+                         f"kms:{action} on it)", code="kms_access_denied")
+    if code in ("DisabledException", "KMSInvalidStateException"):
+        return WrapError(f"the SSH CA's KMS key {label} is disabled or pending deletion (operator: enable it, or "
+                         "rotate the CA onto another key)", code="kms_key_disabled")
+    if code in ("NotFoundException",):
+        return WrapError(f"the SSH CA's KMS key {label} does not exist in this AWS account and region",
+                         code="kms_key_not_found")
+    if code in ("IncorrectKeyException", "InvalidCiphertextException"):
+        return WrapError("the wrapped CA key does not belong to this KMS key or this CA", code="kms_wrong_key")
+    if code in _TRANSIENT_CODES:
+        return WrapError("AWS KMS is not answering right now (throttled or busy); try again in a moment",
+                         transient=True, code="kms_unavailable")
+    if code:
+        return WrapError(f"AWS KMS refused to {action.lower()} the CA key (error code {code[:64]})", code="kms_refused")
+    name = type(exc).__name__
+    if name in ("NoCredentialsError", "PartialCredentialsError", "NoRegionError"):
+        return WrapError("the backend has no usable AWS credentials for KMS (operator)", code="kms_no_credentials")
+    # connection errors, connect/read timeouts and anything else that never got an AWS answer
+    return WrapError("AWS KMS could not be reached; try again in a moment", transient=True, code="kms_unavailable")
 
 
 def wrap(private_pem: bytes, *, team_id: int, ca_fingerprint: str, key_wrap: str, kms_key_ref: str | None) -> str:
@@ -94,7 +189,7 @@ def wrap(private_pem: bytes, *, team_id: int, ca_fingerprint: str, key_wrap: str
             out = _kms(kms_region(kms_key_ref)).generate_data_key(KeyId=kms_key_ref, KeySpec="AES_256",
                                                                    EncryptionContext=context)
         except Exception as exc:
-            raise WrapError(f"AWS KMS refused to create a data key ({type(exc).__name__})") from None
+            raise _kms_failure(exc, "GenerateDataKey", kms_key_ref) from None
         nonce = secrets.token_bytes(12)
         sealed = AESGCM(out["Plaintext"]).encrypt(nonce, private_pem, _aad(context))
         doc = {"v": 1, "key_ref": kms_key_ref, "edk": base64.b64encode(out["CiphertextBlob"]).decode(),
@@ -131,7 +226,7 @@ def unwrap(blob: str, *, team_id: int, ca_fingerprint: str) -> bytes:
         except WrapError:
             raise
         except Exception as exc:
-            raise WrapError(f"AWS KMS refused to unwrap the CA key ({type(exc).__name__})") from None
+            raise _kms_failure(exc, "Decrypt", key_ref) from None
         try:
             return AESGCM(out["Plaintext"]).decrypt(nonce, sealed, _aad(context))
         except Exception:
@@ -142,30 +237,82 @@ def unwrap(blob: str, *, team_id: int, ca_fingerprint: str) -> bytes:
 # ----------------------------------------------------------------------------- per-worker cache
 _cache: dict[tuple[int, str], tuple[float, Any]] = {}
 _cache_lock = threading.Lock()
+_inflight: dict[tuple[int, str], threading.Lock] = {}
+_sweeper: threading.Thread | None = None
+
+
+def _sweep_locked(now: float) -> int:
+    expired = [k for k, (until, _key) in _cache.items() if until <= now]
+    for k in expired:
+        del _cache[k]
+    for k in [k for k, lock in _inflight.items() if k not in _cache and not lock.locked()]:
+        del _inflight[k]
+    return len(expired)
+
+
+def sweep() -> int:
+    """Drop every expired entry; the number dropped."""
+    with _cache_lock:
+        return _sweep_locked(time.monotonic())
+
+
+def _sweep_loop() -> None:
+    global _sweeper
+    while True:
+        time.sleep(SWEEP_EVERY_S)
+        with _cache_lock:
+            _sweep_locked(time.monotonic())
+            if not _cache:
+                _sweeper = None
+                return
+
+
+def _ensure_sweeper_locked() -> None:
+    global _sweeper
+    if _sweeper is None or not _sweeper.is_alive():
+        _sweeper = threading.Thread(target=_sweep_loop, name="sshca-key-sweeper", daemon=True)
+        _sweeper.start()
+
+
+def is_cached(ca_id: int, ca_fingerprint: str) -> bool:
+    """This worker holds the unwrapped key now (signing needs no KMS call)."""
+    with _cache_lock:
+        _sweep_locked(time.monotonic())
+        return (ca_id, ca_fingerprint) in _cache
 
 
 def cached_private_key(ca_id: int, team_id: int, ca_fingerprint: str, blob: str):
-    """The CA's private key object, unwrapped at most once per ``CACHE_SECONDS`` in this worker."""
+    """The CA's private key object, unwrapped at most once per ``CACHE_SECONDS`` in this worker (one thread unwraps,
+    the others wait for it)."""
     key = (ca_id, ca_fingerprint)
-    now = time.monotonic()
     with _cache_lock:
+        _sweep_locked(time.monotonic())
         hit = _cache.get(key)
-        if hit and hit[0] > now:
+        if hit:
             return hit[1]
-    pem = unwrap(blob, team_id=team_id, ca_fingerprint=ca_fingerprint)
-    try:
-        private = C.private_from_openssh(pem)
-    except Exception:
-        raise WrapError("the unwrapped CA key could not be read") from None
-    if C.fingerprint(C.public_line(private)) != ca_fingerprint:
-        raise WrapError("the unwrapped CA key does not match the CA's public key")
-    with _cache_lock:
-        _cache[key] = (now + CACHE_SECONDS, private)
-    return private
+        flight = _inflight.setdefault(key, threading.Lock())
+    with flight:
+        with _cache_lock:
+            hit = _cache.get(key)  # another thread unwrapped it while this one waited
+            if hit and hit[0] > time.monotonic():
+                return hit[1]
+        pem = unwrap(blob, team_id=team_id, ca_fingerprint=ca_fingerprint)
+        try:
+            private = C.private_from_openssh(pem)
+        except Exception:
+            raise WrapError("the unwrapped CA key could not be read") from None
+        finally:
+            pem = b""
+        if C.fingerprint(C.public_line(private)) != ca_fingerprint:
+            raise WrapError("the unwrapped CA key does not match the CA's public key")
+        with _cache_lock:
+            _cache[key] = (time.monotonic() + CACHE_SECONDS, private)
+            _ensure_sweeper_locked()
+        return private
 
 
 def forget(ca_id: int | None = None) -> None:
-    """Drop cached keys (one CA when revoked, or all of them in tests)."""
+    """Drop cached keys (one CA when it is no longer active on this worker, or all of them in tests)."""
     with _cache_lock:
         for key in [k for k in _cache if ca_id is None or k[0] == ca_id]:
             del _cache[key]
