@@ -50,6 +50,7 @@ class Principal:
     is_superuser: bool
     team_id: Optional[int] = None
     role: Optional[str] = None
+    via: Optional[str] = None  # "api_key": a CI/CD or guardrails key acting as the person who created it
 
 
 @dataclass
@@ -182,11 +183,17 @@ class Public(AccessPolicy):
 
 
 class Machine(AccessPolicy):
-    """A credential that is not a person's session, checked by the handler (node token, API key)."""
+    """A credential that is not a person's session, checked by the handler (node token, API key).
+
+    ``permission`` (API keys): the key acts as the person who created it, so that person must still be a member of
+    the key's team whose role holds this permission, on every use (``bind_api_key``); a successful use of an
+    audited permission is written to the audit log with that person as actor (``actor_type`` api_key)."""
     kind = "machine"
 
-    def __init__(self, credential: str, reason: str):
+    def __init__(self, credential: str, reason: str, permission: Optional[str] = None):
         self.credential, self.reason = credential, reason
+        self.permission = get_permission(permission) if permission else None
+        self.audited = bool(self.permission and self.permission.audited)
 
     def describe(self) -> str:
         return f"machine ({self.credential}): {self.reason}"
@@ -310,9 +317,38 @@ def public(reason: str):
     return Depends(Public(reason))
 
 
-def machine(credential: str, reason: str):
+def machine(credential: str, reason: str, permission: Optional[str] = None):
     from fastapi import Depends
-    return Depends(Machine(credential, reason))
+    return Depends(Machine(credential, reason, permission))
+
+
+KEY_HOLDER_GONE = ("The person who created this API key is no longer a member of its team: ask a team member to "
+                   "create a new key")
+
+
+def bind_api_key(request: Request, engine_getter: EngineGetter, *, user_id: int, team_id: int) -> Principal:
+    """Called by the API-key resolvers (utilities/cicd/auth.py, utilities/guardrails/auth.py) once the key itself
+    is valid: the key's creator must still be a member of the key's team whose role holds the route's permission
+    (``machine(..., permission=...)``; a route that names none needs ``scan.read``).  403 otherwise.  The access
+    context then carries the creator, so the audit log names who the key acted for."""
+    ctx = context(request)
+    permission = getattr(getattr(ctx, "policy", None), "permission", None) or get_permission("scan.read")
+    with Session(_engine(engine_getter)) as session:
+        user = session.get(User, user_id)
+        role = session.exec(select(TeamMembership.role).where(
+            TeamMembership.team_id == team_id, TeamMembership.user_id == user_id)).first()
+    if user is None or role is None:
+        log.info("api key refused: its creator is no longer a member (team_id=%s)", team_id)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=KEY_HOLDER_GONE)
+    if not role_has(role, permission.name):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f"The person who created this API key is now a {ROLE_LABELS.get(role, role).lower()} "
+                                   f"and cannot {permission.description}: ask a team member to create a new key")
+    principal = Principal(user_id=user.id, email=user.email, is_superuser=bool(user.is_superuser), team_id=team_id,
+                          role=role, via="api_key")
+    if ctx is not None:
+        ctx.principal, ctx.team_id, ctx.engine_getter = principal, team_id, engine_getter
+    return principal
 
 
 def context(request: Request) -> Optional[AccessContext]:

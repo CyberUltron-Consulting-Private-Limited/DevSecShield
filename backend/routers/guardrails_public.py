@@ -35,7 +35,7 @@ router = APIRouter(tags=["Guardrails Public API (deprecated)"])
 limiter = RateLimiter("guardrails_public", times=2, seconds=10, key_func=ip_key)
 
 
-@router.post("/public/guardrails/start_scan", summary="Start a new guardrails scan", dependencies=[Depends(limiter), machine("guardrails API key", "the API key is checked by get_user_and_integration_id")])
+@router.post("/public/guardrails/start_scan", summary="Start a new guardrails scan", dependencies=[Depends(limiter), machine("guardrails API key", "the API key is checked by get_user_and_integration_id", permission="scan.create")])
 async def start_scan(data: StartScanData, user_and_integration: dict = Depends(get_user_and_integration_id)):
     """
     developer notes : 
@@ -137,7 +137,7 @@ async def start_scan(data: StartScanData, user_and_integration: dict = Depends(g
 
 
 
-@router.get("/public/guardrails/{scan_id}", summary="Get the status of a guardrails scan", dependencies=[Depends(limiter), machine("guardrails API key", "the API key is checked by get_user_and_integration_id")])
+@router.get("/public/guardrails/{scan_id}", summary="Get the status of a guardrails scan", dependencies=[Depends(limiter), machine("guardrails API key", "the API key is checked by get_user_and_integration_id", permission="scan.read")])
 async def get_scan_status(scan_id: str, user_and_integration: dict = Depends(get_user_and_integration_id)):
     """
     developer notes : 

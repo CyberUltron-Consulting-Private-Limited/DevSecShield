@@ -138,8 +138,9 @@ def record_now(engine: Engine, **fields: Any) -> None:
 def actor_fields(principal) -> dict:
     if principal is None:
         return {"actor_type": "anonymous"}
-    return {"actor_user_id": principal.user_id, "actor_email": principal.email,
-            "actor_type": "superuser" if principal.is_superuser else "user"}
+    actor_type = "api_key" if getattr(principal, "via", None) == "api_key" else (
+        "superuser" if principal.is_superuser else "user")
+    return {"actor_user_id": principal.user_id, "actor_email": principal.email, "actor_type": actor_type}
 
 
 _OBJECT_PARAMS = (  # the most specific path parameter names the object
