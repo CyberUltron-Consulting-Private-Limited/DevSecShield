@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import ledgers
 from fakerun import FakeRun
 from harness import canary, gate, ledger, logs, manifest, redact
 from harness.checks import Checks
@@ -181,38 +182,96 @@ def _write(path: Path, text: str) -> Path:
 def test_a_ledger_row_that_passes_makes_the_runner_exit_non_zero(tmp_path, capsys):
     """DA CB-01 failing-first: a stale row (its checks pass) fails the gate until the PR removes it."""
     run = FakeRun(tmp_path).write()  # complete export: key sizes present, so KF-9 passes
-    led = _write(tmp_path / "l.yaml",
-                 "- row: KF-9\n  gate: [G11]\n  match: {kind: join, view: export, field: key_size}\n  issue: '#1'\n"
-                 "  owner: CB-06\n  why: export lacks key size\n"
-                 "- row: POSTURE\n  gate: [G11]\n  match: {kind: derived, field: posture}\n  issue: '#1'\n"
-                 "  owner: CB-05\n  why: x\n  not_run_ok: CB-05\n")
+    led = ledgers.write(tmp_path / "l.yaml",
+                        ledgers.row("KF-9", ["G11"], {"kind": "join", "view": "export", "field": "key_size"},
+                                    failing=2, owner="CB-06"), ledgers.POSTURE)
     assert gate.main(["judge", str(run), "--ledger", str(led)]) == 1
     out = json.loads(capsys.readouterr().out)
     assert out["ledger"]["KF-9"] == "stale" and out["blocking"] == 0
 
 
-def test_ledger_row_matching_nothing_fails_unless_not_run_ok(tmp_path):
+def test_ledger_row_matching_nothing_fails_unless_its_not_run_count_holds(tmp_path):
     run = FakeRun(tmp_path).write()
-    base = ("- row: POSTURE\n  gate: [G11]\n  match: {kind: derived, field: posture}\n  issue: '#1'\n  owner: CB-05\n"
-            "  why: x\n  not_run_ok: CB-05\n")
-    led = _write(tmp_path / "l.yaml", base + "- row: KF-X\n  gate: [G7]\n  match: {check: zeek}\n  issue: '#1'\n"
-                 "  owner: CB-08\n  why: zeek option\n")
+    led = ledgers.write(tmp_path / "l.yaml", ledgers.POSTURE,
+                        ledgers.row("KF-X", ["G7"], {"check": "zeek"}, failing=1, owner="CB-08"))
     passed, report = gate.judge(run, led)
-    assert not passed and {r["row"]: r["status"] for r in report["ledger"]}["KF-X"] == "not-run"
-    _write(led, base + "- row: KF-X\n  gate: [G7]\n  match: {check: zeek}\n  issue: '#1'\n  owner: CB-08\n"
-           "  why: zeek option\n  not_run_ok: the G7 spec is CB-05's\n")
-    passed, report = gate.judge(run, led)
-    assert passed
+    assert not passed and {r["row"]: r["status"] for r in report["ledger"]}["KF-X"] == "stale"
 
 
-def test_ledger_rows_need_issue_and_owner(tmp_path):
-    led = _write(tmp_path / "l.yaml", "- row: KF-1\n  gate: [G3]\n  match: {check: x}\n  owner: CB-03\n  why: y\n")
+def test_ledger_rows_need_issue_owner_and_counts(tmp_path):
+    led = _write(tmp_path / "l.yaml", "- row: KF-1\n  gate: [G3]\n  match: {check: x}\n  owner: CB-03\n  why: y\n"
+                 "  expect_failing: 1\n")
     with pytest.raises(ledger.LedgerError, match="issue"):
+        ledger.load(led)
+    _write(led, "- row: KF-1\n  gate: [G3]\n  match: {check: x}\n  owner: CB-03\n  why: y\n  issue: '#1'\n")
+    with pytest.raises(ledger.LedgerError, match="expect_failing"):
+        ledger.load(led)
+    # a row that pins nothing, and a not-run count without its reason (kills L11, L12)
+    for extra, error in (("  expect_failing: 0\n", "at least one"),
+                         ("  expect_failing: 0\n  expect_not_run: 2\n", "needs not_run_ok"),
+                         ("  expect_failing: 1\n  not_run_ok: z\n", "without expect_not_run")):
+        _write(led, "- row: KF-1\n  gate: [G3]\n  match: {check: x}\n  owner: CB-03\n  why: y\n  issue: '#1'\n" + extra)
+        with pytest.raises(ledger.LedgerError, match=error):
+            ledger.load(led)
+
+
+@pytest.mark.parametrize("match, error", [
+    ({"verdict": "FAIL"}, "not allowed"),
+    ({"id_prefix": "G11/"}, "not allowed"),
+    ({"id": "G11/x"}, "not allowed"),
+    ({"kind": "join"}, "must name one of"),
+    ({"check": "x", "bogus": 1}, "not allowed"),
+    ({"check": []}, "a value or a list"),
+])
+def test_ledger_refuses_wide_or_unknown_match_keys(tmp_path, match, error):
+    """Review 5874859738 major 6: a row can only be narrowed; `{verdict: FAIL}` used to absorb every failure."""
+    led = ledgers.write(tmp_path / "l.yaml", ledgers.row("WIDE", ["G11"], match, failing=1))
+    with pytest.raises(ledger.LedgerError, match=error):
         ledger.load(led)
 
 
+def _check(id_, gate_, verdict, **subject):
+    from harness.checks import Check
+    return Check(id=id_, gate=gate_, kind=subject.pop("kind", "oracle"), verdict=verdict, subject=subject,
+                 reason=subject.pop("reason", ""))
+
+
+def test_ledger_matching_semantics_gate_scope_lists_and_exact_values():
+    """Kills mutants L5 (gate ignored), L6 (lists as wildcards), L7 (prefix/substring), L9 (NOT-JUDGED ledgerable)."""
+    from harness.checks import Checks
+    rows = [ledger.load.__globals__["yaml"].safe_load(
+        "- {row: R, gate: [G11], match: {field: [key_size, curve]}, expect_failing: 2, issue: '#1', owner: CB-1, why: x}")[0]]
+    rows[0]["gate"] = ["G11"]
+    checks = Checks()
+    checks.add(_check("a", "G11", "FAIL", field="key_size"))      # matched
+    checks.add(_check("b", "G11", "NOT-JUDGED", field="curve"))   # matched (NOT-JUDGED can be ledgered)
+    checks.add(_check("c", "G12", "FAIL", field="key_size"))      # other gate: not matched
+    checks.add(_check("d", "G11", "FAIL", field="key_size_x"))    # neither a prefix nor a substring match
+    checks.add(_check("e", "G11", "FAIL", field="groups"))        # a value not in the list
+    checks.add(_check("f", "G11", "FAIL"))                        # no field at all: never matched (L13)
+    results, blocking = ledger.apply(rows, checks)
+    assert results[0].failing == 2 and results[0].status == "holds"
+    assert sorted(c.id for c in blocking) == ["c", "d", "e", "f"]
+
+
+def test_ledger_not_run_needs_a_not_run_row():
+    """Kills L3: a NOT-RUN check is covered only by a row that pins it with not_run_ok, not by any matching row."""
+    from harness.checks import Checks
+    plain = {"row": "F", "gate": ["G7"], "match": {"check": "x"}, "expect_failing": 1, "issue": "#1", "owner": "CB-1",
+             "why": "y"}
+    checks = Checks()
+    checks.add(_check("x", "G7", "NOT-RUN", check="x"))
+    results, blocking = ledger.apply([plain], checks)
+    assert [c.id for c in blocking] == ["x"] and results[0].status == "moved"
+    checks = Checks()
+    checks.add(_check("x", "G7", "NOT-RUN", check="x"))
+    ok = {**plain, "expect_failing": 0, "expect_not_run": 1, "not_run_ok": "by design"}
+    results, blocking = ledger.apply([ok], checks)
+    assert not blocking and results[0].status == "not-run-ok"
+
+
 def test_the_repository_ledger_is_valid():
-    rows = ledger.load(gate.DEFAULT_LEDGER)
+    rows = ledger.load(gate.DEFAULT_LEDGER)  # v2 schema: allowlisted keys, narrowing key, pinned counts
     assert rows, "e2e/cbom/known-fail.yaml is empty"
     for row in rows:
         assert set(row["gate"]) <= set(gate.GATES + gate.WAVES), row["row"]
@@ -294,15 +353,13 @@ def test_deferred_lab_parts_become_not_run_checks_the_ledger_must_name(tmp_path)
     fr.edit_json("oracle/run1.json", lambda d: d.__setitem__("deferred", deferred))
     (run / "lab" / "lab.json").write_text(json.dumps({"deferred": deferred}), encoding="utf-8")
     manifest.freeze_oracle(run)
-    base = ("- row: POSTURE\n  gate: [G11]\n  match: {kind: derived, field: posture}\n  issue: '#1'\n  owner: CB-05\n"
-            "  why: x\n  not_run_ok: CB-05\n")
-    led = _write(tmp_path / "l.yaml", base)
+    led = ledgers.write(tmp_path / "l.yaml", ledgers.POSTURE)
     passed, report = gate.judge(run, led)
     ids = {c["id"]: c for c in report["checks"]}
     assert ids["G7/deferred_idp"]["verdict"] == "NOT-RUN" and ids["G7/deferred_idp"]["reason"] == "IdP target not built"
     assert ids["W-HOST/deferred_k8s"]["subject"]["part"] == "k8s"
     assert not passed  # unlisted NOT-RUN blocks
-    _write(led, base + "- row: LAB\n  gate: [G7, W-HOST]\n  match: {check: deferred, part: [idp, k8s]}\n"
-           "  issue: '#93'\n  owner: CB-02\n  why: deferred lab parts\n  not_run_ok: deferred by the lab\n")
+    ledgers.write(led, ledgers.POSTURE, ledgers.row("LAB", ["G7", "W-HOST"], {"check": "deferred", "part": ["idp", "k8s"]},
+                                                    not_run=2, owner="CB-02", issue="#93"))
     passed, report = gate.judge(run, led)
     assert passed, [c["id"] for c in report["blocking"]]

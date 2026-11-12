@@ -124,6 +124,16 @@ def _cell(value: Any) -> str:
 
 
 def run_steps(run: Path) -> list[str]:
-    """Run indexes present in the run dir: 1 for ``api/assets-run1.json`` etc."""
-    return sorted({m.group(1) for p in (Path(run) / "api").glob("assets-run*.json")
-                   if (m := re.match(r"assets-run(\d+)\.json$", p.name))}, key=int)
+    """Run indexes of a gate run: the union of ``oracle/run<k>.json``, ``api/assets-run<k>.json`` and the product runs
+    the flow started (``flow-state.json`` ``runs``, 1-based). A run with an oracle but no API capture is still judged
+    (its rows become NOT-RUN and must be ledgered), never skipped (m4)."""
+    run = Path(run)
+    found: set[str] = set()
+    for sub, pattern in (("api", r"assets-run(\d+)\.json$"), ("oracle", r"run(\d+)\.json$")):
+        for p in (run / sub).glob("*.json") if (run / sub).is_dir() else []:
+            m = re.match(pattern, p.name)
+            if m:
+                found.add(m.group(1))
+    state = read_json(run / "flow-state.json") or {}
+    found |= {str(i + 1) for i in range(len(state.get("runs") or []))}
+    return sorted(found, key=int)

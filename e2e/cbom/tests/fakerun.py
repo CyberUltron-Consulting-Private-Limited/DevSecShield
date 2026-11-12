@@ -44,7 +44,7 @@ ASSETS: list[dict[str, Any]] = [
                "groups": ["x25519", "secp256r1"], "ciphers": ["TLS_AES_256_GCM_SHA384"]},
      "pqc": "vulnerable",
      "oracle": {"target": "z01", "expect": {"protocol_versions": ["TLSv1.3"], "groups": ["X25519", "P-256"],
-                                            "quantum_vulnerable": True},
+                                            "cipher_suites": ["TLS_AES_256_GCM_SHA384"], "quantum_vulnerable": True},
                 "codes_include": ["NO_PQ_KEX"], "codes_exclude": ["PROTO_TLS10"]}},
     {"id": 103, "type": "certificate", "cdx": "certificate", "target": "10.231.0.18", "location": "10.231.0.18:443",
      "name": "CN=z02.lab", "algorithm": "RSA", "key_size": 3072, "protocol": None, "qv": True, "impact": "High",
@@ -101,6 +101,8 @@ class FakeRun:
             crypto = {"assetType": "certificate", "certificateProperties": {
                 "subjectName": f["subject"], "issuerName": f["issuer"], "notValidBefore": f["not_before"],
                 "notValidAfter": f["not_after"], "certificateFormat": "X.509", "certificateExtension": "pem"}}
+        elif a["cdx"] == "algorithm":
+            crypto = {"assetType": "algorithm"}
         else:
             crypto = {"assetType": "protocol", "protocolProperties": {
                 "type": "tls", "version": ",".join(f["protocols"]),
@@ -121,9 +123,9 @@ class FakeRun:
                 "properties": props}
 
     def ui_row(self, a: dict[str, Any]) -> dict[str, Any]:
-        labels = {"certificate": "Certificate", "tls_endpoint": "TLS endpoint"}
+        labels = {"certificate": "Certificate", "tls_endpoint": "TLS endpoint", "coverage": "Not collected"}
         head = a["algorithm"] or a["protocol"] or "—"
-        return {"id": a["id"], "impact": a["impact"] or "Info", "type": labels[a["type"]], "location": a["location"],
+        return {"id": a["id"], "impact": a["impact"] or "Info", "type": labels.get(a["type"], a["type"]), "location": a["location"],
                 "target": a["target"], "algorithm": f"{head} {a['key_size']}" if a["key_size"] else head,
                 "finding": a["finding"] or "—",
                 "quantum": "Vulnerable" if a["qv"] is True else "Safe" if a["qv"] is False else "—"}
@@ -167,10 +169,17 @@ class FakeRun:
             w.writerows(rows)
         self._json("exports/run1.cdx.json", {"bomFormat": "CycloneDX", "specVersion": "1.6",
                                              "serialNumber": "urn:uuid:00000000-0000-0000-0000-000000000000",
-                                             "version": 1, "metadata": {"properties": []},
+                                             "version": 1, "metadata": {"timestamp": "2026-11-12T09:01:00Z",
+                                                                        "properties": []},
                                              "components": [self.component(a) for a in self.assets],
                                              "vulnerabilities": []})
-        self._json("ui/assets-run1.json", {"run_id": self.run_id, "rows": [self.ui_row(a) for a in self.assets]})
+        self._json("ui/assets-run1.json", {"run_id": self.run_id, "total_text": f"{len(self.assets)} assets",
+                                           "rows": [self.ui_row(a) for a in self.assets]})
+        with open(d / "db" / "jobs.csv", "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=["id", "team_id", "run_id", "kind", "status", "outcome", "asset_count"])
+            w.writeheader()
+            w.writerow({"id": 900, "team_id": self.team, "run_id": self.run_id, "kind": "collect", "status": "success",
+                        "outcome": "ok", "asset_count": len(self.assets)})
         self._json("oracle/run1.json", self.oracle())
         self._json("oracle/canaries.json", {"schema": "zs-cbom-canaries/1", "canaries": [
             {"id": "ssh-pass", "kind": "string", "value": self.canary_value, "allowed": ["oracle/canaries.json"],
@@ -185,9 +194,16 @@ class FakeRun:
         (d / "logs" / "backend.log").write_text(
             "2026-11-12T09:00:01.123456789Z cbom sources assets stored team=9 run=55 job=900 attempt=1 accepted=3 "
             "duplicate=0 rejected=0 dropped=0 total=3 cap_reached=False\n", encoding="utf-8")
-        self._json("har/G9.har", {"log": {"version": "1.2", "entries": []}})
+        self._json("har/G9.har", {"log": {"version": "1.2", "entries": [{
+            "startedDateTime": "2026-11-12T09:00:00Z",
+            "request": {"method": "POST", "url": "https://api.dss.test/9/cbom/sources/runs", "headers": []},
+            "response": {"status": 200, "headers": [], "content": {"mimeType": "application/json", "text": "{}"}}}]}})
+        times = {"G9": ("2026-11-12T08:59:00Z", "2026-11-12T08:59:30Z"), "G10": ("2026-11-12T08:59:30Z", "2026-11-12T09:00:30Z"),
+                 "G11": ("2026-11-12T09:00:30Z", "2026-11-12T09:00:50Z"), "G12": ("2026-11-12T09:00:50Z", "2026-11-12T09:01:30Z")}
         for step in FLOW_STEPS:
-            self._json(f"steps/{step}/step.json", {"gate": step, "status": "ran", "checks": []})
+            started, ended = times.get(step, ("2026-11-12T08:58:00Z", "2026-11-12T08:58:30Z"))
+            self._json(f"steps/{step}/step.json", {"gate": step, "status": "ran", "started": started, "ended": ended,
+                                                   "checks": []})
         manifest.update(d, teams={"A": self.team})
         manifest.freeze_oracle(d)
         return d

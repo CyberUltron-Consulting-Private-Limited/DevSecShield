@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .checks import Checks
-from .rundir import parse_ts
+from .rundir import parse_ts, read_csv, read_json
 
 GATE = "G16"
 KV = re.compile(r"(\w+)=(\S+)")
@@ -55,6 +55,19 @@ def har_entries(run: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def required_logs(run: Path) -> list[str]:
+    """The logs every gate run must carry (DA G16): the stack's core services, the scan node (``zs-scan-node-*``) and
+    every lab container lab.json names (INTERFACES v7 §A.6; no prefix assumed)."""
+    out = list(REQUIRED_LOGS)
+    lab = read_json(Path(run) / "lab" / "lab.json") or {}
+    if (read_json(Path(run) / "flow-state.json") or {}).get("node"):
+        out.append("zs-scan-node-*")
+    for item in (lab.get("targets") or []) + (lab.get("listeners") or []):
+        if item.get("container"):
+            out.append(str(item["container"]))
+    return sorted(set(out), key=out.index)
+
+
 def _team_of(text: str) -> str | None:
     m = re.search(r"\bteam=(\d+)", text)
     return m.group(1) if m else None
@@ -69,13 +82,26 @@ def judge(run: Path, checks: Checks, teams: list[int | str]) -> dict[str, Any]:
         checks.not_run(f"{GATE}/logs", GATE, "log", "logs/ is empty (collect-evidence.sh not run)", {})
         return out
     all_lines = [(name, ts, text) for name, lines in logs.items() for ts, text in lines]
-    for needed in REQUIRED_LOGS:
-        checks.verdict(f"{GATE}/collected/{needed}", GATE, "log", needed in logs, "log-missing",
+    for needed in required_logs(run):
+        present = needed in logs or (needed.endswith("*") and any(n.startswith(needed[:-1]) for n in logs))
+        checks.verdict(f"{GATE}/collected/{needed}", GATE, "log", present, "log-missing",
                        {"kind": "log", "check": "collected", "log": needed}, expected=f"logs/{needed}.log",
-                       observed=f"{len(logs.get(needed, []))} lines" if needed in logs else "absent")
+                       observed="present" if present else "absent")
 
     stored = [(n, ts, t) for n, ts, t in all_lines if "cbom sources assets stored" in t and _team_of(t) in teams_s]
     out["assets_stored_lines"] = len(stored)
+    # O-8: the zero assertion "rejected=0 dropped=0" needs its positive control: every job that stored assets logged it
+    stored_jobs = {dict(KV.findall(t)).get("job") for _, _, t in stored}
+    jobs = [j for j in read_csv(run / "db" / "jobs.csv") if str(j.get("team_id")) in teams_s]
+    if not (run / "db" / "jobs.csv").is_file():
+        checks.not_run(f"{GATE}/assets-stored/jobs", GATE, "log", "db/jobs.csv not collected",
+                       {"kind": "log", "check": "assets_stored_per_job"})
+    for j in jobs:
+        if int(j.get("asset_count") or 0) > 0:
+            checks.verdict(f"{GATE}/assets-stored/job-{j['id']}-logged", GATE, "log", str(j["id"]) in stored_jobs,
+                           "assets-stored-line-missing", {"kind": "log", "check": "assets_stored_per_job"},
+                           expected=f"an 'assets stored' line with job={j['id']}",
+                           observed="present" if str(j["id"]) in stored_jobs else "absent")
     for i, (name, ts, text) in enumerate(stored):
         kv = dict(KV.findall(text))
         ok = kv.get("rejected") == "0" and kv.get("dropped") == "0"
@@ -90,6 +116,9 @@ def judge(run: Path, checks: Checks, teams: list[int | str]) -> dict[str, Any]:
     seen_refs: set[str] = set()
     entries = har_entries(run)
     out["har_entries"] = len(entries)
+    if not entries:
+        checks.not_run(f"{GATE}/har", GATE, "log", "no HAR entries: the 5xx<->log matcher has nothing to read",
+                       {"kind": "log", "check": "har"})
     n5xx = 0
     for entry in entries:
         status = int((entry.get("response") or {}).get("status") or 0)

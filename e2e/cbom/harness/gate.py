@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import SCHEMA_REPORT, canary, derived, join, ledger, logs, manifest, oracle, redact
+from . import SCHEMA_REPORT, canary, derived, join, ledger, logs, manifest, oracle, redact, timing
 from .checks import Check, Checks
 from .rundir import iso, read_json, run_steps, utc_now, write_json
 
@@ -91,15 +91,13 @@ def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str
         pairs: dict[str, int] = {}
         oracle.match(run, k, checks, views["api"], views["export"], scope, pairs)
         details[f"derived-run{k}"] = derived.judge(run, k, checks, pairs, scope)
+        details[f"timing-run{k}"] = timing.judge(run, k, checks)
     canary.judge(run, checks)
     man = read_json(run / manifest.MANIFEST, {}) or {}
     teams = [t for t in ((man.get("teams") or {}).values()) if t]
     details["logs"] = logs.judge(run, checks, teams)
 
-    try:
-        rows = ledger.load(ledger_path)
-    except (OSError, ledger.LedgerError) as exc:
-        raise SystemExit(f"ledger: {exc}") from exc
+    rows = ledger.load(ledger_path)  # LedgerError / OSError: main() exits 2 (an error, not a gate verdict)
     results, blocking = ledger.apply(rows, checks)
     passed = ledger.verdict(results, blocking)
     report = {
@@ -161,7 +159,12 @@ def redact_run(run: Path, known: list[str]) -> list[str]:
     for sub in ("har", "api", "ui", "steps", "logs", "exports", "db"):
         rewrite = sub not in ("exports", "db")
         for path in sorted((run / sub).rglob("*")):
-            if not path.is_file() or path.suffix in (".png", ".zip", ".webm", ".jpg"):
+            if path.is_file() and path.suffix == ".zip":
+                # Playwright traces carry typed values, headers and bodies: scrubbed member by member when the
+                # evidence may be rewritten, and always scanned (m6: a skipped zip made G17 a false PASS)
+                problems += redact_zip(path, run, known, rewrite)
+                continue
+            if not path.is_file() or path.suffix in (".png", ".webm", ".jpg"):
                 continue
             original = path.read_text(encoding="utf-8", errors="replace")
             text = original
@@ -185,6 +188,49 @@ def redact_run(run: Path, known: list[str]) -> list[str]:
     return problems
 
 
+_BINARY = (".png", ".jpg", ".jpeg", ".webp", ".webm", ".woff", ".woff2", ".ttf", ".ico", ".gif")
+
+
+def redact_zip(path: Path, run: Path, known: list[str], rewrite: bool = True) -> list[str]:
+    """Playwright traces (steps/<G>/trace.zip) hold the typed values of fill actions and the request/response bodies
+    and headers (tokens, the database password the customer typed): rewrite every text member through the same scrub
+    as the other evidence (CB-05, found by the G15 canary grep on a full run). Image members are kept as they are.
+    With ``rewrite`` False the members are only scanned."""
+    import zipfile
+    problems = []
+    with zipfile.ZipFile(path) as zin:
+        members = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    changed = False
+    out = []
+    for info, data in members:
+        if info.filename.lower().endswith(_BINARY):
+            out.append((info, data))
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            out.append((info, data))
+            continue
+        new = text
+        if rewrite:
+            new = redact.scrub_text(text)
+            for k, value in enumerate(known):
+                if value and len(value) >= 8:
+                    new = new.replace(value, redact.mark(f"known-{k}", value))
+        if new != text:
+            changed = True
+        out.append((info, new.encode("utf-8")))
+        left = redact.residual_secrets(new, known)
+        problems += [f"{path.relative_to(run).as_posix()}!{info.filename}: {kind}" for kind in left]
+    if changed:
+        tmp = path.with_suffix(".zip.tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for info, data in out:
+                zout.writestr(info, data)
+        tmp.replace(path)
+    return problems
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="harness.gate")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -201,7 +247,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no such run directory: {args.run}", file=sys.stderr)
         return 2
     if args.cmd == "judge":
-        passed, report = judge(args.run, args.ledger)
+        try:
+            passed, report = judge(args.run, args.ledger)
+        except (OSError, ledger.LedgerError) as exc:
+            print(f"ledger: {exc}", file=sys.stderr)
+            return 2
         print(json.dumps({"passed": passed, "counts": report["counts"], "blocking": report["blocking_total"],
                           "ledger": {r["row"]: r["status"] for r in report["ledger"]}}, indent=1))
         return 0 if passed else 1

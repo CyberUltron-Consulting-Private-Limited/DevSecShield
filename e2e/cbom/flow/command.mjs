@@ -91,6 +91,16 @@ export function allowedDiff(command, { image = null, ca = null, network = "cbom-
   return { argv, allowed, extra, removed, imageServed, imageNote, container, volume, uiImage };
 }
 
+/** The tokens the allowed diff may add (DA §4.1), as a multiset: the lab network, and until CB-15 the lab CA. */
+export function allowedTokens({ network = "cbom-e2e-net", ca = null } = {}) {
+  return ["--network", network, ...(ca ? ["-e", "ZS_CA_FILE=/lab/ca.pem", "-v", `${ca}:/lab/ca.pem:ro`] : [])];
+}
+
+/** True when two token lists are equal as multisets. */
+export function sameTokens(a, b) {
+  return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+}
+
 /** The token-level diff between the UI command and an executed argv (for the evidence file). */
 export function tokenDiff(uiArgv, runArgv) {
   const left = [...uiArgv];
