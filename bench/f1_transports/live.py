@@ -69,7 +69,10 @@ def keypair(path: Path, comment: str) -> str:
 def build(base: str | None, apt_https: bool) -> None:
     ctx = Path(tempfile.mkdtemp(prefix="f1-3-fleet."))
     try:
-        for name in ("Dockerfile.fleet", "fleet-entrypoint.sh", "awx_emulator.py"):
+        # the image is built FROM the deliberately weak lab target, so its Dockerfile lives with it in the fixtures
+        shutil.copy(ROOT / "scan_node" / "tests" / "fixtures" / "zs-collect" / "lab" / "Dockerfile.fleet",
+                    ctx / "Dockerfile.fleet")
+        for name in ("fleet-entrypoint.sh", "awx_emulator.py"):
             shutil.copy(HERE / "lab" / name, ctx / name)
         args = ["docker", "build", "-q", "-f", str(ctx / "Dockerfile.fleet"), "-t", IMAGE]
         if base:

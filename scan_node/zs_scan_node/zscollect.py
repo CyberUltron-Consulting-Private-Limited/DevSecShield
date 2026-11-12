@@ -14,7 +14,10 @@ Read-only guarantees (each has a test in tests/test_zs_collect.py):
   line before it runs (exact Tier 1 lines, exact Tier 2 sudo lines, per-file lines with one quoted absolute path).
 * No listener and no outbound connection: nothing here opens a socket.
 * No writes outside the temp dir: the working directory, ``HOME`` and ``TMPDIR`` of every command are the temp dir;
-  a temp dir zs-collect makes itself (``mkdtemp``, 0700) is removed at exit.
+  a temp dir zs-collect makes itself (``mkdtemp``, 0700) is removed at exit.  zs-collect never changes the mode or
+  owner of a directory that was not made for it: a given ``--tmp-dir`` must already be private and named
+  ``zs-collect.*`` (as the transports' wrapper makes it with ``mktemp -d``), so a mistaken ``--tmp-dir /tmp`` or
+  ``/root`` is refused instead of being handed to the run-as user.
 * Started as root, it drops to ``--run-as`` (default ``zs-cbom``, with that user's groups, like an SSH login) before
   anything runs, so the zs-cbom sudoers file decides Tier 2 exactly as on the SSH path.  It never collects as root.
 * Private keys never leave the host (only ``openssl pkey -pubout`` and fingerprints), and every asset passes the
@@ -35,6 +38,7 @@ import shlex
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -50,6 +54,7 @@ from zs_scan_node.transports.zsdoc import (  # noqa: F401
     CHUNK_PREFIX, DEFAULT_CHUNK_BYTES, FORMAT, MAX_ASSETS, MAX_CHUNK_BYTES, NONCE_RE, STATUSES, ChunkError,
     encode_chunks, reassemble, validate_document)
 
+TMP_DIR_NAME_RE = re.compile(r"zs-collect\.[A-Za-z0-9_.-]+")  # mktemp -d .../zs-collect.XXXXXXXX (the wrapper)
 OUTPUT_CAP = 4 * 1024 * 1024  # the same caps as the SSH Session (linux_ssh.OUTPUT_CAP, 64 KB of stderr)
 STDERR_CAP = 65536
 CMD_TIMEOUT = 60
@@ -365,13 +370,35 @@ def refusal_document(nonce: str, label: str, tier: int, code: str, detail: str) 
 
 
 # ----------------------------------------------------------------------------- CLI
+def tmp_dir_problem(path: str) -> str | None:
+    """Why ``path`` cannot be zs-collect's working directory, or None when it can.
+
+    Started as root, zs-collect hands its working directory (with the PyInstaller files unpacked in it) to the run-as
+    user, and it never changes a directory's mode.  So a given directory must be one made for this run: named
+    ``zs-collect.*``, a real directory (not a symbolic link), owned by the user running zs-collect, with no group or
+    other access, which is what ``mktemp -d "${TMPDIR:-/tmp}/zs-collect.XXXXXXXX"`` in the wrapper produces."""
+    if not TMP_DIR_NAME_RE.fullmatch(os.path.basename(path)):
+        return "--tmp-dir must be a directory made for this run, named zs-collect.* (mktemp -d /tmp/zs-collect.XXXXXXXX)"
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return "--tmp-dir does not exist"
+    if not stat.S_ISDIR(st.st_mode):
+        return "--tmp-dir is not a directory (a symbolic link is refused)"
+    if st.st_uid != os.geteuid() or st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        return "--tmp-dir must be private: owned by the user running zs-collect, mode 0700"
+    return None
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="zs-collect", description="ZeroShield read-only CBOM collector for this host")
     p.add_argument("--nonce", required=True, help="the run nonce from ZeroShield; echoed in the output")
     p.add_argument("--tier", type=int, choices=(1, 2), default=1)
     p.add_argument("--label", default=None, help="the inventory address this host is known by (default: hostname)")
     p.add_argument("--run-as", default="zs-cbom", help="when started as root, collect as this user (default zs-cbom)")
-    p.add_argument("--tmp-dir", default=None, help="private working directory (default: a new mktemp -d, removed)")
+    p.add_argument("--tmp-dir", default=None,
+                   help="private working directory made for this run: zs-collect.*, mode 0700, owned by the caller "
+                        "(default: a new mktemp -d, removed at exit)")
     p.add_argument("--timeout-s", type=int, default=300)
     p.add_argument("--output", choices=("json", "chunks"), default="json")
     p.add_argument("--chunk-bytes", type=int, default=DEFAULT_CHUNK_BYTES)
@@ -400,12 +427,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     label = (args.label or socket.gethostname())[:255]
     own_tmp = args.tmp_dir is None
+    if not own_tmp:
+        problem = tmp_dir_problem(os.path.abspath(args.tmp_dir))
+        if problem:
+            sys.stderr.write(f"zs-collect: {problem}\n")
+            return 2
     tmp_dir = tempfile.mkdtemp(prefix="zs-collect.") if own_tmp else os.path.abspath(args.tmp_dir)
     try:
-        if not own_tmp and not os.path.isdir(tmp_dir):
-            sys.stderr.write("zs-collect: --tmp-dir does not exist\n")
-            return 2
-        os.chmod(tmp_dir, 0o700)
         try:
             user = drop_privileges(args.run_as, tmp_dir)
         except Refused as exc:

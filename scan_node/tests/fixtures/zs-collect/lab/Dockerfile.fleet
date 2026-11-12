@@ -3,7 +3,8 @@
 #   minion  the same host running a real salt-minion
 #   master  salt-master + salt-api (rest_cherrypy, TLS) with PAM eauth and a salt-ssh roster
 #   awx     the AWX REST emulator (awx_emulator/app.py) driving real ansible-runner / ansible-core
-# Built FROM the parity lab target (f1-3-lab-target:1, built by parity.py). Salt and Ansible are pinned.
+# Built FROM the parity lab target (f1-3-lab-target:1, built by parity.py), so it is a deliberately weak host like it:
+# root sshd and a root salt-minion, as on a customer host. Salt and Ansible are pinned. Not built or shipped by CI.
 ARG BASE_IMAGE=f1-3-lab-target:1
 FROM ${BASE_IMAGE}
 ARG SALT_VERSION=3007.17
