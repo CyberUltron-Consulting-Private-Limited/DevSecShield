@@ -1,0 +1,24 @@
+# Fleet lab image for the F1.3 transport proofs (bench/f1_transports/live.py). One image, four roles (ZS_ROLE):
+#   target  the lab target (sshd, zs-cbom sudoers, planted crypto) that also takes the automation account's key as root
+#   minion  the same host running a real salt-minion
+#   master  salt-master + salt-api (rest_cherrypy, TLS) with PAM eauth and a salt-ssh roster
+#   awx     the AWX REST emulator (awx_emulator/app.py) driving real ansible-runner / ansible-core
+# Built FROM the parity lab target (f1-3-lab-target:1, built by parity.py). Salt and Ansible are pinned.
+ARG BASE_IMAGE=f1-3-lab-target:1
+FROM ${BASE_IMAGE}
+ARG SALT_VERSION=3007.17
+ARG ANSIBLE_CORE_VERSION=2.18.20
+ARG ANSIBLE_RUNNER_VERSION=2.4.3
+ARG CHERRYPY_VERSION=18.10.0
+# salt's timelib has no wheel for this Python: build it with a compiler that is removed in the same layer
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv python3-dev gcc libc6-dev \
+      ca-certificates \
+ && python3 -m venv /opt/salt && /opt/salt/bin/pip install --no-cache-dir "salt==${SALT_VERSION}" \
+      "cherrypy==${CHERRYPY_VERSION}" \
+ && python3 -m venv /opt/ansible && /opt/ansible/bin/pip install --no-cache-dir \
+      "ansible-core==${ANSIBLE_CORE_VERSION}" "ansible-runner==${ANSIBLE_RUNNER_VERSION}" \
+ && apt-get purge -y python3-dev gcc libc6-dev && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+COPY fleet-entrypoint.sh /usr/local/sbin/fleet-entrypoint
+COPY awx_emulator.py /opt/awx-emu/app.py
+RUN chmod 0755 /usr/local/sbin/fleet-entrypoint
+ENTRYPOINT ["/usr/local/sbin/fleet-entrypoint"]

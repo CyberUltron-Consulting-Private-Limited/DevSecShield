@@ -64,6 +64,6 @@ def request(http, method: str, path: str, what: str, **kwargs):
 
 def raise_for_auth(resp, what: str) -> None:
     if resp.status_code == 401:
-        raise TransportError("auth_failed", f"the {what} refused the login (401)")
+        raise TransportError("auth_failed", f"the {what} answered 401: the login was refused or its session ended")
     if resp.status_code == 403:
         raise TransportError("refused", f"the {what} refused the request (403): check the account's permissions")

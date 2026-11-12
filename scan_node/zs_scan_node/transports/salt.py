@@ -148,6 +148,9 @@ class SaltTransport:
         while True:
             resp = control.request(http, "GET", f"/jobs/{jid}", WHAT)
             control.raise_for_auth(resp, WHAT)
+            if resp.status_code >= 400:  # e.g. the runner client is not enabled: waiting would not help
+                raise TransportError("error", f"salt-api could not look up job {jid} ({resp.status_code}): enable the "
+                                              "'runner' client (netapi_enable_clients) and '@jobs' for this account")
             if resp.status_code < 400:
                 try:
                     ret = resp.json()["return"][0]

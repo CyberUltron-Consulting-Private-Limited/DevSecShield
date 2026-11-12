@@ -443,7 +443,8 @@ def test_fleet_checks_never_scan_before_dispatch_and_relabels_assets(monkeypatch
     assert by["10.0.0.2"].status == by["10.0.0.4"].status == "skipped_never_scan"
     assert "192.168.50.4" in by["10.0.0.4"].error
     assert by["db.internal"].status == "unreachable"
-    assert by["10.0.0.1"].status == "ok" and by["10.0.0.1"].assets == len(FIXTURE["assets"])
+    assert by["10.0.0.1"].status == "ok"
+    assert by["10.0.0.1"].assets == FIXTURE["result"]["targets"][0]["assets"]  # zs-collect's own count, as over SSH
     assert {a["target"] for a in ctx.collected} == {"10.0.0.1"}
     cov = [a for a in ctx.collected if a["type"] == "coverage"]
     assert cov and all(a["location"].startswith("10.0.0.1#") for a in cov)
@@ -537,3 +538,16 @@ def test_zsdoc_parse_output_takes_json_or_chunks():
     assert zsdoc.parse_output("\n".join(zsdoc.encode_chunks(d, NONCE, 4096)), NONCE) == d
     with pytest.raises(ValueError):
         zsdoc.parse_output("nothing here", NONCE)
+
+
+def test_zs_collect_ignores_the_transports_own_processes_but_keeps_services(tmp_path):
+    from zs_scan_node import zscollect as Z
+
+    # pid 1 init <- 50 salt-minion (a service) <- 700 minion job <- 710 sh <- 720 launcher sh <- (zs-collect)
+    tree = {50: 1, 700: 50, 710: 700, 720: 710}
+    for pid, ppid in tree.items():
+        (tmp_path / str(pid)).mkdir()
+        (tmp_path / str(pid) / "stat").write_text(f"{pid} (proc name) S {ppid} 1 1 0 -1\n")
+    assert Z.transient_ancestors(720, proc=str(tmp_path)) == [720, 710, 700]
+    assert Z.transient_ancestors(50, proc=str(tmp_path)) == []  # a service itself is never excluded
+    assert Z.transient_ancestors(999, proc=str(tmp_path)) == []  # unknown pid: nothing

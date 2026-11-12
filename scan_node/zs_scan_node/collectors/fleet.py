@@ -118,8 +118,9 @@ def _post(ctx: JobContext, res: TargetResult, started: float) -> int:
             continue
         ctx.emit(a["type"], a["target"], a["location"], **{k: a.get(k) for k in _FIELDS})
         n += 1
-    status, error = zsdoc.target_outcome(res.document)
-    ctx.outcome(t.label, status, error, started=started, assets=n)
+    status, error, counted = zsdoc.target_outcome(res.document)
+    # the outcome row carries zs-collect's own count (what the SSH path records for the same host)
+    ctx.outcome(t.label, status, error, started=started, assets=n if counted is None else counted)
     return n
 
 
@@ -180,7 +181,7 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | Non
         sample: dict[str, Any] = {"target": res.target.label, "status": res.status, "reachable": res.status == "ok",
                                   "login": True, "privilege": None, "note": res.error or ""}
         if res.document is not None:
-            status, error = zsdoc.target_outcome(res.document)
+            status, error, _n = zsdoc.target_outcome(res.document)
             assets = res.document.get("assets") or []
             sample.update(status="ready" if status == "ok" else status, reachable=True,
                           note=error or f"zs-collect {res.document.get('collector_version')} collected "

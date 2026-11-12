@@ -183,11 +183,14 @@ def relabel(doc: dict, label: str) -> list[dict]:
     return out
 
 
-def target_outcome(doc: dict) -> tuple[str, str | None]:
-    """(status, error) of the one host the document is about, as zs-collect recorded it."""
+def target_outcome(doc: dict) -> tuple[str, str | None, int | None]:
+    """(status, error, assets) of the one host the document is about, as zs-collect recorded them (``assets`` counts
+    what the collector found, as the SSH path's outcome row does; coverage rows are not counted)."""
     rows = [t for t in ((doc.get("result") or {}).get("targets") or []) if isinstance(t, dict)]
     if rows:
-        return str(rows[0].get("status") or "error"), rows[0].get("error")
+        n = rows[0].get("assets")
+        return (str(rows[0].get("status") or "error"), rows[0].get("error"),
+                n if isinstance(n, int) and not isinstance(n, bool) and n >= 0 else None)
     if doc.get("status") == "success":
-        return "ok", None
-    return "error", str(doc.get("error") or "zs-collect reported no outcome")[:256]
+        return "ok", None, None
+    return "error", str(doc.get("error") or "zs-collect reported no outcome")[:256], None

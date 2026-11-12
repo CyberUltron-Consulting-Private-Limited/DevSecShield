@@ -134,8 +134,9 @@ class LocalSession:
         self.user = user
         self.env = {"PATH": SAFE_PATH, "LC_ALL": "C", "HOME": tmp_dir, "TMPDIR": tmp_dir, "USER": user,
                     "LOGNAME": user, "SHELL": "/bin/sh"}
-        # this process (and the PyInstaller bootloader that started it) map libcrypto: never report them
-        self.exclude_pids = {os.getpid()}
+        # this process, the PyInstaller bootloader that started it and the tool's own processes that launched it map
+        # libcrypto: never report them (see transient_ancestors)
+        self.exclude_pids = {os.getpid()} | set(transient_ancestors())
         if getattr(sys, "frozen", False):
             self.exclude_pids.add(os.getppid())
         self.lines: list[str] = []
@@ -195,6 +196,33 @@ class LocalSession:
 
     def close(self) -> None:
         pass
+
+
+def _ppid(pid: int, proc: str = "/proc") -> int | None:
+    try:
+        with open(f"{proc}/{pid}/stat", encoding="ascii", errors="replace") as f:
+            text = f.read()
+        return int(text[text.rindex(")") + 2:].split()[1])  # field 4, after "(comm) state"
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def transient_ancestors(pid: int | None = None, proc: str = "/proc", limit: int = 64) -> list[int]:
+    """The processes that launched zs-collect for this run: its ancestors up to, not including, the first one that is
+    PID 1 or a child of PID 1 (a service: sshd, salt-minion, the SSM agent, a container's init).  They are the
+    transport's own short-lived processes (an SSH session for Ansible, salt-ssh's salt-call, a salt-minion job,
+    sudo, the launcher's shell), which the SSH path never sees on the host; the service they hang off is kept."""
+    out: list[int] = []
+    current = os.getppid() if pid is None else pid
+    for _ in range(limit):
+        if current is None or current <= 1:
+            break
+        parent = _ppid(current, proc)
+        if parent is None or parent <= 1:
+            break
+        out.append(current)
+        current = parent
+    return out
 
 
 # ----------------------------------------------------------------------------- privileges
