@@ -36,6 +36,7 @@ import { handleApiError } from "@/utils/error-handler";
 import { cbomSourcesKeys } from "./keys";
 import { EXPOSURE_CHOICES, pluralize } from "./logic";
 import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 
 const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
   "quantum-vulnerable": ["Quantum-vulnerable", "red", "RSA, elliptic-curve or Diffie-Hellman: a large quantum computer breaks it"],
@@ -347,8 +348,10 @@ function CriticalitySelect({ teamId, source }: { teamId: number; source: CbomSou
   const save = useMutation({
     mutationFn: (value: string) =>
       updateCbomSource(teamId, source.id, { config: { ...source.config, business_criticality: value }, expected_version: source.row_version }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
-    onError: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      refreshCreditBalance(queryClient); // every source edit (only a changed connection refunds; utils/creditBalance.ts)
+    },
   });
   return (
     <Select value={current} onValueChange={(v) => v !== current && save.mutate(v)} disabled={save.isPending}>
@@ -373,8 +376,10 @@ function ExposureSelect({ teamId, source }: { teamId: number; source: CbomSource
         config: { ...source.config, exposure: value === "auto" ? null : value },
         expected_version: source.row_version,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
-    onError: () => queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
+      refreshCreditBalance(queryClient); // every source edit (only a changed connection refunds; utils/creditBalance.ts)
+    },
   });
   return (
     <Select value={current} onValueChange={(v) => v !== current && save.mutate(v as CbomExposure | "auto")} disabled={save.isPending}>

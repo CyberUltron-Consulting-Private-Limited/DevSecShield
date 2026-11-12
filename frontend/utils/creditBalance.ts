@@ -1,8 +1,11 @@
 /**
- * The credit balance in the app sidebar (#13). The team switcher (app/[team_id]/layout.tsx) shows each team's balance
- * from GET /teams, cached under ["teams"]. Starting a scan charges credits and cancelling one refunds them, so every
- * scan start and cancel calls refreshCreditBalance when it settles. Before, only CBOM did, and after a SAST, AI BOM or
- * IaC start the balance stayed stale until a reload.
+ * The credit balance in the app sidebar (#13, #28). The team switcher (app/[team_id]/layout.tsx) shows each team's
+ * balance from GET /teams, cached under ["teams"]. Two kinds of change keep it current:
+ * - a user action that charges or refunds (a scan start or cancel, a chat message, a CBOM sources run, deleting or
+ *   re-pointing a source, ...) calls refreshCreditBalance when its mutation settles (utils/creditBalance.test.ts lists
+ *   every such API helper and checks every use);
+ * - credits the server moves on its own (a failed scan's refund, a CBOM sources run's refunded jobs) are seen in the
+ *   responses that report them: makeQueryClient (utils/query_client.ts) runs creditBalanceWatcher on every response.
  */
 import type { Query, QueryClient } from "@tanstack/react-query";
 
@@ -19,4 +22,50 @@ export function refreshCreditBalance(queryClient: QueryClient): Promise<void> {
  * GET /teams is sent twice (the second invalidation cancels the first fetch and starts another). */
 export function isCreditBalanceQuery(query: Pick<Query, "queryKey">): boolean {
   return query.queryKey[0] === CREDIT_BALANCE_QUERY_KEY[0];
+}
+
+/** The records in a response whose state says the server moved credits: a scan's status ("failure" was refunded) and a
+ * CBOM sources run's refunded total. Keyed per record; "" means nothing was refunded. A response is a record, a list of
+ * them, or an object holding one ({ run }) or a list ({ runs }, { scans }); nested results are not searched. */
+export function refundMarks(data: unknown): Map<string, string> {
+  const marks = new Map<string, string>();
+  const visit = (value: unknown, top: boolean) => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, false);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    if (typeof record.scan_status === "string") {
+      marks.set(`scan:${String(record.id ?? "")}`, record.scan_status === "failure" ? "failure" : "");
+    }
+    const credits = record.credits as { refunded?: unknown } | null | undefined;
+    if (typeof record.status === "string" && typeof credits?.refunded === "number") {
+      marks.set(`run:${String(record.id ?? "")}`, credits.refunded > 0 ? String(credits.refunded) : "");
+    }
+    if (top) for (const inner of Object.values(record)) if (inner && typeof inner === "object") visit(inner, false);
+  };
+  visit(data, true);
+  return marks;
+}
+
+/** The query cache's onSuccess (utils/query_client.ts): refresh the balance when a response shows a refund this client
+ * has not seen yet: a scan that is now "failure" (backend utilities/celery/celery_connection.py refunds it in the
+ * status poll that sees it fail, or in the scan list's background update), or a CBOM sources run whose refunded total
+ * changed (utilities/cbom_sources/jobs.py refund_job, as its jobs fail, expire or are cancelled). A scan already failed
+ * when first seen also counts: that first read may be the poll that refunded it. One GET /teams per change. */
+export function creditBalanceWatcher(getClient: () => QueryClient) {
+  const seen = new WeakMap<Pick<Query, "queryKey">, Map<string, string>>();
+  return (data: unknown, query: Pick<Query, "queryKey">): void => {
+    if (isCreditBalanceQuery(query)) return;
+    const marks = refundMarks(data);
+    const before = seen.get(query);
+    seen.set(query, marks);
+    for (const [key, refunded] of marks) {
+      if (refunded && before?.get(key) !== refunded) {
+        void refreshCreditBalance(getClient());
+        return;
+      }
+    }
+  };
 }

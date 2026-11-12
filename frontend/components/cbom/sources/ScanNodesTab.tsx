@@ -56,6 +56,7 @@ import {
   Truncate,
   useMenuReveal,
 } from "./shared";
+import { refreshCreditBalance } from "@/utils/creditBalance";
 
 const NODE_IMAGE = process.env.NEXT_PUBLIC_CBOM_NODE_IMAGE || "registry.zeroshield.ai/cbom/scan-node:1.0";
 const SEGMENTS = ["Data centre", "DMZ", "Branch office", "OT / plant", "Cloud VPC"];
@@ -215,7 +216,10 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   const deleteMutation = useMutation({
     mutationFn: (node: CbomScanNode) => deleteCbomScanNode(teamId, node.id),
     onSuccess: () => setDeleting(null),
-    onSettled: invalidate,
+    onSettled: () => {
+      invalidate();
+      refreshCreditBalance(queryClient); // deleting a node refunds its open collect jobs
+    },
   });
 
   const startWizard = () => {

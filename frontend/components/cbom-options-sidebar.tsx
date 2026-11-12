@@ -327,14 +327,6 @@ export function CBOMOptionsSidebar({
     }
   }, [query.data?.scan_status, query.data?.scan_metadata, failureMessage]);
 
-  // A finished scan settles its credits (a failed one is refunded): refresh the team balance in the app sidebar,
-  // which otherwise kept showing the balance from before the scan until a reload.
-  useEffect(() => {
-    if (query.data?.scan_status === "success" || query.data?.scan_status === "failure") {
-      refreshCreditBalance(queryClient);
-    }
-  }, [query.data?.scan_status, queryClient]);
-
   const exportMutation = useMutation({
     mutationFn: () => getCBOMExportResults(team_id, scan_id),
     onSuccess: (data) => {
