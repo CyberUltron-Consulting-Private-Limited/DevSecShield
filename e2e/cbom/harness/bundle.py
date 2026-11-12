@@ -85,7 +85,7 @@ def write_manifest(run: Path, sha: str, ref: str, started: str, node_image: str 
             serials[k] = exp["serialNumber"]
     here = Path(__file__).resolve().parents[1]
     harness = {"commit": _sh("git", "-C", str(here), "rev-parse", "HEAD"),
-               "dirty": bool(_sh("git", "-C", str(here), "status", "--porcelain", "--", "."))}
+               "dirty": bool(_sh("git", "-C", str(here), "status", "--porcelain", "--untracked-files=no", "--", "."))}
     return manifest.update(run, sha=sha, ref=ref, tier="L", started=started, stack_status=status_line, harness=harness,
                            images=images(run), node_image={"ref": node_image, "id": node_digest},
                            lab={"containers": lab_containers(run), "images": gen.get("images") or {},
