@@ -486,14 +486,20 @@ export const INFO_TIPS = {
     what: "This scan's severity-weighted average, 0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its vulnerabilities. Empty when it found none.",
     example: "1 High and 1 Low: (7.5 + 2.5) / 2 = 5.0.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125 — tiers on the 0-10 Risk score column once #35 scales it (T3b); scans without vulnerabilities have no score once #46 returns None (T3a)
-  "sbom.filter.risk": {
+  // src: backend/utilities/db/scan_list_item.py:90-112, backend/utilities/db/scan_list_item.py:379-412, frontend/app/[team_id]/iac/page.tsx:123-126, frontend/app/[team_id]/dast/page.tsx:115-118 — weighted average scaled to 0-10 (/4*10, as SAST) with #35 (T3b); starts at 0, so a scan without findings shows 0
+  "scan.table.risk": {
+    label: "Risk score",
+    what: "This scan's severity-weighted average, 0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings. 0 when it found nothing.",
+    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.0.",
+  },
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135, frontend/app/[team_id]/dast/page.tsx:120-127, frontend/app/[team_id]/ai_bom/page.tsx:114-121, frontend/app/[team_id]/llm/page.tsx:123-130, frontend/app/[team_id]/cbom/page.tsx:120-127 — tiers on the Risk score column, 0-10 on every page once #35 scales SCA + SBOM, IaC and DAST (T3b); a null score matches no tier
+  "scan.filter.risk": {
     label: "Risk score filter",
-    what: "Shows only scans whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Scans without vulnerabilities have no score and are hidden by any tier.",
+    what: "Shows only scans whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. A scan without a score (shown as —) is hidden by any tier.",
     example: "High keeps a scan scored 7.5 and hides one scored 9.2.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712 — sorts the loaded rows; missing values count as -1
-  "sbom.filter.sort": {
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581, frontend/app/[team_id]/cbom/page.tsx:668-681 — sorts the loaded rows; missing values count as -1
+  "scan.filter.sort": {
     label: "Sort",
     what: "Orders the table by creation date, risk score or credits, high or low first. Scans with no value for the chosen column go last when sorting high first.",
     example: "Credits (high first) puts the most expensive scan on top.",
@@ -503,6 +509,1266 @@ export const INFO_TIPS = {
     label: "Repository",
     what: "The repository that was scanned (hover for the full URL), or Zip file for an uploaded archive. Empty for an uploaded SBOM file.",
     example: "payments-api.",
+  },
+
+  // ────────────────────────────────────────────────────────────── IaC: scan configuration (components/iac-options-sidebar.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:541-557, backend/utilities/db/scan_list_item.py:143 — stored as a label; the worker does not read it
+  "iac.cfg.environment": {
+    label: "Environment",
+    what: "Which environment this infrastructure code is for: Development, Staging or Production. It is a label for your dashboards (the environment filter and heatmap); it does not change what the scan checks.",
+    example: "Production for the Terraform that deploys your live VPC.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-82 — one mode per context; each mode reads its file types
+  "iac.cfg.contexts": {
+    label: "IaC contexts",
+    what: "The kinds of infrastructure code in the repository, one context each. Each kind reads its own files: Terraform .tf/.tfvars/.tfstate/.tf.json, Kubernetes and Helm .yaml/.yml, Ansible .yml/.yaml/.ini, CloudFormation .yaml/.yml/.json, Pulumi and CDK their program files.",
+    example: "A repository with Terraform and Helm charts: add both contexts.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:56-88, RabbitMQ/worker/helpers/context/codebase_context.py:228-233 — the format decides the extensions; Terraform adds its own .tf patterns; the other formats' include patterns narrow their files (merged across formats: see iac.cfg.include)
+  "iac.cfg.context_type": {
+    label: "Context type",
+    what: "The infrastructure format of this context; it decides which file extensions are read. Terraform needs no pattern: its files are found by extension anywhere. For the other formats, the include patterns below narrow which files are read.",
+    example: "Kubernetes, with the include pattern \"k8s\".",
+  },
+  // src: RabbitMQ/worker/helpers/tools/iac_agent/main.py:207-227, backend/utilities/scan/estimate_scan.py:210 — 1 credit per 0.5 MB of matched files, rounded to 0.01
+  "iac.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "Measures the infrastructure files the contexts match and prices the scan at 2 credits per MB, rounded to 0.01. Nothing is charged until you start the scan.",
+    example: "400 KB of Terraform: about 0.78 credits.",
+  },
+
+  // ────────────────────────────────────────────────────────────── IaC: list page (app/[team_id]/iac/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:575 — successful IaC scans
+  "iac.kpi.total_scans": {
+    label: "Total scans",
+    what: "IaC scans of this team that finished successfully.",
+    example: "12 scans run, 2 failed: 10.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:456-480, backend/utilities/dashboard/scan_list.py:576 — findings of successful scans
+  "iac.kpi.total_issues": {
+    label: "Total issues",
+    what: "Misconfigurations found by all successful IaC scans, added up.",
+    example: "An S3 bucket without encryption is one issue.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:466-478, backend/utilities/dashboard/scan_list.py:577 — impact critical
+  "iac.kpi.critical": {
+    label: "Total critical",
+    what: "Of those, the issues rated Critical.",
+    example: "A security group open to 0.0.0.0/0 on SSH.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:564-569, backend/utilities/dashboard/remediation_metrics.py:43-80 — mean of fixed/ignored time minus creation, in days
+  "iac.kpi.mttr": {
+    label: "Avg MTTR (days)",
+    what: "Mean time to remediate: the average time, in days, from when an issue was recorded to when it was marked Fixed or Ignored.",
+    example: "One issue fixed after 1 day and one after 3 days: 2.0.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:509-518, backend/utilities/dashboard/scan_list.py:570 — per scan included / (included + excluded) files, averaged
+  "iac.kpi.coverage": {
+    label: "Coverage %",
+    what: "For each successful scan, the share of candidate files that were analysed (analysed divided by analysed plus excluded), averaged over the scans.",
+    example: "Two scans with 100% and 80%: 90.0%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:493-507, backend/utilities/dashboard/scan_list.py:580 — compliance-control references with a standard
+  "iac.kpi.policy": {
+    label: "Policy violations",
+    what: "How many compliance-control references (PCI DSS, ISO 27001 and others) the issues map to, added up.",
+    example: "One issue mapped to 2 controls: 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:520-526, backend/utilities/dashboard/scan_list.py:571 — 0-10, weights 4/3/2/1, averaged over issues
+  "iac.kpi.avg_risk": {
+    label: "Avg risk score",
+    what: "Severity-weighted average of all issues of successful scans, from 0 to 10: Critical 4, High 3, Medium 2, Low 1, the average weight divided by 4 and multiplied by 10.",
+    example: "Half Critical, half Low: (4+1)/2 = 2.5, so 6.3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:466-478, backend/utilities/dashboard/scan_list.py:584-589 — totals per impact
+  "iac.chart.severity": {
+    label: "Severity Distribution",
+    what: "Issues of successful IaC scans by severity: Critical, High, Medium and Low.",
+    example: "Critical 1, High 6, Medium 10, Low 3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:464, backend/utilities/dashboard/scan_list.py:482-486 — per creation date (UTC)
+  "iac.chart.over_time": {
+    label: "Issues Over Time",
+    what: "Issues of successful scans by severity, on the day (UTC) each scan was created.",
+    example: "A scan created on 4 Nov with 3 High issues adds 3 to High on 4 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:488-491, backend/utilities/dashboard/scan_list.py:593-606 — issues per category; the six categories always shown
+  "iac.chart.posture": {
+    label: "Security Posture Overview",
+    what: "Issues per security category: Network Security, Data Protection, Access Control, Logging and Monitoring, Secret Management, Audit and Compliance (and any other category found).",
+    example: "Network Security 7 means seven issues about firewalls, ports or routing.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:615-622, backend/utilities/dashboard/finding_metrics.py:18-40 — stored findings by status
+  "iac.chart.pipeline": {
+    label: "Remediation Pipeline",
+    what: "Issues by the status your team set on them: Fixed, In progress, Not started, Ignored, each as a share of all issues found.",
+    example: "20 issues, 5 marked Fixed: Fixed 25%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:493-507, backend/utilities/dashboard/scan_list.py:609, frontend/app/[team_id]/iac/page.tsx:478 — references per standard, share of all references
+  "iac.chart.compliance": {
+    label: "Compliance Framework Violations",
+    what: "How many compliance-control references the issues have per standard, and that standard's share of all references. It is not a pass rate.",
+    example: "PCI DSS 6 of 10 references: 60.0%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:541-562 — successful scans with results counted per (environment, IaC type)
+  "iac.chart.heatmap": {
+    label: "Environment × Cloud Resource Heatmap",
+    what: "How many successful scans covered each IaC type (rows) in each environment (columns). The environment is the one chosen when the scan was configured.",
+    example: "Kubernetes × production = 3: three production scans had a Kubernetes context.",
+  },
+  // src: backend/utilities/dashboard/finding_metrics.py:89-125, backend/utilities/dashboard/scan_list.py:624-625 — per resolution date, average time to fix or ignore
+  "iac.chart.mttr_per_day": {
+    label: "MTTR Per Day",
+    what: "For each day (UTC), the average time to remediate of the issues marked Fixed or Ignored that day, in days.",
+    example: "Two issues fixed on 6 Nov after 1 and 2 days: 1.5 on 6 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:528-539 — one count per scan and IaC type, not per resource
+  "iac.chart.providers": {
+    label: "Resources by Provider",
+    what: "How many successful scans included each IaC type (Terraform, Kubernetes, Helm, …). It counts scans per type, not individual cloud resources.",
+    example: "Terraform 8, Kubernetes 3.",
+  },
+  // src: frontend/app/[team_id]/iac/page.tsx:714-717, backend/utilities/db/scan_list_item.py:143 — matches the scan's environment label
+  "iac.filter.environment": {
+    label: "Environment filter",
+    what: "Shows only scans configured for one environment: Development, Staging or Production.",
+    example: "Production lists only scans labelled Production.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:137-138 — repo_url, or zip upload (IaC; the same fields for CBOM and AI BOM)
+  "scan.table.source": {
+    label: "Repository",
+    what: "The repository that was scanned (its last path segment; hover for the full URL), or Zip file for an uploaded archive.",
+    example: "infra-live for https://github.com/acme/infra-live.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:140 — the IaC context types of the scan
+  "iac.table.provider": {
+    label: "Cloud provider",
+    what: "The IaC types this scan read (its contexts), such as Terraform or Kubernetes.",
+    example: "terraform, helm.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:143 — environment label from the scan's settings
+  "iac.table.environment": {
+    label: "Environment",
+    what: "The environment chosen when the scan was configured. It is a label only.",
+    example: "staging.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:89-104 — counts per impact of a successful scan
+  "iac.table.vulns": {
+    label: "Vulnerabilities",
+    what: "This scan's issues by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
+    example: "1 red, 2 orange, 4 amber, 0 blue.",
+  },
+
+  // ────────────────────────────────────────────────────────────── DAST: scan configuration (components/dast-options-sidebar.tsx)
+  // src: backend/utilities/dast/ssrf.py:1-12, backend/utilities/dast/ssrf.py:79-82 — http/https; scope = the target's host; private/metadata addresses refused unless the operator allows them
+  "dast.cfg.target_url": {
+    label: "Target URL",
+    what: "The web application to test, starting with http:// or https://. Its host is the scan's scope: the login URL and additional URLs must be on the same host. Hosts that resolve to private, loopback or cloud-metadata addresses are refused unless your administrator allowed them.",
+    example: "https://staging.shop.example.com.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/scan_config.py:17-75 — URL workers 10 / 5 / 2 and longer timeouts when slower
+  "dast.cfg.speed": {
+    label: "Scan speed",
+    what: "How hard the scan pushes the target. Fast tests 10 URLs at a time with short timeouts, Medium 5, Slow 2 with the longest timeouts (gentlest on a fragile server). Your administrator can change the worker counts.",
+    example: "Slow for a small staging server that falls over under load.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/crawler/crawler.py:48-50, RabbitMQ/dast_worker/helpers/agent/main.py:373 — the crawler stops at max_urls; credits 0.08 per URL
+  "dast.cfg.max_urls": {
+    label: "Max URLs",
+    what: "The most pages the crawler collects from the target before testing. Each URL tested costs 0.08 credits, so this also caps the price (additional URLs come on top).",
+    example: "100 URLs: at most 8 credits.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/main.py:72-73, RabbitMQ/dast_worker/helpers/checks/nuclei/basic_templates.py:11-37 — all five fields required; a headless browser signs in with them
+  "dast.cfg.auth": {
+    label: "Authentication",
+    what: "How the scanner signs in: a headless browser opens the login URL, types the username and password into the fields found by their XPaths and clicks the submit button. All fields are required, so the pages behind the login are tested too.",
+    example: "Login URL https://shop.example.com/login with a test account.",
+  },
+  // src: backend/utilities/dast/ssrf.py:79-82, RabbitMQ/dast_worker/helpers/checks/nuclei/basic_templates.py:11-21 — opened first; must be on the target's host
+  "dast.cfg.login_url": {
+    label: "Login URL",
+    what: "The page with the sign-in form. It must be on the same host as the target URL.",
+    example: "https://shop.example.com/login.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/checks/nuclei/construct_temp.py:10-27, RabbitMQ/dast_worker/helpers/checks/nuclei/basic_templates.py:21-31 — XPath of the input clicked and typed into
+  "dast.cfg.xpath_user": {
+    label: "Username field XPath",
+    what: "An XPath that finds the username (or email) input on the login page. In the browser: right-click the field, Inspect, then Copy > Copy XPath.",
+    example: "//input[@name='email'].",
+  },
+  // src: RabbitMQ/dast_worker/helpers/checks/nuclei/construct_temp.py:10-27, RabbitMQ/dast_worker/helpers/checks/nuclei/basic_templates.py:31-37 — XPath of the password input
+  "dast.cfg.xpath_pass": {
+    label: "Password field XPath",
+    what: "An XPath that finds the password input on the login page.",
+    example: "//input[@type='password'].",
+  },
+  // src: RabbitMQ/dast_worker/helpers/checks/nuclei/construct_temp.py:10-27 — XPath of the button clicked to submit
+  "dast.cfg.xpath_submit": {
+    label: "Submit button XPath",
+    what: "An XPath that finds the button the scanner clicks to sign in.",
+    example: "//button[@type='submit'].",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/context.py:4-10, backend/utilities/scan/format_input.py:165-181 — sent to the worker for the sign-in; redacted from the scan's stored settings
+  "dast.cfg.username": {
+    label: "Username",
+    what: "The account the scanner signs in with. Use a test account: the scan submits forms and tries attacks while signed in.",
+    example: "dast-test@shop.example.com.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/context.py:4-10, backend/utilities/scan/credit_estimate.py:29-30 — sent to the worker; never part of the stored estimate digest
+  "dast.cfg.password": {
+    label: "Password",
+    what: "The password of that test account. It is sent to the scan worker for the sign-in and is not shown again.",
+    example: "The password of dast-test@shop.example.com.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/crawler/crawler.py:60-63, backend/utilities/dast/ssrf.py:79-82 — always added to the crawl; must be on the target's host
+  "dast.cfg.additional_urls": {
+    label: "Additional URLs to scan",
+    what: "Pages to test even if the crawler does not find them (they are added to the crawl). They must be on the target's host. Each one costs 0.08 credits like any other URL.",
+    example: "https://shop.example.com/admin/reports (linked from nowhere).",
+  },
+  // src: RabbitMQ/dast_worker/helpers/crawler/crawler.py:51-56, RabbitMQ/dast_worker/helpers/crawler/crawler.py:108-123 — include or exclude, not both; * matches anything, searched anywhere in the URL
+  "dast.cfg.url_patterns": {
+    label: "URL patterns",
+    what: "Either Include (test only crawled URLs that match) or Exclude (skip URLs that match), not both. In a pattern * matches anything, and the pattern may match any part of the URL. Additional URLs are always tested.",
+    example: "Exclude https://shop.example.com/logout* so the scan does not sign itself out.",
+  },
+  // src: RabbitMQ/dast_worker/helpers/agent/main.py:350-375, backend/utilities/scan/estimate_scan.py:193 — the estimate crawls the target now; 0.08 credits per URL found
+  "dast.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "Crawls the target now (real requests to your site) to count the URLs the scan would test, and prices them at 0.08 credits each. Nothing is charged until you start the scan.",
+    example: "The crawl finds 60 URLs: 4.8 credits.",
+  },
+
+  // ────────────────────────────────────────────────────────────── DAST: automatic profiles (components/dast/DastProfilesTab.tsx, DastScheduleFields.tsx)
+  // src: backend/utilities/dast/schemas.py:40-56, backend/utilities/dast/dispatch.py:115-121 — profile title; each run is titled "<title> (<trigger>)"
+  "dast.profile.title": {
+    label: "Profile title",
+    what: "A name for this saved DAST setup. Each run it starts appears in the scan list as \"<title> (<how it started>)\".",
+    example: "Shop staging nightly.",
+  },
+  // src: backend/routers/dast_profiles.py:112-155, backend/routers/dast_profiles.py:253-274, backend/utilities/dast/beat.py:71, backend/routers/cicd.py:88, backend/utilities/dast/dispatch.py:84-121 — saved settings run by schedule, Run now or CI; each run is a new scan charged up front
+  "dast.profile.form": {
+    label: "DAST profile",
+    what: "Saved DAST settings (target, sign-in, limits, schedule) that can run without you: on its schedule, with Run now, or from your CI pipeline. Each run becomes a new scan in the list and is charged Max URLs x 0.08 credits when it starts.",
+    example: "A profile for staging that runs every night at 02:00 IST.",
+  },
+  // src: backend/routers/dast_profiles.py:253-274, backend/utilities/dast/dispatch.py:89-90, backend/utilities/dast/schedule.py:1 — Run now; skipped while a run is in flight; next run in IST
+  "dast.profile.list": {
+    label: "Saved profiles",
+    what: "Your team's DAST profiles with their schedule, next run (IST) and last scan. Run now starts a new scan at once; a run is skipped while the profile's previous run is still in progress.",
+    example: "\"Shop staging · daily 02:00 IST · next 12 Nov 2026, 02:00 am IST\".",
+  },
+  // src: frontend/components/dast/DastScheduleFields.tsx:190-215, backend/utilities/dast/schemas.py:37 — the five selects write the cron expression
+  "dast.profile.cron_builder": {
+    label: "Visual cron builder",
+    what: "Pick minute, hour, day, month and weekday from lists; the builder writes the matching cron expression below. Every means any value.",
+    example: "Minute 0, Hour 9, Weekday Monday gives 0 9 * * 1.",
+  },
+  // src: backend/utilities/dast/schemas.py:46, backend/utilities/dast/credits.py:4-6, backend/utilities/dast/dispatch.py:103 — 1-10,000; every run is charged max_urls x 0.08 up front
+  "dast.profile.max_urls": {
+    label: "Max URLs",
+    what: "The most pages a run crawls and tests, from 1 to 10,000. An automatic run is charged Max URLs x 0.08 credits when it starts (no estimate crawl), whatever it then finds.",
+    example: "200 URLs: each run costs 16 credits.",
+  },
+  // src: backend/utilities/dast/dispatch.py:84-88, backend/utilities/dast/schemas.py:55 — runs refused without consent
+  "dast.profile.consent": {
+    label: "Authorization",
+    what: "Confirms you are allowed to attack-test this target. A DAST scan sends real attack payloads; without this confirmation the profile cannot be saved or run.",
+    example: "Tick it for your own staging site, never for a third-party site.",
+  },
+  // src: backend/utilities/dast/schedule.py:1-24, backend/utilities/dast/dispatch.py:89-90 — next_run_at computed in Asia/Kolkata; a run in flight makes the next one skip
+  "dast.profile.schedule": {
+    label: "Schedule",
+    what: "When the profile runs by itself: off, hourly, every N hours, daily, weekdays, weekly, monthly, once, or a cron expression. Times are India Standard Time. A run is skipped if the previous one is still in progress.",
+    example: "Weekdays at 02:00 IST.",
+  },
+  // src: backend/utilities/dast/schemas.py:33, backend/utilities/dast/schedule.py:1 — 1 to 24 hours
+  "dast.profile.interval": {
+    label: "Every N hours",
+    what: "Hours between runs, from 1 to 24 (IST clock).",
+    example: "6 runs four times a day.",
+  },
+  // src: backend/utilities/dast/schemas.py:34, backend/utilities/dast/schedule.py:1 — 0-6 weekday
+  "dast.profile.weekday": {
+    label: "Weekday",
+    what: "The day of the week a weekly schedule runs on (IST).",
+    example: "Sunday.",
+  },
+  // src: backend/utilities/dast/schemas.py:35 — 1 to 28, so every month has the day
+  "dast.profile.monthday": {
+    label: "Day of month",
+    what: "The day a monthly schedule runs on, from 1 to 28 so that every month has it (IST).",
+    example: "1 runs on the first of each month.",
+  },
+  // src: backend/utilities/dast/schemas.py:36, backend/utilities/dast/schedule.py:1 — a single run at that IST time
+  "dast.profile.once_at": {
+    label: "Run at",
+    what: "The date and time (IST) of a single run.",
+    example: "15 Nov 2026, 23:00.",
+  },
+  // src: backend/utilities/dast/schemas.py:32, backend/utilities/dast/schedule.py:26-34 — HH:MM, clamped to 00:00-23:59
+  "dast.profile.times": {
+    label: "Fire times",
+    what: "The times of day (24-hour HH:MM, IST) the schedule runs. You can add several.",
+    example: "02:00 and 14:00.",
+  },
+  // src: backend/utilities/dast/schemas.py:37, backend/utilities/dast/schedule.py:1 — 5-field cron evaluated in IST, 0 = Sunday
+  "dast.profile.cron": {
+    label: "Cron expression",
+    what: "A 5-field cron expression (minute, hour, day of month, month, day of week) evaluated in IST, with 0 = Sunday. The builder above fills it for you.",
+    example: "0 9 * * 1-5 runs at 09:00 IST Monday to Friday.",
+  },
+
+  // ────────────────────────────────────────────────────────────── DAST: list page (app/[team_id]/dast/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:216, backend/utilities/dashboard/scan_list.py:291 — successful DAST scans
+  "dast.kpi.total_scans": {
+    label: "Total scans",
+    what: "DAST scans of this team that finished successfully, manual and automatic.",
+    example: "A nightly profile that ran 7 times adds 7.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:251-256, backend/utilities/dashboard/scan_list.py:284-295 — stored findings of DAST scans by impact
+  "dast.kpi.severity": {
+    label: "Findings by severity",
+    what: "Findings of all DAST scans with this severity (Critical, High, Medium or Low), counted from the stored findings. A finding without a severity counts as Low.",
+    example: "Total high 4: four High findings across all runs.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:104, backend/utilities/dashboard/scan_list.py:257-259, backend/utilities/dashboard/scan_list.py:288 — 10 / 7.5 / 5 / 2.5 per finding, averaged
+  "dast.kpi.avg_risk": {
+    label: "Avg risk score",
+    what: "Average over all DAST findings, 0 to 10: each Critical counts 10, High 7.5, Medium 5, Low 2.5.",
+    example: "One High and one Low: (7.5 + 2.5) / 2 = 5.0.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:251-256, backend/utilities/dashboard/scan_list.py:299 — totals per impact
+  "dast.chart.severity": {
+    label: "Severity Distribution",
+    what: "All DAST findings by severity: Critical, High, Medium, Low.",
+    example: "Critical 0, High 4, Medium 9, Low 12.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:234-248 — successful scans' findings on the scan's creation date (UTC)
+  "dast.chart.over_time": {
+    label: "Issues Over Time",
+    what: "Findings of successful DAST scans by severity, on the day (UTC) each scan was created.",
+    example: "A nightly run on 7 Nov with 2 Medium findings adds 2 to Medium on 7 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:88-101, backend/utilities/dashboard/scan_list.py:271-273, backend/utilities/dashboard/scan_list.py:301 — 12 categories
+  "dast.chart.posture": {
+    label: "Security Posture Overview",
+    what: "Findings in 12 web-security categories: injection, XSS and client side, authentication, authorization, session and state, file and resource, server-side execution, information disclosure, crypto and transport, security headers, API security, denial of service.",
+    example: "Security headers 8: eight findings about missing or weak headers.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:69-80, backend/utilities/dashboard/scan_list.py:266-269, backend/utilities/dashboard/scan_list.py:302 — the ten OWASP 2021 keys
+  "dast.chart.owasp": {
+    label: "OWASP Top 10",
+    what: "Findings per OWASP Top 10 (2021) category, A01 to A10. A finding mapped to two categories counts in both.",
+    example: "A03 Injection 3, A05 Security Misconfiguration 6.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:81-87, backend/utilities/dashboard/scan_list.py:274-276, backend/utilities/dashboard/scan_list.py:303-306 — five categories, mean of 10/7.5/5/2.5
+  "dast.chart.risk_by_category": {
+    label: "Average Risk Score per Category",
+    what: "The average risk score (Critical 10, High 7.5, Medium 5, Low 2.5) of the findings in five categories: injection, XSS and client side, authentication, authorization, session and state.",
+    example: "Injection 8.8: the injection findings are mostly Critical or High.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:103, backend/utilities/dashboard/scan_list.py:278-282, backend/utilities/dashboard/scan_list.py:307-310 — by the scanner's confidence; missing counts as low
+  "dast.chart.risk_by_confidence": {
+    label: "Average Risk Score per Confidence",
+    what: "The average risk score of findings grouped by how sure the scanner is that each one is real: high, medium or low confidence (unknown counts as low).",
+    example: "High confidence 7.5: the certain findings are mostly High.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:102, backend/utilities/dashboard/scan_list.py:261-264, backend/utilities/dashboard/scan_list.py:311 — references to PCI DSS, ISO 27001-27004
+  "dast.chart.compliance": {
+    label: "Compliance Violations",
+    what: "How many compliance-control references the findings have for PCI DSS and ISO 27001, 27002, 27003 and 27004.",
+    example: "PCI DSS 5: findings map to five PCI DSS controls in total.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:381-390 — counts per impact of a successful scan
+  "dast.table.vulns": {
+    label: "Vulnerabilities",
+    what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
+    example: "0 red, 1 orange, 3 amber, 5 blue.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:429 — target_url from the settings of the scan
+  "dast.table.target": {
+    label: "Target URL",
+    what: "The site this scan tested.",
+    example: "https://staging.shop.example.com.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:392-402, RabbitMQ/dast_worker/helpers/crawler/crawler.py:40-71 — URLs the crawler kept for testing
+  "dast.table.urls": {
+    label: "URLs scanned",
+    what: "How many URLs the scan tested: the pages the crawler kept after your patterns, plus the additional URLs.",
+    example: "48 URLs tested.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:432, RabbitMQ/dast_worker/helpers/crawler/crawler.py:79-106 — tested / (tested + dropped by the patterns)
+  "dast.table.coverage": {
+    label: "Coverage %",
+    what: "Tested URLs as a share of all crawled URLs, after your include or exclude patterns dropped some. 100% when no pattern removed anything.",
+    example: "45 tested, 5 excluded by a pattern: 90.0%.",
+  },
+
+  // ────────────────────────────────────────────────────────────── AI BOM: scan configuration (components/ai-bom-options-sidebar.tsx)
+  // src: RabbitMQ/worker/helpers/tools/ai_bom_agent/main.py:391-394, RabbitMQ/worker/helpers/tools/ai_bom_agent/main.py:426-447 — repository: model and source files; AI BOM file: AI summariser
+  "aibom.cfg.repository": {
+    label: "Analyze Repository",
+    what: "Finds the AI in your code: model files, embedding models, Hugging Face models, AI SDKs and external AI providers, datasets, and their licenses, and builds a CycloneDX AI bill of materials.",
+    example: "A service that imports the OpenAI SDK and loads a local .onnx model.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/ai_bom_agent/main.py:122-150 — an existing AI-BOM JSON analysed by the AI model (map-reduce)
+  "aibom.cfg.file": {
+    label: "AI BOM file",
+    what: "An AI bill of materials you already have, as a JSON file. No code is cloned: the file's contents are analysed by the scan's AI model to list risks. Choosing a file clears the repository or zip.",
+    example: "aibom.cdx.json exported from another tool.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/ai_bom_agent/main.py:426-447, backend/utilities/scan/estimate_scan.py:210 — 2 credits per MB of model/source files + ~0.05; a file is ~0.01
+  "aibom.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "A repository or zip costs 2 credits per MB of model and source files plus about 0.05; an uploaded AI BOM file about 0.01. Rounded to 0.01. Nothing is charged until you start the scan.",
+    example: "4 MB of Python and model files: about 8.05 credits.",
+  },
+
+  // ────────────────────────────────────────────────────────────── AI BOM: list page (app/[team_id]/ai_bom/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:1853-1860 — detections of successful scans
+  "aibom.kpi.assets": {
+    label: "AI Assets",
+    what: "Every AI component detection in successful AI BOM scans: models, datasets, AI libraries and external AI providers, added up across scans.",
+    example: "The OpenAI SDK found in 4 files counts 4 here.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1821, backend/utilities/dashboard/scan_list.py:1884-1886, backend/utilities/dashboard/scan_list.py:1956 — distinct (provider, name) of model components
+  "aibom.kpi.models": {
+    label: "Models",
+    what: "Distinct models (local model files, Hugging Face models, embedding models), counted once per provider and name across all scans.",
+    example: "bert-base-uncased found in two repositories counts 1.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1890-1892, backend/utilities/dashboard/scan_list.py:1957 — distinct dataset names
+  "aibom.kpi.datasets": {
+    label: "Datasets",
+    what: "Distinct datasets the code loads, counted once per name.",
+    example: "squad loaded by two notebooks counts 1.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1887-1889, backend/utilities/dashboard/scan_list.py:1958 — distinct providers of external_provider detections
+  "aibom.kpi.providers": {
+    label: "External Providers",
+    what: "Distinct external AI services your code calls, such as OpenAI or Anthropic, counted once each.",
+    example: "OpenAI used in 4 files and Anthropic in 1: 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1894-1896 — impact critical or high
+  "aibom.kpi.high_risk": {
+    label: "High Risk",
+    what: "AI asset detections rated Critical or High.",
+    example: "A model downloaded without a pinned revision, rated High.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1898-1904, backend/utilities/dashboard/aibom_license.py:83-92 — libraries without a usable license
+  "aibom.kpi.unlicensed": {
+    label: "Unlicensed",
+    what: "AI libraries with no usable open-source license declared. Models and external providers are not counted here.",
+    example: "An internal AI package with no license field.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1906-1910, backend/utilities/dashboard/scan_list.py:1960-1963 — assets with a declared license and a model card / total
+  "aibom.kpi.governance": {
+    label: "Governance Readiness",
+    what: "Share of AI asset detections that have both a declared license and a model card: the documentation an AI governance review asks for.",
+    example: "10 assets, 4 with license and model card: 40%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1965-1971 — 0-10, weights 4/3/2/1
+  "aibom.kpi.avg_risk": {
+    label: "Avg Risk Score",
+    what: "Severity-weighted average of all AI asset findings, 0 to 10: Critical 4, High 3, Medium 2, Low 1, the average weight divided by 4 and multiplied by 10.",
+    example: "2 High and 2 Low: (3+3+1+1)/4 = 2, so 5.0.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1979-2018, backend/utilities/dashboard/finding_metrics.py:18-40 — stored findings of successful scans by status
+  "aibom.chart.remediation": {
+    label: "Remediation Actions Required",
+    what: "Stored findings of successful AI BOM scans by the status your team set: Fixed, In progress, Not started, Ignored.",
+    example: "12 findings: 3 Fixed, 9 Not started.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1862-1866 — impact per detection
+  "aibom.chart.severity": {
+    label: "Severity Distribution",
+    what: "AI asset detections by severity: Critical, High, Medium, Low.",
+    example: "High 3, Medium 7, Low 20.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1868-1869 — component_type per detection
+  "aibom.chart.asset_type": {
+    label: "Asset Type Distribution",
+    what: "Detections by kind of AI component: local model file, Hugging Face model, embedding model, dataset, AI library, external provider and others.",
+    example: "external_provider 5, huggingface_model 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1871-1872 — resolved provider per detection
+  "aibom.chart.provider": {
+    label: "Provider Distribution",
+    what: "Detections by the AI vendor or source behind them, such as openai, anthropic or huggingface.",
+    example: "openai 6, huggingface 3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1874-1875 — resolved license per detection
+  "aibom.chart.license": {
+    label: "License Distribution",
+    what: "Detections by license, as declared or resolved for each component (for example MIT, Apache-2.0, a proprietary API's terms, or not declared).",
+    example: "Apache-2.0 8, NOASSERTION 3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1930-1936, backend/utilities/dashboard/scan_list.py:1973-1977 — the 10 most severe detections
+  "aibom.chart.top_risks": {
+    label: "Top AI Risks",
+    what: "The 10 most severe AI asset detections (Critical first), with their type, provider, license and impact.",
+    example: "gpt-4o · external_provider · openai · proprietary · High.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:484-505 — counts per impact of a successful scan
+  "aibom.table.risks": {
+    label: "Risks",
+    what: "This scan's AI asset findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
+    example: "0 red, 2 orange, 5 amber, 11 blue.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:521-524 — weighted 4/3/2/1 average, /4 *10
+  "aibom.table.risk": {
+    label: "Risk score",
+    what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10.",
+    example: "1 High and 1 Low: (3+1)/2 = 2, so 5.0.",
+  },
+
+  // ────────────────────────────────────────────────────────────── MCP: scan configuration (components/mcp-options-sidebar.tsx)
+  // src: backend/utilities/db/schemas.py:159-169, RabbitMQ/worker/helpers/tools/mcp_agent/context.py:5-9 — the MCP server endpoint the worker connects to
+  "mcp.cfg.server_url": {
+    label: "MCP server URL",
+    what: "The address of the MCP (Model Context Protocol) server to test. The scan connects to it, lists its tools, prompts and resources, and checks each one for risks such as prompt injection or dangerous capabilities.",
+    example: "https://mcp.example.com/mcp.",
+  },
+  // src: backend/utilities/db/schemas.py:161, RabbitMQ/worker/helpers/tools/mcp_agent/context.py:7 — httpstreamable or sse
+  "mcp.cfg.server_mode": {
+    label: "Server mode",
+    what: "The transport the server speaks: Streamable HTTP (the current MCP standard) or SSE (Server-Sent Events, the older one). Pick what the server documents.",
+    example: "Streamable HTTP for a server whose endpoint ends in /mcp.",
+  },
+  // src: backend/utilities/db/schemas.py:163, backend/utilities/dashboard/scan_list.py:1326-1329 — a label used by the Environment Risk Analysis chart
+  "mcp.cfg.environment": {
+    label: "Environment",
+    what: "Which environment the server belongs to: Development, Staging or Production. A label for the dashboard's Environment Risk Analysis; it does not change the tests.",
+    example: "Production for the server your agents use live.",
+  },
+  // src: backend/utilities/db/schemas.py:162, RabbitMQ/worker/helpers/tools/mcp_agent/context.py:8-9 — JSON object of HTTP headers sent with every request
+  "mcp.cfg.headers": {
+    label: "Headers (JSON)",
+    what: "Extra HTTP headers sent with every request to the server, as a JSON object, typically for authentication.",
+    example: "{\"Authorization\": \"Bearer <token>\"}.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/mcp_agent/main.py:253-285, backend/utilities/scan/estimate_scan.py:210 — connects now; 0.005 credits per tool, prompt and resource
+  "mcp.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "Connects to the server now, lists its tools, prompts and resources, and prices each at 0.005 credits, rounded to 0.01. Nothing is charged until you start the scan.",
+    example: "40 tools, 4 prompts, 6 resources: 0.25 credits.",
+  },
+
+  // ────────────────────────────────────────────────────────────── MCP: list page (app/[team_id]/mcp/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:1371 — every MCP scan in any status
+  "mcp.kpi.total_scans": {
+    label: "Total Scans",
+    what: "All MCP scans of this team, in any status.",
+    example: "8 scans: 6 succeeded, 1 running, 1 failed.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1320-1325, backend/utilities/dashboard/scan_list.py:1372 — critical findings of all scans
+  "mcp.kpi.critical": {
+    label: "Critical Issues",
+    what: "Findings rated Critical across the tools, prompts and resources of all MCP scans.",
+    example: "A tool that runs shell commands from model input.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1346-1349, backend/utilities/dashboard/scan_list.py:1368 — each finding weight/4*10, averaged
+  "mcp.kpi.avg_risk": {
+    label: "Avg Risk Score",
+    what: "Average over all MCP findings, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5.",
+    example: "One Critical and one Medium: 7.5.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1293-1294, backend/utilities/dashboard/scan_list.py:1369 — status started
+  "mcp.kpi.active": {
+    label: "Active Scans",
+    what: "MCP scans a worker is running now.",
+    example: "2 while two servers are being tested.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1243-1248, backend/utilities/dashboard/scan_list.py:1375 — findings marked fixed in the last 7 x 24 h
+  "mcp.kpi.resolved": {
+    label: "Resolved (7d)",
+    what: "MCP findings marked Fixed in the last 7 days (the last 168 hours). Ignored findings are not counted.",
+    example: "5 findings fixed this week.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1291-1300 — started / success / failure; everything else (incl. pending) counts as not started
+  "mcp.chart.status": {
+    label: "Scan Status Distribution",
+    what: "MCP scans by status: Started, Success, Failure, and Not started (which also counts queued and cancelled scans).",
+    example: "6 Success, 1 Started, 1 Failure.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1348-1351, backend/routers/scans.py:88 — per server: average of weight/4*10; scans come newest first, so the earliest scan's value is kept
+  "mcp.chart.risk_trend": {
+    label: "Risk Score Trend",
+    what: "For each MCP server, the average risk score (0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5) of its scan's findings. A server scanned several times shows one value, from its earliest scan (the list is read newest first and later rows overwrite).",
+    example: "mcp.example.com 6.3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1352-1356 — findings by severity on the scan's creation date (UTC)
+  "mcp.chart.risks_over_time": {
+    label: "Risks Over Time",
+    what: "MCP findings by severity, on the day (UTC) each scan was created.",
+    example: "A scan created on 9 Nov with 3 High findings adds 3 to High on 9 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1307-1325 — totals per impact
+  "mcp.chart.severity": {
+    label: "Severity Distribution",
+    what: "All MCP findings by severity: Critical, High, Medium, Low.",
+    example: "Critical 1, High 5, Medium 9, Low 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1326-1329 — findings counted by the scan's environment label
+  "mcp.chart.environment": {
+    label: "Environment Risk Analysis",
+    what: "How many findings come from servers labelled Development, Staging or Production (the environment chosen when each scan was configured).",
+    example: "Production 7 means seven findings on production servers.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1330-1345 — compliance-control references per standard
+  "mcp.chart.compliance": {
+    label: "Compliance Framework Distribution",
+    what: "How many compliance-control references the MCP findings have per standard.",
+    example: "ISO 27001 9, PCI DSS 3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1378, backend/utilities/dashboard/finding_metrics.py:18-40 — stored findings by status
+  "mcp.chart.remediation": {
+    label: "Remediation Status",
+    what: "MCP findings by the status your team set: Not started, In progress, Fixed, Ignored.",
+    example: "Fixed 5, Not started 12.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1256-1259, backend/utilities/dashboard/scan_list.py:1286-1289, backend/utilities/dashboard/scan_list.py:1346-1347 — by the resource category of each finding
+  "mcp.chart.asset_category": {
+    label: "Asset Category Vulnerabilities",
+    what: "Findings by what the affected tool, prompt or resource gives access to: web, file system, code execution, database, search, vector store, document store.",
+    example: "Code execution 3: three findings on tools that can run code.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1357-1359, RabbitMQ/worker/scan_worker.py:157-164 — duration_of_scan per server
+  "mcp.chart.duration": {
+    label: "Scan Duration Trends",
+    what: "How long each server's MCP scan took, in seconds, from the worker starting to results. A server scanned several times shows its earliest scan.",
+    example: "mcp.example.com 95.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1261-1264, backend/utilities/dashboard/scan_list.py:1348-1349, backend/utilities/dashboard/scan_list.py:1363-1366 — average weight/4*10 per category
+  "mcp.chart.posture": {
+    label: "Security Posture Overview",
+    what: "The average risk score (0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5) of the findings in each asset category; 0 where there are none.",
+    example: "File system 8.8: its findings are mostly Critical or High.",
+  },
+  // src: backend/utilities/dashboard/finding_metrics.py:89-125, backend/utilities/dashboard/scan_list.py:1379-1380 — per resolution date
+  "mcp.chart.mttr": {
+    label: "Mean Time to Remediate per Day",
+    what: "For each day (UTC), the average time between a finding being recorded and being marked Fixed or Ignored, for the findings resolved that day.",
+    example: "Two findings fixed on 8 Nov after 1 and 3 days: 2 days on 8 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1389-1400 — per scan date: findings and those marked ignored
+  "mcp.chart.effectiveness": {
+    label: "Scan Effectiveness Trend",
+    what: "Per scan date, the findings the scans produced and how many of them your team marked Ignored (treated as false positives).",
+    example: "10 findings on 5 Nov, 2 ignored.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1382-1388 — 100 minus the framework's share of that day's references
+  "mcp.chart.compliance_trend": {
+    label: "Compliance Framework Score Trend",
+    what: "Per scan date and standard: 100 minus that standard's share of the day's compliance-control references. A relative measure, not an audit score.",
+    example: "PCI DSS has 3 of 10 references on 5 Nov: 70.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1401-1420 — resolved findings by days from creation to fixed/ignored, 30-day buckets
+  "mcp.chart.age": {
+    label: "Vulnerability Age Distribution",
+    what: "Resolved findings (Fixed or Ignored) grouped by how many days they stayed open, in 30-day buckets up to 210 days. Open findings are not shown.",
+    example: "A finding fixed after 45 days counts in 30-60 days.",
+  },
+  // src: frontend/app/[team_id]/mcp/page.tsx:711-715 — sorts the loaded rows by created_at
+  "scan.filter.sort_created": {
+    label: "Sort",
+    what: "Orders the table by creation date, newest or oldest first.",
+    example: "Newest puts the scan you created last on top.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:277 — host part of the server URL
+  "mcp.table.server": {
+    label: "Server",
+    what: "A short name for the MCP server, taken from its URL's host.",
+    example: "example for https://mcp.example.com.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:200-261, frontend/app/[team_id]/mcp/page.tsx:1007-1011 — weighted average scaled to 0-10 (/4*10, as SAST) with #35 (T3b); starts at 0, so a scan without findings shows 0
+  "mcp.table.risk": {
+    label: "Risk Score",
+    what: "This scan's severity-weighted average, 0 to 10: Critical 10, High 7.5, Medium 5, Low 2.5, averaged over its findings. 0 when it found nothing.",
+    example: "1 High and 1 Low finding: (7.5 + 2.5) / 2 = 5.0.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:199-210, backend/utilities/db/scan_list_item.py:279-284 — tools, prompts and resources the server exposed
+  "mcp.table.discovery": {
+    label: "Discovery",
+    what: "What the scan found on the server: T tools, P prompts, R resources.",
+    example: "T: 40 P: 4 R: 6.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:244-256 — tools/prompts/resources rated high or critical
+  "mcp.table.risky": {
+    label: "Risky assets",
+    what: "Tools, prompts and resources the scan rated High or Critical risk.",
+    example: "3: two tools and one resource.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:212-240 — counts per impact of a successful scan
+  "mcp.table.vulns": {
+    label: "Vulnerabilities",
+    what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
+    example: "1 red, 2 orange, 0 amber, 4 blue.",
+  },
+
+  // ────────────────────────────────────────────────────────────── LLM red teaming: scan configuration (components/llm-options-sidebar.tsx)
+  // src: backend/utilities/db/schemas.py:176-186 — openai, anthropic, gemini or custom
+  "llm.cfg.model_type": {
+    label: "Model Type",
+    what: "Where the model under test is hosted: OpenAI, Anthropic, Google Gemini, or Custom (any HTTP endpoint you describe below).",
+    example: "Custom for your own chatbot API.",
+  },
+  // src: backend/utilities/db/schemas.py:178, backend/utilities/db/scan_list_item.py:350 — the provider's model id
+  "llm.cfg.model_name": {
+    label: "Model Name",
+    what: "The model id the provider expects, exactly as in its API, or a name for your custom model. It also labels the scan in the Model Risk Comparison chart.",
+    example: "gpt-4o-mini.",
+  },
+  // src: backend/utilities/db/schemas.py:181 — secret field, never printed
+  "llm.cfg.api_key": {
+    label: "API Key",
+    what: "The provider API key the red-team prompts are sent with. Every test prompt is billed by your provider on this key. It is never printed in logs.",
+    example: "An OpenAI key from a project with a spending limit.",
+  },
+  // src: backend/utilities/db/schemas.py:179, RabbitMQ/worker/helpers/tools/llm_agent/main.py:142-155 — answers per prompt; not part of the credit price
+  "llm.cfg.generations": {
+    label: "Generations per benchmark",
+    what: "How many answers the model is asked to give for each attack prompt. More generations catch inconsistent behaviour but send more requests to your provider; the credit price does not change.",
+    example: "3 sends each prompt three times.",
+  },
+  // src: backend/utilities/db/schemas.py:185 — the endpoint of a custom model
+  "llm.cfg.model_uri": {
+    label: "Model URI",
+    what: "The URL the scan calls to talk to your custom model (POST by default).",
+    example: "https://chat.example.com/api/v1/complete.",
+  },
+  // src: backend/utilities/db/schemas.py:182 — HTTP headers of the custom request
+  "llm.cfg.headers": {
+    label: "Headers (JSON)",
+    what: "HTTP headers sent with every request to the custom model, as a JSON object, usually for authentication.",
+    example: "{\"Authorization\": \"Bearer <token>\"}.",
+  },
+  // src: backend/utilities/db/schemas.py:183 — the JSON body with the prompt placeholder
+  "llm.cfg.request_template": {
+    label: "Request Template",
+    what: "The JSON body sent to your model, with a placeholder where each attack prompt goes.",
+    example: "{\"message\": \"$INPUT\"}.",
+  },
+  // src: backend/utilities/db/schemas.py:184 — where the answer is in the response
+  "llm.cfg.response_field": {
+    label: "Response JSON Field",
+    what: "The field of your model's JSON response that holds the answer text, which the detectors then judge.",
+    example: "reply for a response {\"reply\": \"…\"}.",
+  },
+  // src: backend/utilities/db/schemas.py:180, RabbitMQ/worker/helpers/tools/llm_agent/main.py:142-155 — garak probes; 0.002 credits each
+  "llm.cfg.probes": {
+    label: "Security Benchmarks",
+    what: "The attack families (garak probes) to run against the model, such as jailbreaks, prompt injection, data leakage or toxicity. Each selected benchmark costs 0.002 credits.",
+    example: "promptinject and dan for a customer-facing chatbot.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/llm_agent/main.py:142-155, backend/utilities/scan/estimate_scan.py:210 — number of probes x 0.002
+  "llm.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "Prices the scan at 0.002 credits per selected benchmark, rounded to 0.01. Your model provider bills its own usage separately. Nothing is charged until you start the scan.",
+    example: "10 benchmarks: 0.02 credits.",
+  },
+
+  // ────────────────────────────────────────────────────────────── LLM red teaming: list page (app/[team_id]/llm/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:1500-1518 — the same status counters as SAST (UTC day for today); "changed" means a real status or progress change once #47 stops polls and chat moving last_updated (T3a)
+  "llm.kpi.status": {
+    label: "Scan counts by status",
+    what: "LLM scans of this team per status (Not started, Pending, Started, Success, Failure), and how many were created or changed since 00:00 UTC today.",
+    example: "Updated today 2: two scans started or finished today (UTC).",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1553-1555, backend/utilities/dashboard/scan_list.py:1638 — successful scans
+  "llm.kpi.success": {
+    label: "Scans (success)",
+    what: "LLM scans that finished successfully. Only these feed the risk cards and charts.",
+    example: "5 scans succeeded.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1619-1626 — weight/4*10 per finding, averaged
+  "llm.kpi.avg_risk": {
+    label: "Avg Risk Score",
+    what: "Average over all findings of successful LLM scans, 0 to 10: Critical counts 10, High 7.5, Medium 5, Low 2.5.",
+    example: "One Critical and one Low: 6.3.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1564-1567, backend/utilities/dashboard/scan_list.py:1617-1618 — findings of successful scans
+  "llm.kpi.vulns": {
+    label: "Vulnerabilities",
+    what: "Findings of successful LLM scans: all of them (Total Vulns), and those rated Critical (Critical Vulns).",
+    example: "Total 12, Critical 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1532-1543, backend/utilities/dashboard/scan_list.py:1628-1631 — 10 minus the number of OWASP LLM categories with a finding
+  "llm.kpi.owasp": {
+    label: "OWASP Score",
+    what: "10 minus the number of OWASP Top 10 for LLM categories that have at least one finding. 10 means no category was hit; it does not weigh how many findings each has.",
+    example: "Findings in LLM01 and LLM06 only: 8.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1602-1606, backend/utilities/dashboard/scan_list.py:1633-1635 — (tests - hits) / tests over successful scans
+  "llm.kpi.passed_rate": {
+    label: "Passed Rate",
+    what: "Share of attack attempts the models resisted, over all successful scans: attempts that did not trigger a detector divided by all attempts.",
+    example: "1,000 attempts, 80 hits: 92.0%.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1564-1567 — findings by impact
+  "llm.chart.risk_level": {
+    label: "Risk Level Distribution",
+    what: "Findings of successful LLM scans by severity: Critical, High, Medium, Low.",
+    example: "High 4, Medium 6, Low 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1592-1601 — per probe: passed and failed attempts
+  "llm.chart.attack_vectors": {
+    label: "Attack Vector Test Results",
+    what: "For each benchmark (garak probe), how many attack attempts the models resisted (passed) and how many succeeded (failed), over all successful scans.",
+    example: "dan: 45 passed, 5 failed.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1581-1590, backend/utilities/dashboard/scan_list.py:1653-1656 — per model name: findings-weighted 0-10 score
+  "llm.chart.model_risk": {
+    label: "Model Risk Comparison",
+    what: "The average risk score (0 to 10, weights Critical 4, High 3, Medium 2, Low 1) of each model's findings, across its successful scans.",
+    example: "gpt-4o-mini 5.0, my-chatbot 7.5.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1544-1551, backend/utilities/dashboard/scan_list.py:1607-1613, backend/utilities/dashboard/scan_list.py:1659-1665 — average of each scan's resistance scores
+  "llm.chart.posture": {
+    label: "AI Security Posture Overview",
+    what: "Average of the scans' resistance scores in six areas: jailbreak resistance, injection resistance, hallucination resistance, bias resistance, content safety and data privacy. 0 where no scan reported one.",
+    example: "Jailbreak resistance 7.2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1532-1543, backend/utilities/dashboard/scan_list.py:1568-1580, backend/utilities/dashboard/scan_list.py:1666-1669 — findings per OWASP LLM category
+  "llm.chart.owasp": {
+    label: "OWASP Top 10 LLM Metrics",
+    what: "Findings per OWASP Top 10 for LLM Applications category (LLM01 Prompt Injection to LLM10). A finding mapped to two categories counts in both.",
+    example: "LLM01 6, LLM06 2.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1502-1519 — every LLM scan by its UTC creation date
+  "llm.chart.scans_per_day": {
+    label: "Scans Per Day",
+    what: "How many LLM scans were created on each day (UTC), whatever their status.",
+    example: "3 scans created on 10 Nov.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1500-1512 — counts by status
+  "llm.chart.status": {
+    label: "Scan Status Breakdown",
+    what: "All LLM scans of this team by their current status.",
+    example: "5 Success, 1 Failure.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:366 — model type from the scan's settings
+  "llm.table.model_type": {
+    label: "Model type",
+    what: "Where the tested model is hosted: openai, anthropic, gemini or custom.",
+    example: "openai.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:350, backend/utilities/db/scan_list_item.py:367 — model name from the settings or the results
+  "llm.table.model_name": {
+    label: "Model name",
+    what: "The model id that was tested.",
+    example: "gpt-4o-mini.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:369 — number of selected probes
+  "llm.table.probes": {
+    label: "Probes",
+    what: "How many security benchmarks (garak probes) the scan was configured with.",
+    example: "10 probes selected.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:338-346, backend/utilities/db/scan_list_item.py:372 — distinct MITRE ATLAS tactics of the findings
+  "llm.table.mitre": {
+    label: "MITRE",
+    what: "How many different MITRE ATLAS tactics (the adversarial-AI attack stages) the scan's findings map to.",
+    example: "3: initial access, ML model access and exfiltration.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:293-310 — counts per impact of a successful scan
+  "llm.table.vulns": {
+    label: "Vulnerabilities",
+    what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
+    example: "1 red, 0 orange, 3 amber, 2 blue.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:330-336 — 0-10 weighted per scan
+  "llm.table.risk": {
+    label: "Risk score",
+    what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10.",
+    example: "1 Critical and 1 Medium: (4+2)/2 = 3, so 7.5.",
+  },
+
+  // ────────────────────────────────────────────────────────────── CBOM: scan configuration (components/cbom-options-sidebar.tsx, cbom-ci-scan-settings-form.tsx)
+  // src: RabbitMQ/worker/helpers/tools/cbom_agent/main.py:186-196 — deterministic engine, no language model
+  "cbom.cfg.repository": {
+    label: "Analyze Repository",
+    what: "Inventories the cryptography in your code: algorithms, key sizes, certificates, keys, protocols and crypto libraries, graded for strength and quantum safety, into a CycloneDX CBOM. The engine is rule-based; no AI model reads your code.",
+    example: "Finds RSA-1024 in a Java KeyPairGenerator call and flags it weak and quantum-vulnerable.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/cbom_agent/main.py:186-196, backend/utilities/scan/credit_estimate.py:14-24 — an uploaded CBOM is analysed for a flat 0.01
+  "cbom.cfg.file": {
+    label: "CBOM file",
+    what: "A CycloneDX CBOM you already have, as a JSON file, graded by the same rules. Analysing a file costs a flat 0.01 credits. Choosing a file clears the repository or zip.",
+    example: "cbom.json produced by another scanner.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/cbom_agent/main.py:155-162, aibom/src/aibom/cbom/posture/safeio.py:22 — vendored and build directories are skipped unless asked
+  "cbom.cfg.vendored": {
+    label: "Scan vendored and build directories",
+    what: "Also reads vendor/, dist/, build/ and node_modules/: third-party code and build output, skipped by default. Turn it on to see crypto your dependencies ship; it makes the scan larger and dearer.",
+    example: "A Go service with a vendor/ folder of crypto libraries.",
+  },
+  // src: RabbitMQ/worker/helpers/context/scan_context.py:22-28, RabbitMQ/worker/helpers/context/scan_context.py:44-47 — up to 1,000 commits, blobs over 2 MB not downloaded
+  "cbom.cfg.history": {
+    label: "Scan git history for keys",
+    what: "Clones up to 1,000 commits of the branch (files over 2 MB are skipped) and reports key and certificate files that were committed and later deleted: they stay readable in the history.",
+    example: "A server.key added in 2023 and removed a week later is still reported.",
+  },
+  // src: backend/utilities/scan/credit_estimate.py:25-27, RabbitMQ/worker/helpers/tools/cbom_agent/main.py:186-196 — 1 credit per 5 MB of binaries/images/firmware
+  "cbom.cfg.binaries": {
+    label: "Scan binaries, container images and firmware",
+    what: "Also reads compiled binaries, docker save / OCI image archives and firmware: linked crypto libraries, crypto constants, embedded keys and the packages inside images. Adds 1 credit per 5 MB of such content.",
+    example: "A 50 MB image archive in the zip adds 10 credits.",
+  },
+  // src: RabbitMQ/worker/helpers/tools/cbom_agent/main.py:186-196, backend/utilities/scan/credit_estimate.py:14-24, backend/utilities/scan/estimate_scan.py:210 — 1 credit per 0.5 MB source + binaries/5 MB, minimum 1; file 0.01
+  "cbom.cfg.estimate": {
+    label: "Estimate scan credits",
+    what: "A repository or zip costs 2 credits per MB of source files (plus 1 per 5 MB of binaries when that option is on), at least 1 credit; an uploaded CBOM file 0.01. Nothing is charged until you start the scan.",
+    example: "300 KB of source: 1 credit (the minimum).",
+  },
+
+  // ────────────────────────────────────────────────────────────── CBOM: list page (app/[team_id]/cbom/page.tsx)
+  // src: backend/utilities/dashboard/scan_list.py:1701-1755, backend/utilities/cbom_sources/cbom_metrics.py:160-167 — inventory rows of code scans + latest Sources collections, each asset once
+  "cbom.kpi.assets": {
+    label: "Crypto Assets",
+    what: "Cryptographic assets found: algorithms, keys, certificates, protocols and libraries, from successful code scans and the latest CBOM Sources collections. An asset seen by both is counted once, from its latest observation.",
+    example: "A TLS certificate found in the repository and on the live server counts 1.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:118-124, aibom/src/aibom/cbom/weakness.py:93-108 — rows graded weak (broken digests, asymmetric keys under 2048 bits, ...)
+  "cbom.kpi.weak": {
+    label: "Weak Algorithms",
+    what: "Assets graded weak: cryptography that is broken or too short today, for example MD5 or SHA-1 in signatures, or RSA, DSA and DH keys under 2048 bits.",
+    example: "A password hash using MD5.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:125-131, backend/utilities/cbom_sources/cbom_metrics.py:28-40 — verdict quantum-vulnerable
+  "cbom.kpi.quantum_vulnerable": {
+    label: "Quantum Vulnerable",
+    what: "Assets a large quantum computer would break: public-key cryptography such as RSA, ECDSA, ECDH and DH, which need moving to post-quantum algorithms.",
+    example: "An ECDHE key exchange without a post-quantum hybrid.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:132-133 — algorithm_type certificate
+  "cbom.kpi.certificates": {
+    label: "Certificates",
+    what: "X.509 certificates found in code, files or on live endpoints.",
+    example: "The certificate served on api.example.com:443.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:134-135 — algorithm_type key or secret
+  "cbom.kpi.keys": {
+    label: "Keys",
+    what: "Keys and secrets found: private keys, symmetric keys and other key material.",
+    example: "A PEM private key committed in config/.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:28-46, backend/utilities/cbom_sources/cbom_metrics.py:170-174 — judged assets not vulnerable / judged; none judged shows no value
+  "cbom.kpi.readiness": {
+    label: "Quantum Readiness",
+    what: "Share of assets with a quantum verdict that are safe: post-quantum, hybrid, or symmetric with enough margin (AES-128 counts as ready). Assets broken today count as not ready. Assets without a verdict (hashes, settings) are left out.",
+    example: "10 judged assets, 3 quantum-vulnerable: 70%.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:20-21, backend/utilities/cbom_sources/cbom_metrics.py:78-85 — 0-10 over findings: critical 9, high 7, medium 5, low 2
+  "cbom.kpi.avg_risk": {
+    label: "Avg Risk Score",
+    what: "Average risk of the crypto findings, 0 to 10: Critical counts 9, High 7, Medium 5, Low 2. Clean inventory rows are not findings and are left out.",
+    example: "One High and one Low finding: (7 + 2) / 2 = 4.5.",
+  },
+  // src: backend/utilities/dashboard/scan_list.py:1757-1783 — code-scan findings by your status; Sources findings by their remediation plan status
+  "cbom.chart.remediation": {
+    label: "Remediation Actions Required",
+    what: "Crypto findings by status: code-scan findings by the status your team set, CBOM Sources findings by their remediation plan status (open counts as Not started).",
+    example: "30 findings: 5 Fixed, 3 In progress, 22 Not started.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:1-15, backend/utilities/dashboard/scan_list.py:1803 — findings by severity, inventory separately
+  "cbom.chart.severity": {
+    label: "Severity Distribution",
+    what: "Crypto findings by severity (Critical, High, Medium, Low) and the clean inventory rows as Informational.",
+    example: "High 4, Medium 9, Informational 120.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:112-117, backend/utilities/dashboard/scan_list.py:1804 — algorithm_type of every row
+  "cbom.chart.algorithm_type": {
+    label: "Algorithm Type Distribution",
+    what: "All crypto assets by the type the engine gave them (for example certificate, key or secret); assets without a type count as other.",
+    example: "certificate 6, key 3, other 12.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:95, backend/utilities/cbom_sources/cbom_metrics.py:118-124 — weak / moderate / strong / quantum-safe
+  "cbom.chart.strength": {
+    label: "Crypto Strength Distribution",
+    what: "All crypto assets by strength grade: weak (replace now), moderate, strong, quantum-safe. Assets without a grade are not shown.",
+    example: "weak 5, moderate 12, strong 60, quantum_safe 2.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:97, backend/utilities/cbom_sources/cbom_metrics.py:125-131 — quantum_safe / quantum_vulnerable / broken_today
+  "cbom.chart.quantum": {
+    label: "Quantum Readiness",
+    what: "Assets with a quantum verdict: quantum-safe, quantum-vulnerable (breakable by a future quantum computer), and broken today (already insecure without one).",
+    example: "Safe 30, Vulnerable 12, Broken today 2.",
+  },
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:1-15, backend/utilities/dashboard/scan_list.py:1808 — the 10 riskiest findings
+  "cbom.chart.top_risks": {
+    label: "Top Cryptographic Risks",
+    what: "The 10 riskiest crypto findings, with algorithm, type, strength, quantum safety, impact and where each was found (a code scan or a CBOM Sources collection).",
+    example: "RSA-1024 · asymmetric · weak · not quantum safe · High · payments-api.",
+  },
+  // src: backend/routers/cbom_deliverables.py:1-20 — PDFs built in memory from every completed CBOM scan; no language model; no credits charged by the route
+  "cbom.deliverables": {
+    label: "Deliverables",
+    what: "Team-wide regulatory PDFs (for example a certificate register or a post-quantum roadmap) built from every completed CBOM scan of the team. They are generated in-house, with no AI model, and download straight away.",
+    example: "Download the PQC roadmap for the board pack.",
+  },
+  // src: backend/routers/scans.py:100-118, backend/utilities/dashboard/scan_list.py:1786-1790 — the latest completed collection of each Sources source
+  "cbom.sources_runs": {
+    label: "CBOM Sources results",
+    what: "Completed CBOM Sources runs whose assets are counted on this page: when each finished, how many assets it found and how many network endpoints it probed.",
+    example: "Sources run #12 · 3 sources · 140 assets · 25 endpoints probed.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:445-453, backend/utilities/cbom_sources/cbom_metrics.py:1-15 — findings by severity plus inventory
+  "cbom.table.risks": {
+    label: "Risks",
+    what: "This scan's crypto findings by severity: Critical (red), High (orange), Medium (amber), Low (blue), plus clean inventory rows (Informational).",
+    example: "0 red, 2 orange, 5 amber, 1 blue, 80 informational.",
+  },
+  // src: backend/utilities/db/scan_list_item.py:452-453, backend/utilities/cbom_sources/cbom_metrics.py:20-21 — 0-10: critical 9, high 7, medium 5, low 2
+  "cbom.table.risk": {
+    label: "Risk score",
+    what: "This scan's average finding risk, 0 to 10: Critical 9, High 7, Medium 5, Low 2. Inventory rows are left out.",
+    example: "Two Medium findings: 5.0.",
+  },
+
+  // ────────────────────────────────────────────────────────────── Team dashboard (app/[team_id]/page.tsx, backend/utilities/dashboard/team.py)
+  // src: backend/utilities/dashboard/team.py:86-97, backend/utilities/dashboard/team.py:113-134 — every scan of the team plus its CBOM Sources runs
+  "team.section.activity": {
+    label: "Your Team's Recent Activity",
+    what: "Scans of every product in this team, plus CBOM Sources collection runs, counted together.",
+    example: "A SAST scan and a CBOM Sources run both count as one scan each.",
+  },
+  // src: backend/utilities/dashboard/team.py:173-190 — stored findings of all scans + Sources findings not already found by a code scan
+  "team.kpi.findings": {
+    label: "Total findings",
+    what: "Findings stored for all scans of this team, in any product, plus CBOM Sources findings that no code scan already reported.",
+    example: "40 SAST + 12 SCA + 8 CBOM findings: 60.",
+  },
+  // src: backend/utilities/dashboard/team.py:13, backend/utilities/dashboard/team.py:114-134, backend/utilities/dashboard/team.py:196 — STARTED/RETRY scans + running Sources runs
+  "team.kpi.started": {
+    label: "Started scans",
+    what: "Scans running now (started or retrying), plus CBOM Sources runs in progress.",
+    example: "2 while a DAST scan and a Sources run are working.",
+  },
+  // src: backend/utilities/dashboard/team.py:13, backend/utilities/dashboard/team.py:114-134, backend/utilities/dashboard/team.py:197 — SUCCESS scans + done/partial Sources runs
+  "team.kpi.completed": {
+    label: "Completed scans",
+    what: "Scans that finished successfully, plus CBOM Sources runs that finished (fully or partly).",
+    example: "30 completed scans across all products.",
+  },
+  // src: backend/utilities/dashboard/team.py:13, backend/utilities/dashboard/team.py:114-134, backend/utilities/dashboard/team.py:198 — NOT_STARTED/PENDING scans + queued Sources runs
+  "team.kpi.not_started": {
+    label: "Not started",
+    what: "Scans created but not running yet (never started, or queued for a worker), plus queued CBOM Sources runs.",
+    example: "A scan you created and never estimated counts here.",
+  },
+  // src: backend/utilities/dashboard/team.py:174-177, backend/utilities/dashboard/team.py:190 — status fixed (or a fixed date) + Sources findings whose remediation is done
+  "team.kpi.fixed": {
+    label: "Fixed findings",
+    what: "Findings your team marked Fixed, plus CBOM Sources findings whose remediation is done.",
+    example: "15 of 60 findings fixed.",
+  },
+  // src: backend/utilities/dashboard/team.py:191-193 — fixed / total * 100
+  "team.kpi.remediation": {
+    label: "Remediation",
+    what: "Fixed findings as a percentage of all findings of the team.",
+    example: "15 fixed of 60: 25.0%.",
+  },
+  // src: backend/utilities/dashboard/team.py:226-236 — scans created in the last 30 days by type; Sources runs count as CBOM
+  "team.chart.activity": {
+    label: "Scan activity by type",
+    what: "Scans created in the last 30 days, per product (SAST, SCA + SBOM, IaC, DAST, CBOM, AI BOM, MCP, LLM). CBOM Sources runs count as CBOM.",
+    example: "SAST 12, DAST 4, CBOM 3.",
+  },
+  // src: backend/utilities/dashboard/team.py:237-290 — high and critical findings of scans created in the last 30 days
+  "team.chart.severity30": {
+    label: "Vulnerabilities by severity (last 30 days)",
+    what: "High and Critical findings of the scans created in the last 30 days (Medium and Low are not counted here). A CBOM asset seen twice counts once.",
+    example: "Critical 3, High 17.",
+  },
+  // src: backend/utilities/dashboard/team.py:199-205, frontend/app/[team_id]/page.tsx:94 — scans by creation date
+  "team.chart.daily": {
+    label: "Daily scan volume",
+    what: "How many scans the team created each day, all products together, in any status.",
+    example: "7 scans on 10 Nov.",
+  },
+  // src: backend/utilities/dashboard/team.py:13, backend/utilities/dashboard/team.py:114-134 — four buckets over scans and Sources runs
+  "team.chart.status": {
+    label: "Scan status distribution",
+    what: "All scans and CBOM Sources runs by state: Not started (including queued), Running (including retrying), Completed, Failed.",
+    example: "Completed 30, Failed 2, Running 1.",
+  },
+  // src: backend/utilities/dashboard/team.py:135-170 — findings of all products and their status changes over time
+  "team.section.findings": {
+    label: "Findings & Remediation",
+    what: "Findings of all products and what your team did with them, day by day (dates in UTC).",
+    example: "A spike of fixes after a remediation sprint.",
+  },
+  // src: backend/utilities/dashboard/team.py:141-163 — per day: findings created (by current status), plus fixes and ignores on their own dates
+  "team.chart.remediations_per_day": {
+    label: "Remediations status per day",
+    what: "For each day: the findings recorded that day by their current status, plus the findings marked Fixed and Ignored that day.",
+    example: "10 Nov: 8 new (5 Not started, 3 In progress), 4 fixed.",
+  },
+  // src: backend/utilities/dashboard/team.py:150-153 — by creation date
+  "team.chart.findings_per_day": {
+    label: "Findings per day",
+    what: "How many findings were recorded each day, across all products.",
+    example: "25 findings on the day a large SAST scan finished.",
+  },
+  // src: backend/utilities/dashboard/team.py:157-159 — by fixed date
+  "team.chart.fixes_per_day": {
+    label: "Fixes per day",
+    what: "How many findings were marked Fixed each day.",
+    example: "6 fixes on 9 Nov.",
+  },
+  // src: backend/utilities/dashboard/team.py:160-162 — by ignored date
+  "team.chart.false_positives": {
+    label: "False positive trends",
+    what: "How many findings were marked Ignored each day: the findings your team judged false positives or accepted risks.",
+    example: "3 ignored on 8 Nov.",
+  },
+  // src: backend/utilities/dashboard/team.py:89, frontend/app/[team_id]/page.tsx:817-830 — CI/CD integrations by creation date
+  "team.section.integrations": {
+    label: "Your Team's Integrations",
+    what: "CI/CD integrations your team created, by creation date.",
+    example: "2 integrations created on 1 Nov.",
+  },
+
+  // ────────────────────────────────────────────────────────────── Team settings (app/[team_id]/settings/page.tsx)
+  // src: backend/routers/team.py:86, backend/utilities/team/invitations.py:219, backend/routers/team.py:173 — creator is admin, invitees join as member
+  "settings.members": {
+    label: "Team members",
+    what: "Everyone in this team and their role. Admin: the team's creator (and other admins) can edit the team, invite, remove members and delete it. Member: runs scans and works on findings. Tick members to remove them.",
+    example: "you@acme.com admin, dev@acme.com member.",
+  },
+  // src: backend/utilities/team/invitations.py:1-9, backend/utilities/team/invitations.py:33 — single-use link, 7 days, no password mailed
+  "settings.invite": {
+    label: "Invite by email",
+    what: "Mails the address a single-use invitation link, valid for 7 days. No password is sent: a new person chooses one on the invitation page, an existing user signs in and accepts. Nobody joins until they accept.",
+    example: "dev@acme.com joins as a member after clicking the link.",
+  },
+  // src: backend/utilities/team/invitations.py:1-9, backend/utilities/team/invitations.py:33, backend/routers/team.py:466-490 — open invitations; resend replaces the link; revoke cancels it
+  "settings.invitations": {
+    label: "Pending invitations",
+    what: "Invitations not yet accepted, with their status and expiry (7 days after sending). Resend mails a new link (the old one stops working); Revoke cancels it.",
+    example: "dev@acme.com · pending · expires 18 Nov.",
+  },
+  // src: backend/utilities/db/schemas.py:24-37, backend/utilities/integrations/jira.py:100-160 — Jira Cloud REST v3 with email + API token
+  "settings.jira": {
+    label: "Jira",
+    what: "Connects the team to Jira (REST API v3, as used by Jira Cloud) so scans can create Jira issues from findings. Each scan chooses its project and whether tickets are created automatically.",
+    example: "https://acme.atlassian.net with a bot account's API token.",
+  },
+  // src: backend/utilities/integrations/jira.py:100-110 — basic auth email + token
+  "settings.jira.email": {
+    label: "Jira email",
+    what: "The email of the Jira account the tickets are created as. It needs access to the projects you will pick.",
+    example: "security-bot@acme.com.",
+  },
+  // src: backend/utilities/db/schemas.py:27, backend/utilities/integrations/jira.py:107 — the site URL; REST paths are added to it
+  "settings.jira.url": {
+    label: "Jira URL",
+    what: "The address of your Jira site, without a path.",
+    example: "https://acme.atlassian.net.",
+  },
+  // src: backend/utilities/db/schemas.py:26, backend/utilities/integrations/jira.py:100-110 — secret field, never printed; basic auth with the email
+  "settings.jira.token": {
+    label: "Jira API token",
+    what: "An API token of that Jira account (Atlassian account settings > Security > API tokens). It is stored for the team and never printed in logs.",
+    example: "A token created for the security-bot account.",
+  },
+  // src: backend/utilities/db/schemas.py:20-22, backend/routers/team.py:193-215 — admin only
+  "settings.team.name": {
+    label: "Team name",
+    what: "The team's name, shown in the team switcher. Only admins can change it.",
+    example: "Payments platform.",
+  },
+  // src: backend/utilities/db/schemas.py:20-22, backend/routers/team.py:193-215 — optional text
+  "settings.team.description": {
+    label: "Description",
+    what: "An optional note about what this team covers.",
+    example: "Scans for the payments services and their infrastructure.",
+  },
+  // src: backend/routers/team.py:297-330 — admin only; the default team cannot be deleted; scans and CBOM Sources data are deleted
+  "settings.danger": {
+    label: "Danger zone",
+    what: "Deleting the team removes its scans, findings and CBOM Sources data for everyone. Only admins can do it, and your default team cannot be deleted.",
+    example: "Delete a team created for a finished project.",
+  },
+
+  // ────────────────────────────────────────────────────────────── Per-scan ticketing (components/ticketing-integrations-settings.tsx)
+  // src: backend/utilities/db/schemas.py:39-45, backend/utilities/integrations/jira.py:148 — project used for issues created from this scan
+  "ticketing.jira_project": {
+    label: "Jira project ID",
+    what: "The Jira project where tickets for this scan's findings are created, using the Jira connection in team Settings.",
+    example: "10001 (the numeric id of project SEC).",
+  },
+  // src: backend/utilities/db/schemas.py:39-41, backend/utilities/celery/celery_connection.py:236-239, backend/utilities/integrations/jira_ticketing.py:20, backend/utilities/integrations/jira_ticketing.py:170-200 — one task per finding when the scan succeeds, cap 50
+  "ticketing.auto_create": {
+    label: "Create tickets automatically",
+    what: "When on, one Jira task is created per finding as soon as this scan succeeds (at most 50 per scan). Marking a finding Fixed closes its ticket.",
+    example: "Turn it on for a nightly scan your team triages in Jira.",
+  },
+
+  // ────────────────────────────────────────────────────────────── Account (app/[team_id]/account/page.tsx)
+  // src: backend/routers/auth.py:333-345 — the current password is checked before the change
+  "account.current_password": {
+    label: "Current password",
+    what: "Your present password, to prove it is you before the change.",
+    example: "The password you signed in with today.",
+  },
+  // src: backend/utilities/auth/auth_utils.py:203-243, frontend/utils/password_rules.ts:1-8 — 8 to 128 characters, at most 512 bytes
+  "account.new_password": {
+    label: "New password",
+    what: "8 to 128 characters (an emoji counts as one), at most 512 bytes. After the change every other browser and device is signed out; this one stays signed in.",
+    example: "A passphrase such as \"correct-horse-battery-staple\".",
+  },
+  // src: frontend/app/[team_id]/account/page.tsx:55-67 — must equal the new password
+  "account.confirm_password": {
+    label: "New password again",
+    what: "Type the new password once more, so a typo does not lock you out.",
+    example: "The same passphrase as above.",
+  },
+  // src: backend/routers/auth.py:1-8 — logout revokes every token issued before it
+  "account.sessions": {
+    label: "Sessions",
+    what: "Sign out everywhere ends every session of your account, on every browser and device, this one included.",
+    example: "Use it after signing in on a shared computer.",
+  },
+
+  // ────────────────────────────────────────────────────────────── Admin (app/admin/page.tsx, superusers only)
+  // src: backend/routers/admin.py:200-262 — superuser account; temporary password; a single-use choose-your-password link is mailed
+  "admin.create_user": {
+    label: "Create admin user",
+    what: "Creates a superuser account. The password you set is temporary: the user must choose their own at first sign-in, and is mailed a single-use link to do it (the password itself is never mailed).",
+    example: "ops@zeroshield.example with a temporary password.",
+  },
+  // src: backend/routers/admin.py:220-235 — one account per email
+  "admin.email": {
+    label: "Email",
+    what: "The new admin's sign-in email. It must not belong to an existing account.",
+    example: "ops@zeroshield.example.",
+  },
+  // src: backend/routers/admin.py:219-222, backend/utilities/auth/auth_utils.py:203-243 — temporary; 8-128 characters
+  "admin.password": {
+    label: "Password",
+    what: "A temporary password, 8 to 128 characters; the user replaces it at first sign-in.",
+    example: "A random 16-character string.",
+  },
+  // src: backend/routers/admin.py:236-246 — stored on the account
+  "admin.name": {
+    label: "Name",
+    what: "The new admin's first and last name, shown in team member lists and scan owners.",
+    example: "Asha Rao.",
+  },
+  // src: backend/routers/admin.py:153-199, backend/routers/admin.py:355-424 — every user, teams, superuser switch
+  "admin.users": {
+    label: "Users",
+    what: "Every account on this installation, its teams and whether it has admin (superuser) access. The switch grants or removes that access.",
+    example: "Turn off Admin Access for someone who changed role.",
+  },
+  // src: backend/routers/admin.py:97-152, backend/routers/admin.py:291-354 — every team; the credit balance is set (not added), never negative
+  "admin.teams": {
+    label: "Teams",
+    what: "Every team with its members, credit balance and scan count. Editing the balance sets it to the number you enter (it does not add to it); it cannot be negative.",
+    example: "Set 5000 to give a team 5,000 credits in total.",
   },
 
   // ────────────────────────────────────────────────────────────── results views, shared (components/SASTResults.tsx, SbomResults.tsx, finding-selection-menu.tsx)

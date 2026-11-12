@@ -34,9 +34,36 @@ export const COVERED: string[] = [
   "app/[team_id]/sbom_sca/page.tsx",
   "components/sca-sbom-options-sidebar.tsx",
   "components/SbomResults.tsx",
+  // IaC
+  "app/[team_id]/iac/page.tsx",
+  "components/iac-options-sidebar.tsx",
+  // DAST (manual scans, automatic profiles and their schedules)
+  "app/[team_id]/dast/page.tsx",
+  "components/dast-options-sidebar.tsx",
+  "components/dast",
+  // AI BOM
+  "app/[team_id]/ai_bom/page.tsx",
+  "components/ai-bom-options-sidebar.tsx",
+  // MCP
+  "app/[team_id]/mcp/page.tsx",
+  "components/mcp-options-sidebar.tsx",
+  // LLM red teaming
+  "app/[team_id]/llm/page.tsx",
+  "components/llm-options-sidebar.tsx",
+  // CBOM code scans (CBOM Sources and Nodes are listed below)
+  "app/[team_id]/cbom/page.tsx",
+  "components/cbom-options-sidebar.tsx",
+  "components/cbom-ci-scan-settings-form.tsx",
+  // team dashboard
+  "app/[team_id]/page.tsx",
+  // Settings (team, members, Jira), per-scan ticketing, Account, Admin
+  "app/[team_id]/settings/page.tsx",
+  "components/ticketing-integrations-settings.tsx",
+  "app/[team_id]/account/page.tsx",
+  "app/admin/page.tsx",
 ];
 /** Dashboards: their h2/h3 chart titles need a tip as well. */
-export const DASHBOARDS = new Set<string>([]);
+export const DASHBOARDS = new Set<string>(["app/[team_id]/page.tsx"]);
 
 function expand(entry: string): string[] {
   const abs = path.join(frontend, entry);

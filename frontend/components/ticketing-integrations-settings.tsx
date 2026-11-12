@@ -9,7 +9,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { Save, Loader2 } from "lucide-react";
@@ -43,7 +43,7 @@ export default function TicketingIntegrationsSettings({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Ticketing integrations</CardTitle>
+        <CardTitle className="flex items-center gap-1">Ticketing integrations <InfoTip id="settings.jira" /></CardTitle>
         <CardDescription>
           Connect this scan to ticketing systems. Configure Jira project to send findings.
         </CardDescription>
@@ -66,7 +66,7 @@ export default function TicketingIntegrationsSettings({
               </p>
               <div className="space-y-3 max-w-sm">
                 <div className="space-y-2">
-                  <Label htmlFor={inputId}>Jira project ID</Label>
+                  <FieldLabel htmlFor={inputId} infoId="ticketing.jira_project">Jira project ID</FieldLabel>
                   <Input
                     id={inputId}
                     value={jiraProjectId}
@@ -85,6 +85,7 @@ export default function TicketingIntegrationsSettings({
                     Auto-create a Jira ticket for each finding when this scan succeeds. Marking a finding Fixed closes that ticket.
                   </span>
                 </label>
+                <InfoTip id="ticketing.auto_create" />
                 <Button
                   onClick={onSave}
                   disabled={isSaving}
