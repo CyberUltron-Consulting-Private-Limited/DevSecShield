@@ -25,6 +25,8 @@ KV = re.compile(r"(\w+)=(\S+)")
 REF_BODY = re.compile(r"\(ref ([0-9a-f]{6,16})\)")
 NGINX = re.compile(r'"(?P<method>[A-Z]+) (?P<path>\S+) HTTP/[\d.]+" (?P<status>\d{3})')
 WINDOW = dt.timedelta(seconds=5)
+# the containers whose logs every gate run must carry (collect-evidence.sh names them without the stack prefix)
+REQUIRED_LOGS = ("backend", "cbom-cloud-worker", "nginx", "postgres")
 
 
 def read_log(path: Path) -> list[tuple[dt.datetime | None, str]]:
@@ -67,6 +69,10 @@ def judge(run: Path, checks: Checks, teams: list[int | str]) -> dict[str, Any]:
         checks.not_run(f"{GATE}/logs", GATE, "log", "logs/ is empty (collect-evidence.sh not run)", {})
         return out
     all_lines = [(name, ts, text) for name, lines in logs.items() for ts, text in lines]
+    for needed in REQUIRED_LOGS:
+        checks.verdict(f"{GATE}/collected/{needed}", GATE, "log", needed in logs, "log-missing",
+                       {"kind": "log", "check": "collected", "log": needed}, expected=f"logs/{needed}.log",
+                       observed=f"{len(logs.get(needed, []))} lines" if needed in logs else "absent")
 
     stored = [(n, ts, t) for n, ts, t in all_lines if "cbom sources assets stored" in t and _team_of(t) in teams_s]
     out["assets_stored_lines"] = len(stored)

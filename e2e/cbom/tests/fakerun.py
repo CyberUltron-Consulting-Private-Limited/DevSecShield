@@ -180,6 +180,8 @@ class FakeRun:
         self._json("lab/selfcheck.json", {"schema": "zs-cbom-selfcheck/1", "checked_at": "2026-11-12T08:59:30Z",
                                           "targets": [{"target_id": t, "agree": True, "checks": []}
                                                       for t in ("z01", "z02")]})
+        for extra in ("cbom-cloud-worker", "nginx", "postgres"):
+            (d / "logs" / f"{extra}.log").write_text("", encoding="utf-8")
         (d / "logs" / "backend.log").write_text(
             "2026-11-12T09:00:01.123456789Z cbom sources assets stored team=9 run=55 job=900 attempt=1 accepted=3 "
             "duplicate=0 rejected=0 dropped=0 total=3 cap_reached=False\n", encoding="utf-8")

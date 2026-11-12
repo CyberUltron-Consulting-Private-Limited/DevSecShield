@@ -275,3 +275,11 @@ def test_residual_secret_in_an_export_is_reported_not_rewritten(tmp_path):
     after = path.read_bytes()
     problems = gate.redact_run(run, [])
     assert problems == ["exports/run1.cdx.json: zs-token"] and path.read_bytes() == after
+
+
+def test_a_missing_core_log_fails_g16(tmp_path):
+    run = FakeRun(tmp_path).write()
+    (run / "logs" / "nginx.log").unlink()
+    checks = Checks()
+    logs.judge(run, checks, [9])
+    assert _ids(checks, "FAIL") == {"G16/collected/nginx": "log-missing"}
