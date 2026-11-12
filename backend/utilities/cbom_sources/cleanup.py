@@ -4,6 +4,13 @@ from __future__ import annotations
 from sqlalchemy import delete
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
+from backend.utilities.cbom_sources.sshca.models import (  # F1.4
+    CbomSshCa,
+    CbomSshCaTrust,
+    CbomSshCaTrustFetch,
+    CbomSshCaTrustToken,
+    CbomSshCertIssued,
+)
 
 from backend.new_models import (
     CbomCollectedAsset,
@@ -38,6 +45,11 @@ _ORDER = (
     CbomCollectionSettings,
     CbomEvidenceVendor,
     CbomEvidenceArea,
+    CbomSshCertIssued,  # F1.4: the certificate audit, the trust bundle's rows, then the CA keys
+    CbomSshCaTrustFetch,
+    CbomSshCaTrustToken,
+    CbomSshCaTrust,
+    CbomSshCa,
     CbomCollectionAuditEvent,
 )
 

@@ -156,6 +156,8 @@ class JobContext:
     _progress_sent: dict | None = None
     # an older ZeroShield refuses the unknown "progress" field (422): stop sending it and resend the batch without it
     _progress_refused: bool = False
+    # F1.4: () -> {"certificate", "expires_in_s", ...}, a fresh SSH CA certificate for this job (agent.start_job)
+    cert_refresher: Callable[[], dict] | None = None
 
     # ------------------------------------------------------------------ progress
     def set_progress_total(self, total: int) -> None:
