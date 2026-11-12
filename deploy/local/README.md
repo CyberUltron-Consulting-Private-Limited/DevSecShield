@@ -45,9 +45,10 @@ All six images of a tag come from the same commit: the moving tags change only a
 published. Which commit a tag is now:
 
 ```sh
-docker buildx imagetools inspect ghcr.io/cyberultron-consulting-private-limited/devsecshield-backend:dev \
-  --format '{{json .Manifest.Annotations}}'      # org.opencontainers.image.revision / version
+docker buildx imagetools inspect ghcr.io/cyberultron-consulting-private-limited/devsecshield-backend:dev --raw
 ```
+prints the index: its `annotations` name the commit (`org.opencontainers.image.revision`) and the immutable tag
+(`org.opencontainers.image.version`), and `manifests` lists linux/amd64 and linux/arm64.
 
 The tags of a package are also listed on GitHub: the organisation's **Packages** page > `devsecshield-backend`.
 
