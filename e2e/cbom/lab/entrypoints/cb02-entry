@@ -3,8 +3,10 @@
 # starts the one server the role names, in the foreground, so `docker logs` holds its whole output.
 set -eu
 [ -r /lab/role.env ] || { echo "cb02-entry: /lab/role.env missing (run lab.sh gen)" >&2; exit 64; }
-# shellcheck disable=SC1091 # generated per run
-. /lab/role.env
+# /lab/role.env holds KEY=VALUE lines (TARGET, ROLE, PORT) written by gen.py; read, never sourced.
+while IFS='=' read -r key value; do
+  case "$key" in TARGET) TARGET=$value ;; ROLE) ROLE=$value ;; PORT) PORT=$value ;; esac
+done < /lab/role.env
 : "${ROLE:?}" "${PORT:?}"
 echo "cb02-entry: target=${TARGET:-?} role=$ROLE port=$PORT"
 

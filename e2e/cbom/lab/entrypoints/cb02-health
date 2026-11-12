@@ -2,8 +2,11 @@
 # Healthy when the role's port is in LISTEN state. Reads /proc/net/tcp{,6}; it never connects, so a canary
 # listener's accept log only ever holds real connections.
 set -eu
-# shellcheck disable=SC1091 # generated per run
-. /lab/role.env
+# /lab/role.env holds KEY=VALUE lines written by gen.py; only PORT is needed here (read, never sourced).
+PORT=
+while IFS='=' read -r key value; do
+  case "$key" in PORT) PORT=$value ;; esac
+done < /lab/role.env
 hex=$(printf '%04X' "$PORT")
 for f in /proc/net/tcp /proc/net/tcp6; do
   [ -r "$f" ] || continue
