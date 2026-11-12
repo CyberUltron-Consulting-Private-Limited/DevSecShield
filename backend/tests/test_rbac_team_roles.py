@@ -405,6 +405,30 @@ def test_only_an_owner_deletes_a_team_and_its_audit_trail_stays(world, client, m
     trail = [e for e in events(engine) if e.team_id == team]
     assert any(e.action == "team.delete" and e.outcome == "success" for e in trail)
     assert any(e.action == "team.delete" and e.outcome == "denied" and e.actor_user_id == ids[ADMIN] for e in trail)
+    started = [e for e in trail if e.action == "team.delete.started"]
+    done = [e for e in trail if e.action == "team.delete" and e.outcome == "success"]
+    assert len(started) == 1 and started[0].id < done[0].id and started[0].actor_user_id == ids[OWNER]
+
+
+def test_a_team_deletion_that_fails_half_way_still_says_who_started_it(world, client, monkeypatch):
+    """Review 5869394244 (team.py:464): the data went in earlier transactions, the only audit row came last."""
+    engine, ids, _, _ = world
+    from backend.routers import team as team_router
+
+    class _BrokenMongo(dict):
+        def __getitem__(self, name):
+            raise RuntimeError("mongo is down")
+
+    monkeypatch.setattr(team_router, "get_mongo_client_db", lambda: _BrokenMongo())
+    with Session(engine) as s:
+        from backend.new_models import Scan
+        s.add(Scan(team_id=ids["team"], scan_type="sast", title="x", owner_user_id=ids[OWNER]))
+        s.commit()
+    failed = TestClient(app, raise_server_exceptions=False).delete(f"/team/{ids['team']}", headers=bearer(OWNER))
+    assert failed.status_code >= 500
+    trail = [e for e in events(engine) if e.team_id == ids["team"]]
+    assert [e.action for e in trail if e.action.startswith("team.delete")] == ["team.delete.started"]
+    assert trail[-1].actor_user_id == ids[OWNER] and trail[-1].details["scans"] == 1
 
 
 # ----------------------------------------------------------------------------------------- viewers

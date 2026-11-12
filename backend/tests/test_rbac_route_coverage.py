@@ -503,3 +503,10 @@ def test_team_ids_under_other_names_need_a_team_permission():
         assert f"{label}: names a team" in problems, (label, problems)
     assert "/admin/teams/{target_team_id}/owner" not in problems  # superusers are not team-scoped
     assert "/sso/{team}/start" not in problems  # public on purpose, and says why
+
+
+def test_the_cbom_discovery_sweep_is_declared_admin_like_its_handler():
+    """Review 5869356370 (cbom_sources.py:1109): declared cbom.write (member) while the handler is admin-only."""
+    rows = {(r["methods"], r["path"]): r for r in coverage.inventory(app)}
+    sweep = rows[("POST", "/{team_id}/cbom/sources/discovery")]
+    assert sweep["permission"] == "cbom.settings" and sweep["min_role"] == "admin"
