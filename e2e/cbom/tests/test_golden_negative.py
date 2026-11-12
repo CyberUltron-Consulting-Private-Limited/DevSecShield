@@ -50,7 +50,7 @@ def test_there_are_27_wrong_cboms():
 
 
 def test_the_golden_run_passes_as_captured(table):
-    assert table["A_correct"]["gate"] == "PASS", table["A_correct"]
+    assert table["A_correct"]["gate"] == "PASS", (table["A_correct"]["blocking"], table["A_correct"]["ledger_rows_moved"])
 
 
 @pytest.mark.parametrize("case", negative.WRONG)
@@ -58,6 +58,17 @@ def test_every_wrong_cbom_fails(table, case):
     row = table[case]
     assert row["gate"] == "FAIL", f"{case} ({row['doc']}) passed the gate"
     assert row["blocking"] or row["ledger_rows_moved"], row
+
+
+def test_the_fixture_is_complete():
+    """Every log the judge requires (core services, every lab container in lab.json) is in the fixture: e2e/.gitignore
+    ignores *.log, which once dropped them from the commit (tests/golden/.gitignore re-includes them)."""
+    src = _source()
+    lab = json.loads((src / "lab" / "lab.json").read_text(encoding="utf-8"))
+    names = [x.get("container") for x in (lab.get("targets") or []) + (lab.get("listeners") or []) if x.get("container")]
+    missing = [n for n in ["backend", "cbom-cloud-worker", "nginx", "postgres", *names] if not (src / "logs" / f"{n}.log").is_file()]
+    assert missing == []
+    assert list((src / "har").glob("*.har")) and (src / "db" / "jobs.csv").is_file()
 
 
 def test_the_fixture_carries_no_lab_secret_or_token():

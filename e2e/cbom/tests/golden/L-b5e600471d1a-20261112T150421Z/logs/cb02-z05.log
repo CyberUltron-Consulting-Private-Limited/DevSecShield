@@ -1,0 +1,44 @@
+2026-11-12T15:21:54.741139181Z cb02-entry: target=z05 role=s_server port=443
+2026-11-12T15:21:54.747211294Z Using default temp DH parameters
+2026-11-12T15:21:54.748014346Z ACCEPT
+2026-11-12T15:22:36.630455245Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:36.630939630Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:36.631425156Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:36.634832098Z 28DB25DD3D7F0000:error:0A000065:SSL routines:final_key_share:no suitable key share:ssl/statem/extensions.c:1411:
+2026-11-12T15:22:36.637171333Z 28DB25DD3D7F0000:error:0A000065:SSL routines:final_key_share:no suitable key share:ssl/statem/extensions.c:1411:
+2026-11-12T15:22:36.641397408Z 28DB25DD3D7F0000:error:0A000065:SSL routines:final_key_share:no suitable key share:ssl/statem/extensions.c:1411:
+2026-11-12T15:22:36.643461343Z 28DB25DD3D7F0000:error:0A000065:SSL routines:final_key_share:no suitable key share:ssl/statem/extensions.c:1411:
+2026-11-12T15:22:36.988062562Z 28DB25DD3D7F0000:error:0A000065:SSL routines:final_key_share:no suitable key share:ssl/statem/extensions.c:1411:
+2026-11-12T15:22:37.039847287Z 28DB25DD3D7F0000:error:0A00018C:SSL routines:tls_early_post_process_client_hello:version too low:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.090592810Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.142117709Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.192089408Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.243172167Z 28DB25DD3D7F0000:error:0A00018C:SSL routines:tls_early_post_process_client_hello:version too low:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.293415768Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.343446735Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.394247243Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.445136432Z 28DB25DD3D7F0000:error:0A00018C:SSL routines:tls_early_post_process_client_hello:version too low:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.499079550Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.549529119Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.599757858Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.650349941Z 28DB25DD3D7F0000:error:0A00018C:SSL routines:tls_early_post_process_client_hello:version too low:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.700364674Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.750274648Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.801420791Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.851995762Z 28DB25DD3D7F0000:error:0A00018C:SSL routines:tls_early_post_process_client_hello:version too low:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.902101491Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:37.952598519Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.005089202Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.054451187Z 28DB25DD3D7F0000:error:0A00018C:SSL routines:tls_early_post_process_client_hello:version too low:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.105055746Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.155525111Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.205563990Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.256052070Z 28DB25DD3D7F0000:error:0A00018C:SSL routines:tls_early_post_process_client_hello:version too low:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.305873807Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.356149011Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:22:38.406431002Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:23:27.348146162Z 28DB25DD3D7F0000:error:0A000126:SSL routines::unexpected eof while reading:ssl/record/rec_layer_s3.c:698:
+2026-11-12T15:23:29.245896542Z 28DB25DD3D7F0000:error:0A00018C:SSL routines:tls_early_post_process_client_hello:version too low:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:23:29.800037190Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:23:30.395944758Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
+2026-11-12T15:23:30.896091968Z 28DB25DD3D7F0000:error:0A000102:SSL routines:tls_early_post_process_client_hello:unsupported protocol:ssl/statem/statem_srvr.c:1780:
