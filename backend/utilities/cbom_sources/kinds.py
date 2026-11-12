@@ -813,6 +813,8 @@ KINDS["container_images"] = KindSpec("container_images", "kubernetes", "Containe
                                      lambda c: set(), frozenset(), _always, _always,
                                      ("images", "credential_type", "vault", "ca_pem"))
 
+from backend.utilities.cbom_sources.kinds_fleet import FLEET_KINDS  # noqa: E402  (F1.3: awx/salt/ssm hosts)
+KINDS.update(FLEET_KINDS)
 KIND_NAMES = tuple(KINDS)
 # Config fields that describe the source rather than how it is reached (declared on ``_Source``).
 METADATA_FIELDS: tuple[str, ...] = tuple(_Source.model_fields)
