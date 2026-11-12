@@ -703,7 +703,9 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               <p className="text-xs text-zinc-500">
                 This list always wins. The node refuses these addresses even if a job asks for them, in every job of
                 this team: a server, database, registry or Kubernetes API whose name resolves to a listed address is
-                skipped as a whole, and ranges are checked one address at a time.
+                skipped as a whole, and ranges are checked one address at a time. This list takes addresses and
+                ranges. A hostname listed in a server source&apos;s own Never scan field also covers every address
+                it resolves to from the scan node (until it resolves there, that source scans nothing).
               </p>
             </Section>
 
