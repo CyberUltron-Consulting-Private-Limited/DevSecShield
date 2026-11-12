@@ -1,4 +1,4 @@
-"""DAST profile beat sidecar: due profiles -> run_dast_from_profile."""
+"""DAST profile beat sidecar: due profiles -> run_dast_from_profile; stale reinitialize claims -> given back."""
 from __future__ import annotations
 
 import time
@@ -87,13 +87,28 @@ def tick(*, engine=None, now: datetime | None = None) -> list[DispatchResult]:
     return results
 
 
+def sweep_reinitialize_claims(*, engine=None) -> list[int]:
+    """The backend's other periodic duty in this sidecar: give back reinitialize claims whose request died between
+    the claim and the record of its run (utilities/scan/reinitialize.py sweep_stale_claims)."""
+    from backend.utilities.scan.reinitialize import sweep_stale_claims
+
+    given_back = sweep_stale_claims(engine or get_db())
+    if given_back:
+        console.print(f"Reinitialize claims given back: scans {given_back}", style="bold yellow")
+    return given_back
+
+
 def main() -> None:
-    console.print("DAST scheduler sidecar started (60s tick)", style="bold green")
+    console.print("DAST scheduler sidecar started (60s tick; also sweeps stale reinitialize claims)", style="bold green")
     while True:
         try:
             tick()
         except Exception as exc:
             console.print(f"DAST scheduler tick error: {exc}", style="bold red")
+        try:
+            sweep_reinitialize_claims()
+        except Exception as exc:
+            console.print(f"Reinitialize claim sweep error: {type(exc).__name__}", style="bold red")
         time.sleep(TICK_SECONDS)
 
 

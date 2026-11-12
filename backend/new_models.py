@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import Dict, Literal
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel, String, Relationship
-from sqlalchemy import Text, UniqueConstraint
+from sqlalchemy import BigInteger, Integer, Text, UniqueConstraint
 from sqlalchemy import Index as _SaIndex, func as _sa_func
 scan_types = Literal["sast", "llm", "mcp" , "iac" , "leakage" , "sbom_sca" , "agent_discovery", "dast", "cbom", "ai_bom"]
 
@@ -143,6 +143,53 @@ class Scan(SQLModel,table=True):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class CreditLedgerEntry(SQLModel, table=True):
+    """One movement of a team's credits and why (#33, #52): written by backend/utilities/team/credit_ledger.py, in the
+    same statement (PostgreSQL) or transaction as the balance change it records.
+
+    Integer milli-credits: ``delta_mc`` is negative when credits are taken from the team and positive when they are
+    given back; ``balance_after_mc`` is the team's balance right after it (NULL for an insert-only line settled later).
+    ``movement_key`` is unique: a movement can never be written twice. ``ref_type`` + ``ref_id`` name what it belongs
+    to (``scan`` / scan id, a CBOM run...); ``scan_id`` is set for scan lines. No foreign keys: a line outlives a deleted
+    scan or team. ``detail`` holds numbers and digests, never an input, a URL or a secret. The table refuses UPDATE,
+    DELETE and TRUNCATE by a trigger (migration r6t2ledger001); that is not a control against the database role itself.
+    Written today: reinitialize charges and refunds, cancel refunds, failure refunds; the other paths are #52."""
+    __tablename__ = "creditledger"
+    __table_args__ = (UniqueConstraint("movement_key", name="uq_creditledger_movement_key"),)
+    id: int | None = Field(default=None, sa_column=Column(
+        BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True))  # never pruned: int8
+    movement_key: str = Field(max_length=96)
+    team_id: int
+    ref_type: str = Field(max_length=32)
+    ref_id: str = Field(max_length=64)
+    scan_id: int | None = Field(default=None)
+    user_id: int | None = Field(default=None)  # who caused it
+    delta_mc: int = Field(sa_type=BigInteger)
+    balance_after_mc: int | None = Field(default=None, sa_type=BigInteger)
+    reason: str = Field(max_length=48)
+    detail: Dict | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), sa_type=DateTime)
+
+    @property
+    def delta(self) -> float:
+        """The movement in credits."""
+        return self.delta_mc / 1000
+
+    @property
+    def balance_after(self) -> float | None:
+        return None if self.balance_after_mc is None else self.balance_after_mc / 1000
+
+
+# reconciliation and statements read (team_id, id) ranges without touching the heap; scan and per-run lookups
+_SaIndex("ix_creditledger_team_id_id", CreditLedgerEntry.team_id, CreditLedgerEntry.id,
+         postgresql_include=["delta_mc", "created_at"])
+_SaIndex("ix_creditledger_scan_id", CreditLedgerEntry.scan_id,
+         postgresql_where=CreditLedgerEntry.scan_id.isnot(None), sqlite_where=CreditLedgerEntry.scan_id.isnot(None))
+_SaIndex("ix_creditledger_ref", CreditLedgerEntry.ref_type, CreditLedgerEntry.ref_id,
+         postgresql_where=CreditLedgerEntry.ref_type != "scan", sqlite_where=CreditLedgerEntry.ref_type != "scan")
 
 
 class DastScanProfile(SQLModel, table=True):
