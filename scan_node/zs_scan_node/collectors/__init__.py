@@ -26,6 +26,7 @@ CAPABILITIES = ["linux_ssh", "windows_winrm", "kubernetes", "postgres", "mysql",
                 "mssql", "oracle", "pkcs11", "kmip", "vault_pki", "ejbca", "adcs"]
 CAPABILITIES += ["ike", "ike_pq_probe", "opcua", "modbus", "appliance_config", "mesh_istio_linkerd"]
 CAPABILITIES += ["registry_v2"]
+CAPABILITIES += ["ssh_ca"]  # F1.4: credential_type ssh_ca (node key + short-lived certificate from the SSH CA)
 AGENT_CAPABILITIES = ["host_agent"]
 
 
