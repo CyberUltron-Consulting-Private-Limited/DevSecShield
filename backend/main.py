@@ -105,9 +105,11 @@ async def lifespan(app: FastAPI):
     console.print("[bold yellow]Shutting down...[/bold yellow]")
 
 
+# F4 RBAC: enforces openapi_extra={"x-zs-permission": ...} on routes that declare no access policy of their own, and
+# refuses any route that declares none (runtime default-deny); every marker is resolved at the end of this module
+permission_marker = PermissionMarker()
 app = FastAPI(lifespan=lifespan, dependencies=[
-    # F4 RBAC: enforces openapi_extra={"x-zs-permission": ...} on routes that declare no access policy of their own
-    Depends(PermissionMarker()),
+    Depends(permission_marker),
 ], middleware=[
     Middleware(
         CORSMiddleware,
@@ -170,3 +172,8 @@ async def health_check():
 if __name__=="__main__":
 
     Console().print("Ran main.py ✔️",style="bold green")
+
+
+# Last: every route is declared.  An unknown or malformed x-zs-permission marker stops the app here (an import
+# error), never a 500 per request.
+permission_marker.prepare(app)

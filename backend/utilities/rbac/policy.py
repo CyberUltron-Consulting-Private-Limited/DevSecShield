@@ -168,12 +168,17 @@ class AccessPolicy:
 
 
 class Public(AccessPolicy):
+    """No account.  ``team_in_path``: the route names a team (``/sso/{team}/start``) on purpose and says why; the
+    coverage check otherwise refuses a non-team policy on a route that names a team."""
     kind = "public"
 
-    def __init__(self, reason: str):
-        if not reason.strip():
+    def __init__(self, reason: str, team_in_path: Optional[str] = None):
+        if not (reason or "").strip():
             raise ValueError("a public route needs a reason")
+        if team_in_path is not None and not team_in_path.strip():
+            raise ValueError("team_in_path needs a reason")
         self.reason = reason
+        self.team_in_path = team_in_path
 
     def describe(self) -> str:
         return f"public: {self.reason}"
@@ -312,9 +317,9 @@ class Access:
         return Depends(PlatformAdmin(self.engine_getter, audited=audited))
 
 
-def public(reason: str):
+def public(reason: str, team_in_path: Optional[str] = None):
     from fastapi import Depends
-    return Depends(Public(reason))
+    return Depends(Public(reason, team_in_path))
 
 
 def machine(credential: str, reason: str, permission: Optional[str] = None):
@@ -363,12 +368,34 @@ def context(request: Request) -> Optional[AccessContext]:
 # only on a {team_id} route, with a permission that exists in the matrix, on an app that has the enforcer.
 
 PERMISSION_MARKER = "x-zs-permission"
+# Besides a team permission name, a marker may say "public:<why>" (a webhook whose signature is the credential) or
+# "machine:<credential>" (a scan-node route), so a track that does not import this module can declare those too.
+PUBLIC_MARKER, MACHINE_MARKER = "public:", "machine:"
 
 
 def marker_of(route) -> Optional[str]:
     extra = getattr(route, "openapi_extra", None) or {}
     value = extra.get(PERMISSION_MARKER) if isinstance(extra, dict) else None
     return value if isinstance(value, str) else None
+
+
+def policy_from_marker(name: str, engine_getter: "EngineGetter") -> AccessPolicy:
+    """The policy a marker declares.  ValueError (naming x-zs-permission) for an unknown or malformed one."""
+    if name.startswith(PUBLIC_MARKER):
+        reason = name[len(PUBLIC_MARKER):].strip()
+        if not reason:
+            raise ValueError(f"{PERMISSION_MARKER} {name!r}: say why the route is public (public:<reason>)")
+        return Public(reason)
+    if name.startswith(MACHINE_MARKER):
+        credential = name[len(MACHINE_MARKER):].strip()
+        if not credential:
+            raise ValueError(f"{PERMISSION_MARKER} {name!r}: name the credential (machine:<credential>)")
+        return Machine(credential, f"declared by its {PERMISSION_MARKER} marker; the handler checks the credential")
+    try:
+        return TeamPermission(name, engine_getter)
+    except ValueError:
+        raise ValueError(f"{PERMISSION_MARKER} names an unknown permission {name!r}: add it to "
+                         "backend/utilities/rbac/permissions.py, or use public:<reason> / machine:<credential>") from None
 
 
 def declared_policies(route) -> list:
@@ -396,21 +423,55 @@ def _engine_for(route) -> EngineGetter:
     return getter
 
 
+NO_POLICY = "This route declares no access policy"
+_DENY = object()  # a route with neither a policy nor a marker: refused at runtime (the coverage test catches it first)
+
+
 class PermissionMarker:
-    """App-level dependency: enforces ``x-zs-permission`` on routes without an AccessPolicy (see above)."""
+    """App-level dependency, on every route: enforces ``x-zs-permission`` markers on routes without an AccessPolicy,
+    and refuses (500, logged) a route that declares no policy at all, so a route added without one never answers
+    (runtime default-deny; the coverage test is the early warning).  ``prepare(app)`` resolves every marker once at
+    start-up: an unknown or malformed marker stops the app instead of answering 500 on every request."""
 
     def __init__(self):
-        self._policies: dict[int, Optional[TeamPermission]] = {}
+        self._policies: dict[int, Any] = {}
+        self.prepared = False
 
-    def _policy_for(self, route) -> Optional[TeamPermission]:
+    def _resolve(self, route) -> Any:
+        if route is None:
+            return _DENY
+        if declared_policies(route):
+            return None  # the route's own policy runs
+        name = marker_of(route)
+        if name is None:
+            return _DENY
+        return policy_from_marker(name, _engine_for(route))
+
+    def _policy_for(self, route) -> Any:
         key = id(route)
         if key not in self._policies:
-            name = marker_of(route)
-            self._policies[key] = (TeamPermission(name, _engine_for(route))
-                                   if name and not declared_policies(route) else None)
+            self._policies[key] = self._resolve(route)
         return self._policies[key]
 
+    def prepare(self, app) -> None:
+        from fastapi.routing import APIRoute, APIWebSocketRoute
+
+        problems = []
+        for route in app.routes:
+            if isinstance(route, (APIRoute, APIWebSocketRoute)):
+                try:
+                    self._policy_for(route)
+                except ValueError as exc:
+                    problems.append(f"{route.path}: {exc}")
+        if problems:
+            raise ValueError("refusing to start: " + "; ".join(problems))
+        self.prepared = True
+
     async def __call__(self, request: Request) -> None:
-        policy = self._policy_for(request.scope.get("route"))
+        route = request.scope.get("route")
+        policy = self._policy_for(route)
+        if policy is _DENY:
+            log.error("access refused: %s %s declares no access policy", request.method, getattr(route, "path", "?"))
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=NO_POLICY)
         if policy is not None:
             await policy(request)
