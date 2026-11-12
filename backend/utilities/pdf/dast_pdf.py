@@ -96,10 +96,8 @@ def generate_pdf(scan_data: Any, output_path: Optional[str] = None) -> str:
         urls_in = metadata.get("urls_included")
         urls_ex = metadata.get("urls_excluded")
         if isinstance(urls_in, list):
-            overview.append(("URLs included", str(len(urls_in))))
             url_rows.append(["URLs included", str(len(urls_in))])
         if isinstance(urls_ex, list):
-            overview.append(("URLs excluded", str(len(urls_ex))))
             url_rows.append(["URLs excluded", str(len(urls_ex))])
     if url_rows:
         extra_tables.append(
