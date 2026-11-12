@@ -11,7 +11,10 @@ Run from ``e2e/cbom`` (``cd e2e/cbom && python3 -m harness.gate ...``) or with `
 What ``judge`` reads (all optional; a missing input becomes NOT-RUN checks, which the ledger must list):
   steps/<G>/step.json   checks the flow and the runner recorded (G0..G10, G12..G14, G17)
   api/ db/ exports/ ui/ the four views (G11 join), oracle/ lab/ (G11 oracle and derived), logs/ har/ (G16),
-  oracle/canaries.json (G15)
+  oracle/canaries.json (G15), lab/listeners/*.jsonl + flow-state.json (G10 never-scan, re-derived from the sealed logs)
+
+The report and MANIFEST record which ledger judged the run (path + sha256): a PASS proves nothing unless the ledger
+it used is the committed one.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import SCHEMA_REPORT, canary, derived, join, ledger, logs, manifest, oracle, redact, timing
+from . import SCHEMA_REPORT, canary, derived, identity, join, ledger, logs, manifest, neverscan, oracle, redact, timing
 from .checks import Check, Checks
 from .rundir import iso, read_json, run_steps, utc_now, write_json, write_text
 
@@ -73,7 +76,7 @@ def deferred_checks(run: Path, checks: Checks) -> list[str]:
     return added
 
 
-def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str, Any]]:
+def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER, pinning: bool = False) -> tuple[bool, dict[str, Any]]:
     run = Path(run)
     checks = Checks()
     steps = load_step_checks(run, checks)
@@ -92,16 +95,21 @@ def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str
         oracle.match(run, k, checks, views["api"], views["export"], scope, pairs)
         details[f"derived-run{k}"] = derived.judge(run, k, checks, pairs, scope)
         details[f"timing-run{k}"] = timing.judge(run, k, checks)
+    details["neverscan"] = neverscan.judge(run, checks)
     canary.judge(run, checks)
     man = read_json(run / manifest.MANIFEST, {}) or {}
     teams = [t for t in ((man.get("teams") or {}).values()) if t]
     details["logs"] = logs.judge(run, checks, teams)
 
-    rows = ledger.load(ledger_path)  # LedgerError / OSError: main() exits 2 (an error, not a gate verdict)
-    results, blocking = ledger.apply(rows, checks)
+    rows = ledger.load(ledger_path, pinning=pinning)  # LedgerError / OSError: main() exits 2 (an error, not a gate verdict)
+    results, blocking = ledger.apply(rows, checks, identity.id_maps(run))
     passed = ledger.verdict(results, blocking)
+    ledger_file = {"path": _rel_path(Path(ledger_path)), "sha256": ledger.sha256(ledger_path)}
+    if man:
+        manifest.update(run, ledger=ledger_file)
     report = {
         "schema": SCHEMA_REPORT, "judged_at": iso(utc_now()), "run": run.name, "passed": passed,
+        "ledger_file": ledger_file,
         "counts": checks.by_verdict(), "steps": steps, "details": details,
         "ledger": [r.__dict__ for r in results],
         "blocking": [c.as_dict() for c in blocking][:500],
@@ -112,6 +120,16 @@ def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str
     write_json(run / "report.json", report)
     write_text(run / "report.md", render_md(report))
     return passed, report
+
+
+def _rel_path(path: Path) -> str:
+    """The ledger's path relative to the repository (e2e/cbom/...) when it lives in it, else absolute."""
+    path = path.resolve()
+    root = Path(__file__).resolve().parents[3]
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def _by_gate(checks: Checks) -> dict[str, dict[str, int]]:
@@ -133,11 +151,17 @@ def render_md(report: dict[str, Any]) -> str:
     for gate, counts in report["by_gate"].items():
         lines.append(f"| {gate} | {counts.get('PASS', 0)} | {counts.get('FAIL', 0)} | {counts.get('KNOWN-FAIL', 0)} | "
                      f"{counts.get('NOT-RUN', 0)} | {counts.get('NOT-JUDGED', 0)} |")
-    lines += ["", "## Ledger", "", "| Row | Status | Matched | Failing | Passing | Owner | Issue |",
-              "|---|---|---|---|---|---|---|"]
+    lf = report.get("ledger_file") or {}
+    lines += ["", "## Ledger", "", f"`{lf.get('path')}` sha256 `{lf.get('sha256')}`", "",
+              "| Row | Status | Matched | Failing | Not run | Passing | Owner | Issue |", "|---|---|---|---|---|---|---|---|"]
     for r in report["ledger"]:
-        lines.append(f"| {r['row']} | {r['status']} | {r['matched']} | {r['failing']} | {r['passing']} | "
-                     f"{r['owner']} | {r['issue']} |")
+        lines.append(f"| {r['row']} | {r['status']} | {r['matched']} | {r['failing']} | {r['not_run']} | "
+                     f"{r['passing']} | {r['owner']} | {r['issue']} |")
+    for r in report["ledger"]:
+        if r["status"] == "moved":
+            lines += ["", f"### {r['row']} moved", ""]
+            lines += [f"* unexpected `{_short(x, 300)}`" for x in r["unexpected"][:40]]
+            lines += [f"* missing `{_short(x, 300)}`" for x in r["missing"][:40]]
     lines += ["", f"## Blocking checks ({report['blocking_total']})", ""]
     for c in report["blocking"][:200]:
         lines.append(f"* `{c['id']}` {c['verdict']} {c.get('reason', '')}: expected `{_short(c.get('expected'))}`, "

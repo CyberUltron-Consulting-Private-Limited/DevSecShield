@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 import ledgers
 from fakerun import FakeRun
@@ -96,37 +97,53 @@ def test_differ_fails_rsa3072_against_export_without_key_size(tmp_path, empty_le
     assert "G11/oracle/run1/z02/certificate/key_size" not in blocking
 
 
+KF9_MATCH = {"kind": "join", "view": "export", "reason": "export-missing",
+             "field": ["key_size", "curve", "signature_algorithm", "groups", "pqc_class", "provenance", "job_id"]}
+
+
 def test_legacy_export_is_known_fail_under_kf9(tmp_path):
     fr = FakeRun(tmp_path, legacy_export=True)
     fr.write()
-    ledger = ledgers.write(
-        tmp_path / "l.yaml",
-        ledgers.row("KF-9", ["G11"], {"kind": "join", "view": "export", "reason": "export-missing",
-                                      "field": ["key_size", "curve", "signature_algorithm", "groups", "pqc_class",
-                                                "provenance", "job_id"]}, failing=15, owner="CB-06"),
-        ledgers.row("KF-9o", ["G11"], {"kind": "oracle", "field": "pqc_class", "reason": "export-missing"},
-                    failing=1, owner="CB-06"),
-        ledgers.POSTURE)
+    ledger = ledgers.pinned(fr.dir, tmp_path / "l.yaml", ledgers.row("KF-9", ["G11"], KF9_MATCH, owner="CB-06"),
+                            ledgers.row("KF-9o", ["G11"], {"kind": "oracle", "field": "pqc_class", "reason": "export-missing"},
+                                        owner="CB-06"), ledgers.POSTURE)
     passed, blocking, report = judge(fr.dir, ledger)
     assert passed, sorted(blocking)
     rows = {r["row"]: r for r in report["ledger"]}
     assert rows["KF-9"]["status"] == "holds" and rows["KF-9"]["failing"] == 15
+    pins = yaml.safe_load(ledger.read_text(encoding="utf-8"))[0]["expect"]
+    # identities, not a count: the asset id is replaced by type@location, values are kept
+    assert {"id": "G11/join/run1/asset/certificate@10.231.0.17:443/key_size/export", "verdict": "FAIL", "expected": 256,
+            "observed": "<absent>"} in pins
 
 
-def test_a_ledger_row_whose_count_moves_fails_the_gate(tmp_path):
-    """v2: expect_failing pins the row; one fixed check (fewer) or one new defect under the row (more) both fail."""
+@pytest.mark.parametrize("change", ["fixed", "worse", "swap", "other-value"])
+def test_a_ledger_row_whose_identities_move_fails_the_gate(tmp_path, change):
+    """Review 5878413538 major 3: a pinned row fails the gate on a fix (fewer), a new defect under it (more), a fix plus
+    a new defect that keep the count (swap: N8/N8b), and the same check failing with another value (N6)."""
     fr = FakeRun(tmp_path, legacy_export=True)
     fr.write()
-    rows = [ledgers.row("KF-9", ["G11"], {"kind": "join", "view": "export", "reason": "export-missing",
-                                         "field": ["key_size", "curve", "signature_algorithm", "groups", "pqc_class",
-                                                   "provenance", "job_id"]}, failing=n, owner="CB-06")
-            for n in (14, 16)]
-    for r in rows:
-        ledger = ledgers.write(tmp_path / "l.yaml", r,
-                               ledgers.row("KF-9o", ["G11"], {"kind": "oracle", "field": "pqc_class"}, failing=1),
-                               ledgers.POSTURE)
-        passed, _, report = judge(fr.dir, ledger)
-        assert not passed and {x["row"]: x["status"] for x in report["ledger"]}["KF-9"] == "moved"
+    ledger = ledgers.pinned(fr.dir, tmp_path / "l.yaml", ledgers.row("KF-9", ["G11"], KF9_MATCH, owner="CB-06"),
+                            ledgers.row("KF-9o", ["G11"], {"kind": "oracle", "field": "pqc_class"}), ledgers.POSTURE)
+    assert judge(fr.dir, ledger)[0]
+    if change in ("fixed", "swap"):  # the export gains the leaf's key size
+        _set_prop_file(fr, 101, "zs:key_size", "256")
+    if change in ("worse", "swap"):  # the API invents a curve the export lacks on the RSA certificate
+        fr.edit_json("api/assets-run1.json", lambda d: d["items"][2]["facts"].__setitem__("curve", "P-384"))
+        fr.edit_csv("db/assets.csv", lambda rows: [r.__setitem__("facts", json.dumps({**json.loads(r["facts"]), "curve": "P-384"}))
+                                                   for r in rows if r["id"] == "103"])
+    if change == "other-value":  # the same export-missing check, another API value
+        fr.edit_json("api/assets-run1.json", lambda d: d["items"][0]["facts"].__setitem__("sig_alg", "ecdsa-with-SHA384"))
+        fr.edit_csv("db/assets.csv", lambda rows: [r.__setitem__("facts", json.dumps({**json.loads(r["facts"]), "sig_alg": "ecdsa-with-SHA384"}))
+                                                   for r in rows if r["id"] == "101"])
+        fr.edit_json("oracle/run1.json", lambda d: d["targets"][0]["assets"][0]["expect"].__setitem__(
+            "signature_algorithm", "ecdsa-with-SHA384"))
+        manifest.freeze_oracle(fr.dir)
+    passed, _, report = judge(fr.dir, ledger)
+    row = {x["row"]: x for x in report["ledger"]}["KF-9"]
+    assert not passed and row["status"] == "moved", row
+    if change == "swap":
+        assert row["failing"] == 15 and row["unexpected"] and row["missing"]
 
 
 def test_oracle_changed_after_start_fails(tmp_path, empty_ledger):
@@ -253,12 +270,13 @@ def test_chain_certificates_at_one_location_are_told_apart_by_fingerprint(tmp_pa
     tried, so matching by id order alone fails one of them: mutant O9)."""
     fr = FakeRun(tmp_path)
     leaf = fr.assets[0]
-    ca = dict(leaf, id=ca_id, name="CN=lab CA", algorithm="RSA", key_size=2048, impact="Low", codes=[],
+    ca = dict(leaf, id=ca_id, name="CN=lab CA", algorithm="RSA", key_size=2048, impact="Low", codes=["QUANTUM_VULNERABLE"],
               finding="Quantum-vulnerable key", pqc="vulnerable",
               facts={**leaf["facts"], "key_alg": "RSA", "curve": None, "subject": "CN=lab CA", "issuer": "CN=lab CA",
                      "fingerprint_sha256": "bb" * 32, "serial": "ca"},
               oracle={"target": "z01", "expect": {"algorithm": "RSA", "subject": "CN=lab CA", "key_size": 2048,
-                                                   "quantum_vulnerable": True, "fingerprint_sha256": "BB:" * 31 + "BB"}})
+                                                   "quantum_vulnerable": True, "fingerprint_sha256": "BB:" * 31 + "BB"},
+                      "codes_include": ["QUANTUM_VULNERABLE"], "impact_min": "Low"})
     leaf["facts"]["fingerprint_sha256"] = "aa" * 32
     leaf["oracle"]["expect"]["fingerprint_sha256"] = "aa" * 32
     ca["facts"] = {k: v for k, v in ca["facts"].items() if v is not None}
