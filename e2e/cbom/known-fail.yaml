@@ -127,6 +127,14 @@
   owner: CB-12
   why: "closed-world counts recomputed from the oracle differ by exactly the KF-4 (z09: 2 certificates not read) and KF-5 (control listener stored as a TLS endpoint) assets"
 
+- row: LAB-deferred
+  gate: [G4, G7, G13, G15, W-INT, W-HOST]
+  match: {check: deferred, part: [idp, receiver, ubuntu-tier2, k8s]}
+  issue: "#93"
+  owner: CB-02
+  why: "lab parts the CB-02 build does not provide (lab.json deferred[]): IdP .42, webhook receiver .43, Ubuntu .40 with Tier-2 sudo, kind/K8s wave"
+  not_run_ok: "deferred by the lab with a stated reason (INTERFACES v2.1); the row flips when CB-02 builds the part"
+
 # ---------------------------------------------------------------------------- steps the gate spec (CB-05) adds
 - row: CB05-sources
   gate: [G11]
