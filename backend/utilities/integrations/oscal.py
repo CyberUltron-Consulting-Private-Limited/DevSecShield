@@ -28,6 +28,7 @@ from pydantic import Field, field_validator
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionJob, CbomCollectedAsset, CbomCollectionRun, CbomCollectionSource, Scan
+from backend.utilities.build_info import build_sha
 from backend.utilities.cbom_sources.common import iso_z, utcnow
 from backend.utilities.integrations.base import Cfg, Context, Outcome, ca_pem, https_url
 from backend.utilities.integrations.webhook import post_signed
@@ -147,10 +148,11 @@ def _text(value: Any, fallback: str) -> str:
 def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str, start: _dt.datetime | None,
                        end: _dt.datetime | None, views: Iterable[tuple[str | None, Any]], kb_version: str | None,
                        description: str, not_read: Iterable[str] = (),
-                       partly_read: Iterable[tuple[str, str]] = ()) -> dict[str, Any]:
+                       partly_read: Iterable[tuple[str, str]] = (), engine_version: str | None = None) -> dict[str, Any]:
     """Build the document from drift ``View``s (``drift.node_views`` / ``drift.code_views``) of finding assets.
     ``not_read``: sources whose collection failed; ``partly_read``: (source, what was not read). Neither is claimed
-    as reviewed: they are listed in the result's props and in the reviewed-controls remarks."""
+    as reviewed: they are listed in the result's props and in the reviewed-controls remarks. ``engine_version``: the
+    build that judged a collection run (its ``engine_version``); the document also names the build that wrote it."""
     from backend.utilities.cbom_sources.crypto_kb import entry
 
     findings_views = [(src, v) for src, v in views if v.finding and v.codes]
@@ -235,6 +237,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
         "uuid": _uuid(team_id, anchor, "document"),
         "metadata": {"title": title, "last-modified": _ts(utcnow()), "version": anchor, "oscal-version": OSCAL_VERSION,
                      "props": _props(("kb-version", kb_version), ("generator", "ZeroShield DevSecShield CBOM"),
+                                     ("generator-build", build_sha()), ("engine-version", engine_version),
                                      ("controls-catalog", "NIST SP 800-53 Rev. 5.2.0"))},
         "import-ap": {"href": "urn:zeroshield:cbom:assessment-plan",
                       "remarks": "No separate assessment plan: the scope is the sources of this collection run or the "
@@ -282,7 +285,7 @@ def run_document(session: Session, run: CbomCollectionRun) -> dict[str, Any]:
         team_id=run.team_id, anchor=f"run-{run.id}", title=f"ZeroShield CBOM collection run #{run.id}",
         namespace="node", start=run.created_at, end=run.finished_at, views=views, kb_version=run.kb_version,
         description=f"Cryptographic inventory collected from {len(jobs)} source(s); run status {run.status}.",
-        not_read=not_read, partly_read=partly_read)
+        not_read=not_read, partly_read=partly_read, engine_version=run.engine_version)
 
 
 def scan_document(scan: Scan) -> dict[str, Any]:

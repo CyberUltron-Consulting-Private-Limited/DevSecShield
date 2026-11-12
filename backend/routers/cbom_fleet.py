@@ -1,13 +1,15 @@
 """CBOM fleet onboarding: the one router ``backend/main.py`` includes for every F1 part (contract section 5).
 
-All routes are ``/{team_id}/cbom/sources/fleet/...`` (plus F1.4's node route) and follow the CBOM Sources
+All routes are ``/{team_id}/cbom/sources/fleet/...`` (plus F1.4's machine routes) and follow the CBOM Sources
 conventions (``backend/utilities/cbom_sources/http.py``): members only, another team's or a missing record is a 404,
 in-team refusals are a 400 (never a 403, which signs the user out of the frontend), stale forms get a 409, validation
 errors are a 400 that never echoes input.  Every route declares ``openapi_extra={"x-zs-permission": ...}``.
 
 Rules every part's router follows (``test_cbom_fleet_scaffold`` checks, with every flag on, every route of this
 aggregator and every route under ``FLEET`` whichever router registered it, as ``backend.main.app`` serves them):
-* team routes live under ``FLEET``; the only other path a part may add is F1.4's scan-node route ``/cbom/node/...``;
+* team routes live under ``FLEET``; the only other paths a part may add are F1.4's machine routes, the scan-node route
+  ``/cbom/node/...`` and the servers' trust-bundle fetch ``/cbom/ssh-ca-trust/...`` (``x-zs-permission``
+  ``machine:<credential>``, F4's marker for a caller that is not a person with a team role);
 * team routes take ``ctx: Member`` (``fleet/http.py``): authentication is a dependency that runs right after the rate
   limiter, with nothing else before it, never only an ``authorize()`` call in the handler body; large bodies are
   read in the handler (``fleet/http.py``, "Bodies");
@@ -32,6 +34,7 @@ from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, read
 # F1.3 imports
 from backend.routers.cbom_transports import router as transports_router
 # F1.4 imports
+from backend.routers import cbom_node_sshca, cbom_sshca, cbom_sshca_trust
 
 router = APIRouter(tags=["cbom-fleet"], route_class=CbomRoute)
 READ = [Depends(read_limiter)]
@@ -49,3 +52,6 @@ async def fleet_status(team_id: TeamId, ctx: Member):
 router.include_router(transports_router)  # /fleet/transports* (CBOM_FLEET_TRANSPORTS)
 
 # F1.4 routers
+router.include_router(cbom_sshca.router)
+router.include_router(cbom_node_sshca.router)
+router.include_router(cbom_sshca_trust.router)

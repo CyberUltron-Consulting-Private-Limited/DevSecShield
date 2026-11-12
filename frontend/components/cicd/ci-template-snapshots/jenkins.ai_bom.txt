@@ -1,0 +1,70 @@
+pipeline {
+    agent any
+
+    environment {
+        CICD_API_KEY = '<your DevSecShield CI/CD API key>'
+        SCAN_API_URL = 'https://api.example.test/cicd/ai_bom/scan'
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        // Everything but .git is scanned (vendored code, build output and nested archives included); installed
+        // dependency trees stay out. The zip is written outside the workspace. Uploads are capped at 50 MB.
+        stage('Create ZIP File') {
+            steps {
+                sh '''#!/bin/sh
+set -eu
+rm -f "${WORKSPACE_TMP:-/tmp}/devsecshield-project.zip"
+zip -q -r "${WORKSPACE_TMP:-/tmp}/devsecshield-project.zip" . -x '.git/*' '*/.git/*' 'node_modules/*' '*/node_modules/*' 'venv/*' '.venv/*' '*/.venv/*'
+'''
+            }
+        }
+
+        stage('Perform AI_BOM Scan') {
+            steps {
+                sh '''#!/bin/sh
+set -u
+# A failed scan fails the pipeline: --fail-with-body (curl 7.76+) exits non-zero on any HTTP error and still
+# prints the reason. 429 (rate limited): wait Retry-After seconds (30 if absent, 300 at most), up to 5 tries.
+for attempt in 1 2 3 4 5; do
+  rc=0
+  code=$(curl --fail-with-body -sS --max-time 900 -o devsecshield-response.json -D devsecshield-headers.txt -w '%{http_code}' \
+    -H "cicd-api-key: ${CICD_API_KEY}" -F "zip_file=@${WORKSPACE_TMP:-/tmp}/devsecshield-project.zip" \
+    "${SCAN_API_URL}") || rc=$?
+  if [ "${code}" = "429" ] && [ "${attempt}" -lt 5 ]; then
+    delay=$(awk 'tolower($1) == "retry-after:" {print $2 + 0}' devsecshield-headers.txt | tail -n 1)
+    [ -n "${delay}" ] && [ "${delay}" -gt 0 ] || delay=30
+    [ "${delay}" -le 300 ] || delay=300
+    echo "DevSecShield is rate limiting this key; retrying in ${delay}s (attempt ${attempt} of 5)"
+    sleep "${delay}"
+    continue
+  fi
+  break
+done
+if [ "${rc}" -ne 0 ]; then
+  echo "DevSecShield scan failed (curl exit ${rc}, HTTP ${code:-none}):"
+  cat devsecshield-response.json 2>/dev/null || true
+  exit 1
+fi
+'''
+                script {
+                    def jsonResponse = readJSON(file: 'devsecshield-response.json')
+                    def payload = jsonResponse.results
+                    def findings = payload instanceof Map ? payload.results : payload
+
+                    echo "Findings found during AI_BOM: ${jsonResponse.finding_count}"
+                    (findings ?: []).each { echo "${it.impact} ${it.title}" }
+
+                    env.FINDINGS = jsonResponse.finding_count?.toString()
+                }
+            }
+        }
+
+        // Additional stages (e.g., deploy) can be added here
+    }
+}

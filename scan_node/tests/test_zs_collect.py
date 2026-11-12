@@ -15,6 +15,7 @@ import io
 import json
 import os
 import pwd
+import shlex
 import shutil
 import subprocess
 import sys
@@ -198,6 +199,10 @@ HOSTILE_FILE_ARGS = [
     "'/etc/a.pem'; id",             # the same with a space (two words)
     '"/etc/$(id).pem"',             # double quotes still substitute
 ]
+# Per-file paths that ARE exactly shlex.quote(path) of one absolute path, but carry a control character (an ANSI
+# escape, DEL): only the control-character rule refuses them (review 5878372394, O2).
+CONTROL_FILE_ARGS = [shlex.quote("/etc/ssl/a\x1b[31m.pem"), shlex.quote("/etc/ssl/a\x7f.pem"),
+                     shlex.quote("/etc/ssl/a\tb.pem")]
 
 
 @pytest.mark.parametrize("line", [
@@ -212,7 +217,7 @@ HOSTILE_FILE_ARGS = [
     C.sudo_line(["/usr/bin/ss", "-H", "-tlnp", "-K"]),
     C.sudo_line(["/bin/sh", "-c", "id"]),
     "/usr/bin/sudo -n /usr/bin/ss -H -tlnp; id",
-] + [C.tier1_line(template.format(file=arg)) for arg in HOSTILE_FILE_ARGS
+] + [C.tier1_line(template.format(file=arg)) for arg in HOSTILE_FILE_ARGS + CONTROL_FILE_ARGS
      for template in (C.CERTS_IN_FILE, C.PUBLIC_HALF_OF_KEY, C.FILE_MODE)])
 def test_unlisted_command_is_never_executed(fake_popen, tmp_path, line):
     sess = Z.LocalSession(tmp_dir=str(tmp_path), user="zs-cbom")
@@ -229,6 +234,8 @@ def test_hostile_file_args_reach_the_quoting_rule():
     single = [a for a in HOSTILE_FILE_ARGS if len(shlex.split(a)) == 1 and shlex.split(a)[0].startswith("/")]
     assert len(single) >= 7
     assert all(shlex.quote(shlex.split(a)[0]) != a for a in single)
+    # CONTROL_FILE_ARGS pass the quoting rule itself: the control-character rule is what refuses them
+    assert all(len(shlex.split(a)) == 1 and shlex.quote(shlex.split(a)[0]) == a for a in CONTROL_FILE_ARGS)
 
 
 def test_allow_list_covers_every_command_the_collector_has():
@@ -282,6 +289,19 @@ def test_document_with_an_unknown_status_or_oversized_facts_is_refused(fake_pope
     bad["assets"][0]["facts"] = {"blob": "x" * (16 * 1024)}  # just over the backend's 16 KB facts limit
     assert "16 KB" in Z.validate_document(bad, nonce=NONCE, version=VERSION)
     bad["assets"][0]["facts"] = {"blob": "x" * (16 * 1024 - 20)}  # just under it
+    assert Z.validate_document(bad, nonce=NONCE, version=VERSION) is None
+    # each remaining check of the schema mirror, one bad value at a time (review 5878372394: O8 O9 O11 O14)
+    for change, needle in (({"tier": 3}, "tier"), ({"error": 5}, "error must be text")):
+        assert needle in Z.validate_document({**copy.deepcopy(doc), **change}, nonce=NONCE, version=VERSION), change
+    bad = copy.deepcopy(doc)
+    bad["assets"][0]["key_size"] = 1_000_001
+    assert "key_size out of range" in Z.validate_document(bad, nonce=NONCE, version=VERSION)
+    bad["assets"][0]["key_size"] = 1_000_000  # the bound itself is allowed
+    assert Z.validate_document(bad, nonce=NONCE, version=VERSION) is None
+    one = {"type": "coverage", "target": "10.0.0.5", "location": "10.0.0.5#x", "facts": {}}
+    bad = {**copy.deepcopy(doc), "assets": [one] * (Z.MAX_ASSETS + 1)}
+    assert "more than 50,000" in Z.validate_document(bad, nonce=NONCE, version=VERSION)
+    bad["assets"] = [one] * Z.MAX_ASSETS
     assert Z.validate_document(bad, nonce=NONCE, version=VERSION) is None
 
 
@@ -393,6 +413,30 @@ def test_drops_to_the_run_as_user_before_running_anything(monkeypatch, tmp_path)
     assert doc["status"] == "success" and rec.calls
 
 
+def test_a_drop_that_root_could_undo_is_refused_before_anything_runs(fake_popen, monkeypatch, capsys, tmp_path):
+    """setuid(user) worked, but setuid(0) still succeeds afterwards (a saved uid of 0): zs-collect must not collect
+    while it could return to root.  It refuses with run_as, and no command reaches Popen (review 5878372394, O6)."""
+    events = []
+    monkeypatch.setattr(Z.os, "geteuid", lambda: 0 if ("setuid", 1234) not in events else 1234)
+    monkeypatch.setattr(Z.os, "getuid", lambda: 0 if ("setuid", 1234) not in events else 1234)
+    monkeypatch.setattr(Z.pwd, "getpwnam", lambda name: pwd.struct_passwd(
+        (name, "x", 1234, 1234, "", "/home/" + name, "/usr/sbin/nologin")))
+    monkeypatch.setattr(Z.os, "chown", lambda path, uid, gid, **kw: None)
+    monkeypatch.setattr(Z.os, "initgroups", lambda name, gid: None, raising=False)
+    monkeypatch.setattr(Z.os, "setgid", lambda gid: None)
+    monkeypatch.setattr(Z.os, "setuid", lambda uid: events.append(("setuid", uid)))  # every setuid succeeds
+    with pytest.raises(Z.Refused, match="root could be regained") as exc:
+        Z.drop_privileges("zs-cbom", str(tmp_path))
+    assert exc.value.code == "run_as" and events == [("setuid", 1234), ("setuid", 0)]
+    events.clear()
+    code = Z.main(["--nonce", NONCE, "--tier", "1"])
+    out, err = capsys.readouterr()
+    doc = json.loads(out)
+    assert code == 2 and "root could be regained" in err
+    assert doc["status"] == "failure" and doc["refusal"] == "run_as" and doc["assets"] == []
+    assert fake_popen.calls == []  # nothing ran: not even the session's own host-key read
+
+
 @pytest.mark.parametrize("name,uid,err", [("root", 0, "root"), ("toor", 0, "root"), ("ghost", None, "does not exist")])
 def test_refuses_to_collect_as_root_or_a_missing_user(monkeypatch, tmp_path, name, uid, err):
     monkeypatch.setattr(Z.os, "geteuid", lambda: 0)
@@ -441,7 +485,9 @@ def _shared_dirs(tmp_path: Path) -> dict[str, Path]:
     """Paths zs-collect must refuse as --tmp-dir: not made for it, shared, a link, missing, or a regular file."""
     dirs = {}
     for name, mode in (("shared-like-tmp", 0o1777), ("home-like", 0o700), ("zs-collect.open", 0o755),
-                       ("zs-collect.group", 0o770)):
+                       ("zs-collect.group", 0o770),
+                       ("x-zs-collect.abc", 0o700),  # private and the caller's, but only CONTAINS the run name
+                       ("zs-collect.gr", 0o750)):    # group read/execute, no group write
         d = tmp_path / name
         d.mkdir()
         d.chmod(mode)

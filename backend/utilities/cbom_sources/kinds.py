@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from backend.utilities.cbom_sources import targets as T
 
@@ -162,13 +162,19 @@ class ServersConfig(_Source):
     login_user: str = Field(default="zs-cbom", max_length=64)
     host_key_policy: Literal["tofu", "pinned"] = "tofu"
     known_hosts: str | None = Field(default=None, max_length=MAX_SECRET_BYTES)
-    credential_type: Literal["node_key", "ssh_cert", "vault", "password"] = "node_key"
+    credential_type: Literal["node_key", "ssh_cert", "vault", "password", "ssh_ca"] = "node_key"
     vault: VaultRef | None = None
     tier: Literal[1, 2] = 1
     parallel: int = Field(default=8, ge=1, le=64)
     timeout_s: int = Field(default=300, ge=10, le=3600)
     window: Literal["network", "any", "custom"] = "network"
     custom_window: list[list[bool]] | None = None
+    # credential_type "ssh_ca" (F1.4): the node's own key, certified per job by this team's SSH CA lineage for these
+    # principals (zs-<team>-<group>), bound to these source addresses (else the node's reported addresses).  Omitted
+    # from the dump for every other credential type, so existing sources keep their connection version.
+    ssh_ca_id: int | None = Field(default=None, ge=1, le=2_147_483_647)
+    ssh_principals: list[str] = Field(default_factory=list, max_length=16)
+    ssh_source_addresses: list[str] = Field(default_factory=list, max_length=32)
 
     @field_validator("login_user")
     @classmethod
@@ -176,11 +182,38 @@ class ServersConfig(_Source):
         # An empty login falls back to the kind's own default (zs-cbom on Linux, svc-zscbom on Windows/AD).
         return check_login(v) or cls.model_fields["login_user"].default
 
+    @model_serializer(mode="wrap")
+    def _dump(self, handler):
+        data = handler(self)
+        if isinstance(data, dict) and self.credential_type != "ssh_ca":
+            for name in ("ssh_ca_id", "ssh_principals", "ssh_source_addresses"):
+                data.pop(name, None)
+        return data
+
     @model_validator(mode="after")
     def _check(self) -> "ServersConfig":
         parsed = T.parse_targets(self.targets)
         self.targets = parsed.normalized
         self.exclusions = T.parse_exclusions(self.exclusions).normalized
+        if self.credential_type == "ssh_ca":
+            from backend.utilities.cbom_sources.sshca import certs as _ca_certs
+            from backend.utilities.cbom_sources.sshca import flags as _ca_flags
+
+            if not _ca_flags.enabled():
+                raise ValueError(f"credential_type: {_ca_flags.OFF_MESSAGE}")
+            if self.ssh_ca_id is None:
+                raise ValueError("ssh_ca_id: choose the SSH CA that signs the scan node's certificates")
+            principals = [p.strip() for p in self.ssh_principals if p.strip()]
+            if not principals or any(not _ca_certs.principal_shape_ok(p) for p in principals):
+                raise ValueError("ssh_principals: one or more principals like zs-<team id>-<group> (lowercase "
+                                 "letters, digits and . _ -), as listed in the servers' principals file")
+            self.ssh_principals = list(dict.fromkeys(principals))
+            try:
+                self.ssh_source_addresses = list(_ca_certs.source_address_list(self.ssh_source_addresses))
+            except ValueError as exc:
+                raise ValueError(f"ssh_source_addresses: {exc}") from None
+        else:
+            self.ssh_ca_id, self.ssh_principals, self.ssh_source_addresses = None, [], []
         if self.credential_type == "vault" and self.vault is None:
             raise ValueError("vault: choose a vault and enter the secret path")
         if self.credential_type != "vault":
@@ -242,6 +275,7 @@ def _server_secrets(cfg: ServersConfig) -> set[str]:
         return {"password"}
     if cfg.credential_type == "ssh_cert":
         return {"ssh_certificate", "private_key"}
+    # node_key, vault, and ssh_ca (nothing stored: the certificate is minted per claim for the node's own key)
     return set()
 
 

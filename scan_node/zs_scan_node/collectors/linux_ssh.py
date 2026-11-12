@@ -140,6 +140,21 @@ def _credentials(ctx: JobContext, config: dict, secrets: dict) -> dict[str, Any]
             except Exception as exc:
                 raise ConfigError(f"the SSH certificate does not match the key ({exc.__class__.__name__})") from None
         return {"key": key}
+    if ctype == "ssh_ca":  # F1.4: the node's own key, certified by the team's SSH CA for this job (zs_scan_node.sshca)
+        from zs_scan_node.sshca import CertSource, CertUnavailable
+
+        ca = config.get("ssh_ca") if isinstance(config.get("ssh_ca"), dict) else {}
+        if ca.get("error"):
+            raise ConfigError(f"SSH CA: {ca['error']}")
+        path = ctx.node_private_key_path or os.path.join(ctx.state_dir, "id_ed25519")
+        try:
+            source = CertSource(path, secrets.get("ssh_certificate"), ca.get("expires_in_s"),
+                                ca.get("refresh_before_s") or 120, ctx.cert_refresher,
+                                backdated_s=ca.get("backdated_s"))
+            source.key()  # a certificate now (the claim's, or one asked for here), or the job fails with the reason
+        except CertUnavailable as exc:
+            raise ConfigError(f"SSH CA: {exc}") from None
+        return {"cert_source": source}
     if ctype == "password":
         if not secrets.get("password"):
             raise ConfigError("no password is stored for this source")
@@ -218,6 +233,25 @@ class Session:
             pass
 
 
+def _cert_login_key(ctx: JobContext, source: Any) -> paramiko.PKey:
+    """F1.4: the certificate key for this login.  When ZeroShield says the job must stop (409 "Stop this job", a
+    revoked node token), the job is cancelled at once (the remaining targets are skipped) instead of every target
+    failing one by one."""
+    from zs_scan_node.api import Unauthorized
+    from zs_scan_node.jobctx import LeaseLost
+    from zs_scan_node.sshca import CertUnavailable
+
+    try:
+        return source.key()
+    except CertUnavailable as exc:
+        raise TargetFail("auth_failed", str(exc)) from None
+    except (LeaseLost, Unauthorized) as exc:
+        detail = str(exc)[:300] or exc.__class__.__name__
+        ctx.cancel_reason = f"Stopped by ZeroShield: {detail}"
+        ctx.cancel.set()
+        raise TargetFail("error", f"ZeroShield stopped this job ({detail})") from None
+
+
 def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> Session:
     port = int(config.get("port") or 22)
     user = str(config.get("login_user") or "zs-cbom")
@@ -294,7 +328,14 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
             host_key["first_use"] = True
     # authenticate once
     try:
-        if "key" in creds:
+        if "cert_source" in creds:  # F1.4: a certificate good for this login (renewed before it runs out)
+            try:
+                cert_key = _cert_login_key(ctx, creds["cert_source"])
+            except TargetFail:
+                transport.close()
+                raise
+            more = transport.auth_publickey(user, cert_key)
+        elif "key" in creds:
             more = transport.auth_publickey(user, creds["key"])
         else:
             pw = creds["password"]
@@ -321,6 +362,8 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
         raise TargetFail("auth_failed", f"the server does not allow this credential type ({', '.join(exc.allowed_types or [])})") from None
     except paramiko.AuthenticationException:
         transport.close()
+        if "cert_source" in creds:  # F1.4: SSH cannot say why; say what the server had to accept (serial kept)
+            raise TargetFail("auth_failed", creds["cert_source"].refusal_detail(user)) from None
         raise TargetFail("auth_failed", f"login as {user} was refused") from None
     except (paramiko.SSHException, EOFError, OSError) as exc:
         transport.close()
