@@ -126,19 +126,31 @@ def _host_or_ip(value: str, name: str) -> tuple[str | None, str | None]:
     return None, str(host)
 
 
+def _tag_rank(folded: str, raw: str) -> tuple[bool, str, str]:
+    """Which of several raw keys that fold to ``folded`` keeps its value (lower wins): the key already written in
+    lower case, then the smallest in code-point order.  The order the tags arrive in never matters."""
+    return raw.strip() != folded, raw.strip(), raw
+
+
+def _tag_pairs(text: str) -> dict[str, str]:
+    """``k=v;k2=v2`` → ``{k: v, k2: v2}`` with the keys as written (``_tags`` folds them)."""
+    pairs: dict[str, str] = {}
+    for part in text.split(";"):
+        if not part.strip():
+            continue
+        key, sep, val = part.partition("=")
+        if not sep:
+            raise InventoryError("bad_tags", "tags must look like key=value;key2=value2")
+        pairs[key] = val
+    return pairs
+
+
 def _tags(value: Any) -> dict[str, str]:
+    """Tags with lower-cased keys.  Keys that differ only in case are folded by ``_tag_rank``, whatever their order."""
     if value is None or value == "":
         return {}
     if isinstance(value, str):  # "k=v;k2=v2" (CSV)
-        pairs: dict[str, Any] = {}
-        for part in value.split(";"):
-            if not part.strip():
-                continue
-            key, sep, val = part.partition("=")
-            if not sep:
-                raise InventoryError("bad_tags", "tags must look like key=value;key2=value2")
-            pairs[key] = val
-        value = pairs
+        value = _tag_pairs(value)
     if isinstance(value, list):  # AWS shape [{"Key": .., "Value": ..}]
         try:
             value = {str(item.get("Key", item.get("key"))): item.get("Value", item.get("value", "")) for item in value}
@@ -147,6 +159,7 @@ def _tags(value: Any) -> dict[str, str]:
     if not isinstance(value, Mapping):
         raise InventoryError("bad_tags", "tags must be an object of key: value")
     out: dict[str, str] = {}
+    winner: dict[str, str] = {}  # folded key -> the raw key whose value it keeps
     for raw_key, raw_val in value.items():
         key = str(raw_key).strip().lower()
         if not _TAG_KEY.match(key):
@@ -161,6 +174,10 @@ def _tags(value: Any) -> dict[str, str]:
         if len(val) > 256 or _CONTROL.search(val):
             raise InventoryError("bad_tags", f"tag {key[:40]!r}: the value is longer than 256 characters or has control "
                                              "characters")
+        # every value is checked first, so an error never depends on the order either
+        if key in winner and _tag_rank(key, winner[key]) <= _tag_rank(key, str(raw_key)):
+            continue  # keys that differ only in case (AWS allows Env and env): the same one wins in any input order
+        winner[key] = str(raw_key)
         out[key] = val
     if len(out) > MAX_TAGS:
         raise InventoryError("bad_tags", f"more than {MAX_TAGS} tags")
@@ -303,6 +320,11 @@ def _csv_rows(text: str) -> Iterator[tuple[int, dict[str, Any]]]:
             continue
         if header is None:
             header = [c.strip() for c in cells]
+            names = [c.lower() if ":" not in c else f"{c.partition(':')[0].strip().lower()}:{c.partition(':')[2].strip()}"
+                     for c in header]
+            if len(set(names)) != len(names):  # which copy would win would depend on the column order
+                dup = next(n for n in names if names.count(n) > 1)
+                raise InventoryError("bad_header", f"column {dup[:40]!r} appears twice")
             for column in header:
                 low = column.lower()
                 if low in _FIELDS and low not in ("handles", "attributes"):
@@ -336,10 +358,8 @@ def _csv_rows(text: str) -> Iterator[tuple[int, dict[str, Any]]]:
                     row["tags"] = value
             elif value:
                 row[low] = value
-        if tags:
-            merged = _tags(row.get("tags")) if row.get("tags") else {}
-            merged.update({k.strip().lower(): v for k, v in tags.items()})
-            row["tags"] = merged
+        if tags:  # keys as written: a tag:<key> column wins over the same key in the tags column; _tags folds case
+            row["tags"] = {**(_tag_pairs(row["tags"]) if row.get("tags") else {}), **tags}
         if handles:
             row["handles"] = handles
         if attrs:

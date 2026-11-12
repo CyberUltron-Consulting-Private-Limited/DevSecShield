@@ -269,6 +269,38 @@ def test_preview_reports_matches_conflicts_and_writes_nothing(api, world):
     assert len(api("GET", f"{FLEET}/policies").json()["policies"]) == 1
 
 
+def test_preview_shows_the_winner_saving_would_give_on_a_tie_and_for_an_edit(api, world):
+    """Which policy won must not depend on whether it was previewed or saved: a draft is the newest policy (it loses a
+    priority tie, as it will once saved), and a draft that edits a saved policy replaces it in the preview (it does
+    not overlap with itself)."""
+    node_id, _tok, _reg = enroll_node(api)
+    cred = _credential(api)
+    _targets(api, 3)
+    prod = {"tag": "env", "op": "eq", "value": "prod"}
+    old = _policy(api, "old", 50, prod, {"transport": "ssh", "credential_id": cred["id"], "node_id": node_id})
+    tie = {"name": "tie", "priority": 50, "selector": prod, "action": {"never_scan": True}}
+    out = api("POST", f"{FLEET}/policies/preview", json={"policy": tie}).json()
+    assert (out["matched"], out["would_collect"], out["never_scan"]) == (3, 0, 0)  # it loses the tie: decides nothing
+    assert not any(s["won"] for s in out["sample"])
+    assert out["conflicts"] == [{"winner_policy_id": old["id"], "winner": "old", "loser_policy_id": None,
+                                 "loser": "tie", "targets": 3}]
+    saved = _policy(api, "tie", 50, prod, {"never_scan": True})  # saved: the preview was right
+    tid = api("GET", f"{INV}/targets").json()["targets"][0]["id"]
+    assert api("GET", f"{INV}/targets/{tid}").json()["decision"]["policy_id"] == old["id"]
+    edit = {"name": "old", "priority": 50, "selector": prod, "action": {"never_scan": True}}
+    out = api("POST", f"{FLEET}/policies/preview", json={"policy": edit, "policy_id": old["id"]}).json()
+    assert (out["matched"], out["would_collect"], out["never_scan"]) == (3, 0, 3)
+    assert all(s["won"] for s in out["sample"])
+    assert out["conflicts"] == [{"winner_policy_id": old["id"], "winner": "old", "loser_policy_id": saved["id"],
+                                 "loser": "tie", "targets": 3}]  # the edit keeps its id (and its tie-break); no self
+    other = api("POST", f"{FLEET}/policies/preview", "carol", json={"policy": edit, "policy_id": old["id"]})
+    assert other.status_code == 403  # carol is not in team 1
+    gone = api("POST", f"{FLEET}/policies/preview", json={"policy": edit, "policy_id": 999_999})
+    assert gone.status_code == 404
+    assert [p["name"] for p in api("GET", f"{FLEET}/policies").json()["policies"]] == ["old", "tie"]  # nothing written
+    assert api("GET", f"{FLEET}/policies").json()["policies"][0]["action"]["never_scan"] is False
+
+
 def test_credentials_are_typed_and_write_only(api, world):
     engine, _ = world
     bad = api("POST", f"{FLEET}/credentials", json={"name": "pw", "credential_type": "password",

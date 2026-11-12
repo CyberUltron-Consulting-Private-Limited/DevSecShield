@@ -39,6 +39,7 @@ READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
 MAX_POLICIES = 200
 MAX_CREDENTIALS = 100
+DRAFT_ID = 2_147_483_647  # a previewed new policy: newer than every saved one (ties break by id ascending)
 
 
 async def _run(what: str, team_id: int, fn, *args) -> Any:
@@ -210,16 +211,19 @@ def _preview(engine, team_id: int, body: PreviewBody) -> dict:
     now = utcnow()
     with Session(engine) as session:
         policies = [p for p in _policies(session, team_id) if p.deleted_at is None]
-        if body.policy_id is not None:
-            draft = _owned_policy(session, team_id, body.policy_id)
+        if body.policy is None:  # a saved policy as it is
+            draft = _owned_policy(session, team_id, body.policy_id)  # type: ignore[arg-type]
             others = policies
         else:
-            assert body.policy is not None
             _check_refs(session, team_id, body.policy.action)
-            draft = CbomFleetPolicy(id=0, team_id=team_id, name=body.policy.name, enabled=True,
+            if body.policy_id is not None:  # an edit: it replaces the saved policy and keeps its id
+                draft_id = _owned_policy(session, team_id, body.policy_id).id
+            else:  # a new policy is the newest: it loses priority ties, exactly as it will once saved
+                draft_id = DRAFT_ID
+            draft = CbomFleetPolicy(id=draft_id, team_id=team_id, name=body.policy.name, enabled=True,
                                     priority=body.policy.priority, selector=body.policy.selector,
                                     action=body.policy.action)
-            others = [*policies, draft]
+            others = [*(p for p in policies if p.id != draft_id), draft]
         policy_engine = _engine(session, team_id, others, now)
         views = list(store.iter_views(session, team_id, present_only=True))
         matched = would_collect = never = 0
@@ -239,9 +243,9 @@ def _preview(engine, team_id: int, body: PreviewBody) -> dict:
                 sample.append(item)
         conflicts = [c for c in policy_engine.conflicts(views)
                      if draft.id in (c["winner_policy_id"], c["loser_policy_id"])]
-        for c in conflicts:  # the draft has no id yet
+        for c in conflicts:  # a new draft has no id yet
             for side in ("winner", "loser"):
-                if c[f"{side}_policy_id"] == 0:
+                if c[f"{side}_policy_id"] == DRAFT_ID:
                     c[f"{side}_policy_id"] = None
         return {"matched": matched, "would_collect": would_collect, "never_scan": never, "conflicts": conflicts,
                 "sample": sample}

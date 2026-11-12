@@ -66,6 +66,41 @@ def test_normalize_is_strict_and_canonical():
             normalize(bad)
 
 
+def test_tag_keys_that_differ_only_in_case_fold_the_same_way_whatever_their_order():
+    """AWS tag keys are case-sensitive and a resource can carry both ``Env`` and ``env``; AWS does not promise the
+    order of ``Tags``.  Keys are compared lower-cased, so the folded value must not depend on the order the tags came
+    in (else the same resource flips between syncs: another fingerprint, an update every sync, another policy).
+    Rule: the key already written in lower case wins; otherwise the smallest key in code-point order."""
+    import itertools
+
+    aws = [{"Key": "Env", "Value": "prod"}, {"Key": "env", "Value": "stage"}, {"Key": "ENV", "Value": "dev"},
+           {"Key": "Team", "Value": "pay"}]
+    seen = set()
+    for order in itertools.permutations(aws):
+        t = normalize({"external_id": "arn:aws:ec2:ap-south-1:1:instance/i-1", "address": "10.0.0.5", "tags": list(order)})
+        seen.add((tuple(sorted(t.tags.items())), t.fingerprint()))
+    assert len(seen) == 1 and dict(seen.pop()[0]) == {"env": "stage", "team": "pay"}
+    no_lower = [{"Key": "Env", "Value": "prod"}, {"Key": "ENV", "Value": "dev"}]
+    for order in (no_lower, no_lower[::-1]):
+        assert dict(normalize({"address": "10.0.0.5", "tags": order}).tags) == {"env": "dev"}  # "ENV" < "Env"
+    # the same rule for a JSON object and for CSV columns, in either column order
+    assert dict(normalize({"address": "10.0.0.5", "tags": {"Env": "prod", "env": "stage"}}).tags) == {"env": "stage"}
+    assert dict(normalize({"address": "10.0.0.5", "tags": {"env": "stage", "Env": "prod"}}).tags) == {"env": "stage"}
+    one = parse_csv("external_id,address,tag:Env,tag:env\na,10.0.0.1,prod,stage\n").targets[0]
+    two = parse_csv("external_id,address,tag:env,tag:Env\na,10.0.0.1,stage,prod\n").targets[0]
+    three = parse_csv("external_id,address,tags,tag:Env\na,10.0.0.1,env=stage,prod\n").targets[0]
+    assert dict(one.tags) == dict(two.tags) == dict(three.tags) == {"env": "stage"}
+    assert one.fingerprint() == two.fingerprint() == three.fingerprint()
+    # a value that is refused is refused whether its key would win or lose
+    for order in (["Env", "env"], ["env", "Env"]):
+        with pytest.raises(InventoryError, match="256"):
+            normalize({"address": "10.0.0.5", "tags": {k: ("x" * 300 if k == "Env" else "ok") for k in order}})
+    # a column given twice (which copy wins would depend on the column order) is refused
+    for header in ("external_id,address,tag:Env,tag: Env", "external_id,address,Address", "external_id,TAG:env,tag:env"):
+        with pytest.raises(InventoryError, match="appears twice"):
+            parse_csv(header + "\na,10.0.0.1,x,y\n")
+
+
 def test_csv_and_json_parsing_report_rows_and_cap_errors():
     parsed = parse_csv("external_id,address,tag:env\na,10.0.0.1,prod\nb,not an address!,prod\na,10.0.0.3,dev\n")
     assert [t.external_id for t in parsed.targets] == ["a"] and parsed.error_count == 2
@@ -166,6 +201,21 @@ def test_permissions_and_tenancy(api, world):
     assert detail["missing_since"] and detail["managed_source_id"] is None
     assert api("GET", f"{INV}/targets").json()["total"] == 1
     assert api("GET", f"{INV}/targets", params={"missing": "all"}).json()["total"] == 2
+
+
+def test_a_member_import_is_refused_before_the_file_is_parsed(api, monkeypatch):
+    """A member who is not an admin gets the 400 without the server parsing up to 10 MB / 10,000 rows first."""
+    from backend.routers import cbom_fleet_inventory as ROUTES
+
+    parsed = []
+    real_csv, real_json = ROUTES.parse_csv, ROUTES.parse_json
+    monkeypatch.setattr(ROUTES, "parse_csv", lambda *a, **k: parsed.append("csv") or real_csv(*a, **k))
+    monkeypatch.setattr(ROUTES, "parse_json", lambda *a, **k: parsed.append("json") or real_json(*a, **k))
+    refused = _import(api, _csv(500), who="bob")
+    assert refused.status_code == 400 and "team admin" in refused.json()["detail"]
+    assert _import(api, json.dumps([{"external_id": "a", "address": "10.0.0.1"}]), "json", who="bob").status_code == 400
+    assert parsed == []
+    assert _import(api, _csv(2)).status_code == 200 and parsed == ["csv"]
 
 
 def test_body_and_row_caps(api):

@@ -100,13 +100,15 @@ class PolicyUpdate(_Strict):
 
 
 class PreviewBody(_Strict):
+    """``policy_id`` alone: a saved policy.  ``policy`` alone: a new draft.  Both: an edit of that saved policy (the
+    draft replaces it in the preview and keeps its id, so ties break as they will once it is saved)."""
     policy: PolicyCreate | None = None
     policy_id: int | None = Field(default=None, ge=1, le=2_147_483_647)
 
     @model_validator(mode="after")
     def _check(self) -> "PreviewBody":
-        if (self.policy is None) == (self.policy_id is None):
-            raise ValueError("send either a draft policy or a policy_id")
+        if self.policy is None and self.policy_id is None:
+            raise ValueError("send a draft policy, a policy_id, or both (an edit)")
         return self
 
 

@@ -220,12 +220,14 @@ async def get_target(team_id: TeamId, target_id: ObjectId, ctx: Member):
 
 def _import(engine, team_id: int, user_id: int, body: ImportBody) -> dict:
     now = utcnow()
+    with Session(engine) as session:  # refuse a non-admin before parsing up to 10 MB / 10,000 rows
+        require_admin(session, user_id, team_id, "the inventory")
     try:
         parsed = parse_csv(body.content) if body.format == "csv" else parse_json(body.content)
     except InventoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     with Session(engine) as session:
-        require_admin(session, user_id, team_id, "the inventory")
+        require_admin(session, user_id, team_id, "the inventory")  # again, in the transaction that writes
         if body.inventory_source_id:
             source = _owned_source(session, team_id, body.inventory_source_id)
             if source.kind not in ("csv", "json"):
