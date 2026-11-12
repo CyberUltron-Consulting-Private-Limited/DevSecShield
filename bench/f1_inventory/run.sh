@@ -10,13 +10,14 @@
 #
 #   flock $L/heavy-tests.lock bench/f1_inventory/run.sh <src-root> <report.json>
 #
-# The venv is the shared backend venv (${F12_VENV}); it has moto 5.2.5, as backend CI does.
+# Python is the backend project through uv with moto 5.2.5 added, exactly as backend CI runs it
+# (`uv run --frozen --with moto==5.2.5`); needs `uv` on PATH and the backend lock.
 set -euo pipefail
 src=$(cd "${1:?src root}" && pwd)
 report=${2:?report path}
 PG_NAME=${F12_PG_NAME:-f12bench-pg}
 PG_PORT=${F12_PG_PORT:-55450}
-VENV=${F12_VENV:-/home/claude/devsecshield/backend/.venv}
+PY=(uv run --frozen --project "$src/backend" --with moto==5.2.5)
 umask 077
 pw=$(openssl rand -hex 16)
 cleanup() { docker rm -f "$PG_NAME" >/dev/null 2>&1 || true; }
@@ -31,9 +32,9 @@ done
 export PG_USER=postgres PG_USER_PASS="$pw" PG_DB=f12bench PG_HOST=127.0.0.1 PG_PORT="$PG_PORT"
 export JWT_SECRET_KEY=$(openssl rand -hex 32) JWT_REFRESH_SECRET_KEY=$(openssl rand -hex 32)
 export AWS_ACCESS_KEY_ID=bench AWS_SECRET_ACCESS_KEY=bench AWS_DEFAULT_REGION=us-east-1 CBOM_SCHEDULER=0
-export ENCRYPTION_KEY=$("$VENV/bin/python" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
-(cd "$src/prod_database_migrations" && PYTHONPATH="$src" "$VENV/bin/alembic" upgrade head 2>&1 | tail -3)
-(cd "$src/prod_database_migrations" && PYTHONPATH="$src" "$VENV/bin/alembic" heads 2>/dev/null)
+export ENCRYPTION_KEY=$("${PY[@]}" python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+(cd "$src/prod_database_migrations" && PYTHONPATH="$src" "${PY[@]}" alembic upgrade head 2>&1 | tail -3)
+(cd "$src/prod_database_migrations" && PYTHONPATH="$src" "${PY[@]}" alembic heads 2>/dev/null)
 cd "$src/backend"
-PYTHONPATH="$src" "$VENV/bin/python" "$src/bench/f1_inventory/bench.py" \
+PYTHONPATH="$src" "${PY[@]}" python "$src/bench/f1_inventory/bench.py" \
   --db "postgresql://postgres:$pw@127.0.0.1:$PG_PORT/f12bench" --out "$report"
