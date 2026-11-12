@@ -750,3 +750,24 @@ def test_ssm_51_instances_are_two_send_commands_of_50_and_1():
         out = list(SsmTransport(c, poll_s=0).run_collect(targets, CRED, options()))
         c.ssm_stub.assert_no_pending_responses()
     assert len(out) == 51 and {r.status for r in out} == {"ok"}
+
+
+# ----------------------------------------------------------------------------- fleet sources fit one job's asset cap
+def test_a_fleet_source_holds_at_most_200_hosts_so_its_assets_fit_one_job(api):
+    from backend.utilities.cbom_sources import jobs as J
+    from backend.utilities.cbom_sources.transports.limits import MAX_FLEET_TARGETS_PER_SOURCE
+
+    # coordinator decision on review 5874466030: 200 hosts x the live AL2023 host's 187 assets fit 50,000
+    assert MAX_FLEET_TARGETS_PER_SOURCE == 200
+    assert MAX_FLEET_TARGETS_PER_SOURCE * 187 <= J.MAX_ASSETS_PER_ATTEMPT
+    t = api("POST", BASE, json=AWX).json()["transport"]
+    node_id, _token, _ = enroll_node(api)
+    hosts = [f"10.40.{k // 250}.{k % 250 + 1}" for k in range(201)]
+    r = fleet_source(api, t["id"], node_id=node_id, targets=hosts)
+    assert r.status_code == 400 and "at most 200 hosts per fleet source" in r.json()["detail"], r.text
+    ssm = api("POST", BASE, json=SSM).json()["transport"]
+    r = fleet_source(api, ssm["id"], kind="ssm_hosts", targets=hosts)
+    assert r.status_code == 400 and "at most 200" in r.json()["detail"], r.text
+    r = fleet_source(api, t["id"], node_id=node_id, targets=hosts[:200])
+    assert r.status_code == 201, r.text
+    assert len(r.json()["source"]["config"]["targets"]) == 200

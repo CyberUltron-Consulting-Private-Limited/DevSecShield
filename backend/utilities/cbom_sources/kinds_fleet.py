@@ -5,6 +5,8 @@ ZeroShield.  Registered into ``kinds.KINDS`` by two lines at the end of ``kinds.
   the node needs the ``transport_awx`` / ``transport_salt`` capability (F1.1 ``capabilities.py``).
 * ``ssm_hosts``: node-less, run by the cloud worker through AWS Systems Manager.
 Same group (``servers``) and therefore the same credits as Linux servers: 0.2 per target per run, from ``RATES_C``.
+A source holds at most ``transports.limits.MAX_FLEET_TARGETS_PER_SOURCE`` (200) hosts, so one job's assets fit the
+per-attempt cap (see that module).
 The transport's secrets are stored on the transport, not here, so a fleet source has no secret of its own.
 """
 from __future__ import annotations
@@ -17,6 +19,7 @@ from pydantic import Field, field_validator, model_validator
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.kinds import KindSpec, _Source, _always, _never, check_window_grid
 from backend.utilities.cbom_sources.transports.flags import transports_enabled
+from backend.utilities.cbom_sources.transports.limits import MAX_FLEET_TARGETS_PER_SOURCE
 
 MAX_HANDLE = 255
 _HANDLE_RE = {
@@ -37,18 +40,26 @@ class FleetHostsConfig(_Source):
     window: Literal["network", "any", "custom"] = "network"
     custom_window: list[list[bool]] | None = None
 
+    @field_validator("targets")
+    @classmethod
+    def _targets(cls, v: list[str]) -> list[str]:
+        if len(T.clean_lines(v)) > MAX_FLEET_TARGETS_PER_SOURCE:
+            raise ValueError(f"at most {MAX_FLEET_TARGETS_PER_SOURCE} hosts per fleet source (one run keeps at most "
+                             "50,000 assets); split the hosts over several sources")
+        return v
+
     @field_validator("handles")
     @classmethod
     def _handles(cls, v: dict[str, str]) -> dict[str, str]:
-        if len(v) > T.MAX_LINES:
-            raise ValueError(f"at most {T.MAX_LINES} handles")
+        if len(v) > MAX_FLEET_TARGETS_PER_SOURCE:
+            raise ValueError(f"at most {MAX_FLEET_TARGETS_PER_SOURCE} handles")
         return {str(k).strip(): str(h).strip() for k, h in v.items()}
 
     @field_validator("addresses")
     @classmethod
     def _addresses(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
-        if len(v) > T.MAX_LINES:
-            raise ValueError(f"at most {T.MAX_LINES} address lists")
+        if len(v) > MAX_FLEET_TARGETS_PER_SOURCE:
+            raise ValueError(f"at most {MAX_FLEET_TARGETS_PER_SOURCE} address lists")
         out = {}
         for k, values in v.items():
             if len(values) > 16:
