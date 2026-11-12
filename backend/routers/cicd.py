@@ -354,7 +354,7 @@ async def run_cicd_scan(
         # STEP [ 7 ] : ================= CBOM policy gate (the customer template fails the job on gate_failed) =========
         # Same codes as the code-scan CLI gate (aibom.cbom.gate.FAIL_CODES). No result in the poll window fails closed.
         # The verdict is stored on the log, so the CI/CD page shows what the pipeline was told.
-        if type == "cbom":
+        if type == "cbom":  # `type` is the path parameter (the scan type) here, not the builtin
             gate = cbom_gate.evaluate(results)
             response["gate_failed"] = cbom_gate.gate_failed(gate)
             response["gate"] = gate
@@ -366,7 +366,7 @@ async def run_cicd_scan(
                 try:
                     cicd_log_collection.update_one({"_id": ObjectId(CICD_LOG_ID)}, {"$set": {"gate": gate}})
                 except Exception as exc:  # the pipeline still gets its verdict; the page then shows none for this log
-                    console.print(f"CBOM CI gate not stored on log {CICD_LOG_ID}: {exc.__class__.__name__}", style="bold red")  # `type` is the path parameter here
+                    console.print(f"CBOM CI gate not stored on log {CICD_LOG_ID}: {exc.__class__.__name__}", style="bold red")
         return response
 
     except HTTPException as e:

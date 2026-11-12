@@ -102,6 +102,15 @@ def test_no_result_fails_closed(run):
     assert gate["failing"] == []
 
 
+def test_the_reason_tells_a_timeout_from_an_unreadable_result():
+    # None: poll_for_results gave up (running the job again can help); anything else arrived but cannot be read.
+    timed_out = cbom_gate.evaluate(None)["reason"]
+    assert "within the time limit" in timed_out and "again" in timed_out
+    for run in ([], "x", {}, {"results": None}, {"results": {"a": 1}}):
+        reason = cbom_gate.evaluate(run)["reason"]
+        assert "could not be read" in reason and "time limit" not in reason, run
+
+
 def test_malformed_rows_are_skipped_not_fatal():
     run = {"results": ["junk", None, {"finding_codes": None}, {"finding_codes": "WEAK_ALGORITHM"},
                        _row("DES", ["WEAK_ALGORITHM"], line=None, impact=None)]}
@@ -109,6 +118,14 @@ def test_malformed_rows_are_skipped_not_fatal():
     assert gate["verdict"] == "fail"
     assert gate["failing_count"] == 1
     assert gate["failing"][0]["title"] == "DES" and gate["failing"][0]["line"] is None
+
+
+@pytest.mark.parametrize(("rows", "truncated"), [(cbom_gate.MAX_LISTED, False), (cbom_gate.MAX_LISTED + 1, True)])
+def test_the_cap_boundary(rows, truncated):
+    gate = cbom_gate.evaluate({"results": [_row(f"DES-{i}", ["WEAK_ALGORITHM"]) for i in range(rows)]})
+    assert gate["failing_count"] == rows
+    assert len(gate["failing"]) == cbom_gate.MAX_LISTED
+    assert gate["truncated"] is truncated
 
 
 def test_the_failing_list_is_capped_and_says_so():

@@ -9,8 +9,9 @@ The backend image does not ship the aibom package, so the code set is copied her
 backend/tests/test_cicd_cbom_gate.py keeps it equal to the engine's. The verdict is decided from the run-object rows
 the hosted scan returns (each row's ``finding_codes``), which carry every flag the CLI gate reads.
 
-Fail closed: when no run-object arrived (the poll window ended, or the answer is malformed) the verdict is
-``no_result`` and ``gate_failed`` is true, so a pipeline never passes a tree nobody judged.
+Fail closed: when no run-object arrived (the poll window ended) or the one that arrived cannot be read, the verdict
+is ``no_result`` (each case with its own reason) and ``gate_failed`` is true, so a pipeline never passes a tree nobody
+judged.
 """
 from __future__ import annotations
 
@@ -60,8 +61,12 @@ def evaluate(run: Any) -> dict[str, Any]:
     }
     rows = run.get("results") if isinstance(run, dict) else None
     if not isinstance(rows, list):
-        gate["reason"] = ("No CBOM result arrived within the time limit, so the tree was not judged; the gate fails "
-                          "closed. Run the job again; the scan is listed on the CI/CD page.")
+        if run is None:  # poll_for_results gave up: running the job again can help
+            gate["reason"] = ("No CBOM result arrived within the time limit, so the tree was not judged; the gate fails "
+                              "closed. Run the job again; the scan is listed on the CI/CD page.")
+        else:  # a result arrived but has no list of rows: running again will not help
+            gate["reason"] = ("The CBOM result could not be read (it has no list of findings), so the tree was not "
+                              "judged; the gate fails closed. Contact DevSecShield support with the scan's log id.")
         return gate
     failing: list[dict[str, Any]] = []
     codes_seen: set[str] = set()
