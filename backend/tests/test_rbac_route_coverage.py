@@ -382,3 +382,131 @@ def test_marker_mistakes_are_violations():
     bare = FastAPI()  # no PermissionMarker: the marker would be decoration only
     bare.include_router(fine)
     assert "is not enforced" in "\n".join(coverage.violations(bare))
+
+
+# ------------------------------------------------------------------------------------------------ review 5869394244 / 5869356370
+
+def test_the_matrix_holds_the_names_the_parallel_tracks_use():
+    """F4 owns the matrix (permissions.py:81): F3 (#40) declares scm.*; F1.2 cbom.*; F1.4's node route is machine()."""
+    from backend.utilities.rbac.permissions import PERMISSIONS, get_permission
+    expected = {"scm.read": "viewer", "scm.connections.write": "admin", "scm.repos.write": "admin",
+                "scm.policies.write": "admin", "scm.scans.run": "admin",
+                "cbom.fleet.read": "viewer", "cbom.inventory.write": "admin", "cbom.policies.write": "admin",
+                "cbom.credentials.write": "admin", "cbom.transports.write": "admin", "cbom.sshca.admin": "admin"}
+    assert {name: get_permission(name).min_role for name in expected} == expected
+    assert "repos.read" not in PERMISSIONS and "repos.manage" not in PERMISSIONS  # nobody declares them
+
+
+def test_public_and_machine_markers_need_no_rbac_import():
+    """A webhook (F3) or a node route (F1.4) declares itself without importing F4: "public:<reason>",
+    "machine:<credential>"."""
+    router = APIRouter()
+
+    @router.post("/scm/webhooks/{provider}/{webhook_uid}",
+                 openapi_extra={"x-zs-permission": "public:the provider's HMAC signature is the credential"})
+    async def webhook(provider: str, webhook_uid: str):
+        return {"reached": "webhook"}
+
+    @router.post("/cbom/node/jobs/{job_id}/ssh-cert", openapi_extra={"x-zs-permission": "machine:scan-node token"})
+    async def node(job_id: int):
+        return {"reached": "node"}
+
+    marker = PermissionMarker()
+    probe = FastAPI(dependencies=[Depends(marker)])
+    probe.include_router(router)
+    marker.prepare(probe)
+    assert coverage.violations(probe) == []
+    client = TestClient(probe)
+    assert client.post("/scm/webhooks/github/abc").json() == {"reached": "webhook"}
+    assert client.post("/cbom/node/jobs/1/ssh-cert").json() == {"reached": "node"}
+    kinds = {r["path"]: r["kind"] for r in coverage.inventory(probe)}
+    assert kinds == {"/scm/webhooks/{provider}/{webhook_uid}": "public", "/cbom/node/jobs/{job_id}/ssh-cert": "machine"}
+
+
+@pytest.mark.parametrize("bad", ["scm.everything", "public:", "machine:  ", "public.scm_webhook", "node"])
+def test_an_unknown_or_malformed_marker_stops_the_app_at_startup(bad):
+    """permissions.py:81 / policy.py:372: a bad marker answered 500 on every request; now the app refuses to start."""
+    router = APIRouter()
+
+    @router.get("/{team_id}/x", openapi_extra={"x-zs-permission": bad})
+    async def x(team_id: int):
+        return {}
+
+    marker = PermissionMarker()
+    probe = FastAPI(dependencies=[Depends(marker)])
+    probe.include_router(router)
+    with pytest.raises(ValueError, match="x-zs-permission"):
+        marker.prepare(probe)
+    assert any("x-zs-permission" in p for p in coverage.violations(probe))
+
+
+def test_the_real_app_resolved_every_marker_at_startup():
+    from backend import main
+    assert main.permission_marker.prepared
+
+
+def test_a_route_without_a_policy_is_refused_at_runtime():
+    """policy.py:376: no runtime default-deny; an anonymous request reached an undeclared route."""
+    router = APIRouter()
+    reached = []
+
+    @router.post("/{team_id}/probe-no-policy")
+    async def undeclared(team_id: int):
+        reached.append(team_id)
+        return {"reached": True}
+
+    probe = FastAPI(dependencies=[Depends(PermissionMarker())])
+    probe.include_router(router)
+    response = TestClient(probe, raise_server_exceptions=False).post("/1/probe-no-policy")
+    assert response.status_code == 500 and "access policy" in response.json()["detail"]
+    assert reached == []
+
+
+def test_team_ids_under_other_names_need_a_team_permission():
+    """coverage.py:70: only the literal {team_id} was recognised."""
+    from pydantic import BaseModel
+
+    class Body(BaseModel):
+        teamId: int
+
+    access = Access(_engine_getter)
+    router = APIRouter()
+
+    @router.get("/teams/{teamId}/renamed", dependencies=[access.authenticated()])
+    async def renamed(teamId: int):
+        return {}
+
+    @router.get("/team/{id}", dependencies=[access.authenticated()])
+    async def by_id(id: int):
+        return {}
+
+    @router.get("/query", dependencies=[access.authenticated()])
+    async def by_query(team_id: int):
+        return {}
+
+    @router.post("/body", dependencies=[access.authenticated()])
+    async def by_body(body: Body):
+        return {}
+
+    @router.post("/admin/teams/{target_team_id}/owner", dependencies=[access.platform_admin()])
+    async def superuser(target_team_id: int):
+        return {}
+
+    @router.get("/sso/{team}/start", dependencies=[public("starts a sign-in", team_in_path="the team whose IdP signs in")])
+    async def sso_start(team: int):
+        return {}
+
+    probe = FastAPI()
+    probe.include_router(router)
+    problems = "\n".join(coverage.violations(probe))
+    for label in ("GET /teams/{teamId}/renamed", "GET /team/{id}", "GET /query", "POST /body"):
+        assert f"{label}: names a team" in problems, (label, problems)
+    assert "/admin/teams/{target_team_id}/owner" not in problems  # superusers are not team-scoped
+    assert "/sso/{team}/start" not in problems  # public on purpose, and says why
+
+
+def test_the_cbom_discovery_sweep_is_declared_admin_like_its_handler():
+    """Review 5869356370 (cbom_sources.py:1109): declared cbom.write (member) while the handler is admin-only."""
+    rows = {(r["methods"], r["path"]): r for r in coverage.inventory(app)}
+    sweep = rows[("POST", "/{team_id}/cbom/sources/discovery")]
+    assert sweep["permission"] == "cbom.settings" and sweep["min_role"] == "admin"

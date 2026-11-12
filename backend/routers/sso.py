@@ -46,6 +46,9 @@ callback_limiter = RateLimiter("sso.callback", times=120, seconds=60, key_func=i
 metadata_limiter = RateLimiter("sso.metadata", times=30, seconds=60, key_func=ip_key)
 exchange_limiter = RateLimiter("sso.exchange", times=120, seconds=60, key_func=ip_key)
 PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
+# The round-trip routes name a team in their path on purpose (the coverage check asks why): it says whose identity
+# provider signs the person in.  Nothing of the team is read or changed through them except its SSO settings.
+SSO_TEAM = "the team whose identity provider signs the person in; only its SSO settings are read"
 
 
 def _principal(request: Request):
@@ -180,7 +183,7 @@ def _refused(team_id: int, protocol: str, message: str, request: Request) -> Red
 
 
 @router.get("/sso/{team}/start", summary="Start single sign-on: to the identity provider",
-            dependencies=[Depends(start_limiter), public("starts a sign-in; the IdP authenticates")])
+            dependencies=[Depends(start_limiter), public("starts a sign-in; the IdP authenticates", team_in_path=SSO_TEAM)])
 async def start(team: int, cn: Annotated[str, Query(max_length=64)] = "",
                 redirect: Annotated[str, Query(max_length=512)] = "/home",
                 login_hint: Annotated[str | None, Query(max_length=254)] = None):
@@ -197,7 +200,7 @@ async def start(team: int, cn: Annotated[str, Query(max_length=64)] = "",
 
 
 @router.get("/sso/{team}/oidc/callback", summary="OIDC: the identity provider returns here",
-            dependencies=[Depends(callback_limiter), public("the IdP's answer; checked against the browser's state")])
+            dependencies=[Depends(callback_limiter), public("the IdP's answer; checked against the browser's state", team_in_path=SSO_TEAM)])
 async def oidc_callback(team: int, request: Request, state: Annotated[str, Query(max_length=64)] = "",
                         code: Annotated[str, Query(max_length=2048)] = "",
                         error: Annotated[str | None, Query(max_length=200)] = None):
@@ -214,7 +217,7 @@ async def oidc_callback(team: int, request: Request, state: Annotated[str, Query
 
 
 @router.post("/sso/{team}/saml/acs", summary="SAML: the identity provider posts the response here",
-             dependencies=[Depends(callback_limiter), public("the IdP's signed response; checked against the browser's state")])
+             dependencies=[Depends(callback_limiter), public("the IdP's signed response; checked against the browser's state", team_in_path=SSO_TEAM)])
 async def saml_acs(team: int, request: Request, SAMLResponse: Annotated[str, Form(max_length=400_000)] = "",
                    RelayState: Annotated[str, Form(max_length=64)] = ""):
     try:
@@ -229,7 +232,7 @@ async def saml_acs(team: int, request: Request, SAMLResponse: Annotated[str, For
 
 
 @router.get("/sso/{team}/saml/metadata", summary="SAML service provider metadata",
-            dependencies=[Depends(metadata_limiter), public("public SP metadata for the IdP administrator")])
+            dependencies=[Depends(metadata_limiter), public("public SP metadata for the IdP administrator", team_in_path=SSO_TEAM)])
 async def saml_metadata(team: int):
     from backend.utilities.sso import saml
     try:

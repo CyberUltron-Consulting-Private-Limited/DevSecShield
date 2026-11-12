@@ -63,7 +63,7 @@ app_langs = ["python", "javascript", "java", "php", "c", "ruby", "rust", "swift"
 # Register /cicd/dast/scan BEFORE /cicd/{type}/scan so "dast" is not swallowed by the zip poller.
 
 
-@router.post("/cicd/dast/scan", summary="Start an asynchronous DAST scan from a saved profile", status_code=202, dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id")])
+@router.post("/cicd/dast/scan", summary="Start an asynchronous DAST scan from a saved profile", status_code=202, dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id", permission="scan.create")])
 async def run_cicd_dast_scan(
     body: CicdDastScanRequest,
     user_and_integration: dict = Depends(get_user_and_integration_id),
@@ -130,7 +130,7 @@ async def run_cicd_dast_scan(
     }
 
 
-@router.get("/cicd/dast/scan/{scan_id}", summary="DAST CI status for Jenkins wait-and-gate", dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id")])
+@router.get("/cicd/dast/scan/{scan_id}", summary="DAST CI status for Jenkins wait-and-gate", dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id", permission="scan.read")])
 async def get_cicd_dast_scan(
     scan_id: int,
     user_and_integration: dict = Depends(get_user_and_integration_id),
@@ -178,7 +178,7 @@ async def get_cicd_dast_scan(
     }
 
 
-@router.post("/cicd/{type}/scan",summary="Run a new cicd scan", dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id")])
+@router.post("/cicd/{type}/scan",summary="Run a new cicd scan", dependencies=[Depends(ci_limiter), machine("CI/CD API key", "X-API-Key is checked by get_user_and_integration_id", permission="scan.create")])
 async def run_cicd_scan(
     type: scan_types, 
     zip_file: UploadFile  , 

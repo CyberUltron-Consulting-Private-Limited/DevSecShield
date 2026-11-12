@@ -1,4 +1,5 @@
-"""Changing who is in a team and with which role (F4 RBAC): role changes, removals, ownership claims.
+"""Changing who is in a team and with which role (F4 RBAC): role changes, removals, ownership claims and
+superuser owner assignment.
 
 Each operation locks the team row first (``SELECT ... FOR UPDATE`` on PostgreSQL), so two concurrent changes in one
 team are applied one after the other: the "a team keeps one owner" and "claim only while there is no owner" rules
@@ -118,7 +119,9 @@ def remove_members(engine: Engine, team_id: int, actor: Principal, emails: list[
 
 
 def claim_ownership(engine: Engine, team_id: int, actor: Principal, meta: dict) -> dict:
-    """A team the migration left without an owner (admins only) gets one: the admin who asks first."""
+    """An ownerless team's ONLY admin may make themself its owner.  With several admins nobody claims (a first-come
+    claim would let one admin take the team and evict the others): a superuser assigns the owner (``assign_owner``).
+    The migration already gave every team with an admin an owner, so this is for teams that lost theirs."""
     with Session(engine) as session:
         lock_team(session, team_id)
         if owner_count(session, team_id) > 0:
@@ -128,6 +131,12 @@ def claim_ownership(engine: Engine, team_id: int, actor: Principal, meta: dict) 
             TeamMembership.team_id == team_id, TeamMembership.user_id == actor.user_id)).first()
         if membership is None or membership.role != "admin":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an admin can claim ownership")
+        admins = int(session.exec(select(func.count()).select_from(TeamMembership).where(
+            TeamMembership.team_id == team_id, TeamMembership.role == "admin")).one())
+        if admins > 1:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                                detail="This team has several admins, so none of them can claim it: ask a platform "
+                                       "operator to choose its owner")
         membership.role = "owner"
         session.add(membership)
         audit.record(session, action="team.ownership.claim", team_id=team_id, object_type="member",
@@ -137,3 +146,42 @@ def claim_ownership(engine: Engine, team_id: int, actor: Principal, meta: dict) 
                      **audit.actor_fields(actor))
         session.commit()
         return {"role": "owner"}
+
+
+def assign_owner(engine: Engine, team_id: int, actor: Principal, email: str, meta: dict) -> dict:
+    """A superuser makes a member the owner (teams with several admins and no owner, or no admin at all).  Nobody
+    else's role changes; audited as ``team.ownership.assign``."""
+    with Session(engine) as session:
+        lock_team(session, team_id)
+        targets = _members_by_email(session, team_id, [email])
+        if not targets:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{normalise_email(email)} is not in this team")
+        user, membership = targets[0]
+        old = membership.role
+        if old != "owner":
+            membership.role = "owner"
+            session.add(membership)
+        audit.record(session, action="team.ownership.assign", team_id=team_id, object_type="member",
+                     object_id=user.id, ip=meta.get("ip"), user_agent=meta.get("user_agent"),
+                     details={"email": normalise_email(user.email), "from": old, "to": "owner",
+                              "owners_before": owner_count(session, team_id) - (old != "owner"),
+                              "method": meta.get("method")},
+                     **audit.actor_fields(actor))
+        session.commit()
+        return {"email": normalise_email(user.email), "role": "owner", "changed": old != "owner"}
+
+
+def last_owner_teams(session: Session, user_id: int, *, except_team_id: int | None = None) -> list[int]:
+    """Teams where ``user_id`` is the only owner and somebody else is still a member (deleting the account would
+    leave them without an owner)."""
+    owned = session.exec(select(TeamMembership.team_id).where(
+        TeamMembership.user_id == user_id, TeamMembership.role == "owner")).all()
+    stuck = []
+    for team_id in owned:
+        if team_id == except_team_id:
+            continue
+        others = int(session.exec(select(func.count()).select_from(TeamMembership).where(
+            TeamMembership.team_id == team_id, TeamMembership.user_id != user_id)).one())
+        if others and owner_count(session, team_id) <= 1:
+            stuck.append(team_id)
+    return sorted(stuck)

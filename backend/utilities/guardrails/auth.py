@@ -6,11 +6,12 @@ exposes Guardrails management.
 
 import secrets
 import hashlib
-from fastapi import Security, HTTPException, status
+from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 from backend.new_models import GuardrailsIntegration
 from sqlmodel import Session, select
 from backend.get_db import get_db
+from backend.utilities.rbac.policy import bind_api_key
 from backend.utilities.db.encryption import encrypt_value, decrypt_value, is_encrypted
 from rich.console import Console
 console = Console()
@@ -21,7 +22,7 @@ def hash_api_key(api_key: str) -> str:
     return hashlib.sha256(api_key.encode()).hexdigest()
 
 
-def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int]:
+def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int, int]:
     """
     Validate API key and return user_id, integration_id.
     Supports both legacy plaintext keys and new hashed keys.
@@ -51,7 +52,7 @@ def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int]:
                     status_code=status.HTTP_401_UNAUTHORIZED, 
                     detail="Missing or invalid Guardrails API key"
                 )
-            return (integration.owner_user.id, integration.id)
+            return (integration.owner_user_id, integration.id, integration.team_id)
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
@@ -62,7 +63,7 @@ def get_user_and_integration_from_api_key(api_key: str) -> tuple[int, int]:
 
 api_key_header = APIKeyHeader(name="gr-api-key")
 
-def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
+def get_user_and_integration_id(request: Request, api_key_header: str = Security(api_key_header)):
     """
     Get the user from the API key header
     Args:
@@ -82,10 +83,12 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
             api_key = api_key_header.split(" ", 1)[1]
         else:
             api_key = api_key_header
-        user_id, integration_id = get_user_and_integration_from_api_key(api_key)
+        user_id, integration_id, team_id = get_user_and_integration_from_api_key(api_key)
         if not user_id or not integration_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid Guardrails API key")
-        
+        # the key acts as its creator: still a member of its team, with a role that holds the route's permission
+        bind_api_key(request, lambda: get_db(), user_id=user_id, team_id=team_id)
+
         console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with API key ******{api_key[-6:]}", style="bold yellow")
         return {
             "user_id": user_id,

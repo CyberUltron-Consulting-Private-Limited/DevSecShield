@@ -34,7 +34,10 @@ def main() -> int:
         cells = [r["methods"], f"`{r['path']}`", f"`{r['handler']}`"]
         if before:
             cells.append(before.get((r["methods"], r["path"]), "new route"))
-        cells += [r["permission"] or r["policy"], r["min_role"] or ("superuser" if r["kind"] == "platform_admin" else r["kind"]),
+        machine = r["kind"] == "machine"
+        cells += [r["policy"] if machine else (r["permission"] or r["policy"]),
+                  f"machine (creator {r['min_role']}+)" if machine and r["min_role"] else
+                  (r["min_role"] or ("superuser" if r["kind"] == "platform_admin" else r["kind"])),
                   "yes" if r["audited"] else ""]
         out.append("| " + " | ".join(c.replace("|", "\\|") for c in cells) + " |")
     kinds: dict[str, int] = {}

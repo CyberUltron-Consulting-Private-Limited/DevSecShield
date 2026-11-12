@@ -77,9 +77,14 @@ _ALL = (
     Permission("cbom.credentials.write", "admin", "change fleet credentials", True),
     Permission("cbom.transports.write", "admin", "change transports", True),
     Permission("cbom.sshca.admin", "admin", "manage the SSH certificate authority", True),
-    # F3 repositories at scale: connected Git organisations (installations, tokens, filters) and their repositories
-    Permission("repos.read", "viewer", "view connected repositories", False),
-    Permission("repos.manage", "admin", "connect Git organisations or change their tokens and filters", True),
+    # F3 repositories at scale (#40, routers/scm.py): the names F3 declares.  Reads are viewer like every product's
+    # data; every write is admin, as F3 decided: connections hold org-wide tokens, policies and bulk runs reach every
+    # repository of the organisation and runs spend the team's credits (one scan of one repository is scan.run).
+    Permission("scm.read", "viewer", "view connected Git organisations, repositories and their roll-up", False),
+    Permission("scm.connections.write", "admin", "connect Git organisations or change their tokens, filters and webhooks", True),
+    Permission("scm.repos.write", "admin", "include, exclude or pin repositories", True),
+    Permission("scm.policies.write", "admin", "change repository scan policies", True),
+    Permission("scm.scans.run", "admin", "run or cancel scans across repositories", True),
 )
 
 PERMISSIONS: dict[str, Permission] = {p.name: p for p in _ALL}

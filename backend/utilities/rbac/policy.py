@@ -50,6 +50,7 @@ class Principal:
     is_superuser: bool
     team_id: Optional[int] = None
     role: Optional[str] = None
+    via: Optional[str] = None  # "api_key": a CI/CD or guardrails key acting as the person who created it
 
 
 @dataclass
@@ -167,12 +168,17 @@ class AccessPolicy:
 
 
 class Public(AccessPolicy):
+    """No account.  ``team_in_path``: the route names a team (``/sso/{team}/start``) on purpose and says why; the
+    coverage check otherwise refuses a non-team policy on a route that names a team."""
     kind = "public"
 
-    def __init__(self, reason: str):
-        if not reason.strip():
+    def __init__(self, reason: str, team_in_path: Optional[str] = None):
+        if not (reason or "").strip():
             raise ValueError("a public route needs a reason")
+        if team_in_path is not None and not team_in_path.strip():
+            raise ValueError("team_in_path needs a reason")
         self.reason = reason
+        self.team_in_path = team_in_path
 
     def describe(self) -> str:
         return f"public: {self.reason}"
@@ -182,14 +188,21 @@ class Public(AccessPolicy):
 
 
 class Machine(AccessPolicy):
-    """A credential that is not a person's session, checked by the handler (node token, API key)."""
+    """A credential that is not a person's session, checked by the handler (node token, API key).
+
+    ``permission`` (API keys): the key acts as the person who created it, so that person must still be a member of
+    the key's team whose role holds this permission, on every use (``bind_api_key``); a successful use of an
+    audited permission is written to the audit log with that person as actor (``actor_type`` api_key)."""
     kind = "machine"
 
-    def __init__(self, credential: str, reason: str):
+    def __init__(self, credential: str, reason: str, permission: Optional[str] = None):
         self.credential, self.reason = credential, reason
+        self.permission = get_permission(permission) if permission else None
+        self.audited = bool(self.permission and self.permission.audited)
 
     def describe(self) -> str:
-        return f"machine ({self.credential}): {self.reason}"
+        acting = f"; acts as its creator, who needs {self.permission.name}" if self.permission else ""
+        return f"machine ({self.credential}): {self.reason}{acting}"
 
     async def __call__(self, request: Request) -> None:
         self._context(request)
@@ -207,9 +220,11 @@ class Authenticated(AccessPolicy):
         return "any signed-in account" + (" (also a closed session)" if self.allow_inactive_session else "")
 
     async def __call__(self, request: Request) -> Principal:
-        principal = await resolve_principal(request, _engine(self.engine_getter),
-                                            allow_inactive=self.allow_inactive_session)
-        self._context(request, engine_getter=self.engine_getter, principal=principal)
+        engine = _engine(self.engine_getter)
+        principal = await resolve_principal(request, engine, allow_inactive=self.allow_inactive_session)
+        ctx = self._context(request, engine_getter=self.engine_getter, principal=principal)
+        if self.audited:
+            await _audit_attempt(request, ctx, engine)
         return principal
 
 
@@ -232,6 +247,8 @@ class PlatformAdmin(AccessPolicy):
                 await _audit_denial(request, ctx, engine, action=f"platform.{request.method.lower()}",
                                     reason="not a superuser")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=SUPERUSER_REQUIRED)
+        if self.audited:
+            await _audit_attempt(request, ctx, engine)
         return principal
 
 
@@ -260,12 +277,33 @@ class TeamPermission(AccessPolicy):
                                 reason=f"role {principal.role} below {self.permission.min_role}")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail=role_denied_detail(principal.role, self.permission))
+        if self.audited:
+            await _audit_attempt(request, ctx, engine)
         return principal
+
+
+AUDIT_UNAVAILABLE = "The audit log cannot record this change right now, so nothing was changed. Try again shortly."
+
+
+async def _audit_attempt(request: Request, ctx: AccessContext, engine: Engine) -> None:
+    """Fail closed: an audited request is written to the audit log (outcome "attempted") BEFORE its handler runs; if
+    that write fails the request is refused with 503 and nothing changes.  The middleware then records how it ended
+    (success / denied / failed) with this row's id."""
+    from backend.utilities.rbac import audit
+
+    try:
+        attempt_id = await run_in_threadpool(audit.record_from_context, engine, ctx, request_meta(request),
+                                             outcome="attempted")
+    except Exception as exc:
+        log.error("audit: attempt not recorded, request refused (%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=AUDIT_UNAVAILABLE) from None
+    request.state.audit_attempt_id = attempt_id
 
 
 async def _audit_denial(request: Request, ctx: AccessContext, engine: Engine, *, action: str, reason: str) -> None:
     from backend.utilities.rbac import audit  # import here: audit imports this module's types
 
+    request.state.audit_denied = True  # the middleware does not record this refusal a second time
     try:
         await run_in_threadpool(audit.record_from_context, engine, ctx, request_meta(request), action=action,
                                 outcome="denied", extra={"reason": reason})
@@ -304,14 +342,51 @@ class Access:
         return Depends(PlatformAdmin(self.engine_getter, audited=audited))
 
 
-def public(reason: str):
+def public(reason: str, team_in_path: Optional[str] = None):
     from fastapi import Depends
-    return Depends(Public(reason))
+    return Depends(Public(reason, team_in_path))
 
 
-def machine(credential: str, reason: str):
+def machine(credential: str, reason: str, permission: Optional[str] = None):
     from fastapi import Depends
-    return Depends(Machine(credential, reason))
+    return Depends(Machine(credential, reason, permission))
+
+
+KEY_HOLDER_GONE = ("The person who created this API key is no longer a member of its team: ask a team member to "
+                   "create a new key")
+
+
+def bind_api_key(request: Request, engine_getter: EngineGetter, *, user_id: int, team_id: int) -> Principal:
+    """Called by the API-key resolvers (utilities/cicd/auth.py, utilities/guardrails/auth.py) once the key itself
+    is valid: the key's creator must still be a member of the key's team whose role holds the route's permission
+    (``machine(..., permission=...)``; a route that names none needs ``scan.read``).  403 otherwise.  The access
+    context then carries the creator, so the audit log names who the key acted for."""
+    ctx = context(request)
+    permission = getattr(getattr(ctx, "policy", None), "permission", None) or get_permission("scan.read")
+    with Session(_engine(engine_getter)) as session:
+        user = session.get(User, user_id)
+        role = session.exec(select(TeamMembership.role).where(
+            TeamMembership.team_id == team_id, TeamMembership.user_id == user_id)).first()
+    if user is None or role is None:
+        log.info("access refused: the creator of this credential left team_id=%s", team_id)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=KEY_HOLDER_GONE)
+    if not role_has(role, permission.name):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f"The person who created this API key is now a {ROLE_LABELS.get(role, role).lower()} "
+                                   f"and cannot {permission.description}: ask a team member to create a new key")
+    principal = Principal(user_id=user.id, email=user.email, is_superuser=bool(user.is_superuser), team_id=team_id,
+                          role=role, via="api_key")
+    if ctx is not None:
+        ctx.principal, ctx.team_id, ctx.engine_getter = principal, team_id, engine_getter
+        if ctx.policy.audited:  # fail closed, as for people (``_audit_attempt``); this resolver is synchronous
+            from backend.utilities.rbac import audit
+            try:
+                request.state.audit_attempt_id = audit.record_from_context(
+                    _engine(engine_getter), ctx, request_meta(request), outcome="attempted")
+            except Exception as exc:
+                log.error("audit: key attempt not recorded, request refused (%s)", type(exc).__name__)
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=AUDIT_UNAVAILABLE) from None
+    return principal
 
 
 def context(request: Request) -> Optional[AccessContext]:
@@ -326,12 +401,34 @@ def context(request: Request) -> Optional[AccessContext]:
 # only on a {team_id} route, with a permission that exists in the matrix, on an app that has the enforcer.
 
 PERMISSION_MARKER = "x-zs-permission"
+# Besides a team permission name, a marker may say "public:<why>" (a webhook whose signature is the credential) or
+# "machine:<credential>" (a scan-node route), so a track that does not import this module can declare those too.
+PUBLIC_MARKER, MACHINE_MARKER = "public:", "machine:"
 
 
 def marker_of(route) -> Optional[str]:
     extra = getattr(route, "openapi_extra", None) or {}
     value = extra.get(PERMISSION_MARKER) if isinstance(extra, dict) else None
     return value if isinstance(value, str) else None
+
+
+def policy_from_marker(name: str, engine_getter: "EngineGetter") -> AccessPolicy:
+    """The policy a marker declares.  ValueError (naming x-zs-permission) for an unknown or malformed one."""
+    if name.startswith(PUBLIC_MARKER):
+        reason = name[len(PUBLIC_MARKER):].strip()
+        if not reason:
+            raise ValueError(f"{PERMISSION_MARKER} {name!r}: say why the route is public (public:<reason>)")
+        return Public(reason)
+    if name.startswith(MACHINE_MARKER):
+        credential = name[len(MACHINE_MARKER):].strip()
+        if not credential:
+            raise ValueError(f"{PERMISSION_MARKER} {name!r}: name the credential (machine:<credential>)")
+        return Machine(credential, f"declared by its {PERMISSION_MARKER} marker; the handler checks the credential")
+    try:
+        return TeamPermission(name, engine_getter)
+    except ValueError:
+        raise ValueError(f"{PERMISSION_MARKER} names an unknown permission {name!r}: add it to "
+                         "backend/utilities/rbac/permissions.py, or use public:<reason> / machine:<credential>") from None
 
 
 def declared_policies(route) -> list:
@@ -359,21 +456,55 @@ def _engine_for(route) -> EngineGetter:
     return getter
 
 
+NO_POLICY = "This route declares no access policy"
+_DENY = object()  # a route with neither a policy nor a marker: refused at runtime (the coverage test catches it first)
+
+
 class PermissionMarker:
-    """App-level dependency: enforces ``x-zs-permission`` on routes without an AccessPolicy (see above)."""
+    """App-level dependency, on every route: enforces ``x-zs-permission`` markers on routes without an AccessPolicy,
+    and refuses (500, logged) a route that declares no policy at all, so a route added without one never answers
+    (runtime default-deny; the coverage test is the early warning).  ``prepare(app)`` resolves every marker once at
+    start-up: an unknown or malformed marker stops the app instead of answering 500 on every request."""
 
     def __init__(self):
-        self._policies: dict[int, Optional[TeamPermission]] = {}
+        self._policies: dict[int, Any] = {}
+        self.prepared = False
 
-    def _policy_for(self, route) -> Optional[TeamPermission]:
+    def _resolve(self, route) -> Any:
+        if route is None:
+            return _DENY
+        if declared_policies(route):
+            return None  # the route's own policy runs
+        name = marker_of(route)
+        if name is None:
+            return _DENY
+        return policy_from_marker(name, _engine_for(route))
+
+    def _policy_for(self, route) -> Any:
         key = id(route)
         if key not in self._policies:
-            name = marker_of(route)
-            self._policies[key] = (TeamPermission(name, _engine_for(route))
-                                   if name and not declared_policies(route) else None)
+            self._policies[key] = self._resolve(route)
         return self._policies[key]
 
+    def prepare(self, app) -> None:
+        from fastapi.routing import APIRoute, APIWebSocketRoute
+
+        problems = []
+        for route in app.routes:
+            if isinstance(route, (APIRoute, APIWebSocketRoute)):
+                try:
+                    self._policy_for(route)
+                except ValueError as exc:
+                    problems.append(f"{route.path}: {exc}")
+        if problems:
+            raise ValueError("refusing to start: " + "; ".join(problems))
+        self.prepared = True
+
     async def __call__(self, request: Request) -> None:
-        policy = self._policy_for(request.scope.get("route"))
+        route = request.scope.get("route")
+        policy = self._policy_for(route)
+        if policy is _DENY:
+            log.error("access refused: %s %s declares no access policy", request.method, getattr(route, "path", "?"))
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=NO_POLICY)
         if policy is not None:
             await policy(request)

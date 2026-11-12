@@ -1,6 +1,7 @@
 import secrets
 import hashlib
 from fastapi import Request, Security, HTTPException, status
+from backend.utilities.rbac.policy import bind_api_key
 from fastapi.concurrency import run_in_threadpool
 from fastapi.security import APIKeyHeader
 from backend.new_models import CicdIntegration
@@ -116,7 +117,7 @@ async def ci_key(request: Request) -> Key:
             return ("ci", str(integration_id))
     return await ip_key(request)
 
-def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
+def get_user_and_integration_id(request: Request, api_key_header: str = Security(api_key_header)):
     """
     Get the user from the API key header
     Args:
@@ -135,6 +136,8 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
         user_id, integration_id, team_id, scan_type = get_user_integration_team_from_api_key(api_key)
         if not user_id or not integration_id or not team_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
+        # the key acts as its creator: still a member of its team, with a role that holds the route's permission
+        bind_api_key(request, lambda: get_db(), user_id=user_id, team_id=team_id)
         
         console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with API key ******{api_key[-6:]}", style="bold yellow")
         return {

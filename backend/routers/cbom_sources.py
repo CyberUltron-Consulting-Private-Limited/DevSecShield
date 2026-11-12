@@ -1106,7 +1106,7 @@ def _discovery(engine, team_id: int, user_id: int) -> dict:
         return {"jobs": [public_job(j, nodes.get(j.node_id), settings, now) for j in jobs]}
 
 
-@router.post(BASE + "/discovery", dependencies=[*WRITE, access.team("cbom.write")], summary="Queue a discovery sweep on every node with ranges (admin)")
+@router.post(BASE + "/discovery", dependencies=[*WRITE, access.team("cbom.settings")], summary="Queue a discovery sweep on every node with ranges (admin)")
 async def discovery(team_id: TeamId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("discovery", team_id, _discovery, engine, team_id, user.id))
