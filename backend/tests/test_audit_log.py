@@ -333,7 +333,10 @@ def test_the_migration_keeps_every_role_and_is_reversible_on_postgresql(pg_schem
 
     before = snapshot()
     _migrate(engine, "upgrade")
-    assert snapshot() == before  # admin -> admin, member -> member, superusers unchanged
+    members, supers = snapshot()
+    assert supers == before[1]  # superusers unchanged
+    # every role kept, except the owner backfill: the admin whose default team it is owns it
+    assert members == [(1, 1, "owner"), (1, 2, "member"), (2, 2, "owner"), (2, 3, "member")]
     with engine.begin() as conn:
         assert conn.execute(sa.text("SELECT role FROM teaminvitation")).scalar() == "member"
         with pytest.raises(sa.exc.IntegrityError), conn.begin_nested():
@@ -354,3 +357,30 @@ def test_the_migration_keeps_every_role_and_is_reversible_on_postgresql(pg_schem
     _migrate(engine, "upgrade")
     assert rows(engine)[0].action == "kept.across.downgrade"  # the archive came back
     assert audit.verify_chain(engine)["ok"] is True
+
+
+@needs_pg
+def test_the_migration_gives_every_team_with_an_admin_one_owner_deterministically(pg_schema, capsys):
+    """Review 5869394244 (r6f4rbac001:8) / 5869356370 (roles.py:120): no team is left to a first-come claim."""
+    engine, _ = pg_schema
+    _create_pre_rbac_tables(engine)
+    with engine.begin() as conn:
+        conn.execute(sa.text("INSERT INTO team (id, name) VALUES (10, 'default of u10, two admins'), "
+                             "(11, 'one admin'), (12, 'two admins, nobody''s default'), (13, 'members only'), "
+                             "(14, 'default of u15 who is only a member')"))
+        conn.execute(sa.text('INSERT INTO "user" (id, email, is_superuser, default_team_id) VALUES '
+                             "(10, 'u10@x.test', false, 10), (11, 'u11@x.test', false, NULL), "
+                             "(12, 'u12@x.test', false, NULL), (13, 'u13@x.test', false, NULL), "
+                             "(14, 'u14@x.test', false, NULL), (15, 'u15@x.test', false, 14)"))
+        conn.execute(sa.text("INSERT INTO teammembership VALUES (10, 11, 'admin'), (10, 10, 'admin'), "
+                             "(11, 12, 'admin'), (11, 13, 'member'), (12, 14, 'admin'), (12, 13, 'admin'), "
+                             "(13, 11, 'member'), (14, 15, 'member'), (14, 12, 'admin')"))
+    _migrate(engine, "upgrade")
+    with engine.begin() as conn:
+        owners = sorted(conn.execute(sa.text("SELECT team_id, user_id FROM teammembership WHERE role = 'owner'")).all())
+    # 10: the admin whose default team it is (u10, not the lower id u11); 11: the only admin; 12: the lowest-id
+    # admin; 13: no admin, no owner (a superuser assigns one); 14: its only admin (u15's default team, u15 a member)
+    assert owners == [(10, 10), (11, 12), (12, 13), (14, 12)]
+    out = capsys.readouterr().out
+    assert "default team: 1" in out and "only admin: 2" in out and "lowest admin id: 1" in out
+    assert "no admin (a superuser assigns the owner): 1" in out

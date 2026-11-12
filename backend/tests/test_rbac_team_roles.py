@@ -1,6 +1,7 @@
 """Team roles end to end (F4 RBAC): owners, admins, members and viewers through the real app.
 
-* creators own their teams; legacy teams (admins only, as the migration leaves them) are claimed by an admin, once;
+* creators own their teams; an ownerless team is claimed only by its only admin, otherwise a superuser assigns
+  the owner (audited); the last owner of a team with members cannot be deleted;
 * invitations carry a role; admins invite members and viewers, owners may invite admins;
 * role changes and removals follow the matrix (admins manage members and viewers; owners everybody; a team keeps
   one owner); a change applies to the very next request (roles are never in the token);
@@ -131,23 +132,73 @@ def test_sign_up_owns_its_default_team(world, client):
         assert roles(engine, user.default_team_id) == {"new@acme.test": "owner"}
 
 
-def test_a_legacy_team_is_claimed_by_one_admin_once(world, client):
+def test_a_team_with_several_admins_and_no_owner_is_never_claimed_first_come(world, client):
+    """Review 5869356370 (roles.py:120): first-come claim let one admin take the team and evict the others."""
     engine, ids, _, _ = world
     legacy = ids["legacy"]
     team = client.get(f"/team/{legacy}", headers=bearer(ADMIN)).json()
     assert team["has_owner"] is False and team["role"] == "admin"
-    assert "team.ownership.claim" in team["permissions"]
     assert client.post(f"/team/{legacy}/ownership/claim", headers=bearer(MEMBER)).status_code == 403
-    claimed = client.post(f"/team/{legacy}/ownership/claim", headers=bearer(ADMIN))
-    assert claimed.status_code == 200, claimed.text
-    assert roles(engine, legacy)[ADMIN] == "owner"
-    again = client.post(f"/team/{legacy}/ownership/claim", headers=bearer(ADMIN2))
-    assert again.status_code == 409 and "already has an owner" in again.json()["detail"]
-    assert roles(engine, legacy)[ADMIN2] == "admin"
+    for who in (ADMIN, ADMIN2):
+        ratelimit.reset_all()
+        refused = client.post(f"/team/{legacy}/ownership/claim", headers=bearer(who))
+        assert refused.status_code == 409 and "platform operator" in refused.json()["detail"], refused.text
+    assert roles(engine, legacy) == {ADMIN: "admin", ADMIN2: "admin", MEMBER: "member"}
     claim_events = events(engine, "team.ownership.claim")
-    assert [(e.actor_user_id, e.outcome) for e in claim_events] == [(ids[MEMBER], "denied"), (ids[ADMIN], "success")]
+    assert [(e.actor_user_id, e.outcome) for e in claim_events] == [
+        (ids[MEMBER], "denied"), (ids[ADMIN], "denied"), (ids[ADMIN2], "denied")]
+
+
+def test_the_only_admin_of_an_ownerless_team_claims_it_once(world, client):
+    engine, ids, _, _ = world
+    with Session(engine) as s:
+        solo = Team(name="Solo legacy")
+        s.add(solo)
+        s.commit()
+        s.refresh(solo)
+        join(s, solo.id, ids[ADMIN], "admin")
+        join(s, solo.id, ids[MEMBER], "member")
+        solo_id = solo.id
+    claimed = client.post(f"/team/{solo_id}/ownership/claim", headers=bearer(ADMIN))
+    assert claimed.status_code == 200, claimed.text
+    assert roles(engine, solo_id)[ADMIN] == "owner"
+    ratelimit.reset_all()
+    again = client.post(f"/team/{solo_id}/ownership/claim", headers=bearer(ADMIN))
+    assert again.status_code == 409 and "already has an owner" in again.json()["detail"]
     # an owned team cannot be claimed either
+    ratelimit.reset_all()
     assert client.post(f"/team/{ids['team']}/ownership/claim", headers=bearer(ADMIN)).status_code == 409
+
+
+def test_a_superuser_makes_a_member_the_owner_of_an_ownerless_team(world, client):
+    """Teams with several admins or no admin at all: a platform operator decides, audited."""
+    engine, ids, _, _ = world
+    legacy = ids["legacy"]
+    url = f"/admin/teams/{legacy}/owner"
+    assert client.post(url, headers=bearer(ADMIN), json={"email": ADMIN}).status_code == 403
+    ratelimit.reset_all()
+    assert client.post(url, headers=bearer(ROOT), json={"email": OUTSIDER}).status_code == 404
+    ratelimit.reset_all()
+    made = client.post(url, headers=bearer(ROOT), json={"email": ADMIN2.upper()})
+    assert made.status_code == 200, made.text
+    assert roles(engine, legacy) == {ADMIN: "admin", ADMIN2: "owner", MEMBER: "member"}
+    ratelimit.reset_all()
+    assert client.post(f"/admin/teams/999999/owner", headers=bearer(ROOT), json={"email": ADMIN}).status_code == 404
+    assigned = events(engine, "team.ownership.assign")
+    assert len(assigned) == 1 and assigned[0].actor_type == "superuser" and assigned[0].team_id == legacy
+    assert assigned[0].details["email"] == ADMIN2 and assigned[0].details["from"] == "admin"
+    # the new owner now runs the team: the other admin can be managed
+    assert set_role(client, legacy, ADMIN2, ADMIN, "member").status_code == 200
+
+
+def test_deleting_the_last_owner_of_a_team_with_members_is_refused(world, client):
+    """Review 5869394244 (admin.py:467): DELETE /admin/delete_user left teams with no owner."""
+    engine, ids, _, _ = world
+    ratelimit.reset_all()
+    refused = client.request("DELETE", "/admin/delete_user", headers=bearer(ROOT), json={"user_id": ids[OWNER]})
+    assert refused.status_code == 409, refused.text
+    assert str(ids["team"]) in refused.json()["detail"] and "owner" in refused.json()["detail"]
+    assert roles(engine, ids["team"])[OWNER] == "owner"
 
 
 # ----------------------------------------------------------------------------------------- invitations with a role
@@ -201,6 +252,37 @@ def test_an_admin_cannot_resend_an_invitation_for_a_role_above_their_own(world, 
     assert resend.status_code == 403
     ratelimit.reset_all()
     assert client.post(f"/team/{team}/invitations/{inv.id}/resend", headers=bearer(OWNER)).status_code == 200
+
+
+def test_every_escalation_an_admin_attempts_is_refused_and_audited(world, client):
+    """Review 5869356370 (audit.py:221): refusals decided inside handlers left no audit trace."""
+    engine, ids, _, _ = world
+    team = ids["team"]
+    assert client.patch(f"/team/{team}", headers=bearer(OWNER),
+                        json={"intent": "add", "email_ids": ["boss@acme.test"], "role": "admin"}).status_code == 200
+    with Session(engine) as s:
+        boss_invite = s.exec(select(TeamInvitation).where(TeamInvitation.email == "boss@acme.test")).one().id
+    before = len([e for e in events(engine) if e.outcome == "denied"])
+    attempts = [
+        ("demote the owner", lambda: set_role(client, team, ADMIN, OWNER, "member")),
+        ("promote self to owner", lambda: set_role(client, team, ADMIN, ADMIN, "owner")),
+        ("make a viewer an admin", lambda: set_role(client, team, ADMIN, VIEWER, "admin")),
+        ("remove another admin", lambda: remove(client, team, ADMIN, ADMIN2)),
+        ("invite someone as admin", lambda: client.patch(f"/team/{team}", headers=bearer(ADMIN), json={
+            "intent": "add", "email_ids": ["x@acme.test"], "role": "admin"})),
+        ("resend the owner's admin invitation", lambda: client.post(
+            f"/team/{team}/invitations/{boss_invite}/resend", headers=bearer(ADMIN))),
+        ("claim ownership while an owner exists", lambda: client.post(
+            f"/team/{team}/ownership/claim", headers=bearer(ADMIN))),
+    ]
+    for what, attempt in attempts:
+        ratelimit.reset_all()
+        response = attempt()
+        assert response.status_code in (403, 409), (what, response.status_code, response.text)
+    denied = [e for e in events(engine) if e.outcome == "denied"][before:]
+    assert len(denied) == len(attempts), [(e.action, e.details) for e in denied]
+    assert all(e.actor_user_id == ids[ADMIN] and e.team_id == team and e.details.get("reason") for e in denied)
+    assert {e.details["status"] for e in denied} <= {403, 409}
 
 
 # ----------------------------------------------------------------------------------------- role changes

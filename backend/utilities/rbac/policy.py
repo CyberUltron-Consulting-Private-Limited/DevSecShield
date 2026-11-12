@@ -266,6 +266,7 @@ class TeamPermission(AccessPolicy):
 async def _audit_denial(request: Request, ctx: AccessContext, engine: Engine, *, action: str, reason: str) -> None:
     from backend.utilities.rbac import audit  # import here: audit imports this module's types
 
+    request.state.audit_denied = True  # the middleware does not record this refusal a second time
     try:
         await run_in_threadpool(audit.record_from_context, engine, ctx, request_meta(request), action=action,
                                 outcome="denied", extra={"reason": reason})

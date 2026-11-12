@@ -205,11 +205,15 @@ class AuditMiddleware:
             await self.app(scope, receive, send)
             return
         scope.setdefault("state", {})
-        sent: dict[str, int] = {}
+        sent: dict[str, Any] = {}
+        body = bytearray()
 
         async def send_and_note(message):
             if message.get("type") == "http.response.start":
                 sent["status"] = int(message.get("status", 0))
+            elif message.get("type") == "http.response.body" and sent.get("status") in REFUSALS:
+                if len(body) < MAX_REFUSAL_BODY:  # a refusal's small JSON body: its "detail" is the reason
+                    body.extend(message.get("body", b"")[:MAX_REFUSAL_BODY - len(body)])
             await send(message)
 
         await self.app(scope, receive, send_and_note)
@@ -218,14 +222,40 @@ class AuditMiddleware:
         status = sent.get("status", 0)
         if ctx is None or not getattr(ctx.policy, "audited", False) or ctx.engine_getter is None:
             return
-        if status >= 400 or status == 0 or state.get("audit_written"):
+        if state.get("audit_written"):
             return
         meta = _meta_from_scope(scope)
+        if status in REFUSALS:
+            # refused by the handler after the policy let the request in (an admin's escalation attempt, a 409 rule):
+            # the change rolled back, the attempt is still recorded.  Refusals by the policy itself are already in.
+            if ctx.principal is None or state.get("audit_denied"):
+                return
+            try:
+                await run_in_threadpool(record_from_context, ctx.engine_getter(), ctx, meta, outcome="denied",
+                                        status=status, extra={"reason": _refusal_reason(bytes(body))})
+            except Exception as exc:
+                log.error("audit: could not record a refused %s %s (%s)", meta.get("method"), ctx.route_path,
+                          type(exc).__name__)
+            return
+        if status >= 400 or status == 0:
+            return
         try:
             await run_in_threadpool(record_from_context, ctx.engine_getter(), ctx, meta, status=status,
                                     note=state.get("audit_note"))
         except Exception as exc:
             log.error("audit: could not record %s %s (%s)", meta.get("method"), ctx.route_path, type(exc).__name__)
+
+
+REFUSALS = (403, 409)
+MAX_REFUSAL_BODY = 2048
+
+
+def _refusal_reason(body: bytes) -> str:
+    try:
+        detail = json.loads(body.decode("utf-8")).get("detail")
+    except (ValueError, AttributeError, UnicodeDecodeError):
+        detail = None
+    return (detail if isinstance(detail, str) else "refused")[:200]
 
 
 def _meta_from_scope(scope) -> dict:

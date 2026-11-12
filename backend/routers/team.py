@@ -591,8 +591,8 @@ async def change_member_role(team_id: int, data: ChangeMemberRoleData, request: 
 @router.post("/team/{team_id}/ownership/claim", summary="Become the owner of a team that has none (admins)",
              dependencies=[Depends(write_limiter), access.team("team.ownership.claim")])
 async def claim_team_ownership(team_id: int, request: Request):
-    """Teams from before roles had owners (migration r6f4rbac001 kept admins as admins) have no owner; the first of
-    their admins to ask becomes it.  Refused (409) once the team has an owner."""
+    """An ownerless team's only admin becomes its owner.  Refused (409) once the team has an owner, and when it has
+    several admins (a platform operator chooses: POST /admin/teams/{id}/owner)."""
     result = await run_in_threadpool(team_roles.claim_ownership, get_db(), team_id, _principal(request),
                                      request_meta(request))
     audit.mark_written(request)

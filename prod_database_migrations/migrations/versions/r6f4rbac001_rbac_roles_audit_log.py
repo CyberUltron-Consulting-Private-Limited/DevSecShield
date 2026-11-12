@@ -4,9 +4,10 @@ Revision ID: r6f4rbac001
 Revises: rv6p1nodename001
 Create Date: 2026-11-11 14:00:00.000000
 
-Roles: existing memberships keep their role (admin -> admin, member -> member); superusers are unchanged; no owner
-is invented (a team without an owner is claimed by one of its admins, POST /team/{id}/ownership/claim, audited).
-New teams give their creator the owner role.  A CHECK constraint keeps roles to the four names; a role stored in
+Roles: existing memberships keep their role (admin -> admin, member -> member); superusers are unchanged.  Every
+team with an admin gets one owner, deterministically: the admin whose default team it is (the creator on dev), else
+the only admin, else the admin with the lowest user id (counts printed).  Teams with members but no admin get theirs
+from a superuser (POST /admin/teams/{id}/owner, audited).  New teams give their creator the owner role.  A CHECK constraint keeps roles to the four names; a role stored in
 another spelling ("Admin", " member") is normalised first, and anything else (none on dev) becomes member, counted
 in the migration output.
 
@@ -30,6 +31,19 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 ROLES = ("owner", "admin", "member", "viewer")
+# one admin per ownerless team: the one whose default team it is, else the lowest user id; ``why`` names the rule
+OWNER_PICK = """
+SELECT team_id, user_id, why FROM (
+  SELECT m.team_id, m.user_id,
+         CASE WHEN u.default_team_id = m.team_id THEN 'default'
+              WHEN count(*) OVER (PARTITION BY m.team_id) = 1 THEN 'only' ELSE 'lowest' END AS why,
+         row_number() OVER (PARTITION BY m.team_id
+                            ORDER BY CASE WHEN u.default_team_id = m.team_id THEN 0 ELSE 1 END, m.user_id) AS rn
+  FROM teammembership m JOIN "user" u ON u.id = m.user_id
+  WHERE m.role = 'admin'
+    AND NOT EXISTS (SELECT 1 FROM teammembership o WHERE o.team_id = m.team_id AND o.role = 'owner')
+) ranked WHERE rn = 1
+"""
 INVITE_ROLES = ("admin", "member", "viewer")
 
 
@@ -50,8 +64,21 @@ def upgrade() -> None:
             "UPDATE teammembership SET role = 'member' "
             "WHERE role IS NULL OR role NOT IN ('owner', 'admin', 'member', 'viewer')"))
     print(f"r6f4rbac001: memberships kept their role; {unknown} with an unknown role became member")
-    op.create_check_constraint("ck_teammembership_role", "teammembership",
-                               "role IN ('owner', 'admin', 'member', 'viewer')")
+
+    # ---- every team that has an admin gets exactly one owner, chosen deterministically (never a first-come claim):
+    # the admin whose default team it is (its creator on dev), else the only admin, else the admin with the lowest
+    # user id.  Teams with members but no admin are counted: a superuser assigns their owner (POST
+    # /admin/teams/{id}/owner, audited).
+    picks = bind.execute(sa.text(f"SELECT why, count(*) FROM ({OWNER_PICK}) p GROUP BY why")).all()
+    counts = {why: n for why, n in picks}
+    bind.execute(sa.text("UPDATE teammembership SET role = 'owner' "
+                         f"WHERE (team_id, user_id) IN (SELECT team_id, user_id FROM ({OWNER_PICK}) p)"))
+    no_admin = bind.execute(sa.text(
+        "SELECT count(DISTINCT m.team_id) FROM teammembership m WHERE NOT EXISTS ("
+        "SELECT 1 FROM teammembership o WHERE o.team_id = m.team_id AND o.role IN ('owner', 'admin'))")).scalar() or 0
+    print(f"r6f4rbac001: owners backfilled: default team: {counts.get('default', 0)}, "
+          f"only admin: {counts.get('only', 0)}, lowest admin id: {counts.get('lowest', 0)}; "
+          f"no admin (a superuser assigns the owner): {no_admin}")
 
     # ---- invitations carry the role the invitee joins with
     op.add_column('teaminvitation', sa.Column('role', sqlmodel.sql.sqltypes.AutoString(length=16),
@@ -95,6 +122,11 @@ def upgrade() -> None:
         bind.execute(sa.text("CREATE TRIGGER auditevent_no_truncate BEFORE TRUNCATE ON auditevent "
                              "FOR EACH STATEMENT EXECUTE FUNCTION auditevent_append_only()"))
 
+
+    # ---- last: the role CHECK (ACCESS EXCLUSIVE on teammembership, which every request's policy reads, held only
+    # to the end of this revision: env.py runs each revision in its own transaction)
+    op.create_check_constraint("ck_teammembership_role", "teammembership",
+                               "role IN ('owner', 'admin', 'member', 'viewer')")
 
 def downgrade() -> None:
     bind = op.get_bind()

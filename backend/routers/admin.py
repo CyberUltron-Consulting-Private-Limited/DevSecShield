@@ -12,7 +12,8 @@ from backend.utilities.auth.auth_utils import (
 )
 from backend.utilities.ratelimit import RateLimiter
 from backend.utilities.rbac import audit
-from backend.utilities.rbac.policy import Access
+from backend.utilities.rbac.policy import Access, request_meta
+from backend.utilities.team import roles as team_roles
 from backend.new_models import Team, TeamMembership, User
 from backend.utilities.auth.plans import plans
 from backend.utilities.auth import email as account_mail
@@ -52,6 +53,11 @@ class ToggleAdminAccessData(BaseModel):
 
 class DeleteUserData(BaseModel):
     user_id: int
+
+
+class AssignOwnerData(BaseModel):
+    email: str
+    check_email = field_validator("email")(clean_email)
 
 router = APIRouter(tags=["Admin"], route_class=NoEchoValidationRoute)  # 422s never echo a password
 
@@ -464,6 +470,13 @@ async def delete_user(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found"
                 )
+            # a team keeps one owner: the account's default team goes with it, any other team needs a new owner first
+            stuck = team_roles.last_owner_teams(session, user.id, except_team_id=user.default_team_id)
+            if stuck:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"This account is the only owner of team(s) {', '.join(map(str, stuck))}, which have other "
+                           "members: make one of them owner first (POST /admin/teams/{id}/owner)")
             audit.note_object(request, "user", user.id, email=user.email)
             for membership in user.team_memberships:
                 console.print(f"Membership: {membership}", style="bold green")
@@ -515,3 +528,15 @@ async def platform_audit_log(limit: Annotated[int, Query(ge=1, le=200)] = 50,
 @router.get('/admin/audit/verify', summary="Check the audit log's hash chain (superusers)", dependencies=READ)
 async def verify_audit_log():
     return await run_in_threadpool(audit.verify_chain, get_db())
+
+
+@router.post("/admin/teams/{target_team_id}/owner",
+             summary="Make a member the owner of a team (superusers; teams with several admins and no owner, or no admin)",
+             dependencies=WRITE)
+async def assign_team_owner(target_team_id: int, data: AssignOwnerData, request: Request):
+    """The recovery path the claim cannot cover: a team with several admins and no owner (no first-come claim), or
+    with members but no admin.  Only the named member's role changes; audited as ``team.ownership.assign``."""
+    result = await run_in_threadpool(team_roles.assign_owner, get_db(), target_team_id, request.state.access.principal,
+                                     data.email, request_meta(request))
+    audit.mark_written(request)
+    return result
