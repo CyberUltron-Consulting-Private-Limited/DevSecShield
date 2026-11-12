@@ -11,6 +11,7 @@ has no known address (PR #32: security re-review 5871690938, code/QA re-check 58
 """
 from __future__ import annotations
 
+import ipaddress
 import socket
 import threading
 import time
@@ -114,6 +115,22 @@ def test_a_name_that_never_answers_is_held_at_most_name_lookup_s(slow_dns, monke
         netutil.checked_ip("10.0.0.5", never)
     started = time.monotonic()
     assert never.match_ip("10.0.0.6") is not None and time.monotonic() - started < 0.1  # no second wait
+
+
+def test_the_hold_counts_from_when_the_name_was_listed_and_lasts_name_lookup_s(slow_dns, monkeypatch):
+    """Re-review 5879769432 (R10): the bound is NAME_LOOKUP_S from when the job started listing the name, not a
+    multiple of it, and not counted again from the first check.  1 s, so a 2x hold (2 s) cannot pass the 1.9 s bound
+    while a loaded runner keeps 0.9 s of slack."""
+    monkeypatch.setattr(netutil, "NAME_LOOKUP_S", 1.0)
+    slow_dns.hanging.add("slow.internal")
+    listed = time.monotonic()
+    never = NeverScan(["slow.internal"])
+    time.sleep(0.5)  # the job does other work first: half of the hold has passed
+    checked = time.monotonic()
+    assert never.match_ip("10.0.0.5") is not None
+    done = time.monotonic()
+    assert done - listed >= 1.0 and done - listed < 1.9  # NAME_LOOKUP_S after the listing
+    assert done - checked < 0.95  # only what was left of it
 
 
 def test_a_listed_name_that_does_not_exist_holds_targets_until_it_resolves(slow_dns, monkeypatch):
@@ -258,15 +275,23 @@ def test_a_listed_name_answering_only_a_sinkhole_address_holds_every_target(slow
     targets, skipped = expand_targets(["10.1.2.0/29"], never, reasons=reasons)
     assert targets == [] and "10.1.2.3" in skipped
     assert never.unresolved == ["prod-db.corp.internal"]
-    assert f"answers only {answer[0]}" in reasons["10.1.2.4"] and "sinkhole answer" in reasons["10.1.2.4"]
+    loopback = any(ipaddress.ip_address(a).is_loopback or (ipaddress.ip_address(a).version == 6
+                                                            and ipaddress.ip_address(a).ipv4_mapped is not None
+                                                            and ipaddress.ip_address(a).ipv4_mapped.is_loopback)
+                   for a in answer)
+    kind = "a loopback or DNS sinkhole answer" if loopback else "a DNS sinkhole answer"  # re-review 5879769432: R7
+    assert f"(answers only {', '.join(answer)}, {kind}) has not resolved from the scan node" in reasons["10.1.2.4"]
     assert UNRESOLVED in reasons["10.1.2.4"]
 
 
 def test_a_mixed_answer_with_a_loopback_address_blocks_both(slow_dns):
-    slow_dns.table["db.corp.internal"] = ["127.0.0.2", "192.0.2.10"]
+    # an IPv4-mapped loopback answer is blocked in both forms too (re-review 5879769432: R5)
+    slow_dns.table["db.corp.internal"] = ["127.0.0.2", "::ffff:127.0.0.5", "192.0.2.10"]
     never = NeverScan(["db.corp.internal"])
     assert never.match_ip("192.0.2.10") == never.match_ip("127.0.0.2") == "an address of db.corp.internal"
     assert never.match_ip("::ffff:127.0.0.2") == "an address of db.corp.internal"
+    assert never.match_ip("127.0.0.5") == never.match_ip("::ffff:127.0.0.5") == "an address of db.corp.internal"
+    assert never.match_ip("64:ff9b::7f00:5") == "an address of db.corp.internal"  # its NAT64 form reaches it too
     assert never.match_ip("127.0.0.3") is None and never.unresolved == []
 
 
@@ -364,3 +389,90 @@ def test_a_closed_job_whose_list_changes_does_not_drop_another_jobs_names(slow_d
         time.sleep(0.05)
     assert job_a.match_ip("10.1.2.9") == "an address of shared.corp"
     assert "other.corp" not in slow_dns.looked_up  # nothing is looked up for the ended job
+
+
+# ----------------------------------------------------------------------------- round 4 (re-review 5879769432)
+# A name that is loopback by definition: RFC 6761 §6.3 (localhost and every name under .localhost) and the loopback
+# aliases of the default hosts files (Debian/Ubuntu, Docker and Kubernetes; RHEL, Fedora and Amazon Linux).
+LOOPBACK_ENTRIES = ["localhost", "LOCALHOST.", "db.localhost", "ip6-localhost", "ip6-loopback", "localhost.localdomain",
+                    "localhost4", "localhost4.localdomain4", "localhost6", "localhost6.localdomain6"]
+LOOPBACK_TARGETS = ["127.0.0.0/30", "127.255.255.254", "::1", "::ffff:127.0.0.9", "64:ff9b::7f00:1"]
+
+
+@pytest.mark.parametrize("entry", LOOPBACK_ENTRIES)
+def test_a_loopback_name_keeps_only_the_loopback_out_and_holds_nothing(slow_dns, monkeypatch, entry):
+    """Re-review 5879769432 (netutil.py:53): with `localhost` in a source's list the node scanned nothing, because its
+    loopback-only answer read as a hosts-file blocklist's.  For a name that is loopback by definition that answer is
+    the truth: the entry blocks the loopback addresses in every form, as on 5ea71a4, is never looked up, and holds no
+    target."""
+    monkeypatch.setattr(netutil, "NAME_LOOKUP_S", 2.0)
+    slow_dns.hanging.add(entry.lower().rstrip("."))  # were it looked up, the first check would wait 2 s
+    started = time.monotonic()
+    never = NeverScan([entry, "10.1.2.5"])
+    reasons: dict[str, str] = {}
+    targets, skipped = expand_targets(["10.1.2.0/29"] + LOOPBACK_TARGETS, never, reasons=reasons)
+    assert time.monotonic() - started < 1.0 and slow_dns.looked_up == []
+    assert [t.ip for t in targets] == ["10.1.2.1", "10.1.2.2", "10.1.2.3", "10.1.2.4", "10.1.2.6"]
+    loopback = ["127.0.0.1", "127.0.0.2", "127.255.255.254", "::1", "::ffff:7f00:9", "64:ff9b::7f00:1"]
+    assert skipped == ["10.1.2.5"] + loopback
+    name = entry.lower().rstrip(".")
+    for address in loopback:
+        assert reasons[address] == f"{address} is on the never-scan list (an address of {name})"
+    assert never.unresolved == [] and never.held_names() == []
+    assert never.blocks_host(entry) and never.blocks_host(name.upper())
+
+
+def test_localhost_with_the_systems_own_resolver_is_the_reviewers_probe():
+    """probe-edges.txt: real getaddrinfo (/etc/hosts: 127.0.0.1 localhost), a sweep of 10.1.2.0/29.  397a0f0 scanned
+    nothing (held by localhost); now the six hosts are scanned and only loopback stays out."""
+    never = NeverScan(["localhost"])
+    targets, skipped = expand_targets(["10.1.2.0/29", "127.0.0.1"], never)
+    assert [t.ip for t in targets] == [f"10.1.2.{i}" for i in range(1, 7)] and skipped == ["127.0.0.1"]
+    assert never.unresolved == [] and never.match_ip("127.0.0.1") == "an address of localhost"
+
+
+def test_a_target_named_or_resolving_to_loopback_is_refused_by_a_loopback_name(slow_dns):
+    slow_dns.table["app.internal"] = ["127.0.0.3"]  # e.g. a hosts-file entry on the node
+    slow_dns.table["web.internal"] = ["10.1.2.7"]
+    ctx = _ctx(NeverScan(["localhost"]))
+    assert [t.label for t in L._targets(ctx, {"targets": ["localhost", "app.internal", "web.internal"]})] == [
+        "web.internal"]
+    assert [(o.target, o.status) for o in ctx.outcomes] == [("localhost", "skipped_never_scan"),
+                                                             ("app.internal", "skipped_never_scan")]
+    assert ctx.outcomes[0].error == "localhost is on the never-scan list"
+    assert ctx.outcomes[1].error == ("app.internal resolves to 127.0.0.3, which is on the never-scan list "
+                                     "(an address of localhost)")
+    assert slow_dns.looked_up == ["app.internal", "web.internal"]  # the targets; never the listed loopback name
+
+
+@pytest.mark.parametrize("entry", ["localhost.corp.internal", "notlocalhost", "localhostx", "my-localhost",
+                                   "ip6-localnet", "localhost5"])
+def test_other_names_that_answer_only_loopback_still_hold_every_target(slow_dns, entry):
+    """Only names that are loopback by definition are exempt: any other name answering only loopback is a blocklist's
+    answer, so the fail-closed rule of round 3 stands."""
+    slow_dns.table[entry] = ["127.0.0.1"]
+    never = NeverScan([entry])
+    reasons: dict[str, str] = {}
+    targets, skipped = expand_targets(["10.1.2.0/29"], never, reasons=reasons)
+    assert targets == [] and never.unresolved == [entry] and slow_dns.looked_up == [entry]
+    assert "a loopback or DNS sinkhole answer" in reasons["10.1.2.1"] and UNRESOLVED in reasons["10.1.2.1"]
+
+
+def test_a_loopback_name_does_not_hide_a_real_name_that_holds(slow_dns):
+    never = NeverScan(["localhost", "gone.corp.internal"])
+    reasons: dict[str, str] = {}
+    targets, skipped = expand_targets(["10.1.2.0/30"], never, reasons=reasons)
+    assert targets == [] and never.unresolved == ["gone.corp.internal"]
+    assert "gone.corp.internal" in reasons["10.1.2.1"] and "localhost" not in reasons["10.1.2.1"]
+    assert never.match_ip("127.0.0.1") == "an address of localhost"  # the loopback entry still names itself
+
+
+def test_a_loopback_name_added_or_removed_during_a_job_applies_at_once(slow_dns):
+    never = NeverScan(["10.1.2.5"])
+    assert never.match_ip("127.0.0.1") is None
+    never.update(["10.1.2.5", "localhost"])  # a heartbeat brings the new list
+    assert never.match_ip("127.0.0.1") == never.match_ip("::1") == "an address of localhost"
+    assert never.blocks_host("localhost") and never.unresolved == []
+    never.update(["10.1.2.5"])
+    assert never.match_ip("127.0.0.1") is None and not never.blocks_host("localhost")
+    assert slow_dns.looked_up == []
