@@ -175,21 +175,29 @@ class Registry:
             try:  # the registry, its token service and every redirect: one listed address skips the whole name
                 ip = netutil.resolve_checked(origin[1], self.ctx.never_scan)[0]
             except netutil.Blocked as exc:
+                if origin != self.origin and exc.entry == netutil.UNSPECIFIED:
+                    # the gate refuses 0.0.0.0/8 and :: whatever the list says; when the REGISTRY named that host it
+                    # is the registry steering the node to itself: report it as such, not as a never-scan skip
+                    self._refuse_internal(origin[1], _internal_address(exc.address or exc.what, self.registry_ip))
                 raise ImageError("skipped_never_scan", str(exc)) from None
             except OSError:
                 raise ImageError("unreachable", f"{origin[1]} does not resolve") from None
             if origin == self.origin:
                 self.registry_ip = ip
             else:
-                problem = _internal_address(ip, self.registry_ip)
-                if problem:
-                    self.ctx.log("registry pointed at an internal address; refused", registry=self.ref.registry,
-                                 host=origin[1], level="warn")
-                    raise ImageError("error", f"the registry sent the node to {origin[1]}, {problem}; refused")
+                self._refuse_internal(origin[1], _internal_address(ip, self.registry_ip))
             verify = self.registry_tls if origin == self.origin else self.public_tls
             self.clients[origin] = netutil.http_client(f"https://{origin[1]}:{origin[2]}", ip, self.ctx.never_scan,
                                                        verify=verify, timeout=TIMEOUT)
         return self.clients[origin]
+
+    def _refuse_internal(self, host: str, problem: str | None) -> None:
+        """Refuse a host the registry named (token service, redirect) that is one of the node's own or cloud-internal
+        addresses (``problem`` from _internal_address; None: nothing to refuse)."""
+        if problem:
+            self.ctx.log("registry pointed at an internal address; refused", registry=self.ref.registry, host=host,
+                         level="warn")
+            raise ImageError("error", f"the registry sent the node to {host}, {problem}; refused")
 
     def _send(self, method: str, url: str, headers: dict[str, str], stream: bool = False):
         """Send through the gate, following redirects by hand; Authorization goes to the registry origin only."""
