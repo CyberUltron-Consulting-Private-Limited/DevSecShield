@@ -10,15 +10,30 @@ Two more things are run-specific and dropped, on both sides alike:
   processes join the sshd daemon's group under other pids).  The group itself, its exe, library, ports and the
   ``deleted`` flag are compared.
 * the per-target ``duration_ms`` and the run's ``duration_s`` / ``elapsed_s`` (timings).
+* the thread id OpenSSL 3 puts in front of each error line (``80DB4734FD7E0000:error:1E08010C:DECODER routines...``)
+  in a fact such as ``detail`` of a key file it could not read: it is the address of the openssl process's thread
+  and differs between any two runs, SSH or not.  The rest of the line (code, library, reason) is compared.
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
+import re
 from typing import Any
 
 LOCAL_HOST_KEY = "<this host's own host key>"
+_OPENSSL_TID = re.compile(r"\b[0-9A-F]{8,16}(?=:error:)")
+
+
+def _no_thread_ids(value: Any) -> Any:
+    if isinstance(value, str):
+        return _OPENSSL_TID.sub("<tid>", value)
+    if isinstance(value, dict):
+        return {k: _no_thread_ids(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_no_thread_ids(v) for v in value]
+    return value
 
 
 def asset_key(asset: dict) -> str:
@@ -46,6 +61,8 @@ def normalise_assets(assets: list[dict], target: str | None = None) -> list[dict
                 facts["host_key"] = LOCAL_HOST_KEY
         if a.get("type") == "process_library":
             facts.pop("pids", None)
+        if facts:
+            a["facts"] = _no_thread_ids(facts)
         out.append(a)
     return sorted(out, key=lambda a: (asset_key(a), json.dumps(a, sort_keys=True, default=str)))
 
