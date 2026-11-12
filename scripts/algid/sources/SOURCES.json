@@ -1,0 +1,157 @@
+{
+ "_about": "Inputs of scripts/algid/build_algid.py. build_algid.py refuses a file without an entry or with a different sha256. Third-party HTML is committed only as normalised extracts (extract_html.py) that carry the raw page's sha256. Re-capture: see scripts/algid/README.md.",
+ "files": [
+  {
+   "file": "aws-apigw-pq-policies.json",
+   "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-security-policies-list.html",
+   "retrieved_utc": "2026-11-12T11:28:07Z",
+   "sha256": "1ffcc0ef026d52a2c72b8c0ec72b6322d060883c08eeb82d33d45d7a240cd46b",
+   "tool": "scripts/algid/extract_html.py from the raw capture aws-apigw-security-policies.html + aws-apigw-security-policies-overview.html (raw sha256 inside the extract; raw pages are kept with the CB-04 evidence, not committed)",
+   "licence": "facts extracted from AWS documentation"
+  },
+  {
+   "file": "aws-elb-pq-policies.json",
+   "url": "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/describe-ssl-policies.html",
+   "retrieved_utc": "2026-11-12T11:28:06Z",
+   "sha256": "643b6fc9b4a3866966a0b6d51ab6075ac3872cf65adc4eb333c474565e80d941",
+   "tool": "scripts/algid/extract_html.py from the raw capture aws-elb-security-policies.html (raw sha256 inside the extract; raw pages are kept with the CB-04 evidence, not committed)",
+   "licence": "facts extracted from AWS documentation"
+  },
+  {
+   "file": "botocore-enums.json",
+   "url": "botocore service models (pip wheel botocore==1.41.5, backend/uv.lock)",
+   "retrieved_utc": "2026-11-12T11:28:36Z",
+   "sha256": "14d6f8f1db34c7c054798e8c3ff6f16e92185f80dbd3ebfe5ed607d0c661fae0",
+   "tool": "scripts/algid/capture_botocore_enums.py, botocore 1.41.5",
+   "licence": "Apache-2.0 (botocore data)"
+  },
+  {
+   "file": "curated.json",
+   "url": "hand-curated; every section cites its document",
+   "retrieved_utc": "2026-11-12T17:37:14Z",
+   "sha256": "ecd01494dc27e51c4d8314c1c990187762afd3c11f580272a2b165749f36201e",
+   "tool": "hand, second-agent review (O-9) recorded in PR #94 (review 5874701640: all 20 categories agree)",
+   "licence": "this repository"
+  },
+  {
+   "file": "iana-ikev2-t4.csv",
+   "url": "https://www.iana.org/assignments/ikev2-parameters/ikev2-parameters-8.csv",
+   "retrieved_utc": "2026-11-12T11:27:11Z",
+   "sha256": "6ed52232302455c17439d41318820a174079c6ee548b5a5e4f9b454b42d34f1b",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "iana-pkix-alg.csv",
+   "url": "https://www.iana.org/assignments/smi-numbers/smi-numbers-1.3.6.1.5.5.7.6.csv",
+   "retrieved_utc": "2026-11-12T11:27:11Z",
+   "sha256": "3a054a338261228c71ea7e7f18928baa07e75cdbf3cd882e4c13e25136db0cd6",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "iana-ssh-kex.csv",
+   "url": "https://www.iana.org/assignments/ssh-parameters/ssh-parameters-16.csv",
+   "retrieved_utc": "2026-11-12T11:27:10Z",
+   "sha256": "982273d0dabf48d2492054005e8902f24181d9085edf6bf42e4eb4ca60516fc5",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "iana-tls-groups.csv",
+   "url": "https://www.iana.org/assignments/tls-parameters/tls-parameters-8.csv",
+   "retrieved_utc": "2026-11-12T11:27:09Z",
+   "sha256": "d35959b23d588f8b4daa038788f168227cc1e909500a8a4d8412b0f6aeffbc17",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "iana-tls-sigschemes.csv",
+   "url": "https://www.iana.org/assignments/tls-parameters/tls-signaturescheme.csv",
+   "retrieved_utc": "2026-11-12T11:27:10Z",
+   "sha256": "df70d06b074d8ef96d978ac83f5b3e232d04b59bb88a986dbc73a2242513dbf9",
+   "tool": "curl 8.5.0",
+   "licence": "IANA registry (public domain)"
+  },
+  {
+   "file": "nist-csor-oids.json",
+   "url": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration",
+   "retrieved_utc": "2026-11-12T11:27:12Z",
+   "sha256": "45604e938b037cf3e49c0cf1039196ee9a4286285958709920c127eda61bab5f",
+   "tool": "scripts/algid/extract_html.py from the raw capture nist-csor.html (raw sha256 inside the extract; raw pages are kept with the CB-04 evidence, not committed). The CSOR page is dynamic: its bytes, and so the raw sha256, differ on every fetch, while the extract (the 105 OID definitions) reproduces from any fresh capture. The extract, not the raw hash, is the reproducible artefact.",
+   "licence": "US government work (public domain)"
+  },
+  {
+   "file": "openssh-kex-aliases.txt",
+   "url": "`ssh -V; ssh -Q kex`",
+   "retrieved_utc": "2026-11-12T11:31:55Z",
+   "sha256": "70dd0db6323a919b275aa9973cd45ce92adb42165d17423be9f3b078b105db7a",
+   "tool": "OpenSSH_10.0p2 Debian-7+deb13u4",
+   "licence": "generated here"
+  },
+  {
+   "file": "openssl-3.0-text.json",
+   "url": "the same certificates",
+   "retrieved_utc": "2026-11-12T11:31:14Z",
+   "sha256": "87b235d41db81cf369731536ecd08cad2d578653d96b5e48836ee8b599a35642",
+   "tool": "scripts/algid/capture_openssl_text.py, OpenSSL 3.0.13 (Ubuntu 24.04)",
+   "licence": "generated here"
+  },
+  {
+   "file": "openssl-3.5-text.json",
+   "url": "certificates from scripts/algid/make_capture_certs.sh + make_oid_only_certs.py",
+   "retrieved_utc": "2026-11-12T11:31:13Z",
+   "sha256": "27233e6eb12143e65baa8cb4aafdaf88082c592d5a72e8b0b24d1a6ec4321bd2",
+   "tool": "scripts/algid/capture_openssl_text.py, OpenSSL 3.5.7 (python:3.12-slim)",
+   "licence": "generated here"
+  },
+  {
+   "file": "iana-jose-key-types.csv",
+   "url": "https://www.iana.org/assignments/jose/web-key-types.csv",
+   "retrieved_utc": "2026-11-12T16:12:32Z",
+   "sha256": "44b20f129a915e1d63b63654cda7fbf3d305dcd5823ae993d6d13859a830b254",
+   "tool": "curl",
+   "licence": "IANA registry (public)"
+  },
+  {
+   "file": "iana-jose-algs.csv",
+   "url": "https://www.iana.org/assignments/jose/web-signature-encryption-algorithms.csv",
+   "retrieved_utc": "2026-11-12T16:12:32Z",
+   "sha256": "9dbc39672fe17c1343fcac7bb7537acc92b4b14624c8ebf76a2c7f59bd2a497d",
+   "tool": "curl",
+   "licence": "IANA registry (public)"
+  },
+  {
+   "file": "iana-jose-curves.csv",
+   "url": "https://www.iana.org/assignments/jose/web-key-elliptic-curve.csv",
+   "retrieved_utc": "2026-11-12T16:15:20Z",
+   "sha256": "ef820560d4c012af4c62b7d0a6a606dd31e7ffe6cc1397b7deee2d4c7480d598",
+   "tool": "curl",
+   "licence": "IANA registry (public)"
+  },
+  {
+   "file": "gcp-kms-algorithms.json",
+   "url": "https://cloudkms.googleapis.com/$discovery/rest?version=v1",
+   "retrieved_utc": "2026-11-12T16:12:33Z",
+   "sha256": "0b979bdb7f5ba79c1adce98216370ea86ca1d4fb45cffd8194f939a953ddb8f4",
+   "tool": "scripts/algid/extract_html.py from the raw capture cloudkms-v1-discovery.json (raw sha256 and the discovery revision inside the extract; the raw document is kept with the CB-04 evidence, not committed). The discovery document changes with each Cloud KMS release: the extract (the 50 CryptoKeyVersion.algorithm values) is the reproducible artefact.",
+   "licence": "Google API discovery document (CC BY 4.0 / Apache-2.0 per Google API terms)"
+  },
+  {
+   "file": "pkcs11-3.2-constants.json",
+   "url": "https://docs.oasis-open.org/pkcs11/pkcs11-spec/v3.2/os/include/pkcs11-v3.2/pkcs11t.h",
+   "retrieved_utc": "2026-11-12T16:12:47Z",
+   "sha256": "507c4878cd50732373379e389f090973138a51abe376f7d238f5cfced22e9976",
+   "tool": "scripts/algid/extract_html.py from the raw capture pkcs11t-3.2.h (raw sha256 inside the extract; the header is kept with the CB-04 evidence, not committed)",
+   "licence": "OASIS Open (copyright OASIS; constants extracted)"
+  },
+  {
+   "file": "kmip-3.0-algorithms.json",
+   "url": "https://docs.oasis-open.org/kmip/kmip-spec/v3.0/kmip-spec-v3.0.html",
+   "retrieved_utc": "2026-11-12T16:13:40Z",
+   "sha256": "1ca64f47ecbcb29d76bf5161b227f34dcd862fb4b346fedf328a203cc5f35540",
+   "tool": "scripts/algid/extract_html.py from the raw capture kmip-spec-v3.0.html (19 MB; raw sha256 inside the extract; kept with the CB-04 evidence, not committed)",
+   "licence": "OASIS Open (copyright OASIS; enumeration extracted)"
+  }
+ ]
+}

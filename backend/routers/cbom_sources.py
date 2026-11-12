@@ -47,6 +47,7 @@ from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets, scrub, warn_if_key_is_weak
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE, VENDOR_LINK_DAYS, clean_answers
+from backend.utilities.cbom_sources.sshca import sources as SSHCA_SOURCES  # F1.4
 from backend.utilities.cbom_sources.http import (
     PRIVATE,
     CbomRoute,
@@ -524,6 +525,7 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
         _check_refs(session, team_id, body.kind, cfg)
         if getattr(cfg, "credential_type", None) == "vault":
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
+        SSHCA_SOURCES.check_create(session, team_id, user_id, cfg)  # F1.4: ssh_ca sources are written by admins
         secrets_ = _merge_secrets(body.kind, cfg, {}, body.secrets, clear=[], reset=True, where_changed=False)
         problem = credential_target_problem(body.kind, cfg, secrets_)
         if problem:
@@ -649,6 +651,8 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         relevant = new_dump != old_dump or bool(provided) or new_node_id != source.node_id
         if relevant and new_dump.get("credential_type") == "vault":
             require_admin(session, user_id, team_id, "sources that read their credential from a vault")
+        SSHCA_SOURCES.check_update(session, team_id, user_id, source, old_cfg, cfg, relevant=relevant,  # F1.4
+                                   name=body.name, enabled=body.enabled)
         problem = credential_target_problem(source.kind, cfg, merged) if relevant else None
         if problem:
             raise HTTPException(status_code=400, detail=problem)
@@ -668,6 +672,7 @@ def _update_source(engine, team_id: int, user_id: int, source_id: int, body: Sou
         if body.enabled is not None and body.enabled != source.enabled:
             changed.add("enabled")
             source.enabled = body.enabled
+        changed |= SSHCA_SOURCES.approval(session, team_id, user_id, source, cfg)  # F1.4: an admin's save approves
         test = None
         if changed:
             source.updated_by_user_id = user_id

@@ -16,6 +16,7 @@ from sqlalchemy import and_, func, or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
+from backend.utilities.build_info import build_sha, build_version
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
 from backend.utilities.cbom_sources.common import iso_z
@@ -678,11 +679,12 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
         "version": 1,
         "metadata": {
             "timestamp": iso_z(now),
-            "tools": {"components": [{"type": "application", "name": "ZeroShield CBOM Sources", "version": "1.0"}]},
+            # the build that wrote this file; the run's own judge is zs:engine_version (CB-03)
+            "tools": {"components": [{"type": "application", "name": "ZeroShield CBOM Sources", "version": build_version()}]},
             "properties": [
                 {"name": "zs:run_id", "value": str(run.id)}, {"name": "zs:run_status", "value": run.status},
                 {"name": "zs:asset_count", "value": str(len(rows))}, {"name": "zs:truncated", "value": str(truncated).lower()},
-                {"name": "zs:kb_version", "value": kb_version},
+                {"name": "zs:kb_version", "value": kb_version}, {"name": "zs:build", "value": build_sha()},
                 *[{"name": name, "value": str(value)} for name, value in versions],
                 *([{"name": "zs:judged_on", "value": judged_on}] if judged_on else []),
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
