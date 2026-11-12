@@ -31,6 +31,18 @@ from backend.utilities.cbom_sources.sshca.ca import IssueError
 from backend.utilities.cbom_sources.sshca.issue import issue_for_job
 
 router = APIRouter(tags=["cbom-node"], route_class=flags.route_class())
+
+# Access declaration.  A scan node is not a person with a team role, so under F4 (feat/f4-rbac) this route declares a
+# machine() policy like every route of cbom_node.py, and no x-zs-permission marker (F4's coverage check refuses a team
+# permission on a path without {team_id}).  Until F4 is on dev, the fleet aggregator's route guard (PR #34) asks every
+# route for a cbom.* marker.  Optional-import seam, removed in the F1/F4 integration.
+try:
+    from backend.utilities.rbac.policy import machine as _machine  # type: ignore[import-not-found]
+except ImportError:
+    _machine = None
+ACCESS = [_machine("scan-node token", "X-ZS-Node-Token, the request signature (node_auth) and the job's lease")] \
+    if _machine is not None else []
+OPENAPI_EXTRA = {} if _machine is not None else {"x-zs-permission": "cbom.node"}
 node_token_header = APIKeyHeader(name="X-ZS-Node-Token", auto_error=False)
 SMALL_BODY = 4 * 1024
 
@@ -76,8 +88,8 @@ def _issue(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> d
         return minted.payload(now)
 
 
-@router.post("/cbom/node/jobs/{job_id}/ssh-cert", dependencies=[Depends(node_limiter)],
-             openapi_extra={"x-zs-permission": "cbom.node"},  # a scan-node token, not a team role (F4: machine)
+@router.post("/cbom/node/jobs/{job_id}/ssh-cert", dependencies=[Depends(node_limiter), *ACCESS],
+             openapi_extra=OPENAPI_EXTRA or None,
              summary="A short-lived SSH certificate for the node's own key, for a job it holds")
 async def ssh_cert(job_id: int, request: Request,
                    token: Annotated[str | None, Security(node_token_header)] = None):

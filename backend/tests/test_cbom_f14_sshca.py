@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import hashlib
+import importlib.util
 import io
 import json
 import logging
@@ -47,6 +48,9 @@ world = _base.world  # the shared fixtures (SQLite world, real routers and JWTs)
 api = _base.api
 BASE = "/1/cbom/sources/fleet/ssh-ca"
 SSH_KEYGEN = shutil.which("ssh-keygen")
+# A member's admin write: CBOM Sources answer 400 inside a team (never 403, which signs the frontend out); once F4's
+# RBAC is on dev its PermissionMarker refuses a cbom.sshca.admin route with its own 403 (contract, open question 14).
+MEMBER_REFUSED = 403 if importlib.util.find_spec("backend.utilities.rbac") is not None else 400
 
 
 def _utcnow() -> dt.datetime:
@@ -120,7 +124,7 @@ def setup_job(api, **source_cfg):
 
 # ----------------------------------------------------------------------------- CA lifecycle and visibility
 def test_ca_create_is_admin_only_and_never_returns_private_material(api, ca_world):
-    assert api("POST", BASE, "bob", json={"name": "x"}).status_code == 400  # member: 400, never 403
+    assert api("POST", BASE, "bob", json={"name": "x"}).status_code == MEMBER_REFUSED
     ca = create_ca(api)
     assert ca["state"] == "active" and ca["provider"] == "builtin" and ca["key_alg"] == "ed25519"
     assert ca["key_wrap"] == "fernet" and ca["default_ttl_s"] == 300 and ca["lineage_id"] == ca["id"]
@@ -398,7 +402,7 @@ def test_revocation_goes_into_the_krl_and_stops_issuing(api, ca_world, tmp_path)
     s = setup_job(api)
     first = cert_route(api, s["token"], s["job_id"], s["lease"]).json()
     cert_id = api("GET", BASE + "/certificates").json()["certificates"][0]["id"]
-    assert api("POST", f"{BASE}/certificates/{cert_id}/revoke", "bob", json={"reason": "x"}).status_code == 400
+    assert api("POST", f"{BASE}/certificates/{cert_id}/revoke", "bob", json={"reason": "x"}).status_code == MEMBER_REFUSED
     r = api("POST", f"{BASE}/certificates/{cert_id}/revoke", json={"reason": "node disk stolen"})
     assert r.status_code == 200 and r.json()["certificate"]["status"] == "revoked"
     krl = api("GET", BASE + "/revoked")
@@ -760,8 +764,11 @@ def test_every_route_is_mounted_flagged_rate_limited_authenticated_and_declares_
                 assert (route.path, method) in app_routes and (route.path, method) in fleet_routes, route.path
             assert isinstance(route, CbomRoute) and getattr(route, "flag_env", None) == "CBOM_SSH_CA", route.path
             permission = (route.openapi_extra or {}).get("x-zs-permission")
-            if route.path.startswith("/cbom/node/"):
-                assert permission == "cbom.node", route.path  # a scan-node token, not a person's team role
+            if route.path.startswith("/cbom/node/"):  # a scan-node token, not a person's team role
+                if cbom_node_sshca._machine is None:  # before F4: the fleet route guard's cbom.* marker
+                    assert permission == "cbom.node", route.path
+                else:  # with F4: a machine() policy and no team permission marker
+                    assert permission is None and len(cbom_node_sshca.ACCESS) == 1, route.path
             else:
                 (method,) = route.methods
                 assert permission == expected[method], (method, route.path, permission)

@@ -28,10 +28,12 @@ import {
   type SshCaState,
   type SshCertIssued,
 } from "@/utils/api/cbom_ssh_ca";
+import { getCbomSourcesOverview } from "@/utils/backend_api";
 
 import { cbomSourcesKeys } from "../keys";
 import { formatDateTime } from "../logic";
 import { CodeSnippet, ConfirmDialog, EmptyState, ErrorBlock, Field, LoadingBlock, SectionCard, StatusBadge, type Tone } from "../shared";
+import type { FleetSectionProps } from "./sections";
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const GROUP_RE = /^[a-z0-9][a-z0-9._-]{0,47}$/;
@@ -352,6 +354,19 @@ export function SshCaSection({ teamId, isAdmin }: { teamId: number; isAdmin: boo
       />
     </SectionCard>
   );
+}
+
+/** The Fleet tab's SSH CA section (``sections.tsx``): the viewer's admin flag comes from the CBOM Sources overview
+ * (the server enforces it as well; a member's write gets a 400). */
+export function SshCaFleetSection({ teamId }: FleetSectionProps) {
+  const overview = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled: Number.isFinite(teamId) && teamId > 0,
+    retry: 1,
+    staleTime: 60_000,
+  });
+  return <SshCaSection teamId={teamId} isAdmin={!!overview.data?.viewer?.is_admin} />;
 }
 
 export default SshCaSection;
