@@ -324,7 +324,7 @@ def _composite_component(suffix: str) -> str:
 
 def _pkix_family(name: str) -> tuple[str | None, str | None]:
     """(family, quantum) of a non-composite PKIX row from its name."""
-    for prefix, family in (("dhPop", "DH"), ("dh-sig", "DH"), ("ecdhPop", "EC"), ("eccsi", "EC"),
+    for prefix, family in (("dhPop", "DH"), ("dh-sig", "DH"), ("ecdhPop", "ECDH"), ("eccsi", "EC"),
                            ("RSASSA-PSS", "RSA"), ("ecdsa-with", "ECDSA")):
         if name.startswith(prefix):
             return family, "vulnerable"
@@ -594,6 +594,16 @@ def test_resolution_order():
     assert A.openssl_major_minor("OpenSSL 3.5.7 9 Jun 2026") == (3, 5)
     assert A.openssl_major_minor("OpenSSL 3.0.13 30 Jan 2024") == (3, 0)
     assert A.openssl_major_minor("LibreSSL 3.8.2") is None and A.openssl_major_minor("") is None
+
+
+def test_classical_family_labels_kept():
+    """The family labels classify.family gave these names before algid: the CBOM rules key on them (_key_rules)."""
+    expect = {"ECDSA": "ECDSA", "ecdsa": "ECDSA", "EC": "EC", "ECC": "EC", "id-ecPublicKey": "EC", "ECDH": "ECDH",
+              "EdDSA": "EDDSA", "DSA": "DSA", "RSA": "RSA", "DH": "DH", "SM2": "SM2", "Ed25519": "ED25519",
+              "X25519": "X25519", "ecdsa-with-SHA256": "ECDSA", "ecdhPop-static-sha256-hmac-sha256": "ECDH",
+              "1.2.840.10045.2.1": "EC", "ssh-rsa": "RSA", "ecdsa-sha2-nistp256": "ECDSA"}
+    for text, family in expect.items():
+        assert A.family_label(text) == family, text
 
 
 def test_names_do_not_depend_on_case():

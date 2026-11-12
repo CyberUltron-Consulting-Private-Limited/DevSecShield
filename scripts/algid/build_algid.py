@@ -255,7 +255,9 @@ def build_pkix(t: Tables, raw: bytes) -> None:
             t.oid[oid] = "XMSS^MT"
         elif name.startswith(("dhPop", "dh-sig")):
             t.oid[oid] = t.add(name, _classical("DH", "signature", status=status))
-        elif name.startswith(("ecdhPop", "eccsi")):
+        elif name.startswith("ecdhPop"):  # RFC 6955: proof of possession of an ECDH key
+            t.oid[oid] = t.add(name, _classical("ECDH", "signature", status=status))
+        elif name.startswith("eccsi"):
             t.oid[oid] = t.add(name, _classical("EC", "signature", status=status))
         elif name.startswith("RSASSA-PSS"):
             t.oid[oid] = t.add(name, _classical("RSA", "signature", status=status))

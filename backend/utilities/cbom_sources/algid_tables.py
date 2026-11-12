@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
-SOURCES_SHA256 = "b68cdd5c1af8119a6a304cf1396b879e5b06031f94d1853fedb426aea71ad723"
+SOURCES_SHA256 = "7257136b181273ea4067ba70f36df1180130868f70bc4f723ee9c493b0f613dc"
 
 # canonical name -> (family_label, primitive, standard, status, parameter_set,
 #                    nist_category, construction, quantum, key_size, components)
@@ -92,6 +92,10 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
     ),
     "ECDH": (
         "ECDH", "key-agree", None, "standard", None, None, "classical", "vulnerable",
+        None, (),
+    ),
+    "ECDSA": (
+        "ECDSA", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ECMQV": (
@@ -934,19 +938,19 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
         521, (),
     ),
     "ecdhPop-static-sha224-hmac-sha224": (
-        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        "ECDH", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ecdhPop-static-sha256-hmac-sha256": (
-        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        "ECDH", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ecdhPop-static-sha384-hmac-sha384": (
-        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        "ECDH", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ecdhPop-static-sha512-hmac-sha512": (
-        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        "ECDH", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
     ),
     "ecdsa-with-SHA1": (
@@ -2047,7 +2051,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "ecdhsha2nistp256": "ecdh-sha2-nistp256",
     "ecdhsha2nistp384": "ecdh-sha2-nistp384",
     "ecdhsha2nistp521": "ecdh-sha2-nistp521",
-    "ecdsa": "EC",
+    "ecdsa": "ECDSA",
     "ecdsabrainpoolp256r1tls13sha256": "ecdsa_brainpoolP256r1tls13_sha256",
     "ecdsabrainpoolp384r1tls13sha384": "ecdsa_brainpoolP384r1tls13_sha384",
     "ecdsabrainpoolp512r1tls13sha512": "ecdsa_brainpoolP512r1tls13_sha512",
@@ -2403,7 +2407,7 @@ KMIP: Mapping[int, str] = MappingProxyType({
     0x0003: "AES",
     0x0004: "RSA",
     0x0005: "DSA",
-    0x0006: "EC",
+    0x0006: "ECDSA",
     0x0007: "HMAC-SHA1",
     0x0008: "HMAC-SHA224",
     0x0009: "HMAC-SHA256",

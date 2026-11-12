@@ -28,8 +28,8 @@
   {
    "file": "curated.json",
    "url": "hand-curated; every section cites its document",
-   "retrieved_utc": "2026-11-12T16:30:00Z",
-   "sha256": "f6c94d5a0ac1fb9d260d98e97e49b8a7de546115f5665d11828dc27891164842",
+   "retrieved_utc": "2026-11-12T17:05:00Z",
+   "sha256": "b39894c4f53764cdabbcf44e1af68fed93c1ba9dd66c6f622c110a1b1e3093ae",
    "tool": "hand, second-agent review (O-9) recorded in PR #94 (review 5874701640: all 20 categories agree)",
    "licence": "this repository"
   },
