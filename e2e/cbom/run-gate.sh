@@ -60,6 +60,9 @@ gate() {
   local started; started=$(date -u +%FT%TZ)
   cd "$HERE"
   local gen=$LAB_DIR/e2e/cbom/lab/gen.py
+  # the lab is a singleton (cbom-e2e-net, cbom-e2e-*): hold its lock from up to down (INTERFACES.md v3)
+  exec 9> "$LOCKS/cbom-lab.lock"
+  flock 9
   if [ -f "$gen" ]; then
     log "lab up ($gen)"
     python3 "$gen" up --run-dir "$RUN" > "$RUN/lab/gen-up.log" 2>&1 || log "lab up failed (exit $?); see lab/gen-up.log"
@@ -92,6 +95,7 @@ gate() {
   [ -n "$node" ] && docker rm -f "$node" > /dev/null 2>&1 || true
   [ -n "$vol" ] && docker volume rm "$vol" > /dev/null 2>&1 || true
   [ -f "$gen" ] && { python3 "$gen" down --run-dir "$RUN" > "$RUN/lab/gen-down.log" 2>&1 || log "lab down failed"; }
+  flock -u 9
   python3 -m harness.bundle seal "$RUN" --secrets-file "$SECRETS" --started "$started"
   log "judge"
   local rc=0
@@ -100,7 +104,7 @@ gate() {
   return "$rc"
 }
 export -f gate log
-export HERE RUN SHA REF REPO LAB_DIR NODE_IMAGE STEPS SECRETS R6
+export HERE RUN SHA REF REPO LAB_DIR NODE_IMAGE STEPS SECRETS R6 LOCKS
 rc=0
 flock "$LOCKS/stack.lock" bash -c gate || rc=$?
 rm -f "$SECRETS"

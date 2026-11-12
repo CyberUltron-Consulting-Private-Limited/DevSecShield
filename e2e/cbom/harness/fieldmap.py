@@ -16,6 +16,7 @@ product code (O-1).
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 from typing import Any, Callable
@@ -167,6 +168,50 @@ def norm_codes(values: Any) -> list[str]:
     return sorted(str(v) for v in values if isinstance(v, (str, int)))
 
 
+# RFC 8308 (ext-info-c/-s) and OpenSSH's strict-KEX marker (PROTOCOL, kex-strict-*) are signalling pseudo-algorithms,
+# not key exchanges: a server lists them in KEXINIT, an sshd_config does not
+SSH_PSEUDO = re.compile(r"^(ext-info-[cs]|kex-strict-[cs]-v00@openssh\.com)$")
+
+
+def norm_ssh_list(values: Any) -> list[str] | None:
+    if values in (None, ""):
+        return None
+    if isinstance(values, str):
+        values = [v for v in values.split(",") if v]
+    return sorted({str(v).strip() for v in values if v and not SSH_PSEUDO.match(str(v).strip())})
+
+
+def _ssh_fp(value: Any) -> str:
+    """An SSH key fingerprint as lower-case hex: OpenSSH's "SHA256:<base64>" or plain hex."""
+    text = str(value or "").strip()
+    if text.upper().startswith("SHA256:"):
+        raw = text[7:]
+        return base64.b64decode(raw + "=" * (-len(raw) % 4)).hex()
+    return re.sub(r"[^0-9a-f]", "", text.lower())
+
+
+def norm_host_keys(values: Any) -> list[tuple[str, int | None, str]] | None:
+    if values in (None, ""):
+        return None
+    if isinstance(values, dict):
+        values = [values]
+    out = []
+    for v in values:
+        if not isinstance(v, dict) or v.get("error"):
+            continue
+        out.append((str(v.get("type") or v.get("key_type") or ""), norm_int(v.get("bits")),
+                    _ssh_fp(v.get("fingerprint_sha256") or v.get("fingerprint"))))
+    return sorted(out)
+
+
+def norm_entries(values: Any) -> list[tuple[str, str, str, int | None]] | None:
+    if values in (None, ""):
+        return None
+    return sorted((str(e.get("alias", "")).lower(), str(e.get("type", "")).lower(),
+                   str(norm_alg(e.get("key_algorithm")) or ""), norm_int(e.get("key_bits") or e.get("key_size")))
+                  for e in values if isinstance(e, dict))
+
+
 ORACLE_NORMALISERS: dict[str, Callable[[Any], Any]] = {
     "algorithm": norm_alg, "key_size": norm_int, "curve": norm_curve, "signature_algorithm": lambda v: (
         None if v in (None, "") else str(v).strip().lower().replace("_", "-")),
@@ -178,6 +223,8 @@ ORACLE_NORMALISERS: dict[str, Callable[[Any], Any]] = {
     "fingerprint_sha256": lambda v: None if v in (None, "") else re.sub(r"[^0-9a-f]", "", str(v).lower()),
     "quantum_vulnerable": norm_bool, "pqc_class": lambda v: None if v in (None, "") else str(v).strip().lower(),
     "format": lambda v: None if v in (None, "") else str(v).strip().lower(), "path": lambda v: v,
+    "kex_algorithms": norm_ssh_list, "host_key_algorithms": norm_ssh_list, "ciphers": norm_ssh_list,
+    "macs": norm_ssh_list, "host_keys": norm_host_keys, "entries": norm_entries, "tls_enabled": norm_bool,
 }
 
 # ------------------------------------------------------------------------------------------------- view readers
@@ -334,6 +381,24 @@ FIELDS: dict[str, dict[str, Callable[[dict[str, Any]], Any]]] = {
                       "export": _export_ciphers},
     "groups": {"api": lambda a: _groups_of(_facts(a)), "db": lambda r: _groups_of(_facts(r)),
                "export": _prop("zs:groups")},
+}
+
+
+def _both(facts: dict[str, Any], *keys: str) -> Any:
+    vals = [v for k in keys for v in (facts.get(k) or [])]
+    return vals or None
+
+
+# read from the product for the oracle only: the export has no field for them (CycloneDX 1.6 protocolProperties
+# carries no SSH algorithm lists); export completeness for SSH is CB-06's to define
+ORACLE_ONLY: dict[str, Callable[[dict[str, Any]], Any]] = {
+    "kex_algorithms": lambda a: _facts(a).get("kex"),
+    "host_key_algorithms": lambda a: _facts(a).get("host_key_algs"),
+    "ciphers": lambda a: _both(_facts(a), "ciphers_s2c", "ciphers_c2s"),
+    "macs": lambda a: _both(_facts(a), "macs_s2c", "macs_c2s"),
+    "host_keys": lambda a: _facts(a).get("host_keys") or _facts(a).get("host_key"),
+    "entries": lambda a: _facts(a).get("entries"),
+    "tls_enabled": lambda a: next((_facts(a)[k] for k in ("tls", "ssl", "tls_enabled") if k in _facts(a)), None),
 }
 # carried by the export for every component whatever the API says (O-7; CB-06 adds them): judged for presence in the
 # join, and for value against the oracle (pqc_class)

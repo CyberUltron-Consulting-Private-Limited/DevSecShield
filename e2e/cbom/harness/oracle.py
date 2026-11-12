@@ -46,6 +46,8 @@ def product_value(key: str, item: dict[str, Any], component: dict[str, Any] | No
     (pqc_class), the export's."""
     if key in F.FIELDS and "api" in F.FIELDS[key]:
         return F.view_value(key, "api", item)
+    if key in F.ORACLE_ONLY:
+        return F.ORACLE_ONLY[key](item)
     if key in F.EXPORT_ALWAYS:
         if component is None:
             return F.MISSING
@@ -60,6 +62,42 @@ def product_value(key: str, item: dict[str, Any], component: dict[str, Any] | No
     if key == "path":
         return item.get("location")
     return F.MISSING
+
+
+DISCRIMINATORS = ("fingerprint_sha256", "serial", "subject", "path")
+
+
+def _score(asset: dict[str, Any], item: dict[str, Any], comp: dict[str, Any] | None) -> int:
+    """How well a product asset fits an oracle asset beyond (type, location): several certificates of one chain share
+    an endpoint's location, so the fingerprint, serial, subject or path decides which is which."""
+    score = 0
+    for key in DISCRIMINATORS:
+        want = (asset.get("expect") or {}).get(key)
+        got = product_value(key, item, comp)
+        if want in (None, "") or got is F.MISSING or got in (None, ""):
+            continue
+        norm = F.ORACLE_NORMALISERS[key]
+        score += 1 if norm(got) == norm(want) else -1
+    return score
+
+
+def in_scope(target: dict[str, Any], scope: dict[str, Any] | None) -> bool:
+    """Was this target part of what the customer configured in this run (by source name or by network range)?"""
+    if scope is None:
+        return True
+    if target.get("source") in set(scope.get("sources") or []):
+        return True
+    try:
+        addr = ipaddress.ip_address(str(target.get("address")))
+    except ValueError:
+        return False
+    for cidr in scope.get("ranges") or []:
+        try:
+            if addr in ipaddress.ip_network(str(cidr), strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def load_oracle(run: Path, k: str) -> dict[str, Any] | None:
@@ -80,7 +118,9 @@ def selfcheck_disagreements(run: Path) -> dict[str, list[str]]:
 
 
 def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]] | None,
-          components: dict[int, dict[str, Any]] | None) -> list[dict[str, Any]]:
+          components: dict[int, dict[str, Any]] | None, scope: dict[str, Any] | None = None,
+          pairs: dict[str, int] | None = None) -> list[dict[str, Any]]:
+    """Judge run ``k`` against its oracle. ``pairs`` (if given) receives oracle_id -> matched product asset id."""
     prefix = f"{GATE}/oracle/run{k}"
     oracle = load_oracle(run, k)
     if oracle is None:
@@ -100,6 +140,12 @@ def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]
         world = target.get("world", "closed")
         tsubject = {"kind": "oracle", "run": k, "target_id": tid, "world": world}
         mine = {aid: item for aid, item in api_items.items() if belongs(item, target)}
+        if not in_scope(target, scope):
+            for asset in target.get("assets") or [{"oracle_id": f"{tid}/*"}]:
+                checks.not_run(f"{prefix}/{asset['oracle_id']}", GATE, "oracle",
+                               f"target not configured in this run (source {target.get('source')})",
+                               {**tsubject, "oracle_id": asset["oracle_id"], "source": target.get("source")})
+            continue
         if tid in lab_bugs:
             for asset in target.get("assets") or []:
                 checks.not_judged(f"{prefix}/{asset['oracle_id']}", GATE, "oracle",
@@ -114,6 +160,7 @@ def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]
             candidates = [aid for aid, item in sorted(mine.items())
                           if aid not in consumed and item.get("type") == asset.get("asset_type")
                           and _location_key(item.get("location")) == _location_key(asset.get("location"))]
+            candidates.sort(key=lambda a: (-_score(asset, api_items[a], components.get(a)), a))
             if not candidates:
                 checks.fail(f"{prefix}/{oid}/present", GATE, "oracle", "missing", subject,
                             expected=f"{asset.get('asset_type')} at {asset.get('location')}", observed="no such asset")
@@ -122,11 +169,9 @@ def match(run: Path, k: str, checks: Checks, api_items: dict[int, dict[str, Any]
                 continue
             aid = candidates[0]
             consumed[aid] = oid
-            if world == "closed" and len(candidates) > 1:
-                checks.fail(f"{prefix}/{oid}/unique", GATE, "oracle", "duplicate", {**subject, "asset_id": aid},
-                            expected=1, observed=len(candidates))
-            else:
-                checks.ok(f"{prefix}/{oid}/present", GATE, "oracle", {**subject, "asset_id": aid})
+            if pairs is not None:
+                pairs[oid] = aid
+            checks.ok(f"{prefix}/{oid}/present", GATE, "oracle", {**subject, "asset_id": aid})
             item, comp = api_items[aid], components.get(aid)
             for key, want_raw in (asset.get("expect") or {}).items():
                 norm = F.ORACLE_NORMALISERS.get(key)

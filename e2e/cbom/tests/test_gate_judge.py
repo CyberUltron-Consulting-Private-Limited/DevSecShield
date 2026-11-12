@@ -231,3 +231,53 @@ def _add_everywhere(fr, aid, target, location):
         w.writerows(rows)
     fr.edit_json("exports/run1.cdx.json", lambda d: d["components"].append(fr.component(spec)))
     fr.edit_json("ui/assets-run1.json", lambda d: d["rows"].append(fr.ui_row(spec)))
+
+
+def test_chain_certificates_at_one_location_are_told_apart_by_fingerprint(tmp_path, empty_ledger):
+    """A leaf and its CA share the endpoint's location; the product may store them in either order."""
+    fr = FakeRun(tmp_path)
+    leaf = fr.assets[0]
+    ca = dict(leaf, id=99, name="CN=lab CA", algorithm="RSA", key_size=2048, impact="Low", codes=[],
+              finding="Quantum-vulnerable key", pqc="vulnerable",
+              facts={**leaf["facts"], "key_alg": "RSA", "curve": None, "subject": "CN=lab CA", "issuer": "CN=lab CA",
+                     "fingerprint_sha256": "bb" * 32, "serial": "ca"},
+              oracle={"target": "z01", "expect": {"algorithm": "RSA", "subject": "CN=lab CA",
+                                                   "fingerprint_sha256": "BB:" * 31 + "BB"}})
+    leaf["facts"]["fingerprint_sha256"] = "aa" * 32
+    leaf["oracle"]["expect"]["fingerprint_sha256"] = "aa" * 32
+    ca["facts"] = {k: v for k, v in ca["facts"].items() if v is not None}
+    fr.assets.insert(0, ca)  # the CA gets the lower id 99: matching by order alone would swap the two
+    fr.write()
+    fr.edit_json("oracle/run1.json", lambda d: [a.__setitem__("oracle_id", f"z01/cert{i}") for i, a in
+                                                enumerate(x for x in d["targets"][0]["assets"] if x["asset_type"] == "certificate")])
+    manifest.freeze_oracle(fr.dir)
+    passed, blocking, report = judge(fr.dir, empty_ledger)
+    assert not [b for b in blocking if "/oracle/" in b], sorted(blocking)
+    by_id = {c["id"]: c for c in report["checks"]}
+    assert by_id["G11/oracle/run1/z01/cert0/present"]["subject"]["asset_id"] == 99
+    assert by_id["G11/oracle/run1/z01/cert1/present"]["subject"]["asset_id"] == 101
+
+
+def test_target_outside_the_runs_scope_is_not_run_not_missing(tmp_path, empty_ledger):
+    fr = FakeRun(tmp_path)
+    fr.write()
+    (fr.dir / "flow-state.json").write_text(json.dumps({"scope": {"sources": [], "ranges": ["10.231.0.0/31"]}}))
+    passed, blocking, _ = judge(fr.dir, empty_ledger)
+    assert blocking["G11/oracle/run1/z01/certificate"]["verdict"] == "NOT-RUN"
+    assert blocking["G11/oracle/run1/z02/certificate"]["verdict"] == "NOT-RUN"
+    (fr.dir / "flow-state.json").write_text(json.dumps({"scope": {"sources": ["S-zoo"], "ranges": []}}))
+    passed, blocking, _ = judge(fr.dir, empty_ledger)
+    assert set(blocking) == {"G11/derived/run1/posture"}
+
+
+def test_ssh_oracle_keys_compare_sets_without_pseudo_algorithms():
+    from harness import fieldmap as F
+    product = {"facts": {"kex": ["curve25519-sha256", "ext-info-s", "kex-strict-s-v00@openssh.com"],
+                         "macs_s2c": ["hmac-sha2-256"], "macs_c2s": ["hmac-sha1"],
+                         "host_key": {"key_type": "ssh-ed25519", "bits": 256, "fingerprint_sha256": "2e01" + "0" * 60}}}
+    assert F.norm_ssh_list(F.ORACLE_ONLY["kex_algorithms"](product)) == ["curve25519-sha256"]
+    assert F.norm_ssh_list(F.ORACLE_ONLY["macs"](product)) == ["hmac-sha1", "hmac-sha2-256"]
+    want = [{"type": "ssh-ed25519", "bits": 256, "fingerprint_sha256": "2e01" + "0" * 60},
+            {"type": "ssh-rsa", "bits": 1024, "fingerprint_sha256": "SHA256:AAAA"}]
+    assert F.norm_host_keys(F.ORACLE_ONLY["host_keys"](product)) != F.norm_host_keys(want)  # one of two keys read
+    assert F.norm_host_keys(F.ORACLE_ONLY["host_keys"](product)) == F.norm_host_keys(want[:1])

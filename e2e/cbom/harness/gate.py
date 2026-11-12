@@ -60,12 +60,14 @@ def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str
         checks.verdict("G0/oracle-frozen", "G0", "oracle", same, "oracle-changed", {"check": "oracle_frozen"},
                        expected="sha256(oracle/*) == MANIFEST.oracle.sha256", observed=why)
     ks = run_steps(run) or ["1"]
+    scope = (read_json(run / "flow-state.json") or {}).get("scope")
     details: dict[str, Any] = {}
     for k in ks:
         join.join(run, k, checks)
         views = join.load_views(run, k)
-        oracle.match(run, k, checks, views["api"], views["export"])
-        details[f"derived-run{k}"] = derived.judge(run, k, checks)
+        pairs: dict[str, int] = {}
+        oracle.match(run, k, checks, views["api"], views["export"], scope, pairs)
+        details[f"derived-run{k}"] = derived.judge(run, k, checks, pairs, scope)
     canary.judge(run, checks)
     man = read_json(run / manifest.MANIFEST, {}) or {}
     teams = [t for t in ((man.get("teams") or {}).values()) if t]

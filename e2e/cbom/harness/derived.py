@@ -16,13 +16,14 @@ from typing import Any
 
 from . import fieldmap as F
 from .checks import Checks
-from .oracle import belongs, load_oracle
+from .oracle import belongs, in_scope, load_oracle
 from .rundir import read_json, write_json
 
 GATE = "G11"
 
 
-def judge(run: Path, k: str, checks: Checks) -> dict[str, Any]:
+def judge(run: Path, k: str, checks: Checks, pairs: dict[str, int] | None = None,
+          scope: dict[str, Any] | None = None) -> dict[str, Any]:
     prefix = f"{GATE}/derived/run{k}"
     doc = read_json(Path(run) / "api" / f"assets-run{k}.json")
     out: dict[str, Any] = {}
@@ -51,21 +52,25 @@ def judge(run: Path, k: str, checks: Checks) -> dict[str, Any]:
     if oracle is None:
         checks.not_run(f"{prefix}/oracle", GATE, "derived", "no oracle", {**s, "field": "oracle"})
     else:
+        # closed-world targets in this run's scope: assets by type, from the oracle vs what the product stored there;
+        # quantum-vulnerable count over the oracle assets that state it vs their matched product assets
         want_type: Counter = Counter()
-        want_q = 0
         got_type: Counter = Counter()
-        got_q = 0
+        want_q = got_q = 0
+        by_id = {i.get("id"): i for i in items}
         for target in oracle.get("targets") or []:
-            if target.get("world", "closed") != "closed":
+            if target.get("world", "closed") != "closed" or not in_scope(target, scope):
                 continue
             for asset in target.get("assets") or []:
                 want_type[asset.get("asset_type")] += 1
-                if F.norm_bool((asset.get("expect") or {}).get("quantum_vulnerable")) is True:
+                qv = F.norm_bool((asset.get("expect") or {}).get("quantum_vulnerable"))
+                if qv is True:
                     want_q += 1
+                    matched = by_id.get((pairs or {}).get(asset.get("oracle_id")))
+                    got_q += 1 if matched and matched.get("quantum_vulnerable") is True else 0
             for item in items:
                 if belongs(item, target):
                     got_type[item.get("type")] += 1
-                    got_q += 1 if item.get("quantum_vulnerable") is True else 0
         out["closed_world"] = {"oracle": {"type": dict(want_type), "quantum_vulnerable": want_q},
                                "product": {"type": dict(got_type), "quantum_vulnerable": got_q}}
         checks.verdict(f"{prefix}/oracle/by_type", GATE, "derived", dict(want_type) == dict(got_type), "mismatch",

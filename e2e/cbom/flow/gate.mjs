@@ -326,6 +326,7 @@ try {
     const nets = (lab?.sources || []).filter((x) => x.kind === "network");
     if (!nets.length) { s.check("lab_network_sources", false, { expected: "lab.json sources of kind network", observed: lab ? "none" : "no lab.json", reason: "no-lab" }); return; }
     const { page } = A;
+    state.scope = { sources: nets.map((n) => n.name), ranges: nets.flatMap((n) => n.ranges || []) };
     await sourcesTab(page, A.team, "Network TLS");
     for (const src of nets) {
       for (const cidr of src.ranges || []) {
@@ -383,7 +384,7 @@ try {
     const estimate = Number(((await req.textContent()) || "").replace(/[^\d.]/g, ""));
     state.estimate = estimate;
     const ack = page.locator("#review-soc-ack");
-    if (await ack.count()) await ack.click();
+    if (await ack.count()) await ack.check();
     await s.shot(page, "review");
     const before = db(`SELECT count(*) FROM cbomcollectionrun WHERE team_id = ${A.team}`)[0][0];
     await page.getByTestId("review-start").dblclick();
