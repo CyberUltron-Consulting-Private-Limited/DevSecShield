@@ -724,20 +724,9 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
 
 def _remove_source(session: Session, source: CbomCollectionSource, team_id: int, user_id: int, now) -> None:
     """Delete a source in the caller's transaction: its open jobs end, its runs and assets stay (unlinked)."""
-    J.cancel_open_jobs(session, source, now, reason="Source deleted")
-    J.stop_discoveries_using(session, source, now, "A range in this discovery was deleted")
-    for job in session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == source.id)).all():
-        # the stable uid stays on the job, so the deleted source's runs still compare with each other
-        job.params = {**(job.params or {}), "source_name": source.name,
-                      "source_uid": (job.params or {}).get("source_uid") or source.source_uid}
-        job.source_id = None
-        session.add(job)
-    # collected assets stay with their run; only the link to the deleted source goes
-    session.exec(update(CbomCollectedAsset).where(CbomCollectedAsset.source_id == source.id).values(source_id=None))
-    session.flush()
-    audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.delete",
-          object_type="source", object_id=source.id)
-    session.delete(source)
+    from backend.utilities.cbom_sources.removal import remove_source  # shared with fleet managed sources (F1.2)
+
+    remove_source(session, source, team_id, now, actor_type="user", actor_id=user_id)
 
 
 @router.delete(BASE + "/items/{source_id}", dependencies=WRITE, summary="Delete a source")

@@ -1,11 +1,17 @@
 """Fleet policy, credential and reconcile routes (F1.2, contract section 3), behind ``CBOM_FLEET_POLICIES``.
 
 ``/{team_id}/cbom/sources/fleet/policies``, ``/credentials`` and ``/reconcile``.  Members read; writes need a team
-admin (400, never 403).  A policy or credential change re-evaluates the team's targets (their cached decisions); only
-``POST /reconcile`` (and an inventory sync) writes managed sources, and only while ``CBOM_FLEET_MATERIALIZE`` is on.
+admin (400, never 403).
+
+No request evaluates a large team's every target (``fleet/evaluate.py``): a policy or credential write saves and
+re-evaluates in place only a small team, otherwise it asks the fleet worker; ``GET /policies`` serves the counts the
+last evaluation stored (marked ``stale`` while one is due); preview evaluates only the targets the draft matches, which
+is exactly what saving it would decide for them.  Managed sources are written by ``POST /reconcile`` and, after a
+write, by the fleet worker, only while ``CBOM_FLEET_MATERIALIZE`` is on.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +24,7 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectionSource
 from backend.utilities.cbom_sources.common import audit, log, utcnow
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, encrypt_secrets
+from backend.utilities.cbom_sources.fleet import evaluate as EVAL
 from backend.utilities.cbom_sources.fleet import flags as FLAGS
 from backend.utilities.cbom_sources.fleet import store
 from backend.utilities.cbom_sources.fleet.credentials import (
@@ -40,6 +47,7 @@ WRITE = [Depends(write_limiter)]
 MAX_POLICIES = 200
 MAX_CREDENTIALS = 100
 DRAFT_ID = 2_147_483_647  # a previewed new policy: newer than every saved one (ties break by id ascending)
+PREVIEW_FROM_STORED = True  # preview reuses current stored decisions (a test compares it with evaluating everything)
 
 
 async def _run(what: str, team_id: int, fn, *args) -> Any:
@@ -64,8 +72,9 @@ def _engine(session: Session, team_id: int, policies: list[Any], now) -> PolicyE
                         now=now)
 
 
-def _refresh(session: Session, team_id: int, now) -> int:
-    return store.refresh_decisions(session, team_id, _engine(session, team_id, _policies(session, team_id), now))
+def _refresh(session: Session, team_id: int, now) -> dict[str, Any]:
+    """After a write: re-evaluate a small team now, else ask the fleet worker (and ask for a reconcile)."""
+    return EVAL.after_change(session, team_id, now)
 
 
 def _check_refs(session: Session, team_id: int, action: dict[str, Any]) -> None:
@@ -92,28 +101,27 @@ def _owned_policy(session: Session, team_id: int, policy_id: int) -> CbomFleetPo
 
 # ----------------------------------------------------------------------------- policies
 def _list_policies(engine, team_id: int) -> dict:
+    """Policies in the order they apply, with the matched / won counts of the team's last evaluation (no evaluation
+    here for a large team: a stale one is asked of the worker and marked ``stale``)."""
     now = utcnow()
     with Session(engine) as session:
+        is_stale = EVAL.ensure_fresh(session, team_id, now)
+        state = EVAL.state(session, team_id, now)
+        session.commit()
         rows = [p for p in _policies(session, team_id) if p.deleted_at is None]
-        policy_engine = _engine(session, team_id, rows, now)
-        won: dict[int, int] = {}
-        hits: dict[int, int] = {}
-        for view in store.iter_views(session, team_id, present_only=True):
-            d = policy_engine.evaluate(view)
-            if d.policy_id:
-                won[d.policy_id] = won.get(d.policy_id, 0) + 1
-            for pid in d.matched_policy_ids:
-                hits[pid] = hits.get(pid, 0) + 1
-        order = {p.id: i for i, p in enumerate(policy_engine.policies)}
+        order = {p.id: i for i, p in enumerate(PolicyEngine(rows, None).policies)}
         rows.sort(key=lambda p: (order.get(p.id, len(order)), -p.priority, p.id))
+        counts = state.counts or {}
         out = []
         for p in rows:
-            item = public_policy(p, hits.get(p.id, 0))
-            item["won_targets"] = won.get(p.id, 0)
+            matched, won = (counts.get(str(p.id)) or [0, 0])[:2]
+            item = public_policy(p, matched)
+            item["won_targets"] = won
             item["precedence"] = order.get(p.id) + 1 if p.id in order else None
             out.append(item)
         return {"policies": out, "materialize": FLAGS.materialize_enabled(),
-                "order": "priority (highest first), then the older policy (lower id); the first match wins"}
+                "order": "priority (highest first), then the older policy (lower id); the first match wins",
+                "evaluation": EVAL.status(state, is_stale)}
 
 
 @router.get(FLEET + "/policies", dependencies=READ, openapi_extra=permission("cbom.fleet.read"),
@@ -137,13 +145,13 @@ def _create_policy(engine, team_id: int, user_id: int, body: PolicyCreate) -> di
                             updated_by_user_id=user_id, created_at=now, last_updated=now)
         session.add(p)
         session.flush()
-        changed = _refresh(session, team_id, now)
+        evaluation = _refresh(session, team_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.policy.create",
               object_type="fleet_policy", object_id=p.id, changed_fields=["name", "priority", "selector", "action"])
         session.commit()
         session.refresh(p)
-        log("fleet policy created", team=team_id, policy=p.id, decisions_changed=changed, by=user_id)
-        return {"policy": public_policy(p), "decisions_changed": changed}
+        log("fleet policy created", team=team_id, policy=p.id, evaluation=evaluation["evaluation"], by=user_id)
+        return {"policy": public_policy(p), **evaluation}
 
 
 @router.post(FLEET + "/policies", dependencies=WRITE, openapi_extra=permission("cbom.policies.write"),
@@ -169,12 +177,12 @@ def _update_policy(engine, team_id: int, user_id: int, policy_id: int, body: Pol
         p.updated_by_user_id, p.last_updated = user_id, now
         session.add(p)
         session.flush()
-        changed = _refresh(session, team_id, now)
+        evaluation = _refresh(session, team_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.policy.update",
               object_type="fleet_policy", object_id=p.id, changed_fields=fields.keys())
         session.commit()
         session.refresh(p)
-        return {"policy": public_policy(p), "decisions_changed": changed}
+        return {"policy": public_policy(p), **evaluation}
 
 
 @router.patch(FLEET + "/policies/{policy_id}", dependencies=WRITE, openapi_extra=permission("cbom.policies.write"),
@@ -193,11 +201,11 @@ def _delete_policy(engine, team_id: int, user_id: int, policy_id: int) -> dict:
         bump_version(session, p)
         session.add(p)
         session.flush()
-        changed = _refresh(session, team_id, now)
+        evaluation = _refresh(session, team_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.policy.delete",
               object_type="fleet_policy", object_id=p.id)
         session.commit()
-        return {"deleted": policy_id, "decisions_changed": changed}
+        return {"deleted": policy_id, **evaluation}
 
 
 @router.delete(FLEET + "/policies/{policy_id}", dependencies=WRITE, openapi_extra=permission("cbom.policies.write"),
@@ -207,7 +215,36 @@ async def delete_policy(team_id: TeamId, policy_id: ObjectId, ctx: Member):
     return _ok(await _run("delete policy", team_id, _delete_policy, engine, team_id, user.id, policy_id))
 
 
+def _stored_hits(view: Any, draft_id: int, position: dict[int, int]) -> list[int] | None:
+    """Places (in the preview engine's order) of the policies that match ``view`` with the draft in place, read from
+    its stored decision; None when that decision cannot say.  Only called while the stored decisions are current
+    (``EVAL.current_for``): every saved policy but the draft matched the target then exactly as it does now, and the
+    caller tested the draft."""
+    raw = view.decision_text  # decoded for the targets the draft matches only
+    ids = (json.loads(raw) or {}).get("matched_policy_ids") if raw else None
+    if ids is None:  # preview reads present targets only: the 7-day clock plays no part
+        return None
+    out = [position[draft_id]]
+    for pid in ids:
+        if pid == draft_id:
+            continue  # the saved version of the policy being edited: the draft replaces it
+        place = position.get(pid)
+        if place is None:  # not while the decisions are current; evaluate rather than guess
+            return None
+        out.append(place)
+    return sorted(out)
+
+
 def _preview(engine, team_id: int, body: PreviewBody) -> dict:
+    """What saving the draft would decide for the targets it matches.  Targets the draft does not match are not part
+    of the answer (matched, would collect, never scan and the overlaps all count draft matches), so only those are
+    decided, with every policy: the result is what saving gives, and the cost follows the draft's reach.  While the
+    stored decisions are current, the other policies' matches come from them and only the draft's selector runs;
+    otherwise every policy is evaluated.
+
+    The draft is ``enabled`` as it will be once saved: a new draft as the body says (default on), an edit as the
+    saved policy is unless the body says otherwise.  A disabled draft matches nothing; ``matched_if_enabled`` says
+    what it would match."""
     now = utcnow()
     with Session(engine) as session:
         policies = [p for p in _policies(session, team_id) if p.deleted_at is None]
@@ -217,22 +254,43 @@ def _preview(engine, team_id: int, body: PreviewBody) -> dict:
         else:
             _check_refs(session, team_id, body.policy.action)
             if body.policy_id is not None:  # an edit: it replaces the saved policy and keeps its id
-                draft_id = _owned_policy(session, team_id, body.policy_id).id
+                saved = _owned_policy(session, team_id, body.policy_id)
+                draft_id = saved.id
+                enabled = saved.enabled if "enabled" not in body.policy.model_fields_set else body.policy.enabled
             else:  # a new policy is the newest: it loses priority ties, exactly as it will once saved
                 draft_id = DRAFT_ID
-            draft = CbomFleetPolicy(id=draft_id, team_id=team_id, name=body.policy.name, enabled=True,
+                enabled = body.policy.enabled
+            draft = CbomFleetPolicy(id=draft_id, team_id=team_id, name=body.policy.name, enabled=enabled,
                                     priority=body.policy.priority, selector=body.policy.selector,
                                     action=body.policy.action)
             others = [*(p for p in policies if p.id != draft_id), draft]
         policy_engine = _engine(session, team_id, others, now)
-        views = list(store.iter_views(session, team_id, present_only=True))
-        matched = would_collect = never = 0
-        sample = []
-        for view in views:
-            d = policy_engine.evaluate(view)
+        probe = PolicyEngine([CbomFleetPolicy(id=draft.id, team_id=team_id, name=draft.name, enabled=True,
+                                              priority=draft.priority, selector=draft.selector, action=draft.action)],
+                             None)
+        rule = probe.policies[0] if probe.policies else None
+        enabled = bool(draft.enabled)
+        stored = (PREVIEW_FROM_STORED and enabled and draft.id in policy_engine.position
+                  and EVAL.current_for(session, team_id, EVAL.inputs(session, team_id, now)))
+        position, ordered = policy_engine.position, policy_engine.policies
+        reach = matched = would_collect = never = 0
+        sample: list[dict[str, Any]] = []
+        overlaps = []
+        for view in store.iter_views(session, team_id, present_only=True, light=True, decision_text=stored):
+            tags = view.tags or {}
+            if rule is None or not ((rule.needs_tag is None or rule.needs_tag in tags) and rule.test(tags, view)):
+                continue
+            reach += 1
+            if not enabled:
+                continue
+            hits = _stored_hits(view, draft.id, position) if stored else None
+            d = policy_engine.decide(view, [ordered[i] for i in hits]) if hits is not None \
+                else policy_engine.evaluate(view)
             if draft.id not in d.matched_policy_ids:
                 continue
             matched += 1
+            if len(d.matched_policy_ids) > 1:
+                overlaps.append(d.matched_policy_ids)
             if d.policy_id == draft.id and d.action == "collect":
                 would_collect += 1
             if d.action == "never_scan":
@@ -241,14 +299,16 @@ def _preview(engine, team_id: int, body: PreviewBody) -> dict:
                 item = public_target(view, d.to_dict())
                 item["won"] = d.policy_id == draft.id
                 sample.append(item)
-        conflicts = [c for c in policy_engine.conflicts(views)
-                     if draft.id in (c["winner_policy_id"], c["loser_policy_id"])]
+        conflicts = policy_engine.overlaps(overlaps, involving=draft.id)  # one decision per target, not two
         for c in conflicts:  # a new draft has no id yet
             for side in ("winner", "loser"):
                 if c[f"{side}_policy_id"] == DRAFT_ID:
                     c[f"{side}_policy_id"] = None
-        return {"matched": matched, "would_collect": would_collect, "never_scan": never, "conflicts": conflicts,
-                "sample": sample}
+        out = {"matched": matched, "would_collect": would_collect, "never_scan": never, "conflicts": conflicts,
+               "sample": sample, "enabled": enabled}
+        if not enabled:
+            out["matched_if_enabled"] = reach
+        return out
 
 
 @router.post(FLEET + "/policies/preview", dependencies=WRITE, openapi_extra=permission("cbom.fleet.read"),
@@ -263,7 +323,7 @@ def _reconcile(engine, team_id: int, user_id: int) -> dict:
     with Session(engine) as session:
         require_admin(session, user_id, team_id, "fleet policies")
         if not FLAGS.materialize_enabled():
-            out = ReconcileResult(decisions_changed=_refresh(session, team_id, now))
+            out = ReconcileResult(decisions_changed=EVAL.evaluate_team(session, team_id, now).changed)
             session.commit()
             return {**out.public(), "materialize": False}
         out = reconcile(session, team_id, now, actor_id=user_id)
@@ -387,12 +447,15 @@ def _update_credential(engine, team_id: int, user_id: int, credential_id: int, b
         bump_version(session, c)
         c.updated_by_user_id, c.last_updated = user_id, now
         session.add(c)
+        session.flush()
+        # managed sources copy the credential's login fields: they follow at the next reconcile
+        evaluation = _refresh(session, team_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.credential.update",
               object_type="credential", object_id=c.id,
               changed_fields=[*fields.keys(), *[f"secret:{k}" for k in (body.secrets or {}) if body.secrets[k]]])
         session.commit()
         session.refresh(c)
-        return {"credential": public_credential(c)}
+        return {"credential": public_credential(c), **evaluation}
 
 
 @router.patch(FLEET + "/credentials/{credential_id}", dependencies=WRITE,
@@ -413,11 +476,11 @@ def _delete_credential(engine, team_id: int, user_id: int, credential_id: int) -
         bump_version(session, c)
         session.add(c)
         session.flush()
-        changed = _refresh(session, team_id, now)
+        evaluation = _refresh(session, team_id, now)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.credential.delete",
               object_type="credential", object_id=c.id)
         session.commit()
-        return {"deleted": credential_id, "decisions_changed": changed}
+        return {"deleted": credential_id, **evaluation}
 
 
 @router.delete(FLEET + "/credentials/{credential_id}", dependencies=WRITE,

@@ -8,8 +8,9 @@ Create Date: 2026-11-11 12:00:00.000000
   import, the API), its sync cadence, last sync status/summary, per region/service coverage, the sync lease and a
   soft delete.
 * ``cbominventorytarget``: one discovered or imported target, unique per (team, external_id); tags, addresses,
-  handles, attributes, the fingerprint of the normalised target, first/last seen, missing since, the cached policy
-  decision and the managed source (sticky batch) it is assigned to.
+  handles, attributes, the fingerprint of the normalised target, first/last seen, missing since, deleted (by a
+  person) and pending (a managed-source change waiting for a busy source), the policy decision (JSON, plus its action
+  and winning policy as indexed columns) and the managed source (sticky batch) it is assigned to.
 
 New tables only; nothing existing changes.  At merge time this revision's ``down_revision`` is re-chained to the head
 of ``origin/dev`` (F1 contract, section 2).
@@ -83,26 +84,37 @@ def upgrade() -> None:
         sa.Column('last_seen_at', sa.DateTime(), nullable=True),
         sa.Column('missing_since', sa.DateTime(), nullable=True),
         sa.Column('decision', sa.JSON(), nullable=True),
+        sa.Column('decision_action', sqlmodel.sql.sqltypes.AutoString(length=16), nullable=True),
+        sa.Column('decision_policy_id', sa.Integer(), nullable=True),
+        sa.Column('deleted_at', sa.DateTime(), nullable=True),
+        sa.Column('pending_since', sa.DateTime(), nullable=True),
         sa.Column('managed_source_id', sa.Integer(), nullable=True),
         *_common(),
         sa.ForeignKeyConstraint(['team_id'], ['team.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('team_id', 'external_id', name='uq_cbominventorytarget_team_external'),
     )
-    op.create_index(op.f('ix_cbominventorytarget_team_id'), 'cbominventorytarget', ['team_id'], unique=False)
+    # (team_id, id): every list and evaluation pages a team's targets by id; it also serves team_id lookups
+    op.create_index('ix_cbominventorytarget_team_id_id', 'cbominventorytarget', ['team_id', 'id'], unique=False)
     op.create_index('ix_cbominventorytarget_team_source', 'cbominventorytarget', ['team_id', 'inventory_source_id'],
                     unique=False)
     op.create_index('ix_cbominventorytarget_team_kind', 'cbominventorytarget', ['team_id', 'kind'], unique=False)
     op.create_index('ix_cbominventorytarget_team_managed', 'cbominventorytarget', ['team_id', 'managed_source_id'],
                     unique=False)
+    op.create_index('ix_cbominventorytarget_team_action', 'cbominventorytarget', ['team_id', 'decision_action'],
+                    unique=False)
+    op.create_index('ix_cbominventorytarget_team_policy', 'cbominventorytarget', ['team_id', 'decision_policy_id'],
+                    unique=False)
 
 
 def downgrade() -> None:
     """Downgrade schema."""
+    op.drop_index('ix_cbominventorytarget_team_policy', table_name='cbominventorytarget')
+    op.drop_index('ix_cbominventorytarget_team_action', table_name='cbominventorytarget')
     op.drop_index('ix_cbominventorytarget_team_managed', table_name='cbominventorytarget')
     op.drop_index('ix_cbominventorytarget_team_kind', table_name='cbominventorytarget')
     op.drop_index('ix_cbominventorytarget_team_source', table_name='cbominventorytarget')
-    op.drop_index(op.f('ix_cbominventorytarget_team_id'), table_name='cbominventorytarget')
+    op.drop_index('ix_cbominventorytarget_team_id_id', table_name='cbominventorytarget')
     op.drop_table('cbominventorytarget')
     op.drop_index(op.f('ix_cbominventorysource_team_id'), table_name='cbominventorysource')
     op.drop_table('cbominventorysource')

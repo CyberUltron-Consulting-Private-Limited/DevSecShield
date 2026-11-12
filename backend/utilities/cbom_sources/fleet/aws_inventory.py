@@ -103,10 +103,17 @@ class _Lister:
 
     def ec2(self) -> tuple[list[dict], bool]:
         client = self.acct.client("ec2", self.region)
-        reservations, cut = _paginate(client, "describe_instances", "Reservations", Filters=[
-            {"Name": "instance-state-name", "Values": ["pending", "running", "stopping", "stopped"]}])
+        instances: list[dict] = []  # the cap counts instances (a reservation may hold many)
+        cut = False
+        for page in client.get_paginator("describe_instances").paginate(Filters=[
+                {"Name": "instance-state-name", "Values": ["pending", "running", "stopping", "stopped"]}]):
+            for reservation in page.get("Reservations") or []:
+                instances.extend(reservation.get("Instances") or [])
+            if len(instances) > PER_SERVICE_CAP:
+                instances, cut = instances[:PER_SERVICE_CAP], True
+                break
         rows = []
-        for reservation in reservations:
+        for reservation in [{"Instances": instances}]:
             for inst in reservation.get("Instances") or []:
                 addresses = [inst.get("PrivateIpAddress")]
                 for eni in inst.get("NetworkInterfaces") or []:
@@ -262,9 +269,10 @@ def discover_account(acct: _Account, regions: list[str], services: list[str],
                 rows, cut = getattr(lister, service)()
             except Exception as exc:  # one service or region never hides the others
                 out.coverage[region][service] = _status(exc)
-                # EC2 is offered in every region: no connection to it means none to the region (an opt-in region
-                # behind an egress filter, a blocked endpoint).  Each further call would cost its retries again.
-                region_down = service == "ec2" and _connection_level(exc)
+                # no answer at all (reset, timeout, TLS, proxy: an opt-in region behind an egress filter, a blocked
+                # endpoint) from any service means none from the region: each further call would cost its retries
+                # again.  A service with no endpoint there ("not_available", DNS) affects only that service.
+                region_down = out.coverage[region][service] == "unreachable"
                 continue
             out.coverage[region][service] = "truncated" if cut else "ok"
             for row in rows:

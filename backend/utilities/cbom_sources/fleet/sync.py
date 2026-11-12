@@ -14,13 +14,11 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionSource
 from backend.utilities.cbom_sources.common import iso_z, log, new_ref, utcnow
-from backend.utilities.cbom_sources.fleet import flags as FLAGS
+from backend.utilities.cbom_sources.fleet import evaluate as EVAL
 from backend.utilities.cbom_sources.fleet import store
 from backend.utilities.cbom_sources.fleet.aws_inventory import AwsInventoryConfig, AwsInventorySource, Discovery
 from backend.utilities.cbom_sources.fleet.inventory_sources import InventoryError
-from backend.utilities.cbom_sources.fleet.models import CbomFleetPolicy, CbomInventorySource
-from backend.utilities.cbom_sources.fleet.policy import PolicyEngine
-from backend.utilities.cbom_sources.fleet.refs import build_refs
+from backend.utilities.cbom_sources.fleet.models import CbomInventorySource
 from backend.utilities.cbom_sources.settings import get_or_create_settings
 
 LEASE = _dt.timedelta(minutes=30)
@@ -42,18 +40,19 @@ def request_sync(session: Session, source: CbomInventorySource, now: _dt.datetim
 
 
 def due_ids(session: Session, now: _dt.datetime, limit: int = 20) -> list[int]:
+    """Sources to sync now, fairest first: one a person queued ("Sync now"), then never synced, then the one that
+    waited longest.  Callers take one at a time and ask again, so a long run of syncs never works through a stale
+    list and no source starves behind lower ids."""
     s = CbomInventorySource
-    rows = session.exec(select(s).where(s.kind == "aws", s.enabled == True, s.deleted_at.is_(None),  # type: ignore[union-attr]  # noqa: E712
-                                        or_(s.lease_until.is_(None), s.lease_until < now))  # type: ignore[union-attr]
-                        .order_by(s.id)).all()
+    rows = session.exec(select(s.id, s.last_sync_status, s.last_sync_at, s.sync_every_min).where(
+        s.kind == "aws", s.enabled == True, s.deleted_at.is_(None),  # type: ignore[union-attr]  # noqa: E712
+        or_(s.lease_until.is_(None), s.lease_until < now))).all()  # type: ignore[union-attr]
     due = []
-    for row in rows:
-        every = _dt.timedelta(minutes=max(MIN_EVERY_MIN, int(row.sync_every_min or 60)))
-        if row.last_sync_status == "queued" or row.last_sync_at is None or row.last_sync_at + every <= now:
-            due.append(row.id)
-        if len(due) >= limit:
-            break
-    return due
+    for sid, status, last, every_min in rows:
+        every = _dt.timedelta(minutes=max(MIN_EVERY_MIN, int(every_min or 60)))
+        if status == "queued" or last is None or last + every <= now:
+            due.append((status != "queued", last is not None, last or _dt.datetime.min, sid))
+    return [sid for *_rank, sid in sorted(due)[:limit]]
 
 
 def claim(session: Session, source_id: int, now: _dt.datetime) -> bool:
@@ -71,6 +70,13 @@ def _in_scope(coverage: dict[str, dict[str, str]]) -> Callable[[Any], bool]:
         return bool(service) and (coverage.get(row[2] or "") or {}).get(service) == "ok"
 
     return check
+
+
+def _region_order(regions: list[str], coverage: dict[str, Any]) -> list[str]:
+    """Regions the last sync could not finish (cut by its time budget) go first, so the same tail regions are not cut
+    on every sync of a large account."""
+    cut = [r for r in regions if any(v == "cancelled" for v in (coverage.get(r) or {}).values())]
+    return cut + [r for r in regions if r not in cut]
 
 
 def run_sync(engine, source_id: int, *, now_fn: Callable[[], _dt.datetime] = utcnow,
@@ -93,11 +99,12 @@ def run_sync(engine, source_id: int, *, now_fn: Callable[[], _dt.datetime] = utc
                                                       "validation is read")
             role_arn = str((account.config or {}).get("role_arn") or "")
             external_id = get_or_create_settings(session, team_id).aws_external_id
+            previous = dict(src.coverage or {})
             session.commit()
         except (InventoryError, ValueError) as exc:
             return _finish(engine, source_id, now_fn(), "failed", {"sync_id": sync_id, "error": str(exc)[:300]}, {})
     deadline = _monotonic() + SYNC_BUDGET.total_seconds()
-    lister = AwsInventorySource(team_id, role_arn, external_id, cfg.regions, cfg.services,
+    lister = AwsInventorySource(team_id, role_arn, external_id, _region_order(cfg.regions, previous), cfg.services,
                                 should_stop=lambda: "out of time" if _monotonic() > deadline else None)
     try:
         if discover is not None:
@@ -120,23 +127,21 @@ def save_discovery(engine, source_id: int, result: Discovery, now: _dt.datetime,
     with Session(engine) as session:
         src = session.get(CbomInventorySource, source_id)
         team_id = src.team_id
-        policies = session.exec(select(CbomFleetPolicy).where(CbomFleetPolicy.team_id == team_id)).all()
-        engine_ = PolicyEngine(policies, get_or_create_settings(session, team_id),
-                               refs=build_refs(session, team_id, policies), now=now)
+        engine_ = EVAL.inputs(session, team_id, now).engine
+        known = store.existing(session, team_id, [t.external_id for t in result.targets])
+        room = store.MAX_TARGETS_PER_TEAM - EVAL.target_count(session, team_id)  # the team cap binds a sync too
         counts = store.upsert(session, team_id, src, result.targets, now, engine=engine_, snapshot=True,
-                              in_scope=_in_scope(result.coverage))
+                              in_scope=_in_scope(result.coverage), known=known, room=room)
+        # the decisions of what changed are stored; the team's counts and managed sources follow on the fleet worker
+        EVAL.request(session, team_id, now, evaluation=True, reconcile=True)
         session.commit()
-    status = "ok" if result.complete and not result.errors else "partial"
-    summary = {"sync_id": sync_id, **counts.public(), "errors": result.errors[:100], "targets": len(result.targets),
-               "account_id": result.account_id}
-    out = _finish(engine, source_id, now, status, summary, result.coverage)
-    if FLAGS.materialize_enabled() and FLAGS.policies_enabled():
-        from backend.utilities.cbom_sources.fleet.materialize import reconcile
-
-        with Session(engine) as session:
-            reconcile(session, team_id, now, actor_id=None)
-            session.commit()
-    return out
+    status = "ok" if result.complete and not result.errors and not counts.errors and not counts.capped else "partial"
+    summary = {"sync_id": sync_id, **counts.public(), "errors": (result.errors + counts.errors)[:100],
+               "targets": len(result.targets), "account_id": result.account_id}
+    if counts.capped:
+        summary["capped_reason"] = (f"the team has the most inventory targets it may hold "
+                                    f"({store.MAX_TARGETS_PER_TEAM:,}); {counts.capped:,} new ones were not added")
+    return _finish(engine, source_id, now, status, summary, result.coverage)
 
 
 def _finish(engine, source_id: int, now: _dt.datetime, status: str, summary: dict[str, Any],
