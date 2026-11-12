@@ -148,7 +148,8 @@ def _credentials(ctx: JobContext, config: dict, secrets: dict) -> dict[str, Any]
         path = ctx.node_private_key_path or os.path.join(ctx.state_dir, "id_ed25519")
         try:
             source = CertSource(path, secrets.get("ssh_certificate"), ca.get("expires_in_s"),
-                                ca.get("refresh_before_s") or 120, ctx.cert_refresher)
+                                ca.get("refresh_before_s") or 120, ctx.cert_refresher,
+                                backdated_s=ca.get("backdated_s"))
             source.key()  # a certificate now (the claim's, or one asked for here), or the job fails with the reason
         except CertUnavailable as exc:
             raise ConfigError(f"SSH CA: {exc}") from None

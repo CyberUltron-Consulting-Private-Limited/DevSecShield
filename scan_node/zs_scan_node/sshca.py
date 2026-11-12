@@ -111,9 +111,15 @@ def cert_facts(cert_line: str) -> dict[str, Any]:
         return {}
 
 
-def clock_tolerance_s(facts: dict[str, Any]) -> int:
-    """How far a server's clock may be off and still accept the certificate: ZeroShield back-dates ``valid_after`` by
-    ``min(60, TTL // 5)`` (backend ``sshca/ca.py`` ``skew_s``), so 60 s for a TTL of 300 s or more, 12 s at 60 s."""
+def clock_tolerance_s(facts: dict[str, Any], backdated_s: float | None = None) -> int:
+    """How far behind a server's clock may be and still accept the certificate: how far the CA back-dated
+    ``valid_after``.  The route says so (``backdated_s``: ``skew_s(TTL)`` for the builtin CA, the role's
+    ``not_before_duration`` for Vault).  Without it (an older ZeroShield): the builtin rule ``min(60, TTL // 5)``."""
+    if backdated_s is not None:
+        try:
+            return max(0, int(backdated_s))
+        except (TypeError, ValueError):
+            pass
     va, vb = facts.get("valid_after"), facts.get("valid_before")
     if not isinstance(va, int) or not isinstance(vb, int) or vb <= va:
         return 60
@@ -125,7 +131,7 @@ class CertSource:
 
     def __init__(self, key_path: str, cert_line: str | None, expires_in_s: float | None, refresh_before_s: float,
                  refresher: Callable[[], dict[str, Any]] | None, on_secret: Callable[[str], None] | None = None,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, backdated_s: float | None = None):
         self.key_path = key_path
         self.refresher = refresher
         self.refresh_before_s = max(MIN_LEFT_S, float(refresh_before_s or 120))
@@ -144,6 +150,7 @@ class CertSource:
         self.attempts = 0
         self.serial: int | None = None
         self.facts: dict[str, Any] = {}
+        self.backdated_s = backdated_s  # how far the CA back-dated the current certificate (the route says)
         if cert_line:
             self._install(self._load(cert_line), cert_line, float(expires_in_s or 0))
 
@@ -185,6 +192,7 @@ class CertSource:
                 self._install(key, cert_line, float(fresh.get("expires_in_s") or 0))
                 if fresh.get("serial") is not None:
                     self.serial = fresh.get("serial")
+                self.backdated_s = fresh.get("backdated_s")
                 self.renewals += 1
                 self._problem, self._retry_at, self._failures = None, 0.0, 0
         except (LeaseLost, Unauthorized) as exc:  # the job must stop: never ask again
@@ -251,7 +259,7 @@ class CertSource:
         until = "?"
         if facts.get("valid_before"):
             until = _dt.datetime.fromtimestamp(int(facts["valid_before"]), _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        tolerance = clock_tolerance_s(facts)
+        tolerance = clock_tolerance_s(facts, self.backdated_s)
         return (f"login as {user} with the SSH CA certificate (serial {facts.get('serial', self.serial)}, principals "
                 f"{principals}, from {source}, valid until {until}) was refused: check that TrustedUserCAKeys has "
                 f"this team's CA keys (trusted keys), that the principals file for {user} lists {principals}, that "

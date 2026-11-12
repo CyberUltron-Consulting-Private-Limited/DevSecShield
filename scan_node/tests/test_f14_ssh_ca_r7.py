@@ -330,3 +330,148 @@ def test_the_certificate_route_is_called_once_per_renewal_with_its_retry_after()
     with pytest.raises(node_api.ApiError) as err:
         client.ssh_cert(42, 2, "lease-abc")
     assert len(seen) == 1 and err.value.status == 503 and err.value.retry_after == 15.0
+
+
+# ============================================================================ re-review 5877293709 (8f0bbaf)
+def _api_client(handler):
+    import httpx
+
+    client = node_api.Api("https://zs.example", "zsn_" + secrets.token_hex(20))  # generated at run time
+    client.client = httpx.Client(base_url="https://zs.example", transport=httpx.MockTransport(handler))
+    waits: list[float] = []
+    client._wait = lambda seconds: waits.append(round(seconds, 1))
+    return client, waits
+
+
+def test_a_clock_skew_refusal_is_repeated_once_even_with_no_retries():
+    """api.py:266: the clock-skew repeat does not use up an attempt, so ssh_cert (retries=0) still repeats once."""
+    import email.utils
+
+    import httpx
+
+    seen: list[int] = []
+
+    def handler(request):
+        seen.append(1)
+        if len(seen) == 1:
+            return httpx.Response(403, json={"detail": "clock skew"}, headers={
+                node_api.DEPLOYMENT_HEADER: "dep-1", node_api.REFUSED_HEADER: "clock_skew",
+                "Date": email.utils.formatdate(time.time() + 600, usegmt=True)})
+        return httpx.Response(200, json={"certificate": "x"}, headers={node_api.DEPLOYMENT_HEADER: "dep-1"})
+
+    client, _waits = _api_client(handler)
+    client.signing_key = None
+    assert client.ssh_cert(42, 2, "lease-abc") == {"certificate": "x"}
+    assert len(seen) == 2
+
+
+def test_a_second_clock_skew_refusal_is_not_repeated_again():
+    """The skew repeat happens once per call: a server that keeps refusing gets two requests, then the error."""
+    import httpx
+
+    seen: list[int] = []
+
+    def handler(request):
+        seen.append(1)
+        return httpx.Response(403, json={"detail": "clock skew"}, headers={
+            node_api.DEPLOYMENT_HEADER: "dep-1", node_api.REFUSED_HEADER: "clock_skew"})
+
+    client, _waits = _api_client(handler)
+    client.signing_key = None
+    with pytest.raises(node_api.ApiError) as err:
+        client.ssh_cert(42, 2, "lease-abc")
+    assert len(seen) == 2 and err.value.status == 403
+
+
+def test_api_call_waits_for_retry_after_on_a_5xx():
+    """RV12: Api.call honours Retry-After on a 5xx as well as on a 429."""
+    import httpx
+
+    n: list[int] = []
+
+    def handler(request):
+        n.append(1)
+        if len(n) == 1:
+            return httpx.Response(503, json={"detail": "busy"}, headers={"Retry-After": "20"})
+        return httpx.Response(200, json={})
+
+    client, waits = _api_client(handler)
+    client.call("POST", "/cbom/node/heartbeat", {}, retries=2)
+    assert waits and waits[0] >= 20, waits
+
+
+def test_a_retry_after_http_date_is_read():
+    """RV14: Retry-After may be an HTTP date."""
+    import email.utils
+
+    import httpx
+
+    when = email.utils.formatdate(time.time() + 40, usegmt=True)
+    got = node_api._retry_after(httpx.Response(503, headers={"Retry-After": when}))
+    assert got is not None and 35 <= got <= 41, got
+
+
+def test_the_failure_count_restarts_after_a_successful_renewal(tmp_path):
+    """RV13: a new outage after a success starts its back-off again at 2 s (a carried-over streak would wait 30 s)."""
+    path, key = _node_key(tmp_path)
+    clock, calls, mode = Clock(0.0), [], {"fail": True}
+
+    def refresher():
+        calls.append(clock())
+        if mode["fail"]:
+            raise node_api.ApiError(503, "busy")
+        return {"certificate": _cert(key), "expires_in_s": 12, "serial": 1}
+
+    src = sshca.CertSource(str(path), None, None, 120, refresher, clock=clock)
+    for second in range(0, 100):  # a 100 s outage: the exponent climbs to the 30 s cap
+        clock.t = float(second)
+        try:
+            src.key()
+        except sshca.CertUnavailable:
+            pass
+        src.wait_renewal(2)
+    mode["fail"] = False
+    while True:  # recover
+        clock.t += 1
+        try:
+            src.key()
+            break
+        except sshca.CertUnavailable:
+            src.wait_renewal(2)
+    mode["fail"] = True
+    n = len(calls)
+    for second in range(int(clock.t) + 1, int(clock.t) + 120):  # the 12 s certificate runs out: a new outage
+        clock.t = float(second)
+        try:
+            src.key()
+        except sshca.CertUnavailable:
+            pass
+        src.wait_renewal(2)
+    new = calls[n:]
+    gaps = [round(b - a) for a, b in zip(new, new[1:])]
+    # failure 1 of the new outage: the certificate is still usable (left/2); failure 2: nothing usable left, so a
+    # fresh streak waits 2 * 2**(2-1) = 4 s
+    assert len(gaps) >= 2 and gaps[1] <= 5, gaps
+
+
+def test_the_refusal_names_the_back_dating_the_server_applied(tmp_path):
+    """sshca.py:120: a Vault CA back-dates by its role's not_before_duration, not TTL / 5.  The route says how far it
+    back-dated (``backdated_s``), at the claim and on every renewal, and the refusal uses that number."""
+    from zs_scan_node.collectors import linux_ssh as L
+    from zs_scan_node.jobctx import JobContext
+    from zs_scan_node.netutil import NeverScan
+    from zs_scan_node.scrub import Scrubber
+
+    path, key = _node_key(tmp_path)
+    vault_like = _short_cert(key, 5, 270)  # TTL 270 s: TTL / 5 would say 54 s
+    ctx = JobContext(job_id=7, attempt=1, run_id=None, kind="collect", source_kind="linux_servers",
+                     scrubber=Scrubber([]), never_scan=NeverScan(), deadline=time.monotonic() + 60,
+                     state_dir=str(tmp_path), node_private_key_path=str(path))
+    creds = L._credentials(ctx, {"credential_type": "ssh_ca",
+                                 "ssh_ca": {"expires_in_s": 240, "refresh_before_s": 120, "backdated_s": 30}},
+                           {"ssh_certificate": vault_like})
+    assert "within 30 s of real time" in creds["cert_source"].refusal_detail("zs-cbom")
+    fresh = {"certificate": _short_cert(key, 6, 270), "expires_in_s": 240, "serial": 6, "backdated_s": 5}
+    src = sshca.CertSource(str(path), None, None, 120, lambda: fresh)
+    src.key()
+    assert "within 5 s of real time" in src.refusal_detail("zs-cbom")

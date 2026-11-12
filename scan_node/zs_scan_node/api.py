@@ -167,7 +167,8 @@ class Api:
                                                    allow_nan=False).encode("utf-8")
         delay = 2.0
         skew_retried = False
-        for attempt in range(retries + 1):
+        attempt = 0  # a repeat after a clock-skew refusal is not an attempt: retries=0 still repeats once
+        while attempt <= retries:
             headers = self._headers(job)
             headers.update(self._sign(method, path, data))
             if body is not None:
@@ -180,6 +181,7 @@ class Api:
                 log("api unreachable, retrying", path=path, error=exc.__class__.__name__, wait_s=int(delay), job=job)
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             deployment = r.headers.get(DEPLOYMENT_HEADER) or None
             refused = r.headers.get(REFUSED_HEADER) or None
@@ -195,6 +197,7 @@ class Api:
                     wait_s=int(delay), level="warn")
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             if r.status_code == 403 and refused == "clock_skew" and not skew_retried:
                 skew_retried = True
@@ -211,6 +214,7 @@ class Api:
                 log("api busy, retrying", path=path, status=r.status_code, ref=ref, wait_s=int(wait), job=job)
                 self._wait(min(wait, MAX_BACKOFF) + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             if r.status_code < 400:
                 self._seen(deployment)
