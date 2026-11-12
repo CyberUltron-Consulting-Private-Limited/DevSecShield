@@ -53,6 +53,7 @@ def normalise(check_id: str, maps: dict[str, dict[str, str]]) -> str:
     out = re.sub(r"_(\d+)_skipped$", lambda m: f"_{maps['job'].get(m.group(1), 'job?')}_skipped", out)
     # G16 "<job>-<attempt>-<line index>": the job by its source, the attempt kept, the log-line index dropped
     out = re.sub(r"assets-stored/(\d+)-(\d+)-\d+$", lambda m: f"assets-stored/{maps['job'].get(m.group(1), 'job?')}-{m.group(2)}", out)
+    out = re.sub(r"/job-(\d+)-", lambda m: f"/{maps['job'].get(m.group(1), 'job?')}-", out)
     return _NUM.sub(lambda m: maps["other"].get(m.group(1), m.group(1)), out)
 
 

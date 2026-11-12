@@ -152,3 +152,22 @@ def test_a_run_id_equal_to_a_port_does_not_rewrite_the_port(tmp_path):
     a = _run(tmp_path, "a", [1, 2], 4, base, team=21, run_id=7)
     b = _run(tmp_path, "b", [31, 32], 19, base, team=23, run_id=443)   # run 443, assets at ...:443
     assert compare.compare(a, b)["identical"]
+
+
+def test_run_two_is_timed_by_its_own_step(tmp_path):
+    from harness import timing
+    run = tmp_path / "run"
+    for g, s, e in (("G9", "2026-11-12T16:05:22Z", "2026-11-12T16:05:40Z"), ("G12", "2026-11-12T16:09:00Z", "2026-11-12T16:10:17Z"),
+                    ("G13", "2026-11-12T16:10:20Z", "2026-11-12T16:13:00Z")):
+        (run / "steps" / g).mkdir(parents=True)
+        (run / "steps" / g / "step.json").write_text(json.dumps({"started": s, "ended": e, "checks": []}))
+    s1, e1 = timing.window(run, "1")
+    s2, e2 = timing.window(run, "2")
+    assert (s1.isoformat(), e1.isoformat()) == ("2026-11-12T16:05:22+00:00", "2026-11-12T16:10:17+00:00")
+    assert (s2.isoformat(), e2.isoformat()) == ("2026-11-12T16:10:20+00:00", "2026-11-12T16:13:00+00:00")
+
+
+def test_g16_job_logged_ids_are_keyed_by_source(tmp_path):
+    a = _run(tmp_path, "a", [1, 2], 102, {**BASE, "G16/assets-stored/job-{job}-logged": "PASS"}, team=21, run_id=7)
+    b = _run(tmp_path, "b", [31, 32], 114, {**BASE, "G16/assets-stored/job-{job}-logged": "PASS"}, team=23, run_id=9)
+    assert compare.compare(a, b)["identical"]

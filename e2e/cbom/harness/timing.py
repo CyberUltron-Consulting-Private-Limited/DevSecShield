@@ -1,7 +1,8 @@
 """O-10 (judgement day) and the run's timestamps (m2).
 
 The window is the customer's own clock: from G9 "Start scan" (``steps/G9/step.json`` ``started``) to the end of the
-last step that read the run (G12, else G11, else G10), plus ``SLACK`` for clock offset between the host and the stack.
+last step that read the run (G12, else G11, else G10), plus ``SLACK`` for clock offset between the host and the stack;
+run 2 (G13 "Run again", CB-05) uses the G13 step's own start and end.
 * every asset row the DB stored for the run was created inside [G9 start, G10 end + slack];
 * the export's ``metadata.timestamp`` and every ``zs:collected_at`` (CB-06) fall inside the window, on G9's UTC day;
 * ``zs:judged_on`` (a date-based rule changed a verdict since the run) is absent, or each component carrying
@@ -25,7 +26,10 @@ def _step_time(run: Path, step: str, key: str) -> dt.datetime | None:
     return parse_ts(doc.get(key))
 
 
-def window(run: Path) -> tuple[dt.datetime | None, dt.datetime | None]:
+def window(run: Path, k: str = "1") -> tuple[dt.datetime | None, dt.datetime | None]:
+    """Run 1: G9 Start .. the last step that read it. Run 2 (CB-05's G13 "Run again"): the G13 step itself."""
+    if str(k) != "1":
+        return _step_time(run, "G13", "started"), _step_time(run, "G13", "ended")
     start = _step_time(run, "G9", "started")
     end = next((t for t in (_step_time(run, s, "ended") for s in ("G12", "G11", "G10")) if t), None)
     return start, end
@@ -33,7 +37,7 @@ def window(run: Path) -> tuple[dt.datetime | None, dt.datetime | None]:
 
 def judge(run: Path, k: str, checks: Checks) -> dict[str, Any]:
     run = Path(run)
-    start, end = window(run)
+    start, end = window(run, k)
     out: dict[str, Any] = {"start": start and start.isoformat(), "end": end and end.isoformat()}
     if start is None or end is None:
         checks.not_run(f"G12/timestamps/run{k}", "G12", "timing", "no G9 start or flow end recorded",
@@ -44,8 +48,8 @@ def judge(run: Path, k: str, checks: Checks) -> dict[str, Any]:
     run_id = api.get("run_id")
     rows = [r for r in read_csv(run / "db" / "assets.csv") if run_id is None or str(r.get("run_id")) == str(run_id)]
     created = [parse_ts(r.get("created_at")) for r in rows]
-    bad = sorted({r["id"] for r, t in zip(rows, created) if t is None or not lo <= t <= (
-        (_step_time(run, "G10", "ended") or end) + SLACK)})
+    stored_by = ((_step_time(run, "G10", "ended") or end) if str(k) == "1" else end) + SLACK
+    bad = sorted({r["id"] for r, t in zip(rows, created) if t is None or not lo <= t <= stored_by})
     if rows:
         checks.verdict(f"G11/db_created_in_run_window/run{k}", "G11", "timing", not bad, "outside-run-window",
                        {"check": "db_created_in_run_window", "run": k},
