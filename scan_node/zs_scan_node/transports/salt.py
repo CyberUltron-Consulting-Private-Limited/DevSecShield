@@ -113,7 +113,12 @@ class SaltTransport:
                     returns = self._post(http, low)
                     returns = returns if isinstance(returns, dict) else {}
                 for t in batch:
-                    yield self._result(t, client, mode, returns.get(t.handle, _MISSING), options)
+                    try:
+                        res = self._result(t, client, mode, returns.get(t.handle, _MISSING), options)
+                    except Exception as exc:  # one minion's output is that minion's error, never the batch's
+                        res = TargetResult(t, "error", f"the salt return for this host could not be read "
+                                                       f"({exc.__class__.__name__})", None)
+                    yield res
         finally:
             http.close()
 

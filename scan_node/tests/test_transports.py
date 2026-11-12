@@ -551,3 +551,98 @@ def test_zs_collect_ignores_the_transports_own_processes_but_keeps_services(tmp_
     assert Z.transient_ancestors(720, proc=str(tmp_path)) == [720, 710, 700]
     assert Z.transient_ancestors(50, proc=str(tmp_path)) == []  # a service itself is never excluded
     assert Z.transient_ancestors(999, proc=str(tmp_path)) == []  # unknown pid: nothing
+
+
+# ----------------------------------------------------------------------------- one host's output never fails the batch
+DEEP = 100_000  # json.loads raises RecursionError far below this depth
+
+
+def nested_text(depth: int = DEEP) -> str:
+    return '{"format":"zs-collect/1","x":' + "[" * depth + "]" * depth + "}"
+
+
+def chunk_lines_of(text: str, nonce: str = NONCE) -> list[str]:
+    """``text`` (not necessarily a document) as one valid ZSC1 chunk: right nonce, right sha256, valid gzip."""
+    import base64
+    import gzip
+    import hashlib
+
+    blob = gzip.compress(text.encode(), mtime=0)
+    return [f"ZSC1 {nonce} 1/1 {hashlib.sha256(blob).hexdigest()} {base64.b64encode(blob).decode()}"]
+
+
+def test_nested_or_corrupt_output_is_a_value_error_not_a_crash():
+    with pytest.raises(RecursionError):  # the hazard itself
+        json.loads(nested_text())
+    with pytest.raises(ValueError, match="not a JSON document"):
+        zsdoc.parse_output(nested_text() + "\n", NONCE)
+    with pytest.raises(zsdoc.ChunkError, match="not a JSON document"):
+        zsdoc.reassemble(chunk_lines_of(nested_text()), NONCE)
+    assert issubclass(zsdoc.ChunkError, ValueError)  # every caller that catches ValueError catches chunk problems
+    # a corrupt deflate stream under a matching sha256 (the digest is in the header, so anyone can compute it)
+    import base64
+    import gzip
+    import hashlib
+
+    blob = bytearray(gzip.compress(json.dumps(doc_for("10.0.0.1")).encode(), mtime=0))
+    blob[len(blob) // 2] ^= 0xFF
+    blob = bytes(blob)
+    line = f"ZSC1 {NONCE} 1/1 {hashlib.sha256(blob).hexdigest()} {base64.b64encode(blob).decode()}"
+    with pytest.raises(zsdoc.ChunkError):
+        zsdoc.reassemble([line], NONCE)
+
+
+def test_awx_a_host_with_a_nested_document_is_its_own_error(mock_http):
+    fake = FakeAwx({"host-1": {"lines": chunk_lines_of(nested_text())}, "host-2": {"lines": chunked("10.0.0.2")}})
+    mock_http(fake)
+    out = {r.target.handle: r for r in awx().run_collect(targets(2), AWX_CRED, options())}
+    assert out["host-1"].status == "error" and "not a JSON document" in out["host-1"].error
+    assert out["host-2"].status == "ok"
+
+
+@pytest.mark.parametrize("client", ["local", "ssh"])
+def test_salt_a_minion_with_a_nested_document_is_its_own_error(mock_http, client):
+    fake = FakeSalt({"host-1": {"stdout": nested_text()}, "host-2": {"stdout": doc_line("10.0.0.2")}}, client=client)
+    mock_http(fake)
+    out = {r.target.handle: r for r in salt().run_collect(targets(2), salt_cred(client=client), options())}
+    assert out["host-1"].status == "error" and "not a JSON document" in out["host-1"].error
+    assert out["host-2"].status == "ok"
+
+
+def test_fleet_one_hosts_failure_never_fails_the_others(monkeypatch):
+    """A per-host exception (here: relabelling one document) is that host's error row; a transport that dies mid-run
+    leaves error rows for the hosts it did not report, and the job itself still finishes."""
+    fake = FakeTransport({"10.0.0.1": "doc", "db.internal": "doc"})
+    monkeypatch.setattr(fleet, "_transport", lambda name, ctx, check_options=None: fake)
+    real_relabel = zsdoc.relabel
+
+    def relabel(doc, label):
+        if label == "10.0.0.1":
+            raise RecursionError("maximum recursion depth exceeded")
+        return real_relabel(doc, label)
+
+    monkeypatch.setattr(fleet.zsdoc, "relabel", relabel)
+    ctx = ctx_for()
+    cfg = {**SOURCE_CFG, "targets": ["10.0.0.1", "db.internal"]}
+    status, error, _ = run_job(ctx, {"kind": "collect"}, {"targets": cfg["targets"]},
+                               {"kind": "awx_hosts", "config": cfg, "secrets": {}})
+    by = {o.target: o for o in ctx.outcomes}
+    assert by["10.0.0.1"].status == "error" and "RecursionError" in by["10.0.0.1"].error
+    assert by["db.internal"].status == "ok" and {a["target"] for a in ctx.collected} == {"db.internal"}
+    assert status == "success", error
+
+    class Dies(FakeTransport):
+        def run_collect(self, targets, credential, options):
+            from zs_scan_node.transports.base import TargetResult
+
+            self.seen = [t.label for t in targets]
+            yield TargetResult(targets[0], "unreachable", "no route", None)
+            raise RuntimeError("the control plane client broke")
+
+    monkeypatch.setattr(fleet, "_transport", lambda name, ctx, check_options=None: Dies())
+    ctx = ctx_for()
+    status, error, _ = run_job(ctx, {"kind": "collect"}, {"targets": cfg["targets"]},
+                               {"kind": "awx_hosts", "config": cfg, "secrets": {}})
+    by = {o.target: o for o in ctx.outcomes}
+    assert by["10.0.0.1"].status == "unreachable"
+    assert by["db.internal"].status == "error" and "RuntimeError" in by["db.internal"].error

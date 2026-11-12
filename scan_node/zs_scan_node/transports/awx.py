@@ -133,7 +133,12 @@ class AwxTransport:
         status = self._wait(http, job_id, options)
         by_host = self._events(http, job_id)
         for t in batch:
-            yield self._result(t, by_host.get(t.handle), options, job_id, status)
+            try:
+                res = self._result(t, by_host.get(t.handle), options, job_id, status)
+            except Exception as exc:  # one host's output is that host's error, never the batch's
+                res = TargetResult(t, "error", f"zs-collect output from AWX job {job_id} could not be read "
+                                               f"({exc.__class__.__name__})", None)
+            yield res
 
     def _cancel(self, http, job_id: int) -> None:
         try:
@@ -203,7 +208,7 @@ class AwxTransport:
         if h["chunks"]:
             try:
                 doc = zsdoc.reassemble(h["chunks"], options.run_nonce)
-            except zsdoc.ChunkError as exc:
+            except (zsdoc.ChunkError, ValueError) as exc:
                 return TargetResult(t, "error", f"zs-collect output from AWX job {job_id}: {exc}", None)
             problem = zsdoc.validate_document(doc, options.run_nonce, options.collector_version)
             if problem:

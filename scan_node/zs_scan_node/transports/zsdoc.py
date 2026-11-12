@@ -21,6 +21,7 @@ import hashlib
 import io
 import json
 import re
+import zlib
 from typing import Any
 
 FORMAT = "zs-collect/1"
@@ -34,8 +35,21 @@ MAX_DOCUMENT_BYTES = 64 * 1024 * 1024  # decompressed; 50,000 assets with 16 KB 
 _ASSET_LIMITS = {"type": 32, "target": 255, "location": 512, "name": 255, "algorithm": 64, "protocol": 32}
 
 
-class ChunkError(Exception):
-    """Chunked output that is incomplete, out of place or altered."""
+class ChunkError(ValueError):
+    """Chunked output that is incomplete, out of place or altered.  A ValueError, like every other way a host's output
+    can fail to be a document, so a caller that catches ValueError per host never lets one host fail the batch."""
+
+
+NOT_JSON = "output is not a JSON document"
+
+
+def _loads(raw: str | bytes) -> Any:
+    """``json.loads`` for host output: a document nested deeper than the parser's recursion limit raises
+    RecursionError (a RuntimeError), which is turned into the ValueError every caller expects."""
+    try:
+        return json.loads(raw)
+    except (ValueError, RecursionError):
+        raise ValueError(NOT_JSON) from None
 
 
 def validate_document(doc: Any, nonce: str, version: str | None = None) -> str | None:
@@ -136,14 +150,14 @@ def reassemble(lines: list[str], nonce: str) -> dict:
         raise ChunkError("checksum mismatch")
     try:
         raw_json = gzip.GzipFile(fileobj=io.BytesIO(blob)).read(MAX_DOCUMENT_BYTES + 1)
-    except (OSError, EOFError):
+    except (OSError, EOFError, zlib.error):  # a corrupt deflate stream raises zlib.error, which is not an OSError
         raise ChunkError("chunk data does not decompress") from None
     if len(raw_json) > MAX_DOCUMENT_BYTES:
         raise ChunkError("document larger than 64 MB")
     try:
-        doc = json.loads(raw_json)
+        doc = _loads(raw_json)
     except ValueError:
-        raise ChunkError("chunk data does not decompress to JSON") from None
+        raise ChunkError(NOT_JSON) from None
     if not isinstance(doc, dict):
         raise ChunkError("not a document")
     return doc
@@ -151,7 +165,7 @@ def reassemble(lines: list[str], nonce: str) -> dict:
 
 def parse_output(text: str, nonce: str) -> dict:
     """The document from a launcher's stdout: one JSON line, or chunk lines (other lines are ignored).  Raises
-    ChunkError for chunks that do not reassemble and ValueError when there is no document at all."""
+    ChunkError (a ValueError) for chunks that do not reassemble and ValueError when there is no document at all."""
     lines = [line for line in (text or "").splitlines() if line.strip()]
     chunks = [line for line in lines if is_chunk(line)]
     if chunks:
@@ -161,7 +175,7 @@ def parse_output(text: str, nonce: str) -> dict:
         if line.startswith("{"):
             if len(line) > MAX_DOCUMENT_BYTES:
                 raise ValueError("document larger than 64 MB")
-            doc = json.loads(line)
+            doc = _loads(line)
             if isinstance(doc, dict):
                 return doc
     raise ValueError("no zs-collect document in the output")

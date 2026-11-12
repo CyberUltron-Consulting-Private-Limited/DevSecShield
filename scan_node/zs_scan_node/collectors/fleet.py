@@ -140,7 +140,13 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
             if res.target.label in done:
                 continue
             done.add(res.target.label)
-            _post(ctx, res, started)
+            try:
+                _post(ctx, res, started)
+            except Exception as exc:  # one host's document is that host's error row, never the job's
+                ctx.log("fleet host result not usable", target=res.target.label, error=exc.__class__.__name__,
+                        level="warn")
+                ctx.outcome(res.target.label, "error", f"the zs-collect document from {transport_name} could not be "
+                                                       f"posted ({exc.__class__.__name__})", started=started)
             started = time.monotonic()
     except TransportError as exc:
         ctx.log("fleet transport refused the run", transport=transport_name, status=exc.status, level="warn")
@@ -148,6 +154,13 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
             if t.label not in done:
                 done.add(t.label)
                 ctx.outcome(t.label, exc.status, exc.detail, started=started)
+    except Exception as exc:  # the transport itself broke: the hosts it reported keep their rows
+        ctx.log("fleet transport failed", transport=transport_name, error=exc.__class__.__name__, level="warn")
+        for t in todo:
+            if t.label not in done:
+                done.add(t.label)
+                ctx.outcome(t.label, "error", f"the {transport_name} transport failed before this host was reported "
+                                              f"({exc.__class__.__name__})", started=started)
     for t in todo:  # anything the transport did not report (stopped, or a tool that skipped it)
         if t.label not in done:
             ctx.outcome(t.label, ctx.should_stop() or "error", None if ctx.should_stop() else

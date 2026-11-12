@@ -87,13 +87,24 @@ def collect_ssm(job: dict, config: dict, exclusions: list[str], transport, emit:
             if res.target.label in done:
                 continue
             done.add(res.target.label)
-            rows.append(_post(res, emit, started))
+            try:
+                rows.append(_post(res, emit, started))
+            except Exception as exc:  # one instance's document is that instance's error row, never the job's
+                rows.append({"target": res.target.label, "status": "error", "assets": 0,
+                             "error": f"the zs-collect document could not be stored ({exc.__class__.__name__})"})
             started = time.monotonic()
     except TransportError as exc:
         for t in todo:
             if t.label not in done:
                 done.add(t.label)
                 rows.append({"target": t.label, "status": exc.status, "error": exc.detail[:256], "assets": 0})
+    except Exception as exc:  # the transport itself broke: the instances it reported keep their rows
+        for t in todo:
+            if t.label not in done:
+                done.add(t.label)
+                rows.append({"target": t.label, "status": "error", "assets": 0,
+                             "error": f"the SSM transport failed before this instance was reported "
+                                      f"({exc.__class__.__name__})"})
     for t in todo:
         if t.label not in done:
             rows.append({"target": t.label, "status": should_stop() or "error",
