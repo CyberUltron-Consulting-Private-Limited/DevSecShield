@@ -120,6 +120,7 @@ class Agent:
         # does not fall back to polling a server that may be recovering)
         self.server_hints: bool | None = None
         self.grants = 0  # claims the last answer granted (protocol 2)
+        self.grant_sent = 0.0  # when the request whose answer set ``grants`` was sent (monotonic)
         self.claim_wanted = threading.Event()
         self.last_error: str | None = None
         self.server_skew_s = 0.0
@@ -228,7 +229,7 @@ class Agent:
         data = self.api.heartbeat(body)
         self.last_error = None
         self.heartbeat_interval = int(data.get("heartbeat_interval_s") or self.heartbeat_interval)
-        self.take_grant(data, heartbeat=True)
+        self.take_grant(data, heartbeat=True, sent=sent)
         self.apply_control(data, sent)
         cancel = set(int(i) for i in data.get("cancel_job_ids") or [] if str(i).isdigit())
         with self.lock:
@@ -239,9 +240,11 @@ class Agent:
                     r.ctx.cancel.set()
                     log("cancel requested", job=job_id)
 
-    def take_grant(self, data: dict | None, heartbeat: bool = False) -> None:
+    def take_grant(self, data: dict | None, heartbeat: bool = False, sent: float | None = None) -> None:
         """Read ``claim`` from a heartbeat, claim or result answer: protocol 2 grants this many claims now (an older
-        protocol-2 server sends true/false: one).  A successful heartbeat answer without ``protocol`` is an older
+        protocol-2 server sends true/false: one).  An answer to a request sent before the one that set the current
+        grant is older news and is ignored (a slow heartbeat answer computed while every slot was busy must not cancel
+        the grant a later result answer gave).  A successful heartbeat answer without ``protocol`` is an older
         server: the node polls every 5 s as it always did."""
         if not isinstance(data, dict):
             return
@@ -255,7 +258,11 @@ class Agent:
             n = 1 if value is True else int(value or 0)
         except (TypeError, ValueError):
             n = 0
+        sent = time.monotonic() if sent is None else sent
         with self.lock:
+            if sent < self.grant_sent:
+                return
+            self.grant_sent = sent
             self.grants = max(0, min(n, 8))
         if self.grants:
             self.claim_wanted.set()
@@ -385,7 +392,7 @@ class Agent:
                 else:
                     self.shutdown.wait(POLL_SECONDS)
                 continue
-            self.take_grant(payload)  # the claim answer grants the next claims (drain while granted)
+            self.take_grant(payload, sent=sent)  # the claim answer grants the next claims (drain while granted)
             job = payload.get("job") or {}
             job_id = int(job.get("id") or 0)
             with self.lock:
@@ -473,8 +480,9 @@ class Agent:
         body = {"lease_id": running.lease_id, "status": status, "result": result,
                 "error": ctx.scrubber.text(error)[:3900] if error else None}
         try:
+            sent = time.monotonic()
             answer = self.api.result(running.job_id, ctx.attempt, ctx.scrubber.obj(body))
-            self.take_grant(answer)  # the result answer grants the next claims
+            self.take_grant(answer, sent=sent)  # the result answer grants the next claims
             ctx.log("job finished", status=status, assets=ctx.accepted, ok=result["counts"]["ok"],
                     failed=result["counts"]["failed"], skipped=result["counts"]["skipped"],
                     duration_s=result["duration_s"])

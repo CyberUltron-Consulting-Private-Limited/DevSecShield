@@ -278,6 +278,7 @@ class Node:
         self.token = node_token(sim.secret, i)
         self.signer = Signer(node_key(sim.secret, i), protocol)
         self.grants = 0
+        self.grant_sent = 0.0
         self.running: dict[int, str] = {}
         self.interval = 60.0
         self.wake = asyncio.Event()
@@ -305,9 +306,11 @@ class Node:
     def kind(self, kind: str) -> str:
         return kind if self.protocol >= 2 else f"{kind}_p1"  # protocol-1 nodes are reported apart (E6)
 
-    def grant(self, data: dict | None) -> None:
-        if self.protocol < 2 or not isinstance(data, dict) or "claim" not in data:
+    def grant(self, data: dict | None, sent: float) -> None:
+        """As the node: an answer to a request sent before the one that set the current grant is ignored."""
+        if self.protocol < 2 or not isinstance(data, dict) or "claim" not in data or sent < self.grant_sent:
             return
+        self.grant_sent = sent
         value = data.get("claim")
         self.grants = max(0, min(8, 1 if value is True else int(value or 0)))
         if self.grants:
@@ -319,6 +322,7 @@ class Node:
             await self.sim.sleep_until(intended)
             if not self.alive:
                 return
+            sent = time.perf_counter()
             status, data = await self.sim.client.call(self, self.kind("heartbeat"), "/cbom/node/heartbeat", self.body(),
                                                       retries=1, intended=intended)
             if status == 200 and data:
@@ -326,7 +330,7 @@ class Node:
                 if data.get("claim"):
                     self.count("heartbeats_granting")
                 self.interval = float(data.get("heartbeat_interval_s") or self.interval)
-                self.grant(data)
+                self.grant(data, sent)
                 for job_id in data.get("cancel_job_ids") or []:
                     self.running.pop(int(job_id), None)
             cap = 600.0 if self.protocol >= 2 else 60.0
@@ -335,7 +339,11 @@ class Node:
     async def claim_loop(self) -> None:
         while self.alive and not self.sim.stopping:
             if len(self.running) >= self.max_jobs:
-                await asyncio.sleep(2.0)  # the node's busy poll: no request
+                self.wake.clear()  # as the node: wait for a slot to free, re-checking at least every 2 s
+                try:
+                    await asyncio.wait_for(self.wake.wait(), 2.0)
+                except asyncio.TimeoutError:
+                    pass
                 continue
             if self.protocol >= 2:
                 if self.grants <= 0:
@@ -358,7 +366,7 @@ class Node:
             self.sim.on_claimed(self, data)
             if not self.alive:
                 return
-            self.grant(data)
+            self.grant(data, intended)
             job = data["job"]
             self.running[int(job["id"])] = job["lease_id"]
             asyncio.create_task(self.run_job(job))
@@ -382,6 +390,7 @@ class Node:
             status, result = "success", {"counts": {"total": 1, "skipped": 1}, "asset_count": 0}
         else:
             result = {"counts": {"total": 1, "failed": 1}}
+        sent = time.perf_counter()
         st, data = await self.sim.client.call(self, self.kind("result"), f"/cbom/node/jobs/{job_id}/result",
                                               {"lease_id": lease, "status": status, "result": result,
                                                "error": None if status == "success" else "unreachable"},
@@ -391,8 +400,8 @@ class Node:
             self.sim.metrics.results_ok += 1 if self.sim.metrics.measuring else 0
             self.count("results")
             self.sim.finished.add(job_id)
-            self.grant(data)
-        self.wake.set() if self.grants else None
+            self.grant(data, sent)
+        self.wake.set()  # a slot is free (the claim loop re-checks its grants)
 
 
 # ----------------------------------------------------------------------------- samplers

@@ -463,3 +463,15 @@ def test_a_node_whose_heartbeats_fail_makes_no_claim_until_one_succeeds(server, 
     ag.heartbeat_once()
     assert _wait(lambda: 61 in api.results)
     ag.shutdown.set()
+
+
+def test_an_older_answer_never_cancels_a_newer_grant(tmp_path, monkeypatch):
+    """F1.1: a heartbeat answer computed while every slot was busy (claim 0) arrives after a result answer that
+    granted the next claim; the older answer must not cancel it (the node would idle until its next heartbeat)."""
+    ag = _agent(tmp_path, "http://127.0.0.1:9", monkeypatch)
+    ag.take_grant({"claim": 1, "protocol": 2}, sent=10.0)
+    assert ag.grants == 1 and ag.claim_wanted.is_set()
+    ag.take_grant({"claim": 0, "protocol": 2}, heartbeat=True, sent=5.0)  # sent before the result
+    assert ag.grants == 1
+    ag.take_grant({"claim": 0, "protocol": 2}, sent=11.0)  # newer news wins
+    assert ag.grants == 0
