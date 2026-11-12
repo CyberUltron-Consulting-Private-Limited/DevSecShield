@@ -1,10 +1,10 @@
 {
- "_about": "NIST security categories per parameter set, transcribed from the standards themselves (not from product code) for test_algid.test_categories_match_fips_transcription. Second-agent check (O-9): requested in the PR that adds this file.",
+ "_about": "NIST security categories per parameter set, transcribed from the standards themselves (not from product code) for test_algid.test_categories_match_fips_transcription. Second-agent check (O-9): PR #94 review 5874701640, all 20 values agree with the primary documents; two citations corrected after it (FIPS 203 section, FN-DSA source).",
  "_sources": {
-  "FIPS 203": "FIPS 203 (August 13, 2024), Section 8, Table 2 'Approved parameter sets for ML-KEM': ML-KEM-512 category 1, ML-KEM-768 category 3, ML-KEM-1024 category 5",
+  "FIPS 203": "FIPS 203 (August 13, 2024), Section 8 prose ('ML-KEM-512 is claimed to be in security category 1, ML-KEM-768 ... category 3, and ML-KEM-1024 ... category 5') and the Section 3.2 overview; Table 2 lists parameters and RBG strength, not categories",
   "FIPS 204": "FIPS 204 (August 13, 2024), Section 4, Table 1 'ML-DSA parameter sets': ML-DSA-44 category 2, ML-DSA-65 category 3, ML-DSA-87 category 5",
   "FIPS 205": "FIPS 205 (August 13, 2024), Section 11, Table 2 'SLH-DSA parameter sets': the -128s/-128f sets category 1, -192s/-192f category 3, -256s/-256f category 5, for both SHA2 and SHAKE",
-  "FIPS 206 ipd": "FIPS 206 initial public draft (FN-DSA): FN-DSA-512 category 1, FN-DSA-1024 category 5"
+  "FN-DSA": "Falcon specification v1.2 (NIST PQC round 3), Section 2.6, eq. 2.8/2.9: n=512 targets NIST Level I, n=1024 Level V (FN-DSA-512 category 1, FN-DSA-1024 category 5). FIPS 206 is forthcoming: no draft was published when this was transcribed"
  },
  "categories": {
   "ML-KEM-512": 1, "ML-KEM-768": 3, "ML-KEM-1024": 5,
