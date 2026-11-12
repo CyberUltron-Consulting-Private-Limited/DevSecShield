@@ -22,6 +22,10 @@ NETWORK = {"name": "cbom-e2e-net", "subnet": "10.231.0.0/24", "gateway": "10.231
 NODE_IP = "10.231.0.5"     # informative only: the node gets a dynamic address in .2-.7 (INTERFACES v2)
 NGINX_IP = "10.231.0.10"   # the stack nginx, aliases api.dss.test / devsec.dss.test (CB-03)
 TOOLS_IP = "10.231.0.11"   # cb02-tools, the self-check source (excluded from accept counts); .10 is nginx (CB-03)
+BURST_IP = "10.231.0.12"   # cb02-burst, a throwaway source for the PerSourcePenalties burst (review 5874442142)
+LAB_SOURCES = (TOOLS_IP, BURST_IP)  # the lab's own peers: listener logs keep them out of <name>.jsonl
+ZOO_RANGE = "10.231.0.16/28"     # S-zoo, the TLS/SSH zoo the customer scans as a network range
+CANARY_RANGE = "10.231.0.32/30"  # R-canary: the never-scan canary and its control neighbour
 
 # Compose profiles. `core` is the Tier-L gate lab (DEVILS-ADVOCATE section 4.2); the others are waves.
 PROFILES = {
@@ -64,11 +68,14 @@ EXPIRED = {"not_before": -765, "not_after": -400}
 
 def tls(id_: str, last_octet: int, server: str, versions: list[str], cert: dict, *, suites: list[str] | None = None,
         groups: list[str] | None = None, pin_groups: bool = True, seclevel: int | None = None,
-        sni: list[str] | None = None, sni_required: bool = False, profile: str = "core", purpose: str = "") -> dict:
+        sni: list[str] | None = None, sni_required: bool = False, profile: str = "core", purpose: str = "",
+        must_report: dict | None = None) -> dict:
+    """`must_report`: the planted weaknesses the product must name among what the server accepts (CB-01 INTERFACES
+    v7 #3), e.g. every CBC / static-RSA suite of a deliberately weak endpoint."""
     return {"id": id_, "kind": "tls", "server": server, "ip": f"10.231.0.{last_octet}", "port": 443,
             "profile": profile, "world": "closed", "purpose": purpose, "versions": versions, "cert": cert,
             "suites": suites or [], "groups": groups or [], "pin_groups": pin_groups, "seclevel": seclevel,
-            "sni": sni or [], "sni_required": sni_required}
+            "sni": sni or [], "sni_required": sni_required, "must_report": must_report or {}}
 
 
 TARGETS: list[dict] = [
@@ -79,6 +86,8 @@ TARGETS: list[dict] = [
         suites=["TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
                 "TLS_RSA_WITH_AES_128_CBC_SHA", "TLS_RSA_WITH_AES_256_CBC_SHA"],
         groups=["secp256r1"], seclevel=0,
+        must_report={"cipher_suites": ["TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+                                       "TLS_RSA_WITH_AES_128_CBC_SHA", "TLS_RSA_WITH_AES_256_CBC_SHA"]},
         purpose="weak: TLS 1.0-1.2, RSA-1024 SHA-1 self-signed, CBC and static-RSA suites at @SECLEVEL=0"),
     tls("z04", 19, "nginx", ["TLSv1.2", "TLSv1.3"], {"key": "rsa:2048", "sig": "sha256", "issuer": "ca", **EXPIRED},
         suites=["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"],
@@ -93,7 +102,8 @@ TARGETS: list[dict] = [
         purpose="SNI-only virtual host: handshakes without SNI are rejected (ssl_reject_handshake)"),
     tls("z16", 26, "nginx", ["TLSv1.0"], {"key": "rsa:2048", "sig": "sha256", "issuer": "ca", **VALID},
         suites=["TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_RSA_WITH_AES_128_CBC_SHA"], groups=["secp256r1"],
-        seclevel=0, purpose="TLS 1.0 only, modern RSA-2048 certificate"),
+        seclevel=0, must_report={"cipher_suites": ["TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_RSA_WITH_AES_128_CBC_SHA"]},
+        purpose="TLS 1.0 only, modern RSA-2048 certificate"),
     tls("z08", 25, "nginx", ["TLSv1.2"], {"key": "rsa:2048", "sig": "sha256", "issuer": "ca", **VALID},
         suites=["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"],
         groups=["secp256r1"], profile="run2", purpose="new endpoint that appears only in the drift run"),
@@ -115,10 +125,12 @@ TARGETS: list[dict] = [
      "macs": ["hmac-sha2-256-etm@openssh.com"], "force_command": False, "penalty_exempt": NETWORK["subnet"]},
     {"id": "sshd-psp", "kind": "ssh", "ip": "10.231.0.28", "port": 22, "profile": "psp", "world": "closed",
      "purpose": "OpenSSH 10 with the default PerSourcePenalties (noauth:1 min:15): about 15 connections that never "
-                "authenticate get the source dropped for 16 s and more",
+                "authenticate get the source dropped for 16 s and more. Only the self-check (.11) is exempt, so the "
+                "self-check can run again at once; the penalty is proven from the throwaway burst source .12",
      "host_keys": ["ed25519"], "kex": ["mlkem768x25519-sha256", "curve25519-sha256"],
      "host_key_algorithms": ["ssh-ed25519"], "ciphers": ["aes256-gcm@openssh.com"],
-     "macs": ["hmac-sha2-256-etm@openssh.com"], "force_command": False, "penalties": "default"},
+     "macs": ["hmac-sha2-256-etm@openssh.com"], "force_command": False, "penalties": "default",
+     "penalty_exempt": TOOLS_IP + "/32"},
     {"id": "host", "kind": "host", "ip": "10.231.0.40", "port": 22, "profile": "core", "world": "open",
      "purpose": "Linux host reached over SSH as zs-cbom; ForceCommand logger; planted keys, certificates, keystores",
      "host_keys": ["rsa:3072", "ecdsa:256", "ed25519"],
@@ -188,7 +200,7 @@ BENCH_PINNED = {"labels_sha256": "d08d3586d0d71f1000e4c693286fc2eaf7c6c1aae152b3
 
 # Lab parts this build does not provide. lab.json lists them, so the gate reports their rows NOT-RUN from this marking.
 DEFERRED_DRAFT = "round6/cbom/cb-02/issue-deferred.md"
-DEFERRED_ISSUE = "not filed: issue creation was refused for the builder agent (External System Writes)"
+DEFERRED_ISSUE = "#93"  # filed by CB-01 from the draft (INTERFACES v6, ledger row LAB-deferred)
 DEFERRED = [
     {"part": "idp", "address": "10.231.0.42", "gate": ["G7"],
      "reason": "OIDC discovery + JWKS target not in the CB-02 brief's target list"},
@@ -218,6 +230,8 @@ CONTROLS = {
     "tls_version_refused:TLSv1.2": "z04", "tls_version_refused:TLSv1.3": "z01",
     "tls_group_absent:X25519MLKEM768": "z05", "tls_group_absent:x25519": "z01", "tls_group_absent:secp256r1": "z01",
     "tls_group_absent:secp384r1": None, "tls_group_absent:secp521r1": None,
+    "tls12_group_absent:x25519": "z04", "tls12_group_absent:secp256r1": "z02",
+    "tls12_group_absent:secp384r1": None, "tls12_group_absent:secp521r1": None,
     "ssh_no_pq_kex": "sshd-pq", "pg_ssl_off": "pg-tls", "mysql_ssl_off": "mysql-tls", "listener_untouched": ["control", "idn-punycode"],
 }
 
@@ -235,7 +249,7 @@ def validate_catalogue(targets: list[dict] | None = None) -> list[str]:
     problems: list[str] = []
     net = ipaddress.ip_network(NETWORK["subnet"])
     seen_id: set[str] = set()
-    seen_ip: dict[str, str] = {NODE_IP: "node", TOOLS_IP: "tools", NETWORK["gateway"]: "gateway",
+    seen_ip: dict[str, str] = {NODE_IP: "node", TOOLS_IP: "tools", BURST_IP: "burst", NETWORK["gateway"]: "gateway",
                                 NGINX_IP: "nginx (CB-03)"}
     for t in targets:
         if t["id"] in seen_id:
@@ -267,4 +281,8 @@ def validate_catalogue(targets: list[dict] | None = None) -> list[str]:
                 problems.append(f"{t['id']}: TLS <= 1.2 enabled without an explicit suite list")
             if t["sni_required"] and not t["sni"]:
                 problems.append(f"{t['id']}: sni_required without a name")
+            for key, names in (t.get("must_report") or {}).items():
+                pool = {"cipher_suites": t["suites"], "groups": t["groups"]}.get(key)
+                if pool is None or not set(names) <= set(pool):
+                    problems.append(f"{t['id']}: must_report {key} {names} not all planted")
     return problems

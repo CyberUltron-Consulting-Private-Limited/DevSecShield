@@ -323,11 +323,13 @@ Object 3:
 
 
 def test_hsm_observation_uses_an_independent_reader_and_the_catalogue() -> None:
+    import labread as R
     objs = selfcheck.parse_p11tool(P11TOOL)
     assert [(o["label"], o["class"], o["key_type"], o["bits"], o["extractable"]) for o in objs] == [
         ("aes-128-wrap", "Secret Key", None, None, True), ("ec-p256-signing", "Private Key", "EC", 256, False),
         ("rsa-2048-signing", "Private Key", "RSA", 2048, False)]
-    objs = selfcheck.merge_secret_sizes(objs, selfcheck.parse_secret_sizes((FIX / "pkcs11-tok-a.txt").read_text()))
+    store = R.softhsm_object(_softhsm_object(4, 0x1F, label=b"aes-128-wrap", value_len=16, extractable=True))
+    objs = [{**o, "key_type": store["key_type"], "bits": store["bits"]} if o["class"] == "Secret Key" else o for o in objs]
     requested = S.by_id("softhsm")["tokens"][0]["objects"]
     assert selfcheck.hsm_mismatches(requested, objs) == []
     inverted = [{**o, "extractable": not o["extractable"]} for o in objs]   # mutation C, seen through any reader
@@ -405,6 +407,8 @@ def test_lab_sshd_targets_exempt_the_lab_but_one_keeps_the_default_penalties() -
     sshd = [t for t in S.TARGETS if t["kind"] in ("ssh", "host")]
     default = [t for t in sshd if t.get("penalties") == "default"]
     assert len(default) == 1 and default[0]["profile"] == "psp"
+    # review 5874442142: only the self-check is exempt there; the burst runs from the throwaway source .12
+    assert default[0]["penalty_exempt"] == S.TOOLS_IP + "/32" and S.BURST_IP not in default[0]["penalty_exempt"]
     for t in sshd:
         if t not in default:
             assert t.get("penalty_exempt") == S.NETWORK["subnet"]
@@ -423,3 +427,309 @@ def test_no_stale_lab_sh_references_and_no_session_ca_default() -> None:
             continue
         assert "lab.sh" not in path.read_text(), path
     assert ".ccr" not in (LAB / "gen.py").read_text()
+
+
+# ---------------------------------------------------------------- review 5874442142 (PR #79): fail first on edd3cef
+def _der(tag: int, body: bytes) -> bytes:
+    n = len(body)
+    head = bytes([n]) if n < 0x80 else bytes([0x80 | ((n.bit_length() + 7) // 8)]) + n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return bytes([tag]) + head + body
+
+
+def _der_int(v: int) -> bytes:
+    return _der(0x02, v.to_bytes(v.bit_length() // 8 + 1, "big"))
+
+
+RSA_OID = bytes.fromhex("06092a864886f70d010101")
+
+
+def _pkcs8_rsa(bits: int) -> str:
+    """A structurally valid PKCS#8 RSA key whose modulus has `bits` bits (not a usable key: no key material)."""
+    n = (1 << (bits - 1)) | 1
+    rsa = _der(0x30, b"".join(_der_int(x) for x in (0, n, 65537, 3, 5, 7, 11, 13, 17)))
+    info = _der(0x30, _der_int(0) + _der(0x30, RSA_OID + b"\x05\x00") + _der(0x04, rsa))
+    import base64
+    return "-----BEGIN PRIVATE KEY-----\n" + base64.encodebytes(info).decode() + "-----END PRIVATE KEY-----\n"
+
+
+def _softhsm_object(cls: int, key_type: int, *, label: bytes = b"", value_len: int | None = None,
+                    modulus_bits: int | None = None, extractable: bool | None = None) -> bytes:
+    import struct
+    out = struct.pack(">Q", 7)
+    out += struct.pack(">QQQ", 0x0, 2, cls) + struct.pack(">QQQ", 0x3, 3, len(label)) + label
+    out += struct.pack(">QQQ", 0x100, 2, key_type)
+    if value_len is not None:
+        out += struct.pack(">QQQ", 0x161, 2, value_len)
+    if modulus_bits is not None:
+        out += struct.pack(">QQQ", 0x121, 2, modulus_bits)
+    if extractable is not None:
+        out += struct.pack(">QQ", 0x162, 1) + bytes([255 if extractable else 0])
+    return out + struct.pack(">QQQ", 0x40000600, 5, 0)
+
+
+def _certs() -> tuple[list[bytes], dict]:
+    import labread as R
+    ders = R.pem_blocks((FIX / "certs-z01-chain.crt.txt").read_text()) + R.pem_blocks((FIX / "cert-z05b-mldsa.crt.txt").read_text())
+    facts = json.loads((FIX / "certs-openssl-facts.json").read_text())
+    return ders, facts["z01"] + facts["z05b"]
+
+
+def test_x509_reader_agrees_with_the_generators_openssl_facts() -> None:
+    import labread as R
+    ders, facts = _certs()
+    for der, want in zip(ders, facts):
+        got = R.x509_facts(der)
+        assert got["fingerprint_sha256"] == want["sha256"]
+        assert int(got["serial"], 16) == int(want["serial"], 16)
+        assert got["signature_algorithm_oid"] == R.sig_oid(want["signature_algorithm"])
+        assert R.name_key(got["subject"]) == R.name_key(want["subject"])
+        assert R.name_key(got["issuer"]) == R.name_key(want["issuer"])
+        assert (got["not_before"], got["not_after"]) == (want["not_before"], want["not_after"])
+        assert got["algorithm"] == want["key_algorithm"].upper()
+        assert got["key_size"] == want["key_bits"] and got["curve"] == want["curve"]
+
+
+def test_pkcs8_jks_softhsm_and_ssh_readers() -> None:
+    import struct
+    import hashlib
+    import labread as R
+    assert R.pkcs8_facts(_pkcs8_rsa(1024)) == {"algorithm": "RSA", "key_size": 1024}
+    ders, _ = _certs()
+    body = struct.pack(">III", 0xFEEDFEED, 2, 2)
+    for tag, alias, der in ((2, b"legacy-ca", ders[1]), (1, b"app", ders[0])):
+        body += struct.pack(">I", tag) + struct.pack(">H", len(alias)) + alias + b"\0" * 8
+        if tag == 1:
+            body += struct.pack(">I", 3) + b"key" + struct.pack(">I", 1)
+        body += struct.pack(">H", 5) + b"X.509" + struct.pack(">I", len(der)) + der
+    data = body + hashlib.sha1("pw".encode("utf-16-be") + b"Mighty Aphrodite" + body).digest()
+    jks = R.jks_entries(data, "pw")
+    assert jks["integrity"] is True and R.jks_entries(data, "wrong")["integrity"] is False
+    assert [(e["alias"], e["type"]) for e in jks["entries"]] == [("legacy-ca", "trustedCertEntry"), ("app", "PrivateKeyEntry")]
+    sec = R.softhsm_object(_softhsm_object(4, 0x1F, label=b"aes-256-decoy", value_len=32, extractable=False))
+    assert sec == {"class": "Secret Key", "key_type": "AES", "bits": 256, "extractable": False, "label": "aes-256-decoy"}
+    pub = R.softhsm_object(_softhsm_object(2, 0x0, label=b"rsa-2048-signing", modulus_bits=2048))
+    assert (pub["class"], pub["key_type"], pub["bits"]) == ("Public Key", "RSA", 2048)
+    keys = selfcheck.parse_keyscan((FIX / "keyscan-legacy.txt").read_text())
+    facts = {t: R.ssh_key_facts(b) for t, b in keys.items()}
+    # ssh-keygen -l -E sha256 of the same blobs (OpenSSH 10), the generator's tool, as the expected values
+    assert facts["ssh-rsa"] == {"type": "ssh-rsa", "bits": 1024,
+                                "fingerprint_sha256": "SHA256:OsWusYCjoOOWIvBLpqiIIPIMh33qWpMWBgkiuYANhBs"}
+    assert facts["ssh-ed25519"]["fingerprint_sha256"] == "SHA256:wb+k1OEAfP4bGyvPjpv5aUr+su+GH/dN5vPNrq4BQEs"
+    assert selfcheck.parse_banner((FIX / "keyscan-legacy.txt").read_text()) == ["SSHv2"]
+
+
+def _hsm_facts() -> dict:
+    objs = labgen.parse_pkcs11_objects((FIX / "pkcs11-tok-a.txt").read_text())
+    return {"target": "softhsm", "kind": "softhsm", "profile": "hsm", "world": "closed", "address": None, "port": None,
+            "aliases": [], "container": None, "provenance": {},
+            "expect": {"tokens": [{"label": "cb02-tok-a", "objects": objs}]}}
+
+
+def test_hsm_private_key_size_comes_from_the_public_object() -> None:
+    assets, _ = oraclefmt.assets_for(_hsm_facts())
+    by = {a["oracle_id"]: a["expect"] for a in assets}
+    assert by["softhsm/cb02-tok-a/rsa-2048-signing/Private Key"]["key_size"] == 2048    # was null (oraclefmt:134)
+    assert by["softhsm/cb02-tok-a/ec-p256-signing/Private Key"]["key_size"] == 256
+    assert by["softhsm/cb02-tok-a/aes-128-wrap/Secret Key"]["key_size"] == 128
+    assert not any(k.endswith("/Public Key") for k in by)
+
+
+def test_endpoint_rows_state_quantum_vulnerable_from_the_key_exchange() -> None:
+    v13 = {v: v == "TLSv1.3" for v in S.VERSIONS}
+    assert oraclefmt.tls_endpoint_qv(v13, ["x25519", "secp256r1"]) is True            # z01
+    assert oraclefmt.tls_endpoint_qv(v13, ["X25519MLKEM768"]) is False               # z05: hybrid only
+    assert oraclefmt.tls_endpoint_qv(v13, ["X25519MLKEM768", "x25519"]) is False     # z05b: mixed (v7 #2)
+    legacy = {v: v != "TLSv1.3" for v in S.VERSIONS}
+    assert oraclefmt.tls_endpoint_qv(legacy, ["secp256r1"]) is True                   # z02: no PQ below TLS 1.3
+    assert oraclefmt.tls_endpoint_qv(v13, None) is None
+    with pytest.raises(ValueError):
+        oraclefmt.tls_endpoint_qv(v13, ["brainpoolP256r1"])                           # fail closed
+    assert oraclefmt.ssh_endpoint_qv(S.by_id("sshd-legacy")["kex"]) is True
+    assert oraclefmt.ssh_endpoint_qv(S.by_id("sshd-pq")["kex"]) is False
+    assert oraclefmt.ssh_endpoint_qv(S.by_id("host")["kex"]) is False
+    run = oraclefmt.run_oracle([_tls_facts()], "run1", "t", "c", "core", {})
+    ep = next(a for a in run["targets"][0]["assets"] if a["asset_type"] == "tls_endpoint")
+    assert ep["expect"]["quantum_vulnerable"] is True
+
+
+def test_planted_weak_suites_are_must_report_rows() -> None:
+    for tid in ("z02", "z16"):
+        t = S.by_id(tid)
+        assert t["must_report"]["cipher_suites"] and set(t["must_report"]["cipher_suites"]) <= set(t["suites"])
+    o = _tls_facts()
+    o["expect"]["must_report"] = {"cipher_suites": ["TLS_RSA_WITH_AES_128_CBC_SHA"]}
+    ep = next(a for a in oraclefmt.assets_for(o)[0] if a["asset_type"] == "tls_endpoint")
+    assert ep["must_report"] == {"cipher_suites": ["TLS_RSA_WITH_AES_128_CBC_SHA"]}
+    o["expect"]["must_report"] = {"cipher_suites": ["TLS_RSA_WITH_3DES_EDE_CBC_SHA"]}   # not accepted: refused
+    with pytest.raises(ValueError):
+        oraclefmt.assets_for(o)
+    bad = [{**S.by_id("z16"), "must_report": {"cipher_suites": ["TLS_RSA_WITH_AES_256_CBC_SHA"]}}]
+    assert any("must_report" in p for p in S.validate_catalogue(bad))
+
+
+def _facts_for(*ids: str) -> list[dict]:
+    out = []
+    for tid in ids:
+        t = S.by_id(tid)
+        e = {"role": t["role"]} if t["kind"] == "listener" else {"versions": {}, "suites": {}, "groups": None,
+                                                               "sni_names": t.get("sni", []), "certificates": []}
+        out.append({"target": tid, "kind": t["kind"], "profile": t["profile"], "world": t["world"],
+                    "address": t.get("ip"), "port": t.get("port"), "aliases": t.get("aliases", [f"{tid}.lab"]),
+                    "expect": e})
+    return out
+
+
+def test_ranges_classify_every_address_of_every_scanned_range() -> None:
+    facts = _facts_for("z01", "z02", "z04", "z05", "z05b", "z09", "z16", "canary", "control")
+    ranges = {r["cidr"]: r for r in oraclefmt.ranges_for(facts)}
+    zoo = ranges["10.231.0.16/28"]
+    assert zoo["source"] == "S-zoo" and zoo["never_scan"] == []
+    assert zoo["empty_addresses"] == ["10.231.0.23", "10.231.0.24", "10.231.0.25", "10.231.0.27", "10.231.0.28",
+                                      "10.231.0.29", "10.231.0.30"]
+    can = ranges["10.231.0.32/30"]
+    assert can == {"source": "R-canary", "cidr": "10.231.0.32/30", "empty_addresses": [], "never_scan": ["10.231.0.33"]}
+    # a wave target inside the range is a member (sshd-psp .28; run 2's z08 .25 and control-tls .34)
+    more = facts + _facts_for("z08")
+    more = [f for f in more if f["target"] != "control"] + _facts_for("control-tls")
+    srcs, by = oraclefmt.sources_for(more)
+    assert by["z08"] == "S-zoo" and by["control-tls"] == "S-canary"
+    assert "10.231.0.25" not in {r["cidr"]: r for r in oraclefmt.ranges_for(more)}["10.231.0.16/28"]["empty_addresses"]
+    assert any(s["name"] == "R-canary" for s in srcs)
+
+
+def test_target_reports_independent_and_unverified_keys() -> None:
+    assets = {"z01/tls": {"expect": {"protocol_versions": ["TLSv1.3"], "groups": ["X25519"], "cipher_suites": []},
+                          "must_report": {"cipher_suites": ["x"]}}}
+    t = selfcheck.Target("z01", assets)
+    t.expect("z01/tls", "protocol_versions", "go", ["TLSv1.3"])
+    t.expect("z01/tls", "groups", "s_client", ["X25519"], independent=False, reason="same library as the node")
+    assert t.expect("z01/tls", "curve", "go", "P-256") is None                     # not asserted: no row
+    r = t.result()
+    assert r["agree"] is True and r["verified_independently"] is False
+    assert r["independent_keys"] == {"z01/tls": ["protocol_versions"]}
+    assert r["unverified_keys"] == {"z01/tls": ["cipher_suites", "groups", "must_report"]}
+    assert r["checks"][0]["verifies"] == [{"oracle_id": "z01/tls", "key": "protocol_versions"}]
+    t.expect("z01/tls", "cipher_suites", "nmap", ["TLS_AES_128_GCM_SHA256"])     # a disagreement verifies nothing
+    assert t.result()["agree"] is False and "cipher_suites" in t.result()["unverified_keys"]["z01/tls"]
+
+
+def test_tls12_groups_are_probed_one_per_handshake_and_compared_for_equality() -> None:
+    def ok(g: str) -> dict:
+        return {"ok": True, "group": g, "cipher_suite": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"}
+
+    static = {"ok": True, "group": "", "cipher_suite": "TLS_RSA_WITH_AES_128_CBC_SHA"}   # group refused
+    probes = {"x25519": static, "secp256r1": ok("secp256r1"), "secp384r1": static, "secp521r1": {"ok": False}}
+    assert selfcheck.legacy_groups_accepted(probes) == ["secp256r1"]
+    probes["x25519"] = ok("x25519")                                                  # E2: prime256v1:X25519
+    assert selfcheck.legacy_groups_accepted(probes) == ["secp256r1", "x25519"]
+    assert selfcheck.iana_suite("TLS_AKE_WITH_AES_128_GCM_SHA256") == "TLS_AES_128_GCM_SHA256"
+
+
+def _tls_run(tmp_path: Path) -> Path:
+    run = tmp_path / "run"
+    o = {**_tls_facts(), "facts": "oracle/facts/z02.json"}
+    (run / "oracle" / "facts").mkdir(parents=True)
+    (run / "oracle" / "facts" / "z02.json").write_text(json.dumps(o))
+    (run / "oracle" / "facts" / "index.json").write_text(json.dumps({"targets": [{"target": "z02",
+                                                                                  "facts": "oracle/facts/z02.json"}]}))
+    oraclefmt.write_all(run, [o], [], step="run1", generated_at="2026-11-12T00:00:00Z", commit="abc", wave="core",
+                        network=S.NETWORK, node_ip=S.NODE_IP)
+    return run
+
+
+def test_run_file_is_rebuilt_from_the_facts_and_an_accepted_edit_fails(tmp_path: Path) -> None:
+    run = _tls_run(tmp_path)
+    current = json.loads((run / "oracle" / "run1.json").read_text())
+    assert oraclefmt.oracle_diff(current, oraclefmt.rebuild_run(run, "run1")) == {}
+    current["generated_at"] = "2030-01-01T00:00:00Z"                                # ignored
+    tls = next(a for a in current["targets"][0]["assets"] if a["oracle_id"] == "z02/tls")
+    tls["expect"]["groups"] = ["X25519"]                                            # mutation B, original form
+    (run / "oracle" / "run1.json").write_text(json.dumps(current))
+    diff = oraclefmt.oracle_diff(current, oraclefmt.rebuild_run(run, "run1"))
+    assert list(diff) == ["z02"] and any("groups" in p for p in diff["z02"])
+    t = selfcheck.check_oracle_file(run, "run1", {"z02": selfcheck.Target("z02")})
+    assert t.result()["agree"] is False
+
+
+def test_drift_is_a_pure_function_of_the_facts() -> None:
+    def tls(tid, ip, sha):
+        return {"target": tid, "address": ip, "port": 443, "expect": {"certificates": [{"sha256": sha}]}}
+    run1 = {"z02": tls("z02", "10.231.0.18", "a"), "z04": tls("z04", "10.231.0.19", "old"),
+            "host": {"target": "host", "address": "10.231.0.40", "expect": {"files": [
+                {"path": "/srv/cbom-lab/keys/legacy-rsa1024.key", "kind": "private_key"}]}}}
+    run2 = {**run1, "z04": tls("z04", "10.231.0.19", "new"), "z08": tls("z08", "10.231.0.25", "z"),
+            "control-tls": tls("control-tls", "10.231.0.34", "c")}
+    rows = oraclefmt.drift(run1, run2, S.RUN2_CHANGES)
+    assert rows[0] == {"change": "resolved", "code": "PROTO_TLS10", "location": "10.231.0.18:443"}
+    assert {"change": "cert_renewed", "location": "10.231.0.19:443", "old_sha256": "old", "new_sha256": "new"} in rows
+    assert {"change": "removed_asset", "asset_type": "private_key", "location": "10.231.0.40",
+            "path": "/srv/cbom-lab/keys/legacy-rsa1024.key"} in rows
+    assert [r["location"] for r in rows if r["change"] == "new_asset"] == ["10.231.0.25:443", "10.231.0.34:443"]
+
+
+def test_listener_logs_route_lab_peers_out_of_the_product_log(tmp_path: Path) -> None:
+    import datetime as dt
+    import subprocess
+    g = labgen.Gen(tmp_path, dt.datetime(2026, 11, 12, tzinfo=dt.timezone.utc), "t", None, None)
+    o = g.listener_target(S.by_id("control"))
+    assert o["expect"]["lab_accept_log"] == "lab/listeners/control.lab.jsonl"
+    script = (tmp_path / "lab" / "targets" / "control" / "accept.sh").read_text().replace("/logs/", f"{tmp_path}/")
+    for peer in ("10.231.0.11", "10.231.0.12", "127.0.0.1", "10.231.0.3"):
+        subprocess.run(["sh", "-c", script], env={"SOCAT_PEERADDR": peer, "SOCAT_PEERPORT": "4", "SOCAT_SOCKADDR": "x",
+                                                  "SOCAT_SOCKPORT": "443", "PATH": "/usr/bin:/bin"}, check=True)
+    product = [json.loads(x) for x in (tmp_path / "control.jsonl").read_text().splitlines()]
+    lab = [json.loads(x) for x in (tmp_path / "control.lab.jsonl").read_text().splitlines()]
+    assert [r["peer"] for r in product] == ["10.231.0.3:4"]
+    assert [r["peer"].split(":")[0] for r in lab] == ["10.231.0.11", "10.231.0.12", "127.0.0.1"]
+    assert "/lab/listen.sh" in gen.compose_text()
+    lab_json = oraclefmt.lab_json([o], "t", "c", "core", S.NETWORK, S.NODE_IP)
+    assert lab_json["listeners"][0]["lab_log"] == "lab/listeners/control.lab.jsonl"
+    assert lab_json["lab_addresses"] == [S.TOOLS_IP, S.BURST_IP]
+
+
+def test_cert_rows_compare_every_asserted_certificate_key() -> None:
+    import labread as R
+    ders, facts = _certs()
+    cert = {**facts[0], "self_issued": False, "san": []}
+    o = {**_tls_facts(), "target": "z01"}
+    o["expect"]["certificates"] = [cert]
+    asset = next(a for a in oraclefmt.assets_for(o)[0] if a["oracle_id"] == "z01/cert[0]")
+    t = selfcheck.Target("z01", {"z01/cert[0]": asset})
+    selfcheck.cert_rows(t, "z01/cert[0]", R.x509_facts(ders[0]), "labread")
+    r = t.result()
+    assert r["agree"] is True and r["unverified_keys"] == {}
+    assert set(r["independent_keys"]["z01/cert[0]"]) == set(asset["expect"])
+    asset["expect"]["key_size"] = 384                                                # a wrong oracle value
+    t2 = selfcheck.Target("z01", {"z01/cert[0]": asset})
+    selfcheck.cert_rows(t2, "z01/cert[0]", R.x509_facts(ders[0]), "labread")
+    assert t2.result()["agree"] is False
+
+
+def test_keystore_entries_compare_signature_algorithms_by_oid() -> None:
+    import labread as R
+    ders, _ = _certs()
+    obs = selfcheck.keystore_entry("app", "PrivateKeyEntry", ders[1])
+    assert obs["signature_algorithm"] == "1.2.840.113549.1.1.11"
+    oracle = [{"alias": "app", "type": "PrivateKeyEntry", "key_algorithm": "RSA", "key_bits": obs["key_bits"],
+               "signature_algorithm": "SHA256withRSA", "cert_sha256": obs["cert_sha256"]}]
+    assert selfcheck.norm_entries(oracle) == selfcheck.norm_entries([obs])
+    assert selfcheck.norm_entries([{**oracle[0], "key_bits": obs["key_bits"] + 1}]) != selfcheck.norm_entries([obs])  # D2
+    text = ("Bag Attributes\n    friendlyName: app\n    localKeyID: 01 02\n" + (FIX / "certs-z01-chain.crt.txt").read_text()
+            .split("-----END CERTIFICATE-----")[0] + "-----END CERTIFICATE-----\nBag Attributes\n    friendlyName: ca\n"
+            "    Trusted key usage (Oracle): Any Extended Key Usage (2.5.29.37.0)\n" + (FIX / "cert-z05b-mldsa.crt.txt").read_text())
+    assert [(n, t) for n, t, _ in selfcheck.parse_p12_bags(text)] == [("app", "PrivateKeyEntry"), ("ca", "trustedCertEntry")]
+    assert R.sig_oid("SHA1withRSA") == R.sig_oid("sha1WithRSAEncryption")
+
+
+def test_deferred_parts_point_at_the_filed_issue() -> None:
+    assert S.DEFERRED_ISSUE == "#93"
+    assert all(d["issue"] == "#93" for d in oraclefmt.lab_json([], "t", "c", "core", S.NETWORK, S.NODE_IP)["deferred"])
+
+
+def test_negative_proofs_cover_the_review_mutations() -> None:
+    import labnegative
+    assert {"z02-extra-group"} <= set(labnegative.VARIANTS)
+    assert {"hsm-parser-inverted", "hsm-parser-bits", "keytool-bits"} <= set(labnegative.PARSER_MUTATIONS)
+    for m in labnegative.PARSER_MUTATIONS.values():
+        assert m["old"] in (LAB / m["file"]).read_text()          # every mutation anchor still exists
+    assert "z02-extra-group" in labgen.VARIANTS
