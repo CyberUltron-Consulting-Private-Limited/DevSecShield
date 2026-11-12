@@ -95,6 +95,12 @@ class FreeDiskSpace(unittest.TestCase):
     KEEP = ["/", "/usr", "/usr/bin", "/usr/sbin", "/usr/lib", "/usr/lib/x86_64-linux-gnu", "/usr/local",
             "/usr/local/bin", "/usr/share", "/opt", "/etc", "/var", "/var/lib/docker", "/var/lib/containerd",
             "/tmp", "/home", "/home/runner", "/home/runner/work", "/home/runner/actions-runner"]
+    # ... and nothing inside these: Docker and its buildx plugin, system libraries, CA certificates, the runner.
+    NOTHING_INSIDE = ["/usr/bin", "/usr/sbin", "/usr/libexec", "/usr/lib/x86_64-linux-gnu", "/usr/local/bin", "/etc",
+                      "/usr/share/ca-certificates", "/var/lib/docker", "/var/lib/containerd", "/home/runner"]
+    # Every deleted path is a preinstalled toolchain under one of these.
+    TOOLCHAINS = ["/opt", "/usr/local/lib", "/usr/local/share", "/usr/share", "/usr/lib/jvm", "/usr/lib/google-cloud-sdk",
+                  "/usr/local/.ghcup"]
 
     def removed(self) -> tuple[list[str], subprocess.CompletedProcess]:
         with tempfile.TemporaryDirectory() as d:
@@ -121,6 +127,10 @@ class FreeDiskSpace(unittest.TestCase):
             self.assertTrue(p.startswith("/") and ".." not in p, p)
             for keep in self.KEEP:
                 self.assertFalse(keep == p or keep.startswith(p.rstrip("/") + "/"), f"{p} would delete {keep}")
+            for t in self.NOTHING_INSIDE:
+                self.assertFalse(p == t or p.startswith(t + "/"), f"{p} is inside {t}")
+            self.assertTrue(any(p.startswith(t + "/") for t in self.TOOLCHAINS) or p in self.TOOLCHAINS[4:],
+                            f"{p} is not under a known toolchain directory")
 
     def test_it_shows_the_free_space_before_and_after(self):
         _, res = self.removed()
@@ -146,11 +156,41 @@ class DiskMonitor(unittest.TestCase):
             finally:
                 os.kill(pid, signal.SIGTERM)
 
-    def report(self, samples: str | None) -> tuple[subprocess.CompletedProcess, str]:
+    def test_the_monitor_samples_the_root_disk_in_the_units_the_report_reads(self):
+        # End to end: a real sample of this machine's / goes through the real report.
+        self.assertIn("df --output=avail -BM / ", step_script("Start the disk monitor"))
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            env_file = d / "env"
+
+            def df() -> float:  # free GB on /, as df reports it
+                out = subprocess.run(["df", "--output=avail", "-BM", "/"], capture_output=True, text=True).stdout
+                return int(out.splitlines()[-1].strip().rstrip("M")) / 1024
+
+            before = df()
+            res = run(step_script("Start the disk monitor"), {"RUNNER_TEMP": str(d), "GITHUB_ENV": str(env_file)})
+            self.assertEqual(res.returncode, 0, res.stderr)
+            pid = int((d / "disk-monitor.pid").read_text())
+            try:
+                log = Path(dict(line.split("=", 1) for line in env_file.read_text().splitlines())["DISK_LOG"])
+                deadline = time.time() + 10
+                while time.time() < deadline and not (log.exists() and log.read_text().strip()):
+                    time.sleep(0.2)
+            finally:
+                os.kill(pid, signal.SIGTERM)
+            after = df()
+            out, _ = self.report(None, disk_log=str(log))
+        m = re.search(r"lowest free space ([\d.]+) GB", out.stdout)
+        self.assertTrue(m, out.stdout)
+        self.assertGreaterEqual(float(m.group(1)), min(before, after) - 1, out.stdout)
+        self.assertLessEqual(float(m.group(1)), max(before, after) + 1, out.stdout)
+
+    def report(self, samples: str | None, disk_log: str = "", freed: str = "true"
+               ) -> tuple[subprocess.CompletedProcess, str]:
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)
             summary = d / "summary.md"
-            env = {"GITHUB_STEP_SUMMARY": str(summary), "NAME": "scan-worker", "DISK_LOG": ""}
+            env = {"GITHUB_STEP_SUMMARY": str(summary), "NAME": "scan-worker", "DISK_LOG": disk_log, "FREED": freed}
             if samples is not None:
                 (d / "disk.tsv").write_text(samples)
                 env["DISK_LOG"] = str(d / "disk.tsv")
@@ -168,6 +208,20 @@ class DiskMonitor(unittest.TestCase):
         self.assertIn("lowest free space 2.0 GB at 12:24:30", res.stdout)
         self.assertIn("::warning", res.stdout)
         self.assertIn("lowest free space 2.0 GB", summary)
+
+    def test_the_warning_says_what_to_do(self):
+        low = "12:10:55\t45056\n12:24:30\t2048\n"
+        # no clean-up on this image yet: turn it on
+        res, _ = self.report(low, freed="false")
+        warning = [line for line in res.stdout.splitlines() if line.startswith("::warning")][0]
+        self.assertIn('"free-disk-space": true', warning)
+        self.assertIn("docs/ci/README.md#runner-disk", warning)
+        # the clean-up already ran: the image itself must shrink
+        res, _ = self.report(low, freed="true")
+        warning = [line for line in res.stdout.splitlines() if line.startswith("::warning")][0]
+        self.assertNotIn('"free-disk-space": true', warning)
+        self.assertIn("smaller", warning)
+        self.assertIn("docs/ci/README.md#runner-disk", warning)
 
     def test_enough_headroom_passes_quietly(self):
         res, summary = self.report("12:10:55\t45056\n12:20:00\t20480\n12:25:00\t30000\n")

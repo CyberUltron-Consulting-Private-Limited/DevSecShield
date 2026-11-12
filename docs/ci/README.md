@@ -39,7 +39,7 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
 | Event | What runs |
 |---|---|
 | Pull request into dev, staging or main | pr-checks, security, and the suites and images whose paths changed |
-| `merge_group` (a merge queue entry) | security, and the suites and images whose paths changed between the queue's base commit and its merge commit. The suites' tests and the image builds run as on a PR. Their lint-diff steps (ruff, mypy, ESLint "no new findings") do not run, as on a push, and the security jobs scan in report mode (see [Known limits](#known-limits), #70). There are no pr-checks: there is no PR event, and the PR's own run checked them. `ci-gate` reports on the queue commit, so a queue can require it |
+| `merge_group` (a merge queue entry) | security, and the suites and images whose paths changed between the queue's base commit and its merge commit. The suites' tests and the image builds run as on a PR. Their lint-diff steps (ruff, mypy, ESLint "no new findings") run in report mode only, as on a push, and the security jobs scan in report mode (see [Known limits](#known-limits), #70). There are no pr-checks: there is no PR event, and the PR's own run checked them. `ci-gate` reports on the queue commit, so a queue can require it |
 | Push to `dev` (a merge) | security, and the suites and images whose paths changed since the commit before the push |
 | Push to `staging` or `main` (a promotion) | security and the changed images only. The commit arrived through a PR whose run already tested the merged tree (branch protection requires branches to be up to date), so the suites are not run a second time |
 | `workflow_dispatch` | everything; scanners in report mode |
@@ -56,17 +56,13 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
   Its runner gets the `free-disk-space` clean-up; the other images do not need it. Build layers go to the Actions
   cache from `dev` only, and PRs read them. The cache is `mode=min` (final-image layers only), so a PR that changes
   worker code re-installs every dependency: plan for a full build.
-- **Runner disk (#50).** Images are built with Buildx's `docker` driver, straight into the runner's Docker image
-  store. The default `docker-container` driver kept a second copy of the image in its own BuildKit store, and `load`
-  streamed it into Docker as a tarball that Docker stored and unpacked again. That filled the 44 GB left after the
-  clean-up on a full scan-worker build. After the build, the build cache (intermediate stages, uv's wheel cache) is
-  pruned before Trivy copies the image. Every image job samples the free disk space every 5 s and ends with a
-  *Disk headroom* step: the lowest value is in the log and the job summary, with a warning under 10 GB, so a
-  shrinking margin shows before a build fails.
+- **Runner disk.** Every image job logs the lowest free disk space it reached, and warns under 10 GB. See
+  [Runner disk](#runner-disk).
 - **Concurrency.** A new push to a PR cancels that PR's older run. On `dev`, `staging` and `main` a running run is
   not cancelled. But GitHub keeps only one *pending* run per group, so after several quick merges the middle commits
-  may get no result of their own. Merge-queue runs are never cancelled by this workflow: each queue entry has its
-  own ref, and the queue cancels the runs it no longer needs.
+  may get no result of their own. Merge-queue runs are never cancelled by this workflow, because each queue entry
+  has its own ref. GitHub does not cancel them either when it rebuilds or drops a queue group: those runs finish and
+  use runner minutes. Keep the queue's *Maximum pull requests to build* small (a cancel job is #71).
 - **Permissions.** The workflow defaults to `contents: read`, and each job asks only for what it needs. Only two jobs
   get a write token, `pull-requests: write`, and neither checks out PR code: the label job, and
   `pr-checks / review labels`, which removes review labels that new commits outdate. Every checkout uses
@@ -77,6 +73,33 @@ pull_request into dev / staging / main, merge_group, push to dev / staging / mai
   (Semgrep, Checkov, ggshield, tsx), which are pinned by top-level version only, so bump those by hand
   (hash-locking them is #20). The PostgreSQL service image is pinned by digest. Bump it by hand too: Dependabot does
   not update workflow service images.
+
+### Runner disk
+
+The hosted runner has about 15 GB free. A full build of the scan-worker image (torch with the CUDA wheels, through
+garak) needs about 40 GB at its peak (#50). How the image job keeps that within the disk:
+
+- **One copy of the image.** Images are built with Buildx's `docker` driver, straight into the runner's Docker
+  image store. The default `docker-container` driver kept a second copy in its own BuildKit store, and `load`
+  streamed it into Docker as a tarball that Docker stored and unpacked again. That filled the 44 GB left after the
+  clean-up.
+- **Clean-up.** Images with `"free-disk-space": true` first delete preinstalled toolchains the job never uses:
+  15 GB free becomes 54 GB. `/mnt` is on the same disk on these runners, so it adds nothing.
+- **Build cache pruned before Trivy.** Intermediate stages and uv's wheel cache (34 GB on scan-worker) are deleted
+  before Trivy writes its temporary copy of the image.
+- **Disk headroom.** A background monitor samples the free space on `/` every 5 s. The last step prints the lowest
+  value in the log and the job summary, for example `Disk (scan-worker): lowest free space 13.5 GB at 06:46:27 UTC`.
+
+**When it warns** (lowest free space under 10 GB):
+
+1. If the image has no `"free-disk-space": true` in the `Decide` step of `ci.yml`, add it. The clean-up adds about
+   39 GB and about 3 minutes.
+2. If it already has it, the image or its build must get smaller. For scan-worker the open options are in #50:
+   - CPU-only torch wheels, if the worker never uses a GPU (about 3 GB compressed, in every copy);
+   - avoid the second copy of the venv that the uv cache mount makes with `UV_LINK_MODE=copy`.
+
+Small images built without the clean-up (dast-worker) sit near 10 GB on a fully cached build. A warning there is
+not yet a risk; a per-image threshold is #71.
 
 ## The gating rule: no new findings
 
@@ -108,7 +131,7 @@ what happened to the old `cbom-gates.yml`, which was red on 59 of 59 runs. The r
 
 The comparators are Python embedded in the workflows, so callers in other repositories need no extra files. All
 their decisions (tool exit codes, missing base, renames) are inside that Python. `.github/tests/` extracts it from
-the YAML and tests it: 102 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
+the YAML and tests it: 104 tests, run by the `ci-selftest` job whenever a workflow, a test or this file changes.
 They check that the same findings from two checkouts at different paths give 0 new, that an added finding is new,
 that each failure mode above fails, that ci-gate, the path map, the image list (`Decide`, run for each event),
 pr-hygiene and the image job's disk steps behave as documented, and that every reusable-workflow input is documented
@@ -537,10 +560,14 @@ protected, the secret gate trusts them as promotion heads automatically (it read
 
 **Merge queue (optional).** In the same ruleset, *Require merge queue* tests each PR merged onto the latest base
 before it lands, so two PRs that pass alone cannot break `dev` together. `ci.yml` already runs on `merge_group` and
-`ci-gate` reports there; keep `ci-gate` as the one required check.
+`ci-gate` reports there; keep `ci-gate` as the one required check. Make `dev` the default branch first: a queue run
+can restore Actions caches only from its own ref and the default branch, so with `main` as default it builds
+images without the layer cache written from `dev`. That is inferred from GitHub's caching docs; check the first
+queue run for `CACHED` steps (#71). Keep *Maximum pull requests to build* small: invalidated queue runs are not
+cancelled.
 
 **Until #70 lands, a queue commit is not security-gated.** On `merge_group` the security jobs run in report mode,
-and the suites' lint-diff steps do not run (see [Known limits](#known-limits)). A new finding that exists only in the
+and the suites' lint-diff steps report without blocking (see [Known limits](#known-limits)). A new finding that exists only in the
 merged tree therefore passes the queue, and the push run reports it only after the merge. The merged tree differs
 from the tree the PR's own run gated when:
 - the base moved after the PR's last run, or PRs ahead in the queue add commits;
@@ -654,7 +681,7 @@ cd frontend && npm ci && npx tsc --noEmit && npx eslint . && \
   when a rendered chart produced no evaluated check.
 - **Merge-queue runs scan security in report mode.** The secret and scanner gates compare with a base commit taken
   from the pull request or push event; a `merge_group` event has neither, so they scan in full mode and report
-  without blocking. The suites' lint-diff steps are skipped too, as on a push. The PR's own run already gated
+  without blocking. The suites' lint-diff steps run in report mode only too, as on a push. The PR's own run already gated
   its diff, but a finding that exists only in the merged tree passes the queue (see Branch protection). Gating the
   queue commit against `merge_group.base_sha` is #70.
 - **The pull-request files API lists at most 3,000 files**, so pr-hygiene does not see files beyond that in a huge

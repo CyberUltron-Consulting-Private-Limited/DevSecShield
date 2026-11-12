@@ -43,7 +43,8 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   # A new push to a PR cancels the older run. On dev / staging / main a running run is not cancelled, but GitHub
   # keeps only one PENDING run per group: with several quick merges, the middle commits can end up with no result.
-  # Merge-queue runs are never cancelled here (their ref is unique per queue entry; the queue cancels its own).
+  # Merge-queue runs are never cancelled here (their ref is unique per queue entry). GitHub does not cancel them
+  # either when it rebuilds or drops a queue group: they finish (#71).
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
