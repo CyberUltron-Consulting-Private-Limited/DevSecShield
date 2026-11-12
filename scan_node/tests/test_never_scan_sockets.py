@@ -29,17 +29,28 @@ PROXY_VARS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PRO
 
 
 class Listener:
-    """TCP listeners on ``addresses`` (one port for all); records the local address of every accepted connection."""
+    """TCP listeners on ``addresses`` (one port for all); records the local address of every accepted connection.
+
+    ``hits`` is a barrier, not a snapshot: reading it first opens one connection of its own to each listening socket
+    and waits (bounded) until the accept thread has taken it.  A socket's accept queue is first in, first out, so by
+    then every connection that reached that socket before the read has been accepted and recorded; an assertion on
+    ``hits`` can no longer run ahead of the accept threads (re-review 5879769432: 4 of 8 runs failed that way).  The
+    barrier's own connections are told apart by their source address and port and are never recorded."""
+
+    BARRIER_S = 5.0  # how long a read of ``hits`` waits for the accept threads at most (an assertion fails after)
 
     def __init__(self, addresses=("127.0.0.1", "127.0.0.2")):
-        self.hits: list[str] = []
+        self._hits: list[str] = []
+        self._cond = threading.Condition()
+        self._barrier_peers: set = set()  # (address, port) of barrier connections not yet accepted
+        self.addresses = tuple(addresses)
         self.socks: list[socket.socket] = []
         port = 0
         for address in addresses:
             s = socket.socket()
             s.bind((address, port))
             port = s.getsockname()[1]
-            s.listen(16)
+            s.listen(64)
             s.settimeout(0.1)
             self.socks.append(s)
         self.port = port
@@ -51,14 +62,44 @@ class Listener:
     def _loop(self, s):
         while not self.stop.is_set():
             try:
-                conn, _ = s.accept()
+                conn, peer = s.accept()
             except OSError:
                 continue
-            self.hits.append(conn.getsockname()[0])
+            with self._cond:
+                if peer[:2] in self._barrier_peers:
+                    self._barrier_peers.discard(peer[:2])
+                else:
+                    self._hits.append(conn.getsockname()[0])
+                self._cond.notify_all()
             conn.close()
 
+    def settle(self) -> None:
+        """Wait until every connection made to the listeners so far has been accepted and recorded."""
+        clients = []
+        try:
+            for address in self.addresses:
+                client = socket.socket()
+                client.bind((address, 0))  # its source is known before it connects, so the accept thread can tell
+                with self._cond:
+                    self._barrier_peers.add(client.getsockname()[:2])
+                clients.append(client)
+                client.connect((address, self.port))
+            with self._cond:
+                done = self._cond.wait_for(lambda: not self._barrier_peers, timeout=self.BARRIER_S)
+            assert done, f"the listener did not accept its barrier connections within {self.BARRIER_S} s"
+        finally:
+            for client in clients:
+                client.close()
+
+    @property
+    def hits(self) -> list[str]:
+        if not self.stop.is_set():
+            self.settle()
+        with self._cond:
+            return list(self._hits)
+
     def close(self):
-        time.sleep(0.2)  # let a connection that is on its way be accepted and recorded
+        self.settle()  # every connection on its way is recorded before the listeners stop (was a 0.2 s sleep)
         self.stop.set()
         for t in self.threads:
             t.join()
