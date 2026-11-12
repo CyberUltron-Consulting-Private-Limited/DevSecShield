@@ -22,6 +22,7 @@ from backend.utilities.cicd.auth import (
     require_dast_cicd_key,
     require_zip_cicd_key,
 )
+from backend.utilities.cicd import cbom_gate
 from backend.utilities.cicd.cbom_page import project_cbom_ci_page
 from backend.utilities.cicd.migrate_dast_logs import migrate_dast_cicd_logs_for_team
 from backend.utilities.cicd.poll import poll_for_results
@@ -343,12 +344,30 @@ async def run_cicd_scan(
             finding_rows = results.get("results") or []
         elif isinstance(results, list):
             finding_rows = results
-        return {
+        response = {
             "results": results,
             "status": task_status,
             "cicd_log_id": CICD_LOG_ID,
             "finding_count": len(finding_rows) if isinstance(finding_rows, list) else 0,
         }
+
+        # STEP [ 7 ] : ================= CBOM policy gate (the customer template fails the job on gate_failed) =========
+        # Same codes as the code-scan CLI gate (aibom.cbom.gate.FAIL_CODES). No result in the poll window fails closed.
+        # The verdict is stored on the log, so the CI/CD page shows what the pipeline was told.
+        if type == "cbom":  # `type` is the path parameter (the scan type) here, not the builtin
+            gate = cbom_gate.evaluate(results)
+            response["gate_failed"] = cbom_gate.gate_failed(gate)
+            response["gate"] = gate
+            console.print(
+                f"CBOM CI gate verdict={gate['verdict']} failing={gate['failing_count']} log={CICD_LOG_ID}",
+                style="bold yellow",
+            )
+            if CICD_LOG_ID:
+                try:
+                    cicd_log_collection.update_one({"_id": ObjectId(CICD_LOG_ID)}, {"$set": {"gate": gate}})
+                except Exception as exc:  # the pipeline still gets its verdict; the page then shows none for this log
+                    console.print(f"CBOM CI gate not stored on log {CICD_LOG_ID}: {exc.__class__.__name__}", style="bold red")
+        return response
 
     except HTTPException as e:
         console.print(f"HTTPException in running cicd scan: {str(e)}", style="bold red")
@@ -739,6 +758,8 @@ async def get_cicd_integration(
                     "profile_id": meta.get("profile_id"),
                     "trigger": meta.get("trigger"),
                     "scan_kind": "dast" if is_dast else scan_type,
+                    # CBOM policy gate verdict as returned to the pipeline (None for logs made before the gate)
+                    "gate": log.get("gate"),
                 })
                 if log.get("results"):
                     created = log["created_at"]

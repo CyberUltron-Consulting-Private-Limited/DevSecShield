@@ -29,6 +29,7 @@ import { AgentPoolsCard } from "./AgentPoolsCard";
 import {
   DEPLOY_SUPPORT,
   ago,
+  insecureApiWarning,
   installCommand,
   nodeInstallNames,
   offersRegistrationToken,
@@ -255,6 +256,8 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
       })
     : "";
   const offlineSteps = created ? offlineImageSteps(createdNode?.deployment ?? wizard.deployment, NODE_IMAGE) : null;
+  // The install command uses this deployment's API URL: say before the customer runs it when a node cannot connect.
+  const apiWarning = insecureApiWarning(apiBaseURL);
 
   return (
     <div className="space-y-6">
@@ -410,6 +413,12 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
             </Button>
           }
         >
+          {apiWarning && (
+            <p role="alert" className="mb-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+              data-testid="node-api-insecure">
+              {apiWarning}
+            </p>
+          )}
           <ol className="space-y-8">
             <li>
               <StepTitle n={1} title="Name and segment" />
@@ -449,8 +458,9 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                       </summary>
                       <p className="mt-2">
                         Use this on a host without access to the image registry (air-gapped sites, or before the image is
-                        published there). The file and its SHA-256 checksum come from{" "}
-                        <span className="font-mono">make node-image</span>; check the checksum before you load it.
+                        published there). The steps say where the file and its SHA-256 checksum come from (ZeroShield,
+                        or <span className="font-mono">make node-image</span> for a release version); check the checksum
+                        before you load it.
                       </p>
                       <div className="mt-2"><CodeSnippet code={offlineSteps} language="bash" /></div>
                     </details>
