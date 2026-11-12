@@ -56,7 +56,7 @@ def stand_in_principal(monkeypatch, *, engine=None, user_for_token=None, role: s
       in ``engine`` (no membership: refused as a non-member, exactly like the real policy);
     * otherwise every request is ``user_id`` holding ``role`` in whatever team the path names.
 
-    The role check, the 403s and the audit trail are the real ones."""
+    The role check and the 403s are the real ones; so is the audit trail when ``engine`` is given."""
     from fastapi import HTTPException
 
     from backend.utilities.rbac import policy
@@ -79,3 +79,10 @@ def stand_in_principal(monkeypatch, *, engine=None, user_for_token=None, role: s
                                 role=role if team_id is not None else None)
 
     monkeypatch.setattr(policy, "resolve_principal", resolve)
+    if engine is None:
+        # No database in these tests, so there is nowhere to write the fail-closed "attempted" audit row (with a
+        # database, tests keep the real one and its 503 when it cannot be written).
+        async def no_audit_attempt(request, ctx, engine_):
+            request.state.audit_attempt_id = None
+
+        monkeypatch.setattr(policy, "_audit_attempt", no_audit_attempt)
