@@ -293,6 +293,12 @@ async def register(token: str, password: str, first_name: str, last_name: str, e
         if user_by_email(session, row.email) is not None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                                 detail=f"An account already uses {row.email}: sign in as {row.email} to accept")
+        from backend.utilities.sso import service as sso_service
+        try:  # no password account for an address whose organisation requires single sign-on
+            sso_service.password_sign_in(engine, row.email, None)
+        except sso_service.SsoRefused as refused:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail=f"{refused}, then open this invitation again to accept it") from None
         _close(session, row, token, "accepted", now)
         default_team = Team(name=f"{first_name}'s Default Team", description=f"Default team for {first_name}")
         session.add(default_team)

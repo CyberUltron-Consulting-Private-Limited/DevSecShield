@@ -34,3 +34,24 @@ async def send_account_created_email(email: str, link: str, expires_on: str) -> 
     body = create_account_created_email_html(email, link, expires_on)
     await send_outlook_email(recipient_email=email, subject=ACCOUNT_CREATED_SUBJECT, html_body=body)
     log.info("account-created mail sent")
+
+
+BREAK_GLASS_SUBJECT = "DevSecShield: an owner signed in with a password while single sign-on is required"
+
+
+async def send_break_glass_email(recipients: list[str], owner_email: str, ip: str | None, at_iso: str) -> None:
+    """Tell every owner of a team that requires SSO that one of them used the password break-glass sign-in.  The
+    subject is fixed; the body escapes every value (an address and an IP are all it says)."""
+    import html as _html
+
+    owner, where, when = (_html.escape(str(v or "unknown"), quote=True) for v in (owner_email, ip, at_iso))
+    body = (f"<p>{owner} signed in to DevSecShield with a password and a mailed code at {when} (UTC) from {where}, "
+            "although your team requires single sign-on for that address.</p>"
+            "<p>Owners keep this break-glass sign-in so that a broken identity provider never locks a team out. "
+            "If this was not expected, change that owner's password and review the team's audit log.</p>")
+    for recipient in recipients:
+        try:
+            await send_outlook_email(recipient_email=recipient, subject=BREAK_GLASS_SUBJECT, html_body=body)
+        except Exception as exc:  # one recipient's failure never stops the others; the audit row is the record
+            log.error("break-glass notice not mailed (%s)", type(exc).__name__)
+    log.info("break-glass notice mailed to %s owner(s)", len(recipients))
