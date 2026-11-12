@@ -4,15 +4,15 @@ with credits shown first, the queue, the cross-repository roll-up, and the signe
 Conventions of the CBOM Sources API (``backend/utilities/cbom_sources/http.py``): team members read; changes and
 anything that spends credits need a team admin (400 with a sentence, never 403, which signs the frontend out); another
 team's or a missing record is a 404; a stale form gets 409; validation errors are a 400 that never echoes input.
-Credentials are write-only (``secrets_set`` lists the names). Each route declares its permission for F4's
-route-coverage test in ``openapi_extra["x-zs-permission"]``:
+Credentials are write-only (``secrets_set`` lists the names). Each team route declares its permission in
+``openapi_extra["x-zs-permission"]`` with a name of F4's matrix (``backend/utilities/rbac/permissions.py``, which F4
+owns; F4's app-level enforcer applies the marker, and tests/test_scm_permissions.py pins the names):
 
-    scm.read                member   every GET, estimates and previews
-    scm.connections.write   admin    connections, filters, sync, webhook secret
-    scm.repos.write         admin    bulk include / exclude / policy pinning
-    scm.policies.write      admin    policies
-    scm.scans.run           admin    runs (they spend the team's credits) and cancelling them
-    (none: signature)       public   /scm/webhooks/{provider}/{webhook_uid}
+    repos.read     viewer   every GET, estimates and previews (they change nothing)
+    repos.manage   admin    connections, filters, sync, webhook secret, bulk include / exclude / pinning, policies,
+                            runs (they spend the team's credits) and cancelling them
+    (no marker)    public   /scm/webhooks/{provider}/{webhook_uid}: signed with the connection's webhook secret; F4's
+                            ``public(...)`` policy is added when F4 (PR #42) and this router are both on dev
 """
 from __future__ import annotations
 
@@ -263,7 +263,7 @@ def _create_connection(engine, team_id: int, user_id: int, body: ConnectionCreat
 
 
 @router.get(BASE + "/connections", dependencies=READ, summary="SCM connections of the team (no secrets)",
-            openapi_extra=perm("scm.read"))
+            openapi_extra=perm("repos.read"))
 async def list_connections(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
 
@@ -284,14 +284,14 @@ async def list_connections(team_id: TeamId, Authorization: AuthHeader = None):
     return _ok(await _run("list connections", team_id, work))
 
 
-@router.post(BASE + "/connections", dependencies=WRITE, status_code=201, openapi_extra=perm("scm.connections.write"),
+@router.post(BASE + "/connections", dependencies=WRITE, status_code=201, openapi_extra=perm("repos.manage"),
              summary="Connect a GitHub org / App installation, GitLab group or Bitbucket workspace")
 async def create_connection(team_id: TeamId, body: ConnectionCreate, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("create connection", team_id, _create_connection, engine, team_id, user.id, body), 201)
 
 
-@router.get(BASE + "/connections/{connection_id}", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.get(BASE + "/connections/{connection_id}", dependencies=READ, openapi_extra=perm("repos.read"),
             summary="One connection, with its sync status")
 async def get_connection(team_id: TeamId, connection_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -364,7 +364,7 @@ def _update_connection(engine, team_id: int, user_id: int, connection_id: int, b
         return {"connection": public_connection(row)}
 
 
-@router.patch(BASE + "/connections/{connection_id}", dependencies=WRITE, openapi_extra=perm("scm.connections.write"),
+@router.patch(BASE + "/connections/{connection_id}", dependencies=WRITE, openapi_extra=perm("repos.manage"),
               summary="Rename, disable, re-key or re-point a connection")
 async def update_connection(team_id: TeamId, connection_id: ObjectId, body: ConnectionUpdate,
                             Authorization: AuthHeader = None):
@@ -394,7 +394,7 @@ def _delete_connection(engine, team_id: int, user_id: int, connection_id: int) -
     return {"deleted": connection_id, "repositories": len(repo_ids), "refunded": pricing.as_credits(refunded)}
 
 
-@router.delete(BASE + "/connections/{connection_id}", dependencies=WRITE, openapi_extra=perm("scm.connections.write"),
+@router.delete(BASE + "/connections/{connection_id}", dependencies=WRITE, openapi_extra=perm("repos.manage"),
                summary="Delete a connection and its inventory (queued scans are cancelled and refunded)")
 async def delete_connection(team_id: TeamId, connection_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -421,7 +421,7 @@ def _test_connection(engine, team_id: int, user_id: int, connection_id: int) -> 
         return {"ok": ok, "message": message[:250]}
 
 
-@router.post(BASE + "/connections/{connection_id}/test", dependencies=WRITE, openapi_extra=perm("scm.connections.write"),
+@router.post(BASE + "/connections/{connection_id}/test", dependencies=WRITE, openapi_extra=perm("repos.manage"),
              summary="Check that the credential can read the organisation, group or workspace")
 async def test_connection(team_id: TeamId, connection_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -451,7 +451,7 @@ def _background_sync(engine, connection_id: int) -> None:
 
 
 @router.post(BASE + "/connections/{connection_id}/sync", dependencies=WRITE, status_code=202,
-             openapi_extra=perm("scm.connections.write"), summary="Discover the connection's repositories now")
+             openapi_extra=perm("repos.manage"), summary="Discover the connection's repositories now")
 async def sync_connection(team_id: TeamId, connection_id: ObjectId, background: BackgroundTasks,
                           Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -476,7 +476,7 @@ def _rotate_secret(engine, team_id: int, user_id: int, connection_id: int) -> di
 
 
 @router.post(BASE + "/connections/{connection_id}/webhook-secret", dependencies=WRITE,
-             openapi_extra=perm("scm.connections.write"), summary="Generate a new webhook secret (shown once)")
+             openapi_extra=perm("repos.manage"), summary="Generate a new webhook secret (shown once)")
 async def rotate_webhook_secret(team_id: TeamId, connection_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("rotate webhook secret", team_id, _rotate_secret, engine, team_id, user.id, connection_id))
@@ -518,7 +518,7 @@ def _preview(engine, team_id: int, connection_id: int, body: FiltersBody) -> dic
                 "sync": {"status": row.sync_status, "last_at": iso_z(row.last_sync_at)}}
 
 
-@router.post(BASE + "/connections/{connection_id}/preview", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.post(BASE + "/connections/{connection_id}/preview", dependencies=READ, openapi_extra=perm("repos.read"),
              summary="How many discovered repositories these filters keep, and what one scan of them would cost")
 async def preview_filters(team_id: TeamId, connection_id: ObjectId, body: FiltersBody, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -544,7 +544,7 @@ def _import(engine, team_id: int, user_id: int, connection_id: int, body: Filter
 
 
 @router.put(BASE + "/connections/{connection_id}/filters", dependencies=WRITE,
-            openapi_extra=perm("scm.connections.write"), summary="Import: save the filters and apply them")
+            openapi_extra=perm("repos.manage"), summary="Import: save the filters and apply them")
 async def apply_filters(team_id: TeamId, connection_id: ObjectId, body: FiltersBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("import", team_id, _import, engine, team_id, user.id, connection_id, body))
@@ -604,7 +604,7 @@ def _list_repos(engine, team_id: int, params: dict[str, Any]) -> dict:
                            "reasons": {str(k or ""): int(v) for k, v in reasons}, "in_scope": int(scoped)}}
 
 
-@router.get(BASE + "/repositories", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.get(BASE + "/repositories", dependencies=READ, openapi_extra=perm("repos.read"),
             summary="The repository inventory, filtered and paged, with facets")
 async def list_repositories(team_id: TeamId, Authorization: AuthHeader = None,
                             connection_id: int | None = Query(default=None, ge=1),
@@ -653,7 +653,7 @@ def _bulk(engine, team_id: int, user_id: int, body: BulkBody) -> dict:
         return {"changed": changed}
 
 
-@router.post(BASE + "/repositories/bulk", dependencies=WRITE, openapi_extra=perm("scm.repos.write"),
+@router.post(BASE + "/repositories/bulk", dependencies=WRITE, openapi_extra=perm("repos.manage"),
              summary="Include, exclude or reset repositories, or pin them to a policy")
 async def bulk_repositories(team_id: TeamId, body: BulkBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -717,7 +717,7 @@ def _list_policies(engine, team_id: int) -> dict:
                 "iac_modes": Q.DEFAULT_IAC_MODES}
 
 
-@router.get(BASE + "/policies", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.get(BASE + "/policies", dependencies=READ, openapi_extra=perm("repos.read"),
             summary="Scan policies in evaluation order, with how many repositories each one takes")
 async def list_policies(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -758,14 +758,14 @@ def _save_policy(engine, team_id: int, user_id: int, policy_id: int | None, body
         return {"policy": public_policy(row, _matched_counts(session, team_id).get(row.id, 0))}
 
 
-@router.post(BASE + "/policies", dependencies=WRITE, status_code=201, openapi_extra=perm("scm.policies.write"),
+@router.post(BASE + "/policies", dependencies=WRITE, status_code=201, openapi_extra=perm("repos.manage"),
              summary="Create a scan policy for a group of repositories")
 async def create_policy(team_id: TeamId, body: PolicyBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
     return _ok(await _run("create policy", team_id, _save_policy, engine, team_id, user.id, None, body), 201)
 
 
-@router.put(BASE + "/policies/{policy_id}", dependencies=WRITE, openapi_extra=perm("scm.policies.write"),
+@router.put(BASE + "/policies/{policy_id}", dependencies=WRITE, openapi_extra=perm("repos.manage"),
             summary="Change a scan policy")
 async def update_policy(team_id: TeamId, policy_id: ObjectId, body: PolicyBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -787,7 +787,7 @@ def _delete_policy(engine, team_id: int, user_id: int, policy_id: int) -> dict:
     return {"deleted": policy_id}
 
 
-@router.delete(BASE + "/policies/{policy_id}", dependencies=WRITE, openapi_extra=perm("scm.policies.write"),
+@router.delete(BASE + "/policies/{policy_id}", dependencies=WRITE, openapi_extra=perm("repos.manage"),
                summary="Delete a scan policy (pinned repositories fall back to the selectors)")
 async def delete_policy(team_id: TeamId, policy_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -822,7 +822,7 @@ def _policy_preview(engine, team_id: int, body: PolicyPreviewBody) -> dict:
                 "credits_per_run": pricing.as_credits(cents), "formula": pricing.FORMULA}
 
 
-@router.post(BASE + "/policies/preview", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.post(BASE + "/policies/preview", dependencies=READ, openapi_extra=perm("repos.read"),
              summary="Which repositories a policy would take, and what one run of it costs")
 async def preview_policy(team_id: TeamId, body: PolicyPreviewBody, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -852,7 +852,7 @@ def _estimate(engine, team_id: int, body: RunBody) -> dict:
         return _estimate_body(Q.estimate(session, team_id, **kw))
 
 
-@router.post(BASE + "/runs/estimate", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.post(BASE + "/runs/estimate", dependencies=READ, openapi_extra=perm("repos.read"),
              summary="What a bulk run would scan and cost, before anything is charged")
 async def estimate_run(team_id: TeamId, body: RunBody, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -886,7 +886,7 @@ def _create_run(engine, team_id: int, user_id: int, body: RunBody) -> JSONRespon
     return JSONResponse({"run": run}, status_code=201, headers=PRIVATE)
 
 
-@router.post(BASE + "/runs", dependencies=WRITE, status_code=201, openapi_extra=perm("scm.scans.run"),
+@router.post(BASE + "/runs", dependencies=WRITE, status_code=201, openapi_extra=perm("repos.manage"),
              summary="Start a bulk run at the estimated price (charged once, as a whole)")
 async def create_run(team_id: TeamId, body: RunBody, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -912,7 +912,7 @@ def _list_runs(engine, team_id: int, limit: int) -> dict:
         return {"runs": [public_run(r, counts.get(r.id)) for r in runs], "queue": Q.queue_stats(session, team_id)}
 
 
-@router.get(BASE + "/runs", dependencies=READ, openapi_extra=perm("scm.read"), summary="Recent runs and the queue")
+@router.get(BASE + "/runs", dependencies=READ, openapi_extra=perm("repos.read"), summary="Recent runs and the queue")
 async def list_runs(team_id: TeamId, Authorization: AuthHeader = None, limit: int = Query(default=25, ge=1, le=200)):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("list runs", team_id, _list_runs, engine, team_id, limit))
@@ -937,7 +937,7 @@ def _get_run(engine, team_id: int, run_id: int, page: int, size: int, status: st
                 "page": page, "page_size": size}
 
 
-@router.get(BASE + "/runs/{run_id}", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.get(BASE + "/runs/{run_id}", dependencies=READ, openapi_extra=perm("repos.read"),
             summary="One run and its scans")
 async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None,
                   page: int = Query(default=1, ge=1, le=100000), page_size: int = Query(default=50, ge=1, le=200),
@@ -957,7 +957,7 @@ def _cancel(engine, team_id: int, user_id: int, run_id: int) -> dict:
     return {"refunded": refunded}
 
 
-@router.post(BASE + "/runs/{run_id}/cancel", dependencies=WRITE, openapi_extra=perm("scm.scans.run"),
+@router.post(BASE + "/runs/{run_id}/cancel", dependencies=WRITE, openapi_extra=perm("repos.manage"),
              summary="Cancel the scans of a run that have not started (refunded)")
 async def cancel_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader = None):
     engine, user = await authorize(team_id, Authorization)
@@ -987,7 +987,7 @@ def _list_findings(engine, team_id: int, product: str | None, severity: str | No
                 "total": int(total), "page": page, "page_size": size}
 
 
-@router.get(BASE + "/findings", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.get(BASE + "/findings", dependencies=READ, openapi_extra=perm("repos.read"),
             summary="Findings de-duplicated across repositories, most widespread first")
 async def list_findings(team_id: TeamId, Authorization: AuthHeader = None,
                         product: Literal["sast", "iac", "sbom_sca", "cbom", "ai_bom"] | None = None,
@@ -1017,7 +1017,7 @@ def _get_finding(engine, team_id: int, finding_id: int) -> dict:
                                  for o, name, url in rows]}
 
 
-@router.get(BASE + "/findings/{finding_id}", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.get(BASE + "/findings/{finding_id}", dependencies=READ, openapi_extra=perm("repos.read"),
             summary="One roll-up finding and every repository it is in")
 async def get_finding(team_id: TeamId, finding_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -1059,7 +1059,7 @@ def _rollup(engine, team_id: int) -> dict:
                          "repo_count": f.repo_count} for f in top]}
 
 
-@router.get(BASE + "/rollup", dependencies=READ, openapi_extra=perm("scm.read"),
+@router.get(BASE + "/rollup", dependencies=READ, openapi_extra=perm("repos.read"),
             summary="Roll-up per product across every repository")
 async def rollup_view(team_id: TeamId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
@@ -1090,8 +1090,10 @@ def _webhook(provider: str, uid: str, body: bytes, headers: Any) -> JSONResponse
     return JSONResponse(out, status_code=202, headers=PRIVATE)
 
 
+# Public: no account; the credential is the connection's webhook secret (HMAC or token, constant-time). No
+# x-zs-permission marker (that names a team permission); F4's public(...) policy is added once F4 is on dev.
 @router.post("/scm/webhooks/{provider}/{webhook_uid}", dependencies=[Depends(webhook_limiter)],
-             openapi_extra=perm("public.scm_webhook"), summary="Inbound GitHub / GitLab / Bitbucket webhook (signed)")
+             summary="Inbound GitHub / GitLab / Bitbucket webhook (signed)")
 async def receive_webhook(provider: Literal["github", "gitlab", "bitbucket"], request: Request,
                           webhook_uid: Annotated[str, Path(max_length=64)]):
     uid = webhook_uid
