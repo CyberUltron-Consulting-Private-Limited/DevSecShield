@@ -6,13 +6,14 @@
 algid.py is vendored byte-identical in three places (the scan node, the backend and aibom cannot import each
 other). Hand-written resolver code sits outside the region between the BEGIN/END GENERATED markers; this script
 rewrites only that region, taking the hand-written parts from the backend copy. Every input file is listed in
-sources/SOURCES.json with its sha256; a missing entry or a changed file is an error. Stdlib only.
+sources/SOURCES.json with its sha256; a missing entry or a changed file is an error. Third-party HTML pages are
+not committed: sources/ holds normalised extracts of them (extract_html.py), each with the raw page's sha256.
+Stdlib only.
 """
 from __future__ import annotations
 
 import csv
 import hashlib
-import html
 import json
 import re
 import sys
@@ -131,9 +132,8 @@ def build_curated_rows(t: Tables) -> None:
         t.oid[oid] = name
 
 
-def build_csor(t: Tables, raw: bytes) -> None:
-    text = re.sub(r"<[^>]+>", " ", html.unescape(raw.decode("utf-8")))
-    defs = re.findall(r"([A-Za-z][\w-]*)\s+OBJECT\s+IDENTIFIER\s*::=\s*\{([^}]*)\}", text)
+def build_csor(t: Tables, extract: bytes) -> None:
+    defs = json.loads(extract)["object_identifier_definitions"]
     arcs = {"nistAlgorithms": "2.16.840.1.101.3.4"}
     for name, body in defs:
         parts = body.split()
@@ -370,7 +370,7 @@ def build_ike(t: Tables, raw: bytes) -> None:
         raise SourceError(f"ike_ke_names not in the registry: {sorted(set(names) - seen)}")
 
 
-def build_aws(t: Tables, enums: bytes, elb: bytes, apigw: bytes) -> None:
+def build_aws(t: Tables, enums: bytes, elb_extract: bytes, apigw_extract: bytes) -> None:
     captured = json.loads(enums)["enums"]
     for key, mapping in t.curated["aws"].items():
         if key.startswith("_"):
@@ -383,17 +383,15 @@ def build_aws(t: Tables, enums: bytes, elb: bytes, apigw: bytes) -> None:
                 raise SourceError(f"aws {key} {value} names unknown {name!r}")
         t.aws[key] = dict(mapping)
     quote = t.curated["aws_tls_policy"]["elbv2_quote"]
-    elb_text = " ".join(re.sub(r"<[^>]+>", " ", html.unescape(elb.decode("utf-8"))).split())
-    if quote not in elb_text:
-        raise SourceError("the ELB page no longer carries the PQ group sentence")
+    elb = json.loads(elb_extract)
+    if elb["group_sentence"] != quote:
+        raise SourceError("the ELB extract's PQ group sentence differs from curated.json")
     groups = tuple(g for g in re.findall(r"(\w+MLKEM\d+)", quote))
     for g in groups:
         if g not in t.tls_group.values():
             raise SourceError(f"ELB group {g} is not an IANA TLS group")
-    elb_names = sorted(set(re.findall(r"\b(ELBSecurityPolicy[\w-]*-PQ-[\w-]*)\b", elb_text)))
-    t.aws_tls_policy["elbv2"] = {n: groups for n in elb_names}
-    api_text = html.unescape(apigw.decode("utf-8"))
-    api_names = set(re.findall(r"\b(SecurityPolicy_\w*_PQ_\w*)\b", api_text))
+    t.aws_tls_policy["elbv2"] = {n: groups for n in elb["pq_policy_names"]}
+    api_names = set(json.loads(apigw_extract)["pq_policy_names"])
     api_names |= {v for v in captured["apigateway.SecurityPolicy"] if "_PQ_" in v}
     t.aws_tls_policy["apigateway"] = {n: () for n in sorted(api_names)}
 
@@ -435,14 +433,14 @@ def build_aliases(t: Tables) -> None:
 def build(data: dict[str, bytes]) -> Tables:
     t = Tables(json.loads(data["curated.json"]))
     build_curated_rows(t)
-    build_csor(t, data["nist-csor.html"])
+    build_csor(t, data["nist-csor-oids.json"])
     build_pkix(t, data["iana-pkix-alg.csv"])
     build_tls_groups(t, data["iana-tls-groups.csv"])
     build_tls_sigschemes(t, data["iana-tls-sigschemes.csv"])
     build_ssh_kex(t, data["iana-ssh-kex.csv"], data["openssh-kex-aliases.txt"])
     build_ike(t, data["iana-ikev2-t4.csv"])
-    build_aws(t, data["botocore-enums.json"], data["aws-elb-security-policies.html"],
-              data["aws-apigw-security-policies.html"])
+    build_aws(t, data["botocore-enums.json"], data["aws-elb-pq-policies.json"],
+              data["aws-apigw-pq-policies.json"])
     build_openssl_text(t, data["openssl-3.0-text.json"], data["openssl-3.5-text.json"])
     build_aliases(t)
     for oid, name in t.oid.items():

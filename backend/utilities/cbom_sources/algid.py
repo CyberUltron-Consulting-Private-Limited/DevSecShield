@@ -46,7 +46,7 @@ class Identity(NamedTuple):
 
 
 # --- BEGIN GENERATED (scripts/algid/build_algid.py) ---
-SOURCES_SHA256 = "141c6164a6a2dfb881316569b12387324e5a303fac7448f0241bac99dc6c19f5"
+SOURCES_SHA256 = "2198a98071ef1c9ac58805cb1a7a97a1318e7b33c7d7e2e93c47858d8911ffe0"
 
 # canonical name -> (family_label, primitive, standard, status, parameter_set,
 #                    nist_category, construction, quantum, key_size, components)

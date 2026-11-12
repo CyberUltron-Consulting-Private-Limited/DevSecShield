@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import html
 import json
 import os
 import random
@@ -166,14 +165,30 @@ def test_iana_ikev2_t4_exact():
 
 
 def _csor_oids() -> dict[str, str]:
-    text = re.sub(r"<[^>]+>", " ", html.unescape((SRC / "nist-csor.html").read_text(encoding="utf-8")))
+    """{identifier: dotted OID} from the CSOR extract's ASN.1 definitions, resolved here independently."""
+    defs = json.loads((SRC / "nist-csor-oids.json").read_text())["object_identifier_definitions"]
     arcs = {"nistAlgorithms": "2.16.840.1.101.3.4"}
     out = {}
-    for ident, parent, num in re.findall(r"([\w-]+)\s+OBJECT\s+IDENTIFIER\s*::=\s*\{\s*(\w+)\s+(\d+)\s*\}", text):
-        if parent in arcs:
-            arcs[ident] = f"{arcs[parent]}.{num}"
-            out[ident] = arcs[ident]
+    for ident, body in defs:
+        m = re.fullmatch(r"(\w+) (\d+)", body)
+        if m and m.group(1) in arcs:
+            arcs[ident] = out[ident] = f"{arcs[m.group(1)]}.{m.group(2)}"
     return out
+
+
+@pytest.mark.skipif(not os.environ.get("ALGID_RAW_DIR"), reason="raw HTML captures are not committed; set "
+                    "ALGID_RAW_DIR to the folder that holds them (CB-04 evidence) to check the extracts")
+def test_extracts_match_raw_captures():
+    import importlib.util
+
+    raw_dir = Path(os.environ["ALGID_RAW_DIR"])
+    spec = importlib.util.spec_from_file_location("extract_html", REPO / "scripts/algid/extract_html.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    for name, doc in module.extracts(raw_dir).items():
+        assert (SRC / name).read_text(encoding="utf-8") == module.render(doc), name
+        for prov in doc["provenance"]:
+            assert hashlib.sha256((raw_dir / prov["raw_file"]).read_bytes()).hexdigest() == prov["raw_sha256"]
 
 
 def test_pkix_and_csor_oids_exact():

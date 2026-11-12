@@ -1,29 +1,21 @@
 {
- "_about": "Inputs of scripts/algid/build_algid.py. build_algid.py refuses a file without an entry or with a different sha256. Re-capture: see scripts/algid/README.md.",
+ "_about": "Inputs of scripts/algid/build_algid.py. build_algid.py refuses a file without an entry or with a different sha256. Third-party HTML is committed only as normalised extracts (extract_html.py) that carry the raw page's sha256. Re-capture: see scripts/algid/README.md.",
  "files": [
   {
-   "file": "aws-apigw-security-policies-overview.html",
-   "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-security-policies.html",
-   "retrieved_utc": "2026-11-12T11:28:10Z",
-   "sha256": "65615c61901493e0aaf8bb5f7dcf84b762cac14ff9e29e0f239b26d17c2a2aea",
-   "tool": "curl 8.5.0 (raw HTML bytes)",
-   "licence": "AWS documentation (quoted for interoperability)"
-  },
-  {
-   "file": "aws-apigw-security-policies.html",
+   "file": "aws-apigw-pq-policies.json",
    "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-security-policies-list.html",
    "retrieved_utc": "2026-11-12T11:28:07Z",
-   "sha256": "aef69751e32607bc001e13aaa5b7f1b98510481f30c855602da0d6e7aec7046b",
-   "tool": "curl 8.5.0 (raw HTML bytes)",
-   "licence": "AWS documentation (quoted for interoperability)"
+   "sha256": "1ffcc0ef026d52a2c72b8c0ec72b6322d060883c08eeb82d33d45d7a240cd46b",
+   "tool": "scripts/algid/extract_html.py from the raw capture aws-apigw-security-policies.html + aws-apigw-security-policies-overview.html (raw sha256 inside the extract; raw pages are kept with the CB-04 evidence, not committed)",
+   "licence": "facts extracted from AWS documentation"
   },
   {
-   "file": "aws-elb-security-policies.html",
+   "file": "aws-elb-pq-policies.json",
    "url": "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/describe-ssl-policies.html",
    "retrieved_utc": "2026-11-12T11:28:06Z",
-   "sha256": "175f0f141ae8c46e9dce1a0356025c3b50529d30427f750629bf9b00229f5273",
-   "tool": "curl 8.5.0 (raw HTML bytes)",
-   "licence": "AWS documentation (quoted for interoperability)"
+   "sha256": "643b6fc9b4a3866966a0b6d51ab6075ac3872cf65adc4eb333c474565e80d941",
+   "tool": "scripts/algid/extract_html.py from the raw capture aws-elb-security-policies.html (raw sha256 inside the extract; raw pages are kept with the CB-04 evidence, not committed)",
+   "licence": "facts extracted from AWS documentation"
   },
   {
    "file": "botocore-enums.json",
@@ -82,11 +74,11 @@
    "licence": "IANA registry (public domain)"
   },
   {
-   "file": "nist-csor.html",
+   "file": "nist-csor-oids.json",
    "url": "https://csrc.nist.gov/projects/computer-security-objects-register/algorithm-registration",
    "retrieved_utc": "2026-11-12T11:27:12Z",
-   "sha256": "bbc400ee861f962b267dea2bde295cb14a85a6aeb9c0458c0d6aa1b8c0611ceb",
-   "tool": "curl 8.5.0 (raw HTML bytes)",
+   "sha256": "45604e938b037cf3e49c0cf1039196ee9a4286285958709920c127eda61bab5f",
+   "tool": "scripts/algid/extract_html.py from the raw capture nist-csor.html (raw sha256 inside the extract; raw pages are kept with the CB-04 evidence, not committed)",
    "licence": "US government work (public domain)"
   },
   {

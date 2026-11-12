@@ -16,9 +16,10 @@ After re-capturing a file, update its `sha256` and `retrieved_utc` in `SOURCES.j
 
 | Source | How it is captured |
 |---|---|
-| `iana-*.csv`, `nist-csor.html`, `aws-*.html` | `curl -sS -L -o <file> <url>` (URLs in `SOURCES.json`); raw bytes, never a summary |
+| `iana-*.csv` | `curl -sS -L -o <file> <url>` (URLs in `SOURCES.json`); the registry CSV as published |
+| `nist-csor-oids.json`, `aws-elb-pq-policies.json`, `aws-apigw-pq-policies.json` | `curl` the raw pages (URLs inside each file) into a folder outside the repo, then `extract_html.py <that folder>`. Only the normalised extract is committed; it records each raw page's sha256. `ALGID_RAW_DIR=<folder> pytest backend/tests/test_algid.py -k raw` proves an extract was made from those bytes |
 | `botocore-enums.json` | `capture_botocore_enums.py`, run with the backend's pinned botocore (command in its docstring) |
-| `openssl-3.5-text.json`, `openssl-3.0-text.json` | `make_capture_certs.sh` (inside `python:3.12-slim`, OpenSSL 3.5) writes one throwaway certificate per algorithm, `make_oid_only_certs.py` adds composite/HashML-DSA/GOST ones, then `capture_openssl_text.py <dir> openssl` with each OpenSSL version. Keys never leave the temporary directory |
+| `openssl-3.5-text.json`, `openssl-3.0-text.json` | `make_capture_certs.sh` (inside `python:3.12-slim`, OpenSSL 3.5) writes one throwaway certificate per algorithm, `make_oid_only_certs.py` adds composite/HashML-DSA/GOST ones, then `capture_openssl_text.py <dir>` with each OpenSSL version on PATH (the certificate goes to OpenSSL on stdin). Keys never leave the temporary directory |
 | `openssh-kex-aliases.txt` | `ssh -V; ssh -Q kex` with OpenSSH 10.0 |
 | `curated.json` | by hand; every section cites its document. Changes get a second-agent review recorded in the PR |
 

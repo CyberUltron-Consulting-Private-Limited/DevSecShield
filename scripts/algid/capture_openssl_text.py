@@ -1,6 +1,9 @@
-"""Record what an OpenSSL binary prints for each certificate's public-key and signature algorithm.
+"""Record what the `openssl` on PATH prints for each certificate's public-key and signature algorithm.
 
-    python3 capture_openssl_text.py <dir of DER certificates> <openssl binary>  > openssl-<version>-text.json
+    python3 capture_openssl_text.py <dir of DER certificates>  > openssl-<major.minor>-text.json
+
+Run it once per OpenSSL version (3.0 on the host, 3.5 inside python:3.12-slim). The command line given to OpenSSL
+is fixed: the certificate goes in on stdin, so no file name or other input ever reaches the argument list.
 
 Each row pairs the OIDs (read from the DER with a stdlib walker, no OpenSSL) with the exact text after
 "Public Key Algorithm:" and "Signature Algorithm:" in `openssl x509 -inform DER -noout -text`.
@@ -51,13 +54,15 @@ def oids(der: bytes) -> tuple[str, str]:
     return _oid(der[spki_oid[1]:spki_oid[2]]), _oid(der[sig_oid[1]:sig_oid[2]])
 
 
+VERSION_CMD = ("openssl", "version")
+TEXT_CMD = ("openssl", "x509", "-inform", "DER", "-noout", "-text")
+
 rows = []
-binary = sys.argv[2]
-version = subprocess.run([binary, "version"], capture_output=True, text=True).stdout.strip()
+version = subprocess.run(VERSION_CMD, capture_output=True, text=True, check=True, shell=False).stdout.strip()
 for path in sorted(pathlib.Path(sys.argv[1]).glob("*.der")):
     der = path.read_bytes()
-    text = subprocess.run([binary, "x509", "-inform", "DER", "-noout", "-text", "-in", str(path)],
-                          capture_output=True, text=True).stdout
+    text = subprocess.run(TEXT_CMD, input=der, capture_output=True, check=True,
+                          shell=False).stdout.decode("utf-8", "replace")
     lines = {k: None for k in ("Public Key Algorithm", "Signature Algorithm")}
     for line in text.splitlines():
         key, _, value = line.strip().partition(":")
