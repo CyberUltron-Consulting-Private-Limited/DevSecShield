@@ -75,8 +75,9 @@ reviews:
       instructions: >-
         Deployment config: no secrets in files (use .env.example placeholders), containers not privileged, images
         pinned, health checks present, and the change reflected in deploy/staging/README.md when operators must act.
-  # Only tools CI does not already run (ci-gate runs ruff, ESLint, ShellCheck, Hadolint, actionlint, gitleaks,
-  # Checkov, Semgrep, OSV-Scanner and Trivy), so nothing is reported twice.
+  # Only tools CI does not already run (ci-gate runs ruff, ESLint, ShellCheck, Hadolint, actionlint, Checkov,
+  # Semgrep, OSV-Scanner and Trivy), so nothing is reported twice. gitleaks stays off: the owner removed secret
+  # scanning on 2026-11-12.
   tools:
     zizmor:
       enabled: true
