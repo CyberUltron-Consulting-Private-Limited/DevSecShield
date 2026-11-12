@@ -78,11 +78,16 @@ class FakeIdp:
         self.next_claims: dict = {}
         self.next_header: dict = {}
         self.next_key = None
+        self.issuer = ISSUER  # what discovery and the ID token say (an IdP may end it with "/")
+        self.pkce_methods = ["S256"]
+        self.token_requests: list[dict] = []
 
     def discovery(self):
-        return {"issuer": ISSUER, "authorization_endpoint": ISSUER + "/protocol/openid-connect/auth",
-                "token_endpoint": ISSUER + "/protocol/openid-connect/token",
-                "jwks_uri": ISSUER + "/protocol/openid-connect/certs", "code_challenge_methods_supported": ["S256"]}
+        base = self.issuer.rstrip("/")
+        return {"issuer": self.issuer, "authorization_endpoint": base + "/protocol/openid-connect/auth",
+                "token_endpoint": base + "/protocol/openid-connect/token",
+                "jwks_uri": base + "/protocol/openid-connect/certs",
+                "code_challenge_methods_supported": self.pkce_methods}
 
     def get_json(self, url):
         if url.endswith("/.well-known/openid-configuration"):
@@ -101,6 +106,7 @@ class FakeIdp:
         return q, code
 
     def post_form(self, url, form):
+        self.token_requests.append(dict(form))
         grant = self.codes.pop(form["code"], None)
         if grant is None:
             raise sso_http.SsoHttpError("The identity provider refused the request (invalid_grant)")
@@ -108,10 +114,11 @@ class FakeIdp:
         if challenge != grant["challenge"] or form["redirect_uri"] != grant["redirect_uri"]:
             raise sso_http.SsoHttpError("The identity provider refused the request (invalid_grant)")
         now = int(time.time())
-        claims = {"iss": ISSUER, "aud": CLIENT_ID, "sub": "sub-" + grant["email"], "iat": now, "exp": now + 300,
+        claims = {"iss": self.issuer, "aud": CLIENT_ID, "sub": "sub-" + grant["email"], "iat": now, "exp": now + 300,
                   "nonce": grant["nonce"], "email": grant["email"], "email_verified": True, "name": "Test Person"}
         claims.update({k: v for k, v in grant.items() if k not in ("nonce", "challenge", "redirect_uri", "email")})
         claims.update(self.next_claims)
+        claims = {k: v for k, v in claims.items() if v is not ...}  # ``...`` drops a claim
         header = {"kid": "k1", **self.next_header}
         key = self.next_key or self.pem
         alg = header.pop("alg", "RS256")
@@ -455,3 +462,242 @@ def test_discover_tells_the_sign_in_page_where_to_go(world, client):
     assert client.get("/sso/discover", params={"email": OWNER}).json() == {
         "sso": True, "team_id": ids["team"], "protocol": "oidc", "enforced": False}
     assert client.get("/sso/discover", params={"email": "x@elsewhere.test"}).json() == {"sso": False}
+
+
+# ------------------------------------------------------------------------------------------------ OIDC: more checks
+
+@pytest.mark.parametrize("claim", ["exp", "iat", "sub", "aud", "iss"])
+def test_an_id_token_missing_a_required_claim_is_refused(world, client, claim):
+    """python-jose checks exp / iat / aud / iss only when present unless told to require them."""
+    _, ids, idp, _ = world
+    idp.next_claims = {claim: ...}
+    _, back = oidc_login(client, idp, ids["team"], OWNER)
+    assert "error" in fragment(back), f"an ID token without {claim} signed someone in"
+
+
+@pytest.mark.parametrize("claims,accepted", [
+    ({"exp": -60}, True),     # expired a minute ago: inside the 120 s skew
+    ({"exp": -200}, False),   # beyond it
+    ({"iat": 60}, True),      # issued "in the future" by a fast IdP clock, inside the skew
+    ({"iat": 200}, False),
+    ({"nbf": 60}, True),
+    ({"nbf": 200}, False),
+])
+def test_id_token_clock_skew_is_two_minutes(world, client, claims, accepted):
+    _, ids, idp, _ = world
+    now = int(time.time())
+    idp.next_claims = {k: now + v for k, v in claims.items()}
+    nonce, back = oidc_login(client, idp, ids["team"], OWNER)
+    result = fragment(back)
+    if accepted:
+        assert "code" in result, result
+        assert exchange(client, result["code"], nonce).status_code == 200
+    else:
+        assert "error" in result, result
+
+
+def test_an_azp_naming_another_client_is_refused_even_with_one_audience(world, client):
+    _, ids, idp, _ = world
+    idp.next_claims = {"azp": "another-client"}
+    _, back = oidc_login(client, idp, ids["team"], OWNER)
+    assert "azp" in fragment(back)["error"]
+
+
+def test_an_issuer_ending_in_a_slash_signs_in(world, client):
+    """Auth0-style issuers end in "/": discovery, the ID token and the configuration all say so."""
+    engine, ids, idp, _ = world
+    idp.issuer = ISSUER + "/"
+    with Session(engine) as s:
+        cfg = s.exec(select(TeamSsoConfig)).one()
+        cfg.oidc_issuer = ISSUER + "/"
+        s.add(cfg)
+        s.commit()
+    nonce, back = oidc_login(client, idp, ids["team"], OWNER)
+    assert exchange(client, fragment(back)["code"], nonce).status_code == 200
+    idp.next_claims = {"iss": ISSUER}  # the same issuer without the slash is another issuer
+    _, back = oidc_login(client, idp, ids["team"], OWNER)
+    assert "error" in fragment(back)
+
+
+def test_pkce_the_token_request_carries_the_verifier_of_the_challenge(world, client):
+    engine, ids, idp, _ = world
+    nonce, back = oidc_login(client, idp, ids["team"], OWNER)
+    assert "code" in fragment(back)
+    sent = idp.token_requests[-1]
+    assert len(sent["code_verifier"]) >= 43 and sent["redirect_uri"] == f"{API}/sso/{ids['team']}/oidc/callback"
+    # a state whose verifier is not the one behind the challenge: the IdP refuses the code
+    _, start = begin(client, ids["team"])
+    q, code = idp.authorize(start.headers["location"], OWNER)
+    with Session(engine) as s:
+        row = s.get(SsoLoginState, q["state"])
+        row.pkce_verifier = "x" * 64
+        s.add(row)
+        s.commit()
+    back = client.get(f"/sso/{ids['team']}/oidc/callback", params={"state": q["state"], "code": code})
+    assert "invalid_grant" in fragment(back)["error"]
+
+
+def test_an_identity_provider_without_pkce_s256_is_not_used(world, client):
+    _, ids, idp, _ = world
+    idp.pkce_methods = ["plain"]
+    ratelimit.reset_all()
+    _, cn = nonce_pair()
+    r = client.get(f"/sso/{ids['team']}/start", params={"cn": cn})
+    assert r.status_code == 303 and "PKCE" in fragment(r)["error"]
+
+
+def test_start_without_the_spas_nonce_hash_is_refused(world, client):
+    _, ids, _, _ = world
+    for cn in ("", "not-a-hash", "A" * 64):
+        ratelimit.reset_all()
+        r = client.get(f"/sso/{ids['team']}/start", params={"cn": cn})
+        assert "error" in fragment(r)
+
+
+def test_start_purges_round_trip_rows_long_expired(world, client):
+    engine, ids, _, _ = world
+    old = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(hours=3)
+    with Session(engine) as s:
+        s.add(SsoLoginState(id="old-state", team_id=ids["team"], protocol="oidc", binding_hash="0" * 64,
+                            client_nonce_hash="0" * 64, created_at=old, expires_at=old))
+        s.commit()
+    begin(client, ids["team"])
+    with Session(engine) as s:
+        assert s.get(SsoLoginState, "old-state") is None
+
+
+# ------------------------------------------------------------------------------------------------ SAML through the ACS
+
+@pytest.fixture()
+def saml_idp(world):
+    from backend.tests.test_sso_saml import _key_and_cert
+    engine, ids, _, _ = world
+    key_cert = _key_and_cert("idp.acme-sso.test")
+    with Session(engine) as s:
+        cfg = s.exec(select(TeamSsoConfig)).one()
+        cfg.protocol, cfg.saml_idp_entity_id = "saml", SAML_IDP
+        cfg.saml_idp_sso_url, cfg.saml_idp_certs = SAML_IDP + "/protocol/saml", [key_cert[1]]
+        s.add(cfg)
+        s.commit()
+    return key_cert
+
+
+SAML_IDP = "https://idp.acme-sso.test/realms/acme-saml"
+
+
+def saml_start(client, team):
+    import zlib
+
+    from lxml import etree
+    nonce, start = begin(client, team)
+    q = {k: v[0] for k, v in parse_qs(urlsplit(start.headers["location"]).query).items()}
+    request = etree.fromstring(zlib.decompress(base64.b64decode(q["SAMLRequest"]), -15))
+    return nonce, q["RelayState"], request.get("ID")
+
+
+def saml_response(key_cert, team, request_id, email=OWNER, assertion_id=None, **kw):
+    from backend.tests.test_sso_saml import b64, build, sign
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None, microsecond=0)
+    args = dict(audience=f"{API}/sso/{team}/saml", recipient=f"{API}/sso/{team}/saml/acs",
+                destination=f"{API}/sso/{team}/saml/acs", issuer=SAML_IDP, in_response_to=request_id,
+                not_before=now - dt.timedelta(minutes=1), not_after=now + dt.timedelta(minutes=5),
+                assertion_id=assertion_id or "_" + secrets.token_hex(16))
+    args.update(kw)
+    return b64(sign(build(email, **args), key_cert, what="both"))
+
+
+def acs(client, team, relay_state, payload):
+    ratelimit.reset_all()
+    return client.post(f"/sso/{team}/saml/acs", data={"SAMLResponse": payload, "RelayState": relay_state})
+
+
+def test_saml_round_trip_through_the_acs_signs_in(world, client, saml_idp):
+    engine, ids, _, _ = world
+    team = ids["team"]
+    nonce, relay, request_id = saml_start(client, team)
+    back = acs(client, team, relay, saml_response(saml_idp, team, request_id))
+    tokens = exchange(client, fragment(back)["code"], nonce)
+    assert tokens.status_code == 200, tokens.text
+    me = client.get("/get_user", headers={"Authorization": f"Bearer {tokens.json()['access_token']}"})
+    assert me.json()["email"] == OWNER
+    with Session(engine) as s:
+        event = s.exec(select(AuditEvent).where(AuditEvent.action == "auth.login.sso")).all()[-1]
+    assert event.outcome == "success" and event.details["protocol"] == "saml"
+
+
+def test_saml_replay_of_an_assertion_is_refused(world, client, saml_idp):
+    _, ids, _, _ = world
+    team = ids["team"]
+    _, relay, request_id = saml_start(client, team)
+    first = saml_response(saml_idp, team, request_id, assertion_id="_replayed-assertion")
+    assert "code" in fragment(acs(client, team, relay, first))
+    # the very same POST again: the state is spent
+    assert "already used" in fragment(acs(client, team, relay, first))["error"]
+    # the same assertion id inside a fresh sign-in (a new state, re-signed for the new request): the id cache refuses
+    _, relay2, request_id2 = saml_start(client, team)
+    again = saml_response(saml_idp, team, request_id2, assertion_id="_replayed-assertion")
+    assert "replay" in fragment(acs(client, team, relay2, again))["error"]
+
+
+def test_saml_unsolicited_or_misdirected_responses_are_refused(world, client, saml_idp):
+    _, ids, _, _ = world
+    team = ids["team"]
+    _, relay, request_id = saml_start(client, team)
+    # IdP-initiated: no RelayState at all
+    assert "not started here" in fragment(acs(client, team, "", saml_response(saml_idp, team, request_id)))["error"]
+    # an answer to another sign-in (InResponseTo is not this browser's request)
+    _, relay, request_id = saml_start(client, team)
+    other = saml_response(saml_idp, team, "_someone-elses-request")
+    assert "another sign-in" in fragment(acs(client, team, relay, other))["error"]
+    # meant for another team's service provider
+    _, relay, request_id = saml_start(client, team)
+    wrong_audience = saml_response(saml_idp, team, request_id, audience=f"{API}/sso/{team + 1}/saml")
+    assert "audience" in fragment(acs(client, team, relay, wrong_audience))["error"]
+    # expired beyond the skew
+    _, relay, request_id = saml_start(client, team)
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None, microsecond=0)
+    stale = saml_response(saml_idp, team, request_id, not_before=now - dt.timedelta(minutes=10),
+                          not_after=now - dt.timedelta(minutes=3))
+    assert "expired" in fragment(acs(client, team, relay, stale))["error"]
+
+
+def test_saml_acs_without_this_browsers_cookie_is_refused(world, client, saml_idp):
+    _, ids, _, _ = world
+    team = ids["team"]
+    _, relay, request_id = saml_start(client, team)
+    victim = TestClient(app, base_url=API, follow_redirects=False)
+    ratelimit.reset_all()
+    back = victim.post(f"/sso/{team}/saml/acs",
+                       data={"SAMLResponse": saml_response(saml_idp, team, request_id), "RelayState": relay})
+    assert "another browser" in fragment(back)["error"]
+
+
+def test_saml_metadata_names_our_entity_and_acs(world, client):
+    _, ids, _, _ = world
+    r = client.get(f"/sso/{ids['team']}/saml/metadata")
+    assert r.status_code == 200 and f'entityID="{API}/sso/{ids["team"]}/saml"' in r.text
+    assert f'Location="{API}/sso/{ids["team"]}/saml/acs"' in r.text
+
+
+# ------------------------------------------------------------------------------------------------ enforcement: invitations
+
+def test_enforced_sso_refuses_a_password_account_from_an_invitation(world, client):
+    from backend.new_models import TeamInvitation
+    from backend.utilities.team import invitations
+
+    engine, ids, _, _ = world
+    token, digest = invitations.new_token()
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    with Session(engine) as s:
+        cfg = s.exec(select(TeamSsoConfig)).one()
+        cfg.enforced = True
+        s.add(cfg)
+        s.add(TeamInvitation(team_id=ids["team"], email=f"invited@{DOMAIN}", token_hash=digest, role="member",
+                             created_at=now, expires_at=now + dt.timedelta(days=7)))
+        s.commit()
+    ratelimit.reset_all()
+    r = client.post(f"/invitations/{token}/register", json={"password": PASSWORD, "first_name": "I",
+                                                            "last_name": "N"})
+    assert r.status_code == 403 and "single sign-on" in r.json()["detail"]
+    with Session(engine) as s:
+        assert s.exec(select(User).where(User.email == f"invited@{DOMAIN}")).first() is None

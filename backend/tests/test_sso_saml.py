@@ -255,6 +255,55 @@ def test_conditions(idp, change, message):
         check(b64(sign(build(**change), idp, what="both")), idp[1])
 
 
+@pytest.mark.parametrize("seconds,accepted", [(-60, True), (-119, True), (-121, False), (-3600, False)])
+def test_not_on_or_after_is_held_to_the_two_minute_skew(idp, seconds, accepted):
+    """Conditions and SubjectConfirmationData share NotOnOrAfter here; 120 s of clock skew, not more."""
+    response = sign(build(not_after=NOW + dt.timedelta(seconds=seconds)), idp)
+    if accepted:
+        assert check(b64(response), idp[1]).email == "alice@acme-sso.test"
+    else:
+        with pytest.raises(saml.SamlError, match="expired|not confirmed"):
+            check(b64(response), idp[1])
+
+
+def test_an_expired_subject_confirmation_is_refused_even_when_the_conditions_are_valid(idp):
+    response = build(not_after=NOW + dt.timedelta(minutes=5))
+    data = response.find(f"{A}Assertion/{A}Subject/{A}SubjectConfirmation/{A}SubjectConfirmationData")
+    data.set("NotOnOrAfter", _iso(NOW - dt.timedelta(minutes=10)))
+    with pytest.raises(saml.SamlError, match="not confirmed"):
+        check(b64(sign(response, idp)), idp[1])
+
+
+def test_an_assertion_without_not_on_or_after_never_signs_in(idp):
+    response = build()
+    del response.find(f"{A}Assertion/{A}Conditions").attrib["NotOnOrAfter"]
+    with pytest.raises(saml.SamlError, match="expired"):
+        check(b64(sign(response, idp)), idp[1])
+
+
+def test_every_audience_restriction_must_name_us(idp):
+    """SAML core 2.5.1.4: several <AudienceRestriction> elements must ALL be satisfied."""
+    response = build()
+    conditions = response.find(f"{A}Assertion/{A}Conditions")
+    other = etree.SubElement(conditions, A + "AudienceRestriction")
+    etree.SubElement(other, A + "Audience").text = "https://someone-else.test/sp"
+    with pytest.raises(saml.SamlError, match="audience"):
+        check(b64(sign(response, idp)), idp[1])
+    # one restriction listing several audiences, ours among them, is fine (OR within one restriction)
+    response = build()
+    restriction = response.find(f"{A}Assertion/{A}Conditions/{A}AudienceRestriction")
+    etree.SubElement(restriction, A + "Audience").text = "https://someone-else.test/sp"
+    assert check(b64(sign(response, idp)), idp[1]).email == "alice@acme-sso.test"
+
+
+def test_seven_digit_fractional_seconds_are_read(idp):
+    """ADFS writes 2026-11-11T12:05:00.1234567Z; Python < 3.11 fromisoformat takes at most 6 digits."""
+    response = build()
+    for el in response.iter(A + "Conditions", A + "SubjectConfirmationData"):
+        el.set("NotOnOrAfter", "2026-11-11T12:05:00.1234567Z")
+    assert check(b64(sign(response, idp)), idp[1]).email == "alice@acme-sso.test"
+
+
 # ------------------------------------------------------------------------------------------------ parsing
 
 def test_doctype_and_entities_are_refused(idp):
