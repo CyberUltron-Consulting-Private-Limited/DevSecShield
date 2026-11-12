@@ -85,6 +85,11 @@ gate() {
   exec 9> "$LOCKS/cbom-lab.lock"
   flock 9
   mkdir -p "$RUN/steps/lab"
+  # §4.1 memory rule: >= 1.5 GB available before and after the lab starts, otherwise wait. The core lab needs about
+  # 0.45 GB, so wait (up to 15 min of the hold) for 2 GB before bringing it up.
+  local waited=0
+  while [ "$(avail_mb)" -lt 2000 ] && [ "$waited" -lt 900 ]; do sleep 30; waited=$((waited + 30)); done
+  stamp memory waited_s "$waited"
   mem before_lab_mb
   if [ -f "$gen" ]; then
     log "lab up ($gen)"
