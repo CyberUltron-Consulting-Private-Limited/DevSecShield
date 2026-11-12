@@ -212,27 +212,44 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
 
 
 _SSH_WEAK = (
-    (re.compile(r"(arcfour|3des|blowfish|cast128)", re.I), "SSH_WEAK_CIPHER", "High", "broken SSH ciphers"),
+    (re.compile(r"(arcfour|3des|blowfish|cast128|^des(-cbc)?(@ssh\.com)?$|^idea-)", re.I), "SSH_WEAK_CIPHER", "High",
+     "broken SSH ciphers"),
     (re.compile(r"(-cbc$|rijndael-cbc)", re.I), "SSH_CBC_CIPHER", "Medium", "CBC-mode SSH ciphers"),
     (re.compile(r"(hmac-md5|-96$)", re.I), "SSH_WEAK_MAC", "Medium", "weak or truncated SSH MACs"),
     (re.compile(r"^umac-64", re.I), "SSH_UMAC64", "Low", "64-bit UMAC tags"),
-    (re.compile(r"^diffie-hellman-group1-sha1$", re.I), "SSH_DH_GROUP1", "High", "1024-bit DH key exchange"),
-    (re.compile(r"^(diffie-hellman-group14-sha1|diffie-hellman-group-exchange-sha1)$", re.I), "SSH_DH_SHA1", "Medium", "SHA-1 key exchange"),
-    (re.compile(r"^ssh-dss", re.I), "SSH_DSS", "High", "DSA host keys"),
-    (re.compile(r"^ssh-rsa$", re.I), "SSH_RSA_SHA1", "Medium", "SHA-1 RSA signatures (ssh-rsa)"),
+    (re.compile(r"^(diffie-hellman-group1-sha1|gss-group1-sha1-.*)$", re.I), "SSH_DH_GROUP1", "High",
+     "1024-bit DH key exchange"),
+    (re.compile(r"^(diffie-hellman-group14-sha1|diffie-hellman-group-exchange-sha1|rsa1024-sha1|"
+                r"gss-(group14|gex)-sha1-.*)$", re.I), "SSH_DH_SHA1", "Medium", "SHA-1 key exchange"),
+    (re.compile(r"^(ssh-dss|x509v3-(ssh|sign)-dss)", re.I), "SSH_DSS", "High", "DSA host keys"),
+    (re.compile(r"^(ssh-rsa|ssh-rsa-cert-v01@openssh\.com|x509v3-ssh-rsa|x509v3-sign-rsa)$", re.I), "SSH_RSA_SHA1",
+     "Medium", "SHA-1 RSA signatures (ssh-rsa)"),
     (re.compile(r"^hmac-sha1(-etm@openssh\.com)?$", re.I), "SSH_HMAC_SHA1", "Low", "HMAC-SHA1"),
 )
+# Rules that read one algorithm list only: a ``none`` MAC is not a cipher (names: IANA SSH parameters).
+_SSH_WEAK_IN_LIST = (
+    ("ciphers", re.compile(r"^none$", re.I), "SSH_WEAK_CIPHER", "High", "broken SSH ciphers"),
+    ("macs", re.compile(r"^none$", re.I), "SSH_WEAK_MAC", "Medium", "weak or truncated SSH MACs"),
+)
+_SSH_LISTS = {"ciphers": ("ciphers",), "macs": ("macs",), "kex": ("kex", "kexalgorithms"),
+              "hostkey": ("hostkey_algorithms", "hostkeyalgorithms")}
+
+
+def _ssh_list(facts: dict[str, Any], key: str) -> list[str]:
+    value = facts.get(key)
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(",") if v.strip()]
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return []
 
 
 def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
-    names: list[str] = []
-    for key in ("ciphers", "macs", "kex", "kexalgorithms", "hostkey_algorithms", "hostkeyalgorithms"):
-        value = facts.get(key)
-        if isinstance(value, str):
-            names += [v.strip() for v in value.split(",") if v.strip()]
-        elif isinstance(value, list):
-            names += [str(v) for v in value]
-    for pattern, code, impact, label in _SSH_WEAK:
+    by_list = {name: [n for key in keys for n in _ssh_list(facts, key)] for name, keys in _SSH_LISTS.items()}
+    rules = [(pattern, code, impact, label, None) for pattern, code, impact, label in _SSH_WEAK]
+    rules += [(pattern, code, impact, label, only) for only, pattern, code, impact, label in _SSH_WEAK_IN_LIST]
+    for pattern, code, impact, label, only in rules:
+        names = by_list[only] if only else [n for names in by_list.values() for n in names]
         hits = sorted({n for n in names if pattern.search(n)})
         if hits:
             out.add(code, impact, f"{what} offers {label} ({', '.join(hits[:3])})")
@@ -244,6 +261,47 @@ def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
     if not pq:
         out.add("SSH_NO_PQ_KEX", "Low", f"{what} has no post-quantum key exchange")
     return not pq
+
+
+# SSH public-key type names (RFC 4253, 5656, 8709; OpenSSH certificates and FIDO keys) -> the family _key_rules reads
+_SSH_KEY_FAMILY = (("ssh-rsa", "RSA"), ("rsa-sha2-", "RSA"), ("x509v3-ssh-rsa", "RSA"), ("x509v3-sign-rsa", "RSA"),
+                   ("x509v3-rsa", "RSA"), ("ssh-dss", "DSA"), ("x509v3-ssh-dss", "DSA"), ("x509v3-sign-dss", "DSA"),
+                   ("ecdsa-sha2-", "ECDSA"), ("sk-ecdsa-sha2-", "ECDSA"), ("x509v3-ecdsa-sha2-", "ECDSA"),
+                   ("ssh-ed25519", "ED25519"), ("sk-ssh-ed25519", "ED25519"), ("ssh-ed448", "ED448"))
+
+
+def _ssh_key_family(key_type: Any) -> Any:
+    text = str(key_type or "")
+    return next((fam for prefix, fam in _SSH_KEY_FAMILY if text.startswith(prefix)), key_type)
+
+
+def _ssh_host_key_rules(out: _Out, facts: dict[str, Any], now: _dt.datetime) -> None:
+    """Key-size rules for every host key the server holds (``host_keys``, CB-13), and for host certificates their
+    validity, CA key and CA signature.  ``host_key`` (one key, older nodes) is judged as before."""
+    host_key = facts.get("host_key") if isinstance(facts.get("host_key"), dict) else {}
+    if host_key:
+        _key_rules(out, host_key.get("key_type"), host_key.get("bits"), "SSH host key")
+    for key in facts.get("host_keys") or []:
+        if not isinstance(key, dict):
+            continue
+        name = str(key.get("type") or "")
+        _key_rules(out, _ssh_key_family(key.get("key_type") or name), key.get("bits"), f"SSH host key {name}")
+        cert = key.get("certificate")
+        if not isinstance(cert, dict):
+            continue
+        what = f"SSH host certificate {name}"
+        valid_before = _parse_time(cert.get("valid_before")) if cert.get("valid_before") != "forever" else None
+        if valid_before is not None:
+            days = (valid_before - now).total_seconds() / 86400
+            if days < 0:
+                out.add("CERT_EXPIRED", "High", f"{what} expired on {valid_before.date().isoformat()}")
+            elif days <= 30:
+                out.add("CERT_EXPIRES_30D", "Medium", f"{what} expires in {int(days)} days")
+        ca = cert.get("ca") if isinstance(cert.get("ca"), dict) else {}
+        if ca:
+            _key_rules(out, _ssh_key_family(ca.get("type")), ca.get("bits"), f"{what}: CA key {ca.get('type')}")
+        if str(cert.get("signature_algorithm") or "").lower() == "ssh-rsa":
+            out.add("SIG_SHA1", "High", f"{what} is signed by its CA with ssh-rsa (SHA-1)")
 
 
 def _normalise(asset_type: str, facts: dict[str, Any]) -> dict[str, Any]:
@@ -459,9 +517,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             out.add("PLAINTEXT_LISTENER", "Medium", f"{what} also serves plaintext HTTP")
     elif asset_type in ("ssh_endpoint", "ssh_server_config"):
         qv = _ssh_rules(out, facts, "SSH server")
-        host_key = facts.get("host_key") if isinstance(facts.get("host_key"), dict) else {}
-        if host_key:
-            _key_rules(out, host_key.get("key_type"), host_key.get("bits"), "SSH host key")
+        _ssh_host_key_rules(out, facts, now)
     elif asset_type in ("crypto_library", "process_library"):
         version = str(facts.get("version") or "")
         package = str(facts.get("name") or facts.get("package") or "")
