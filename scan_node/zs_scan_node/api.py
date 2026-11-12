@@ -4,6 +4,16 @@
   ``X-ZS-Timestamp``, ``X-ZS-Nonce`` and ``X-ZS-Signature`` over ``METHOD\\nPATH\\nTIMESTAMP\\nNONCE\\nsha256(body)``;
   the body is sent as exactly the bytes that were signed.  A ``clock_skew`` refusal (403) re-signs once with the offset
   learned from the server's ``Date`` header.
+* Protocol 2 (F1.1): the nonce is a per-process sequence number, ``s2_<19 digits>`` = (process start, Unix
+  microseconds) << 11, plus one per request: dense within this process (requests that overtake each other stay
+  inside the server's 63-wide replay window) and larger after every restart (a process would have to sign 2,048
+  requests per microsecond of its life to reach the next start's range; the value fits 63 bits until 2112).  The server checks it with one UPDATE of the node row instead of storing
+  every nonce.  An older server treats it as an ordinary nonce.  A ``replay_window`` refusal (a sequence below the
+  window: the clock went back across a restart) or a ``seq_out_of_range`` refusal (a sequence more than 30 days
+  ahead of the server: this host's clock is far ahead) carries ``X-ZS-Seq-Next``; the node re-bases its counter there
+  and re-signs once.  It accepts only a floor at most 30 days ahead of its own clock corrected by the skew it learned
+  from the server (security review S1/S7), so an injected far-future value cannot push it out of range for good; and
+  once it learns a skew, a counter beyond that bound restarts from the corrected time.
 * mTLS: ``ZS_CLIENT_CERT`` + ``ZS_CLIENT_KEY`` (PEM files) present a client certificate to the TLS proxy;
   ``ZS_CA_FILE`` replaces the trusted CAs for the ZeroShield API (for a private CA or a TLS-inspecting proxy).
 * 401 is ``Unauthorized`` (the credential is revoked) only when the ZeroShield this node enrolled with says so
@@ -26,7 +36,6 @@ import hashlib
 import json
 import os
 import random
-import secrets
 import ssl
 import threading
 import time
@@ -43,6 +52,12 @@ DEPLOYMENT_HEADER = "X-ZS-Deployment"
 REFUSED_HEADER = "X-ZS-Refused"
 # The only 401 codes that end a credential (backend/routers/cbom_node.py), and only from this node's deployment.
 REVOKED_CODES = frozenset({"node_token_revoked", "registration_token_refused"})
+SEQ_NEXT_HEADER = "X-ZS-Seq-Next"
+SEQ_SHIFT = 11  # counter bits below the process-start microsecond
+SEQ_AHEAD_US = 30 * 86_400 * 1_000_000  # the server refuses sequences further ahead of its clock than this
+# One sequence per process, shared by every Api object (a node process has one; tests create several).
+_SEQ = [(time.time_ns() // 1000) << SEQ_SHIFT]
+_SEQ_LOCK = threading.Lock()
 
 
 class Unauthorized(Exception):
@@ -124,11 +139,42 @@ class Api:
             h["X-ZS-Job"] = job
         return h
 
+    def next_nonce(self) -> str:
+        """The next protocol-2 sequence nonce (thread-safe: heartbeat, claim and job threads sign concurrently)."""
+        with _SEQ_LOCK:
+            _SEQ[0] += 1
+            return f"s2_{_SEQ[0]:019d}"
+
+    def _seq_bound(self) -> int:
+        """The highest sequence the server accepts now: 30 days of microseconds ahead of skew-corrected time."""
+        return (int((time.time() + self.skew) * 1_000_000) + SEQ_AHEAD_US) << SEQ_SHIFT
+
+    def _rebase(self, r: httpx.Response, lower: bool = False) -> bool:
+        """After a ``replay_window`` (``lower`` False: only ever up) or ``seq_out_of_range`` refusal (``lower`` True:
+        the counter is beyond what the server accepts and moves down to its floor): continue the sequence at the
+        server's ``X-ZS-Seq-Next``.  A floor more than 30 days ahead of this node's skew-corrected clock is refused
+        and logged (an injected value must not lock the node out).  False when there is no usable value."""
+        try:
+            floor = int(r.headers.get(SEQ_NEXT_HEADER) or "")
+        except ValueError:
+            return False
+        if not 0 < floor < (1 << 63):
+            return False
+        if floor > self._seq_bound():
+            log("ignored a sequence floor too far ahead of this node's clock (proxy or forged answer?)",
+                floor=floor, level="warn")
+            return False
+        with _SEQ_LOCK:
+            # the next nonce is exactly the server's next acceptable sequence
+            _SEQ[0] = (floor - 1) if lower else max(_SEQ[0], floor - 1)
+        log("request sequence re-based to the server's floor (did this host's clock jump?)", level="warn")
+        return True
+
     def _sign(self, method: str, path: str, data: bytes) -> dict[str, str]:
         if self.signing_key is None:
             return {}
         ts = str(int(time.time() + self.skew))
-        nonce = secrets.token_urlsafe(18)
+        nonce = self.next_nonce()
         sig = self.signing_key.sign(signing_message(method, path, ts, nonce, data))
         return {"X-ZS-Timestamp": ts, "X-ZS-Nonce": nonce, "X-ZS-Signature": base64.b64encode(sig).decode()}
 
@@ -163,8 +209,9 @@ class Api:
         data = b"" if body is None else json.dumps(body, ensure_ascii=False, separators=(",", ":"),
                                                    allow_nan=False).encode("utf-8")
         delay = 2.0
-        skew_retried = False
-        for attempt in range(retries + 1):
+        skew_retried = rebased = False
+        attempt = 0  # real retries; a clock-skew correction and a sequence re-base (each at most once) do not count
+        for _pass in range(retries + 3):
             headers = self._headers(job)
             headers.update(self._sign(method, path, data))
             if body is not None:
@@ -177,6 +224,7 @@ class Api:
                 log("api unreachable, retrying", path=path, error=exc.__class__.__name__, wait_s=int(delay), job=job)
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             deployment = r.headers.get(DEPLOYMENT_HEADER) or None
             refused = r.headers.get(REFUSED_HEADER) or None
@@ -192,10 +240,17 @@ class Api:
                     wait_s=int(delay), level="warn")
                 self._wait(delay + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             if r.status_code == 403 and refused == "clock_skew" and not skew_retried:
                 skew_retried = True
                 self._learn_skew(r)
+                continue
+            if r.status_code == 403 and refused == "replay_window" and not rebased and self._rebase(r):
+                rebased = True
+                continue
+            if r.status_code == 403 and refused == "seq_out_of_range" and not rebased and self._rebase(r, lower=True):
+                rebased = True
                 continue
             if lease_sensitive and r.status_code in (404, 409):
                 raise LeaseLost(_detail(r))
@@ -212,6 +267,7 @@ class Api:
                 log("api busy, retrying", path=path, status=r.status_code, ref=ref, wait_s=int(wait), job=job)
                 self._wait(min(wait, MAX_BACKOFF) + random.random())
                 delay = min(delay * 2, MAX_BACKOFF)
+                attempt += 1
                 continue
             if r.status_code < 400:
                 self._seen(deployment)
@@ -236,6 +292,9 @@ class Api:
         self.skew = server - time.time()
         log("node clock differs from ZeroShield; signing with the server's time (fix NTP on this host)",
             skew_s=int(self.skew), level="warn")
+        with _SEQ_LOCK:
+            if _SEQ[0] > self._seq_bound():  # the counter came from a clock far ahead: restart it from corrected time
+                _SEQ[0] = int((time.time() + self.skew) * 1_000_000) << SEQ_SHIFT
 
     # ------------------------------------------------------------------ endpoints
     def enroll(self, body: dict) -> dict:

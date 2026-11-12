@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Throwaway PostgreSQL (docker) + the backend under gunicorn/uvicorn for the F1.1 node-API bench.
+#
+#   bench/f1_node_api/stack.sh up   <src-root> <workdir> [workers]   # src-root holds backend/ (dev baseline or branch)
+#   bench/f1_node_api/stack.sh down <workdir>
+#
+# PostgreSQL 15 (the stack's image) with staging defaults plus the DA's measurement settings: max_connections=100,
+# log_lock_waits=on, deadlock_timeout=100ms, pg_stat_statements (V5); on 127.0.0.1:${F1_PG_PORT:-55440}, container
+# ${F1_PG_NAME:-f1bench-pg}, its log is `docker logs`.  gunicorn on 127.0.0.1:${F1_API_PORT:-18080} with
+# gunicorn_bench.py (worker hooks); with F1_REAPER=1 also the reaper loop (reaper.py, the cloud worker's reap_all).
+# F1_PIN_SERVER (e.g. "0-2") pins gunicorn, the reaper and PostgreSQL to those vCPUs (V1); the simulator is pinned by
+# run_bench.sh.  Connection pools are sized so the sum stays below max_connections (DA E2): workers x
+# (DB_POOL_SIZE + DB_MAX_OVERFLOW) + the reaper's pool + the bench's own connections.  CBOM_* settings in the
+# caller's environment reach the server.  Secrets are generated per run into <workdir>/env (mode 0600) and never
+# printed.  The venv is ${F1_VENV}.
+set -euo pipefail
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+cmd=${1:?up|down}
+PG_NAME=${F1_PG_NAME:-f1bench-pg}
+PG_PORT=${F1_PG_PORT:-55440}
+API_PORT=${F1_API_PORT:-18080}
+VENV=${F1_VENV:-/home/claude/devsecshield/backend/.venv}
+PIN=${F1_PIN_SERVER:-}
+
+if [[ $cmd == stop-api ]]; then  # an API outage (E7): gunicorn only; PostgreSQL and the reaper keep running
+  work=${2:?workdir}
+  if [[ -f $work/gunicorn.pid ]]; then
+    pid=$(cat "$work/gunicorn.pid"); kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+    kill -KILL "$pid" 2>/dev/null || true; rm -f "$work/gunicorn.pid"
+  fi
+  echo "api stopped"
+  exit 0
+fi
+
+if [[ $cmd == down ]]; then
+  work=${2:?workdir}
+  if [[ -f $work/gunicorn.pid ]]; then kill "$(cat "$work/gunicorn.pid")" 2>/dev/null || true; rm -f "$work/gunicorn.pid"; fi
+  if [[ -f $work/reaper.pid ]]; then kill "$(cat "$work/reaper.pid")" 2>/dev/null || true; rm -f "$work/reaper.pid"; fi
+  sleep 2
+  docker rm -f "$PG_NAME" >/dev/null 2>&1 || true
+  echo "stack down"
+  exit 0
+fi
+
+src=$(cd "${2:?src root}" && pwd)
+work=${3:?workdir}
+workers=${4:-3}
+mkdir -p "$work"
+umask 077
+if [[ ! -f $work/env ]]; then
+  pw=$(openssl rand -hex 16)
+  {
+    echo "PG_USER=postgres"; echo "PG_USER_PASS=$pw"; echo "PG_DB=f1bench"; echo "PG_HOST=127.0.0.1"
+    echo "PG_PORT=$PG_PORT"
+    echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"; echo "JWT_REFRESH_SECRET_KEY=$(openssl rand -hex 32)"
+    echo "ENCRYPTION_KEY=$("$VENV/bin/python" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+    echo "AWS_ACCESS_KEY_ID=bench"; echo "AWS_SECRET_ACCESS_KEY=bench"; echo "AWS_DEFAULT_REGION=us-east-1"
+    echo "CBOM_SCHEDULER=0"
+  } > "$work/env"
+fi
+set -a; . "$work/env"; set +a
+
+if ! docker inspect "$PG_NAME" >/dev/null 2>&1; then
+  cpus=()
+  [[ -n $PIN ]] && cpus=(--cpuset-cpus "$PIN")
+  docker run -d --name "$PG_NAME" --label zs-owner=f1-1 -p "127.0.0.1:$PG_PORT:5432" "${cpus[@]}" \
+    -e POSTGRES_PASSWORD="$PG_USER_PASS" -e POSTGRES_DB="$PG_DB" --shm-size=256m \
+    postgres:15-alpine -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=top \
+    -c max_connections=100 -c log_lock_waits=on -c deadlock_timeout=100ms >/dev/null
+  # the image's entrypoint runs a temporary server (unix socket only) for initdb, then restarts: wait for TCP
+  ok=0
+  for _ in $(seq 1 90); do
+    if docker exec "$PG_NAME" psql -h 127.0.0.1 -U postgres -d "$PG_DB" -qc \
+        "CREATE EXTENSION IF NOT EXISTS pg_stat_statements" >/dev/null 2>&1; then ok=1; break; fi
+    sleep 1
+  done
+  [[ $ok == 1 ]] || { echo "postgres did not come up" >&2; docker logs --tail 30 "$PG_NAME" >&2; exit 1; }
+fi
+echo "postgresql://postgres:$PG_USER_PASS@127.0.0.1:$PG_PORT/$PG_DB" > "$work/db_url"
+
+if [[ ${F1_SKIP_API:-0} != 1 ]]; then
+  if [[ -f $work/gunicorn.pid ]]; then kill "$(cat "$work/gunicorn.pid")" 2>/dev/null || true; sleep 2; fi
+  pin=()
+  [[ -n $PIN ]] && pin=(taskset -c "$PIN")
+  cd "$src/backend"
+  # 3 workers x 20 + reaper 3 + bench <= 10 connections: below max_connections 100 (DA E2)
+  BACKEND_WORKERS=$workers DB_POOL_SIZE=${DB_POOL_SIZE:-20} DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-0} PYTHONPATH="$src" \
+    nohup "${pin[@]}" "$VENV/bin/gunicorn" main:app -k uvicorn.workers.UvicornWorker --workers "$workers" \
+    -c "$here/gunicorn_bench.py" --bind "0.0.0.0:$API_PORT" --timeout 120 --graceful-timeout 30 --keep-alive 5 \
+    --backlog 2048 --pid "$work/gunicorn.pid" >> "$work/gunicorn.log" 2>&1 &
+  for _ in $(seq 1 90); do
+    curl -fsS "http://127.0.0.1:$API_PORT/health" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  curl -fsS "http://127.0.0.1:$API_PORT/health" >/dev/null || { tail -40 "$work/gunicorn.log"; exit 1; }
+  echo "api up: http://127.0.0.1:$API_PORT (workers=$workers, src=$src, pin=${PIN:-none})"
+  if [[ ${F1_REAPER:-0} == 1 && ( ${F1_KEEP_REAPER:-0} != 1 || ! -f $work/reaper.pid ) ]]; then
+    if [[ -f $work/reaper.pid ]]; then kill "$(cat "$work/reaper.pid")" 2>/dev/null || true; fi
+    DB_POOL_SIZE=3 DB_MAX_OVERFLOW=0 PYTHONPATH="$src" nohup "${pin[@]}" "$VENV/bin/python" "$here/reaper.py" \
+      --every "${F1_REAP_EVERY_S:-30}" >> "$work/reaper.log" 2>&1 &
+    echo $! > "$work/reaper.pid"
+    echo "reaper up (every ${F1_REAP_EVERY_S:-30} s)"
+  fi
+fi

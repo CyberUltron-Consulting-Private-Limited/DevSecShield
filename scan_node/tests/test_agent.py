@@ -43,6 +43,9 @@ class FakeApi:
         self.strip_token = False  # a proxy in front of this server drops the X-ZS-Node-Token header
         self.registration_tokens = {"zsr_good_token_0123456789"}  # accepted at enrollment (add an agent pool token)
         self.enroll_bodies: list[dict] = []
+        self.claim_hints = False  # True: heartbeat answers carry "claim" like a protocol-2 server (F1.1)
+        self.grants = False  # True: like this server: enroll says "protocol", every answer grants "claim": n
+        self.fail_heartbeats = 0  # answer this many heartbeats 503
 
     def check_signature(self, method, path, headers, raw, key):
         ts, nonce, sig = (headers.get(h) for h in ("X-ZS-Timestamp", "X-ZS-Nonce", "X-ZS-Signature"))
@@ -85,8 +88,11 @@ class FakeApi:
                     assert base64.b64encode(on_disk).decode() == body["signing_public_key"]
                 self.pubkey = body["signing_public_key"]
             self.enrolled = True
-            return 200, {"node_id": 7, "team_id": 3, "node_token": "zsn_node_token_ABCDEFGHIJKLMNOP", "heartbeat_interval_s": 5,
-                         "deployment_id": self.deployment, "signing": "required" if self.pubkey else "legacy"}
+            out = {"node_id": 7, "team_id": 3, "node_token": "zsn_node_token_ABCDEFGHIJKLMNOP", "heartbeat_interval_s": 5,
+                   "deployment_id": self.deployment, "signing": "required" if self.pubkey else "legacy"}
+            if self.grants or self.claim_hints:
+                out["protocol"] = 2
+            return 200, out
         token = None if self.strip_token else headers.get("X-ZS-Node-Token")
         if token != "zsn_node_token_ABCDEFGHIJKLMNOP":
             return 401, {"detail": "Invalid node token"}, {"X-ZS-Refused": "node_token_revoked" if token else
@@ -96,14 +102,28 @@ class FakeApi:
             if refused:
                 return refused
         if path == "/cbom/node/heartbeat":
+            if self.fail_heartbeats > 0:
+                self.fail_heartbeats -= 1
+                return 503, {"detail": "starting"}
             self.heartbeats.append(body)
-            return 200, {"cancel_job_ids": sorted(self.cancel), "never_scan": [], "stop_all_network": self.stop,
-                         "heartbeat_interval_s": 5}
+            answer = {"cancel_job_ids": sorted(self.cancel), "never_scan": [], "stop_all_network": self.stop,
+                      "heartbeat_interval_s": 5}
+            if self.grants:
+                answer["protocol"] = 2
+                with self.lock:
+                    answer["claim"] = min(len(self.jobs), 2)
+            elif self.claim_hints:
+                with self.lock:
+                    answer["claim"] = bool(self.jobs)
+            return 200, answer
         if path == "/cbom/node/jobs/claim":
             with self.lock:
                 if not self.jobs:
                     return 204, None
-                return 200, self.jobs.pop(0)
+                payload = self.jobs.pop(0)
+                if self.grants:
+                    payload = {**payload, "claim": 1 if self.jobs else 0}
+                return 200, payload
         job_id = int(path.split("/")[4])
         if path.endswith("/assets"):
             if job_id in self.lease_lost:
@@ -116,7 +136,11 @@ class FakeApi:
             if job_id in self.lease_lost:
                 return 409, {"detail": "This job is no longer leased to this node"}
             self.results[job_id] = body
-            return 200, {"job_id": job_id, "status": body["status"]}
+            out = {"job_id": job_id, "status": body["status"]}
+            if self.grants:
+                with self.lock:
+                    out["claim"] = 1 if self.jobs else 0
+            return 200, out
         return 404, {"detail": "no"}
 
 
@@ -361,3 +385,93 @@ def test_heartbeat_loop_marks_the_node_alive_even_when_the_server_fails(server, 
     assert _wait(lambda: os.path.getmtime(alive) > stale + 60)
     ag.shutdown.set()
     t.join(10)
+
+
+def test_protocol2_node_claims_only_when_a_heartbeat_says_so(server, tmp_path, monkeypatch):
+    """F1.1: against a server that sends claim hints the node does not poll every 5 s; it claims when a heartbeat says
+    work is waiting, drains, and signs with sequence nonces.  (Against a server without hints it polls: the tests
+    above.)"""
+    api, url = server
+    srv, port = _listener()
+    api.claim_hints = True
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+    assert api.enroll_bodies[-1]["capabilities"]["protocol"] == 2
+    ag.heartbeat_once()
+    assert ag.server_hints and not ag.claim_wanted.is_set()
+    t = threading.Thread(target=ag.claim_loop, daemon=True)
+    t.start()
+    time.sleep(1.5)
+    assert api.calls.count("/cbom/node/jobs/claim") == 0  # no work announced: no claim at all
+    api.jobs.append(_job(51, port))
+    ag.heartbeat_once()  # "claim": true
+    assert _wait(lambda: 51 in api.results)
+    ag.shutdown.set()
+    assert 1 <= api.calls.count("/cbom/node/jobs/claim") <= 3  # the claim, then the drain that found nothing
+    assert all(n.startswith("s2_") and len(n) == 22 for n in api.nonces)
+    seqs = sorted(int(n[3:]) for n in api.nonces)
+    assert len(set(seqs)) == len(seqs)
+    srv.close()
+
+
+def test_a_node_drains_its_queue_within_grants_without_waiting_for_heartbeats(server, tmp_path, monkeypatch):
+    """F1.1 DA D2 guard: one node, 20 jobs of 0.5 s, max_jobs 2: claim and result answers grant the next claims, so
+    the queue drains in about 20 x 0.5 / 2 = 5 s, not one job pair per heartbeat interval (plan F1(b): ~10 min)."""
+    api, url = server
+    api.grants = True
+    monkeypatch.setenv("ZS_MAX_JOBS", "2")
+    ag = _agent(tmp_path, url, monkeypatch)
+    ag.ensure_enrolled()
+
+    def fake_job(ctx, job, scope, source):
+        time.sleep(0.5)
+        return "success", None, "ok"
+
+    monkeypatch.setattr(A, "run_job", fake_job)
+    api.jobs.extend(_job(100 + i, 9) for i in range(20))
+    t0 = time.monotonic()
+    ag.heartbeat_once()  # the only heartbeat (the next would come 60 s later)
+    t = threading.Thread(target=ag.claim_loop, daemon=True)
+    t.start()
+    assert _wait(lambda: len(api.results) == 20, timeout=30)
+    took = time.monotonic() - t0
+    ag.shutdown.set()
+    assert took <= 1.15 * 5.0, took
+    assert api.calls.count("/cbom/node/heartbeat") == 1
+
+
+def test_a_node_whose_heartbeats_fail_makes_no_claim_until_one_succeeds(server, tmp_path, monkeypatch):
+    """F1.1 DA D2: a node restarted while ZeroShield is recovering does not fall back to polling claims every 5 s;
+    only a successful answer without "protocol" (an older server) makes it poll."""
+    api, url = server
+    api.grants = True
+    first = _agent(tmp_path, url, monkeypatch)
+    first.ensure_enrolled()
+    ag = _agent(tmp_path, url, monkeypatch)  # the same node restarted (state on disk, no enrollment this run)
+    ag.api._wait = lambda seconds: None
+    assert ag.server_hints is None
+    api.jobs.append(_job(61, 9))
+    api.fail_heartbeats = 4
+    t = threading.Thread(target=ag.claim_loop, daemon=True)
+    t.start()
+    for _ in range(2):
+        with pytest.raises(Exception):
+            ag.heartbeat_once()
+    time.sleep(6)
+    assert api.calls.count("/cbom/node/jobs/claim") == 0
+    monkeypatch.setattr(A, "run_job", lambda ctx, job, scope, source: ("success", None, "ok"))
+    ag.heartbeat_once()
+    assert _wait(lambda: 61 in api.results)
+    ag.shutdown.set()
+
+
+def test_an_older_answer_never_cancels_a_newer_grant(tmp_path, monkeypatch):
+    """F1.1: a heartbeat answer computed while every slot was busy (claim 0) arrives after a result answer that
+    granted the next claim; the older answer must not cancel it (the node would idle until its next heartbeat)."""
+    ag = _agent(tmp_path, "http://127.0.0.1:9", monkeypatch)
+    ag.take_grant({"claim": 1, "protocol": 2}, sent=10.0)
+    assert ag.grants == 1 and ag.claim_wanted.is_set()
+    ag.take_grant({"claim": 0, "protocol": 2}, heartbeat=True, sent=5.0)  # sent before the result
+    assert ag.grants == 1
+    ag.take_grant({"claim": 0, "protocol": 2}, sent=11.0)  # newer news wins
+    assert ag.grants == 0

@@ -96,5 +96,6 @@ def test_every_claim_says_which_mode_the_node_runs_in(tmp_path, monkeypatch, mod
         return None
 
     monkeypatch.setattr(pod.api, "claim", claim)
+    pod.server_hints = False  # a server whose answers carry no "protocol" (F1.1: the node polls it)
     pod.claim_loop()
     assert bodies == [{"mode": mode}]

@@ -327,7 +327,7 @@ class PoolCreate(_Body):
     name: str = Field(max_length=64)
     segment: str = Field(default="", max_length=64)
     expires_in_hours: int = Field(default=24 * 7, ge=1, le=24 * 90)
-    max_enrollments: int = Field(default=50, ge=1, le=1000)
+    max_enrollments: int = Field(default=50, ge=1, le=1_000_000)  # capped by CBOM_MAX_POOL_ENROLLMENTS at create
 
     _n = field_validator("name")(classmethod(lambda cls, v: _name(v)))
 

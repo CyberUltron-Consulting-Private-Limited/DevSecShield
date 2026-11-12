@@ -28,13 +28,14 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agents as AG
+from backend.utilities.cbom_sources.limits import max_sources
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.common import NAME_RE, audit, log, utcnow
 from backend.utilities.cbom_sources.kinds import KINDS, _metadata_text
 
 MAX_ROWS = 5000
 MAX_CSV_BYTES = 2 * 1024 * 1024
-MAX_SOURCES = 500
+# the team's source cap is limits.max_sources() (CBOM_MAX_SOURCES), the same one the Sources API applies
 SERVER_KINDS = ("linux_servers", "windows_servers")
 FIELDS = ("owner", "application", "criticality", "exposure", "data_classification", "environment")
 CONFIG_FIELD = {"owner": "owner", "application": "application", "criticality": "business_criticality",
@@ -336,9 +337,9 @@ def apply_plan(session: Session, team_id: int, user_id: int, plan: Plan, *, node
             if problem:
                 raise ValueError(f"node_id: {problem}")
         total = len(session.exec(select(CbomCollectionSource.id).where(CbomCollectionSource.team_id == team_id)).all())
-        if total + len(plan.creates) > MAX_SOURCES:
+        if total + len(plan.creates) > (cap := max_sources()):
             raise ValueError(f"this import would create {len(plan.creates)} sources; a team can have at most "
-                             f"{MAX_SOURCES} (it has {total})")
+                             f"{cap} (it has {total})")
     updated = created = 0
     for item in plan.updates:
         source = session.get(CbomCollectionSource, item["source_id"])

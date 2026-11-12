@@ -373,7 +373,8 @@ def test_a_cloud_test_survives_a_metadata_save_but_not_a_connection_change(api, 
 # ------------------------------------------------------------------------- 8-9. credits
 def test_two_jobs_of_a_run_refunded_at_the_same_time_both_count(api, world):
     """rev2 L4: ``run.credits_refunded_c += amount`` was an ORM read-modify-write; the second refund overwrote the
-    first, so the run said less was refunded than the team got back."""
+    first, so the run said less was refunded than the team got back.  F1.1 (DA C2): a job end only marks its refund
+    due on its own row; ``settle_refunds`` moves the money once per run, exactly once per job."""
     engine, _ = world
     node_id, _token, _ = enroll_node(api)
     for name, target in (("a", "10.20.0.1"), ("b", "10.20.0.2")):
@@ -384,20 +385,28 @@ def test_two_jobs_of_a_run_refunded_at_the_same_time_both_count(api, world):
     with Session(engine) as one, Session(engine) as two:
         jobs_one = one.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run_id).order_by(CbomCollectionJob.id)).all()
         jobs_two = two.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run_id).order_by(CbomCollectionJob.id)).all()
-        run_one, run_two = one.get(CbomCollectionRun, run_id), two.get(CbomCollectionRun, run_id)
-        assert run_one.credits_refunded_c == run_two.credits_refunded_c == 0  # both read before either refunds
-        assert J.refund_job(one, jobs_one[0], run_one) == 20
+        assert J.refund_job(one, jobs_one[0]) == 20  # marked due, nothing paid yet
         one.commit()
-        assert J.refund_job(two, jobs_two[1], run_two) == 20
+        assert J.refund_job(two, jobs_two[1]) == 20
         two.commit()
-        assert run_two.credits_refunded_c == 40  # the session's copy is reloaded, not trusted
+    with Session(engine) as s:
+        assert s.get(CbomCollectionRun, run_id).credits_refunded_c == 0
+        assert J.settle_refunds(s) == {"runs": 1, "jobs": 2, "centi": 40}
+        s.commit()
+        assert J.settle_refunds(s)["jobs"] == 0  # a second settlement pays nothing
+        s.commit()
     with Session(engine) as s:
         assert s.get(CbomCollectionRun, run_id).credits_refunded_c == 40
         assert s.get(Team, 1).credit_balance == pytest.approx(100.0)
         # a refund the run has already had in full is refused, never paid twice
         job = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run_id)).first()
         job.refunded = False
-        assert J.refund_job(s, job, s.get(CbomCollectionRun, run_id)) == 0
+        s.add(job)
+        s.commit()
+        assert J.settle_refunds(s, [run_id])["centi"] == 0
+        s.commit()
+        assert s.get(CbomCollectionRun, run_id).credits_refunded_c == 40
+        assert s.get(Team, 1).credit_balance == pytest.approx(100.0)
 
 
 def test_a_charge_of_exactly_the_balance_passes(world):

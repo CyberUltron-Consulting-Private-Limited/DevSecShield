@@ -8,6 +8,9 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
+from collections import OrderedDict
 from typing import Annotated, Any, Callable
 
 from fastapi import HTTPException, Path, Request
@@ -94,12 +97,61 @@ def _node_id_for_token(token: str) -> int | None:
         return session.exec(select(CbomScanNode.id).where(CbomScanNode.node_token_hash == sha256_hex(token))).first()
 
 
+# token SHA-256 -> (node id, monotonic expiry): which budget a node request is charged to, without a database round
+# trip per request.  Positive answers only, so an unknown token still falls back to the address; it never
+# authenticates anything (the route checks the token against the database itself).  The expiry SLIDES: every hit
+# pushes it NODE_KEY_TTL_S further (DA E1, Nov 12): with an absolute 60 s expiry and nodes beating every 48-72 s on
+# one of several workers, 85% of lookups missed (EC2) and each miss cost a threadpool hop, a checkout and a SELECT.
+# A 401 ``node_token_revoked`` answer evicts the entry (``forget_node_token``, called by the node middleware), so
+# after a Reset the old token's next request is charged to its address again.
+_NODE_KEYS: "OrderedDict[str, tuple[int, float]]" = OrderedDict()
+_NODE_KEYS_LOCK = threading.Lock()
+NODE_KEY_TTL_S = 3600.0
+NODE_KEY_MAX = 100_000
+
+
+def _cached_node_id(digest: str) -> int | None:
+    now = time.monotonic()
+    with _NODE_KEYS_LOCK:
+        hit = _NODE_KEYS.get(digest)
+        if hit is None:
+            return None
+        if hit[1] < now:
+            del _NODE_KEYS[digest]
+            return None
+        _NODE_KEYS[digest] = (hit[0], now + NODE_KEY_TTL_S)  # sliding expiry
+        _NODE_KEYS.move_to_end(digest)
+        return hit[0]
+
+
+def _remember_node_id(digest: str, node_id: int) -> None:
+    with _NODE_KEYS_LOCK:
+        _NODE_KEYS[digest] = (node_id, time.monotonic() + NODE_KEY_TTL_S)
+        _NODE_KEYS.move_to_end(digest)
+        while len(_NODE_KEYS) > NODE_KEY_MAX:
+            _NODE_KEYS.popitem(last=False)
+
+
+def forget_node_token(digest: str) -> None:
+    with _NODE_KEYS_LOCK:
+        _NODE_KEYS.pop(digest, None)
+
+
 async def node_key(request: Request) -> Key:
     """A verified scan node is charged by node id; an unknown token falls back to the address, so guessing
     tokens never buys fresh budgets."""
+    from backend.utilities.cbom_sources import node_obs as OBS
+
     token = request.headers.get("x-zs-node-token") or ""
     if token.startswith("zsn_") and len(token) <= 128:
-        node_id = await run_in_threadpool(_node_id_for_token, token)
+        digest = sha256_hex(token)
+        node_id = _cached_node_id(digest)
+        OBS.STATS.bump("limiter_lookups")
+        if node_id is None:
+            OBS.STATS.bump("limiter_miss")
+            node_id = await OBS.to_node_thread(_node_id_for_token, token)
+            if node_id is not None:
+                _remember_node_id(digest, node_id)
         if node_id is not None:
             return ("node", str(node_id))
     return await ip_key(request)

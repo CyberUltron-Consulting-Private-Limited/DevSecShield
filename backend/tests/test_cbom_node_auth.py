@@ -173,7 +173,12 @@ def test_signed_node_full_round_trip(api, world):
     node = api("GET", f"/1/cbom/sources/nodes/{node_id}").json()["node"]
     assert node["signing"] == "required"
     with Session(engine) as s:
-        assert len(s.exec(select(CbomNodeNonce).where(CbomNodeNonce.node_id == node_id)).all()) >= 4
+        # every request was replay-checked: the node client signs with protocol-2 sequence nonces (F1.1), which advance
+        # the node's replay window instead of storing nonce rows (protocol-1 nonces: test_cbom_f1_node_api).  Only the
+        # enrollment's own nonce is stored: an enrollment binds a new key, so it is recorded with the enrollment (S1/S2)
+        assert s.get(CbomScanNode, node_id).replay_hwm == node_api._SEQ[0]
+        rows = s.exec(select(CbomNodeNonce).where(CbomNodeNonce.node_id == node_id)).all()
+        assert len(rows) == 1 and rows[0].nonce.startswith("s2_") and int(rows[0].nonce[3:]) < node_api._SEQ[0]
     assert src["id"]
 
 
@@ -275,9 +280,14 @@ def test_expired_nonces_are_swept(api, world):
         s.commit()
     node_auth._SWEPT[0] = 0.0
     client.heartbeat({})
+    with Session(engine) as s:  # the heartbeat no longer sweeps (F1.1 DA E4): the reaper does, every pass
+        assert "old" + "x" * 20 in s.exec(select(CbomNodeNonce.nonce).where(CbomNodeNonce.node_id == node_id)).all()
+    from backend.workers.cbom_cloud_worker import reap_all
+
+    reap_all(engine)
     with Session(engine) as s:
         nonces = s.exec(select(CbomNodeNonce.nonce).where(CbomNodeNonce.node_id == node_id)).all()
-    assert "old" + "x" * 20 not in nonces and len(nonces) >= 2
+    assert "old" + "x" * 20 not in nonces  # swept by the reaper
 
 
 def test_deleting_a_node_deletes_its_nonces(api, world):
