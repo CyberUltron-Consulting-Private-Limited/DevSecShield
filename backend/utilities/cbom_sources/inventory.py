@@ -334,6 +334,38 @@ def _date_time(value: Any) -> str | None:
     return iso_z(moment)
 
 
+def _protocol_versions(row: CbomCollectedAsset, facts: dict[str, Any]) -> list[str]:
+    """The versions the server accepted, read as the classifier reads them (``classify._normalise``): its own list,
+    else the version probes that succeeded (``versions``: {"TLSv1.2": true, "TLSv1.1": null ...}; null = not read),
+    else the SSH banner (RFC 4253 4.2: "SSH-2.0-" and the compatibility "SSH-1.99-" are protocol 2), else the
+    negotiated version, else the stored protocol."""
+    listed = _names(facts.get("protocols") or facts.get("accepted_versions"))
+    if listed:
+        return listed
+    versions = facts.get("versions")
+    if isinstance(versions, dict):
+        return _names([name for name, offered in versions.items() if offered is True])
+    if isinstance(versions, (list, tuple)) and versions:
+        return _names(versions)
+    banner = str(facts.get("banner") or "")
+    if banner.startswith(("SSH-2.0-", "SSH-1.99-")):
+        return ["SSHv2"]
+    if banner.startswith("SSH-1."):
+        return ["SSHv1"]
+    return _names(facts.get("negotiated_version")) or _names(row.protocol)
+
+
+def _cipher_suites(facts: dict[str, Any]) -> list[str]:
+    """Every suite the collector saw the server accept: its own list (a list, or sshd's comma-separated string), else
+    the negotiated suite plus the suites the weak-class probes found accepted (``weak_ciphers_accepted``)."""
+    listed = _names(facts.get("ciphers"))
+    if listed:
+        return listed
+    weak = facts.get("weak_ciphers_accepted")
+    extra = [v for v in weak.values() if isinstance(v, (list, tuple))] if isinstance(weak, dict) else []
+    return _names(facts.get("cipher") or facts.get("negotiated_cipher"), *extra)
+
+
 def _key_primitive(algorithm: str) -> str:
     """CycloneDX primitive of a certificate's subject key algorithm, by family (unknown when the family does not say)."""
     fam = family(algorithm)
@@ -472,11 +504,11 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         crypto["certificateProperties"] = {k: v for k, v in crypto["certificateProperties"].items() if v}
     elif crypto["assetType"] == "protocol":
         proto = (row.protocol or ("ssh" if "ssh" in row.asset_type else "tls")).lower()
-        versions = facts.get("protocols") or ([row.protocol] if row.protocol else [])
+        versions = _protocol_versions(row, facts)
         crypto["protocolProperties"] = {
             "type": "ssh" if proto.startswith("ssh") else ("tls" if "tls" in proto or "ssl" in proto or proto == "tls" else "other"),
-            "version": ",".join(str(v) for v in versions)[:255] if versions else None,
-            "cipherSuites": [{"name": str(c)} for c in (facts.get("ciphers") or ([facts["cipher"]] if facts.get("cipher") else []))][:200],
+            "version": ",".join(versions)[:255] if versions else None,
+            "cipherSuites": [{"name": name} for name in _cipher_suites(facts)],
         }
         crypto["protocolProperties"] = {k: v for k, v in crypto["protocolProperties"].items() if v}
     elif crypto["assetType"] == "related-crypto-material":

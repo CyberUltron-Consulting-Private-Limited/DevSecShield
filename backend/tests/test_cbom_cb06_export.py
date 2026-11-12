@@ -62,8 +62,15 @@ TLS_CLASSICAL = {"type": "tls_endpoint", "target": "10.20.0.1", "location": "10.
                  "facts": {"versions": {"TLSv1.2": False, "TLSv1.3": True}, "negotiated_version": "TLSv1.3",
                            "negotiated_group": "X25519", "negotiated_cipher": "TLS_AES_256_GCM_SHA384",
                            "pq_hybrid": False}}
-# SSH KEXINIT facts (tlsprobe.ssh_kexinit names)
-SSH = {"type": "ssh_endpoint", "target": "10.20.0.1", "location": "10.20.0.1:22",
+# a TLS 1.0-1.2 server as the network collector writes it: version probes, the negotiated suite, and the suites its
+# weak-class probes saw accepted (collectors/network.py _tls steps 2 and 5)
+TLS_LEGACY = {"type": "tls_endpoint", "target": "10.20.0.1", "location": "10.20.0.1:10443", "protocol": "tls",
+              "facts": {"versions": {"SSLv3": False, "TLSv1.0": True, "TLSv1.1": None, "TLSv1.2": True, "TLSv1.3": False},
+                        "negotiated_version": "TLSv1.2", "negotiated_cipher": "ECDHE-RSA-AES128-GCM-SHA256",
+                        "negotiated_group": "X25519", "weak_ciphers_accepted": {
+                            "obsolete": ["DES-CBC3-SHA"], "static_rsa": [], "cbc": ["ECDHE-RSA-AES128-SHA"], "dhe": []}}}
+# SSH KEXINIT facts (tlsprobe.ssh_kexinit names; the network collector stores protocol "ssh" and the banner)
+SSH = {"type": "ssh_endpoint", "target": "10.20.0.1", "location": "10.20.0.1:22", "protocol": "ssh",
        "facts": {"kex": ["mlkem768x25519-sha256", "curve25519-sha256"], "host_key_algs": ["ssh-ed25519"],
                  "ciphers_c2s": ["chacha20-poly1305@openssh.com"], "ciphers_s2c": ["chacha20-poly1305@openssh.com"],
                  "macs_c2s": ["hmac-sha2-256-etm@openssh.com"], "macs_s2c": ["hmac-sha2-256-etm@openssh.com"],
@@ -174,7 +181,7 @@ def exported(request):
     call = request.getfixturevalue("api")
     engine, _ = request.getfixturevalue("world")
     ids = _node_run(call, engine, [CERT_RSA3072, CERT_RSA2048, CERT_P384, CERT_P256, TLS_HYBRID, TLS_CLASSICAL, SSH,
-                                  *OTHERS])
+                                   TLS_LEGACY, *OTHERS])
     run_id = ids["run"]["id"]
     ids["cloud_job_id"], ids["cloud_source_id"] = _cloud_job(engine, run_id, [KMS_KEY, KMS_DENIED])
     r = call("GET", f"/1/cbom/sources/runs/{run_id}/cbom")
@@ -249,6 +256,24 @@ def test_ssh_endpoints_export_the_algorithms_the_server_offered(exported):
     assert _one(ssh, "zs:macs") == "hmac-sha2-256-etm@openssh.com"
     config = _component(exported, "sshd -T")  # sshd -T writes comma-separated strings
     assert _one(config, "zs:kex_algorithms").split(",") == ["curve25519-sha256", "diffie-hellman-group14-sha1"]
+
+
+def test_protocols_export_the_versions_and_suites_the_collector_saw(exported):
+    """Found by CB-01's G11 join on this branch (L probe): the network collector writes ``versions`` (a dict of
+    probes), ``negotiated_cipher`` and ``weak_ciphers_accepted``; the export read only ``protocols`` / ``ciphers``,
+    so a real TLS endpoint exported no version and no suite, and an sshd -T cipher string became one suite per
+    character."""
+    def proto(location):
+        return _component(exported, location)["cryptoProperties"]["protocolProperties"]
+
+    assert proto(TLS_HYBRID["location"])["version"] == "TLSv1.3"
+    assert [c["name"] for c in proto(TLS_HYBRID["location"])["cipherSuites"]] == ["TLS_AES_256_GCM_SHA384"]
+    legacy = proto(TLS_LEGACY["location"])
+    assert legacy["version"].split(",") == ["TLSv1.0", "TLSv1.2"]  # True probes only; None = not read, not accepted
+    assert [c["name"] for c in legacy["cipherSuites"]] == ["ECDHE-RSA-AES128-GCM-SHA256", "DES-CBC3-SHA",
+                                                           "ECDHE-RSA-AES128-SHA"]
+    assert proto(SSH["location"])["version"] == "SSHv2"  # banner "SSH-2.0-OpenSSH_10.0" (RFC 4253 section 4.2)
+    assert [c["name"] for c in proto("sshd -T")["cipherSuites"]] == ["aes128-cbc", "aes256-ctr"]
 
 
 def test_every_component_has_a_pqc_class(exported):
