@@ -330,6 +330,10 @@ export function DASTOptionsSidebar({
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
     },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
+    },
   });
 
   // Why a failed scan failed, in the worker's words (scan.info.error); before, only "An error occurred during the scan".

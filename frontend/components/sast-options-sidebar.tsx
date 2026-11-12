@@ -336,7 +336,11 @@ export function SASTOptionsSidebar({
     onError: (err) => {
       setErrorMessage(handleApiError(err).message);
       setOptionsSidebarState("error");
-    }
+    },
+    // a re-run can move credits (PR #57 charges the price difference): the balance shows what the server did
+    onSettled: () => {
+      refreshCreditBalance(queryClient);
+    },
   });
 
 

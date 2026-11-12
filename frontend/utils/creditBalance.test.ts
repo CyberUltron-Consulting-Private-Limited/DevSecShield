@@ -3,6 +3,9 @@
  * stale after starting a SAST, AI BOM or IaC scan, until a reload; only CBOM refreshed it. Starting a scan charges
  * credits and cancelling one refunds them, so every start and cancel of the eight products now calls
  * refreshCreditBalance (utils/creditBalance.ts) when it settles.
+ * PR #67 review: a re-run (/reinitialize) refreshes too, so the balance follows the server whether or not the re-run
+ * charges (it does once PR #57 merges); the guard's import detector is shared (utils/backendApiImports.ts) and follows
+ * dynamic imports.
  * Browser check: note the balance, start a SAST scan: it drops without a reload; cancel the scan: it comes back.
  * Run: npx --yes tsx utils/creditBalance.test.ts
  */
@@ -10,8 +13,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { MutationObserver, QueryClient, QueryObserver } from "@tanstack/react-query";
 
+import { backendApiImportRanges, backendApiImports } from "./backendApiImports";
 import { CREDIT_BALANCE_QUERY_KEY, isCreditBalanceQuery, refreshCreditBalance } from "./creditBalance";
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
@@ -84,18 +88,42 @@ async function main() {
     updateCbomSource: "changing a source's connection cancels and refunds its pending collect jobs",
     deleteCbomScanNode: "deleting a scan node refunds its open collect jobs",
     createGuardrailsIntegration: "0.5 credits (routers/guardrails.py); only the unrouted components/deprecated pages use it",
+    // re-running a scan: POST /{team_id}/{type}/scan/{id}/reinitialize (routers/scans.py). Whether it moves credits
+    // (nothing before PR #57, the price difference after it) does not matter here: the balance follows what the server
+    // answers (part 6)
+    reinitializeSastScan: "re-run a scan: the reinitialize endpoint",
+    reinitializeLLMScan: "the same reinitialize endpoint",
+    reinitializeMCPScan: "the same reinitialize endpoint",
+    reinitializeIACScanWithPayload: "the same reinitialize endpoint",
+    reinitializeSBOMScanWithPayload: "the same reinitialize endpoint",
+    reinitializeCBOMScanWithPayload: "the same reinitialize endpoint",
+    reinitializeAIBOMScanWithPayload: "the same reinitialize endpoint",
+    reinitializeDASTScan: "the same reinitialize endpoint",
   };
-  // (re-running a scan, /reinitialize, charges nothing today: #33)
   const apiSrc = read("utils/backend_api.ts");
   for (const name of Object.keys(movers)) {
     assert.match(apiSrc, new RegExp(String.raw`\bconst ${name} = async\b`), `utils/backend_api.ts has no ${name}`);
   }
+  // every reinitialize helper is a mover, or calls a route the backend does not have (no credit can move there)
+  const noRoute: Record<string, string> = {
+    reinitializeIACScan: "/iac/conversation/{id}/reinitialize (the IaC sidebar uses reinitializeIACScanWithPayload)",
+    reinitializeSCASBOMScan: "/sbom_sca/conversation/{id}/reinitialize (the SCA + SBOM sidebar uses ...WithPayload)",
+    reinitializeDiscoveryScan: "/agent_discovery/conversation/{id}/reinitialize (agent discovery has no page)",
+    reinitializeLeakageScan: "/leakage/conversation/{id}/reinitialize (data leakage shows ProductUnavailableNotice)",
+  };
+  assert.deepEqual([...apiSrc.matchAll(/\bconst (reinitialize\w+) = async\b/g)].map((m) => m[1]).sort(),
+    [...Object.keys(movers).filter((n) => n.startsWith("reinitialize")), ...Object.keys(noRoute)].sort(),
+    "a new reinitialize helper refreshes the balance (a mover) or is listed in noRoute");
+  const routers = path.join(root, "..", "backend", "routers");
+  const routes = fs.readdirSync(routers).filter((f) => f.endsWith(".py")).map((f) => fs.readFileSync(path.join(routers, f), "utf8"));
+  assert.ok(routes.some((src) => src.includes('"/{team_id}/{type}/scan/{scan_id}/reinitialize"')), "the reinitialize route");
+  assert.ok(!routes.some((src) => /conversation\/\{[^}]*\}\/reinitialize/.test(src)), "a noRoute helper's route exists now");
   // per file: how many useMutation blocks move credits, and the uses that are not a mutation (pinned below)
   const expected: Record<string, number> = {
     "components/RemediationPanel.tsx": 1, // AI remediation (the CBOM knowledge-base one is free: not counted)
-    "components/ai-bom-options-sidebar.tsx": 1,
+    "components/ai-bom-options-sidebar.tsx": 2, // start, re-run
     "components/ai/ChatWindow.tsx": 0, // a chat message is a direct await: refreshed in its finally (below)
-    "components/cbom-options-sidebar.tsx": 2, // the code scan and its linked sources run
+    "components/cbom-options-sidebar.tsx": 3, // the code scan, its linked sources run, re-run
     "components/cbom/sources/AppliancesSection.tsx": 1, // delete
     "components/cbom/sources/ClustersDatabasesTab.tsx": 4, // delete; save a cluster, a database, a key manager
     "components/cbom/sources/CloudIdentityTab.tsx": 6, // delete; save cloud, CA, IdP, two credential forms
@@ -106,24 +134,26 @@ async function main() {
     "components/cbom/sources/ScanNodesTab.tsx": 1, // delete a node
     "components/cbom/sources/ServersTab.tsx": 3, // turn on/off, delete, save
     "components/cbom/sources/SourceMetadata.tsx": 2, // ownership and data, one source or many (metadata, as above)
-    "components/dast-options-sidebar.tsx": 1, // through handleStartScan (below)
+    "components/dast-options-sidebar.tsx": 2, // start and re-run, through handleStartScan / handleReinitializeScan (below)
     "components/dast/DastProfilesTab.tsx": 1, // run a saved DAST profile
-    "components/iac-options-sidebar.tsx": 1,
-    "components/llm-options-sidebar.tsx": 1,
-    "components/mcp-options-sidebar.tsx": 1,
-    "components/sast-options-sidebar.tsx": 1,
-    "components/sca-sbom-options-sidebar.tsx": 1,
+    "components/iac-options-sidebar.tsx": 2, // start, re-run
+    "components/llm-options-sidebar.tsx": 2,
+    "components/mcp-options-sidebar.tsx": 2,
+    "components/sast-options-sidebar.tsx": 2, // start; re-run through handleReinitializeScan (below)
+    "components/sca-sbom-options-sidebar.tsx": 2,
     "components/scan-cancel.tsx": 1, // cancel a SAST, IaC, SCA + SBOM, CBOM or AI BOM scan
   };
-  // a mover used outside a useMutation block, each with the reason it still refreshes
-  const outside: Record<string, (code: string) => void> = {
-    "components/dast-options-sidebar.tsx": (code) => {
-      // handleStartScan builds the DAST request; the start mutation runs it and refreshes when it settles
-      const wrapper = code.slice(code.indexOf("const handleStartScan = "));
-      assert.ok(wrapper.indexOf("startDASTScan(") < wrapper.indexOf("\n  };"), "startDASTScan is called in handleStartScan");
-      assert.ok(mutations(code).some((b) => /mutationFn: handleStartScan\b/.test(b.text) && refreshesOnSettled(b.text)),
-        "the DAST start mutation (handleStartScan) refreshes the balance when it settles");
+  // a local function that calls a mover, run by a mutation: the call must be in the function, and every mutation that
+  // runs it refreshes the balance when it settles
+  const wrappers: Record<string, Record<string, string>> = {
+    [path.join("components", "dast-options-sidebar.tsx")]: {
+      handleStartScan: "startDASTScan", // builds the DAST request
+      handleReinitializeScan: "reinitializeDASTScan",
     },
+    [path.join("components", "sast-options-sidebar.tsx")]: { handleReinitializeScan: "reinitializeSastScan" },
+  };
+  // a mover used outside a useMutation block and outside a wrapper, each with the reason it still refreshes
+  const outside: Record<string, (code: string) => void> = {
     "components/ai/ChatWindow.tsx": (code) => {
       const call = code.indexOf("await sendMessageToScan(");
       const rest = code.slice(call);
@@ -136,12 +166,12 @@ async function main() {
   for (const rel of sourceFiles()) {
     if (rel.startsWith(path.join("components", "deprecated"))) continue; // unrouted: app/[team_id]/guardrails shows a notice
     const code = stripComments(read(rel));
-    const used = backendApiImports(code).filter((name) => name in movers);
+    const used = backendApiImports(code, rel).filter((name) => name in movers);
     if (!used.length) continue;
     const pattern = new RegExp(String.raw`\b(?:${used.join("|")})\b`, "g");
-    // a local function that calls a mover counts as one where a mutation runs it (pinned in `outside`)
-    const wrappers: Record<string, string[]> = { [path.join("components", "dast-options-sidebar.tsx")]: ["handleStartScan"] };
-    const uses = new RegExp(String.raw`\b(?:${[...used, ...(wrappers[rel] ?? [])].join("|")})\b`);
+    // a local function that calls a mover counts as one where a mutation runs it (pinned in `wrappers`)
+    const own = wrappers[rel] ?? {};
+    const uses = new RegExp(String.raw`\b(?:${[...used, ...Object.keys(own)].join("|")})\b`);
     const blocks = mutations(code);
     found[rel] = 0;
     // CBOM's remediation comes from the offline knowledge base: the backend answers it before any charge
@@ -152,9 +182,20 @@ async function main() {
         `${rel}: a mutation that moves credits does not refresh the balance in its onSettled:\n${block.text}`);
     }
     // every other use (outside the import line) is one of the pinned exceptions
-    const imports = importRanges(code);
+    const imports = backendApiImportRanges(code, rel);
+    const wrapped = Object.entries(own).map(([fn, mover]) => {
+      const start = code.indexOf(`const ${fn} = `);
+      const end = code.indexOf("\n  };", start);
+      const call = code.indexOf(`${mover}(`, start);
+      assert.ok(start >= 0 && call > start && call < end, `${rel}: ${mover} is called in ${fn}`);
+      const runs = blocks.filter((b) => new RegExp(String.raw`mutationFn: ${fn}\b`).test(b.text));
+      assert.ok(runs.length > 0 && runs.every((b) => refreshesOnSettled(b.text)),
+        `${rel}: the mutation that runs ${fn} refreshes the balance when it settles`);
+      return [start, end] as const;
+    });
     const stray = [...code.matchAll(pattern)].filter((m) =>
-      !imports.some(([a, b]) => m.index! >= a && m.index! < b) && !blocks.some((b) => m.index! >= b.start && m.index! < b.end));
+      !imports.some(([a, b]) => m.index! >= a && m.index! < b) && !blocks.some((b) => m.index! >= b.start && m.index! < b.end) &&
+      !wrapped.some(([a, b]) => m.index! >= a && m.index! < b));
     if (stray.length) {
       assert.ok(outside[rel], `${rel}: ${stray.map((m) => m[0]).join(", ")} used outside a useMutation block`);
       outside[rel](code);
@@ -163,6 +204,11 @@ async function main() {
     assert.ok(!/invalidateQueries\(\)/.test(code), `${rel}: invalidating everything also refetches the balance a second time`);
   }
   assert.deepEqual(found, expected, "every file that imports a credit-moving API helper, and its mutations");
+  // the detector finds a mover however the module is imported, also the two dynamic forms the PR #67 review found it
+  // missed (one detector for both guards: utils/backendApiImports.test.ts has every form)
+  assert.deepEqual(backendApiImports('const { startScan } = await import("@/utils/backend_api"); return startScan(1);'),
+    ["startScan"]);
+  assert.deepEqual(backendApiImports('import("@/utils/backend_api").then((m) => m.cancelScan(1, 2));'), ["cancelScan"]);
 
   // 5. credits the server moves without a user action (#28): a failed scan is refunded by the status poll that sees it
   // fail (backend utilities/celery/celery_connection.py), and a CBOM sources run is refunded job by job as its jobs
@@ -227,6 +273,42 @@ async function main() {
   assert.ok(!/scan_status === "failure"\) \{\s*refreshCreditBalance/.test(read("components/cbom-options-sidebar.tsx")),
     "cbom-options-sidebar.tsx: the query client already refreshes the balance when a scan fails");
 
+  // 6. re-running a scan (/reinitialize) charges nothing before PR #57 and the price difference after it; a refused re-run
+  // moves nothing, and one given back refunds the difference. Whatever the server did, the sidebar shows its answer: each
+  // re-run mutation refreshes the balance when it settles (part 4 checks every one), as this one does.
+  const rerun = makeQueryClient();
+  let server = 10;
+  const header: number[] = [];
+  const teamsView = new QueryObserver<Teams>(rerun, {
+    queryKey: [...CREDIT_BALANCE_QUERY_KEY],
+    queryFn: async () => [{ team_id: 13, team_credit_balance: server }],
+  });
+  const stopHeader = teamsView.subscribe((r) => {
+    if (r.data) header.push(r.data[0].team_credit_balance);
+  });
+  await settle();
+  for (const [what, after, refused] of [
+    ["charges nothing (before PR #57)", 10, false],
+    ["charges the price difference (PR #57)", 7.5, false],
+    ["is refused for too few credits (402, nothing charged)", 7.5, true],
+    ["is sent, then given back (409, the difference refunded)", 10, true],
+  ] as const) {
+    const reinitialize = new MutationObserver(rerun, {
+      mutationFn: async () => {
+        server = after;
+        if (refused) throw new Error(what);
+        return { message: "Scan reinitialized" };
+      },
+      onSettled: () => {
+        refreshCreditBalance(rerun);
+      },
+    });
+    await reinitialize.mutate().catch(() => undefined);
+    await settle();
+    assert.equal(header.at(-1), after, `a re-run that ${what}: the sidebar shows the server's balance`);
+  }
+  stopHeader();
+
   console.log("credit balance refresh: tests passed");
 }
 
@@ -280,34 +362,6 @@ function sourceFiles(): string[] {
       : /\.(tsx?|jsx?|mjs)$/.test(e.name) && !/\.test\.[a-z]+$/.test(e.name) ? [path.join(dir, e.name)] : []);
   return ["app", "components", "hooks", "lib", "utils"].flatMap((d) => walk(path.join(root, d)))
     .map((f) => path.relative(root, f)).filter((rel) => rel !== path.join("utils", "backend_api.ts")).sort();
-}
-
-const API_MODULE = String.raw`["'](?:@\/utils\/|(?:\.\.?\/)+(?:utils\/)?)backend_api["']`;
-
-/** Where the import statements of utils/backend_api are (their names are not uses). */
-function importRanges(src: string): [number, number][] {
-  return [...src.matchAll(new RegExp(String.raw`import\s*[^;]*?from\s*` + API_MODULE, "g"))]
-    .map((m) => [m.index!, m.index! + m[0].length]);
-}
-
-/** The names a source file takes from utils/backend_api: named imports (by their exported name), and the members it
- * reads from a namespace or dynamic import of the module. */
-function backendApiImports(src: string): string[] {
-  const names = new Set<string>();
-  for (const m of src.matchAll(new RegExp(String.raw`import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*` + API_MODULE, "g"))) {
-    for (const part of m[1].split(",")) {
-      const name = part.trim().split(/\s+as\s+/)[0].trim();
-      if (name && !/^type\s/.test(name)) names.add(name);
-    }
-  }
-  const aliases = [
-    ...src.matchAll(new RegExp(String.raw`import\s*\*\s*as\s+(\w+)\s*from\s*` + API_MODULE, "g")),
-    ...src.matchAll(new RegExp(String.raw`(?:const|let|var)\s+(\w+)\s*=\s*await\s+import\(\s*` + API_MODULE + String.raw`\s*\)`, "g")),
-  ].map((m) => m[1]);
-  for (const alias of aliases) {
-    for (const m of src.matchAll(new RegExp(String.raw`\b${alias}\.(\w+)`, "g"))) names.add(m[1]);
-  }
-  return [...names];
 }
 
 /** The options literal of every useMutation({ ... }) in a source file, with where it is. */
