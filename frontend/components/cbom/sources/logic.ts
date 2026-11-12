@@ -109,6 +109,32 @@ export function nodeInstallNames(nodeName: string): { container: string; volume:
   return { container: `zs-scan-node-${slug}`, volume: `zs-node-${slug}`, release: `zs-scan-node-${slug}` }
 }
 
+/** Why a scan node could not connect with an install command built from this API URL, or null when it can.
+ * It mirrors the node's own rule (scan_node/zs_scan_node/agent.py: the stripped ZS_API_URL must start with
+ * "https://", exactly, lower case; claim answers carry decrypted credentials), so the wizard warns exactly when the
+ * node would exit. Port 80 is the plain-HTTP port: the node accepts the URL but its TLS client cannot connect there.
+ * The commands the wizard shows use this deployment's own API URL, so the customer is told before running one. */
+export function insecureApiWarning(apiUrl: string): string | null {
+  const value = (apiUrl || "").trim()
+  if (!value) return null
+  if (!value.startsWith("https://")) {
+    if (/^http:\/\//i.test(value)) {
+      return `This ZeroShield deployment serves its API over plain HTTP (${value}). The scan node refuses http:// (it would receive your server credentials unencrypted) and will exit with "ZS_API_URL must be the ZeroShield API URL over https://". Ask your ZeroShield administrator to serve the API over https:// before you install a node.`
+    }
+    return `This ZeroShield deployment's API address (${value}) does not start with https:// (lower case), so the scan node refuses it and exits. Ask your ZeroShield administrator for the https:// address of the API.`
+  }
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return `This ZeroShield deployment's API address (${value}) is not a valid URL, so a scan node cannot connect with the command below. Ask your ZeroShield administrator for the https:// address of the API.`
+  }
+  if (url.port === "80") {
+    return `This ZeroShield deployment's API address uses port 80 (${value}), the plain-HTTP port: the scan node connects with TLS only and cannot connect there. Ask your ZeroShield administrator for the https:// address of the API.`
+  }
+  return null
+}
+
 export function installCommand(
   method: DeployMethod,
   opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string },
@@ -159,8 +185,13 @@ export function installCommand(
 /** The published node image's name (scripts/release/scan_node_image.sh builds and saves it under this name). */
 export const PUBLISHED_NODE_IMAGE = "registry.zeroshield.ai/cbom/scan-node"
 
+/** The versions `make node-image` builds: scripts/release/scan_node_image.sh's NODE_VERSION_RE (the versions the
+ * node reports; logic.test.ts reads the script to keep the two equal). */
+const NODE_VERSION_RE = /^[0-9][0-9A-Za-z.-]{0,18}$/
+
 /** For a site that cannot pull the node image: the image file from `make node-image` (or the release workflow),
- * checked with its .sha256 and loaded with `docker load` (scan_node/README.md, "Without registry access"). Helm also
+ * checked with its .sha256 and loaded with `docker load` (scan_node/README.md, "Without registry access"). A tag that
+ * `make node-image` refuses (e.g. GHCR's dev-<commit>, or latest) gets the file from ZeroShield instead. Helm also
  * needs the image in a registry the cluster can pull from, and the chart from the repository. Null for the AMI and
  * the OVA, which carry the image inside. */
 export function offlineImageSteps(method: DeployMethod, image: string): string | null {
@@ -169,8 +200,15 @@ export function offlineImageSteps(method: DeployMethod, image: string): string |
   const version = cut > image.lastIndexOf("/") ? image.slice(cut + 1) : "latest"
   const archive = `scan-node-${version}.tar.gz`
   const lines = [
-    `# 1. Get the image file: in the DevSecShield repository run  make node-image VERSION=${version}`,
-    `#    (it writes dist/scan-node/${archive} and ${archive}.sha256), or ask ZeroShield for both files.`,
+    ...(NODE_VERSION_RE.test(version)
+      ? [
+        `# 1. Get the image file: in the DevSecShield repository run  make node-image VERSION=${version}`,
+        `#    (it writes dist/scan-node/${archive} and ${archive}.sha256), or ask ZeroShield for both files.`,
+      ]
+      : [
+        `# 1. Get the image file: ask ZeroShield for ${archive} and ${archive}.sha256`,
+        "#    (make node-image builds only release versions that start with a digit, such as 1.1.0).",
+      ]),
     "# 2. Copy both files to the host, check the file, then load it:",
     `sha256sum -c ${archive}.sha256`,
     `docker load -i ${archive}`,

@@ -35,7 +35,7 @@ import threading
 import time
 import traceback
 
-from zs_scan_node import VERSION
+from zs_scan_node import node_build, reported_version
 from zs_scan_node.api import Api, ApiError, Unauthorized, WrongServer
 from zs_scan_node.collectors import AGENT_CAPABILITIES, CAPABILITIES, run_job
 from zs_scan_node.jobctx import JobContext, LeaseLost
@@ -115,6 +115,10 @@ class Agent:
         for secret in (reg, self.state.node_token, os.environ.get("VAULT_TOKEN")):
             g.add(secret)
 
+    def log_start(self) -> None:
+        log("scan node starting", version=reported_version(), build=node_build() or "unknown", api=self.api_url,
+            state=self.state.directory, openssl=have_openssl())
+
     # ------------------------------------------------------------------ enrollment
     def ensure_enrolled(self) -> None:
         while not self.state.node_token and not self.shutdown.is_set():
@@ -142,7 +146,7 @@ class Agent:
             # the key ZeroShield stored is still the one this node signs with.
             key = self.state.new_signing_key()
             self.api.signing_key = key
-            body = {"registration_token": reg, "hostname": socket.gethostname()[:255], "version": VERSION,
+            body = {"registration_token": reg, "hostname": socket.gethostname()[:255], "version": reported_version(),
                     "source_ips": local_ips(), "ssh_public_key": self.state.ssh_public_key(),
                     "capabilities": self.capabilities(), "clock": _now_iso(),
                     "signing_public_key": base64.b64encode(key.public_key().public_bytes_raw()).decode()}
@@ -205,7 +209,7 @@ class Agent:
     def heartbeat_once(self) -> None:
         with self.lock:
             running = [{"job_id": r.job_id, "lease_id": r.lease_id} for r in self.running.values()]
-        body = {"hostname": socket.gethostname()[:255], "version": VERSION, "source_ips": local_ips(),
+        body = {"hostname": socket.gethostname()[:255], "version": reported_version(), "source_ips": local_ips(),
                 "capabilities": self.capabilities(), "clock": _now_iso(), "running": running}
         if self.last_error:
             body["last_error"] = global_scrubber().text(self.last_error)[:1900]
@@ -405,7 +409,7 @@ class Agent:
     def _post_result(self, running: Running, status: str, error: str | None, summary: str | None) -> None:
         ctx = running.ctx
         result = ctx.result(summary)
-        result["node_version"] = VERSION
+        result["node_version"] = reported_version()
         body = {"lease_id": running.lease_id, "status": status, "result": result,
                 "error": ctx.scrubber.text(error)[:3900] if error else None}
         try:
@@ -471,8 +475,7 @@ class Agent:
 
         signal.signal(signal.SIGTERM, stop)
         signal.signal(signal.SIGINT, stop)
-        log("scan node starting", version=VERSION, api=self.api_url, state=self.state.directory,
-            openssl=have_openssl())
+        self.log_start()
         self.ensure_enrolled()
         threading.Thread(target=self.heartbeat_loop, name="heartbeat", daemon=True).start()
         self.claim_loop()
