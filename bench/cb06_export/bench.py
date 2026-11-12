@@ -11,7 +11,8 @@ One export = what the route does: ``inventory.cyclonedx`` then ``json.dumps`` (f
 (format xml); each iteration builds once and times both serialisations of that build. The database is read-only during timing. The mix (certificates, TLS and SSH endpoints, private keys,
 libraries, KMS keys, coverage rows) follows what the lab and a mid-size estate produce; every certificate and endpoint
 carries the facts the collectors write, so the new per-component work (nested certificate parts, groups, provenance)
-is exercised at full size.
+is exercised at full size. Each record has wall time and process CPU time: on a shared host the wall time includes
+waiting for a CPU, so the report gives the head/base p95 ratio of both.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import resource
 import statistics
 import subprocess
 import sys
@@ -125,15 +127,18 @@ def time_export(path: str, iterations: int) -> None:
     for _ in range(iterations):
         with Session(engine) as s:
             run = s.get(CbomCollectionRun, 1)
-            t0 = time.perf_counter()
+            t0, c0 = time.perf_counter(), time.process_time()
             doc = inventory.cyclonedx(s, run, now)
-            t1 = time.perf_counter()
+            t1, c1 = time.perf_counter(), time.process_time()
             as_json = json.dumps(doc).encode()
-            t2 = time.perf_counter()
+            t2, c2 = time.perf_counter(), time.process_time()
             as_xml = cdx_xml.to_xml(doc)
-            t3 = time.perf_counter()
-        print(json.dumps({"build_s": round(t1 - t0, 4), "json": {"seconds": round(t2 - t0, 4), "bytes": len(as_json)},
-                          "xml": {"seconds": round(t1 - t0 + t3 - t2, 4), "bytes": len(as_xml)},
+            t3, c3 = time.perf_counter(), time.process_time()
+        print(json.dumps({"build_s": round(t1 - t0, 4), "build_cpu_s": round(c1 - c0, 4),
+                          "json": {"seconds": round(t2 - t0, 4), "cpu": round(c2 - c0, 4), "bytes": len(as_json)},
+                          "xml": {"seconds": round(t1 - t0 + t3 - t2, 4), "cpu": round(c1 - c0 + c3 - c2, 4),
+                                  "bytes": len(as_xml)},
+                          "maxrss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024,
                           "components": len(doc["components"])}), flush=True)
 
 
@@ -144,7 +149,8 @@ def _p95(values: list[float]) -> float:
 
 def ab(path: str, a: str, b: str, rounds: int, out: str | None) -> None:
     """Alternate A and B (one export each per step, both formats), ``rounds`` steps; p50/p95 per side and format."""
-    results: dict[str, dict[str, list]] = {"a": {"json": [], "xml": []}, "b": {"json": [], "xml": []}}
+    results: dict[str, dict[str, list]] = {side: {"json": [], "xml": [], "json_cpu": [], "xml_cpu": []}
+                                           for side in ("a", "b")}
     meta: dict[str, dict] = {"a": {}, "b": {}}
     for step in range(rounds):
         for side, tree in (("a", a), ("b", b)) if step % 2 == 0 else (("b", b), ("a", a)):
@@ -154,15 +160,19 @@ def ab(path: str, a: str, b: str, rounds: int, out: str | None) -> None:
             rec = json.loads(line)
             for fmt in ("json", "xml"):
                 results[side][fmt].append(rec[fmt]["seconds"])
-                meta[side][fmt] = {"bytes": rec[fmt]["bytes"], "components": rec["components"]}
+                results[side][f"{fmt}_cpu"].append(rec[fmt]["cpu"])
+                meta[side][fmt] = meta[side][f"{fmt}_cpu"] = {"bytes": rec[fmt]["bytes"], "components": rec["components"],
+                                                              "maxrss_mb": rec["maxrss_mb"]}
             print(json.dumps({"step": step, "side": side, **rec}), file=sys.stderr, flush=True)
     report = {"rounds": rounds, "db": path, "a": a, "b": b, "sides": {}}
     for side in ("a", "b"):
         report["sides"][side] = {fmt: {"p50": round(statistics.median(v), 3), "p95": round(_p95(v), 3),
                                        "min": round(min(v), 3), "max": round(max(v), 3), "n": len(v), **meta[side][fmt]}
                                  for fmt, v in results[side].items()}
+    # wall time on a shared host includes waiting for a CPU; process CPU time is the code's own cost
     report["ratio_p95"] = {fmt: round(report["sides"]["b"][fmt]["p95"] / report["sides"]["a"][fmt]["p95"], 3)
-                           for fmt in ("json", "xml")}
+                           for fmt in ("json", "xml", "json_cpu", "xml_cpu")}
+    report["loadavg_end"] = os.getloadavg()
     report["raw"] = results
     text = json.dumps(report, indent=1)
     if out:
