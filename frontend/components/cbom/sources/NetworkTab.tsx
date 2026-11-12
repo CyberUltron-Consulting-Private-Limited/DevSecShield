@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CirclePlay, CircleX, Loader2, OctagonX, Pencil, Plus, Radar, ShieldCheck, Trash2, X } from "lucide-react";
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
@@ -581,57 +581,64 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
               {exclusions.length === 0 ? (
                 <EmptyState title="Nothing is excluded" body="Add OT networks, core routers and anything else that must never be touched." />
               ) : (
-                <ScrollArea className="w-full border rounded-lg">
-                  <div className="min-w-max">
-                    <Table data-testid="network-exclusions-table">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Range</TableHead>
-                          <TableHead>Reason</TableHead>
-                          <TableHead className="w-12">
-                            <span className="sr-only">Remove</span>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {exclusions.map((e) => {
-                          const issue = storedExclusionIssue(e.cidr);
-                          return (
-                          <TableRow key={e.cidr} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
-                            <TableCell className="font-mono text-xs text-zinc-900 dark:text-white">
-                              {e.cidr}
-                              {issue && (
-                                <div className="mt-1 space-y-1 font-sans whitespace-normal max-w-[320px]" data-testid="network-exclusion-hostname">
-                                  <StatusBadge tone="red" title={issue}>Host name: not allowed here</StatusBadge>
-                                  <p className="text-xs text-red-600 dark:text-red-400" role="alert">{issue}</p>
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell className="max-w-[240px] text-zinc-600 dark:text-zinc-400">
-                              <Truncate text={e.reason || "—"} />
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="cursor-pointer"
-                                aria-label={`Remove ${e.cidr} from never scan`}
-                                onClick={() => {
-                                  setExclusionError(null);
-                                  setDraft((d) => ({ ...d, network_exclusions: exclusions.filter((x) => x.cidr !== e.cidr) }));
-                                }}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
+                // A fixed layout as wide as the card, not a horizontal scroller: at 390 px an entry wraps and its
+                // Remove button stays in view, and a note on a stored host name gets its own full-width row below it.
+                <div className="w-full border rounded-lg">
+                  <Table data-testid="network-exclusions-table" className="table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[45%]">Range</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead className="w-12">
+                          <span className="sr-only">Remove</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {exclusions.map((e, index) => {
+                        const issue = storedExclusionIssue(e.cidr);
+                        const noteId = `network-exclusion-note-${index}`;
+                        return (
+                          <Fragment key={e.cidr}>
+                            <TableRow className={cn("hover:bg-zinc-50 dark:hover:bg-zinc-800", issue && "border-b-0")}>
+                              <TableCell className="font-mono text-xs text-zinc-900 dark:text-white [overflow-wrap:anywhere]">{e.cidr}</TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400">
+                                <Truncate text={e.reason || "—"} />
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="cursor-pointer"
+                                  aria-label={`Remove ${e.cidr} from never scan`}
+                                  aria-describedby={issue ? noteId : undefined}
+                                  onClick={() => {
+                                    setExclusionError(null);
+                                    setDraft((d) => ({ ...d, network_exclusions: exclusions.filter((x) => x.cidr !== e.cidr) }));
+                                  }}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                            {issue && (
+                              // a note on what is stored, not a live error: no role="alert" (the InlineError under the
+                              // field is the live one); the Remove button above points to it with aria-describedby
+                              <TableRow className="hover:bg-transparent" data-testid="network-exclusion-hostname">
+                                <TableCell colSpan={3} className="pt-0 whitespace-normal">
+                                  <div id={noteId} className="space-y-1">
+                                    <StatusBadge tone="red" title={issue}>Host name: not allowed here</StatusBadge>
+                                    <p className="text-xs text-red-600 dark:text-red-400">{issue}</p>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] gap-2 items-start">
                 <Input
@@ -674,7 +681,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 this team: a server, database, registry or Kubernetes API whose name resolves to a listed address is
                 skipped as a whole, and ranges are checked one address at a time. This list takes addresses and
                 ranges. A hostname listed in a server source&apos;s own Never scan field also covers every address
-                it resolves to from the scan node (until it resolves there, that source scans nothing).
+                it resolves to from the scan node (until it resolves there, that source scans nothing; localhost and
+                the other loopback names cover only 127.0.0.0/8 and ::1).
               </p>
             </Section>
 
