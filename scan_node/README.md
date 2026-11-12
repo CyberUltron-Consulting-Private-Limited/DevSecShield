@@ -118,7 +118,9 @@ are reported, not read.
 
 Each release is also published as a file. Build it from the repository with `make node-image VERSION=<version>`
 (the same as `scripts/release/scan_node_image.sh build <version>`, or the **Scan node image** workflow): it writes
-`dist/scan-node/scan-node-<version>.tar.gz` and its `.sha256`. Copy both files to the host, check the file, and load
+`dist/scan-node/scan-node-<version>.tar.gz` and its `.sha256`. `<version>` is what the node reports (with its
+commit, e.g. `1.1.0+0a1b2c3d4e5f`): a digit, then up to 18 digits, letters, dots or dashes; other values are
+refused. Copy both files to the host, check the file, and load
 it; then run the install command unchanged (Docker uses the loaded image and does not pull):
 
 ```sh

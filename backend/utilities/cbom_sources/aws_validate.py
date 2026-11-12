@@ -131,11 +131,15 @@ def _boto(*, retries: int = 2, mode: str = "standard"):
     """ZeroShield's own AWS principal (the one customers trust), from CBOM_AWS_* only.
 
     Ambient credentials (instance role, ~/.aws, AWS_*) are never used: they could belong to
-    ZeroShield's own infrastructure, whose inventory must never land in a customer's CBOM."""
+    ZeroShield's own infrastructure, whose inventory must never land in a customer's CBOM.
+    Ambient endpoints are ignored the same way: AWS_ENDPOINT_URL, AWS_ENDPOINT_URL_<SERVICE> and endpoint_url in
+    ~/.aws/config point at ZeroShield's own services (e.g. AWS_ENDPOINT_URL_S3=http://minio:9000 for uploads in
+    deploy/local and the staging MinIO profile); a customer's account is always called at AWS."""
     import boto3  # imported lazily: only this path needs it
     from botocore.config import Config
 
-    cfg = Config(connect_timeout=5, read_timeout=8, retries={"max_attempts": retries, "mode": mode})
+    cfg = Config(connect_timeout=5, read_timeout=8, retries={"max_attempts": retries, "mode": mode},
+                 ignore_configured_endpoint_urls=True)
     key = os.environ.get("CBOM_AWS_ACCESS_KEY_ID")
     secret = os.environ.get("CBOM_AWS_SECRET_ACCESS_KEY")
     token = os.environ.get("CBOM_AWS_SESSION_TOKEN") or None
