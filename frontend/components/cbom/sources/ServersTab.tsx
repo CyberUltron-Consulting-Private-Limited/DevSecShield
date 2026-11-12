@@ -538,6 +538,11 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
                         <div className="flex items-center gap-2 min-w-0">
                           <Truncate text={source.name} className="min-w-0" />
                           {!source.enabled && <StatusBadge tone="zinc">Disabled</StatusBadge>}
+                          {source.managed_by_policy_id != null && (
+                            <StatusBadge tone="blue" title="A fleet policy manages this source: change the policy on the Fleet tab">
+                              Managed by policy
+                            </StatusBadge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{source.kind_label}</TableCell>
@@ -576,7 +581,12 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" onCloseAutoFocus={rowMenu.onCloseAutoFocus}>
-                            <DropdownMenuItem className="cursor-pointer" onSelect={() => startEdit(source)} data-testid={`servers-edit-${source.id}`}>
+                            <DropdownMenuItem
+                              className="cursor-pointer"
+                              disabled={source.managed_by_policy_id != null}
+                              onSelect={() => startEdit(source)}
+                              data-testid={`servers-edit-${source.id}`}
+                            >
                               <Pencil className="h-4 w-4" />
                               Edit
                             </DropdownMenuItem>

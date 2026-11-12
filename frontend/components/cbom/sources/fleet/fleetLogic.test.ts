@@ -3,7 +3,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ALL_OFF, fleetTabState, fleetTabVisible, isNotFound, pickTab, visibleSections } from "./fleetLogic";
+import {
+  actionText,
+  ALL_OFF,
+  decisionText,
+  draftFromSelector,
+  fleetTabState,
+  fleetTabVisible,
+  isNotFound,
+  pickTab,
+  selectorFromDraft,
+  selectorText,
+  visibleSections,
+} from "./fleetLogic";
 
 // The Fleet tab shows when any fleet feature is on; while the status loads, failed (an older server answers 404) or
 // all flags are off, it is hidden.
@@ -66,5 +78,39 @@ const tab = readFileSync(join(__dirname, "FleetTab.tsx"), "utf8");
 assert.ok(tab.includes("const state = fleetTabState(status);"), "FleetTab does not use fleetTabState");
 assert.ok(!tab.includes("status.isError ||"), "FleetTab replaces its sections on any error");
 assert.ok(tab.includes("retry: (failureCount, error) => !isNotFound(error) && queryRetry(failureCount, error)"));
+
+// ---------------------------------------------------------------------------- policies (F1.2)
+const draft = {
+  mode: "all" as const,
+  conditions: [
+    { on: "tag" as const, key: " Env ", op: "eq" as const, value: "prod" },
+    { on: "tag" as const, key: "team", op: "in" as const, value: "pay, ops," },
+    { on: "field" as const, key: "region", op: "prefix" as const, value: "ap-" },
+    { on: "tag" as const, key: "", op: "eq" as const, value: "ignored" },
+  ],
+};
+const sel = selectorFromDraft(draft);
+assert.deepEqual(sel, {
+  all: [
+    { tag: "env", op: "eq", value: "prod" },
+    { tag: "team", op: "in", value: ["pay", "ops"] },
+    { field: "region", op: "prefix", value: "ap-" },
+  ],
+});
+assert.deepEqual(selectorFromDraft({ mode: "any", conditions: [] }), {});
+assert.deepEqual(selectorFromDraft({ mode: "any", conditions: [{ on: "tag", key: "x", op: "exists", value: "zzz" }] }), { tag: "x", op: "exists" });
+assert.deepEqual(draftFromSelector(sel)?.conditions.map((c) => c.key), ["env", "team", "region"]);
+assert.equal(draftFromSelector({ not: { tag: "env", op: "exists" } }), null); // edited as JSON
+assert.equal(selectorText(sel), "env is prod and team is one of pay, ops and region starts with ap-");
+assert.equal(selectorText({}), "every target");
+assert.equal(actionText({ never_scan: true }), "Never scan");
+assert.equal(
+  actionText({ transport: "ssh", tier: 1, batch_size: 100, schedule: { frequency: "weekly", time_of_day: "02:00", weekday: 6, monthday: null } }),
+  "Collect over SSH, tier 1, batches of 100; Sundays at 02:00",
+);
+const names = { "2": { name: "prod-never", priority: 90 }, "5": { name: "all-pay", priority: 10 } };
+assert.equal(decisionText({ action: "never_scan", policy_id: 2, matched_policy_ids: [2, 5] }, names), "prod-never (priority 90) (also matched 1 more)");
+assert.equal(decisionText({ action: "never_scan", policy_id: null, matched_policy_ids: [5] }, names), "Never-scan list (overrides 1 matching policy)");
+assert.equal(decisionText({ action: "unmanaged", policy_id: null, matched_policy_ids: [] }, names), "No policy matches");
 
 console.log("fleetLogic tests passed");

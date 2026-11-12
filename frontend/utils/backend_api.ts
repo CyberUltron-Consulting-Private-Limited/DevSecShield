@@ -4254,6 +4254,8 @@ export interface CbomSource {
     row_version: number
     created_at: string | null
     last_updated: string | null
+    managed_by_policy_id?: number | null  // F1.2 fleet: a policy manages this source (edit the policy, not the source)
+    credential_id?: number | null
 }
 
 export interface CbomSourceWrite {
