@@ -45,11 +45,13 @@ class SaltTransport:
         self.check_options = check_options
 
     # ------------------------------------------------------------------ login
-    def _login(self, credential: TransportCredential):
+    def _login(self, credential: TransportCredential, wait_s: float | None = None):
+        """A logged-in client.  Its request timeout covers ``wait_s`` (how long salt itself may take to answer one
+        synchronous call: the ``local`` and ``ssh`` clients answer only when the batch is done) plus a minute."""
         secrets = credential.secrets or {}
         if not secrets.get("username") or not secrets.get("password"):
             raise TransportError("auth_failed", "no salt-api username and password are stored for this transport")
-        timeout = float(credential.config.get("timeout_s") or 300) + 60
+        timeout = float(wait_s if wait_s is not None else (credential.config.get("timeout_s") or 300)) + 60
         http = control.client(credential.config, self.never, headers={"Accept": "application/json"},
                               timeout=timeout, what=WHAT)
         try:
@@ -99,7 +101,7 @@ class SaltTransport:
         size = max(1, min(int(cfg.get("batch_size") or DEFAULT_BATCH), MAX_SSH_BATCH if client == "ssh" else MAX_BATCH))
         # salt's own wait for the script covers zs-collect's per-host timeout (and its command slack)
         timeout = max(int(cfg.get("timeout_s") or 300), host_timeout(options) + 60)
-        http = self._login(credential)  # already used for /login: closed in the finally below, not a with block
+        http = self._login(credential, timeout)  # used for /login already: closed in the finally below
         try:
             for start in range(0, len(targets), size):
                 batch = list(targets[start:start + size])

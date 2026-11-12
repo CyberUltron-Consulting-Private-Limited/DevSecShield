@@ -887,3 +887,24 @@ def test_the_parity_normaliser_reports_pid_set_differences():
     assert N.pid_differences(ssh, zs, "10.0.0.1") == [
         "pids differ: sshd /usr/lib/libcrypto.so.3: only A []; only B [695]"]
     assert N.pid_differences(ssh, {"assets": [lib([1])]}) == []
+
+
+def test_salt_request_timeout_covers_the_per_host_timeout(monkeypatch):
+    """The local and ssh clients answer only when the batch is done: the HTTP timeout must outlast salt's own wait,
+    which now covers zs-collect's per-host timeout (here 600 s, above the transport's 300 s)."""
+    seen = []
+    fake = FakeSalt({"host-1": {"stdout": doc_line("10.0.0.1")}}, client="local")
+
+    def client(config, never, headers=None, timeout=30.0, what="control plane"):
+        seen.append(timeout)
+        return httpx.Client(base_url=config["base_url"], headers=dict(headers or {}), transport=httpx.MockTransport(fake))
+
+    monkeypatch.setattr(control, "client", client)
+    opts = CollectOptions(tier=2, run_nonce=NONCE, deadline=time.monotonic() + 3600, timeout_per_target_s=600,
+                          max_concurrency="", zs_collect_sha256={"amd64": "a" * 64}, should_stop=lambda: None,
+                          collector_version=VERSION)
+    cred = TransportCredential("salt_eauth", {**salt_cred(client="local").config, "timeout_s": 300},
+                               {"username": "zs", "password": "pw"})
+    out = list(salt().run_collect(targets(1), cred, opts))
+    assert out[0].status == "ok"
+    assert fake.calls[0]["timeout"] == 660 and seen == [720]  # salt waits 600 + 60 s; the request 60 s more
