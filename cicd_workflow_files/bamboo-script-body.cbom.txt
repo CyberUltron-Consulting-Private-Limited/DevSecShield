@@ -31,6 +31,7 @@ fi
 FINDINGS=$(grep -o '"finding_count":[0-9]*' devsecshield-response.json | grep -o '[0-9]*' || echo "0")
 echo "Findings found during CBOM: $FINDINGS"
 cat devsecshield-response.json
+echo
 
 # CBOM policy gate: fail on a high crypto finding, and fail closed when the answer carries no verdict.
 if grep -Eq '"gate_failed"[[:space:]]*:[[:space:]]*true' devsecshield-response.json; then

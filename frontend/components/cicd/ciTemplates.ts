@@ -23,7 +23,10 @@ export const isCbom = (kind: string) => (kind || "").toLowerCase() === "cbom";
 export const CBOM_GATE_NOTE =
   "The job fails when DevSecShield reports a high crypto finding (weak algorithm or key, ECB, hard-coded key, static " +
   "IV, reused nonce, weak RNG, weak padding, disabled certificate verification, a vulnerable crypto library) and when " +
-  "no result arrives in time. Quantum-vulnerable findings are reported without failing the job.";
+  "no result arrives in time. Quantum-vulnerable findings are reported without failing the job. The job also fails " +
+  "when DevSecShield cannot be reached, answers with an error or rejects a wrong or revoked API key. To make the " +
+  "check advisory, mark the step continue-on-error (GitHub Actions), the job allow_failure (GitLab CI) or wrap the " +
+  "stage in catchError (Jenkins).";
 
 const kindOf = (kind: string) => (kind || "sast").toLowerCase();
 
@@ -178,7 +181,9 @@ FINDINGS=${D}(grep -o '"finding_count":[0-9]*' devsecshield-response.json | grep
 echo "Findings found during ${label}: ${D}FINDINGS"
 cat devsecshield-response.json`;
   if (!isCbom(kind)) return script;
+  // echo: the compact JSON has no final newline, so the gate's message starts a line of its own
   return `${script}
+echo
 
 ${cbomGateScript("devsecshield-response.json")}`;
 }
@@ -186,16 +191,19 @@ ${cbomGateScript("devsecshield-response.json")}`;
 export function gitlabCi({ kind: rawKind, endpoint, branch }: TemplateOptions & { branch: string }): string {
   const kind = kindOf(rawKind);
   const label = kind.toUpperCase();
+  // A new directory per job: `zip -r` adds to an archive that already exists, and /tmp can outlive a job (shell
+  // executor, several jobs on one host), so a fixed path would upload an earlier job's files too.
   const scan = scanRequestScript({
-    zipPath: "/tmp/project.zip",
+    zipPath: `${D}{zip_file}`,
     url: endpoint,
     keyRef: `${D}{CICD_API_KEY}`,
     responseFile: "devsecshield-response.json",
   });
   const body = [
     "# Everything but .git is scanned (vendored code, build output and nested archives included); installed",
-    "# dependency trees stay out. The zip is written outside the project directory. Uploads are capped at 50 MB.",
-    zipCommand("/tmp/project.zip"),
+    "# dependency trees stay out. The zip is written to a new directory outside the project. Uploads are capped at 50 MB.",
+    `zip_file="${D}(mktemp -d)/project.zip"`,
+    zipCommand(`${D}{zip_file}`),
     scan,
     `echo "${label} findings: ${D}(jq '.finding_count // 0' devsecshield-response.json)"`,
     `jq -r '(.results | if type == "object" then (.results // []) elif type == "array" then . else [] end)[] | (.impact // "unknown") + " " + (.title // .name // "")' devsecshield-response.json`,

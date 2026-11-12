@@ -10,15 +10,16 @@ cbom-check:
   script:
     - |
       # Everything but .git is scanned (vendored code, build output and nested archives included); installed
-      # dependency trees stay out. The zip is written outside the project directory. Uploads are capped at 50 MB.
-      zip -q -r "/tmp/project.zip" . -x '.git/*' '*/.git/*' 'node_modules/*' '*/node_modules/*' 'venv/*' '.venv/*' '*/.venv/*'
+      # dependency trees stay out. The zip is written to a new directory outside the project. Uploads are capped at 50 MB.
+      zip_file="$(mktemp -d)/project.zip"
+      zip -q -r "${zip_file}" . -x '.git/*' '*/.git/*' 'node_modules/*' '*/node_modules/*' 'venv/*' '.venv/*' '*/.venv/*'
       set -u
       # A failed scan fails the pipeline: --fail-with-body (curl 7.76+) exits non-zero on any HTTP error and still
       # prints the reason. 429 (rate limited): wait Retry-After seconds (30 if absent, 300 at most), up to 5 tries.
       for attempt in 1 2 3 4 5; do
         rc=0
         code=$(curl --fail-with-body -sS --max-time 900 -o devsecshield-response.json -D devsecshield-headers.txt -w '%{http_code}' \
-          -H "cicd-api-key: ${CICD_API_KEY}" -F "zip_file=@/tmp/project.zip" \
+          -H "cicd-api-key: ${CICD_API_KEY}" -F "zip_file=@${zip_file}" \
           "https://devsecshieldapi.zeroshield.ai/cicd/cbom/scan") || rc=$?
         if [ "${code}" = "429" ] && [ "${attempt}" -lt 5 ]; then
           delay=$(awk 'tolower($1) == "retry-after:" {print $2 + 0}' devsecshield-headers.txt | tail -n 1)

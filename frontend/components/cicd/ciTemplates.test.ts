@@ -6,6 +6,11 @@
  * POST /cicd/cbom/scan the way the backend does (compact JSON, gate_failed + gate). Expected exit codes come from the
  * policy: a high crypto finding fails the job; an explicit pass passes; an answer without a verdict (an older server,
  * a cut-off body) fails closed; an HTTP error fails as before. SAST / AI-BOM files must not change.
+ * Each file runs the way its runner runs it: GitHub `bash -e <file>`, GitLab `sh -e`, Jenkins `sh` bodies executed
+ * through their shebang, Bamboo `/bin/sh <file>`. Temporary directories persist between jobs where the runner keeps
+ * them (TMPDIR for GitLab and Bamboo, WORKSPACE_TMP for Jenkins; GitHub empties RUNNER_TEMP per job), and a weak tree
+ * then a clean tree must give 1 then 0: nothing of the first job may reach the second upload.
+ * SAST / AI-BOM files are pinned by snapshots in ci-template-snapshots/ (a change there must be deliberate).
  * The reference copies in cicd_workflow_files/*.cbom.* must equal the builders' output (the Bamboo one is a .txt: it
  * is the body of a Bamboo Script task, valid only after Bamboo substitutes ${bamboo.cicd_api_key}, not a shell script).
  * Run (frontend/): npx --yes tsx@4.23.15 components/cicd/ciTemplates.test.ts   (needs bash, sh, curl, jq, zip)
@@ -18,7 +23,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { cbomGateScript } from "./ciScanScript";
-import { bambooScript, githubActionsWorkflow, gitlabCi, jenkinsfile } from "./ciTemplates";
+import { CBOM_GATE_NOTE, bambooScript, githubActionsWorkflow, gitlabCi, jenkinsfile } from "./ciTemplates";
 
 // js-yaml ships with ESLint (a dev dependency); the workflows are parsed as YAML so the test runs what a runner runs.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -61,37 +66,46 @@ const replies: Record<string, Reply> = {
 assert.match(replies.fail.body, /"gate_failed":true/);
 
 // ------------------------------------------------------------------------------------------------- the harness
-let current: Reply = replies.pass;
+let current: Reply | "judge" = replies.pass;
 const seen: { key?: string; bytes: number }[] = [];
+const WEAK_MARKER = "weak_marker.py"; // a file only the weak tree has; a zip stores its name in plain text
 
 function serve(): Promise<http.Server> {
   const server = http.createServer((req, res) => {
-    let bytes = 0;
-    req.on("data", (c: Buffer) => { bytes += c.length; });
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => { chunks.push(c); });
     req.on("end", () => {
-      seen.push({ key: req.headers["cicd-api-key"] as string | undefined, bytes });
-      res.writeHead(current.status, { "Content-Type": "application/json" });
-      res.end(current.body);
+      const body = Buffer.concat(chunks);
+      seen.push({ key: req.headers["cicd-api-key"] as string | undefined, bytes: body.length });
+      // "judge": answer like the backend would for what was uploaded (any weak file in the zip fails the gate)
+      const reply = current === "judge" ? (body.includes(WEAK_MARKER) ? replies.fail : replies.pass) : current;
+      res.writeHead(reply.status, { "Content-Type": "application/json" });
+      res.end(reply.body);
     });
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 
-function repoDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cb30-repo-"));
-  fs.writeFileSync(path.join(dir, "keys.py"), "KEY_SIZE = 1024\n");
+// All temporary files of this test live under one directory, removed at the end (nothing is left in /tmp).
+const SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), "cb30-test-"));
+const scratch = (prefix: string) => fs.mkdtempSync(path.join(SCRATCH, prefix));
+
+function repoDir(weak = false): string {
+  const dir = scratch("repo-");
+  fs.writeFileSync(path.join(dir, "keys.py"), "KEY_SIZE = 3072\n");
+  if (weak) fs.writeFileSync(path.join(dir, WEAK_MARKER), "KEY_SIZE = 1024\n");
   return dir;
 }
 
-// The child sees no proxy (the local server must be reached directly) and only the variables a runner sets. It runs
-// asynchronously: the fake API answers from this process's event loop.
-function run(shell: string, script: string, cwd: string, env: Record<string, string>): Promise<{ code: number; out: string }> {
+// The child sees no proxy (the local server must be reached directly). It runs asynchronously: the fake API answers
+// from this process's event loop.
+function run(argv: string[], cwd: string, env: Record<string, string>): Promise<{ code: number; out: string }> {
   const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
   for (const k of Object.keys(childEnv)) {
     if (/^(https?|all|no)_proxy$/i.test(k)) delete childEnv[k];
   }
   return new Promise((resolve) => {
-    const child = spawn(shell, ["-c", script], { cwd, env: childEnv });
+    const child = spawn(argv[0], argv.slice(1), { cwd, env: childEnv });
     let out = "";
     child.stdout.on("data", (c: Buffer) => { out += c.toString(); });
     child.stderr.on("data", (c: Buffer) => { out += c.toString(); });
@@ -100,45 +114,60 @@ function run(shell: string, script: string, cwd: string, env: Record<string, str
   });
 }
 
-// Every generated file, reduced to what its runner executes, in order.
-interface Job { name: string; steps: { shell: string; script: string }[]; env: Record<string, string> }
+// Every generated file, reduced to what its runner executes, in order. `argv(file)` is how the runner starts the step
+// written to `file`; `shebang` marks a body run directly.
+interface Step { script: string; argv: (file: string) => string[]; shebang?: boolean }
+interface Job { name: string; steps: Step[]; env: Record<string, string> }
 
 function githubJob(text: string): Job {
+  // A run: step without `shell:` runs as `bash -e {0}` (no pipefail) on the runner.
   const wf = yaml.load(text) as { jobs: Record<string, { steps: { run?: string }[] }> };
-  const steps = Object.values(wf.jobs)[0].steps.filter((s) => s.run).map((s) => ({ shell: "bash", script: `set -eo pipefail\n${s.run}` }));
+  const steps = Object.values(wf.jobs)[0].steps.filter((s) => s.run).map((s) => ({ script: s.run!, argv: (f: string) => ["bash", "-e", f] }));
   return { name: "github", steps, env: {} };
 }
 
 function gitlabJob(text: string): Job {
+  // The alpine image has no bash: the runner feeds the script to sh with errexit on.
   const doc = yaml.load(text) as Record<string, { script: string[] }>;
   const job = Object.values(doc)[0];
-  return { name: "gitlab", steps: job.script.map((s) => ({ shell: "sh", script: `set -e\n${s}` })), env: {} };
+  return { name: "gitlab", steps: job.script.map((s) => ({ script: s, argv: (f: string) => ["sh", "-e", f] })), env: {} };
 }
 
 function jenkinsJob(text: string): Job {
-  // sh '''...''' bodies (the Groovy script blocks only print). Jenkins runs `sh` steps with `sh -xe`.
-  const steps = [...text.matchAll(/sh '''#!\/bin\/sh\n([\s\S]*?)\n'''/g)].map((m) => ({ shell: "sh", script: `set -e\n${m[1]}` }));
+  // sh '''...''' bodies (the Groovy script blocks only print). A body that starts with a shebang is run through it, with
+  // no extra flags (Jenkins adds -xe only when there is none). Groovy unescapes ''' strings: a backslash at the end of a
+  // line joins the next line; the bodies hold no other backslash.
+  const steps = [...text.matchAll(/sh '''(#!\/bin\/sh\n[\s\S]*?)\n'''/g)].map((m) => {
+    const body = m[1].replace(/\\\n/g, "");
+    assert.doesNotMatch(body, /\\/, "a Jenkins sh body holds a backslash Groovy would unescape");
+    return { script: body, argv: (f: string) => [f], shebang: true };
+  });
   return { name: "jenkins", steps, env: {} };
 }
 
 function bambooJob(text: string): Job {
-  // Bamboo replaces ${bamboo.cicd_api_key} before the script runs.
-  return { name: "bamboo", steps: [{ shell: "sh", script: text.split("${bamboo.cicd_api_key}").join(KEY) }], env: {} };
+  // Bamboo replaces ${bamboo.cicd_api_key} before the script runs, then runs the body with /bin/sh (no -e).
+  return { name: "bamboo", steps: [{ script: text.split("${bamboo.cicd_api_key}").join(KEY), argv: (f: string) => ["sh", f] }], env: {} };
 }
 
-async function runJob(job: Job, cwd: string): Promise<{ code: number; out: string }> {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cb30-runner-"));
-  const env = { RUNNER_TEMP: tmp, WORKSPACE_TMP: tmp, CICD_API_KEY: KEY, ...job.env };
+// `shared` holds the directories a runner keeps between jobs (TMPDIR, Jenkins WORKSPACE_TMP); RUNNER_TEMP is per job.
+async function runJob(job: Job, cwd: string, shared?: { tmpdir: string; workspaceTmp: string }): Promise<{ code: number; out: string }> {
+  const perJob = scratch("job-");
+  const env = {
+    RUNNER_TEMP: perJob, TMPDIR: shared?.tmpdir ?? perJob, WORKSPACE_TMP: shared?.workspaceTmp ?? perJob, CICD_API_KEY: KEY, ...job.env,
+  };
   let out = "";
   try {
-    for (const step of job.steps) {
-      const r = await run(step.shell, step.script, cwd, env);
+    for (const [i, step] of job.steps.entries()) {
+      const file = path.join(perJob, `step-${i}.sh`);
+      fs.writeFileSync(file, step.script, { mode: step.shebang ? 0o755 : 0o644 });
+      const r = await run(step.argv(file), cwd, env);
       out += r.out;
       if (r.code !== 0) return { code: r.code, out };
     }
     return { code: 0, out };
   } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(perJob, { recursive: true, force: true });
   }
 }
 
@@ -146,7 +175,7 @@ async function main() {
   const server = await serve();
   const port = (server.address() as { port: number }).port;
   const endpoint = `http://127.0.0.1:${port}/cicd/cbom/scan`;
-  const cwd = repoDir();
+  const cwd = repoDir(true);
 
   const cbomFiles: [string, string, (t: string) => Job][] = [
     ["github", githubActionsWorkflow({ kind: "cbom", endpoint, branch: "main" }), githubJob],
@@ -178,16 +207,43 @@ async function main() {
       if (answer === "fail" && (name === "github" || name === "gitlab")) {
         assert.match(r.out, /High WEAK_ALGORITHM app\/keys\.py:5 RSA-1024/, `${name}: the failing finding is listed`);
       }
+      // the verdict line starts a line of its own (Bamboo prints the compact JSON, which has no final newline)
+      if (answer !== "error") assert.match(r.out, /^DevSecShield CBOM policy gate: /m, `${name}: the gate message starts its line`);
     }
     console.log(`ok ${name}: fail->1 pass->0 no_result->1 no-verdict->1 http-500->1`);
+
+    // Same runner, weak tree then clean tree: the second job must upload only its own tree.
+    current = "judge";
+    const shared = { tmpdir: scratch("runner-tmp-"), workspaceTmp: scratch("workspace-tmp-") };
+    const weak = await runJob(job, repoDir(true), shared);
+    const clean = await runJob(job, repoDir(false), shared);
+    assert.equal(weak.code === 0 ? 0 : 1, 1, `${name}: the weak tree fails\n${weak.out}`);
+    assert.equal(clean.code, 0, `${name}: the clean tree after a weak one passes (nothing left from the first job)\n${clean.out}`);
+    console.log(`ok ${name}: weak then clean on one runner -> 1, 0`);
   }
 
-  // Other scan types: the same files as before, without a gate.
+  // What the guides say under every CBOM file: what fails the job, and how to make the step advisory.
+  for (const words of [/high crypto finding/, /no result arrives in time/, /cannot be reached|unreachable/, /error/, /wrong.*key|key.*wrong|invalid.*key/i,
+    /continue-on-error/, /allow_failure/, /catchError/]) {
+    assert.match(CBOM_GATE_NOTE, words, `CBOM_GATE_NOTE mentions ${words}`);
+  }
+
+  // Other scan types: no gate, and the exact files are pinned by snapshots. Against dev 3df26fd the SAST / AI-BOM GitHub
+  // workflow differs only by the pinned actions/checkout line (CB-30 pins it for every kind); Jenkins and Bamboo are as
+  // before; GitLab is new.
+  const snapshots = path.join(__dirname, "ci-template-snapshots");
   for (const kind of ["sast", "ai_bom"]) {
     const ep = `https://api.example.test/cicd/${kind}/scan`;
-    for (const text of [githubActionsWorkflow({ kind, endpoint: ep, branch: "main" }), gitlabCi({ kind, endpoint: ep, branch: "main" }),
-      jenkinsfile({ kind, endpoint: ep, apiKey: "k" }), bambooScript({ kind, endpoint: ep })]) {
+    const files: [string, string][] = [
+      ["github", githubActionsWorkflow({ kind, endpoint: ep, branch: "main" })],
+      ["gitlab", gitlabCi({ kind, endpoint: ep, branch: "main" })],
+      ["jenkins", jenkinsfile({ kind, endpoint: ep, apiKey: "<your DevSecShield CI/CD API key>" })],
+      ["bamboo", bambooScript({ kind, endpoint: ep })],
+    ];
+    for (const [name, text] of files) {
       assert.doesNotMatch(text, /gate_failed|policy gate|Policy Gate/i, `${kind}: no CBOM gate`);
+      const snapshot = path.join(snapshots, `${name}.${kind}.txt`);
+      assert.equal(fs.readFileSync(snapshot, "utf8"), `${text}\n`, `${name} ${kind} file changed: if on purpose, update ${snapshot}`);
     }
   }
   // A SAST workflow is not blocked by a CBOM verdict it never asked for (its answer has none).
@@ -211,7 +267,7 @@ async function main() {
   console.log("ok reference files match");
 
   server.close();
-  fs.rmSync(cwd, { recursive: true, force: true });
+  fs.rmSync(SCRATCH, { recursive: true, force: true });
 }
 
 main().catch((err) => {
