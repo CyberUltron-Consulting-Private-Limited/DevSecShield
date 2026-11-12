@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -30,6 +31,25 @@ from backend.utilities.scm.models import ScmRepository, ScmScanRequest, ScmScanR
 
 api, world = _cbom_api.api, _cbom_api.world  # the CBOM Sources harness fixtures
 CANARY = "ghp_Canary7f3a91c2SCMtoken000000000000"
+# F4 (PR #42) enforces each route's x-zs-permission before the handler runs: a member's change is then refused by F4
+# with 403 and its role sentence; before F4 the handler refuses it with a 400 sentence (never 403). Either way the
+# member changes nothing; tests/test_scm_permissions.py pins the permission names.
+def _f4_enforces() -> bool:
+    try:
+        return importlib.util.find_spec("backend.utilities.rbac.policy") is not None
+    except ModuleNotFoundError:  # no backend.utilities.rbac package at all: F4 is not on this branch
+        return False
+
+
+F4_ENFORCES = _f4_enforces()
+
+
+def assert_member_refused(response) -> None:
+    if F4_ENFORCES:
+        assert response.status_code == 403 and response.json()["detail"].startswith("Your role (member) cannot"), \
+            response.text
+    else:
+        assert response.status_code == 400 and "admin" in response.json()["detail"], response.text
 
 
 @pytest.fixture()
@@ -65,7 +85,7 @@ def setup_connection(api, fake):
 
 
 def test_connect_is_admin_only_and_the_credential_never_comes_back(scm, fake):
-    assert connect(scm, fake, who="bob").status_code == 400  # member: a sentence, never 403
+    assert_member_refused(connect(scm, fake, who="bob"))  # member
     bad = connect(scm, fake, api_base="https://ghe.corp.example/api/v3")
     assert bad.status_code == 400 and "GIT_ALLOWED_HOSTS" in bad.json()["detail"]
     assert connect(scm, fake, auth_kind="github_app", scope_kind="installation").status_code == 400  # no App ids
@@ -106,7 +126,7 @@ def test_discover_preview_import_and_inventory(scm, fake):
     assert preview["discovered"] == 120 and 0 < preview["in_scope"] < 120
     assert sum(preview["reasons"].values()) == 120 and preview["reasons"]["language"] > 0
     assert preview["estimate"]["credits"] > 0 and set(preview["estimate"]["per_product"]) == {"sbom_sca", "iac"}
-    assert scm("PUT", f"/1/scm/connections/{cid}/filters", "bob", json={"filters": {}}).status_code == 400
+    assert_member_refused(scm("PUT", f"/1/scm/connections/{cid}/filters", "bob", json={"filters": {}}))
     imported = scm("PUT", f"/1/scm/connections/{cid}/filters",
                    json={"filters": {"exclude_topics": ["deprecated"], "languages": ["Python", "Java"]}}).json()
     assert imported["in_scope"] == preview["in_scope"]
@@ -118,8 +138,7 @@ def test_discover_preview_import_and_inventory(scm, fake):
     assert scm("GET", "/1/scm/repositories?q=legacy-0001").json()["total"] == 1
     # bulk: pin an excluded repository in, then reset it
     target = out["items"][0]["id"]
-    assert scm("POST", "/1/scm/repositories/bulk", "bob", json={"repo_ids": [target], "action": "include"}
-               ).status_code == 400
+    assert_member_refused(scm("POST", "/1/scm/repositories/bulk", "bob", json={"repo_ids": [target], "action": "include"}))
     assert scm("POST", "/1/scm/repositories/bulk", json={"repo_ids": [target], "action": "include"}).json() == {"changed": 1}
     pinned = scm("GET", "/1/scm/repositories?q=" + out["items"][0]["full_name"]).json()["items"][0]
     assert pinned["in_scope"] and pinned["scope_reason"] == "manual_include"
@@ -136,7 +155,7 @@ def test_policies_estimates_runs_and_cancel(scm, fake, world):
     policy = {"name": "PCI nightly", "selector": {"topics_any": ["pci"]}, "products": ["sbom_sca", "iac"],
               "on_push": True, "schedule": {"frequency": "daily", "time_of_day": "02:00", "timezone": "Asia/Kolkata"},
               "options": {"iac_modes": ["terraform", "k8s"]}}
-    assert scm("POST", "/1/scm/policies", "bob", json=policy).status_code == 400
+    assert_member_refused(scm("POST", "/1/scm/policies", "bob", json=policy))
     assert scm("POST", "/1/scm/policies", json={**policy, "options": {"nope": 1}}).status_code == 400
     assert scm("POST", "/1/scm/policies", json={**policy, "products": ["dast"]}).status_code == 400
     created = scm("POST", "/1/scm/policies", json=policy)
@@ -155,8 +174,8 @@ def test_policies_estimates_runs_and_cancel(scm, fake, world):
                                                "client_request_id": "ui-1"})
     assert changed.status_code == 409 and changed.json()["code"] == "estimate_changed"
     assert changed.json()["estimate"]["credits"] == est["credits"]
-    assert scm("POST", "/1/scm/runs", "bob", json={"policy_id": pol["id"], "expected_credits": est["credits"],
-                                                   "client_request_id": "ui-1"}).status_code == 400
+    assert_member_refused(scm("POST", "/1/scm/runs", "bob", json={"policy_id": pol["id"], "expected_credits": est["credits"],
+                                                                   "client_request_id": "ui-1"}))
     run = scm("POST", "/1/scm/runs", json={"policy_id": pol["id"], "expected_credits": est["credits"],
                                            "client_request_id": "ui-1"})
     assert run.status_code == 201, run.text
@@ -301,7 +320,7 @@ def test_deleting_a_connection_refunds_its_queued_scans(scm, fake, world):
     assert scm("POST", "/1/scm/runs", json={"repo_ids": ids, "products": ["sbom_sca"],
                                             "expected_credits": est["credits"], "client_request_id": "del"}
                ).status_code == 201
-    assert scm("DELETE", f"/1/scm/connections/{cid}", "bob").status_code == 400
+    assert_member_refused(scm("DELETE", f"/1/scm/connections/{cid}", "bob"))
     gone = scm("DELETE", f"/1/scm/connections/{cid}").json()
     assert gone["refunded"] == est["credits"] and gone["repositories"] == 120
     with Session(engine) as s:
