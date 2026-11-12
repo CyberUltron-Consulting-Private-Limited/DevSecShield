@@ -388,6 +388,12 @@ def test_registry_is_the_iana_registry_and_openssl_names():
     assert R.suite_code("(NONE)") is None and R.suite_code(None) is None
 
 
+def test_registry_groups_are_algid_groups():
+    from zs_scan_node import algid_tables as A
+
+    assert R.GROUP_NAMES == dict(A.TLS_GROUPS)  # two tables from the same IANA registry agree code for code
+
+
 def test_weak_classes_over_the_registry_are_the_node_rules():
     for label, table in (("obsolete", T.OBSOLETE), ("static_rsa", T.STATIC_RSA), ("cbc", T.CBC_FS), ("dhe", T.DHE_SUITES)):
         assert sorted(c for c, n in T.CIPHERS.items() if label in E.suite_classes(n)) == sorted(table), label
