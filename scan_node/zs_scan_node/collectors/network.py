@@ -412,7 +412,8 @@ class NetworkScan:
         return "ok", None, assets
 
     def _ssh_slot(self, ip: str) -> None:
-        """Pace and count unauthenticated SSH connections per address (PerSourcePenalties); raises sshprobe.Stop."""
+        """Count one more unauthenticated SSH connection to ``ip`` (PerSourcePenalties budget); raises sshprobe.Stop
+        when the address's budget is used up or the server refused an earlier connection."""
         with self._ssh_lock:
             st = self._ssh_addr.setdefault(ip, {"next": 0.0, "used": 0, "refused": None})
             if st["refused"]:
@@ -420,11 +421,19 @@ class NetworkScan:
             if st["used"] >= SSH_MAX_CONNECTIONS_PER_ADDRESS:
                 raise S.Stop(f"budget: {SSH_MAX_CONNECTIONS_PER_ADDRESS} SSH connections per address per scan")
             st["used"] += 1
-            now = time.monotonic()
-            wait = st["next"] - now
-            st["next"] = max(st["next"], now) + SSH_SPACING_S
-        if wait > 0 and self.ctx.cancel.wait(wait):
-            raise S.Stop("skipped_cancelled")
+
+    def _ssh_pace(self, ip: str) -> None:
+        """Wait until SSH_SPACING_S after the last SSH connection to ``ip`` (any port), right before connecting."""
+        while True:
+            with self._ssh_lock:
+                st = self._ssh_addr.setdefault(ip, {"next": 0.0, "used": 0, "refused": None})
+                now = time.monotonic()
+                if now >= st["next"]:
+                    st["next"] = now + SSH_SPACING_S
+                    return
+                wait = st["next"] - now
+            if self.ctx.cancel.wait(wait):
+                raise S.Stop("skipped_cancelled")
 
     def _ssh_refused(self, ip: str, why: str) -> None:
         with self._ssh_lock:
@@ -443,6 +452,7 @@ class NetworkScan:
             gate = self._gate(ep.ip)  # stop-all, never-scan (live), deadline, the node's rate limiter
             if gate:
                 raise S.Stop(gate)
+            self._ssh_pace(ep.ip)
             try:
                 return _tcp(ep.ip, ep.port, self.ctx.never_scan, 3.0)
             except Blocked:

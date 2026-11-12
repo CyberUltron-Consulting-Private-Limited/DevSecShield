@@ -228,8 +228,8 @@ _SSH_WEAK = (
 )
 # Rules that read one algorithm list only: a ``none`` MAC is not a cipher (names: IANA SSH parameters).
 _SSH_WEAK_IN_LIST = (
-    ("ciphers", re.compile(r"^none$", re.I), "SSH_WEAK_CIPHER", "High", "broken SSH ciphers"),
-    ("macs", re.compile(r"^none$", re.I), "SSH_WEAK_MAC", "Medium", "weak or truncated SSH MACs"),
+    ("ciphers", re.compile(r"^none$", re.IGNORECASE), "SSH_WEAK_CIPHER", "High", "broken SSH ciphers"),
+    ("macs", re.compile(r"^none$", re.IGNORECASE), "SSH_WEAK_MAC", "Medium", "weak or truncated SSH MACs"),
 )
 _SSH_LISTS = {"ciphers": ("ciphers",), "macs": ("macs",), "kex": ("kex", "kexalgorithms"),
               "hostkey": ("hostkey_algorithms", "hostkeyalgorithms")}

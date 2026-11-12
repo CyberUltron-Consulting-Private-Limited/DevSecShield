@@ -7,13 +7,13 @@ raise RSA_LT_2048) and from the IANA / OpenSSH algorithm names, never from the c
 from __future__ import annotations
 
 import datetime as dt
+from types import SimpleNamespace
 
 import pytest
-
 from backend.utilities.cbom_sources.classify import classify
 from backend.utilities.cbom_sources.drift import job_gaps
 
-NOW = dt.datetime(2026, 11, 12, 12, 0, 0)
+NOW = dt.datetime(2026, 11, 12, 12, 0, 0, tzinfo=dt.timezone.utc).replace(tzinfo=None)  # classify works in naive UTC
 
 
 def _ssh(**facts):
@@ -113,12 +113,9 @@ def test_old_nodes_single_host_key_is_still_judged():
 def test_unread_host_keys_coverage_row_keeps_earlier_findings_not_read():
     """The node's coverage row for unread families is scoped to the endpoint and marked incomplete: drift treats the
     listed endpoint's vanished findings as "not read", never resolved."""
-
-    class Row:
-        asset_type, target = "coverage", "10.0.0.5"
-        facts = {"check": "ssh host keys 10.0.0.5:22", "status": "truncated", "detail": "SSH 10.0.0.5:22: host keys "
-                 "not read (rsa-sha2-512): budget", "scope": ["10.0.0.5:22"], "incomplete": True}
-
-    [gap] = job_gaps([Row()])
+    row = SimpleNamespace(asset_type="coverage", target="10.0.0.5", facts={
+        "check": "ssh host keys 10.0.0.5:22", "status": "truncated", "scope": ["10.0.0.5:22"], "incomplete": True,
+        "detail": "SSH 10.0.0.5:22: host keys not read (rsa-sha2-512): budget"})
+    [gap] = job_gaps([row])
     assert gap.target == "10.0.0.5" and gap.prefixes == ("10.0.0.5:22",) and gap.incomplete is True
     assert gap.reason.startswith("SSH 10.0.0.5:22: host keys not read")

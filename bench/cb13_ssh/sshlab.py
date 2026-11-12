@@ -86,6 +86,13 @@ def up(out: Path) -> None:
     if not ca.exists():
         sh("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "cb13-host-ca", "-f", str(ca))
     ca_bits, ca_fp = _fp(Path(f"{ca}.pub"))
+    # the scan node's own key (collect.py --state-dir DIR/node reads DIR/node/id_ed25519), authorised for zs-cbom
+    node = out / "node" / "id_ed25519"
+    node.parent.mkdir(exist_ok=True)
+    node.parent.chmod(0o777)  # the node container runs as uid 10001
+    if not node.exists():
+        sh("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "cb13-node", "-f", str(node))
+    node.chmod(0o644)
     oracle = {"generated_by": "bench/cb13_ssh/sshlab.py", "ssh_keygen": sh("ssh", "-V", check=False) or "",
               "ca": {"type": "ssh-ed25519", "bits": ca_bits, "fingerprint": ca_fp}, "targets": []}
     for t in TARGETS:
@@ -122,6 +129,7 @@ def up(out: Path) -> None:
                  f"Ciphers {','.join(t['ciphers'])}", f"MACs {','.join(t['macs'])}"]
         (d / "sshd_config").write_text("\n".join(lines) + "\n")
         (d / "role.env").write_text(f"TARGET=cb13-{t['id']}\nROLE=sshd\nPORT=22\n")
+        (d / "authorized_keys").write_text(Path(f"{node}.pub").read_text())
         # Host key algorithms the server can actually offer: the configured ones it holds a key (or certificate) for
         held = {k["type"] for k in keys}
         offered = []
