@@ -5,9 +5,13 @@ conventions (``backend/utilities/cbom_sources/http.py``): members only, another 
 in-team refusals are a 400 (never a 403, which signs the user out of the frontend), stale forms get a 409, validation
 errors are a 400 that never echoes input.  Every route declares ``openapi_extra={"x-zs-permission": ...}``.
 
-Rules every part's router follows (``test_cbom_fleet_scaffold`` checks every route of this aggregator, flags on):
-* team routes take ``ctx: Member`` (``fleet/http.py``): authentication is a dependency that runs after the rate
-  limiter, never only an ``authorize()`` call in the handler body;
+Rules every part's router follows (``test_cbom_fleet_scaffold`` checks, with every flag on, every route of this
+aggregator and every route under ``FLEET`` whichever router registered it, as ``backend.main.app`` serves them):
+* team routes live under ``FLEET``; the only other path a part may add is F1.4's scan-node route ``/cbom/node/...``;
+* team routes take ``ctx: Member`` (``fleet/http.py``): authentication is a dependency that runs right after the rate
+  limiter, with nothing else before it, never only an ``authorize()`` call in the handler body; large bodies are
+  read in the handler (``fleet/http.py``, "Bodies");
+* every fleet URL reaches the route that was checked: no earlier route's template may capture it;
 * the route class is a ``CbomRoute`` behind the part's flag (``fleet/flags.py``, ``flagged_route(...)``), so a route
   whose flag is off does not exist (404) and a bad body is a readable 400, never a 422 that echoes the input.
   ``GET /fleet/status`` is the one unflagged route, so the frontend can hide what is off.
