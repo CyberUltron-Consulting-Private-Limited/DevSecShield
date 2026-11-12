@@ -17,6 +17,13 @@ assert.equal(accountPath("13"), "/13/account")
 assert.equal(accountPath(undefined), "/home/account", "outside a team")
 assert.equal(accountPath(""), "/home/account")
 assert.equal(accountPath(["13"]), "/home/account", "a catch-all segment is not a team")
+// team ids are integers (backend/new_models.py Team.id): anything else is not a team, and never becomes part of the
+// link. Next 16 passes useParams() the segment still percent-encoded; if a later release decoded it, "%5C" would turn
+// into a backslash, and "/\evil.example/account" resolves to another origin (security review of PR #30).
+for (const segment of ["%5Cevil.example", "\\evil.example", "/evil.example", "%2F%2Fevil.example", "13abc", "1 3", " 13", "-1", "1e3", "0x1"]) {
+  assert.equal(accountPath(segment), "/home/account", `not a team id: ${JSON.stringify(segment)}`)
+}
+assert.equal(accountPath("4096"), "/4096/account")
 
 const root = path.join(__dirname, "..")
 const read = (rel: string) => fs.readFileSync(path.join(root, rel), "utf8")
