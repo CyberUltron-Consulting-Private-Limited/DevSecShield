@@ -71,10 +71,11 @@ gate() {
   # the lab is a singleton (cbom-e2e-net, cbom-e2e-*): hold its lock from up to down (INTERFACES.md v3)
   exec 9> "$LOCKS/cbom-lab.lock"
   flock 9
+  mkdir -p "$RUN/steps/lab"
   if [ -f "$gen" ]; then
     log "lab up ($gen)"
-    python3 "$gen" up --run-dir "$RUN" > "$RUN/lab/gen-up.log" 2>&1 || log "lab up failed (exit $?); see lab/gen-up.log"
-    python3 "$gen" selfcheck --run-dir "$RUN" > "$RUN/lab/selfcheck.log" 2>&1 || log "lab self-check disagreed (exit $?)"
+    python3 "$gen" up --run-dir "$RUN" > "$RUN/steps/lab/gen-up.log" 2>&1 || log "lab up failed (exit $?); see steps/lab/gen-up.log"
+    python3 "$gen" selfcheck --run-dir "$RUN" > "$RUN/steps/lab/selfcheck.log" 2>&1 || log "lab self-check disagreed (exit $?)"
   else
     log "no lab at $gen: lab rows will be NOT-RUN"
   fi
@@ -102,7 +103,7 @@ gate() {
   vol=$(python3 -c "import json,sys; print((json.load(open(sys.argv[1])).get('node') or {}).get('volume') or '')" "$RUN/flow-state.json" 2>/dev/null || true)
   [ -n "$node" ] && docker rm -f "$node" > /dev/null 2>&1 || true
   [ -n "$vol" ] && docker volume rm "$vol" > /dev/null 2>&1 || true
-  [ -f "$gen" ] && { python3 "$gen" down --run-dir "$RUN" > "$RUN/lab/gen-down.log" 2>&1 || log "lab down failed"; }
+  [ -f "$gen" ] && { python3 "$gen" down --run-dir "$RUN" > "$RUN/steps/lab/gen-down.log" 2>&1 || log "lab down failed"; }
   flock -u 9
   python3 -m harness.bundle seal "$RUN" --secrets-file "$SECRETS" --started "$started"
   log "judge"

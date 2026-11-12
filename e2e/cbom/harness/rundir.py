@@ -16,7 +16,8 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-SUBDIRS = ("oracle", "lab", "steps", "har", "ui", "api", "db", "exports", "logs", "diff")
+# oracle/ and lab/ belong to the lab generator (CB-02), which creates them with its own owner and modes
+SUBDIRS = ("steps", "har", "ui", "api", "db", "exports", "logs", "diff")
 RUN_NAME = re.compile(r"^(?P<tier>[LASV])-(?P<sha>[0-9a-f]{7,40})-(?P<utc>\d{8}T\d{6}Z)$")
 
 
