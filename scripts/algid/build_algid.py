@@ -495,8 +495,13 @@ def build_pkcs11(t: Tables, extract: bytes) -> None:
         for ckp, row in sets.items():
             if ckp not in params or row not in t.algs:
                 raise SourceError(f"PKCS#11 parameter set {ckp} -> {row!r}: not in the header or not a row")
+            if not ckp.startswith(f"CKP_{ckk[4:]}_"):
+                raise SourceError(f"PKCS#11 parameter set {ckp} listed under {ckk}")
             out[params[ckp]] = row
         t.pkcs11_parameter_sets[key_types[ckk]] = out
+    listed = {ckp for sets in c["parameter_sets"].values() for ckp in sets}
+    if listed != set(params):  # a new CKP_* (a new ML-DSA/SLH-DSA/ML-KEM set) must be mapped, not read as the family
+        raise SourceError(f"PKCS#11 parameter sets differ from the header: {sorted(listed ^ set(params))}")
 
 
 def build_jose(t: Tables, key_types: bytes, curves: bytes, algs: bytes) -> None:
@@ -505,10 +510,8 @@ def build_jose(t: Tables, key_types: bytes, curves: bytes, algs: bytes) -> None:
     t.jose_key_types = tuple(kty)
     t.jose_kty = _mapped(t, "jose.kty", c["kty"], kty)
     t.jose_crv = _mapped(t, "jose.crv", c["crv"], [r["Curve Name"] for r in _csv(curves)])
-    registered = {r["Algorithm Name"] for r in _csv(algs)}
-    if set(c["alg"]) - registered:
-        raise SourceError(f"jose.alg not in the registry: {sorted(set(c['alg']) - registered)}")
-    t.jose_alg = _mapped(t, "jose.alg", c["alg"], list(c["alg"]))
+    # every registered alg, as for kty and crv: the ones that name a key's algorithm mapped, the rest null
+    t.jose_alg = _mapped(t, "jose.alg", c["alg"], [r["Algorithm Name"] for r in _csv(algs)])
 
 
 def build_openssl_text(t: Tables, *captures: bytes) -> None:

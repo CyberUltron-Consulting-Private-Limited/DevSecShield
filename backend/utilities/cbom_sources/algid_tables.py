@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
-SOURCES_SHA256 = "1366e8556dd3eabd60347440345199647be1ea105f7cce8e928d5b2b7e4fc3d8"
+SOURCES_SHA256 = "90f2404a05f3517c749462843e6cb69092ff99a8dbcab7cfa4fd1b98aea85ab4"
 
 # canonical name -> (family_label, primitive, standard, status, parameter_set,
 #                    nist_category, construction, quantum, key_size, components)
@@ -182,6 +182,10 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
     "GOST 28147-89": (
         None, "block-cipher", None, "standard", None, None, "classical", None, 256, (),
     ),
+    "GOST R 34.10": (
+        "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
+        None, (),
+    ),
     "GOST R 34.10-2012": (
         "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
         None, (),
@@ -201,6 +205,9 @@ ALGS: Mapping[str, tuple[Any, ...]] = MappingProxyType({
     "GOST R 34.10-2012-512": (
         "EC", "signature", None, "standard", None, None, "classical", "vulnerable",
         512, (),
+    ),
+    "GOST R 34.11": (
+        None, "hash", None, "standard", None, None, "classical", None, None, (),
     ),
     "GOST R 34.11-2012": (
         None, "hash", None, "standard", None, None, "classical", None, None, (),
@@ -2133,10 +2140,10 @@ ALIASES: Mapping[str, str] = MappingProxyType({
     "gc512c": "GC512C",
     "gost28147": "GOST 28147-89",
     "gost2814789": "GOST 28147-89",
-    "gost3410": "GOST R 34.10-2012",
+    "gost3410": "GOST R 34.10",
     "gost34102012256": "GOST R 34.10-2012-256",
     "gost34102012512": "GOST R 34.10-2012-512",
-    "gostr3410": "GOST R 34.10-2012",
+    "gostr3410": "GOST R 34.10",
     "gostr34102012": "GOST R 34.10-2012",
     "gostr34102012256": "GOST R 34.10-2012-256",
     "gostr34102012256a": "gostr34102012_256a",
@@ -2153,7 +2160,7 @@ ALIASES: Mapping[str, str] = MappingProxyType({
         "GOST R 34.10-2012 with GOST R 34.11-2012 (256 bit)",
     "gostr34102012withgostr34112012512bit":
         "GOST R 34.10-2012 with GOST R 34.11-2012 (512 bit)",
-    "gostr3411": "GOST R 34.11-2012",
+    "gostr3411": "GOST R 34.11",
     "gostr34112012": "GOST R 34.11-2012",
     "gostr34132015": "GOST R 34.13-2015",
     "gsscurve25519sha256": "gss-curve25519-sha256-*",
@@ -2401,8 +2408,8 @@ GCP: Mapping[str, str] = MappingProxyType({
     "HMAC_SHA256": "HMAC-SHA256",
     "HMAC_SHA384": "HMAC-SHA384",
     "HMAC_SHA512": "HMAC-SHA512",
-    "KEM_ECDH_P256": "P-256",
-    "KEM_ECDH_P384": "P-384",
+    "KEM_ECDH_P256": "secp256r1",
+    "KEM_ECDH_P384": "secp384r1",
     "KEM_XWING": "X-Wing",
     "ML_KEM_1024": "ML-KEM-1024",
     "ML_KEM_768": "ML-KEM-768",
@@ -2511,8 +2518,8 @@ PKCS11_KEY_TYPES: Mapping[int, str] = MappingProxyType({
     0x002C: "HMAC-SHA384",
     0x002D: "HMAC-SHA512",
     0x002E: "HMAC-SHA224",
-    0x0030: "GOST R 34.10-2012",
-    0x0031: "GOST R 34.11-2012",
+    0x0030: "GOST R 34.10",
+    0x0031: "GOST R 34.11",
     0x0032: "GOST 28147-89",
     0x0040: "EdDSA",
     0x0041: "XDH",

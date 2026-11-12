@@ -78,6 +78,14 @@ _JOSE_KEY_TYPES: tuple[str, ...] = _t.JOSE_KEY_TYPES
 _JOSE_KTY: Mapping[str, str] = _t.JOSE_KTY
 _JOSE_CRV: Mapping[str, str] = _t.JOSE_CRV
 _JOSE_ALG: Mapping[str, str] = _t.JOSE_ALG
+# The families a crv or alg may name for each JWK key type (RFC 7518 s6, RFC 8037,
+# RFC 9964); oct (symmetric) has none.
+_JOSE_FAMILIES: Mapping[str, frozenset[str]] = MappingProxyType({
+    "RSA": frozenset({"RSA"}),
+    "EC": frozenset({"EC", "ECDSA"}),
+    "OKP": frozenset({"ED25519", "ED448", "X25519", "X448", "EDDSA"}),
+    "AKP": frozenset({"PQ"}),
+})
 _OID_PREFIXES: tuple[tuple[str, str, str | None], ...] = _t.OID_PREFIXES
 _GREASE: tuple[int, ...] = _t.GREASE
 _PQ_MARKERS: tuple[str, ...] = _t.PQ_MARKERS
@@ -412,15 +420,18 @@ def pkcs11_key_type(key_type: int, parameter_set: int | None = None) -> Identity
 
 
 def jose(kty: object, alg: object = None, crv: object = None) -> Identity | None:
-    """A JSON Web Key's algorithm: ``kty`` must be a registered key type; its ``crv``
-    (EC, OKP) or ``alg`` names the key when given (an AKP key, RFC 9964, is named by its
-    alg: ML-DSA-44/65/87), else the key type alone (EC, RSA). A symmetric ``oct`` key,
-    or an OKP/AKP key without crv/alg, gives None."""
+    """A JSON Web Key's algorithm. ``kty`` (REQUIRED, RFC 7517 s4.1) must be a
+    registered key type and decides the family; ``crv`` (EC, OKP), else ``alg``
+    (OPTIONAL, only the intended use), refines it when its family fits the key type:
+    an AKP key (RFC 9964) is named by its alg, ML-DSA-44/65/87. A crv or alg of another
+    family is ignored (an RSA key with alg ML-DSA-65 is RSA), so the key type alone
+    answers: EC, RSA, or None for a symmetric ``oct`` key and an OKP/AKP key."""
     if not isinstance(kty, str) or kty not in _JOSE_KEY_TYPES:
         return None
+    fits = _JOSE_FAMILIES.get(kty, frozenset())
     for table, member in ((_JOSE_CRV, crv), (_JOSE_ALG, alg)):
         name = table.get(member) if isinstance(member, str) else None
-        if name:
+        if name and _ALGS[name][0] in fits:
             return _identity(name, "enum")
     name = _JOSE_KTY.get(kty)
     return _identity(name, "enum") if name else None
