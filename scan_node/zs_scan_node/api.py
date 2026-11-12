@@ -260,6 +260,11 @@ class Api:
         return self.call("POST", f"/cbom/node/jobs/{job_id}/result", body, job=f"{job_id}/{attempt}",
                          lease_sensitive=True)[1] or {}
 
+    def ssh_cert(self, job_id: int, attempt: int, lease_id: str) -> dict:
+        """A fresh SSH CA certificate for this node's own key, for a job it holds (F1.4)."""
+        return self.call("POST", f"/cbom/node/jobs/{job_id}/ssh-cert", {"lease_id": lease_id}, job=f"{job_id}/{attempt}",
+                         retries=2, lease_sensitive=True)[1] or {}
+
 
 def _detail(r: httpx.Response) -> str:
     try:
