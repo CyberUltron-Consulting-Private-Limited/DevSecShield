@@ -32,15 +32,19 @@ USERS = [
 ]
 
 
+HTTP = requests.Session()
+HTTP.trust_env = False  # a lab on loopback: never through the environment's proxy
+
+
 def admin_token(base: str, password: str) -> str:
-    r = requests.post(f"{base}/realms/master/protocol/openid-connect/token", timeout=30, data={
+    r = HTTP.post(f"{base}/realms/master/protocol/openid-connect/token", timeout=30, data={
         "grant_type": "password", "client_id": "admin-cli", "username": "admin", "password": password})
     r.raise_for_status()
     return r.json()["access_token"]
 
 
 def call(base: str, token: str, method: str, path: str, **kw):
-    r = requests.request(method, f"{base}/admin{path}", headers={"Authorization": f"Bearer {token}"}, timeout=30, **kw)
+    r = HTTP.request(method, f"{base}/admin{path}", headers={"Authorization": f"Bearer {token}"}, timeout=30, **kw)
     if r.status_code >= 400 and not (method == "DELETE" and r.status_code == 404):
         raise RuntimeError(f"{method} {path}: {r.status_code} {r.text[:300]}")
     return r
@@ -72,7 +76,9 @@ def setup(args) -> int:
     make_realm(base, token, REALM_SAML, users)
     descriptor = call(base, token, "GET", f"/realms/{REALM_SAML}/keys").json()
     cert = next(k["certificate"] for k in descriptor["keys"] if k.get("algorithm") == "RS256" and k.get("certificate"))
-    sp_entity = args.sp_entity_id or f"{api}/sso/saml"
+    if not args.team_id:
+        raise SystemExit("--team-id is required: the SAML client's entity id and ACS URL name the team")
+    sp_entity = args.sp_entity_id or f"{api}/sso/{args.team_id}/saml"  # service.saml_sp_entity_id
     call(base, token, "POST", f"/realms/{REALM_SAML}/clients", json={
         "clientId": sp_entity, "enabled": True, "protocol": "saml", "frontchannelLogout": False,
         "redirectUris": [f"{api}/sso/*"], "adminUrl": "",
@@ -80,7 +86,7 @@ def setup(args) -> int:
             "saml.authnstatement": "true", "saml.server.signature": "true", "saml.assertion.signature": "true",
             "saml.client.signature": "false", "saml.encrypt": "false", "saml.signature.algorithm": "RSA_SHA256",
             "saml_force_name_id_format": "true", "saml_name_id_format": "email",
-            "saml_assertion_consumer_url_post": f"{api}/sso/{args.team_id}/saml/acs" if args.team_id else "",
+            "saml_assertion_consumer_url_post": f"{api}/sso/{args.team_id}/saml/acs",
             "post.logout.redirect.uris": "",
         }})
     out = {
