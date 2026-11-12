@@ -21,7 +21,7 @@ from zs_scan_node.transports import control
 from zs_scan_node.transports import zsdoc
 from zs_scan_node.transports.base import (CollectOptions, CollectTarget, TargetResult, TransportCredential,
                                           TransportError)
-from zs_scan_node.transports.wrappers import salt_args
+from zs_scan_node.transports.wrappers import host_timeout, salt_args
 
 WHAT = "salt-api"
 SCRIPT = "salt://zeroshield/zs-collect-run.sh"
@@ -29,6 +29,7 @@ STATE = "zeroshield.zs_collect"
 POLL_S = 3.0
 DEFAULT_BATCH = 50
 MAX_BATCH = 500
+MAX_SSH_BATCH = 100  # salt-ssh: one synchronous request per batch, ~80 MB of master memory per concurrent process
 NO_RETURN = ("minion did not return", "no response", "not connected")
 
 
@@ -95,8 +96,9 @@ class SaltTransport:
         mode = str(cfg.get("mode") or "cmd")
         if mode not in ("cmd", "state"):
             raise TransportError("error", f"salt mode {mode} is not supported (cmd, state)")
-        size = max(1, min(int(cfg.get("batch_size") or DEFAULT_BATCH), MAX_BATCH))
-        timeout = int(cfg.get("timeout_s") or 300)
+        size = max(1, min(int(cfg.get("batch_size") or DEFAULT_BATCH), MAX_SSH_BATCH if client == "ssh" else MAX_BATCH))
+        # salt's own wait for the script covers zs-collect's per-host timeout (and its command slack)
+        timeout = max(int(cfg.get("timeout_s") or 300), host_timeout(options) + 60)
         http = self._login(credential)  # already used for /login: closed in the finally below, not a with block
         try:
             for start in range(0, len(targets), size):
@@ -129,9 +131,10 @@ class SaltTransport:
         tier = int(options.tier)
         if mode == "state":
             fun, arg = "state.apply", [STATE]
-            kwarg: dict[str, Any] = {"pillar": {"zs_nonce": options.run_nonce, "zs_tier": tier}}
+            kwarg: dict[str, Any] = {"pillar": {"zs_nonce": options.run_nonce, "zs_tier": tier,
+                                                "zs_timeout_s": host_timeout(options)}}
         else:
-            fun, arg = "cmd.script", [SCRIPT, salt_args(options.run_nonce, tier)]
+            fun, arg = "cmd.script", [SCRIPT, salt_args(options.run_nonce, tier, timeout_s=host_timeout(options))]
             kwarg = {"timeout": timeout}
         low: dict[str, Any] = {"client": client, "tgt": [t.handle for t in batch], "tgt_type": "list", "fun": fun,
                                "arg": arg, "kwarg": kwarg}
@@ -142,6 +145,8 @@ class SaltTransport:
 
     def _async(self, http, low: dict[str, Any], batch: list[CollectTarget], options: CollectOptions,
                timeout: int) -> dict[str, Any]:
+        """Start the job, poll which minions have returned (a cheap status), then fetch the returns once: the full
+        lookup carries every minion's whole document (35-130 KB each), so it is not repeated on every poll."""
         started = self._post(http, low)
         jid = (started or {}).get("jid") if isinstance(started, dict) else None
         if not jid:
@@ -149,23 +154,38 @@ class SaltTransport:
         expected = {t.handle for t in batch}
         self.log("salt job started", jid=jid, minions=len(expected))
         until = min(options.deadline, time.monotonic() + timeout + self.grace_s)
-        got: dict[str, Any] = {}
-        while True:
-            resp = control.request(http, "GET", f"/jobs/{jid}", WHAT)
-            control.raise_for_auth(resp, WHAT)
-            if resp.status_code >= 400:  # e.g. the runner client is not enabled: waiting would not help
-                raise TransportError("error", f"salt-api could not look up job {jid} ({resp.status_code}): enable the "
-                                              "'runner' client (netapi_enable_clients) and '@jobs' for this account")
-            if resp.status_code < 400:
-                try:
-                    ret = resp.json()["return"][0]
-                except (ValueError, KeyError, IndexError, TypeError):
-                    ret = {}
-                if isinstance(ret, dict):
-                    got.update({k: v for k, v in ret.items() if k in expected})
-            if expected <= set(got) or options.should_stop() or time.monotonic() >= until:
-                return got
+        while not (expected <= self._returned(http, jid, expected) or options.should_stop()
+                   or time.monotonic() >= until):
             time.sleep(self.poll_s)
+        return self._returns(http, jid, expected)
+
+    def _returned(self, http, jid: str, expected: set[str]) -> set[str]:
+        """The minions whose return is in the job cache: the runner's ``jobs.exit_success`` answers minion -> bool
+        (the same '@jobs' permission as the job lookup), without the returns themselves."""
+        resp = control.request(http, "POST", "/", WHAT, json=[{"client": "runner", "fun": "jobs.exit_success",
+                                                               "jid": jid}])
+        self._lookup_allowed(resp, jid)
+        try:
+            ret = resp.json()["return"][0]
+        except (ValueError, KeyError, IndexError, TypeError):
+            return set()
+        return {m for m, done in ret.items() if done is True and m in expected} if isinstance(ret, dict) else set()
+
+    def _returns(self, http, jid: str, expected: set[str]) -> dict[str, Any]:
+        resp = control.request(http, "GET", f"/jobs/{jid}", WHAT)
+        self._lookup_allowed(resp, jid)
+        try:
+            ret = resp.json()["return"][0]
+        except (ValueError, KeyError, IndexError, TypeError):
+            return {}
+        return {k: v for k, v in ret.items() if k in expected} if isinstance(ret, dict) else {}
+
+    @staticmethod
+    def _lookup_allowed(resp, jid: str) -> None:
+        control.raise_for_auth(resp, WHAT)
+        if resp.status_code >= 400:  # e.g. the runner client is not enabled: waiting would not help
+            raise TransportError("error", f"salt-api could not look up job {jid} ({resp.status_code}): enable the "
+                                          "'runner' client (netapi_enable_clients) and '@jobs' for this account")
 
     # ------------------------------------------------------------------ results
     def _result(self, t: CollectTarget, client: str, mode: str, ret: Any, options: CollectOptions) -> TargetResult:

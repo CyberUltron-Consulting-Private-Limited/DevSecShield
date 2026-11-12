@@ -245,6 +245,19 @@ mirrored manifest with `openssl pkeyutl -verify -rawin` when OpenSSL 3 is presen
 zs-collect --nonce run-0123456789abcdef --tier 2 --label 10.0.0.5      # as root: collects as zs-cbom
 ```
 
+Every transport passes the source's per-host timeout as `--timeout-s` (10-3600 s; AWX extra var `zs_timeout_s`, Salt
+pillar `zs_timeout_s` or the `cmd.script` arguments, SSM document parameter `timeout`). A fleet source holds at most
+200 hosts, so one run's assets fit the per-job cap of 50,000.
+
+Salt sizing. With the salt-api `ssh` client (salt-ssh), the master runs up to `ssh_max_procs` salt-ssh processes at
+once, about 80 MB each: 50 of them OOM-killed a 768 MB master in the lab, so give the master about
+512 MB + 80 MB x `ssh_max_procs`. Each batch is one synchronous salt-api request, so keep
+`batch_size / ssh_max_procs x` the per-host time within the transport's `timeout_s`. ZeroShield accepts a salt-ssh
+`batch_size` of at most 100; the default of 50 took about 240 s per batch on a loaded 4-vCPU master. The minion
+clients (`local`, `local_async`) do not load the master this way; `local_async` polls the runner's
+`jobs.exit_success` and fetches the returns once, so the account needs the `runner` client and `@jobs`. The same
+guidance is in the header of the `salt-state` artifact (`zeroshield/zs_collect.sls`).
+
 ## Develop and test
 
 ```sh

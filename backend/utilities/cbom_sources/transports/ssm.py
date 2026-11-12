@@ -30,6 +30,7 @@ from typing import Any, Callable, ClassVar, Iterator, Sequence
 from backend.utilities.cbom_sources.transports import zsdoc
 from backend.utilities.cbom_sources.transports.base import (CollectOptions, CollectTarget, TargetResult,
                                                             TransportCredential, TransportError)
+from backend.utilities.cbom_sources.transports.wrappers import host_timeout
 
 BATCH = 50  # SendCommand InstanceIds limit
 POLL_S = 3.0
@@ -177,7 +178,7 @@ class SsmTransport:
         kw: dict[str, Any] = {
             "InstanceIds": [t.handle for t in ready], "DocumentName": document,
             "Parameters": {"nonce": [options.run_nonce], "tier": [str(int(options.tier))],
-                           "output": ["json" if bucket else "chunks"]},
+                           "timeout": [str(host_timeout(options))], "output": ["json" if bucket else "chunks"]},
             # SSM never starts an instance still waiting for its wave when this runs out, and calls it
             # DeliveryTimedOut: past the wait (plus a margin), so a healthy instance is never reported unreachable
             "TimeoutSeconds": max(30, min(MAX_TIMEOUT_SECONDS, math.ceil(wait_s) + DELIVERY_MARGIN_S)),

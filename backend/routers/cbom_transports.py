@@ -14,7 +14,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import func
 from sqlmodel import Session, select
 
@@ -70,6 +70,9 @@ class AwxConfig(_Strict):
         return check_pem_certificates(v)
 
 
+MAX_SALT_SSH_BATCH = 100  # scan_node transports/salt.py MAX_SSH_BATCH
+
+
 class SaltConfig(_Strict):
     base_url: str = Field(max_length=512)
     eauth: str = Field(default="pam", pattern=r"^[a-z_]{2,32}$")
@@ -89,6 +92,16 @@ class SaltConfig(_Strict):
     @classmethod
     def _ca(cls, v: str | None) -> str | None:
         return check_pem_certificates(v)
+
+    @model_validator(mode="after")
+    def _ssh_batch(self) -> "SaltConfig":
+        # salt-ssh runs a batch as ONE synchronous salt-api request, with ~80 MB of master memory per concurrent
+        # salt-ssh process: 500 hosts outran the request timeout and 50 processes OOM-killed a 768 MB master in the
+        # lab; 50 (the default) passed at about 240 s per batch.  Minion clients are not limited this way.
+        if self.client == "ssh" and self.batch_size > MAX_SALT_SSH_BATCH:
+            raise ValueError(f"batch_size must be at most {MAX_SALT_SSH_BATCH} with client ssh (one salt-api request "
+                             "per batch; see the salt-state artifact for master sizing)")
+        return self
 
 
 class SsmConfig(_Strict):

@@ -8,7 +8,7 @@ One launch per batch of hosts:
 1. ``GET  /api/v2/job_templates/<id>/launch/``: the template must prompt on launch for Limit and for Variables; a
    template that does not would run on its whole inventory, so it is refused before anything is launched.
 2. ``POST /api/v2/job_templates/<id>/launch/`` with ``limit`` = the batch's AWX host names and ``extra_vars``
-   ``zs_nonce`` and ``zs_tier``.  If AWX still reports ``limit`` or ``extra_vars`` as ignored, the job is cancelled.
+   ``zs_nonce``, ``zs_tier`` and ``zs_timeout_s`` (the source's per-host timeout, passed to zs-collect).  If AWX still reports ``limit`` or ``extra_vars`` as ignored, the job is cancelled.
 3. ``GET  /api/v2/jobs/<id>/`` until it finishes (cancelled at the job deadline or when the run is stopped).
 4. ``GET  /api/v2/jobs/<id>/job_events/`` (paged): per host, the ``debug`` events of the generated playbook
    (``ZSRC <rc> <stderr tail>`` and one ``ZSC1`` chunk per event), unreachable and failed events.  The chunks are
@@ -25,6 +25,7 @@ from zs_scan_node.transports import control
 from zs_scan_node.transports import zsdoc
 from zs_scan_node.transports.base import (CollectOptions, CollectTarget, TargetResult, TransportCredential,
                                           TransportError)
+from zs_scan_node.transports.wrappers import host_timeout
 
 WHAT = "AWX"
 MAX_HOSTS_PER_LAUNCH = 200
@@ -119,7 +120,8 @@ class AwxTransport:
     def _one_launch(self, http, launch: str, batch: Sequence[CollectTarget],
                     options: CollectOptions) -> Iterator[TargetResult]:
         body = {"limit": ",".join(t.handle for t in batch),
-                "extra_vars": {"zs_nonce": options.run_nonce, "zs_tier": int(options.tier)}}
+                "extra_vars": {"zs_nonce": options.run_nonce, "zs_tier": int(options.tier),
+                               "zs_timeout_s": host_timeout(options)}}
         started = self._json(control.request(http, "POST", launch, WHAT, json=body), "the launch")
         job_id = int(started.get("job") or started.get("id") or 0)
         if job_id <= 0:
