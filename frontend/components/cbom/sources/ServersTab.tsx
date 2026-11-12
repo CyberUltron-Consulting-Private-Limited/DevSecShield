@@ -52,6 +52,7 @@ import {
 import { listSshCas } from "@/utils/api/cbom_ssh_ca";
 
 import { cbomSourcesKeys, TERMINAL_JOB } from "./keys";
+import { principalOk } from "./fleet/sshCaLogic";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import {
   ago,
@@ -166,7 +167,7 @@ const TIER2_COMMANDS = [
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const NAME_ERROR = "Use 1-64 letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.";
 const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
-const SSH_PRINCIPAL_RE = /^zs-\d{1,10}-[a-z0-9][a-z0-9._-]{0,47}$/; // F1.4: mirrors sshca/certs.py
+const SSH_PRINCIPAL_RE = /^zs-(0|[1-9]\d{0,9})-[a-z0-9][a-z0-9._-]{0,47}$/; // F1.4: mirrors sshca/certs.py (one spelling)
 const MAX_TARGET_LINES = 1000;
 const MAX_EXCLUSIONS = 2000;
 const READY = new Set(["ready", "ok", "passed"]);
@@ -815,8 +816,9 @@ function ServerForm({
       if (!isAdmin) e.credentialType = "Only a team admin can save a source that uses the SSH CA";
       if (!form.sshCaId) e.sshCaId = "Choose the SSH CA that signs the scan node's certificates";
       const principals = splitList(form.sshPrincipals);
-      if (principals.length === 0 || principals.length > 16 || principals.some((p) => !SSH_PRINCIPAL_RE.test(p)))
-        e.sshPrincipals = `One to 16 principals like zs-${teamId}-prod, as listed in the servers' principals file`;
+      if (principals.length === 0 || principals.length > 16
+        || principals.some((p) => !SSH_PRINCIPAL_RE.test(p) || !principalOk(p, teamId)))
+        e.sshPrincipals = `One to 16 principals of this team like zs-${teamId}-prod, as listed in the servers' principals file`;
       if (splitList(form.sshSourceAddresses).length > 32) e.sshSourceAddresses = "At most 32 addresses";
     }
     // A stored secret survives only while the targets and their identity check stay the same: ask for it here
@@ -1304,14 +1306,15 @@ function ServerForm({
                       placeholder={`zs-${teamId}-prod`} onChange={(e) => set({ sshPrincipals: e.target.value })} />
                   </Field>
                   <Field label="Addresses the servers see the node as" htmlFor="servers-ssh-source-addresses" error={errors.sshSourceAddresses}
-                    hint={`Each certificate only works from these (source-address). Blank: the node's own addresses${selectedNode?.source_ips?.length ? ` (${selectedNode.source_ips.join(", ")})` : ""}; a node in Docker without host networking needs the Docker host's address here.`}>
+                    hint={`Each certificate only works from these (source-address): addresses or networks of /16 or narrower (IPv6 /48). Blank: the node's own addresses${selectedNode?.source_ips?.length ? ` (${selectedNode.source_ips.join(", ")})` : ""}; a node in Docker without host networking needs the Docker host's address here.`}>
                     <Textarea id="servers-ssh-source-addresses" rows={2} className="font-mono text-xs" value={form.sshSourceAddresses}
                       placeholder="10.20.1.15 or 10.20.1.0/28" onChange={(e) => set({ sshSourceAddresses: e.target.value })} />
                   </Field>
                 </div>
                 <p className="text-xs text-zinc-500">
                   Nothing is stored: for every job ZeroShield signs the scan node&apos;s own key for a few minutes (no terminal, forwarding or
-                  agent), and lists each certificate under Fleet &gt; SSH CA. Install the CA&apos;s sshd snippet, trusted keys and revocation list on the servers.
+                  agent), and lists each certificate under Fleet &gt; SSH CA. Install the CA&apos;s sshd snippet and its fetch script on the servers.
+                  Only a team admin can save a source that uses the SSH CA (it decides which servers and groups the team&apos;s CA signs for).
                 </p>
               </div>
             )}
