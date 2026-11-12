@@ -30,6 +30,18 @@ from backend.utilities.cbom_sources import ct_providers as P
 POISON_OID = "1.3.6.1.4.1.11129.2.4.3"  # RFC 6962 precertificate poison extension
 WILDCARD_SPRAWL_THRESHOLD = 3  # more live wildcard certificates than this for one name is sprawl
 DEADLINE_MARGIN_S = 120.0  # stop starting new searches this close to the job's deadline
+
+
+def wait_budget_s() -> float:
+    """How long one job may spend waiting for provider quota (``CBOM_CT_WAIT_BUDGET_S``, default one hour): a job that
+    waits on a small plan would otherwise hold a cloud worker for its whole 8 hours.  The names left are searched
+    first by the next run (``first``)."""
+    import os
+
+    try:
+        return max(float(os.environ.get("CBOM_CT_WAIT_BUDGET_S", "3600")), 0.0)
+    except ValueError:
+        return 3600.0
 CHECK = "Certificate Transparency search"
 _CN = re.compile(r"(?:^|[,/])\s*CN\s*=\s*([^,/+]+)", re.IGNORECASE)
 _O = re.compile(r"(?:^|[,/])\s*O\s*=\s*([^,/+]+)", re.IGNORECASE)
@@ -172,17 +184,24 @@ def _better(old: Cert, new_facts: dict[str, Any]) -> bool:
 def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]], None],
                should_stop: Callable[[], str | None], *, deadline: float | None = None,
                chain: list[Any] | None = None, http: P.CtHttp | None = None, clock: P.Clock | None = None,
-               now: _dt.datetime | None = None, cache: P.AnswerCache | None = None) -> dict[str, Any]:
-    """Search every name, emit the assets, return the job result (targets, counts, summary, provider use)."""
+               now: _dt.datetime | None = None, cache: P.AnswerCache | None = None,
+               first: list[str] | None = None) -> dict[str, Any]:
+    """Search every name, emit the assets, return the job result (targets, counts, summary, provider use).
+    ``first``: names the previous run could not search; they go first, so a quota-bound team is covered over runs."""
     clock = clock or (http.clock if http is not None else P.Clock())
     own_http = http is None and chain is None
     http = http or P.CtHttp(clock=clock)
+    http.heartbeat = should_stop  # a long Retry-After wait keeps renewing the job's lease
     chain = chain if chain is not None else P.build_chain(http)
     now = now or _dt.datetime.utcnow()
     started = clock.monotonic()
     include_sub = bool(cfg.get("include_subdomains", True))
     expected = [str(e) for e in cfg.get("expected_issuers") or [] if isinstance(e, str) and e.strip()]
     names = D.query_set(list(cfg.get("domains") or []), include_sub)
+    if first:
+        pending = set(first)
+        names = [n for n in names if n in pending] + [n for n in names if n not in pending]
+    budget = wait_budget_s()
     certs: dict[str, Cert] = {}
     targets: list[dict[str, Any]] = []
     coverage: list[dict[str, Any]] = []
@@ -198,6 +217,9 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
                     stop_left = reason
                 elif deadline is not None and clock.monotonic() > deadline - DEADLINE_MARGIN_S:
                     stop_left = "the run reached its maximum time"
+                elif http.waited_s > budget:
+                    stop_left = (f"the provider's quota was used up ({int(http.waited_s)} s spent waiting for it); "
+                                 "the next run searches this name first")
             if stop_left is not None:
                 targets.append({"target": name, "status": "skipped", "error": f"Not searched: {stop_left}", "assets": 0,
                                 "duration_ms": 0})
@@ -215,6 +237,10 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
                     break
                 except P.CtError as exc:
                     calls[provider.name] = calls.get(provider.name, 0) + 1
+                    if exc.kind == "stopped":
+                        stop_left = str(exc)
+                        errors.append(f"Not searched: {exc}")
+                        break
                     errors.append(str(exc))
                     if exc.kind == "rate_limited":  # do not ask it again for the other names of this job
                         provider.throttled_until = clock.monotonic() + (exc.retry_after or P.MAX_WAIT_S)
@@ -224,7 +250,7 @@ def collect_ct(cfg: dict[str, Any], label: str, emit: Callable[[dict[str, Any]],
                         break
             ms = int((clock.monotonic() - t0) * 1000)
             if result is None:
-                status = "skipped" if all("rate limit" in e for e in errors) else "error"
+                status = "skipped" if all("rate limit" in e or e.startswith("Not searched") for e in errors) else "error"
                 detail = "; ".join(errors)[:256] or "No provider is configured"
                 targets.append({"target": name, "status": status, "error": detail, "assets": 0, "duration_ms": ms})
                 coverage.append(_gap(label, name, status, detail))

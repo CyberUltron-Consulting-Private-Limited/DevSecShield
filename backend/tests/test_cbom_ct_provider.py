@@ -230,7 +230,21 @@ def test_the_recorded_429_is_waited_for_then_retried():
     clock = FakeClock()
     client = http(replay, clock)
     result = P.CertSpotter(client, rate=fast()).search("zeroshield.ai", True)
-    assert len(result.issuances) == 25 and clock.slept == [348.0] and client.rate_limited == 1
+    assert len(result.issuances) == 25 and sum(clock.slept) == 348.0 and client.rate_limited == 1
+    assert max(clock.slept) <= P.HEARTBEAT_S  # waited in slices: the job's lease is renewed between them
+
+
+def test_a_long_wait_renews_the_lease_and_stops_when_told():
+    status, headers, body = recorded("certspotter_fullquota_10")
+    replay = Replay({("certspotter", "zeroshield.ai"): lambda req: httpx.Response(status, headers=headers, content=body)})
+    clock = FakeClock()
+    client = http(replay, clock)
+    beats = []
+    client.heartbeat = lambda: (beats.append(clock.t), "Stopped at the maximum run time" if len(beats) >= 3 else None)[1]
+    with pytest.raises(P.CtError) as err:
+        P.CertSpotter(client, rate=fast()).search("zeroshield.ai", True)
+    assert err.value.kind == "stopped" and "maximum run time" in str(err.value)
+    assert len(beats) == 3 and clock.slept == [P.HEARTBEAT_S] * 3 and len(replay.calls) == 1
 
 
 def test_a_429_past_the_deadline_or_the_wait_cap_is_not_waited_for():

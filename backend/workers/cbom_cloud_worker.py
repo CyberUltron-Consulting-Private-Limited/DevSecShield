@@ -119,7 +119,7 @@ class _Job:
                 from backend.utilities.cbom_sources.ct_collect import collect_ct
 
                 result = collect_ct(self.source["config"], self.source["name"], self.emit, self.should_stop,
-                                    deadline=self.deadline)
+                                    deadline=self.deadline, first=self._ct_left_over())
                 counts = result.get("counts") or {}
                 if counts.get("total") and not (counts.get("ok") or counts.get("partial")):
                     # nothing was read: fail (and refund) so the last good collection stays the current one
@@ -157,6 +157,22 @@ class _Job:
                 session.rollback()
                 log("cloud job result refused", team=team_id, job=self.job["id"], reason=str(exc.detail)[:120])
         log("cloud job done", team=team_id, job=self.job["id"], status=status, emitted=self.emitted, stored=stored)
+
+    def _ct_left_over(self) -> list[str]:
+        """Names the source's previous CT job could not search (quota, time, errors): this job searches them first."""
+        from sqlmodel import select
+
+        from backend.new_models import CbomCollectionJob
+
+        with Session(self.engine) as session:
+            previous = session.exec(
+                select(CbomCollectionJob).where(CbomCollectionJob.source_id == self.source["id"],
+                                                CbomCollectionJob.kind == "collect",
+                                                CbomCollectionJob.id != self.job["id"],
+                                                CbomCollectionJob.finished_at.is_not(None))  # type: ignore[union-attr]
+                .order_by(CbomCollectionJob.id.desc()).limit(1)).first()  # type: ignore[union-attr]
+        targets = ((previous.result or {}).get("targets") if previous is not None else None) or []
+        return [str(t.get("target")) for t in targets if isinstance(t, dict) and t.get("status") in ("skipped", "error")]
 
     def _aws(self) -> dict[str, Any]:
         from backend.utilities.cbom_sources.aws_collect import AwsCollectError, collect_aws

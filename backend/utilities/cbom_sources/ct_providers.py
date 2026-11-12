@@ -30,7 +30,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlencode, urlsplit
 
 import httpx
@@ -46,7 +46,8 @@ MAX_RETRIES = 2  # 5xx, timeouts and non-JSON bodies
 MAX_RATE_RETRIES = 4  # 429 / rate_limited
 BACKOFF_BASE_S = 2.0
 BACKOFF_CAP_S = 60.0
-MAX_WAIT_S = 900.0  # a single wait longer than this is not waited for: the provider is "throttled"
+MAX_WAIT_S = 3_700.0  # a single wait longer than this is not waited for (Cert Spotter quotas are per hour)
+HEARTBEAT_S = 30.0  # a long wait is cut into slices; after each one the job's lease is renewed (``heartbeat``)
 TIMEOUT = httpx.Timeout(90.0, connect=15.0)
 _AUTH_CODES = frozenset({"bad_credentials", "unauthorized", "payment_required", "disabled_credentials",
                          "not_allowed_by_plan"})
@@ -58,7 +59,7 @@ class CtError(Exception):
 
     kind: ``refused`` (the provider rejected the query: no retry, no fallback), ``auth`` (the key was refused),
     ``rate_limited`` (quota spent; ``retry_after`` seconds when known), ``unavailable`` (5xx, timeouts, network),
-    ``malformed`` (an answer that is not the documented JSON)."""
+    ``malformed`` (an answer that is not the documented JSON), ``stopped`` (the job was told to stop while waiting)."""
 
     def __init__(self, kind: str, message: str, retry_after: float | None = None):
         self.kind, self.retry_after = kind, retry_after
@@ -259,6 +260,8 @@ class CtHttp:
         self.requests = 0
         self.waited_s = 0.0
         self.rate_limited = 0
+        # called between slices of a long wait: renews the job's lease (cloud worker ``should_stop``); a reason stops
+        self.heartbeat: Callable[[], str | None] | None = None
 
     def close(self) -> None:
         self._client.close()
@@ -320,8 +323,15 @@ class CtHttp:
     def _wait(self, seconds: float, deadline: float | None, what: str) -> None:
         if not self._fits(seconds, deadline):
             raise CtError("unavailable", f"{what} kept failing and the run's time ran out")
-        self.clock.sleep(seconds)
-        self.waited_s += seconds
+        left = seconds
+        while left > 0:
+            step = min(left, HEARTBEAT_S)
+            self.clock.sleep(step)
+            self.waited_s += step
+            left -= step
+            reason = self.heartbeat() if self.heartbeat is not None and left > 0 else None
+            if reason:
+                raise CtError("stopped", reason)
 
 
 def json_list(answer: Response, what: str) -> list[Any]:

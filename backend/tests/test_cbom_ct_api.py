@@ -203,6 +203,21 @@ def test_a_run_that_reads_no_domain_fails_and_is_refunded(api):
     assert job.refunded and run.credits_refunded_c == run.credits_charged_c == 20 and team.credit_balance == 1000.0
 
 
+def test_the_next_run_searches_first_what_the_last_run_could_not(api):
+    status, headers, body = recorded("crtsh_reliability_00")
+    api.replay.override[("certspotter", "zeroshield.ai")] = lambda r: httpx.Response(status, headers=headers, content=body)
+    api.replay.override[("crtsh", "zeroshield.ai")] = lambda r: httpx.Response(status, headers=headers, content=body)
+    assert _ct(api, ["zeroshield.ai", "example.com"]).status_code == 201
+    first = _run(api, "ct-order-01")
+    with Session(api.engine) as s:
+        job = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == first.id)).one()
+    assert job.outcome == "partial" and [t["target"] for t in job.result["targets"]] == ["example.com", "zeroshield.ai"]
+    api.replay.override.clear()
+    api.replay.calls.clear()
+    _run(api, "ct-order-02")
+    assert "domain=zeroshield.ai" in api.replay.calls[0] and "domain=example.com" in api.replay.calls[1]
+
+
 # ----------------------------------------------------------------------------- drift
 def test_a_new_certificate_for_a_domain_is_a_new_asset_drift_event(api):
     """Derived first answer: the recorded zeroshield.ai answer without its newest issuance; second run: the recording."""

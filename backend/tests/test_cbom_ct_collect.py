@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
@@ -30,7 +31,7 @@ NOW = dt.datetime(2026, 11, 12, 18, 0, 0)  # the recording day (17:46-17:59Z)
 
 
 def run(domains, *, replay=None, chain_names=("certspotter",), expected=(), include_subdomains=True, clock=None,
-        should_stop=lambda: None, deadline=None, now=NOW):
+        should_stop=lambda: None, deadline=None, now=NOW, first=None):
     replay = replay or Replay()
     clock = clock or FakeClock()
     import random
@@ -43,7 +44,7 @@ def run(domains, *, replay=None, chain_names=("certspotter",), expected=(), incl
                                        "expected_issuers": list(expected)}).model_dump(mode="json")
     out: list[dict] = []
     result = C.collect_ct(cfg, "Certificate Transparency", out.append, should_stop, deadline=deadline, chain=chain,
-                          http=client, clock=clock, now=now, cache=P.AnswerCache(0))
+                          http=client, clock=clock, now=now, cache=P.AnswerCache(0), first=first)
     certs = [a for a in out if a["type"] == "certificate"]
     gaps = [a for a in out if a["type"] == "coverage"]
     return result, certs, gaps, replay
@@ -234,3 +235,37 @@ def test_bad_credentials_open_the_circuit_for_the_whole_job():
     result, _c, _g, replay = run(["zeroshield.ai", "example.com"], replay=replay, chain_names=("certspotter", "crtsh"))
     assert sum(1 for u in replay.calls if "certspotter" in u) == 1
     assert all(t["provider"] == "crtsh" for t in result["targets"])
+
+
+def test_a_stop_while_waiting_for_the_quota_leaves_the_rest_not_searched():
+    status, headers, body = recorded("certspotter_fullquota_10")
+    replay = Replay({("certspotter", "zeroshield.ai"): lambda req: httpx.Response(status, headers=headers, content=body)})
+    clock = FakeClock()
+    calls = []
+
+    def should_stop():
+        calls.append(clock.t)
+        return "Stopped at the maximum run time" if clock.t > 1100 else None
+
+    result, certs, gaps, _ = run(["zeroshield.ai", "example.com"], replay=replay, clock=clock, should_stop=should_stop)
+    # example.com is searched first (sorted) and answers; zeroshield.ai waits for the quota and is stopped
+    assert {t["target"]: t["status"] for t in result["targets"]} == {"example.com": "ok", "zeroshield.ai": "skipped"}
+    assert len(certs) == 17 and [g["target"] for g in gaps] == ["zeroshield.ai"] and gaps[0]["facts"]["status"] == "skipped"
+    assert len(calls) > 3  # the lease was renewed while waiting
+
+
+def test_the_wait_budget_bounds_a_job_and_the_left_over_names_go_first_next_time(monkeypatch):
+    monkeypatch.setenv("CBOM_CT_WAIT_BUDGET_S", "100")
+    status, headers, body = recorded("certspotter_fullquota_10")
+    answers = [httpx.Response(status, headers=headers, content=body)]
+    replay = Replay({("certspotter", "example.com"): lambda req: answers.pop(0) if answers else
+                     httpx.Response(200, content=recorded("certspotter_example")[2])})
+    result, certs, gaps, _ = run(["example.com", "zeroshield.ai", "xn--bcher-kva.de"], replay=replay)
+    status_of = {t["target"]: t["status"] for t in result["targets"]}
+    # example.com waited 348 s (> the 100 s budget) and was answered; the two names after it were not searched
+    assert status_of == {"example.com": "ok", "xn--bcher-kva.de": "skipped", "zeroshield.ai": "skipped"}
+    assert all("quota was used up" in g["facts"]["detail"] for g in gaps) and len(certs) == 17
+    left = [t["target"] for t in result["targets"] if t["status"] == "skipped"]
+    _r2, _c2, _g2, replay2 = run(["example.com", "zeroshield.ai", "xn--bcher-kva.de"], first=left)
+    order = [parse_qs(urlsplit(u).query)["domain"][0] for u in replay2.calls]
+    assert order == ["xn--bcher-kva.de", "zeroshield.ai", "example.com"]
