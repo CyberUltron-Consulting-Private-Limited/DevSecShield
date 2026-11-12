@@ -219,7 +219,7 @@ merging one, because an action update runs new third-party code with the workflo
 | `pr-labels.yml` | PR; also `workflow_call` | Area labels (actions/labeler) and a size label, in one job |
 | `aibom-nightly.yml` | **weekly** (Mon 07:00 UTC), manual | Live AI-BOM benchmark against the Trusera and Cisco oracles (Bedrock spend). Was nightly, 86 min a night on July code |
 | `cbom-nightly.yml` | **weekly** (Mon 07:30 UTC), manual | Live CBOM benchmark against IBM cbomkit-theia |
-| `deploy-staging.yml` | manual | Build the production images, optionally deploy them to staging |
+| `deploy-staging.yml` | push to `staging`; manual | Build the production images; deploy them to staging on every push to `staging` (manual: optional), one run at a time, never cancelled |
 | `scan-node-image.yml` | manual | Release the CBOM scan-node image as a file |
 
 ### What each `ci.yml` suite runs

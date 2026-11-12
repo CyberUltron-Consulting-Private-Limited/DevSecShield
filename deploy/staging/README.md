@@ -178,7 +178,11 @@ dead-lettered, and admins retry them from the delivery log.
 
 ## GitHub workflow
 
-**Deploy staging** (manual): builds, checks the image contexts, saves the archive as an artifact; with `deploy`
-ticked it also pushes to the host. Configure in the repository's `staging` environment: secrets
+**Deploy staging** (`.github/workflows/deploy-staging.yml`) runs on **every push to `staging`** (a promotion from
+`dev` merged): it builds that commit (frontend for `https://devsec-staging-api.zeroshield.ai`, build exposed), checks
+the image contexts, saves the archive as an artifact and deploys it to the host. Runs go one at a time in the order
+they arrive; a running deploy is never cancelled, and of several waiting pushes the newest deploys. A manual run
+(GitHub offers it from the default branch only) builds and saves; with `deploy` ticked it also pushes to the host.
+Nothing in it touches production. Configure in the repository's `staging` environment: secrets
 `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`, `STAGING_SSH_TARGET`; variable `STAGING_DIR`. Nothing of that is in
 the repository.

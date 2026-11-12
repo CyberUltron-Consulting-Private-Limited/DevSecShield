@@ -7,9 +7,20 @@
 #            STAGING_SSH_TARGET       user@host
 #   vars     STAGING_DIR              directory on the host (default /opt/devsecshield-staging) holding
 #                                     deploy/staging/.env, backend.env and certs/
+#
+# Triggers: every push to `staging` (a promotion from dev merged) builds THAT commit and deploys it, with the frontend
+# built for the staging API and its build exposed (expose_build). A manual run (which GitHub only offers from the
+# default branch) keeps its inputs; it deploys only with `deploy` ticked. Only the staging host is touched: the
+# `staging` environment's secrets, `staging.sh build/save/push`; nothing here knows about production.
+#
+# Build identity (CB-03): with expose_build the frontend names its commit in <meta name="zs-build">, so the merge
+# gate's G0 can compare it with the API's /health build on staging (DSS_EXPOSE_BUILD; takes effect with the CB-03
+# build-identity change).
 name: Deploy staging
 
 on:
+  push:
+    branches: [staging]
   workflow_dispatch:
     inputs:
       deploy:
@@ -20,11 +31,18 @@ on:
         description: "API URL baked into the frontend bundle"
         type: string
         default: "https://devsec-staging-api.zeroshield.ai"
+      expose_build:
+        description: "Frontend names its commit in a zs-build meta tag (DSS_EXPOSE_BUILD; staging G0). Off: production-like"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
+  # One run at a time, for every ref and event, in the order they arrive: a new push waits for the running build and
+  # deploy, which is never cancelled. GitHub keeps ONE pending run per group, so with three quick pushes the middle
+  # one is dropped and the newest deploys last (staging always ends on the latest push).
   group: deploy-staging
   cancel-in-progress: false
 
@@ -34,10 +52,40 @@ jobs:
     timeout-minutes: 120
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      deploy: ${{ steps.settings.outputs.deploy }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Settings
+        id: settings
+        # A push to staging always deploys, for the staging API, with the build exposed; a manual run uses its inputs.
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          INPUT_DEPLOY: ${{ inputs.deploy }}
+          INPUT_API_URL: ${{ inputs.api_url }}
+          INPUT_EXPOSE_BUILD: ${{ inputs.expose_build }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            push)
+              if [ "$REF" != refs/heads/staging ]; then echo "::error::a push to $REF never deploys"; exit 1; fi
+              deploy=true api_url=https://devsec-staging-api.zeroshield.ai expose=true ;;
+            workflow_dispatch)
+              deploy=$INPUT_DEPLOY api_url=$INPUT_API_URL expose=$INPUT_EXPOSE_BUILD ;;
+            *)
+              echo "::error::event $EVENT does not deploy staging"
+              exit 1 ;;
+          esac
+          if ! [[ "$api_url" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]]; then
+            echo "::error::api_url '$api_url' is not http(s)://host[:port]"
+            exit 1
+          fi
+          if [ "$deploy" != true ]; then deploy=false; fi
+          if [ "$expose" != true ]; then expose=false; fi
+          printf 'deploy=%s\napi_url=%s\nexpose_build=%s\n' "$deploy" "$api_url" "$expose" | tee -a "$GITHUB_OUTPUT"
       - name: Image tag
         id: tag
         run: echo "tag=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
@@ -48,7 +96,8 @@ jobs:
       - name: Build images
         env:
           DSS_TAG: ${{ steps.tag.outputs.tag }}
-          NEXT_PUBLIC_BACKEND_URL: ${{ inputs.api_url }}
+          NEXT_PUBLIC_BACKEND_URL: ${{ steps.settings.outputs.api_url }}
+          DSS_EXPOSE_BUILD: ${{ steps.settings.outputs.expose_build == 'true' && '1' || '0' }}
         run: scripts/deploy/staging.sh build
 
       - name: Save images
@@ -68,7 +117,7 @@ jobs:
 
   deploy:
     needs: build
-    if: ${{ inputs.deploy }}
+    if: needs.build.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: staging
@@ -76,6 +125,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dss-staging-${{ needs.build.outputs.tag }}
