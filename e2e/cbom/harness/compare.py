@@ -20,7 +20,8 @@ from typing import Any
 
 from .rundir import read_json
 
-_NUM = re.compile(r"(?<![\w.])(\d+)(?![\w.])")
+# a bare number that may be a run, team or node id; never a port (":22"), an address part or an index ("[0]")
+_NUM = re.compile(r"(?<![\w.:@#\[])(\d+)(?![\w.\]])")
 
 
 def id_maps(run: Path) -> dict[str, dict[str, str]]:

@@ -774,7 +774,8 @@ export async function g13(ctx) {
       .filter(([, , cidr]) => ranges.some((x) => (x.ranges || []).includes(cidr)));
     const sources = diff.body?.sources || [];
     for (const [id, name, cidr] of rangeIds) {
-      const row = sources.find((x) => String(x.source_ref).includes(String(id)) || x.name === name || x.name === cidr);
+      // by the source's name only (source_ref is a uid: matching an id as a substring of it found S-host once)
+      const row = sources.find((x) => x.name === name);
       s.check(`range_${cidr}_compared`, row?.status === "compared", { expected: "compared", observed: row || "not in /diff sources", subject: { check: "range_with_never_scan_compared", cidr } });
     }
     const loc = `${control?.address}:443`;

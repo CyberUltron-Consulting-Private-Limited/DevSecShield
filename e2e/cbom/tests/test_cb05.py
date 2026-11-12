@@ -143,3 +143,10 @@ def test_g16_stored_lines_are_keyed_by_source_not_job_id(tmp_path):
     a = _run(tmp_path, "a", [1, 2], 59, {**BASE, "G16/assets-stored/{job}-1-0": "PASS"}, team=21, run_id=7)
     b = _run(tmp_path, "b", [31, 32], 76, {**BASE, "G16/assets-stored/{job}-1-3": "PASS"}, team=23, run_id=9)
     assert compare.compare(a, b)["identical"]
+
+
+def test_a_run_id_equal_to_a_port_does_not_rewrite_the_port(tmp_path):
+    base = {"G11/join/run1/asset/{a0}/key_size/db": "PASS", "G11/join/run1/asset/{a1}/key_size/db": "PASS"}
+    a = _run(tmp_path, "a", [1, 2], 4, base, team=21, run_id=7)
+    b = _run(tmp_path, "b", [31, 32], 19, base, team=23, run_id=443)   # run 443, assets at ...:443
+    assert compare.compare(a, b)["identical"]
