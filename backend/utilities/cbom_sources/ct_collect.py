@@ -123,6 +123,7 @@ def details(iss: P.Issuance) -> tuple[dict[str, Any], str | None, int | None]:
         facts["fingerprint_sha256" if not precert else "precert_sha256"] = digest
         facts["precertificate_only"] = bool(precert)
         facts["ct_detail"] = "full"
+        facts["format"] = "der"  # read from the log entry, not a file
     else:
         alg, bits, curve = _pubkey(iss.pubkey)
         algorithm, key_size = alg, bits

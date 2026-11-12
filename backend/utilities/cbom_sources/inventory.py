@@ -266,6 +266,22 @@ def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, A
     return out
 
 
+def ct_properties(facts: dict[str, Any]) -> list[dict[str, str]]:
+    """Provenance of a certificate found in Certificate Transparency logs (ct_collect).  ``zs:source`` keeps meaning the
+    source's name, as for every other row; ``zs:collector=ct`` is the provenance key (the CB-06 vocabulary)."""
+    out = [{"name": "zs:collector", "value": "ct"}, {"name": "zs:method", "value": "ct-log-search"}]
+    for prop, key in (("zs:ct_provider", "ct_provider"), ("zs:ct_entry_id", "ct_provider_id"), ("zs:ct_detail", "ct_detail"),
+                      ("zs:tbs_sha256", "tbs_sha256"), ("zs:fingerprint_sha256", "fingerprint_sha256"),
+                      ("zs:precert_sha256", "precert_sha256"), ("zs:serial", "serial")):
+        if facts.get(key):
+            out.append({"name": prop, "value": str(facts[key])[:255]})
+    for domain in (facts.get("matched_domains") or [])[:20]:
+        out.append({"name": "zs:ct_matched_domain", "value": str(domain)[:253]})
+    if facts.get("revoked") is not None:
+        out.append({"name": "zs:revoked", "value": str(bool(facts["revoked"])).lower()})
+    return out
+
+
 def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None) -> dict[str, Any]:
     facts = row.facts or {}
     view = view or shown(row)
@@ -336,6 +352,8 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         }.items() if v is not None and v != ""}
     if row.algorithm:
         props.append({"name": "zs:algorithm", "value": row.algorithm})
+    if facts.get("source") == "ct":
+        props += ct_properties(facts)
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
             "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
 

@@ -30,8 +30,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Re-record the fixtures (backend/tests/fixtures/ct) by hand: it spends the runner's unauthenticated quota.
   capture:
     name: record provider responses
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     continue-on-error: true
@@ -40,7 +42,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Record Cert Spotter, crt.sh and RFC 6962 log responses
-        run: python3 bench/ct/capture.py "$RUNNER_TEMP/ct-capture" --cases "${CT_CAPTURE_CASES:-round2}"
+        run: python3 bench/ct/capture.py "$RUNNER_TEMP/ct-capture" --cases all
       - name: Summary
         if: always()
         run: |
@@ -57,4 +59,67 @@ jobs:
         with:
           name: ct-capture
           path: ${{ runner.temp }}/ct-capture
+          retention-days: 30
+
+  # The product collects real CT answers end to end (API -> run -> cloud worker -> provider -> stored, classified rows)
+  # and its stored rows are compared one by one with the provider's raw answer, fetched before and after the run by
+  # bench/ct/capture.py and read with openssl (bench/ct/oracle.py), neither of which imports product code.
+  live-proof:
+    name: collector vs provider, row by row
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      DOMAINS: zeroshield.ai,example.com
+      OUT: ${{ github.workspace }}/ct-live
+      PYTHONPATH: ${{ github.workspace }}
+      JWT_SECRET_KEY: ci-only-not-a-secret
+      JWT_REFRESH_SECRET_KEY: ci-only-not-a-secret
+      AWS_ACCESS_KEY_ID: ci-only-dummy
+      AWS_SECRET_ACCESS_KEY: ci-only-dummy
+      AWS_DEFAULT_REGION: us-east-1
+      RABBIT_ADMIN_USERNAME: ci
+      RABBIT_ADMIN_PASSWORD: ci-only-dummy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up uv and Python 3.12
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.6"
+          python-version: "3.12"
+          working-directory: backend
+          enable-cache: true
+      - name: Install the backend
+        working-directory: backend
+        run: uv sync --frozen
+      - name: Oracle, before (Cert Spotter)
+        run: python3 bench/ct/capture.py "$OUT/before" --cases live --domains "$DOMAINS" --tag before
+      - name: Product run (Cert Spotter)
+        working-directory: backend
+        run: CBOM_CT_PROVIDER=certspotter uv run --frozen python scripts/ct_live_proof.py --domains "$DOMAINS" --expected-issuers "Let's Encrypt" --out "$OUT/collector.json"
+      - name: Oracle, after (Cert Spotter)
+        if: always()
+        run: python3 bench/ct/capture.py "$OUT/after" --cases live --domains "$DOMAINS" --tag after
+      - name: Compare row by row (Cert Spotter)
+        if: always()
+        run: python3 bench/ct/live_compare.py --collector "$OUT/collector.json" --before "$OUT/before" --after "$OUT/after" --provider certspotter --report "$OUT/compare-certspotter.md"
+      - name: crt.sh fallback, same proof (best effort; crt.sh often answers 502)
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 bench/ct/capture.py "$OUT/crtsh-before" --cases live --domains zeroshield.ai --provider crtsh --tag before
+          (cd backend && CBOM_CT_PROVIDER=crtsh uv run --frozen python scripts/ct_live_proof.py --domains zeroshield.ai --out "$OUT/collector-crtsh.json")
+          python3 bench/ct/capture.py "$OUT/crtsh-after" --cases live --domains zeroshield.ai --provider crtsh --tag after
+          python3 bench/ct/live_compare.py --collector "$OUT/collector-crtsh.json" --before "$OUT/crtsh-before" --after "$OUT/crtsh-after" --provider crtsh --report "$OUT/compare-crtsh.md"
+      - name: Summary
+        if: always()
+        run: cat "$OUT"/compare-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no comparison written" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the raw answers, the stored rows and the comparison
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ct-live-proof
+          path: ${{ github.workspace }}/ct-live
           retention-days: 30

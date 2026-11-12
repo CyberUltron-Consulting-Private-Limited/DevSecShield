@@ -179,6 +179,21 @@ def rate_limit(rec: Recorder, tries: int = 40) -> None:
             break
 
 
+def live(rec: Recorder, domains: list[str], provider: str, tag: str) -> None:
+    """The oracle side of the live proof: each domain's full listing, as the provider answers it (pages followed)."""
+    for domain in domains:
+        if provider == "crtsh":
+            rec.record(f"{tag}_crtsh_{domain}", crtsh_url(domain, exclude="expired", deduplicate="Y"), timeout=90)
+            continue
+        after, page = None, 0
+        while page < 40:
+            status, body = rec.record(f"{tag}_certspotter_{domain}_p{page}", cs_url(domain, after=after))
+            rows = json.loads(body) if status == "200" else []
+            if status != "200" or not rows or len(rows) < 100:
+                break
+            after, page = rows[-1]["id"], page + 1
+
+
 def round2(rec: Recorder) -> None:
     """Paging, the full-domain rate limit (unauthenticated: 10 per hour, x-ratelimit-limit) and a crt.sh burst."""
     status, body = rec.record("certspotter_paging_p1", cs_url("google.com", wildcards=False))
@@ -257,9 +272,17 @@ def logs(rec: Recorder) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("out", type=pathlib.Path)
-    parser.add_argument("--cases", default="all", choices=["all", "fixtures", "reliability", "logs", "ratelimit", "round2"])
+    parser.add_argument("--cases", default="all", choices=["all", "fixtures", "reliability", "logs", "ratelimit", "round2",
+                                                            "live"])
+    parser.add_argument("--domains", default="zeroshield.ai,example.com")
+    parser.add_argument("--provider", default="certspotter", choices=["certspotter", "crtsh"])
+    parser.add_argument("--tag", default="oracle")
     args = parser.parse_args()
     rec = Recorder(args.out)
+    if args.cases == "live":
+        live(rec, [d.strip() for d in args.domains.split(",") if d.strip()], args.provider, args.tag)
+        rec.write_manifest({"tag": args.tag, "provider": args.provider})
+        return 0
     if args.cases in ("all", "fixtures"):
         fixtures(rec)
     if args.cases in ("all", "logs"):
