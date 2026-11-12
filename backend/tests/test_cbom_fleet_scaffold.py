@@ -330,6 +330,9 @@ def test_requests_over_the_limit_never_reach_authentication(api, monkeypatch):
 
     monkeypatch.setattr(fleet_http, "authorize", counting)
     monkeypatch.setattr(cbom_http.read_limiter, "times", 2)
+    # Pin the 60 s fixed window: a window boundary between the requests would reset the count (flake, #98).
+    now = cbom_http.read_limiter.clock()
+    monkeypatch.setattr(cbom_http.read_limiter, "clock", lambda: now)
     codes = [api("GET", STATUS, "bob").status_code for _ in range(4)]
     assert codes == [200, 200, 429, 429] and len(calls) == 2
 
