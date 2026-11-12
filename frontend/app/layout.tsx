@@ -5,6 +5,8 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "sonner"
 // errors 8 s with a close button, successes 4 s, up to 3 at once (utils/toast.ts, utils/toastPolicy.ts; was 1.5 s and one at a time)
 import { TOAST_SUCCESS_MS, TOASTS_VISIBLE } from "@/utils/toastPolicy"
+// <meta name="zs-build">: the commit this frontend was built from (CB-03, utils/buildInfo.ts)
+import { buildMeta } from "@/utils/buildInfo"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,6 +21,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DevSecShield",
   description: "DevSecShield is a platform for developers to secure their applications.",
+  ...buildMeta(process.env.NEXT_PUBLIC_BUILD_SHA),
 };
 
 export default function RootLayout({

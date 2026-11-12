@@ -28,7 +28,14 @@ def tick(engine, now=None) -> dict[str, Any]:
     now = now or utcnow()
     fired = fire_due(engine, now)
     drift = record_pending_drift(engine, now)
-    return {"fired": fired, "drift_runs": drift}
+    out: dict[str, Any] = {"fired": fired, "drift_runs": drift}
+    try:  # F1.4: the SSH CA audit is kept 13 months (at most hourly; a failure never stops schedules)
+        from backend.utilities.cbom_sources.sshca.retention import purge_due
+
+        out["sshca_retention"] = purge_due(engine, now)
+    except Exception as exc:
+        log("ssh ca audit retention FAILED", ref=new_ref(), error=type(exc).__name__)
+    return out
 
 
 def loop(engine, stop: threading.Event) -> None:
