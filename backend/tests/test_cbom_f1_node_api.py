@@ -599,6 +599,18 @@ def test_scan_node_1_0_client_works_against_the_new_server(api, world):
     with Session(engine) as s:
         assert s.get(CbomCollectionRun, run_id).status == "done"
         assert len(s.exec(select(CbomNodeNonce).where(CbomNodeNonce.node_id == node_id)).all()) >= 6
+    # an empty dispatch bucket answers the same 204 as an empty queue: the 1.0 client just sees "nothing to do"
+    from backend.utilities.cbom_sources import dispatch as D
+
+    with Session(engine) as s:
+        pinned = s.exec(select(CbomCollectionSource).where(CbomCollectionSource.name == "pinned")).one()
+    assert api("POST", f"/1/cbom/sources/items/{pinned.id}/test").status_code in (200, 201, 202)
+    D.reset(D.Dispatcher(1, clock=lambda: 0.0, start_full=False))
+    try:
+        assert client.claim() is None
+    finally:
+        D.reset(None)
+    assert client.claim() is not None  # and with a permit it claims as before
 
 
 # ----------------------------------------------------------------------------- PostgreSQL races

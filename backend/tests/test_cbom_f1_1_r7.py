@@ -1305,3 +1305,79 @@ def test_a1_a_claim_whose_commit_fails_is_not_logged_as_claimed(api, world, caps
     assert r.status_code == 500
     out = capsys.readouterr().out
     assert "cbom node claim FAILED" in out and "job claimed" not in out
+
+
+# ============================================================================= E3: one connection per request
+def test_e3_a_heartbeat_takes_one_connection_from_the_pool(api, world):
+    from sqlalchemy import event
+
+    engine, _ = world
+    _node_id, client, _key, _ = F._signed_node(api)
+    client.heartbeat({})
+    checkouts = [0]
+    listener = lambda *a: checkouts.__setitem__(0, checkouts[0] + 1)  # noqa: E731
+    event.listen(engine, "checkout", listener)
+    try:
+        client.heartbeat({})
+    finally:
+        event.remove(engine, "checkout", listener)
+    assert checkouts[0] == 1
+
+
+def test_e3_the_helper_refuses_a_connection_that_already_ran_a_statement(world):
+    engine, _ = world
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+        with pytest.raises(RuntimeError, match="fresh connection"):
+            NA.bind_fresh(conn)
+
+
+@needs_pg
+def test_e3_the_window_step_is_committed_before_the_work_and_survives_its_failure(monkeypatch):
+    """cx3 S-1 trio on the bound connection: the window advance is visible from another connection before the work;
+    the node row is not held during the work (NOWAIT succeeds); a request whose work fails (500) cannot be replayed
+    (the same signed bytes get 403)."""
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+    from backend.routers import cbom_node as ROUTE
+
+    engine = F._pg_world()
+    key = ed25519.Ed25519PrivateKey.generate()
+    token = "zsn_" + __import__("secrets").token_urlsafe(24)
+    with Session(engine) as s:
+        node = CbomScanNode(team_id=1, owner_user_id=1, name="bound", node_token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                            signing_public_key=base64.b64encode(key.public_key().public_bytes_raw()).decode(),
+                            enrolled_at=dt.datetime.utcnow(), capabilities={"protocol": 2})
+        s.add(node)
+        s.commit()
+        node_id = node.id
+    from backend.utilities.cbom_sources import http as CBOM_HTTP
+
+    for module in (ROUTE, NA, CBOM_HTTP):
+        monkeypatch.setattr(module, "get_db", lambda: engine)
+    for limiter in (CBOM_HTTP.node_limiter, CBOM_HTTP.enroll_limiter):
+        limiter.requests.clear()
+    seen: dict = {}
+    real = J.claimed_jobs
+
+    def during_work(session, node):
+        with engine.connect() as other:
+            seen["hwm"] = other.execute(text(f"SELECT replay_hwm FROM cbomscannode WHERE id = {node_id}")).scalar()
+            other.execute(text(f"SELECT id FROM cbomscannode WHERE id = {node_id} FOR UPDATE NOWAIT"))
+            other.rollback()
+        if seen.get("fail"):
+            raise RuntimeError("the work fails")
+        return real(session, node)
+
+    monkeypatch.setattr(J, "claimed_jobs", during_work)
+    seq = _seq()
+    raw = b"{}"
+    headers = F._p2_headers(key, "POST", "/cbom/node/heartbeat", raw, token, seq)
+    client = TestClient(app)  # no lifespan: the test JWT secrets are short
+    assert client.post("/cbom/node/heartbeat", headers=headers, content=raw).status_code == 200
+    assert seen["hwm"] == seq
+    seen["fail"] = True
+    headers = F._p2_headers(key, "POST", "/cbom/node/heartbeat", raw, token, seq + 1)
+    assert client.post("/cbom/node/heartbeat", headers=headers, content=raw).status_code == 500
+    assert client.post("/cbom/node/heartbeat", headers=headers, content=raw).status_code == 403

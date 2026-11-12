@@ -378,7 +378,7 @@ def _heartbeat(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> d
     reaper's), no reap of the whole queue."""
     now = utcnow()
     seen = {"last_heartbeat_at": now, "last_seen_ip": ip}
-    with Session(get_db(), expire_on_commit=False) as session:
+    with NA.node_session(get_db()) as session:
         node, stamped = _authenticate(session, token, req, raw, now, touch=seen)
         body = _parse(HeartbeatBody, parse_json(raw))
         gap = (now - node.last_heartbeat_at).total_seconds() if node.last_heartbeat_at else None
@@ -448,7 +448,7 @@ def _claim(token: str | None, req: NA.NodeRequest, raw: bytes, ip: str) -> tuple
     holds it (C4).  Returns (payload or None, node id)."""
     now = utcnow()
     seen = {"last_heartbeat_at": now, "last_seen_ip": ip}
-    with Session(get_db(), expire_on_commit=False) as session:
+    with NA.node_session(get_db()) as session:
         node, stamped = _authenticate(session, token, req, raw, now, touch=seen)
         body = _parse(ClaimBody, parse_json(raw)) if raw else None  # older nodes send no body
         # a node restarted in agent mode may claim before its first heartbeat: it is never given a secret again
@@ -505,7 +505,7 @@ async def claim(request: Request, token: Annotated[str | None, Security(node_tok
 def _assets(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> dict:
     now = utcnow()
     RT.note(job_id=job_id)
-    with Session(get_db()) as session:
+    with NA.node_session(get_db()) as session:
         node = authenticate_node(session, token, req, raw, now)
         body = _parse(AssetsBody, parse_json(raw))
         valid: list[dict[str, Any]] = []
@@ -540,7 +540,7 @@ def _result(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> 
     the commit, ``jobs``); the answer grants the node its next claims."""
     now = utcnow()
     RT.note(job_id=job_id)
-    with Session(get_db(), expire_on_commit=False) as session:
+    with NA.node_session(get_db()) as session:
         node = authenticate_node(session, token, req, raw, now)
         body = _parse(ResultBody, parse_json(raw))
         job = J.finish_job(session, node, job_id, body.lease_id, body.status, body.result, body.error, now)

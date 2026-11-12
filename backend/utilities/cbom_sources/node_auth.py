@@ -146,6 +146,35 @@ class NodeDeploymentHeader:
         await OBS.serve(self.app, scope, receive, send, value)
 
 
+# ----------------------------------------------------------------------------- one connection per request (DA E3)
+import contextlib  # noqa: E402
+
+ONE_CONNECTION = [os.environ.get("CBOM_NODE_ONE_CONNECTION", "1") != "0"]
+
+
+@contextlib.contextmanager
+def node_session(engine):
+    """The Session a node route works in.  With one connection per request (DA E3) the Session is bound to ONE pooled
+    connection for the whole request, so the replay-window step's own commit and the work after it share a single
+    checkout and pre-ping.  ``join_transaction_mode="control_fully"``: the Session's commit really commits on the
+    connection (the default mode would turn it into a savepoint release when the connection already had a
+    transaction: the window step would look committed and be lost, cx3 S-1).  The connection must be fresh."""
+    if not ONE_CONNECTION[0]:
+        with Session(engine, expire_on_commit=False) as session:
+            yield session
+        return
+    with engine.connect() as conn:
+        with bind_fresh(conn) as session:
+            yield session
+
+
+def bind_fresh(conn):
+    """A Session in full control of ``conn``; refuses a connection that already ran a statement."""
+    if conn.in_transaction():
+        raise RuntimeError("node_session: the connection already has a transaction; bind only a fresh connection")
+    return Session(bind=conn, join_transaction_mode="control_fully", expire_on_commit=False)
+
+
 # ----------------------------------------------------------------------------- request facts
 @dataclass(frozen=True)
 class NodeRequest:
