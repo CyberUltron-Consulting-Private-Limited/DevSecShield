@@ -40,7 +40,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Record Cert Spotter, crt.sh and RFC 6962 log responses
-        run: python3 bench/ct/capture.py "$RUNNER_TEMP/ct-capture" --cases all
+        run: python3 bench/ct/capture.py "$RUNNER_TEMP/ct-capture" --cases "${CT_CAPTURE_CASES:-round2}"
       - name: Summary
         if: always()
         run: |

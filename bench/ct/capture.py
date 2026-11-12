@@ -179,6 +179,22 @@ def rate_limit(rec: Recorder, tries: int = 40) -> None:
             break
 
 
+def round2(rec: Recorder) -> None:
+    """Paging, the full-domain rate limit (unauthenticated: 10 per hour, x-ratelimit-limit) and a crt.sh burst."""
+    status, body = rec.record("certspotter_paging_p1", cs_url("google.com", wildcards=False))
+    after = _last_id(body) if status == "200" else None
+    if after:
+        rec.record("certspotter_paging_p2", cs_url("google.com", wildcards=False, after=after))
+    for n, domain in enumerate(["example.org", "example.net", "iana.org", "ietf.org", "w3.org", "mozilla.org",
+                                "python.org", "debian.org", "kernel.org", "gnu.org", "apache.org", "openssl.org",
+                                "letsencrypt.org", "github.io", "wikipedia.org"]):
+        status, _body = rec.record(f"certspotter_fullquota_{n:02d}", cs_url(domain))
+        if status != "200":
+            break
+    for n in range(8):  # back to back: crt.sh allows 5 requests per minute per address
+        rec.record(f"crtsh_burst_{n:02d}", crtsh_url("example.org", exclude="expired"), timeout=60)
+
+
 def reliability(rec: Recorder, rounds: int = 12) -> None:
     """crt.sh under ordinary use: the same small query, spaced out, timed (status and latency per try)."""
     for n in range(rounds):
@@ -241,7 +257,7 @@ def logs(rec: Recorder) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("out", type=pathlib.Path)
-    parser.add_argument("--cases", default="all", choices=["all", "fixtures", "reliability", "logs", "ratelimit"])
+    parser.add_argument("--cases", default="all", choices=["all", "fixtures", "reliability", "logs", "ratelimit", "round2"])
     args = parser.parse_args()
     rec = Recorder(args.out)
     if args.cases in ("all", "fixtures"):
@@ -251,6 +267,8 @@ def main() -> int:
     if args.cases in ("all", "reliability"):
         reliability(rec)
         postgres(rec)
+    if args.cases == "round2":
+        round2(rec)
     if args.cases in ("all", "ratelimit"):  # last: it spends the runner's unauthenticated quota
         rate_limit(rec)
     rec.write_manifest()
