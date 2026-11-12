@@ -22,6 +22,11 @@ assert.ok(insecureApiWarning("http://api.example:8080"), "any http:// port")
 const port80 = insecureApiWarning("https://api.example:80")
 assert.ok(port80 && /port 80/.test(port80), "https on port 80 is the plain-HTTP port")
 assert.ok(insecureApiWarning("not a url"), "an unparsable URL cannot work either")
+// the node's own rule (agent.py: ZS_API_URL.startswith("https://"), case-sensitive): the UI warns exactly then
+for (const refused of ["HTTPS://api.example", "Https://api.example", "https:api.example", "https:/api.example", " http://x"]) {
+  assert.ok(insecureApiWarning(refused), `the node refuses ${refused}`)
+}
+assert.equal(insecureApiWarning("  https://api.example  "), null, "the node strips the value too")
 assert.equal(insecureApiWarning(""), null, "no URL configured: nothing to judge")
 
 // the wizard and the agent-pool card show it next to the commands they build from the API URL
@@ -30,5 +35,6 @@ assert.ok(tab.includes('data-testid="node-api-insecure"'), "wizard warning")
 assert.ok(tab.includes("insecureApiWarning(apiBaseURL)"), "computed from the URL the command uses")
 const pools = fs.readFileSync(path.join(__dirname, "AgentPoolsCard.tsx"), "utf8")
 assert.ok(pools.includes('data-testid="pool-api-insecure"') && pools.includes("insecureApiWarning(apiUrl)"), "pool card warning")
+// that both RENDER is proven by nodeInsecureApiRender.test.ts (the real components, mounted in jsdom)
 
 console.log("insecure API URL tests passed")

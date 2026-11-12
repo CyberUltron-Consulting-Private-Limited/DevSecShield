@@ -37,6 +37,8 @@ COPY . .
 ARG NEXT_PUBLIC_BACKEND_URL
 ARG NEXT_PUBLIC_CBOM_NODE_IMAGE=
 # Build identity (CB-03): the commit this frontend is built from, in every page's <meta name="zs-build">.
+# build_images.sh fills it only with DSS_EXPOSE_BUILD=1 (local stack, lab, staging). `next build` compiles it in, so
+# there every new commit re-runs the build (~4-8 min on 2 CPUs); a production build (empty value) reuses its cache.
 ARG NEXT_PUBLIC_BUILD_SHA=
 ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL \
     NEXT_PUBLIC_CBOM_NODE_IMAGE=$NEXT_PUBLIC_CBOM_NODE_IMAGE \

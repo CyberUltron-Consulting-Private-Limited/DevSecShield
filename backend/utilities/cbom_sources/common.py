@@ -11,7 +11,8 @@ from rich.console import Console
 from sqlmodel import Session
 
 from backend.new_models import CbomCollectionAuditEvent
-from backend.utilities.build_info import UNKNOWN, build_version, current_request_id, short_build, utc_timestamp
+from backend.utilities.build_info import (UNKNOWN, build_version, current_client_request_id, current_request_id,
+                                          short_build, utc_timestamp)
 
 console = Console()
 
@@ -75,7 +76,7 @@ def clean_text(value: Any, limit: int) -> str | None:
 def log(action: str, **fields: Any) -> None:
     """One greppable line per state change.  Only ids, enums and numbers belong in ``fields``.  The line starts with
     an ISO UTC timestamp and, inside a request, ends with that request's ``request_id`` (the X-ZS-Request-Id the
-    response carries)."""
+    response carries) and, when the caller sent a well-formed one, its ``client_request_id``."""
     parts = [utc_timestamp(), f"cbom sources {action}"]
     for key, value in fields.items():
         if value is None:
@@ -84,6 +85,9 @@ def log(action: str, **fields: Any) -> None:
     request_id = current_request_id()
     if request_id and "request_id" not in fields:
         parts.append(f"request_id={request_id}")
+        client_id = current_client_request_id()  # the caller's own id, only when well formed (build_info)
+        if client_id:
+            parts.append(f"client_request_id={client_id}")
     try:
         console.print(" ".join(parts), markup=False, highlight=False, soft_wrap=True)
     except Exception:  # logging must never fail a request

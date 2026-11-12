@@ -66,8 +66,9 @@ def test_frontend_bakes_the_build_before_next_build():
 def test_scan_node_image_bakes_the_build_after_the_code_layer():
     final = _stages("scan_node/Dockerfile")[-1]
     code = _index(final, r"^COPY zs_scan_node ")
-    assert _index(final, r"^ARG ZS_NODE_BUILD") > code
-    assert "ZS_NODE_BUILD=${ZS_NODE_BUILD}" in final[_index(final, r"^ENV ZS_NODE_BUILD")]
+    assert _index(final, r"^ARG ZS_NODE_BUILD") > code and _index(final, r"^ARG ZS_NODE_VERSION") > code
+    env = final[_index(final, r"^ENV ZS_NODE_BUILD")]
+    assert "ZS_NODE_BUILD=${ZS_NODE_BUILD}" in env and "ZS_NODE_VERSION=${ZS_NODE_VERSION}" in env
 
 
 def _repo(tmp_path: Path, *rels: str) -> tuple[Path, str, dict]:
@@ -104,13 +105,14 @@ def _args(build: list[str], flag: str) -> list[str]:
 def test_build_images_passes_the_commit_and_version(tmp_path):
     repo, head, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
     proc = subprocess.run([str(repo / "scripts/deploy/build_images.sh"), "--only", "backend,frontend"],
-                          env={**env, "DSS_TAG": "k-ed70ff12e203", "NEXT_PUBLIC_BACKEND_URL": "https://api.dss.test"},
+                          env={**env, "DSS_TAG": "k-ed70ff12e203", "NEXT_PUBLIC_BACKEND_URL": "https://api.dss.test",
+                               "DSS_EXPOSE_BUILD": "1"},
                           capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     backend, frontend = _builds(env)
     assert f"DSS_BUILD_SHA={head}" in _args(backend, "--build-arg")
     assert "DSS_BUILD_VERSION=k-ed70ff12e203" in _args(backend, "--build-arg")
-    assert f"NEXT_PUBLIC_BUILD_SHA={head}" in _args(frontend, "--build-arg")
+    assert f"NEXT_PUBLIC_BUILD_SHA={head}" in _args(frontend, "--build-arg")  # exposed: the page meta names it
     for build in (backend, frontend):  # the OCI label names the same commit
         assert f"org.opencontainers.image.revision={head}" in _args(build, "--label")
     assert f"build {head}" in proc.stdout
@@ -131,6 +133,53 @@ def test_build_images_version_override_and_bad_commit(tmp_path):
     assert bad_version.returncode != 0 and "DSS_BUILD_VERSION" in bad_version.stderr
 
 
+def test_frontend_meta_only_when_the_deployment_exposes_the_build(tmp_path):
+    """Production default: the sign-in page must not name the commit (PR #72 security review); the backend image
+    still carries it for signed-in users (/version), runs and exports."""
+    repo, head, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
+    proc = subprocess.run([str(repo / "scripts/deploy/build_images.sh"), "--only", "backend,frontend"],
+                          env={**env, "DSS_TAG": "t1", "NEXT_PUBLIC_BACKEND_URL": "https://api.example"},
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    backend, frontend = _builds(env)
+    assert f"DSS_BUILD_SHA={head}" in _args(backend, "--build-arg")
+    assert "NEXT_PUBLIC_BUILD_SHA=" in _args(frontend, "--build-arg")  # empty: no <meta name="zs-build">
+
+
+@pytest.mark.parametrize("change", ["modified", "untracked"])
+def test_a_dirty_tree_never_reports_the_clean_commit(tmp_path, change):
+    """PR #72 review: code that is not the commit must not claim it (G0 would pass, exports would lie)."""
+    repo, head, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
+    if change == "modified":
+        (repo / "prod_database_migrations/alembic.ini").write_text("[alembic]\n# edited\n")
+    else:
+        (repo / "backend").mkdir()
+        (repo / "backend/new_file.py").write_text("x = 1\n")
+    proc = subprocess.run([str(repo / "scripts/deploy/build_images.sh"), "--only", "backend,frontend"],
+                          env={**env, "DSS_TAG": "t1", "NEXT_PUBLIC_BACKEND_URL": "https://api.example",
+                               "DSS_EXPOSE_BUILD": "1"}, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    for build in _builds(env):
+        args = _args(build, "--build-arg") + _args(build, "--label")
+        assert not any(head in a for a in args), args
+        assert "org.opencontainers.image.revision=unknown" in _args(build, "--label")
+    assert "DSS_BUILD_SHA=" in _args(_builds(env)[0], "--build-arg")
+    assert "uncommitted changes" in proc.stdout + proc.stderr
+    # an operator who names the commit explicitly takes responsibility for it
+    explicit = subprocess.run([str(repo / "scripts/deploy/build_images.sh"), "--only", "backend"],
+                              env={**env, "DSS_TAG": "t1", "DSS_BUILD_SHA": head}, capture_output=True, text=True,
+                              timeout=60)
+    assert explicit.returncode == 0 and f"DSS_BUILD_SHA={head}" in _args(_builds(env)[-1], "--build-arg")
+
+
+def test_staging_exposes_the_build_only_when_its_env_says_so():
+    compose = (ROOT / "deploy/staging/docker-compose.yml").read_text()
+    backend = compose[compose.index("\n  backend:\n"):compose.index("\n  cbom-cloud-worker:")]
+    assert "DSS_EXPOSE_BUILD: ${DSS_EXPOSE_BUILD:-0}" in backend  # off unless .env says 1
+    staging = (ROOT / "scripts/deploy/staging.sh").read_text()
+    assert 'DSS_EXPOSE_BUILD="$(env_get DSS_EXPOSE_BUILD 0)"' in staging  # the same .env value drives the meta
+
+
 def test_build_images_outside_git_builds_without_identity(tmp_path):
     repo, _head, env = _repo(tmp_path, "scripts/deploy/build_images.sh")
     shutil.rmtree(repo / ".git")
@@ -141,11 +190,19 @@ def test_build_images_outside_git_builds_without_identity(tmp_path):
     assert "no git commit" in proc.stdout + proc.stderr
 
 
-def test_scan_node_release_bakes_the_commit(tmp_path):
+def test_scan_node_release_bakes_the_commit_and_version(tmp_path):
     repo, head, env = _repo(tmp_path, "scripts/release/scan_node_image.sh")
     proc = subprocess.run([str(repo / "scripts/release/scan_node_image.sh"), "build", "1.1.0"],
                           env={**env, "OUT_DIR": str(tmp_path / "out")}, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     (build,) = _builds(env)
     assert f"ZS_NODE_BUILD={head}" in _args(build, "--build-arg")
+    assert "ZS_NODE_VERSION=1.1.0" in _args(build, "--build-arg")  # the node reports 1.1.0+<commit>
     assert f"org.opencontainers.image.revision={head}" in _args(build, "--label")
+    # a dirty tree: no commit claimed
+    (repo / "scan_node/x.py").write_text("x = 1\n")
+    dirty = subprocess.run([str(repo / "scripts/release/scan_node_image.sh"), "build", "1.1.1"],
+                           env={**env, "OUT_DIR": str(tmp_path / "out")}, capture_output=True, text=True, timeout=60)
+    assert dirty.returncode == 0, dirty.stderr
+    last = _builds(env)[-1]
+    assert "ZS_NODE_BUILD=" in _args(last, "--build-arg") and not any(head in a for a in last)

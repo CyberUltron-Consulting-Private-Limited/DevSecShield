@@ -44,11 +44,17 @@ cmd_build() {
   local ref="${IMAGE}:${version}" archive="${OUT_DIR}/scan-node-${version}.tar.gz" sha
   local -a args=()
   [[ -n "${BASE_IMAGE:-}" ]] && args+=(--build-arg "BASE_IMAGE=${BASE_IMAGE}")
-  # Build identity (CB-03): the node reports <version>+<12-character commit> to ZeroShield (ZS_NODE_BUILD).
+  # Build identity (CB-03): the node reports <version>+<12-character commit> to ZeroShield (ZS_NODE_VERSION,
+  # ZS_NODE_BUILD). A tree with uncommitted or untracked changes claims no commit.
   sha="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)"
   [[ "${sha}" =~ ^[0-9a-f]{40}$ ]] || { log "WARNING: no git commit: the image reports no build"; sha=""; }
+  if [[ -n "${sha}" && -n "$(git -C "${REPO_ROOT}" status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
+    log "WARNING: uncommitted changes at ${sha:0:12}: the image reports no build"
+    sha=""
+  fi
   log "building ${ref} (build ${sha:-unknown})"
   docker buildx build --load --provenance=false "${args[@]}" --build-arg "ZS_NODE_BUILD=${sha}" \
+    --build-arg "ZS_NODE_VERSION=${version}" \
     --label "org.opencontainers.image.version=${version}" \
     --label "org.opencontainers.image.revision=${sha:-unknown}" \
     -t "${ref}" "${REPO_ROOT}/scan_node"

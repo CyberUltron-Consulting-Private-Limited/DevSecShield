@@ -19,7 +19,8 @@ for (const bad of [undefined, "", "unknown", SHA.slice(0, 12), SHA + "0", "g".re
   assert.equal(buildSha(bad), "unknown", String(bad))
 }
 assert.deepEqual(buildMeta(SHA), { other: { "zs-build": SHA } })
-assert.deepEqual(buildMeta(undefined), { other: { "zs-build": "unknown" } })
+// no commit (a production build: scripts/deploy/build_images.sh passes it only when DSS_EXPOSE_BUILD=1): no meta tag
+for (const none of [undefined, "", "unknown", "not-a-sha"]) assert.deepEqual(buildMeta(none), {}, String(none))
 
 // the root layout puts it into every page's <head>
 const layout = fs.readFileSync(path.join(__dirname, "../app/layout.tsx"), "utf8")

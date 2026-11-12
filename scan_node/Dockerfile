@@ -41,11 +41,14 @@ RUN pip install --no-cache-dir --require-hashes --no-deps -r requirements.lock &
 
 COPY zs_scan_node ./zs_scan_node
 
-# Build identity (CB-03): the commit this image was built from. The node reports 1.0.0+<12-character commit> to
-# ZeroShield (enrolment, heartbeat, results, User-Agent). scripts/release/scan_node_image.sh passes it. Declared after
-# the code layer, so a new commit with the same code reuses every layer above.
+# Build identity (CB-03): the commit this image was built from and its release version. The node reports
+# <version>+<12-character commit> to ZeroShield (enrolment, heartbeat, results, User-Agent).
+# scripts/release/scan_node_image.sh passes both. Declared after the code layer, so a new commit with the same code
+# reuses every layer above.
 ARG ZS_NODE_BUILD=""
-ENV ZS_NODE_BUILD=${ZS_NODE_BUILD}
+ARG ZS_NODE_VERSION=""
+ENV ZS_NODE_BUILD=${ZS_NODE_BUILD} \
+    ZS_NODE_VERSION=${ZS_NODE_VERSION}
 
 RUN useradd --system --uid 10001 --home-dir /var/lib/zs-node --shell /usr/sbin/nologin zsnode \
  && mkdir -p /var/lib/zs-node && chown zsnode:zsnode /var/lib/zs-node && chmod 0700 /var/lib/zs-node

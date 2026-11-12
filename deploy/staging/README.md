@@ -122,6 +122,7 @@ and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is
 
 `.env` (shared, also read by compose): `DSS_IMAGE_PREFIX`, `DSS_TAG`, `FRONTEND_HOST`, `API_HOST`, `HTTP_PORT`,
 `HTTPS_PORT`, `HTTP_BIND`, `TLS_CERT_DIR`, `DSS_EDGE_SUBNET`, `DSS_PROXY_IP`, `DSS_REAL_IP_FROM`, `BACKEND_WORKERS`, `DAST_MEM_LIMIT`,
+`DSS_EXPOSE_BUILD` (see "Build identity"),
 `IS_DOCKER_CONTAINER`, `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_USER_PASS`, `PG_DB`, `MONGO_HOST`, `MONGO_PORT`,
 `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`,
 `RABBIT_ADMIN_USERNAME`, `RABBIT_ADMIN_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
@@ -131,6 +132,16 @@ and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is
 `CERTIN_HMAC_SECRET`, `CORS_ORIGINS`, `CBOM_PUBLIC_APP_URL`, mail (`SMTP_*`, `MAIL_FROM` or `TENANT_ID`,
 `CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
 the full list is `backend/.env.example`.
+
+## Build identity
+
+Every image carries the commit it was built from (`build_images.sh`; the OCI `revision` label and, in the backend,
+`DSS_BUILD_SHA` / `DSS_BUILD_VERSION`). A tree with uncommitted or untracked changes claims no commit ("unknown").
+Signed-in users and operators always read it from `GET /version`; collection runs and CBOM exports record it.
+`DSS_EXPOSE_BUILD=1` in `.env` also names it publicly: `GET /health` adds `build` / `version`, every response
+carries `X-ZS-Build`, and `staging.sh build` puts it into the frontend's `<meta name="zs-build">` (which makes every
+commit rebuild the frontend). Set it on staging and test stacks, where the gate compares the deployed commit
+without an account; leave it unset (0) in production, where it would fingerprint the exact build (ASVS V14.3.3).
 
 Scan-node mTLS (optional): put the CA that issues scan-node client certificates at
 `$TLS_CERT_DIR/node-client-ca.pem`; nginx then asks the API host's clients for a certificate

@@ -85,7 +85,9 @@ cmd_build() {
   local tag=${DSS_TAG:-$(default_tag)} api
   api="${NEXT_PUBLIC_BACKEND_URL:-https://$(env_get API_HOST devsec-staging-api.zeroshield.ai)}"
   log "building tag ${tag} (frontend API URL ${api})"
+  # the same .env switch that makes the backend name its build publicly puts the commit in the frontend's meta
   DSS_TAG="${tag}" DSS_IMAGE_PREFIX="$(prefix)" NEXT_PUBLIC_BACKEND_URL="${api}" \
+    DSS_EXPOSE_BUILD="$(env_get DSS_EXPOSE_BUILD 0)" \
     "${REPO_ROOT}/scripts/deploy/build_images.sh" --only "$(components | tr ' ' ',')"
 }
 

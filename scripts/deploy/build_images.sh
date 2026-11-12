@@ -18,12 +18,16 @@
 #                                      (optional; UV: backend and both workers, NODE: frontend, GO: the scan
 #                                      worker's cbomkit-theia stage)
 #         DSS_BUILD_ARGS               extra arguments for every `docker buildx build` (optional, word-split)
-#         DSS_BUILD_SHA                the commit baked into the images (default: git HEAD; a full 40-character sha)
+#         DSS_BUILD_SHA                the commit baked into the images (default: git HEAD of a clean tree; a full
+#                                      40-character sha; a tree with uncommitted or untracked changes gets none)
 #         DSS_BUILD_VERSION            the version string baked into the backend (default: DSS_TAG)
+#         DSS_EXPOSE_BUILD             1 = the frontend also names the commit in <meta name="zs-build"> on every page
+#                                      (the local stack, the lab, staging); default off (production)
 #
-# Build identity (CB-03): the backend reports DSS_BUILD_SHA / DSS_BUILD_VERSION (GET /health, X-ZS-Build, the CBOM
-# exports) and the frontend NEXT_PUBLIC_BUILD_SHA (<meta name="zs-build">); every image's
-# org.opencontainers.image.revision label names the same commit.
+# Build identity (CB-03): the backend carries DSS_BUILD_SHA / DSS_BUILD_VERSION (GET /version for signed-in users,
+# runs and CBOM exports; GET /health and X-ZS-Build only where DSS_EXPOSE_BUILD=1 at run time); every image's
+# org.opencontainers.image.revision label names the same commit ("unknown" without one). The frontend's meta is
+# compiled in by `next build`, so with DSS_EXPOSE_BUILD=1 every new commit rebuilds the frontend (~4-8 min on 2 CPUs).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -48,7 +52,13 @@ if [[ -n "${DSS_BUILD_SHA:-}" ]]; then
 else
   BUILD_SHA="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)"
   [[ "${BUILD_SHA}" =~ ^[0-9a-f]{40}$ ]] || BUILD_SHA=""
+  # Code that is not the commit must not claim it: uncommitted or untracked changes -> no build identity.
+  if [[ -n "${BUILD_SHA}" && -n "$(git -C "${REPO_ROOT}" status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
+    DIRTY_SHA="${BUILD_SHA}"
+    BUILD_SHA=""
+  fi
 fi
+case "${DSS_EXPOSE_BUILD:-0}" in 1 | true | yes | on) EXPOSE_SHA="${BUILD_SHA}" ;; *) EXPOSE_SHA="" ;; esac
 BUILD_VERSION="${DSS_BUILD_VERSION:-${DSS_TAG}}"
 [[ "${BUILD_VERSION}" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$ ]] ||
   die "DSS_BUILD_VERSION (default DSS_TAG) must be 1-64 letters, digits, dots, plus, dash or underscore: ${BUILD_VERSION}"
@@ -141,7 +151,9 @@ go_args=()
 
 log "tag=${DSS_TAG} prefix=${DSS_IMAGE_PREFIX} components=${ONLY[*]}"
 if [[ -n "${BUILD_SHA}" ]]; then
-  log "build ${BUILD_SHA} version ${BUILD_VERSION}"
+  log "build ${BUILD_SHA} version ${BUILD_VERSION}${EXPOSE_SHA:+ (exposed: the frontend meta names it)}"
+elif [[ -n "${DIRTY_SHA:-}" ]]; then
+  log "WARNING: the tree at ${DIRTY_SHA:0:12} has uncommitted changes: the images report build \"unknown\""
 else
   log "WARNING: no git commit (not a git checkout and DSS_BUILD_SHA unset): the images report build \"unknown\""
 fi
@@ -159,7 +171,7 @@ fi
 if wanted frontend; then
   [[ "${NEXT_PUBLIC_BACKEND_URL:-}" =~ ^https?://. ]] ||
     die "set NEXT_PUBLIC_BACKEND_URL (e.g. https://devsec-staging-api.zeroshield.ai) to build the frontend"
-  fe_args=(--build-arg "NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}" --build-arg "NEXT_PUBLIC_BUILD_SHA=${BUILD_SHA}")
+  fe_args=(--build-arg "NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}" --build-arg "NEXT_PUBLIC_BUILD_SHA=${EXPOSE_SHA}")
   [[ -n "${NEXT_PUBLIC_CBOM_NODE_IMAGE:-}" ]] && fe_args+=(--build-arg "NEXT_PUBLIC_CBOM_NODE_IMAGE=${NEXT_PUBLIC_CBOM_NODE_IMAGE}")
   [[ -n "${NODE_BASE_IMAGE:-}" ]] && fe_args+=(--build-arg "NODE_BASE_IMAGE=${NODE_BASE_IMAGE}")
   build frontend frontend/Dockerfile frontend "${fe_args[@]}"
