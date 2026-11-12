@@ -15,7 +15,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement as h, type ReactElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
-import * as logic from "./logic"
+import { NODE_API_NOT_HTTPS, helmAgentCommand, installCommand, nodeApiPort, nodeApiProblem } from "./logic"
+import { ApiEgressRow, ApiNotHttpsNotice, NodeInstallCommand, PoolHelmCommand } from "./NodeInstall"
 
 // block and cell tags become spaces; inline tags (the syntax highlighter's token spans) join their text
 const text = (el: ReactElement) =>
@@ -35,49 +36,47 @@ async function main() {
   const helm = fs.readFileSync(path.join(__dirname, "../../../../deploy/helm/cbom-scan-node/templates/_helpers.tpl"), "utf8")
   assert.ok(helm.includes("{{- if .Values.allowInsecureHttp }}\n- name: ZS_ALLOW_INSECURE_HTTP"), "the Helm switch")
 
-  const L = logic as unknown as Record<string, any>
-  assert.equal(L.NODE_API_NOT_HTTPS,
+  assert.equal(NODE_API_NOT_HTTPS,
     "This ZeroShield deployment is not served over HTTPS. Scan nodes refuse a plain-HTTP API unless started with ZS_ALLOW_INSECURE_HTTP=1 (test labs only: credentials travel unencrypted).")
-  for (const url of [HTTPS, "https://api.dss.test:8443/"]) assert.equal(L.nodeApiProblem(url), null, url)
-  for (const url of [HTTP, "HTTP://API.EXAMPLE", "ftp://x", "ws://x", "", "not a url"]) assert.equal(L.nodeApiProblem(url), L.NODE_API_NOT_HTTPS, url)
-  assert.equal(L.nodeApiPort(HTTPS), "443")
-  assert.equal(L.nodeApiPort("https://api.dss.test:8443"), "8443")
-  assert.equal(L.nodeApiPort(HTTP), null, "no port advice (never 80) for a plain-HTTP API")
-  assert.equal(L.nodeApiPort("http://api.example:80"), null)
+  for (const url of [HTTPS, "https://api.dss.test:8443/"]) assert.equal(nodeApiProblem(url), null, url)
+  for (const url of [HTTP, "HTTP://API.EXAMPLE", "ftp://x", "ws://x", "", "not a url"]) assert.equal(nodeApiProblem(url), NODE_API_NOT_HTTPS, url)
+  assert.equal(nodeApiPort(HTTPS), "443")
+  assert.equal(nodeApiPort("https://api.dss.test:8443"), "8443")
+  assert.equal(nodeApiPort(HTTP), null, "no port advice (never 80) for a plain-HTTP API")
+  assert.equal(nodeApiPort("http://api.example:80"), null)
 
   // the lab switch in each command, and only when asked for
   const opts = { token: TOKEN, apiUrl: HTTP, image: IMAGE, name: "lab-1" }
-  assert.ok(L.installCommand("docker", { ...opts, insecureHttp: true }).includes("  -e ZS_ALLOW_INSECURE_HTTP=1 \\"))
-  assert.ok(!L.installCommand("docker", { ...opts, apiUrl: HTTPS }).includes("ZS_ALLOW_INSECURE_HTTP"))
-  assert.ok(L.installCommand("helm", { ...opts, insecureHttp: true }).includes("--set allowInsecureHttp=true"))
-  assert.ok(L.installCommand("ami", { ...opts, insecureHttp: true }).includes("      ZS_ALLOW_INSECURE_HTTP=1"))
-  assert.ok(L.helmAgentCommand({ poolToken: TOKEN, apiUrl: HTTP, image: IMAGE, insecureHttp: true }).includes("--set allowInsecureHttp=true"))
-  assert.ok(!L.helmAgentCommand({ poolToken: TOKEN, apiUrl: HTTPS, image: IMAGE }).includes("allowInsecureHttp"))
+  assert.ok(installCommand("docker", { ...opts, insecureHttp: true }).includes("  -e ZS_ALLOW_INSECURE_HTTP=1 \\"))
+  assert.ok(!installCommand("docker", { ...opts, apiUrl: HTTPS }).includes("ZS_ALLOW_INSECURE_HTTP"))
+  assert.ok(installCommand("helm", { ...opts, insecureHttp: true }).includes("--set allowInsecureHttp=true"))
+  assert.ok(installCommand("ami", { ...opts, insecureHttp: true }).includes("      ZS_ALLOW_INSECURE_HTTP=1"))
+  assert.ok(helmAgentCommand({ poolToken: TOKEN, apiUrl: HTTP, image: IMAGE, insecureHttp: true }).includes("--set allowInsecureHttp=true"))
+  assert.ok(!helmAgentCommand({ poolToken: TOKEN, apiUrl: HTTPS, image: IMAGE }).includes("allowInsecureHttp"))
 
   // rendered pieces
-  const I = (await import("./NodeInstall")) as unknown as Record<string, (p: any) => ReactElement>
-  assert.match(text(h(I.ApiNotHttpsNotice, { apiUrl: HTTP })), /not served over HTTPS\. Scan nodes refuse a plain-HTTP API/)
-  assert.equal(renderToStaticMarkup(h(I.ApiNotHttpsNotice, { apiUrl: HTTPS })), "")
+  assert.match(text(h(ApiNotHttpsNotice, { apiUrl: HTTP })), /not served over HTTPS\. Scan nodes refuse a plain-HTTP API/)
+  assert.equal(renderToStaticMarkup(h(ApiNotHttpsNotice, { apiUrl: HTTPS })), "")
 
-  const labDocker = text(h(I.NodeInstallCommand, { apiUrl: HTTP, method: "docker", token: TOKEN, name: "lab-1", image: IMAGE }))
+  const labDocker = text(h(NodeInstallCommand, { apiUrl: HTTP, method: "docker", token: TOKEN, name: "lab-1", image: IMAGE }))
   assert.match(labDocker, /Test lab only/)
   assert.match(labDocker, /credentials travel unencrypted/)
   assert.ok(labDocker.includes("-e ZS_ALLOW_INSECURE_HTTP=1") && labDocker.includes(TOKEN), "the lab command carries the switch and the token")
-  const prodDocker = text(h(I.NodeInstallCommand, { apiUrl: HTTPS, method: "docker", token: TOKEN, name: "n1", image: IMAGE }))
+  const prodDocker = text(h(NodeInstallCommand, { apiUrl: HTTPS, method: "docker", token: TOKEN, name: "n1", image: IMAGE }))
   assert.ok(prodDocker.includes(`ZS_API_URL='${HTTPS}'`) && prodDocker.includes(TOKEN))
   assert.ok(!/Test lab only|ZS_ALLOW_INSECURE_HTTP/.test(prodDocker), "no lab switch on an https deployment")
-  const labHelm = text(h(I.NodeInstallCommand, { apiUrl: HTTP, method: "helm", token: TOKEN, name: "lab-1", image: IMAGE }))
+  const labHelm = text(h(NodeInstallCommand, { apiUrl: HTTP, method: "helm", token: TOKEN, name: "lab-1", image: IMAGE }))
   assert.ok(labHelm.includes("--set allowInsecureHttp=true") && /Test lab only/.test(labHelm))
   // the OVA has no switch: its properties (and token) are still shown, with why it cannot reach this API
-  const labOva = text(h(I.NodeInstallCommand, { apiUrl: HTTP, method: "ova", token: TOKEN, name: "lab-1", image: IMAGE }))
+  const labOva = text(h(NodeInstallCommand, { apiUrl: HTTP, method: "ova", token: TOKEN, name: "lab-1", image: IMAGE }))
   assert.ok(labOva.includes(TOKEN) && labOva.includes("The OVA has no plain-HTTP switch"), labOva)
 
-  const labPool = text(h(I.PoolHelmCommand, { apiUrl: HTTP, poolToken: TOKEN, image: IMAGE }))
+  const labPool = text(h(PoolHelmCommand, { apiUrl: HTTP, poolToken: TOKEN, image: IMAGE }))
   assert.ok(labPool.includes("--set allowInsecureHttp=true") && labPool.includes(TOKEN) && /Test lab only/.test(labPool))
-  const prodPool = text(h(I.PoolHelmCommand, { apiUrl: HTTPS, poolToken: TOKEN, image: IMAGE }))
+  const prodPool = text(h(PoolHelmCommand, { apiUrl: HTTPS, poolToken: TOKEN, image: IMAGE }))
   assert.ok(prodPool.includes(TOKEN) && !/allowInsecureHttp|Test lab only/.test(prodPool))
 
-  const row = (apiUrl: string) => text(h("table", null, h("tbody", null, h(I.ApiEgressRow, { apiUrl }))))
+  const row = (apiUrl: string) => text(h("table", null, h("tbody", null, h(ApiEgressRow, { apiUrl }))))
   assert.match(row(HTTPS), /devsecshieldapi\.zeroshield\.ai 443 Jobs in, results out \(HTTPS\)/)
   assert.match(row("https://api.dss.test:8443"), / 8443 /)
   assert.ok(!/\b80\b/.test(row(HTTP)) && row(HTTP).includes("—") && /test-lab nodes only/.test(row(HTTP)), row(HTTP))

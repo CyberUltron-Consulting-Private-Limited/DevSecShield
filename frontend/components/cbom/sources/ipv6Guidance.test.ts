@@ -41,7 +41,7 @@ assert.equal(targetGuidance("no_route", "OSError", "[fd00::1]:443"), IPV6_NO_ROU
 async function rendered() {
   const { createElement: h } = await import("react")
   const { renderToStaticMarkup } = await import("react-dom/server")
-  const { TargetProblemRow } = (await import("./RunResults")) as unknown as { TargetProblemRow: (p: unknown) => never }
+  const { TargetProblemRow } = await import("./RunResults")
   const row = (t: { target: string; status: string; error: string | null }) =>
     renderToStaticMarkup(h("ul", null, h(TargetProblemRow, { t }))).replace(/<[^>]+>/g, " ")
   const v6 = row({ target: "[fd00:cb::17]:443", status: "no_route", error: "IPv6 is not available on this scan node" })
