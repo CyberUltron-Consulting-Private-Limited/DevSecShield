@@ -206,7 +206,8 @@ def test_staging_workflow_builds_staging_with_the_build_exposed():
     .github/tests/test_deploy_staging.py; this one runs with the scripts it feeds."""
     wf = (ROOT / ".github/workflows/deploy-staging.yml").read_text()
     build = wf[wf.index("- name: Build images"):wf.index("- name: Save images")]
-    assert "DSS_EXPOSE_BUILD: ${{ inputs.expose_build && '1' || '0' }}" in build
+    # #105: through the Settings step, which sets expose_build=true on every push to staging
+    assert "DSS_EXPOSE_BUILD: ${{ steps.settings.outputs.expose_build == 'true' && '1' || '0' }}" in build
     assert "run: scripts/deploy/staging.sh build" in build
 
 

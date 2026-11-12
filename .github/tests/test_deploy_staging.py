@@ -38,12 +38,17 @@ class ExposeBuild(unittest.TestCase):
     def test_build_step_passes_it_to_staging_sh(self):
         build = step("Build images")
         self.assertIn("run: scripts/deploy/staging.sh build", build)
-        # boolean input -> "1" / "0": an explicit 0 also wins over any .env the checkout might hold
-        self.assertIn("DSS_EXPOSE_BUILD: ${{ inputs.expose_build && '1' || '0' }}", build)
+        # through the Settings step (#105: a push has no inputs and always exposes; a manual run keeps its input),
+        # then "1" / "0": an explicit 0 also wins over any .env the checkout might hold
+        self.assertIn("DSS_EXPOSE_BUILD: ${{ steps.settings.outputs.expose_build == 'true' && '1' || '0' }}", build)
 
     def test_only_the_build_step_reads_it(self):
-        # the switch changes what the images contain; save and deploy ship them as built
+        # the switch changes what the images contain; save and deploy ship them as built. The input is read once,
+        # by the Settings step, and its output only by the build step.
         self.assertEqual(TEXT.count("inputs.expose_build"), 1)
+        self.assertIn("INPUT_EXPOSE_BUILD: ${{ inputs.expose_build }}", step("Settings"))
+        self.assertEqual(TEXT.count("steps.settings.outputs.expose_build"), 1)
+        self.assertIn("steps.settings.outputs.expose_build", step("Build images"))
 
 
 if __name__ == "__main__":

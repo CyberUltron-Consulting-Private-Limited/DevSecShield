@@ -194,7 +194,26 @@ dead-lettered, and admins retry them from the delivery log.
 
 ## GitHub workflow
 
-**Deploy staging** (manual): builds, checks the image contexts, saves the archive as an artifact; with `deploy`
-ticked it also pushes to the host. Configure in the repository's `staging` environment: secrets
+**Deploy staging** (`.github/workflows/deploy-staging.yml`) runs on **every push to `staging`** (a promotion from
+`dev` merged): it builds that commit (frontend for `https://devsec-staging-api.zeroshield.ai`, build exposed), checks
+the image contexts, saves the archive as an artifact and deploys it to the host. Runs go one at a time in the order
+they arrive; a running deploy is never cancelled, and of several waiting pushes the newest deploys. A push run
+deploys only while its commit is still the tip of `staging` (step "Still the tip of staging"): GitHub re-runs keep
+the original commit, so re-running an older run fails with "superseded" instead of putting that commit back over a
+newer one; re-running the newest run is fine. A manual run
+(GitHub offers it from the default branch only) builds and saves; with `deploy` ticked it also pushes to the host.
+Nothing in it touches production. Configure in the repository's `staging` environment: secrets
 `STAGING_SSH_KEY`, `STAGING_SSH_KNOWN_HOSTS`, `STAGING_SSH_TARGET`; variable `STAGING_DIR`. Nothing of that is in
 the repository.
+
+**What a red Deploy staging run leaves behind** (there is no automatic rollback; `staging.sh push`/`deploy` above):
+* The build (or the superseded check) failed: nothing on the host changed.
+* `deploy` refused before switching tags (archive checksum, an image not loaded, or a database at a revision the
+  new tag's migrations do not contain): the containers still run the previous tag, but the host's deploy files
+  (compose file, nginx, `staging.sh`) are already the new bundle's and `releases/files-tag` is cleared. Fix the
+  cause and push again (or re-run the newest run). Do not use `rollback` here: `DSS_TAG` is still the running
+  release, so `rollback` would go to the release before it.
+* `compose up` failed: the host is on the new tag, partly started, and `deploy-history` says `FAILED`.
+* The post-deploy `staging.sh check` failed: the new tag is live and the run is red.
+For the last two, go back with `make rollback-staging HOST=user@host` (or `scripts/deploy/staging.sh rollback` on
+the host; it asks before a database downgrade), or push a fix to `staging`.
