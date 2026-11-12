@@ -110,7 +110,14 @@ jobs:
         continue-on-error: true
         run: |
           python3 bench/ct/capture.py "$OUT/crtsh-before" --cases live --domains zeroshield.ai --provider crtsh --tag before
-          (cd backend && CBOM_CT_PROVIDER=crtsh uv run --frozen python scripts/ct_live_proof.py --domains zeroshield.ai --out "$OUT/collector-crtsh.json")
+          # crt.sh answers 502 to about half of all requests (recorded): up to three product runs, a minute apart;
+          # every attempt's stored result is kept (a failed one must have been refunded)
+          for attempt in 1 2 3; do
+            if (cd backend && CBOM_CT_PROVIDER=crtsh uv run --frozen python scripts/ct_live_proof.py --domains zeroshield.ai --out "$OUT/collector-crtsh-$attempt.json"); then
+              cp "$OUT/collector-crtsh-$attempt.json" "$OUT/collector-crtsh.json"; break
+            fi
+            sleep 60
+          done
           python3 bench/ct/capture.py "$OUT/crtsh-after" --cases live --domains zeroshield.ai --provider crtsh --tag after
           python3 bench/ct/live_compare.py --collector "$OUT/collector-crtsh.json" --before "$OUT/crtsh-before" --after "$OUT/crtsh-after" --provider crtsh --report "$OUT/compare-crtsh.md"
       - name: Summary
