@@ -154,6 +154,9 @@ def main() -> int:
     ap.add_argument("--target-memory", default="160m")  # salt-ssh runs a Python salt-call on the host
     # The salt master runs up to --ssh-max-procs salt-ssh processes at once (~70 MB each, measured on the sandbox
     # EC2): a fixed 768 MB was OOM-killed at 50 (salt-api exited 137 and every target failed), so it scales with them.
+    # salt-api's ssh client answers one batch in one synchronous request: at 500 (all 200 lab hosts at once, on one
+    # 4-vCPU box that also runs every host) it passed the 960 s request timeout; the product default is 50.
+    ap.add_argument("--salt-ssh-batch", type=int, default=50)
     ap.add_argument("--master-memory", default=None, help="salt master container memory (default 512m + 80m per "
                                                           "salt-ssh process)")
     ap.add_argument("--awx-forks", type=int, default=10)
@@ -265,7 +268,7 @@ def main() -> int:
             cfg = {"targets": t_labels, "handles": {labels[n]: n.removeprefix(PREFIX) for n in tnames}, "tier": 2,
                    "timeout_s": 600, "zs_collect": zs,
                    "transport": {"base_url": f"https://{ips[MASTER]}:8000", "eauth": "pam", "client": "ssh",
-                                 "mode": "cmd", "batch_size": 500, "timeout_s": 900, "ca_pem": salt_ca}}
+                                 "mode": "cmd", "batch_size": args.salt_ssh_batch, "timeout_s": 900, "ca_pem": salt_ca}}
             doc = node_collect("salt_hosts", cfg, {"username": "zs", "password": salt_pw}, {"targets": t_labels},
                                state, out, "salt-ssh")
             rows = compare(ref, doc, t_labels)
