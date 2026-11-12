@@ -36,17 +36,27 @@ def _s(length: int):
     return sqlmodel.sql.sqltypes.AutoString(length=length)
 
 
+SEQUENCE = "cbomsshca_serial_seq"
+_issued = sa.table("cbomsshcertissued", sa.column("serial", sa.BigInteger()))
+_ca = sa.table("cbomsshca", sa.column("serial_next", sa.BigInteger()))
+
+
 def _pg() -> bool:
     return op.get_bind().dialect.name == "postgresql"
+
+
+def _highest_serial():
+    """The highest serial issued so far (0 when none); Vault serials are stored negative past 2^63 and skipped."""
+    return sa.func.coalesce(sa.select(sa.func.max(_issued.c.serial)).where(_issued.c.serial > 0).scalar_subquery(), 0)
 
 
 def upgrade() -> None:
     """Upgrade schema."""
     if _pg():
-        start = op.get_bind().execute(sa.text(
-            "SELECT GREATEST(COALESCE((SELECT max(serial) FROM cbomsshcertissued WHERE serial > 0), 0), "
-            "COALESCE((SELECT max(serial_next) FROM cbomsshca), 1) - 1) + 1")).scalar()
-        op.execute(sa.text(f"CREATE SEQUENCE cbomsshca_serial_seq START WITH {int(start)}"))
+        start = op.get_bind().execute(sa.select(sa.func.greatest(
+            _highest_serial(), sa.func.coalesce(sa.select(sa.func.max(_ca.c.serial_next)).scalar_subquery(), 1) - 1)
+            + 1)).scalar()
+        op.execute(sa.schema.CreateSequence(sa.Sequence(SEQUENCE, start=int(start))))
     op.add_column('cbomsshca', sa.Column('trust_generation', sa.BigInteger(), nullable=True))
 
     op.drop_index('ix_cbomsshcertissued_ca_id', table_name='cbomsshcertissued')
@@ -56,7 +66,7 @@ def upgrade() -> None:
                     unique=False)
     op.create_index('ix_cbomsshcertissued_team_ca_id', 'cbomsshcertissued', ['team_id', 'ca_id', 'id'], unique=False)
     op.create_index('ix_cbomsshcertissued_revoked', 'cbomsshcertissued', ['team_id', 'valid_before'], unique=False,
-                    postgresql_where=sa.text('revoked_at IS NOT NULL'), sqlite_where=sa.text('revoked_at IS NOT NULL'))
+                    postgresql_where=sa.column('revoked_at').isnot(None), sqlite_where=sa.column('revoked_at').isnot(None))
     op.create_index('ix_cbomscannode_ssh_public_key', 'cbomscannode', ['ssh_public_key'], unique=False,
                     postgresql_using='hash')
 
@@ -137,6 +147,5 @@ def downgrade() -> None:
     op.drop_column('cbomsshca', 'trust_generation')
     if _pg():
         # r6f14sshca001 signs with serial_next again: move every CA past the serials the sequence handed out
-        op.execute(sa.text("UPDATE cbomsshca SET serial_next = GREATEST(serial_next, "
-                           "(SELECT COALESCE(max(serial), 0) + 1 FROM cbomsshcertissued WHERE serial > 0))"))
-        op.execute(sa.text("DROP SEQUENCE IF EXISTS cbomsshca_serial_seq"))
+        op.execute(sa.update(_ca).values(serial_next=sa.func.greatest(_ca.c.serial_next, _highest_serial() + 1)))
+        op.execute(sa.schema.DropSequence(sa.Sequence(SEQUENCE)))

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import BigInteger, Index, Sequence, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Index, Sequence, Text, UniqueConstraint, column
 from sqlmodel import JSON, Column, DateTime, Field, SQLModel
 
 from backend.new_models import CbomScanNode, _cbom_utcnow
@@ -86,7 +86,7 @@ class CbomSshCertIssued(SQLModel, table=True):
         Index("ix_cbomsshcertissued_team_node_id", "team_id", "node_id", "id"),  # ?node_id=
         Index("ix_cbomsshcertissued_team_ca_id", "team_id", "ca_id", "id"),  # ?ca_id=
         Index("ix_cbomsshcertissued_revoked", "team_id", "valid_before",  # the KRL
-              postgresql_where=text("revoked_at IS NOT NULL"), sqlite_where=text("revoked_at IS NOT NULL")),
+              postgresql_where=column("revoked_at").isnot(None), sqlite_where=column("revoked_at").isnot(None)),
     )
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", ondelete="CASCADE")

@@ -143,8 +143,7 @@ def lab(world, api, monkeypatch, tmp_path):
     conf.write_text(api("GET", BASE + "/templates/sshd-config").text)
     script_dir = Path(tempfile.mkdtemp(prefix="f14-fetch-"))
     (script_dir / "zs-trust-fetch.sh").write_text(api("GET", BASE + "/templates/trust-fetch").text)
-    os.chmod(script_dir, 0o755)
-    os.chmod(script_dir / "zs-trust-fetch.sh", 0o755)
+    _lab_owned(script_dir, script_dir / "zs-trust-fetch.sh")  # read by the container's user only (run with sh)
     token = api("POST", BASE + "/trust-tokens", json={"name": "proof-server"})
     assert token.status_code == 201, token.text
     server, url = _serve_api()

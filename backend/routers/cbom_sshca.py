@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -239,14 +239,14 @@ TRUST_FETCH_TEMPLATE = r"""#!/bin/sh
 # ZeroShield CBOM: keep this server's SSH CA trust current (team {team_id}). Run as root from a timer, e.g. every 5
 # minutes with a random delay (systemd: OnUnitActiveSec=5min, RandomizedDelaySec=120). POSIX sh + curl + ssh-keygen.
 #   ZS_TRUST_TOKEN  a trust token of this team (CBOM Sources > Fleet > SSH CA > Trust tokens); keep it in a 0600 file
-#   ZS_URL          ZeroShield's API address (default {api_hint})
+#   ZS_URL          ZeroShield's API address (the one the scan nodes use, e.g. https://api.<your ZeroShield domain>)
 #   ZS_GROUPS       this server's group(s), space separated (principals zs-{team_id}-<group>)
 #   ZS_DIR          default /etc/ssh/zs-cbom;  ZS_RELOAD  default "systemctl reload ssh || systemctl reload sshd"
 # It never installs an empty or unreadable file: on any failure it keeps the old one and exits non-zero.
 set -u
 umask 022
 : "${{ZS_TRUST_TOKEN:?set ZS_TRUST_TOKEN}}"
-URL="${{ZS_URL:-{api_hint}}}"
+URL="${{ZS_URL:?set ZS_URL to ZeroShield's API address}}"
 DIR="${{ZS_DIR:-/etc/ssh/zs-cbom}}"
 GROUPS_Q=""
 for g in ${{ZS_GROUPS:-}}; do GROUPS_Q="${{GROUPS_Q}}${{GROUPS_Q:+&}}group=${{g}}"; done
@@ -310,15 +310,14 @@ def _principals_template(engine, team_id: int, group: str | None) -> str:
 @router.get(BASE + "/templates/{name}", dependencies=READ, openapi_extra=PERM_READ,
             summary="sshd configuration snippet, principals file or trust-fetch script for the servers")
 async def template(team_id: TeamId, name: Literal["sshd-config", "principals", "trust-fetch"], ctx: Member,
-                   request: Request, group: str | None = Query(default=None, max_length=48)):
+                   group: str | None = Query(default=None, max_length=48)):
     engine, _user = ctx
     if group is not None and not _GROUP.match(group):
         raise HTTPException(status_code=400, detail="group: lowercase letters, digits and . _ -")
     if name == "sshd-config":
         return Response(SSHD_TEMPLATE.format(team_id=team_id, installer_issue=INSTALLER_ISSUE), headers=TEXT)
-    if name == "trust-fetch":
-        api_hint = str(request.base_url).rstrip("/") or "https://api.zeroshield.example"
-        return Response(TRUST_FETCH_TEMPLATE.format(team_id=team_id, api_hint=api_hint), headers=TEXT)
+    if name == "trust-fetch":  # no request data in the script (the API address is the server's ZS_URL)
+        return Response(TRUST_FETCH_TEMPLATE.format(team_id=int(team_id)), headers=TEXT)
     return Response(await _run("template", team_id, _principals_template, engine, team_id, group), headers=TEXT)
 
 
