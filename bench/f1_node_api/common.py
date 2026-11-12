@@ -51,6 +51,10 @@ class Signer:
             return f"s2_{self.base + self.counter:019d}"
         return secrets.token_urlsafe(18)
 
+    def rebase(self, floor: int) -> None:
+        """After ``replay_window`` / ``seq_out_of_range``: the next nonce is the server's ``X-ZS-Seq-Next``."""
+        self.base, self.counter = floor - 1, 0
+
     def headers(self, method: str, path: str, body: bytes) -> dict[str, str]:
         ts = str(int(time.time()))
         nonce = self.nonce()

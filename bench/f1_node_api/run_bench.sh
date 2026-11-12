@@ -1,45 +1,54 @@
 #!/usr/bin/env bash
-# One F1.1 bench scenario end to end: PostgreSQL up, seed, backend up, simulate, collect, everything down.
+# One F1.1 bench scenario end to end: PostgreSQL up, seed, backend (and reaper) up, simulate, collect every artefact
+# (V7), evaluate the gates, everything down.
 #
 #   bench/f1_node_api/run_bench.sh <src-root> <workdir> <name> <seed args...> -- <sim args...>
 #
 # e.g. (on the shared lab machine, always under the heavy-tests lock):
-#   flock $L/heavy-tests.lock bench/f1_node_api/run_bench.sh . /scratch/f1 p2-steady \
-#       --nodes 10000 --sources 0 --assign pinned -- --protocol 2 --duration 600 --warmup 60
-# Result: <workdir>/<name>.json (the simulator's report) and <workdir>/<name>.gunicorn.log.
+#   flock $L/heavy-tests.lock bench/f1_node_api/run_bench.sh . /scratch/f1 E1 \
+#       --nodes 10000 --sources 0 --assign segment -- --duration 600 --warmup 60
+# Result directory <workdir>/<name>/: sim.json (the simulator's report), trace.tsv (every attempt), server.log (the
+# whole gunicorn log), reaper.log, pg.log (lock waits, deadlocks), db.json (run, money and job facts), gates.json
+# (report.py: every gate and threshold of the scenario).  F1_PIN_SERVER / F1_PIN_SIM pin the server and the
+# simulator to separate vCPUs (V1).  CBOM_NODE_STATS_S=10 so the server's stats lines cover the whole run.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 src=$(cd "${1:?src root}" && pwd); work=${2:?workdir}; name=${3:?name}; shift 3
 seed_args=(); while [[ $# -gt 0 && $1 != -- ]]; do seed_args+=("$1"); shift; done
 [[ ${1:-} == -- ]] && shift
 VENV=${F1_VENV:-/home/claude/devsecshield/backend/.venv}
-WORKERS=${F1_WORKERS:-2}
-mkdir -p "$work"
-trap '"$here/stack.sh" down "$work" >/dev/null 2>&1 || true' EXIT
+WORKERS=${F1_WORKERS:-3}
+PORT=${F1_API_PORT:-18080}
+out=$work/$name
+mkdir -p "$out"
+export CBOM_NODE_STATS_S=${CBOM_NODE_STATS_S:-10}
+collect() {
+  cp "$work/gunicorn.log" "$out/server.log" 2>/dev/null || true
+  cp "$work/reaper.log" "$out/reaper.log" 2>/dev/null || true
+  docker logs "${F1_PG_NAME:-f1bench-pg}" > "$out/pg.log" 2>&1 || true
+  if [[ -f $work/db_url ]]; then
+    PYTHONPATH="$src" "$VENV/bin/python" "$here/facts.py" --db "$(cat "$work/db_url")" > "$out/db.json" 2>"$out/facts.err" || true
+  fi
+  "$VENV/bin/python" "$here/report.py" --name "$name" --dir "$out" > "$out/gates.json" 2>"$out/report.err" || true
+}
+trap 'collect; "$here/stack.sh" down "$work" >/dev/null 2>&1 || true' EXIT
 "$here/stack.sh" down "$work" >/dev/null 2>&1 || true
-rm -f "$work/env"
+rm -f "$work/env" "$work/gunicorn.log" "$work/reaper.log"
 F1_SKIP_API=1 "$here/stack.sh" up "$src" "$work"
 set -a; . "$work/env"; set +a
 db=$(cat "$work/db_url")
 PYTHONPATH="$src" "$VENV/bin/python" "$here/seed.py" --db "$db" --creds "$work/creds.json" --yes-drop-everything \
-  "${seed_args[@]}"
+  "${seed_args[@]}" | tee "$out/seed.json"
 "$here/stack.sh" up "$src" "$work" "$WORKERS"
 master=$(cat "$work/gunicorn.pid")
-pids="$master,$(pgrep -P "$master" | paste -sd,)"
+pin=()
+[[ -n ${F1_PIN_SIM:-} ]] && pin=(taskset -c "$F1_PIN_SIM")
+lscpu -e > "$out/lscpu.txt" 2>/dev/null || true
+free -m > "$out/free-before.txt" 2>/dev/null || true
+ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 cd "$src/backend"
-PYTHONPATH="$src" "$VENV/bin/python" "$here/sim.py" --api "http://127.0.0.1:${F1_API_PORT:-18080}" \
-  --creds "$work/creds.json" --db "$db" --pg-container "${F1_PG_NAME:-f1bench-pg}" --server-pids "$pids" \
-  --out "$work/$name.json" "$@" > /dev/null
-# the server log can reach hundreds of MB under overload: keep its error counts and its tail only
-{ echo "tracebacks: $(grep -c Traceback "$work/gunicorn.log" || true)"
-  echo "lines: $(wc -l < "$work/gunicorn.log")"
-  grep -oE "(ref [A-Za-z0-9-]+|[A-Za-z]+(Error|Exception|Timeout)\b)" "$work/gunicorn.log" | sort | uniq -c | sort -rn | head -20
-  echo "--- tail"; tail -n 60 "$work/gunicorn.log"; } > "$work/$name.server-log.txt" 2>&1 || true
-python3 - "$work/$name.json" <<'PY'
-import json, sys
-d = json.load(open(sys.argv[1]))
-print(json.dumps({"rate": d["req_per_s"], "all": d["latency"]["all"], "errors": d["errors"],
-                  "cpu": d["cpu_pct_of_one_cpu"], "db_tps": d["db"].get("tps_avg"),
-                  "stmts_per_s": d["db"].get("statements_per_s"), "nonce_inserts": d["db"].get("nonce_inserts"),
-                  "lag": d["sim_loop_lag_ms"], "run": {k: v for k, v in d["run"].items() if k != "timeline"}}))
-PY
+PYTHONPATH="$src" "${pin[@]}" "$VENV/bin/python" "$here/sim.py" --api "http://127.0.0.1:$PORT" \
+  --creds "$work/creds.json" --db "$db" --server-pid "$master" --port "$PORT" \
+  --out "$out/sim.json" --trace "$out/trace.tsv" "$@" | tee "$out/sim-summary.json"
+free -m > "$out/free-after.txt" 2>/dev/null || true
+sleep $(( ${CBOM_NODE_STATS_S%.*} + 2 ))  # the server's last stats line
