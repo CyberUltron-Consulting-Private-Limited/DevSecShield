@@ -290,7 +290,7 @@ def test_a_dual_stack_name_with_one_listed_address_gets_no_socket_at_all(lis, dn
 
 def test_control_the_socket_log_sees_an_ipv6_attempt(dns, socket_log):
     table, _ = dns
-    table["v6only.internal"] = ["fd00::5"]
+    table["v6only.internal"] = ["::1"]  # refused at once with IPv6, refused at socket creation without it
     ctx = _ctx([])
     [target] = L._targets(ctx, {"targets": ["v6only.internal"]})
     with pytest.raises(L.TargetFail):
