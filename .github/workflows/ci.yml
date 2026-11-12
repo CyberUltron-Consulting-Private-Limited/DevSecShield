@@ -6,8 +6,7 @@
 # was skipped although its paths changed.
 #
 #   changes      what changed -> which suites run, and the image list
-#   pr-checks    branch-flow (staging <- dev, main <- staging | hotfix/*), review-labels (drop outdated review labels),
-#                pr-hygiene (title, acceptance criteria, no secret files, gate changes and suppressions need a label)
+#   pr-checks    branch-flow (staging <- dev, main <- staging | hotfix/*), pr-hygiene (title, acceptance criteria)
 #   backend      backend/ pytest on Python 3.12 with PostgreSQL 15, ruff "no new findings"
 #   aibom        aibom/ pytest (AI-BOM + CBOM gates), ruff + mypy "no new findings", representative-repo gates
 #   cbom-action  .github/actions/cbom-scan: a clean tree passes, a vulnerable tree is blocked (exit 1, not 127)
@@ -16,7 +15,8 @@
 #   dast-worker  RabbitMQ/dast_worker pytest (helpers/tests/test_*)
 #   worker-locks uv lock --check for the guardrail worker
 #   frontend     npm ci, tsc, eslint "no new errors", *.test.ts with tsx, next build
-#   security     gitleaks, ggshield, Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint
+#   security     Semgrep, OSV-Scanner, Trivy fs, Checkov, Hadolint, ShellCheck, actionlint (no secret scanning since
+#                2026-11-12, owner decision)
 #   codeql       python + javascript-typescript (only where CodeQL is licensed; see reusable-codeql.yml)
 #   images       docker build (no push) + Trivy image scan for each changed image
 #   ci-gate      summary of all of the above; the required status check
@@ -27,6 +27,11 @@ name: CI
 on:
   pull_request:
     branches: [dev, staging, main]
+  # A merge queue (a ruleset setting, not on yet) tests each queued PR merged onto the latest base before it lands.
+  # It runs this workflow on the queue's temporary branch (gh-readonly-queue/<base>/pr-<n>-<sha>); the queue waits
+  # for ci-gate there, as a PR does. The suites and images run as on a PR; pr-checks does not (no PR event).
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [dev, staging, main]
   workflow_dispatch:
@@ -38,6 +43,8 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   # A new push to a PR cancels the older run. On dev / staging / main a running run is not cancelled, but GitHub
   # keeps only one PENDING run per group: with several quick merges, the middle commits can end up with no result.
+  # Merge-queue runs are never cancelled here (their ref is unique per queue entry). GitHub does not cancel them
+  # either when it rebuilds or drops a queue group: they finish (#71).
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -62,9 +69,10 @@ jobs:
       images: ${{ steps.decide.outputs.images }}
     steps:
       # Pull requests: the file list comes from the API. Pushes: from git, against the commit before the push (`base`
-      # = the pushed branch; without it the action diffs against the default branch). workflow_dispatch: everything.
+      # = the pushed branch; without it the action diffs against the default branch). Merge queue: from git, with
+      # `base` empty, the action diffs merge_group.base_sha..head_sha from the event. workflow_dispatch: everything.
       - name: Checkout
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'merge_group'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -161,6 +169,8 @@ jobs:
               - 'scan_node/**'
             img-scan-worker:
               - 'RabbitMQ/worker/**'
+              # a change to how images are built is proven on the largest image (#50: it filled the runner disk)
+              - '.github/workflows/reusable-image-build.yml'
             img-scan-worker-aibom:
               - 'aibom/**'
             img-dast-worker:
@@ -191,14 +201,15 @@ jobs:
               - '!LICENSE*'
 
       # What runs:
-      #   pull requests and pushes to dev  the suites whose paths changed
+      #   pull requests, merge queue and pushes to dev
+      #                                   the suites whose paths changed
       #   pushes to staging and main      security and the changed images only: those commits arrive through a PR
       #                                   whose run already tested the merged tree ("Require branches to be up to
       #                                   date" in branch protection), so the suites are not run a second time
       #   workflow_dispatch               everything
-      # The scan-worker image (torch through garak, about 20 minutes) is built on a PR only when RabbitMQ/worker/
-      # changes; on a push to dev also when aibom/ (copied into the image) changes. Its layer cache is written on
-      # pushes to dev only, and PRs read it.
+      # The scan-worker image (torch through garak, about 20 minutes) is built on a PR or in the merge queue only
+      # when RabbitMQ/worker/ or the image workflow changes; on a push to dev also when aibom/ (copied into the
+      # image) changes. Its layer cache is written on pushes to dev only, and PRs read it.
       - name: Decide
         id: decide
         env:
@@ -259,7 +270,7 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-      pull-requests: write # review-labels removes review labels that new commits outdate; it checks out nothing
+      pull-requests: read # pr-hygiene reads the PR's title and body
     uses: ./.github/workflows/reusable-pr-checks.yml
 
   backend:
@@ -469,11 +480,10 @@ jobs:
     name: security
     permissions:
       contents: read
-      pull-requests: read # gitleaks reads the PR's secret-fixtures-reviewed label
     uses: ./.github/workflows/reusable-security.yml
     with:
       # Deliberately vulnerable detector fixtures and benchmark clones, anchored to their real roots (a future
-      # product directory named "fixtures" or "examples" elsewhere is still scanned). gitleaks ignores this list.
+      # product directory named "fixtures" or "examples" elsewhere is still scanned).
       exclude-regex: >-
         ^(aibom/tests/fixtures|scan_node/tests/fixtures|backend/tests/fixtures|e2e/fixtures|bench/repos|aibom/bench/repos|aibom/examples)/|(^|/)(node_modules|\.venv|venv|\.next|dist)/
       semgrep-exclude: >-
@@ -486,8 +496,6 @@ jobs:
       helm-charts: >-
         deploy/helm/cbom-scan-node --set apiUrl=https://ci.invalid --set registrationToken=ci-placeholder
         --set agent.enabled=true --set agent.poolToken=ci-placeholder
-    secrets:
-      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
 
   codeql:
     name: codeql
