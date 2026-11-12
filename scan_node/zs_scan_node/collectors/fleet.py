@@ -74,7 +74,9 @@ def _setup(ctx: JobContext, config: dict, secrets: dict, scope: dict, limit: int
         raise ConfigError("No verified zs-collect release is active in ZeroShield: import and verify one first")
     transport_cfg = config.get("transport")
     if not isinstance(transport_cfg, dict) or not transport_cfg:
-        raise ConfigError("The transport of this source is missing, disabled or deleted")
+        # the backend's claim plugin says why (deleted, disabled, another kind, flag off); older servers say nothing
+        raise ConfigError(str(config.get("transport_problem") or "The transport of this source is missing, disabled "
+                                                                  "or deleted")[:300])
     handles = config.get("handles") or {}
     addresses = config.get("addresses") or {}
     labels = [str(x).strip() for x in (scope.get("targets") or config.get("targets") or []) if str(x).strip()]
