@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .rundir import write_text
+
 SECRET_HEADERS = {"authorization", "cookie", "set-cookie", "proxy-authorization", "x-zs-node-token",
                   "x-zs-registration-token", "x-api-key"}
 SECRET_KEYS = re.compile(
@@ -117,7 +119,7 @@ def scrub_har(har: dict[str, Any]) -> dict[str, Any]:
 def scrub_har_file(path: Path) -> Path:
     path = Path(path)
     har = json.loads(path.read_text(encoding="utf-8"))
-    path.write_text(json.dumps(scrub_har(har), indent=1), encoding="utf-8")
+    write_text(path, json.dumps(scrub_har(har), indent=1))
     return path
 
 

@@ -412,9 +412,10 @@ FIELDS: dict[str, dict[str, Callable[[dict[str, Any]], Any]]] = {
     "finding": {"api": lambda a: a.get("finding"), "db": lambda r: r.get("finding"), "export": _prop("zs:finding")},
     "finding_codes": {"api": lambda a: a.get("finding_codes"), "db": lambda r: r.get("finding_codes"),
                       "export": lambda c: props(c).get("zs:finding_code", [])},
-    "curve": {"api": lambda a: _facts(a).get("curve"), "db": lambda r: _facts(r).get("curve"),
+    "curve": {"api": lambda a: _first(_facts(a), "curve", "crv"), "db": lambda r: _first(_facts(r), "curve", "crv"),
               "export": _prop("zs:curve")},
-    "signature_algorithm": {"api": lambda a: _facts(a).get("sig_alg"), "db": lambda r: _facts(r).get("sig_alg"),
+    "signature_algorithm": {"api": lambda a: _first(_facts(a), "sig_alg", "signature_alg", "signature_algorithm"),
+                            "db": lambda r: _first(_facts(r), "sig_alg", "signature_alg", "signature_algorithm"),
                             "export": _prop("zs:signature_algorithm")},
     "not_before": {"api": lambda a: _facts(a).get("not_before"), "db": lambda r: _facts(r).get("not_before"),
                    "export": lambda c: _cert(c, "notValidBefore")},
@@ -431,6 +432,14 @@ FIELDS: dict[str, dict[str, Callable[[dict[str, Any]], Any]]] = {
     "groups": {"api": lambda a: _groups_of(_facts(a)), "db": lambda r: _groups_of(_facts(r)),
                "export": _prop("zs:groups")},
 }
+
+
+def _first(facts: dict[str, Any], *keys: str) -> Any:
+    """The first fact present under any of the names collectors use (CB-06 v1 §2 reads the same aliases)."""
+    for key in keys:
+        if facts.get(key) not in (None, ""):
+            return facts[key]
+    return None
 
 
 def _both(facts: dict[str, Any], *keys: str) -> Any:
@@ -488,6 +497,9 @@ def view_eq(field: str, value: Any) -> Any:
 # ----------------------------------------------------------------------------------------------------- UI rows
 # How the Results table renders an API item (RunResults.tsx): impact badge ("Info" when none), the type label, the
 # location (+ target when it differs), "<algorithm or protocol or —>[ <key size>]", the finding, and the quantum text.
+# PRODUCT COPY, JOIN-ONLY: TYPE_LABELS and ui_expected transcribe the product's own rendering so the UI <-> API
+# self-consistency join can compare cells. They must never feed an oracle value (O-1 covers oracle values); a product
+# change to the copy fails the join closed, which is the intent.
 TYPE_LABELS = {
     "certificate": "Certificate", "private_key": "Private key", "public_key": "Public key", "keystore": "Keystore",
     "ssh_host_key": "SSH host key", "ssh_server_config": "SSH server config", "ssh_endpoint": "SSH endpoint",

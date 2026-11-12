@@ -63,8 +63,15 @@ COMMIT;"
 done
 
 if command -v docker >/dev/null 2>&1; then
-  docker ps -a --format '{{.Names}}' | grep -E "$CONTAINERS" | sort | while read -r name; do
-    short=${name#dss-staging-}; short=${short%-1}
+  # lab containers come from the lab's own lab.json (INTERFACES v7 §A.6: never assume a name prefix)
+  lab=""
+  if [ -f "$RUN/lab/lab.json" ]; then
+    lab=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("\n".join(sorted({x.get("container") for x in (d.get("targets") or [])+(d.get("listeners") or []) if x.get("container")})))' "$RUN/lab/lab.json")
+  fi
+  { docker ps -a --format '{{.Names}}' | grep -E "$CONTAINERS"; [ -n "$lab" ] && printf '%s\n' "$lab"; } | sort -u | while read -r name; do
+    [ -n "$name" ] || continue
+    short=$name
+    case $name in dss-staging-*) short=${name#dss-staging-}; short=${short%-1} ;; esac
     docker logs --timestamps --since "$SINCE" "$name" > "$RUN/logs/$short.log" 2>&1 || echo "collect-evidence: logs of $name failed" >&2
   done
 fi

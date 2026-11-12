@@ -17,6 +17,8 @@ flow/command.mjs           the G3 allowed-diff rule (UI command token for token 
 harness/                   the judge: per-row join keyed by asset id (UI DOM, API, DB, export), closed/open-world
                            oracle matching, derived numbers, canary grep, 5xx<->log ref, ledger, manifest, redaction
 known-fail.yaml            the strict ledger: every failing check is fixed or listed with an issue and owner
+harness/negative.py        negative controls: 27 deliberately wrong CBOMs made from a real run's evidence; each must FAIL
+tools/mutants.py           one-line mutants of the judge; each must be killed by tests/
 tests/                     the judge's own tests: a correct CBOM passes, deliberately wrong ones fail
 ```
 
@@ -27,6 +29,8 @@ cd e2e/cbom
 python3 -m harness.gate judge <run>      # report.json + report.md + diff/; exit 0 pass, 1 fail, 2 error
 python3 -m harness.gate verify <run>     # or: cd <run> && sha256sum -c SHA256SUMS
 python3 -m pytest -q tests               # the judge's own suite
+python3 -m harness.negative <run>        # the 27 wrong CBOMs on a copy of <run>: each FAILs, the run itself PASSes
+python3 tools/mutants.py                 # mutation score of tests/ (every mutant must be killed)
 node --test flow/command.test.mjs
 ```
 
@@ -37,3 +41,22 @@ pass) or NOT-RUN. The ledger turns a listed FAIL into KNOWN-FAIL. The gate passe
 nothing unlisted was skipped, and no ledger row is stale: a row whose checks all pass fails the gate until the PR that
 fixed it deletes the row. Product correctness is judged against the oracle on the API value; a field the export does
 not carry is FAIL(export-missing), never a skip.
+
+Ledger rows (v2, INTERFACES v7 §B) match on allowlisted keys only (exact strings; a list is "any of"; never `verdict`,
+`id` or a `*_prefix`) inside their `gate`, must name a narrowing key (`check`, `oracle_id`, `field`, `part`, `step`,
+`probe`) and pin `expect_failing` (and `expect_not_run` with `not_run_ok`). A count that moves either way, up (a new
+defect under an old row) or down (a fix), fails the gate until the row is edited.
+
+## CI vs local
+
+CI (ci-gate, backend job) runs `tests/` only: the judge's unit suite, the golden negative-control suite (a trimmed,
+sanitised snapshot of a real Tier-L run under `tests/golden/`, re-judged with every wrong CBOM), the O-1 import lint and
+the repository ledger's schema. CI never sees a live run: it cannot tell whether `known-fail.yaml`'s pinned counts are
+still true on dev. Only `run-gate.sh` on the local stack (Tier L: the dss-staging stack, Docker, the CB-02 lab,
+Chromium) can, so **a ledger edit needs a live run in the same PR**.
+
+How a PR proves the gate (DA §4.6): run `run-gate.sh <head>` on the PR head rebased on dev, under `stack.lock`; no new
+failure (nothing blocking, every ledger row `holds` or `not-run-ok`); post the bundle sha256
+(`sha256sum <run>/SHA256SUMS`) and the `report.md` ledger table on the PR. A PR that fixes a ledgered defect sees its
+row `moved` or `stale` and edits or deletes it in the same PR, backed by that run. The golden fixture is refreshed
+with `python3 tools/golden.py <run> tests/golden` plus its own ledger snapshot when the lab or the judge changes shape.

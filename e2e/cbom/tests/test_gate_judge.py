@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import ledgers
 from fakerun import FakeRun
 from harness import gate, manifest
 
@@ -33,10 +34,7 @@ def test_correct_cbom_passes(tmp_path, empty_ledger):
 
 def test_correct_cbom_passes_with_posture_ledgered(tmp_path):
     run = FakeRun(tmp_path).write()
-    ledger = tmp_path / "l.yaml"
-    ledger.write_text(
-        "- row: POSTURE\n  gate: [G11]\n  match: {kind: derived, field: posture}\n  issue: '#1'\n  owner: CB-05\n"
-        "  why: no posture oracle yet\n  not_run_ok: CB-05 defines the posture oracle\n", encoding="utf-8")
+    ledger = ledgers.write(tmp_path / "l.yaml", ledgers.POSTURE)
     passed, blocking, _ = judge(run, ledger)
     assert passed and not blocking
 
@@ -101,18 +99,34 @@ def test_differ_fails_rsa3072_against_export_without_key_size(tmp_path, empty_le
 def test_legacy_export_is_known_fail_under_kf9(tmp_path):
     fr = FakeRun(tmp_path, legacy_export=True)
     fr.write()
-    ledger = tmp_path / "l.yaml"
-    ledger.write_text(
-        "- row: KF-9\n  gate: [G11]\n  match: {kind: join, view: export, field: [key_size, curve, signature_algorithm,"
-        " groups, pqc_class, provenance, job_id]}\n  issue: '#1'\n  owner: CB-06\n  why: export lacks fields\n"
-        "- row: KF-9o\n  gate: [G11]\n  match: {kind: oracle, field: pqc_class}\n  issue: '#1'\n  owner: CB-06\n"
-        "  why: no pqc_class in the export\n"
-        "- row: POSTURE\n  gate: [G11]\n  match: {kind: derived, field: posture}\n  issue: '#1'\n  owner: CB-05\n"
-        "  why: no posture oracle yet\n  not_run_ok: CB-05\n", encoding="utf-8")
+    ledger = ledgers.write(
+        tmp_path / "l.yaml",
+        ledgers.row("KF-9", ["G11"], {"kind": "join", "view": "export", "reason": "export-missing",
+                                      "field": ["key_size", "curve", "signature_algorithm", "groups", "pqc_class",
+                                                "provenance", "job_id"]}, failing=15, owner="CB-06"),
+        ledgers.row("KF-9o", ["G11"], {"kind": "oracle", "field": "pqc_class", "reason": "export-missing"},
+                    failing=1, owner="CB-06"),
+        ledgers.POSTURE)
     passed, blocking, report = judge(fr.dir, ledger)
     assert passed, sorted(blocking)
     rows = {r["row"]: r for r in report["ledger"]}
-    assert rows["KF-9"]["status"] == "holds" and rows["KF-9"]["failing"] >= 6
+    assert rows["KF-9"]["status"] == "holds" and rows["KF-9"]["failing"] == 15
+
+
+def test_a_ledger_row_whose_count_moves_fails_the_gate(tmp_path):
+    """v2: expect_failing pins the row; one fixed check (fewer) or one new defect under the row (more) both fail."""
+    fr = FakeRun(tmp_path, legacy_export=True)
+    fr.write()
+    rows = [ledgers.row("KF-9", ["G11"], {"kind": "join", "view": "export", "reason": "export-missing",
+                                         "field": ["key_size", "curve", "signature_algorithm", "groups", "pqc_class",
+                                                   "provenance", "job_id"]}, failing=n, owner="CB-06")
+            for n in (14, 16)]
+    for r in rows:
+        ledger = ledgers.write(tmp_path / "l.yaml", r,
+                               ledgers.row("KF-9o", ["G11"], {"kind": "oracle", "field": "pqc_class"}, failing=1),
+                               ledgers.POSTURE)
+        passed, _, report = judge(fr.dir, ledger)
+        assert not passed and {x["row"]: x["status"] for x in report["ledger"]}["KF-9"] == "moved"
 
 
 def test_oracle_changed_after_start_fails(tmp_path, empty_ledger):
@@ -233,20 +247,22 @@ def _add_everywhere(fr, aid, target, location):
     fr.edit_json("ui/assets-run1.json", lambda d: d["rows"].append(fr.ui_row(spec)))
 
 
-def test_chain_certificates_at_one_location_are_told_apart_by_fingerprint(tmp_path, empty_ledger):
-    """A leaf and its CA share the endpoint's location; the product may store them in either order."""
+@pytest.mark.parametrize("ca_id", [99, 120])
+def test_chain_certificates_at_one_location_are_told_apart_by_fingerprint(tmp_path, empty_ledger, ca_id):
+    """A leaf and its CA share the endpoint's location; the product may store them in either order (both orders are
+    tried, so matching by id order alone fails one of them: mutant O9)."""
     fr = FakeRun(tmp_path)
     leaf = fr.assets[0]
-    ca = dict(leaf, id=99, name="CN=lab CA", algorithm="RSA", key_size=2048, impact="Low", codes=[],
+    ca = dict(leaf, id=ca_id, name="CN=lab CA", algorithm="RSA", key_size=2048, impact="Low", codes=[],
               finding="Quantum-vulnerable key", pqc="vulnerable",
               facts={**leaf["facts"], "key_alg": "RSA", "curve": None, "subject": "CN=lab CA", "issuer": "CN=lab CA",
                      "fingerprint_sha256": "bb" * 32, "serial": "ca"},
-              oracle={"target": "z01", "expect": {"algorithm": "RSA", "subject": "CN=lab CA",
-                                                   "fingerprint_sha256": "BB:" * 31 + "BB"}})
+              oracle={"target": "z01", "expect": {"algorithm": "RSA", "subject": "CN=lab CA", "key_size": 2048,
+                                                   "quantum_vulnerable": True, "fingerprint_sha256": "BB:" * 31 + "BB"}})
     leaf["facts"]["fingerprint_sha256"] = "aa" * 32
     leaf["oracle"]["expect"]["fingerprint_sha256"] = "aa" * 32
     ca["facts"] = {k: v for k, v in ca["facts"].items() if v is not None}
-    fr.assets.insert(0, ca)  # the CA gets the lower id 99: matching by order alone would swap the two
+    fr.assets.insert(0, ca)  # the CA is listed first in the oracle, whatever its id
     fr.write()
     fr.edit_json("oracle/run1.json", lambda d: [a.__setitem__("oracle_id", f"z01/cert{i}") for i, a in
                                                 enumerate(x for x in d["targets"][0]["assets"] if x["asset_type"] == "certificate")])
@@ -254,7 +270,7 @@ def test_chain_certificates_at_one_location_are_told_apart_by_fingerprint(tmp_pa
     passed, blocking, report = judge(fr.dir, empty_ledger)
     assert not [b for b in blocking if "/oracle/" in b], sorted(blocking)
     by_id = {c["id"]: c for c in report["checks"]}
-    assert by_id["G11/oracle/run1/z01/cert0/present"]["subject"]["asset_id"] == 99
+    assert by_id["G11/oracle/run1/z01/cert0/present"]["subject"]["asset_id"] == ca_id
     assert by_id["G11/oracle/run1/z01/cert1/present"]["subject"]["asset_id"] == 101
 
 

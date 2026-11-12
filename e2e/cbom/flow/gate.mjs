@@ -15,7 +15,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync }
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { allowedDiff, splitCommand } from "./command.mjs";
+import { allowedDiff, allowedTokens, sameTokens, splitCommand, tokenDiff } from "./command.mjs";
+import { inCidr, plannedCharge } from "./rates.mjs";
+import { createConnection } from "node:net";
 import * as cb05 from "./cb05.mjs";
 
 const R6 = process.env.R6 || "/home/claude/round6";
@@ -186,10 +188,34 @@ async function signUp(browser, label, s) {
   return who;
 }
 
+const TAB_VALUES = { "Scan nodes": "scan-nodes", Servers: "servers", "Kubernetes & Databases": "k8s-db", "Cloud & Identity": "cloud",
+  "Network TLS": "network", Evidence: "evidence", "Review & Run": "review" };
 async function sourcesTab(page, team, tab) {
-  const t = page.getByRole("tab", { name: new RegExp(`^${tab}$`, "i") });
-  if (await t.count()) { await t.first().click(); } else { await page.goto(`${UI}/${team}/cbom/sources?tab=${tab}`); }
+  const t = page.getByRole("tab", { name: new RegExp(`^${tab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") });
+  if (await t.count()) { await t.first().click(); } else { await page.goto(`${UI}/${team}/cbom/sources?tab=${TAB_VALUES[tab] || tab}`); }
   await page.waitForLoadState("networkidle");
+}
+
+/** The node container's addresses (docker inspect), for the never-scan and SOC checks. */
+function nodeAddresses(container) {
+  const r = spawnSync("docker", ["inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", container], { encoding: "utf8" });
+  return (r.stdout || "").split(/\s+/).filter(Boolean);
+}
+
+/** Listener log lines (INTERFACES §4: {"ts","peer":"ip:port","local"}) or null when the file is absent. */
+function listenerLines(l) {
+  const p = join(RUN, l.log || "");
+  if (!existsSync(p)) return null;
+  return readFileSync(p, "utf8").split("\n").filter(Boolean).map((x) => { try { return JSON.parse(x); } catch { return { bad: x }; } });
+}
+
+/** One TCP connection from this host to the listener (peer = the lab network's gateway), to prove its log path. */
+async function probeListener(l, port) {
+  return new Promise((resolve) => {
+    const sock = createConnection({ host: l.address, port, timeout: 5000 }, () => { sock.end(); resolve(true); });
+    sock.on("error", () => resolve(false));
+    sock.on("timeout", () => { sock.destroy(); resolve(false); });
+  });
 }
 
 // G17: both customers sign out through the UI (user menu > Sign out); proven by the login page and a 401 afterwards
@@ -215,13 +241,6 @@ async function signOut(who) {
   return after.status === 401 || after.status === 403;
 }
 
-function inCidr(ip, cidr) {
-  const [net, bits = "32"] = cidr.split("/");
-  const n = (a) => a.split(".").reduce((x, o) => x * 256 + Number(o), 0);
-  const size = 2 ** (32 - Number(bits));
-  return Math.floor(n(ip) / size) === Math.floor(n(net) / size);
-}
-
 async function overflow(page) {
   return page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth }));
 }
@@ -237,16 +256,15 @@ try {
     A = await signUp(browser, "customerA", s);
     state.teams = { ...(state.teams || {}), A: A.team };
     s.check("signed_up", Number.isInteger(A.team), { expected: "a new team id", observed: A.team });
-    // operator top-up (allowed, §4.1). The operator signs in with a mailed code on a shared stack where other sessions
-    // also sign in (send_code is limited per IP): retry with a pause, and keep the operator tool's own error text
-    let topupErr = null;
+    // operator top-up: the shared stack's operator sign-in is rate-limited per IP; retry 4x, 30 s apart (CB-05 v7 #8)
+    let topupError = "";
     for (let i = 0; i < 4; i++) {
       const r = spawnSync("python3", [`${R6}/local/bin/dss.py`, "topup", String(A.team), String(TOPUP)], { encoding: "utf8", timeout: 300000 });
-      topupErr = r.status === 0 ? null : `${(r.stderr || r.stdout || "").trim().split("\n").pop()}`.slice(0, 200);
-      if (!topupErr) break;
-      await sleep(30000);
+      if (r.status === 0) { topupError = ""; break; }
+      topupError = ((r.stderr || r.stdout || String(r.error || "")).trim().split("\n").pop() || `exit ${r.status}`).slice(0, 300);
+      if (i < 3) await sleep(30000);
     }
-    if (topupErr) throw new Error(`operator top-up failed 4 times: ${topupErr}`);
+    if (topupError) throw new Error(`operator top-up failed 4x: ${topupError}`);
     await A.page.reload({ waitUntil: "networkidle" });
     const text = await A.page.getByText(/\d+(\.\d+)? credits/).first().textContent({ timeout: 20000 }).catch(() => "");
     const shown = Number((text.match(/([\d.]+) credits/) || [])[1]);
@@ -320,23 +338,33 @@ try {
     // run it: the UI's command, token for token, plus only the allowed diff (DA §4.1)
     const plan = allowedDiff(command, { lab, image: args["node-image"], ca: CA });
     writeFileSync(join(s.dir, "command-run.txt"), plan.argv.map((a) => (a.includes(token) ? a.replace(token, "<token>") : a)).join(" ") + "\n");
-    writeJson(join(s.dir, "command-diff.json"), { allowed: plan.allowed, extra: plan.extra, removed: plan.removed });
-    s.check("allowed_diff", plan.extra.length === 0 && plan.removed.length === 0, { expected: "UI command + allowed diff only", observed: { extra: plan.extra, removed: plan.removed }, reason: "command-diff" });
+    // DA §4.1: the harness diffs the token lists of the UI command and the argv it executes (not the planner's notes)
+    const diff = tokenDiff(splitCommand(command), plan.argv);
+    const allowedAdd = allowedTokens({ ca: CA });
+    const mask = (t) => (token && t.includes(token) ? t.replace(token, "<token>") : t);
+    writeJson(join(s.dir, "command-diff.json"), { added: diff.added.map(mask), removed: diff.removed.map(mask), allowed: allowedAdd, planner: { extra: plan.extra } });
+    s.check("allowed_diff", diff.removed.length === 0 && sameTokens(diff.added, allowedAdd), { expected: { added: allowedAdd, removed: [] }, observed: { added: diff.added.map(mask), removed: diff.removed.map(mask) }, reason: "command-diff" });
     s.check("node_image_served", plan.imageServed, { expected: "the image the UI prints exists on this stack", observed: plan.imageNote, reason: "precondition" });
     spawnSync("docker", ["rm", "-f", plan.container], { stdio: "ignore" });
     const runRes = spawnSync("docker", plan.argv.slice(1), { encoding: "utf8", timeout: 120000 });
     s.check("node_started", runRes.status === 0, { expected: "docker run exit 0", observed: (runRes.stderr || runRes.stdout || "").slice(0, 300).replace(token || "\u0000", "<token>") });
-    node.container = plan.container; node.volume = plan.volume; state.node = { container: plan.container, volume: plan.volume };
+    node.container = plan.container; node.volume = plan.volume;
+    state.node = { container: plan.container, volume: plan.volume, image: plan.argv[plan.argv.length - 1] };
     const t0 = Date.now();
     let online = false, row = null;
     while (Date.now() - t0 < 90000 && !online) {
       await sleep(3000);
-      row = db(`SELECT id, node_version, hostname, source_ips, last_heartbeat_at FROM cbomscannode WHERE team_id = ${A.team} AND name = 'e2e-node-1'`)[0];
+      row = db(`SELECT id, node_version, hostname, source_ips::text, last_heartbeat_at, last_seen_ip FROM cbomscannode WHERE team_id = ${A.team} AND name = 'e2e-node-1'`)[0];
       online = !!(row && row[4]);
     }
     const secs = Math.round((Date.now() - t0) / 1000);
     s.check("node_online_60s", online && secs <= 60, { expected: "heartbeat <= 60 s after start", observed: { online, seconds: secs } });
     if (row) { node.id = Number(row[0]); state.node.id = node.id; }
+    // the node's source address: the container's address = what the API saw (DB last_seen_ip / source_ips)
+    const addrs = nodeAddresses(plan.container);
+    state.node.addresses = addrs;
+    s.check("node_ip_eq_db", !!row && addrs.includes(row[5]) && (row[3] || "").includes(row[5]), { expected: { container: addrs },
+      observed: row ? { last_seen_ip: row[5], source_ips: row[3] } : null, reason: "node-ip" });
     await page.reload({ waitUntil: "networkidle" });
     const uiRow = page.getByRole("row", { name: /e2e-node-1/ }).first();
     const rowText = (await uiRow.textContent().catch(() => "")) || "";
@@ -389,6 +417,10 @@ try {
       s.check(`never_scan_${l.name}`, listed > 0, { expected: `${l.address} listed under never scan`, observed: listed ? "listed" : "refused or absent", evidence: [await s.shot(page, "never-scan")] });
     }
     state.never_scan_g5 = canaries.map((l) => l.address);
+    const socText = ((await page.getByTestId("network-soc-table").textContent().catch(() => "")) || "");
+    const nodeIps = state.node?.addresses || [];
+    s.check("soc_ip_eq_node", nodeIps.length > 0 && nodeIps.some((ip) => socText.includes(ip)), { expected: nodeIps, observed: socText.replace(/\s+/g, " ").slice(0, 200), reason: "soc-ip" });
+    s.notRun("discovery_sweep", "DA G5 'sweep = the self-checked open ports': the flow does not run the discovery sweep yet (CB-05)");
     await page.getByRole("button", { name: /^every hour$/i }).first().click();
     await page.getByTestId("network-soc-email").fill("soc@agents.dss.test");
     await page.getByTestId("network-emergency").fill("+91 00000 00000");
@@ -430,11 +462,21 @@ try {
     await req.waitFor({ timeout: 30000 });
     const estimate = Number(((await req.textContent()) || "").replace(/[^\d.]/g, ""));
     state.estimate = estimate;
-    await cb05.g9Rates(ctx, s, estimate);
+    // the price the harness computes from what the customer configured (DA G9 rates, O-6), not the product's number
+    const srcs = db(`SELECT kind, name, config::text FROM cbomcollectionsource WHERE team_id = ${A.team} AND enabled`)
+      .map(([kind, name, cfg]) => ({ kind, name, config: JSON.parse(cfg || "{}") }));
+    const plan = plannedCharge(srcs, state.never_scan_g5 || [], Object.entries(state.tests || {}).filter(([, v]) => v === "failed").map(([k]) => k));
+    writeJson(join(s.dir, "estimate-oracle.json"), plan);
+    state.expected_charge_c = plan.total_c;
+    s.check("estimate_eq_rates", !plan.unknown.length && Math.round(estimate * 100) === plan.total_c, { expected: plan.total_c / 100, observed: estimate,
+      reason: plan.unknown.length ? "rate-unknown" : "estimate-vs-rates", subject: { check: "estimate_eq_rates" } });
+    // the Review page names exactly the sources whose test the customer saw fail (CB-05)
+    await cb05.g9Skipped(ctx, s, plan);
     const ack = page.locator("#review-soc-ack");
     if (await ack.count()) await ack.check();
     await s.shot(page, "review");
     const before = db(`SELECT count(*) FROM cbomcollectionrun WHERE team_id = ${A.team}`)[0][0];
+    state.g9_start = iso();
     await page.getByTestId("review-start").dblclick();
     let runs = [];
     for (let i = 0; i < 20 && runs.length === 0; i++) { await sleep(1000); runs = db(`SELECT id, credits_charged_c FROM cbomcollectionrun WHERE team_id = ${A.team} ORDER BY id`); }
@@ -444,6 +486,7 @@ try {
     if (runs.length) {
       state.runs = [Number(runs[runs.length - 1][0])];
       const charged = Number(runs[runs.length - 1][1]) / 100;
+      s.check("charge_eq_rates", Math.round(charged * 100) === state.expected_charge_c, { expected: state.expected_charge_c / 100, observed: charged, reason: "charge-vs-rates" });
       s.check("estimate_eq_charge", charged === estimate, { expected: estimate, observed: charged, reason: "estimate-vs-charge" });
     }
   });
@@ -465,8 +508,45 @@ try {
     const { page } = A;
     await page.reload({ waitUntil: "networkidle" });
     await s.shot(page, "watch");
-    // charge after runtime skips (OA-10b) and the never-scan listeners over the run's window, by path (CB-05)
-    await cb05.g10(ctx, s);
+    // charge after runtime skips (OA-10b; CB-05)
+    await cb05.g10Charge(ctx, s);
+    // never-scan (O-8): only connections FROM THE NODE after "Start scan" count; the control proves the node scanned
+    // the range, and a probe from this host proves the canary's log path (INTERFACES v7 §A.4)
+    const listeners = lab?.listeners || [];
+    const inScope = (x) => (state.scope?.ranges || []).some((r) => inCidr(x.address, r));
+    const nodeIps = new Set(state.node?.addresses || []);
+    const since = Date.parse(state.g9_start || state.started);
+    const fromNode = (lines) => (lines || []).filter((x) => x.peer && nodeIps.has(String(x.peer).split(":")[0]) && Date.parse(x.ts) >= since - 1000);
+    const byName = !(state.never_scan_g5 || []).length;
+    for (const l of listeners.filter((x) => x.role === "control" && inScope(x))) {
+      const lines = listenerLines(l);
+      const n = lines === null ? null : fromNode(lines).length;
+      s.check(`control_accepts_${l.name}`, n !== null && n >= 1, { expected: ">= 1 connection from the node after Start (positive control)", observed: { from_node: n, all_lines: lines && lines.length },
+        reason: lines === null ? "listener-log-missing" : "control-not-reached", subject: { check: "control_accepts", listener: l.name }, evidence: [l.log] });
+    }
+    for (const l of listeners.filter((x) => x.role === "canary" && inScope(x))) {
+      const before = listenerLines(l);
+      const n = before === null ? null : fromNode(before).length;
+      s.check(`canary_accepts_${l.name}`, n === 0, { expected: "0 connections from the node", observed: { from_node: n, all_lines: before && before.length },
+        reason: before === null ? "listener-log-missing" : "never-scan-reached", subject: { check: "canary_accepts", never_scan_by: byName ? "name" : "address", listener: l.name }, evidence: [l.log] });
+      const t = Date.now();
+      const connected = await probeListener(l, (l.ports || [443])[0]);
+      let probed = [];
+      for (let i = 0; i < 10 && !probed.length; i++) {
+        await sleep(500);
+        probed = (listenerLines(l) || []).filter((x) => x.peer && !nodeIps.has(String(x.peer).split(":")[0]) && Date.parse(x.ts) >= t - 1500);
+      }
+      s.check(`canary_log_path_probe_${l.name}`, connected && probed.length === 1, { expected: "exactly one line for one probe connection from the harness", observed: { connected, lines: probed.length, file: existsSync(join(RUN, l.log || "")) },
+        reason: !existsSync(join(RUN, l.log || "")) ? "listener-log-missing" : "log-path", subject: { check: "canary_log_path_probe", listener: l.name }, evidence: [l.log] });
+    }
+    // DA G10: the range holding the never-scan canary ends 'partial' with the canary 'skipped_never_scan'
+    const asg = await apiGet(A, `/${A.team}/cbom/sources/runs/${runId}/assets?page=1&page_size=1`);
+    for (const l of listeners.filter((x) => x.role === "canary" && inScope(x) && (state.never_scan_g5 || []).includes(x.address))) {
+      const job = (asg.body?.targets || []).find((j) => (j.targets || []).some((t) => t.target === l.address));
+      const tgt = job && job.targets.find((t) => t.target === l.address);
+      s.check(`r_canary_partial_never_scan_${l.name}`, !!job && job.outcome === "partial" && tgt?.status === "skipped_never_scan", { expected: { outcome: "partial", status: "skipped_never_scan" },
+        observed: job ? { outcome: job.outcome, status: tgt?.status } : null, subject: { check: "r_canary_partial_never_scan", listener: l.name } });
+    }
   });
 
   // G11 results (DOM + API pages with the same token), G12 exports -------------------------------------------
@@ -478,13 +558,14 @@ try {
     await page.getByTestId(`review-run-details-${runId}`).click();
     await page.getByTestId("run-results").waitFor({ timeout: 30000 });
     // every page of the API with the customer's own token
+    // raw pages: an id the product serves twice stays twice (the judge fails duplicates, m1)
     const items = []; let first = null;
     for (let p = 1; p < 500; p++) {
       const r = await apiGet(A, `/${A.team}/cbom/sources/runs/${runId}/assets?page=${p}&page_size=200`);
       if (r.status !== 200) { s.check("api_assets_200", false, { expected: 200, observed: r.status }); break; }
       first = first || r.body;
       items.push(...r.body.items);
-      if (items.length >= r.body.total || !r.body.items.length) break;
+      if (!r.body.items.length || p * 200 >= (r.body.total || 0)) break;
     }
     writeJson(join(RUN, "api", "assets-run1.json"), { run_id: runId, total: first?.total, all_total: first?.all_total, facets: first?.facets, targets: first?.targets, pages: Math.ceil(items.length / 200), items });
     const run = await apiGet(A, `/${A.team}/cbom/sources/runs/${runId}`);
@@ -492,8 +573,10 @@ try {
     const posture = await apiGet(A, `/${A.team}/cbom/sources/runs/${runId}/posture`);
     writeJson(join(RUN, "api", "posture-run1.json"), posture.body);
     // the DOM: every row of every page of the Results table
+    // raw DOM rows, page by page (no de-duplication: a repeated id is judged, m1); stop at the last page, or when a
+    // "next" click did not move (the same ids again), which is recorded as a paging failure
     const rows = [];
-    const seen = new Set();
+    let prevIds = null, stuck = false;
     for (let p = 1; p < 200; p++) {
       const got = await page.$$eval('[data-testid^="run-asset-"]', (trs) => trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
         const td = [...tr.querySelectorAll("td")];
@@ -501,11 +584,15 @@ try {
         return { id: Number(tr.dataset.testid.slice(10)), impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
           location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
       }));
-      const fresh = got.filter((r) => !seen.has(r.id));
-      fresh.forEach((r) => seen.add(r.id));
-      rows.push(...fresh);
-      if (!fresh.length || rows.length >= items.length) break;
-      const next = page.getByTestId("run-results").getByRole("button", { name: /next/i }).first();
+      const ids = got.map((r) => r.id).join(",");
+      if (prevIds !== null && ids === prevIds) { stuck = true; break; }
+      prevIds = ids;
+      rows.push(...got);
+      if (!got.length) break;
+      // the pagination exists only when there is more than one page ("Page n of m"); its button is named exactly
+      // "Next" (the certificate calendar's "Next month" button sits in the same panel: run 5's paging_stuck)
+      if (!(await page.getByTestId("run-results-page").count())) break;
+      const next = page.getByTestId("run-results").getByRole("button", { name: "Next", exact: true });
       if (!(await next.count()) || (await next.isDisabled())) break;
       await next.click(); await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
     }
@@ -518,7 +605,7 @@ try {
       const want = j.status === "success" ? label[j.outcome] || j.outcome : j.status;
       s.check(`job_${j.id}_label_eq_db`, !!want && text.toLowerCase().includes(String(want).toLowerCase()), { expected: { status: j.status, outcome: j.outcome, label: want }, observed: text.slice(0, 200), subject: { job: j.id } });
     }
-    s.check("dom_rows_eq_api", rows.length === items.length, { expected: items.length, observed: rows.length });
+    s.check("dom_rows_eq_api", rows.length === items.length && !stuck, { expected: items.length, observed: { rows: rows.length, paging_stuck: stuck } });
     await s.shot(page, "results");
     // drill-down of the first row (detail panel opens)
     if (rows[0]) {
@@ -555,7 +642,12 @@ try {
       if (name.endsWith(".json")) {
         let doc = null; try { doc = JSON.parse(file.toString("utf8")); } catch { /* checked below */ }
         s.check(`${name}_parses`, !!doc, { expected: "valid JSON", observed: doc ? "ok" : "parse error", subject: { file: name } });
-        if (doc && name.startsWith("run1.cdx")) s.check("cdx_spec", doc.bomFormat === "CycloneDX" && doc.specVersion === "1.6", { expected: "CycloneDX 1.6", observed: `${doc.bomFormat} ${doc.specVersion}` });
+        if (doc && name.startsWith("run1.cdx")) {
+          s.check("cdx_spec", doc.bomFormat === "CycloneDX" && doc.specVersion === "1.6", { expected: "CycloneDX 1.6", observed: `${doc.bomFormat} ${doc.specVersion}` });
+          // DA G12: the export names the build it was judged by (CB-03 sets engine_version = build)
+          const engine = ((doc.metadata?.properties) || []).find((x) => x.name === "zs:engine_version")?.value || null;
+          s.check("engine_version_eq_build", !!engine && !!SHA && (SHA.startsWith(engine) || engine.includes(SHA.slice(0, 12))), { expected: SHA.slice(0, 12), observed: engine, reason: "engine-version" });
+        }
       } else {
         const xml = file.toString("utf8");
         s.check(`${name}_well_formed`, xml.startsWith("<?xml") && xml.includes("<bom"), { expected: "an XML bom document", observed: xml.slice(0, 80), subject: { file: name } });
@@ -604,6 +696,11 @@ try {
     }
     await B.page.goto(`${UI}/${A.team}/cbom/sources?tab=review`, { waitUntil: "networkidle" });
     await B.page.waitForTimeout(1500);
+    // DA G14 "B gets 404 (UI)": B's browser on A's URL shows none of A's data
+    const dom = await B.page.content();
+    const aMarks = [A.email, ...assets.slice(0, 10).map((a) => a.location), state.runs?.[0] && `review-run-${state.runs[0]}`].filter(Boolean);
+    s.check("b_ui_shows_no_a_data", !aMarks.some((m) => dom.includes(m)), { expected: "none of A's email, asset locations or run ids in B's page", observed: aMarks.filter((m) => dom.includes(m)), evidence: [await s.shot(B.page, "b-ui-on-a-url")] });
+    s.notRun("b_node_claims_no_a_job", "DA G14 'B's node token claims none of A's jobs' needs a node enrolled in team B (CB-05)");
     const still = await apiGet(B, `/${B.team}/cbom/sources/runs`);
     s.check("b_not_logged_out", still.status === 200 && !/\/login/.test(B.page.url()), { expected: "B still signed in", observed: { status: still.status, url: new URL(B.page.url()).pathname }, evidence: [await s.shot(B.page, "b-on-a-url")] });
   });

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { accepts, AWS_NOT_CONFIGURED_TEXT, g10Charge, g9Rates, RATES_C, RUNTIME_SKIPS, VEX_FUTURE_RISK } from "./cb05.mjs";
+import { accepts, AWS_NOT_CONFIGURED_TEXT, g10Charge, g9Skipped, RATES_C, RUNTIME_SKIPS, VEX_FUTURE_RISK } from "./cb05.mjs";
+import { plannedCharge } from "./rates.mjs";
 
 function lab(dir, lines) {
   mkdirSync(join(dir, "lab", "listeners"), { recursive: true });
@@ -36,18 +37,16 @@ test("the oracle constants are the spec's, not the product's", () => {
 const fakeCtx = (rows, extra = {}) => ({ A: { team: 5 }, state: { runs: [9], estimate: 3.6 }, iso: () => "2026-11-12T10:00:00Z", writeJson() {},
   db: (sql) => (typeof rows === "function" ? rows(sql) : rows), ...extra });
 
-test("G9: estimate == the spec's rates over the queued sources (network: 1 per 256 addresses or part, never-scan left out)", async () => {
-  const rows = [["linux_servers", "S-host", JSON.stringify({ targets: ["10.231.0.40"] })], ["linux_servers", "S-canary", JSON.stringify({ targets: ["10.231.0.33", "10.231.0.34"] })],
-    ["database", "DB-pg-tls", "{}"], ["network_range", "R-zoo", JSON.stringify({ cidr: "10.231.0.16/28" })], ["network_range", "R-canary", JSON.stringify({ cidr: "10.231.0.32/30" })]];
-  const inCidr = (ip, c) => { const [n, b] = c.split("/"); const v = (a) => a.split(".").reduce((x, o) => x * 256 + Number(o), 0); const sz = 2 ** (32 - Number(b)); return Math.floor(v(ip) / sz) === Math.floor(v(n) / sz); };
-  const ctx = (est) => fakeCtx(rows, { inCidr, state: { runs: [9], estimate: est, tests: { "S-canary": "failed", "S-host": "passed" }, never_scan_g5: ["10.231.0.33"] },
-    A: { team: 5, page: { getByTestId: () => ({ textContent: async () => "S-canary Last connection test failed; fix it and test again" }) } } });
-  // S-host 0.2 + DB 1 + network 19 addresses -> 1 = 2.2 (S-canary not queued: its test failed)
+test("G9: the skipped list must name every source whose test failed (the estimate itself is CB-01's)", async () => {
+  const plan = plannedCharge([{ kind: "linux_servers", name: "S-host", config: { targets: ["10.231.0.40"] } }, { kind: "linux_servers", name: "S-canary", config: { targets: ["10.231.0.33", "10.231.0.34"] } },
+    { kind: "network_range", name: "R-canary", config: { cidr: "10.231.0.32/30" } }], ["10.231.0.33"], ["S-canary"]);
+  assert.equal(plan.total_c, 120);  // S-host 0.2 + 3 range addresses -> 1 credit; S-canary not queued
+  const ctxWith = (text) => fakeCtx([], { A: { team: 5, page: { getByTestId: () => ({ textContent: async () => text }) } } });
   const s = stepStub();
-  await g9Rates(ctx(2.2), s, 2.2);
-  assert.deepEqual(s.checks.map((c) => [c.name, c.ok]), [["estimate_eq_rates", true], ["review_skipped_eq_failed_tests", true]]);
+  await g9Skipped(ctxWith("S-canary Last connection test failed; fix it and test again"), s, plan);
+  assert.equal(s.checks[0].ok, true);
   const s2 = stepStub();
-  await g9Rates(ctx(2.6), s2, 2.6);
+  await g9Skipped(ctxWith("nothing skipped"), s2, plan);
   assert.equal(s2.checks[0].ok, false);
 });
 

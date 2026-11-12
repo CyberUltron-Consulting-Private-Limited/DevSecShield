@@ -62,8 +62,9 @@ def test_tightened_rows_do_not_swallow_other_failures_of_the_same_step():
 
 
 def test_deferred_parts_are_covered_only_as_not_run():
-    rows = [r for r in ledger.load(gate.DEFAULT_LEDGER) if r["row"] == "LAB-deferred"]
+    rows = [dict(r) for r in ledger.load(gate.DEFAULT_LEDGER) if r["row"] == "LAB-deferred"]
     assert len(rows) == 1
+    rows[0]["expect_not_run"] = 4
     checks = Checks()
     checks.add(_flow("G7/deferred_idp", "G7", NOT_RUN, check="deferred", part="idp"))
     checks.add(_flow("G4/deferred_ubuntu-tier2", "G4", NOT_RUN, check="deferred", part="ubuntu-tier2", what="sudoers"))
@@ -71,11 +72,12 @@ def test_deferred_parts_are_covered_only_as_not_run():
     checks.add(_flow("G13/deferred_receiver", "G13", NOT_RUN, check="deferred", part="receiver"))
     results, blocking = ledger.apply(rows, checks)
     assert blocking == [] and {r.status for r in results} == {"not-run-ok"}
-    # a deferred part whose check FAILS is never hidden as not-run: the row then "holds", and the gate still reports it
+    # a deferred part whose check FAILS is never hidden as not-run: the row's counts move and the gate fails
     checks2 = Checks()
     checks2.add(_flow("G7/deferred_idp", "G7", FAIL, check="deferred", part="idp"))
     results2, _ = ledger.apply(rows, checks2)
-    assert {r.row: r.status for r in results2}["LAB-deferred"] == "holds"
+    assert {r.row: r.status for r in results2}["LAB-deferred"] not in ("not-run-ok", "holds")
+    assert not ledger.verdict(results2, [])
 
 
 def test_the_cb05_rows_name_checks_not_whole_steps():

@@ -22,9 +22,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import SCHEMA_REPORT, canary, compare, derived, join, ledger, logs, manifest, oracle, redact
+from . import SCHEMA_REPORT, canary, compare, derived, join, ledger, logs, manifest, oracle, redact, timing
 from .checks import Check, Checks
-from .rundir import iso, read_json, run_steps, utc_now, write_json
+from .rundir import iso, read_json, run_steps, utc_now, write_json, write_text
 
 GATES = [f"G{i}" for i in range(18)] + ["G5b", "G13b"]
 # the waves of DEVILS-ADVOCATE §4.5 (a deferred lab part may name one)
@@ -92,15 +92,13 @@ def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str
         pairs: dict[str, int] = {}
         oracle.match(run, k, checks, views["api"], views["export"], scope, pairs)
         details[f"derived-run{k}"] = derived.judge(run, k, checks, pairs, scope)
+        details[f"timing-run{k}"] = timing.judge(run, k, checks)
     canary.judge(run, checks)
     man = read_json(run / manifest.MANIFEST, {}) or {}
     teams = [t for t in ((man.get("teams") or {}).values()) if t]
     details["logs"] = logs.judge(run, checks, teams)
 
-    try:
-        rows = ledger.load(ledger_path)
-    except (OSError, ledger.LedgerError) as exc:
-        raise SystemExit(f"ledger: {exc}") from exc
+    rows = ledger.load(ledger_path)  # LedgerError / OSError: main() exits 2 (an error, not a gate verdict)
     results, blocking = ledger.apply(rows, checks)
     passed = ledger.verdict(results, blocking)
     report = {
@@ -113,7 +111,7 @@ def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER) -> tuple[bool, dict[str
         "checks": [c.as_dict() for c in checks],
     }
     write_json(run / "report.json", report)
-    (run / "report.md").write_text(render_md(report), encoding="utf-8")
+    write_text(run / "report.md", render_md(report))
     return passed, report
 
 
@@ -162,10 +160,12 @@ def redact_run(run: Path, known: list[str]) -> list[str]:
     for sub in ("har", "api", "ui", "steps", "logs", "exports", "db"):
         rewrite = sub not in ("exports", "db")
         for path in sorted((run / sub).rglob("*")):
-            if path.is_file() and path.suffix == ".zip" and rewrite:
-                problems += redact_zip(path, run, known)
+            if path.is_file() and path.suffix == ".zip":
+                # Playwright traces carry typed values, headers and bodies: scrubbed member by member when the
+                # evidence may be rewritten, and always scanned (m6: a skipped zip made G17 a false PASS)
+                problems += redact_zip(path, run, known, rewrite)
                 continue
-            if not path.is_file() or path.suffix in (".png", ".zip", ".webm", ".jpg"):
+            if not path.is_file() or path.suffix in (".png", ".webm", ".jpg"):
                 continue
             original = path.read_text(encoding="utf-8", errors="replace")
             text = original
@@ -183,7 +183,7 @@ def redact_run(run: Path, known: list[str]) -> list[str]:
                     if value and len(value) >= 8:
                         text = text.replace(value, redact.mark(f"known-{k}", value))
                 if text != original:
-                    path.write_text(text, encoding="utf-8")
+                    write_text(path, text)
             left = redact.residual_secrets(text, known)
             problems += [f"{path.relative_to(run).as_posix()}: {kind}" for kind in left]
     return problems
@@ -192,10 +192,11 @@ def redact_run(run: Path, known: list[str]) -> list[str]:
 _BINARY = (".png", ".jpg", ".jpeg", ".webp", ".webm", ".woff", ".woff2", ".ttf", ".ico", ".gif")
 
 
-def redact_zip(path: Path, run: Path, known: list[str]) -> list[str]:
+def redact_zip(path: Path, run: Path, known: list[str], rewrite: bool = True) -> list[str]:
     """Playwright traces (steps/<G>/trace.zip) hold the typed values of fill actions and the request/response bodies
     and headers (tokens, the database password the customer typed): rewrite every text member through the same scrub
-    as the other evidence (CB-05, found by the G15 canary grep on a full run). Image members are kept as they are."""
+    as the other evidence (CB-05, found by the G15 canary grep on a full run). Image members are kept as they are.
+    With ``rewrite`` False the members are only scanned."""
     import zipfile
     problems = []
     try:
@@ -203,12 +204,13 @@ def redact_zip(path: Path, run: Path, known: list[str]) -> list[str]:
             members = [(info, zin.read(info.filename)) for info in zin.infolist()]
     except (zipfile.BadZipFile, OSError):
         # a trace cut short (the flow was stopped while writing it): unreadable, so it is removed when it holds a
-        # known secret, and reported either way
+        # known secret (and the evidence may be rewritten), and reported either way
         raw = path.read_bytes()
         leaked = any(v and len(v) >= 8 and v.encode() in raw for v in known)
-        if leaked:
+        if leaked and rewrite:
             path.unlink()
-        return [f"{path.relative_to(run).as_posix()}: unreadable zip ({'removed: held a known secret' if leaked else 'kept'})"]
+        what = ("removed: held a known secret" if rewrite else "held a known secret") if leaked else "kept"
+        return [f"{path.relative_to(run).as_posix()}: unreadable zip ({what})"]
     changed = False
     out = []
     for info, data in members:
@@ -220,10 +222,12 @@ def redact_zip(path: Path, run: Path, known: list[str]) -> list[str]:
         except UnicodeDecodeError:
             out.append((info, data))
             continue
-        new = redact.scrub_text(text)
-        for k, value in enumerate(known):
-            if value and len(value) >= 8:
-                new = new.replace(value, redact.mark(f"known-{k}", value))
+        new = text
+        if rewrite:
+            new = redact.scrub_text(text)
+            for k, value in enumerate(known):
+                if value and len(value) >= 8:
+                    new = new.replace(value, redact.mark(f"known-{k}", value))
         if new != text:
             changed = True
         out.append((info, new.encode("utf-8")))
@@ -264,7 +268,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=1))
         return 0 if result["identical"] else 1
     if args.cmd == "judge":
-        passed, report = judge(args.run, args.ledger)
+        try:
+            passed, report = judge(args.run, args.ledger)
+        except (OSError, ledger.LedgerError) as exc:
+            print(f"ledger: {exc}", file=sys.stderr)
+            return 2
         print(json.dumps({"passed": passed, "counts": report["counts"], "blocking": report["blocking_total"],
                           "ledger": {r["row"]: r["status"] for r in report["ledger"]}}, indent=1))
         return 0 if passed else 1

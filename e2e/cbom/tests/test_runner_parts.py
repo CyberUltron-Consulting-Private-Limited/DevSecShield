@@ -36,7 +36,10 @@ def test_seal_redacts_writes_g17_and_deletes_the_secrets_file(tmp_path):
     (run / "steps" / "G1" / "note.txt").write_text("password Pw-very-secret-1 used\n", encoding="utf-8")
     secrets = tmp_path / "s.json"
     secrets.write_text(json.dumps(["Pw-very-secret-1"]), encoding="utf-8")
-    bundle.manifest.update(run, sha="abc1234", images={"x": {}}, playwright={"version": "1.62.0"}, started="t")
+    bundle.manifest.update(run, sha="abc1234", images={"x": {}}, playwright={"version": "1.62.0"}, started="t",
+                           runs=[55], jobs=[{"id": 900}], assets={"1": [101]}, serialNumbers={"1": "urn:uuid:x"},
+                           node_image={"ref": "img", "id": "sha256:1"}, lab={"containers": ["cb02-z01"]},
+                           harness={"commit": "abc1234", "dirty": False})
     (run / "flow-state.json").write_text(json.dumps({"logged_out": {"A": True, "B": True}}), encoding="utf-8")
     assert bundle.seal(run, secrets, "2026-11-12T09:00:00Z", budget_min=10**6) == 0
     assert not secrets.exists()
@@ -45,6 +48,18 @@ def test_seal_redacts_writes_g17_and_deletes_the_secrets_file(tmp_path):
     assert {c["id"]: c["verdict"] for c in g17["checks"]} == {
         "G17/no_residual_secrets": "PASS", "G17/manifest_complete": "PASS", "G17/oracle_hash_in_manifest": "PASS",
         "G17/runtime_le_budget": "PASS", "G17/customers_logged_out": "PASS"}
+
+
+def test_manifest_complete_needs_node_image_id_and_lab_containers(tmp_path):
+    run = FakeRun(tmp_path).write()
+    bundle.manifest.update(run, sha="abc1234", images={"x": {}}, playwright={"version": "1.62.0"}, started="t",
+                           runs=[55], jobs=[{"id": 900}], assets={"1": [101]}, serialNumbers={"1": "urn:uuid:x"},
+                           node_image={"ref": None, "id": None}, lab={"containers": []})
+    (run / "flow-state.json").write_text(json.dumps({"logged_out": {"A": True}}), encoding="utf-8")
+    bundle.seal(run, None, "2026-11-12T09:00:00Z", budget_min=10**6)
+    g17 = {c["id"]: c for c in json.loads((run / "steps" / "G17" / "step.json").read_text())["checks"]}
+    assert g17["G17/manifest_complete"]["verdict"] == "FAIL"
+    assert g17["G17/manifest_complete"]["observed"] == ["harness", "harness.commit", "lab.containers", "node_image.id"]
 
 
 def test_seal_fails_the_budget_and_a_missing_logout(tmp_path):
@@ -57,3 +72,32 @@ def test_seal_fails_the_budget_and_a_missing_logout(tmp_path):
     empty.write_text("[]\n", encoding="utf-8")
     passed, report = gate.judge(run, empty)
     assert not passed and "G17/runtime_le_budget" in {c["id"] for c in report["blocking"]}
+
+
+def test_image_revision_accepts_a_ci_only_commit(tmp_path):
+    """Run 5: dev moved from 3df26fd to b5e6004 with CI/docs changes only, so the stack's images (built at 3df26fd)
+    are the build under test; a code change still fails (CB-05's equivalent_build, ported)."""
+    import subprocess
+    repo = tmp_path / "r"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    git = ["git", "-C", str(repo), "-c", "user.email=e2e@lab", "-c", "user.name=e2e"]
+
+    def commit(msg: str) -> str:
+        subprocess.run(git + ["add", "-A"], check=True)
+        subprocess.run(git + ["commit", "-q", "-m", msg], check=True)
+        return subprocess.run(git + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    (repo / "backend").mkdir()
+    (repo / "backend" / "main.py").write_text("a\n")
+    one = commit("one")
+    (repo / ".github").mkdir()
+    (repo / ".github" / "ci.yml").write_text("x\n")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "ci.md").write_text("x\n")
+    two = commit("ci")
+    assert preflight.equivalent_build(str(repo), one, two)[0]
+    (repo / "backend" / "main.py").write_text("b\n")
+    three = commit("code")
+    ok, why = preflight.equivalent_build(str(repo), one, three)
+    assert not ok and "backend/main.py" in why
+    assert not preflight.equivalent_build(str(repo), None, three)[0]

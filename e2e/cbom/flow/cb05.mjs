@@ -13,10 +13,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { plannedCharge, RATES_C } from "./rates.mjs";
+
 // ------------------------------------------------------------------------------------------------ oracle constants
-// Credit rates as the spec states them (DEVILS-ADVOCATE.md §4.3 G9; E2E-PLAN UF-9): server 0.2 per target, database 1,
-// network 1 per /24 or part of one (per range), IdP free. In hundredths, as the product stores charges.
-export const RATES_C = { linux_servers: 20, windows_servers: 20, database: 100, network_range: 100, idp: 0 };
+export { RATES_C };  // the spec's rates live in rates.mjs (CB-01's G9 and CB-05's G10 use the same rule)
 // The owner's staging snapshot (round6/cbom/owner-staging-snapshot.md), word for word.
 export const AWS_NOT_CONFIGURED_TEXT = "This ZeroShield deployment is not set up for AWS collection; contact your administrator";
 // OA-10c (DA default): observed weakness -> exploitable; future-risk code -> in_triage; drift-resolved -> resolved.
@@ -410,49 +410,20 @@ export async function g8(ctx) {
 }
 
 // ------------------------------------------------------------------------------------------------ G9 / G10 / G11 additions
-/** Addresses of a CIDR (a /28 has 16). */
-function cidrSize(cidr) { return 2 ** (32 - Number(String(cidr || "").split("/")[1] ?? 32)); }
-
-/** The harness's own view of what a run charges (§4.3 G9 rates; "network 1 per /24 or part" read as 1 credit per 256
- * addresses or part, over every range's addresses less the team never-scan addresses inside them). Sources whose
- * connection test the customer saw fail in G4/G5b/G6 are not queued (the Review page says so; checked below). */
-function plannedCharge(ctx) {
-  const rows = ctx.db(`SELECT kind, name, config::text FROM cbomcollectionsource WHERE team_id = ${ctx.A.team} AND enabled`);
-  const failed = new Set(Object.entries(ctx.state.tests || {}).filter(([, v]) => v === "failed").map(([k]) => k));
-  const never = ctx.state.never_scan_g5 || [];
-  const lines = [];
-  let total = 0, netAddrs = 0;
-  for (const [kind, name, cfg] of rows) {
-    const c = JSON.parse(cfg || "{}");
-    if (failed.has(name)) { lines.push({ kind, name, queued: false, why: "connection test failed (seen by the customer)" }); continue; }
-    if (kind === "network_range") {
-      const n = cidrSize(c.cidr) - never.filter((ip) => ctx.inCidr(ip, c.cidr)).length;
-      netAddrs += n;
-      lines.push({ kind, name, queued: true, addresses: n });
-      continue;
-    }
-    const units = ["linux_servers", "windows_servers"].includes(kind) ? (Array.isArray(c.targets) ? c.targets : String(c.targets || "").split(/[\s,]+/)).filter(Boolean).length : 1;
-    const rate = RATES_C[kind];
-    lines.push({ kind, name, queued: true, units, rate_c: rate ?? null });
-    if (rate !== undefined) total += rate * units;
-  }
-  const netC = netAddrs ? RATES_C.network_range * Math.ceil(netAddrs / 256) : 0;
-  total += netC;
-  return { rates_c: RATES_C, source: "DEVILS-ADVOCATE.md §4.3 G9 (+ OA-10b for G10)", network: { addresses: netAddrs, credits_c: netC }, lines, total_c: total, failed: [...failed] };
+/** The sources the customer configured, as typed (CB-01's plannedCharge input). */
+function configuredSources(ctx) {
+  return ctx.db(`SELECT kind, name, config::text FROM cbomcollectionsource WHERE team_id = ${ctx.A.team} AND enabled`)
+    .map(([kind, name, cfg]) => ({ kind, name, config: JSON.parse(cfg || "{}") }));
 }
+function failedTests(ctx) { return Object.entries(ctx.state.tests || {}).filter(([, v]) => v === "failed").map(([k]) => k); }
 
-/** G9: the estimate recomputed from the source list the customer configured; the skipped list names exactly the
- * sources whose test the customer saw fail. */
-export async function g9Rates(ctx, s, estimate) {
-  ctx.state.run1_from = ctx.iso();
-  const plan = plannedCharge(ctx);
-  ctx.writeJson(join(s.dir, "estimate-oracle.json"), plan);
-  const unknown = plan.lines.filter((l) => l.queued && l.rate_c === null && l.kind !== "network_range");
-  s.check("estimate_eq_rates", !unknown.length && Math.round(estimate * 100) === plan.total_c, { expected: plan.total_c / 100, observed: estimate,
-    reason: unknown.length ? "rate-unknown" : "estimate-vs-rates", subject: { check: "estimate_eq_rates" } });
+/** G9 (CB-05 part; the estimate itself is CB-01's `estimate_eq_rates`): the Review page's skipped list names exactly
+ * the sources whose connection test the customer saw fail, which is why they are not charged. */
+export async function g9Skipped(ctx, s, plan) {
+  const failed = (plan?.lines || []).filter((l) => l.queued === false).map((l) => l.name);
   const skippedText = ((await ctx.A.page.getByTestId("review-skipped").textContent().catch(() => "")) || "");
-  const named = plan.failed.filter((n) => skippedText.includes(n));
-  s.check("review_skipped_eq_failed_tests", named.length === plan.failed.length, { expected: plan.failed, observed: skippedText.replace(/\s+/g, " ").slice(0, 300),
+  const named = failed.filter((n) => skippedText.includes(n));
+  s.check("review_skipped_eq_failed_tests", named.length === failed.length, { expected: failed, observed: skippedText.replace(/\s+/g, " ").slice(0, 300),
     subject: { check: "review_skipped" } });
 }
 
@@ -465,7 +436,7 @@ export async function g10Charge(ctx, s) {
   const jobs = r.body?.targets || [];
   const srcRows = Object.fromEntries(ctx.db(`SELECT id, kind, config::text FROM cbomcollectionsource WHERE team_id = ${ctx.A.team}`).map(([id, kind, cfg]) => [Number(id), { kind, cfg: JSON.parse(cfg || "{}") }]));
   const never = new Set(ctx.state.never_scan_g5 || []);
-  const plan = plannedCharge(ctx);
+  const plan = plannedCharge(configuredSources(ctx), ctx.state.never_scan_g5 || [], failedTests(ctx));
   let refund = 0, charged = 0;
   const lines = [];
   for (const j of jobs) {
@@ -499,38 +470,6 @@ export async function g10Charge(ctx, s) {
     for (const t of j.targets || []) {
       if (never.has(String(t.target).split(":")[0])) s.check(`run_target_${t.target}_${j.job_id}_skipped`, t.status === "skipped_never_scan", { expected: "skipped_never_scan", observed: t.status, subject: { check: "never_scan_target_status", never_scan_by: "address" } });
     }
-  }
-}
-
-/** G10: charge (OA-10b) and the never-scan listeners over the run's own window, attributed to the path that leaked:
- * a job whose target list holds the canary but whose status for it is not skipped_never_scan names its source's
- * never-scan form (a server source's own list = by name; the team list = by address). */
-export async function g10(ctx, s) {
-  await g10Charge(ctx, s);
-  const runId = ctx.state.runs?.[0];
-  const from = ctx.state.run1_from || ctx.state.started;
-  const to = ctx.iso();
-  const r = runId ? await ctx.apiGet(ctx.A, `/${ctx.A.team}/cbom/sources/runs/${runId}/assets?page=1&page_size=1`) : { body: {} };
-  const jobs = r.body?.targets || [];
-  const kinds = Object.fromEntries(ctx.db(`SELECT id, kind FROM cbomcollectionsource WHERE team_id = ${ctx.A.team}`).map(([id, kind]) => [Number(id), kind]));
-  const listeners = ctx.lab?.listeners || [];
-  const control = listeners.find((x) => x.role === "control" && x.name === "control");
-  for (const l of listeners.filter((x) => x.role === "canary" && x.name === "canary")) {
-    const paths = new Set();
-    const statuses = [];
-    for (const j of jobs) {
-      for (const t of j.targets || []) {
-        if (String(t.target).split(":")[0] !== l.address && !(l.names || []).includes(String(t.target).split(":")[0])) continue;
-        statuses.push({ job: j.job_id, source: j.source_name, status: t.status });
-        if (t.status !== "skipped_never_scan") paths.add(kinds[j.source_id] === "network_range" ? "address" : "name");
-      }
-    }
-    const counts = canaryCount(ctx, l.name, control?.name || "control", from, to);
-    const by = paths.size ? [...paths].sort().join("+") : "unattributed";
-    s.check(`canary_accepts_run_${l.name}`, counts.canary === 0, { expected: 0, observed: { accepts: counts.canary, targets: statuses },
-      reason: counts.canary === null ? "listener-log-missing" : "never-scan-reached", subject: { check: "canary_accepts", never_scan_by: counts.canary ? by : "name+address", listener: l.name, window: "run 1" }, evidence: [l.log] });
-    s.check(`control_accepts_run_${control?.name}`, (counts.control || 0) >= 1, { expected: ">= 1 (positive control)", observed: counts.control, reason: "control-not-reached",
-      subject: { check: "control_accepts", listener: control?.name, window: "run 1" }, evidence: [control?.log] });
   }
 }
 
@@ -585,7 +524,7 @@ export function g12Validate(ctx, s, k = "1", { vex = true, gap = true } = {}) {
   if (process.env.CBOM_E2E_HTTPS_PROXY) env.HTTPS_PROXY = env.https_proxy = process.env.CBOM_E2E_HTTPS_PROXY;
   if (process.env.CBOM_E2E_HTTP_PROXY) env.HTTP_PROXY = env.http_proxy = process.env.CBOM_E2E_HTTP_PROXY;
   const out = spawnSync("uv", ["run", "-q", "--no-project", "--with-requirements", join(dir, "requirements.txt"), "python3", "-I", join(dir, "validate_exports.py"),
-    "--run-dir", ctx.RUN, "--run", k, ...(ctx.SHA && vex ? ["--build", ctx.SHA] : [])], { encoding: "utf8", timeout: 600000, env });
+    "--run-dir", ctx.RUN, "--run", k], { encoding: "utf8", timeout: 600000, env });
   let res = null;
   try { res = JSON.parse(out.stdout); } catch { /* reported below */ }
   writeFileSync(join(s.dir, `validate-run${k}.json`), (out.stdout || "") + (out.stderr ? `\n/* stderr */\n${out.stderr}` : ""));
@@ -629,12 +568,13 @@ export async function captureRun(ctx, s, k, runId) {
     if (r.status !== 200) { s.check(`api_assets_200_run${k}`, false, { expected: 200, observed: r.status }); break; }
     first = first || r.body;
     items.push(...r.body.items);
-    if (items.length >= r.body.total || !r.body.items.length) break;
+    if (!r.body.items.length || p * 200 >= (r.body.total || 0)) break;
   }
   ctx.writeJson(join(ctx.RUN, "api", `assets-run${k}.json`), { run_id: runId, total: first?.total, all_total: first?.all_total, facets: first?.facets, targets: first?.targets, items });
   ctx.writeJson(join(ctx.RUN, "api", `run-${runId}.json`), (await ctx.apiGet(ctx.A, `/${ctx.A.team}/cbom/sources/runs/${runId}`)).body);
   ctx.writeJson(join(ctx.RUN, "api", `posture-run${k}.json`), (await ctx.apiGet(ctx.A, `/${ctx.A.team}/cbom/sources/runs/${runId}/posture`)).body);
-  const rows = []; const seen = new Set();
+  const rows = [];
+  let prevIds = null, stuck = false;
   for (let p = 1; p < 200; p++) {
     const got = await page.$$eval('[data-testid^="run-asset-"]', (trs) => trs.filter((tr) => /^run-asset-\d+$/.test(tr.dataset.testid)).map((tr) => {
       const td = [...tr.querySelectorAll("td")];
@@ -642,16 +582,18 @@ export async function captureRun(ctx, s, k, runId) {
       return { id: Number(tr.dataset.testid.slice(10)), impact: td[2]?.textContent.trim(), type: td[3]?.textContent.trim(),
         location: where[0] ?? null, target: where[1] ?? null, algorithm: td[5]?.textContent.trim(), finding: td[6]?.textContent.trim(), quantum: td[7]?.textContent.trim() };
     }));
-    const fresh = got.filter((r) => !seen.has(r.id));
-    fresh.forEach((r) => seen.add(r.id));
-    rows.push(...fresh);
-    if (!fresh.length || rows.length >= items.length) break;
-    const next = page.getByTestId("run-results").getByRole("button", { name: /next/i }).first();
+    const ids = got.map((r) => r.id).join(",");
+    if (prevIds !== null && ids === prevIds) { stuck = true; break; }
+    prevIds = ids;
+    rows.push(...got);
+    if (!got.length) break;
+    if (!(await page.getByTestId("run-results-page").count())) break;
+    const next = page.getByTestId("run-results").getByRole("button", { name: "Next", exact: true });
     if (!(await next.count()) || (await next.isDisabled())) break;
     await next.click(); await page.waitForLoadState("networkidle"); await page.waitForTimeout(500);
   }
   ctx.writeJson(join(ctx.RUN, "ui", `assets-run${k}.json`), { run_id: runId, total_text: ((await page.getByTestId("run-results-total").textContent().catch(() => "")) || "").trim(), rows });
-  s.check(`dom_rows_eq_api_run${k}`, rows.length === items.length, { expected: items.length, observed: rows.length });
+  s.check(`dom_rows_eq_api_run${k}`, rows.length === items.length && !stuck, { expected: items.length, observed: { rows: rows.length, paging_stuck: stuck } });
   // downloads (sha256 == the HAR body of the same request)
   const bodies = {};
   const onResp = async (r) => { if (r.url().includes(`/runs/${runId}/`) && r.status() === 200) { try { bodies[r.url()] = await r.body(); } catch { /* streamed */ } } };
@@ -755,8 +697,9 @@ export async function g13(ctx) {
     for (const d of drift) {
       const id = `${d.change}_${d.code || d.asset_type || ""}_${d.location}`.replace(/[^\w.:-]/g, "_");
       const ev = matchEvent(d);
-      s.check(`drift_${id}_changes`, !!ev, { expected: d, observed: ev || `no ${d.change} event`, subject: { check: "drift_changes", change: d.change, location: d.location } });
-      s.check(`drift_${id}_diff`, inDiff(d), { expected: d, observed: inDiff(d) ? "listed" : "absent", subject: { check: "drift_diff", change: d.change, location: d.location } });
+      const sub = { change: d.change, location: d.location, ...(d.asset_type ? { asset_type: d.asset_type } : {}), ...(d.code ? { code: d.code } : {}) };
+      s.check(`drift_${id}_changes`, !!ev, { expected: d, observed: ev || `no ${d.change} event`, subject: { check: "drift_changes", ...sub } });
+      s.check(`drift_${id}_diff`, inDiff(d), { expected: d, observed: inDiff(d) ? "listed" : "absent", subject: { check: "drift_diff", ...sub } });
     }
     // the Changes list the customer sees == the API's events (kind + code), in the run's details
     await page.getByTestId("run-changes").waitFor({ timeout: 20000 }).catch(() => {});

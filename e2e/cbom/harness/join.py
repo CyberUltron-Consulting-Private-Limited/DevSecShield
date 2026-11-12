@@ -21,27 +21,53 @@ GATE = "G11"
 REF = re.compile(r"^zs-asset-(\d+)$")
 
 
-def load_views(run: Path, k: str) -> dict[str, dict[int, dict[str, Any]] | None]:
-    """The four views of run ``k`` keyed by asset id; a view that was not captured is None."""
+def _raw_views(run: Path, k: str) -> dict[str, list[tuple[int, dict[str, Any]]] | None]:
+    """Every view as captured, as (asset id, record) lists, duplicates kept (m1: a repeated id is a product bug the
+    dict-keyed views would hide)."""
     run = Path(run)
     api_doc = read_json(run / "api" / f"assets-run{k}.json")
-    api = None if api_doc is None else {int(a["id"]): a for a in api_doc.get("items", [])}
+    api = None if api_doc is None else [(int(a["id"]), a) for a in api_doc.get("items", [])]
     run_id = None if api_doc is None else api_doc.get("run_id")
-    db_rows = read_csv(run / "db" / "assets.csv") if (run / "db" / "assets.csv").is_file() else None
     db = None
-    if db_rows is not None:
-        db = {int(r["id"]): r for r in db_rows if run_id is None or str(r.get("run_id")) == str(run_id)}
+    if (run / "db" / "assets.csv").is_file():
+        db = [(int(r["id"]), r) for r in read_csv(run / "db" / "assets.csv")
+              if run_id is None or str(r.get("run_id")) == str(run_id)]
     exp_doc = read_json(run / "exports" / f"run{k}.cdx.json")
     export = None
     if exp_doc is not None:
-        export = {}
+        export = []
         for comp in exp_doc.get("components") or []:
             m = REF.match(str(comp.get("bom-ref", "")))
             if m:
-                export[int(m.group(1))] = comp
+                export.append((int(m.group(1)), comp))
+        # CB-06 v1 §4: coverage rows are exported as metadata gaps, not components
+        for prop in (exp_doc.get("metadata") or {}).get("properties") or []:
+            if prop.get("name") != "zs:coverage_gap":
+                continue
+            try:
+                gap = json.loads(prop.get("value") or "{}")
+            except ValueError:
+                continue
+            m = REF.match(str(gap.get("ref", "")))
+            if m:
+                export.append((int(m.group(1)), {"bom-ref": gap["ref"], "zs_coverage_gap": gap, "properties": [
+                    {"name": "zs:asset_type", "value": "coverage"},
+                    {"name": "zs:location", "value": gap.get("location") or ""},
+                    {"name": "zs:target", "value": gap.get("target") or ""}]}))
     ui_doc = read_json(run / "ui" / f"assets-run{k}.json")
-    ui = None if ui_doc is None else {int(r["id"]): r for r in ui_doc.get("rows", [])}
+    ui = None if ui_doc is None else [(int(r["id"]), r) for r in ui_doc.get("rows", [])]
     return {"api": api, "db": db, "export": export, "ui": ui}
+
+
+def load_views(run: Path, k: str) -> dict[str, dict[int, dict[str, Any]] | None]:
+    """The four views of run ``k`` keyed by asset id; a view that was not captured is None."""
+    return {name: (None if rows is None else dict(rows)) for name, rows in _raw_views(run, k).items()}
+
+
+def ui_header_total(run: Path, k: str) -> int | None:
+    doc = read_json(Path(run) / "ui" / f"assets-run{k}.json") or {}
+    m = re.search(r"(\d[\d,]*)", str(doc.get("total_text") or ""))
+    return int(m.group(1).replace(",", "")) if m else None
 
 
 def _is_empty(value: Any) -> bool:
@@ -56,10 +82,21 @@ def _show(value: Any) -> Any:
 
 def join(run: Path, k: str, checks: Checks) -> list[dict[str, Any]]:
     """Judge run ``k``; return the long-format diff rows (one per asset x field) written to diff/assets-run<k>.csv."""
-    views = load_views(run, k)
+    raw = _raw_views(run, k)
+    views = {name: (None if rows is None else dict(rows)) for name, rows in raw.items()}
     api = views["api"]
     diff: list[dict[str, Any]] = []
     prefix = f"{GATE}/join/run{k}"
+    for view, rows in raw.items():
+        if rows is None:
+            continue
+        counts: dict[int, int] = {}
+        for aid, _ in rows:
+            counts[aid] = counts.get(aid, 0) + 1
+        dups = sorted(aid for aid, n in counts.items() if n > 1)
+        checks.verdict(f"{prefix}/duplicates/{view}", GATE, "join", not dups, f"duplicate-in-{view}",
+                       {"run": k, "field": "duplicates", "view": view}, expected="each asset id once",
+                       observed={aid: counts[aid] for aid in dups})
     if api is None:
         checks.not_run(f"{prefix}/api", GATE, "join", "api/assets-run%s.json not captured" % k,
                        {"run": k, "view": "api"})
@@ -82,8 +119,18 @@ def join(run: Path, k: str, checks: Checks) -> list[dict[str, Any]]:
             checks.fail(f"{prefix}/asset/{aid}/presence/{view}", GATE, "join", f"extra-in-{view}",
                         {"kind": "join", "run": k, "asset_id": aid, "field": "presence", "view": view},
                         expected="absent (not served by the API)", observed="present")
-        checks.verdict(f"{prefix}/count/{view}", GATE, "join", not missing and not extra, "count-mismatch",
-                       {"run": k, "field": "count", "view": view}, expected=len(api), observed=len(other))
+        checks.verdict(f"{prefix}/count/{view}", GATE, "join", not missing and not extra
+                       and len(raw[view] or []) == len(raw["api"] or []), "count-mismatch",
+                       {"run": k, "field": "count", "view": view}, expected=len(raw["api"] or []),
+                       observed=len(raw[view] or []))
+    if views["ui"] is not None:
+        shown = ui_header_total(run, k)
+        api_doc = read_json(Path(run) / "api" / f"assets-run{k}.json") or {}
+        db_n = None if raw["db"] is None else len(raw["db"])
+        want = api_doc.get("all_total")
+        checks.verdict(f"{prefix}/ui_total", GATE, "join", shown is not None and shown == want
+                       and (db_n is None or db_n == want), "count-mismatch", {"run": k, "field": "ui_total", "view": "ui"},
+                       expected={"api_all_total": want, "db_rows": db_n}, observed=shown)
 
     for aid, item in sorted(api.items()):
         row_diff: dict[str, dict[str, Any]] = {}
@@ -93,6 +140,8 @@ def join(run: Path, k: str, checks: Checks) -> list[dict[str, Any]]:
             for view in ("db", "export"):
                 other = (views[view] or {}).get(aid)
                 if other is None or view not in readers:
+                    continue
+                if view == "export" and "zs_coverage_gap" in other and field not in ("asset_type", "location", "target"):
                     continue
                 a = F.run_verdict(item, field) if (view == "db" and field in F.RUN_VERDICT_FIELDS) else \
                     F.view_value(field, "api", item)
@@ -110,7 +159,7 @@ def join(run: Path, k: str, checks: Checks) -> list[dict[str, Any]]:
                     a_cmp, o_cmp = F.view_eq(field, a), F.view_eq(field, o)
                 checks.verdict(cid, GATE, "join", a_cmp == o_cmp, "mismatch", subject, expected=a, observed=o)
         comp = (views["export"] or {}).get(aid)
-        if comp is not None:
+        if comp is not None and "zs_coverage_gap" not in comp:
             p = F.props(comp)
             for field, prop in F.EXPORT_ALWAYS.items():
                 cid = f"{prefix}/asset/{aid}/{field}/export"

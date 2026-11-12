@@ -17,7 +17,7 @@ from typing import Any
 
 from . import gate, manifest
 from .preflight import API, CA, http_get
-from .rundir import iso, parse_ts, read_json, utc_now, write_json
+from .rundir import iso, parse_ts, read_csv, read_json, utc_now, write_json
 
 STACK_MD = "/home/claude/round6/local/STACK.md"
 PW = "/home/claude/round6/local/pw"
@@ -30,10 +30,17 @@ def _sh(*cmd: str) -> str:
         return ""
 
 
-def images() -> dict[str, Any]:
+def lab_containers(run: Path) -> list[str]:
+    """Lab container names from the lab's own lab.json (INTERFACES v7 §A.6; no prefix assumed)."""
+    lab = read_json(Path(run) / "lab" / "lab.json") or {}
+    return sorted({x["container"] for x in (lab.get("targets") or []) + (lab.get("listeners") or []) if x.get("container")})
+
+
+def images(run: Path) -> dict[str, Any]:
     out = {}
+    lab = set(lab_containers(run))
     for name in _sh("docker", "ps", "--format", "{{.Names}}").split():
-        if not re.match(r"^(dss-staging-|zs-scan-node-|cbom-e2e-)", name):
+        if not (re.match(r"^(dss-staging-|zs-scan-node-)", name) or name in lab):
             continue
         image_id = _sh("docker", "inspect", "--format", "{{.Image}}", name)
         ref = _sh("docker", "inspect", "--format", "{{.Config.Image}}", name)
@@ -62,11 +69,30 @@ def write_manifest(run: Path, sha: str, ref: str, started: str, node_image: str 
     browsers = sorted(p.name for p in (Path(PW) / "browsers").glob("chromium*")) if (Path(PW) / "browsers").is_dir() else []
     node_digest = _sh("docker", "image", "inspect", "--format", "{{.Id}}", node_image) if node_image else None
     state = read_json(Path(run) / "flow-state.json") or {}
-    return manifest.update(run, sha=sha, ref=ref, tier="L", started=started, stack_status=status_line,
-                           images=images(), node_image={"ref": node_image, "id": node_digest},
+    node_image = (state.get("node") or {}).get("image") or node_image
+    node_digest = _sh("docker", "image", "inspect", "--format", "{{.Id}}", node_image) if node_image else node_digest
+    gen = read_json(Path(run) / "lab" / "gen.json") or {}
+    jobs = [{"id": r.get("id"), "run_id": r.get("run_id"), "kind": r.get("kind"), "status": r.get("status"),
+             "outcome": r.get("outcome"), "asset_count": r.get("asset_count")}
+            for r in read_csv(Path(run) / "db" / "jobs.csv")]
+    assets: dict[str, list[int]] = {}
+    serials: dict[str, str] = {}
+    for p in sorted((Path(run) / "api").glob("assets-run*.json")):
+        k = p.stem.rsplit("run", 1)[-1]
+        assets[k] = sorted(int(i["id"]) for i in (read_json(p) or {}).get("items") or [])
+        exp = read_json(Path(run) / "exports" / f"run{k}.cdx.json") or {}
+        if exp.get("serialNumber"):
+            serials[k] = exp["serialNumber"]
+    here = Path(__file__).resolve().parents[1]
+    harness = {"commit": _sh("git", "-C", str(here), "rev-parse", "HEAD"),
+               "dirty": bool(_sh("git", "-C", str(here), "status", "--porcelain", "--untracked-files=no", "--", "."))}
+    return manifest.update(run, sha=sha, ref=ref, tier="L", started=started, stack_status=status_line, harness=harness,
+                           images=images(run), node_image={"ref": node_image, "id": node_digest},
+                           lab={"containers": lab_containers(run), "images": gen.get("images") or {},
+                                "generator": gen.get("generator"), "commit": gen.get("commit")},
                            playwright={"version": pw.get("version"), "browsers": browsers},
                            clock_offset_s=offset, teams=state.get("teams") or {}, runs=state.get("runs") or [],
-                           node=state.get("node") or {})
+                           node=state.get("node") or {}, jobs=jobs, assets=assets, serialNumbers=serials)
 
 
 def seal(run: Path, secrets_file: Path | None, started: str, budget_min: float) -> int:
@@ -79,11 +105,11 @@ def seal(run: Path, secrets_file: Path | None, started: str, budget_min: float) 
     t0 = parse_ts(started)
     elapsed = (utc_now() - t0).total_seconds() if t0 else None
     man = read_json(Path(run) / manifest.MANIFEST) or {}
-    need = ("sha", "images", "playwright", "teams", "started")
+    need = ("sha", "images", "playwright", "teams", "started", "runs", "jobs", "assets", "serialNumbers", "node_image",
+            "lab", "harness")
     checks = [
         _check("no_residual_secrets", not problems, "no token, password or registration token left", problems[:20]),
-        _check("manifest_complete", all(man.get(k) for k in need), list(need),
-               [k for k in need if not man.get(k)] or "complete"),
+        _check("manifest_complete", not _incomplete(man, need), list(need), _incomplete(man, need) or "complete"),
         _check("oracle_hash_in_manifest", bool((man.get("oracle") or {}).get("sha256")), "MANIFEST.oracle.sha256",
                (man.get("oracle") or {}).get("sha256") or "<none>"),
         _check("runtime_le_budget", elapsed is not None and elapsed <= budget_min * 60, f"<= {budget_min} min",
@@ -98,6 +124,17 @@ def seal(run: Path, secrets_file: Path | None, started: str, budget_min: float) 
     manifest.update(run, gate_seconds=None if elapsed is None else round(elapsed))
     print(json.dumps({"residual_secrets": problems[:5], "elapsed_min": None if elapsed is None else round(elapsed / 60, 1)}))
     return 0
+
+
+def _incomplete(man: dict[str, Any], need: tuple[str, ...]) -> list[str]:
+    missing = [k for k in need if not man.get(k)]
+    if not (man.get("node_image") or {}).get("id"):
+        missing.append("node_image.id")
+    if not (man.get("lab") or {}).get("containers"):
+        missing.append("lab.containers")
+    if not (man.get("harness") or {}).get("commit"):
+        missing.append("harness.commit")
+    return sorted(set(missing))
 
 
 def _check(name: str, ok: bool, expected: Any, observed: Any) -> dict[str, Any]:
