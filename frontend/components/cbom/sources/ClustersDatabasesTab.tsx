@@ -77,6 +77,20 @@ const LOGIN_OPTIONAL: ReadonlySet<Engine> = new Set(["mongodb", "redis"]);
 const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql"]);
 const GRANT_LANGUAGE: Record<Engine, string> = { postgres: "sql", mysql: "sql", mssql: "sql", oracle: "sql", mongodb: "javascript", redis: "bash" };
 
+// What each Kubernetes tier reads: every claim is matched to the collector's API paths and the tier's ClusterRole by
+// backend/tests/test_cbom_cb08_promises.py (no pods are read, so no images; a TLS Secret's tls.key is dropped unparsed).
+const K8S_TIER_READS: Record<1 | 2, string[]> = {
+  1: [
+    "API server TLS and certificate chain",
+    "cluster and node versions",
+    "cert-manager certificates and the issuer each names",
+    "ingress TLS hosts and Secret names",
+    "Istio and Linkerd mTLS policy",
+    "CA bundles and private keys pasted into ConfigMaps (type and size only)",
+  ],
+  2: ["adds the certificate of each TLS Secret (the node drops tls.key without parsing it)"],
+};
+
 // templates.py DB_READS (kept equal by test_command_lists_shown_to_customers_match_the_server_and_sudoers)
 const DB_READS: Record<Engine, string[]> = {
   postgres: [
@@ -84,7 +98,7 @@ const DB_READS: Record<Engine, string[]> = {
     "Password hashing setting and the method of each HBA rule",
     "Password hash type of each login role (md5 or SCRAM; never the hash itself)",
     "TLS used by live client connections",
-    "pgcrypto use",
+    "Installed extensions and their versions (for example pgcrypto); not where they are used",
   ],
   mysql: [
     "require_secure_transport and TLS versions",
@@ -1068,8 +1082,8 @@ function ClusterForm({
               value={form.tier}
               onChange={(v) => set({ tier: v })}
               options={[
-                { value: 1, title: "Tier 1 · no Secrets", description: "Certificates and issuers, ingress TLS, mesh mTLS mode, images in use" },
-                { value: 2, title: "Tier 2 · reads Secrets", description: "Adds TLS secrets and private keys left in Secrets or ConfigMaps" },
+                { value: 1, title: "Tier 1 · no Secrets", description: K8S_TIER_READS[1].join(", ") },
+                { value: 2, title: "Tier 2 · reads Secrets", description: K8S_TIER_READS[2].join(", ") },
               ]}
             />
           </div>

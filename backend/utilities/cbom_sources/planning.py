@@ -191,6 +191,9 @@ def plan_run(
             item.reason = "Configuration is no longer valid; edit and save it again"
         elif not collectable:
             item.reason = ("Cloud collection is not available yet" if group == "cloud"
+                           # the AWS account source reads ACM Private CA itself (aws_collect "acm-pca")
+                           else "Read by its AWS account source; nothing separate to collect"
+                           if getattr(cfg_model, "provider", None) == "aws_private_ca"
                            else "Collection for this connector is not available yet")
         elif needs_node and node is None:
             item.reason = "No scan node assigned"

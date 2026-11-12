@@ -439,7 +439,7 @@ def _scope_for(job: CbomCollectionJob, source: CbomCollectionSource | None, sett
             "parallel_per_server": settings.rate_parallel_per_server,
             "handshakes_per_endpoint": settings.rate_handshakes_per_endpoint,
         }
-        scope["read_zeek_span"] = bool(settings.zeek_span)
+        # settings.zeek_span is not sent: no scan node reads a SPAN port (CB-08; the UI no longer offers it)
     return scope
 
 

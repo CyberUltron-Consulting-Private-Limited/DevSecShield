@@ -26,7 +26,7 @@ import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
 import { cbomSourcesKeys } from "./keys";
-import { pluralize } from "./logic";
+import { pluralize, targetGuidance } from "./logic";
 import { RunInsights } from "./ChangesPanel";
 import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
 import { BulkAssignBar, useRunRemediation, WaveBadge } from "./WavesControls";
@@ -155,6 +155,11 @@ function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
                           <span className="font-mono text-zinc-700 dark:text-zinc-300 break-all">{t.target}</span>
                           <StatusBadge tone={TARGET_TONE[t.status] ?? "red"}>{TARGET_LABEL[t.status] ?? t.status}</StatusBadge>
                           {t.error && <span className="text-zinc-500 break-words min-w-0">{t.error}</span>}
+                          {targetGuidance(t.status, t.error, t.target) && (
+                            <span className="basis-full text-zinc-600 dark:text-zinc-400 break-words" data-testid="run-results-guidance">
+                              {targetGuidance(t.status, t.error, t.target)}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>

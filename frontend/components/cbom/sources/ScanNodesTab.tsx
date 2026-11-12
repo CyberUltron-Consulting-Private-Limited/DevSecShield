@@ -30,6 +30,8 @@ import {
   DEPLOY_SUPPORT,
   ago,
   installCommand,
+  nodeApiPort,
+  nodeApiProblem,
   nodeInstallNames,
   offersRegistrationToken,
   offlineImageSteps,
@@ -116,15 +118,6 @@ function apiHost(): string {
     return new URL(apiBaseURL).hostname;
   } catch {
     return apiBaseURL;
-  }
-}
-
-function apiPort(): string {
-  try {
-    const url = new URL(apiBaseURL);
-    return url.port || (url.protocol === "http:" ? "80" : "443");
-  } catch {
-    return "443";
   }
 }
 
@@ -245,7 +238,10 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
   if (nodesQuery.isLoading) return <LoadingBlock />;
   if (nodesQuery.isError && !nodesQuery.data) return <ErrorBlock error={nodesQuery.error} onRetry={() => nodesQuery.refetch()} />;
 
-  const command = created
+  // A node accepts only an https:// API: on a plain-HTTP deployment no command, port or new node can work (CB-08).
+  const apiProblem = nodeApiProblem(apiBaseURL);
+  const apiPort = nodeApiPort(apiBaseURL);
+  const command = created && !apiProblem
     ? installCommand(createdNode?.deployment ?? wizard.deployment, {
         token: created.token,
         apiUrl: apiBaseURL,
@@ -258,6 +254,11 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
   return (
     <div className="space-y-6">
+      {apiProblem && (
+        <div role="alert" className="flex items-start gap-3 rounded-lg border border-amber-500/50 px-4 py-3 text-sm text-amber-700 dark:text-amber-400" data-testid="node-api-not-https">
+          {apiProblem}
+        </div>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Scan nodes" value={nodes.length} />
         <StatCard label="Online" value={online} tone={online ? "green" : undefined} />
@@ -267,7 +268,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       <SectionCard
         title="Registered scan nodes"
-        description={`One node per network segment. Each connects out to ZeroShield on port ${apiPort()} only.`}
+        description={apiPort ? `One node per network segment. Each connects out to ZeroShield on port ${apiPort} only.` : "One node per network segment."}
         actions={
           <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={startWizard}>
             <Plus className="h-4 w-4 mr-2" />
@@ -441,7 +442,11 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                 options={DEPLOY_OPTIONS.map((o) => ({ ...o, disabled: !!created && o.value !== wizard.deployment }))} />
               {created && (
                 <div className="mt-4 space-y-2">
-                  <CodeSnippet code={command} language={wizard.deployment === "ami" ? "yaml" : "bash"} />
+                  {apiProblem ? (
+                    <p role="alert" className="text-sm text-amber-700 dark:text-amber-400" data-testid="node-command-not-https">{apiProblem}</p>
+                  ) : (
+                    <CodeSnippet code={command} language={wizard.deployment === "ami" ? "yaml" : "bash"} />
+                  )}
                   {offlineSteps && (
                     <details className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="node-image-offline">
                       <summary className="cursor-pointer">
@@ -493,7 +498,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
                     <TableRow><TableHead>Destination</TableHead><TableHead>Port</TableHead><TableHead>Used for</TableHead></TableRow>
                   </TableHeader>
                   <TableBody>
-                    <TableRow><TableCell className="font-mono text-xs">{apiHost()}</TableCell><TableCell>{apiPort()}</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Jobs in, results out (HTTPS)</TableCell></TableRow>
+                    <TableRow><TableCell className="font-mono text-xs">{apiHost()}</TableCell><TableCell>{apiPort ?? "—"}</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">{apiPort ? "Jobs in, results out (HTTPS)" : "Not usable: this deployment is not served over HTTPS"}</TableCell></TableRow>
                     <TableRow><TableCell>Your targets</TableCell><TableCell>22, 5986, 6443, database and TLS ports</TableCell><TableCell className="text-zinc-600 dark:text-zinc-400">Read-only collection</TableCell></TableRow>
                   </TableBody>
                 </Table>
@@ -525,10 +530,11 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
               </div>
               {!created && (
                 <div className="mt-6">
-                  <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" disabled={createMutation.isPending} onClick={submitWizard}>
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" disabled={createMutation.isPending || !!apiProblem} onClick={submitWizard}>
                     {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Server className="h-4 w-4 mr-2" />}
                     Create node and show install command
                   </Button>
+                  {apiProblem && <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">{apiProblem}</p>}
                 </div>
               )}
             </li>
@@ -561,7 +567,7 @@ export default function ScanNodesTab({ teamId, onNavigate }: { teamId: number; o
 
       <SectionCard title="What the node does, and never does">
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-          <li>Opens no inbound ports. It only connects out to {apiHost()} on port {apiPort()}.</li>
+          <li>Opens no inbound ports. It only connects out to {apiHost()}{apiPort ? ` on port ${apiPort}` : " over HTTPS"}.</li>
           <li>Secrets you enter are encrypted at rest by ZeroShield and sent only to the scan node that runs the job.</li>
           <li>Uses each credential only on the targets it was entered with; your never-scan list always wins.</li>
           <li>Reads with read-only accounts and the published command list shown on the Servers tab.</li>

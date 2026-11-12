@@ -109,6 +109,25 @@ export function nodeInstallNames(nodeName: string): { container: string; volume:
   return { container: `zs-scan-node-${slug}`, volume: `zs-node-${slug}`, release: `zs-scan-node-${slug}` }
 }
 
+/** The scan node accepts only an https:// ZeroShield API (scan_node/zs_scan_node/agent.py: claim answers carry decrypted
+ * credentials). On a deployment served over plain HTTP no install command can work, so the UI says this instead. */
+export const NODE_API_NOT_HTTPS =
+  "This ZeroShield deployment is not served over HTTPS; scan nodes refuse it. Ask your administrator to serve the API over HTTPS."
+
+export function nodeApiProblem(apiUrl: string): string | null {
+  try {
+    return new URL(apiUrl).protocol === "https:" ? null : NODE_API_NOT_HTTPS
+  } catch {
+    return NODE_API_NOT_HTTPS
+  }
+}
+
+/** The outbound port a scan node uses to reach this API, or null when nodes cannot use it at all. */
+export function nodeApiPort(apiUrl: string): string | null {
+  if (nodeApiProblem(apiUrl)) return null
+  return new URL(apiUrl).port || "443"
+}
+
 export function installCommand(
   method: DeployMethod,
   opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string },
@@ -230,6 +249,19 @@ export function refusalReason(error: unknown): string | null {
 /** "Not read in this run" (lab UI r1 F2): assets of a compared source that the later run did not read because of a
  * coverage gap (a stopped target, a denied check). They are neither removed nor resolved, so they are listed apart,
  * grouped by why they were not read (the coverage row's detail, from the server) and by source. */
+/** What to do about a target the node could not reach. An IPv6 target with no route: the wizard's `docker run` puts the
+ * node on Docker's default bridge, which has no IPv6 (scan_node tlsprobe.connect_error: "IPv6 is not available on this
+ * scan node"). */
+export const IPV6_NO_ROUTE_GUIDANCE =
+  "Give the scan node an IPv6 route: run its container on a Docker network created with --ipv6 (or with --network host on a host that has IPv6), or run it in a dual-stack Kubernetes cluster, then run the scan again."
+
+export function targetGuidance(status: string, error: string | null | undefined, target: string): string | null {
+  if (status !== "no_route") return null
+  const host = target.replace(/^\[([^\]]+)\](:\d+)?$/, "$1")
+  const ipv6 = /IPv6/.test(error ?? "") || (host.includes(":") && /^[0-9a-fA-F:.]+(:\d+)?$/.test(host) && (host.match(/:/g) ?? []).length >= 2)
+  return ipv6 ? IPV6_NO_ROUTE_GUIDANCE : null
+}
+
 export const NOT_READ_NO_REASON = "The scan node reported a coverage gap here"
 export function groupNotRead<T extends { reason?: string | null; source_name?: string | null }>(
   items: T[],

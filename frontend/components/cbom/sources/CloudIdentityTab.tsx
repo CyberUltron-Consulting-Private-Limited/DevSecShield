@@ -113,9 +113,9 @@ interface IdpRow {
   defaultName: string;
 }
 const IDP_ROWS: IdpRow[] = [
-  { provider: "entra_id", label: "Microsoft Entra ID", detail: "Application.Read.All, read-only", defaultName: "Entra ID" },
-  { provider: "okta", label: "Okta", defaultName: "Okta" },
-  { provider: "keycloak", label: "Keycloak", defaultName: "Keycloak" },
+  { provider: "entra_id", label: "Microsoft Entra ID", detail: "public metadata; no permission needed", defaultName: "Entra ID" },
+  { provider: "okta", label: "Okta", detail: "public metadata; no permission needed", defaultName: "Okta" },
+  { provider: "keycloak", label: "Keycloak", detail: "public metadata; no permission needed", defaultName: "Keycloak" },
 ];
 const METADATA_LABEL: Record<MetadataProvider, string> = { saml_metadata: "SAML metadata", oidc_discovery: "OIDC discovery" };
 
@@ -138,7 +138,10 @@ const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
 const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
-const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata; no secret is needed for that.";
+// aws_collect reads ACM Private CA with the account's read-only role (planning.py says the same in Review & Run)
+const AWS_PCA_READ = "Read when that AWS account is scanned; nothing separate to collect.";
+// idp_collect reads public OIDC / SAML metadata and sends no credential (backend/tests/test_cbom_cb08_promises.py)
+const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata only; a secret is not used yet.";
 // Cloud, CLM and IdP secrets never go to a scan node, so the node wording of the default hint would be wrong here.
 const STORED_HINT = "Encrypted at rest by ZeroShield. Never shown again.";
 
@@ -638,7 +641,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
                           through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"} ·{" "}
-                          {NOT_AVAILABLE}
+                          {AWS_PCA_READ}
                         </span>
                       ) : (
                         <span className="text-xs text-zinc-500">
@@ -677,10 +680,14 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 dark:border-zinc-800 px-4 py-3">
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-zinc-900 dark:text-white">ADFS</span>
-                  <span className="ml-1.5 text-xs text-zinc-500">read from the Windows servers you add on the Servers tab</span>
+                  <span className="ml-1.5 text-xs text-zinc-500 break-words">
+                    add its SAML metadata URL below (
+                    <span className="font-mono break-all">https://your-adfs/FederationMetadata/2007-06/FederationMetadata.xml</span>); the
+                    Windows servers you add are read for their machine certificates only
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <StatusBadge tone="zinc">Via servers</StatusBadge>
+                  <StatusBadge tone="zinc">Metadata URL</StatusBadge>
                   <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => onNavigate("servers")}>
                     Servers
                   </Button>
@@ -1667,7 +1674,7 @@ function CertDomains({ teamId, settings }: { teamId: number; settings: CbomSourc
       label="Domains to search in Certificate Transparency logs"
       htmlFor="cert-domain-input"
       error={error}
-      hint="Saved for the certificate collector. ZeroShield does not query Certificate Transparency logs yet."
+      hint="Saved, but not read yet: ZeroShield does not query Certificate Transparency logs yet."
     >
       <div className="space-y-2">
         {settings.cert_domains.length > 0 ? (
@@ -1982,7 +1989,7 @@ function CaDialog({
                   ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
                   : isAwsCa
                     ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                    : "ZeroShield keeps the API address and key for the certificate collector."}
+                    : "Not collected yet: ZeroShield only stores the API address and key. Nothing is read from it and it is never charged."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2260,10 +2267,10 @@ function IdpDialog({
           <DialogTitle>{source ? `Edit ${source.name}` : `Connect ${row.label}`}</DialogTitle>
           <DialogDescription>
             {provider === "entra_id"
-              ? "An app registration with the Application.Read.All application permission (read-only)."
+              ? "ZeroShield reads this tenant's public OpenID and federation metadata: its signing keys and certificates. No permission is needed; the application ID is kept for API reads that are not built yet."
               : provider === "okta"
-                ? "A read-only API token from your Okta admin console."
-                : "A confidential client in the realm with read-only access to clients and keys."}
+                ? "ZeroShield reads your Okta org's public OpenID metadata: its signing keys. No API token is needed or used yet."
+                : "ZeroShield reads the realm's public OpenID and SAML metadata: its signing keys and certificates. The client ID is kept for API reads that are not built yet."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">

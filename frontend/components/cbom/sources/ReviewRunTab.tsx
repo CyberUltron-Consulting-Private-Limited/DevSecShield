@@ -277,7 +277,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     "identity",
     "Certificates and identity",
     (s, _u, k) =>
-      `${pluralize(s, "connector")}${k ? ` (${k})` : ""}${overview.settings.cert_domains ? ` · ${pluralize(overview.settings.cert_domains, "certificate domain")}` : ""}`,
+      `${pluralize(s, "connector")}${k ? ` (${k})` : ""}${overview.settings.cert_domains ? ` · ${pluralize(overview.settings.cert_domains, "certificate domain")} (not read yet)` : ""}`,
     true,
   );
   groupRow("network", "Network TLS", (s, u) => (
