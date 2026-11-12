@@ -1,0 +1,24 @@
+{
+ "provenance": [
+  {
+   "raw_file": "aws-apigw-security-policies.html",
+   "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-security-policies-list.html",
+   "retrieved_utc": "2026-11-12T11:28:07Z",
+   "raw_sha256": "aef69751e32607bc001e13aaa5b7f1b98510481f30c855602da0d6e7aec7046b",
+   "raw_bytes": 38748
+  },
+  {
+   "raw_file": "aws-apigw-security-policies-overview.html",
+   "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-security-policies.html",
+   "retrieved_utc": "2026-11-12T11:28:10Z",
+   "raw_sha256": "65615c61901493e0aaf8bb5f7dcf84b762cac14ff9e29e0f239b26d17c2a2aea",
+   "raw_bytes": 22623
+  }
+ ],
+ "pq_policy_names": [
+  "SecurityPolicy_TLS13_1_2_FIPS_PFS_PQ_2025_09",
+  "SecurityPolicy_TLS13_1_2_PFS_PQ_2025_09",
+  "SecurityPolicy_TLS13_1_2_PQ_2025_09"
+ ],
+ "pq_statement": "Use these policies for regulated workloads, advanced governance, or to use post-quantum cryptography"
+}
