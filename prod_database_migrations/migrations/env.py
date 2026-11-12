@@ -8,6 +8,8 @@ from sqlalchemy import text
 from sqlmodel import SQLModel
 from alembic import context
 from backend.new_models import *
+# Table models that live outside new_models.py (F1.4 SSH CA), so autogenerate sees their tables:
+import backend.utilities.cbom_sources.sshca.models  # noqa: F401
 from dotenv import load_dotenv
 
 load_dotenv()
