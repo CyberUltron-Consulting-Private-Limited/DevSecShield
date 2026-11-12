@@ -55,10 +55,11 @@ if os.environ.get("ZS_F14_SSHD_PROOF") == "1":
 
     import test_cbom_sources_api as _base
     from backend.main import app
-    from backend.routers import cbom_node_sshca
+    from backend.routers import cbom_node_sshca, cbom_sshca_trust
     from backend.utilities.cbom_sources.sshca import certs as C
     from backend.utilities.cbom_sources.sshca import keywrap as KW
     from backend.utilities.cbom_sources.sshca import registry as R
+    from backend.utilities.cbom_sources.sshca import trust as T
     from backend.utilities.cbom_sources.sshca.models import CbomSshCa
     from zs_scan_node import api as node_api
     from zs_scan_node.collectors import linux_ssh as L
@@ -137,6 +138,7 @@ def lab(world, api, monkeypatch, tmp_path):
     monkeypatch.setenv("CBOM_SSH_CA", "1")
     monkeypatch.setattr(cbom_node_sshca, "get_db", lambda: engine)
     KW.forget()
+    T.reset()  # per-worker trust caches keyed by team and token ids: each test has a fresh database
     etc = Path(tempfile.mkdtemp(prefix="f14-sshd-"))
     _lab_owned(etc)  # empty: the trust-fetch script fills it
     conf = tmp_path / "50-zs-cbom-ca.conf"
@@ -388,12 +390,16 @@ def test_sshd_trusts_the_ca(api, lab):
     record("rotated CA: new CA's certificate during the overlap", "ok", got_new, [], ca_id=new_cert["ca_id"])
     record("rotated CA: old CA's certificate during the overlap", "ok", got_old, [])
     assert got_new[0] == "ok" and got_old[0] == "ok" and new_cert["ca_id"] == nxt["id"]
+    # the overlap ends: the trust routes' clock moves past it (retired_at is written once, by promote, which moved the
+    # trust generation; the trusted-keys text is cached per generation until that moment)
     with Session(lab["engine"]) as session:
-        old_row = session.get(CbomSshCa, ca["id"])
-        old_row.retired_at = _utcnow() - R.OVERLAP - dt.timedelta(seconds=1)
-        session.add(old_row)
-        session.commit()
-    install(lab, api)
+        ends = session.get(CbomSshCa, ca["id"]).retired_at + R.OVERLAP
+    real_now = cbom_sshca_trust.utcnow
+    cbom_sshca_trust.utcnow = lambda: ends + dt.timedelta(seconds=1)
+    try:
+        install(lab, api)
+    finally:
+        cbom_sshca_trust.utcnow = real_now
     t0 = log_mark()
     got_old = login(lab, rcfg, {"key": old_key}, ctx_o)
     got_new = login(lab, rcfg, new_creds, ctx_n)
