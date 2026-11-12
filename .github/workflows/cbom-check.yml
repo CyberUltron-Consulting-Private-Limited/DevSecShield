@@ -24,7 +24,7 @@ jobs:
       - name: "[cb30-proof] DevSecShield at the PR head"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 60e85f6bcb4a89b1224770e97be4f0de6ab7a7a3
+          ref: f4cb87bece97743ac5eb0dee0139a12dde044270
           path: .dss
           persist-credentials: false
       - name: "[cb30-proof] deploy/local (GHCR compose) from ci/publish-ghcr"
@@ -77,15 +77,18 @@ jobs:
           LEG: rsa1024
         run: |
           python3 - <<'PY'
-          import json, os, re, secrets, string, subprocess, time, urllib.parse, urllib.request
+          import json, os, re, secrets, string, subprocess, time, urllib.error, urllib.parse, urllib.request
           API, MAIL = "http://127.0.0.1:8000", "http://127.0.0.1:8025"
           op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
           def call(method, url, body=None, token=None):
               req = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method)
               req.add_header("Content-Type", "application/json"); req.add_header("Origin", "http://localhost:3000")
               if token: req.add_header("Authorization", f"Bearer {token}")
-              with op.open(req, timeout=60) as r:
-                  return json.loads(r.read() or b"null")
+              try:
+                  with op.open(req, timeout=60) as r:
+                      return json.loads(r.read() or b"null")
+              except urllib.error.HTTPError as e:
+                  raise SystemExit(f"{method} {url}: HTTP {e.code} {e.read()[:300]!r}")
           email = f"cb30-{os.environ['LEG']}-{secrets.token_hex(3)}@customer.test"
           call("POST", f"{API}/send_code", {"email": email})
           code = None
@@ -94,7 +97,8 @@ jobs:
               msgs = json.loads(op.open(f"{MAIL}/api/v1/search?query={q}").read()).get("messages") or []
               for m in msgs:
                   full = json.loads(op.open(f"{MAIL}/api/v1/message/{m['ID']}").read())
-                  text = re.sub(r"(?s)<[^>]+>", " ", full.get("HTML") or "") + " " + (full.get("Text") or "")
+                  html = re.sub(r"(?is)<(style|script|head)\b.*?</\1>", " ", full.get("HTML") or "")  # CSS colours are 6 digits too
+                  text = re.sub(r"(?s)<[^>]+>", " ", html) + " " + (full.get("Text") or "")
                   found = re.findall(r"(?<!\d)(\d{6})(?!\d)", text)
                   if found: code = found[0]; break
               if code: break
@@ -115,7 +119,7 @@ jobs:
           print(f"customer team {team}, CBOM CI/CD integration {created['integration_id']} created")
           PY
       # ------------------------------------------------ the generated file starts here ------------------------------
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Everything but .git is scanned (vendored code, build output and nested archives included); installed
       # dependency trees stay out. The zip is written outside the workspace. Uploads are capped at 50 MB.
