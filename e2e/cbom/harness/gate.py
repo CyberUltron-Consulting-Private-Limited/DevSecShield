@@ -162,6 +162,9 @@ def redact_run(run: Path, known: list[str]) -> list[str]:
     for sub in ("har", "api", "ui", "steps", "logs", "exports", "db"):
         rewrite = sub not in ("exports", "db")
         for path in sorted((run / sub).rglob("*")):
+            if path.is_file() and path.suffix == ".zip" and rewrite:
+                problems += redact_zip(path, run, known)
+                continue
             if not path.is_file() or path.suffix in (".png", ".zip", ".webm", ".jpg"):
                 continue
             original = path.read_text(encoding="utf-8", errors="replace")
@@ -183,6 +186,46 @@ def redact_run(run: Path, known: list[str]) -> list[str]:
                     path.write_text(text, encoding="utf-8")
             left = redact.residual_secrets(text, known)
             problems += [f"{path.relative_to(run).as_posix()}: {kind}" for kind in left]
+    return problems
+
+
+_BINARY = (".png", ".jpg", ".jpeg", ".webp", ".webm", ".woff", ".woff2", ".ttf", ".ico", ".gif")
+
+
+def redact_zip(path: Path, run: Path, known: list[str]) -> list[str]:
+    """Playwright traces (steps/<G>/trace.zip) hold the typed values of fill actions and the request/response bodies
+    and headers (tokens, the database password the customer typed): rewrite every text member through the same scrub
+    as the other evidence (CB-05, found by the G15 canary grep on a full run). Image members are kept as they are."""
+    import zipfile
+    problems = []
+    with zipfile.ZipFile(path) as zin:
+        members = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    changed = False
+    out = []
+    for info, data in members:
+        if info.filename.lower().endswith(_BINARY):
+            out.append((info, data))
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            out.append((info, data))
+            continue
+        new = redact.scrub_text(text)
+        for k, value in enumerate(known):
+            if value and len(value) >= 8:
+                new = new.replace(value, redact.mark(f"known-{k}", value))
+        if new != text:
+            changed = True
+        out.append((info, new.encode("utf-8")))
+        left = redact.residual_secrets(new, known)
+        problems += [f"{path.relative_to(run).as_posix()}!{info.filename}: {kind}" for kind in left]
+    if changed:
+        tmp = path.with_suffix(".zip.tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for info, data in out:
+                zout.writestr(info, data)
+        tmp.replace(path)
     return problems
 
 

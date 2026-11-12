@@ -36,25 +36,33 @@ test("the oracle constants are the spec's, not the product's", () => {
 const fakeCtx = (rows, extra = {}) => ({ A: { team: 5 }, state: { runs: [9], estimate: 3.6 }, iso: () => "2026-11-12T10:00:00Z", writeJson() {},
   db: (sql) => (typeof rows === "function" ? rows(sql) : rows), ...extra });
 
-test("G9: estimate == sum of the spec's rates over the configured sources (ranges: 1 per /24 or part)", () => {
-  const rows = [["linux_servers", "S-host", JSON.stringify({ targets: "10.231.0.40" })], ["linux_servers", "S-canary", JSON.stringify({ targets: ["10.231.0.33", "10.231.0.34"] })],
-    ["database", "DB-pg-tls", "{}"], ["network_range", "R-zoo", JSON.stringify({ cidr: "10.231.0.16/28" })], ["network_range", "R-big", JSON.stringify({ cidr: "10.0.0.0/23" })]];
+test("G9: estimate == the spec's rates over the queued sources (network: 1 per 256 addresses or part, never-scan left out)", async () => {
+  const rows = [["linux_servers", "S-host", JSON.stringify({ targets: ["10.231.0.40"] })], ["linux_servers", "S-canary", JSON.stringify({ targets: ["10.231.0.33", "10.231.0.34"] })],
+    ["database", "DB-pg-tls", "{}"], ["network_range", "R-zoo", JSON.stringify({ cidr: "10.231.0.16/28" })], ["network_range", "R-canary", JSON.stringify({ cidr: "10.231.0.32/30" })]];
+  const inCidr = (ip, c) => { const [n, b] = c.split("/"); const v = (a) => a.split(".").reduce((x, o) => x * 256 + Number(o), 0); const sz = 2 ** (32 - Number(b)); return Math.floor(v(ip) / sz) === Math.floor(v(n) / sz); };
+  const ctx = (est) => fakeCtx(rows, { inCidr, state: { runs: [9], estimate: est, tests: { "S-canary": "failed", "S-host": "passed" }, never_scan_g5: ["10.231.0.33"] },
+    A: { team: 5, page: { getByTestId: () => ({ textContent: async () => "S-canary Last connection test failed; fix it and test again" }) } } });
+  // S-host 0.2 + DB 1 + network 19 addresses -> 1 = 2.2 (S-canary not queued: its test failed)
   const s = stepStub();
-  g9Rates(fakeCtx(rows), s, 4.6);
-  assert.equal(s.checks[0].ok, true, JSON.stringify(s.checks[0]));
+  await g9Rates(ctx(2.2), s, 2.2);
+  assert.deepEqual(s.checks.map((c) => [c.name, c.ok]), [["estimate_eq_rates", true], ["review_skipped_eq_failed_tests", true]]);
   const s2 = stepStub();
-  g9Rates(fakeCtx(rows), s2, 4.4);
+  await g9Rates(ctx(2.6), s2, 2.6);
   assert.equal(s2.checks[0].ok, false);
 });
 
-test("G10 (OA-10b): skipped server targets and a pro-rata range share are refunded", async () => {
-  const jobs = [{ job_id: 1, source_id: 11, source_name: "S-canary", targets: [{ target: "10.231.0.33", status: "skipped_never_scan" }, { target: "10.231.0.34", status: "ok" }] },
+test("G10 (OA-10b): a never-scan address left out at planning owes nothing; a charged server target skipped at run time is refunded", async () => {
+  const jobs = [{ job_id: 1, source_id: 11, source_name: "S-host", targets: [{ target: "10.231.0.40", status: "ok" }, { target: "10.231.0.23", status: "skipped_never_scan" }] },
     { job_id: 2, source_id: 12, source_name: "R-canary", targets: [{ target: "10.231.0.33:443", status: "skipped_never_scan" }, { target: "10.231.0.34:443", status: "ok" }] }];
-  const db = (sql) => (sql.includes("FROM cbomcollectionsource") ? [["11", "linux_servers", "{}"], ["12", "network_range", JSON.stringify({ cidr: "10.231.0.32/30" })]]
-    : sql.includes("FROM cbomcollectionrun") ? [["360", "45"]] : []);
+  const srcs = [["11", "linux_servers", JSON.stringify({ targets: ["10.231.0.40", "10.231.0.23"] })], ["12", "network_range", JSON.stringify({ cidr: "10.231.0.32/30" })]];
+  const inCidr = (ip, c) => ip.startsWith("10.231.0.3") && c.endsWith("/30");
+  const run = (charged, refunded) => fakeCtx((sql) => (sql.includes("FROM cbomcollectionrun") ? [[String(charged), String(refunded)]] : sql.includes("AND enabled") ? srcs.map(([, k, c], i) => [k, ["S-host", "R-canary"][i], c]) : srcs),
+    { inCidr, state: { runs: [9], estimate: 1.4, tests: {}, never_scan_g5: ["10.231.0.33"] }, apiGet: async () => ({ status: 200, body: { targets: jobs } }) });
   const s = stepStub();
-  await g10Charge(fakeCtx(db, { apiGet: async () => ({ status: 200, body: { targets: jobs } }) }), s);
-  // 3.60 - 0.20 (one server target) - 0.25 (one of four addresses of a /30 at 1 credit) = 3.15 == 3.60 - 0.45 refunded
-  const c = s.checks.find((x) => x.name === "charge_after_runtime_skips");
-  assert.equal(c.ok, true, JSON.stringify(c));
+  await g10Charge(run(140, 20), s);   // 1.4 charged, 0.2 refunded for the skipped .23
+  assert.equal(s.checks.find((x) => x.name === "charge_after_runtime_skips").ok, true);
+  const s2 = stepStub();
+  await g10Charge(run(140, 0), s2);   // charged in full: KF-8
+  assert.equal(s2.checks.find((x) => x.name === "charge_after_runtime_skips").ok, false);
+  assert.equal(s2.checks.find((x) => x.name.startsWith("run_target_10.231.0.33")).ok, true);
 });

@@ -413,7 +413,7 @@ try {
     await req.waitFor({ timeout: 30000 });
     const estimate = Number(((await req.textContent()) || "").replace(/[^\d.]/g, ""));
     state.estimate = estimate;
-    cb05.g9Rates(ctx, s, estimate);
+    await cb05.g9Rates(ctx, s, estimate);
     const ack = page.locator("#review-soc-ack");
     if (await ack.count()) await ack.check();
     await s.shot(page, "review");

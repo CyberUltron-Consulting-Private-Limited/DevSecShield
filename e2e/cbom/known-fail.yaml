@@ -137,3 +137,41 @@
   issue: "#73"
   owner: CB-08
   why: "Azure and Google Cloud forms promise 'signs in and lists what it would read' instead of an honest 'not available' (OA-7c); draft round6/cbom/cb-05/bugs/BUG-CB05-1-azure-gcp-not-honest.md"
+- row: CB05-B2
+  gate: [G11]
+  match: {kind: join, view: export, field: protocol, asset_type: [ssh_server_config, crypto_config, database_config]}
+  issue: "#73"
+  owner: CB-06
+  why: "config assets disagree between API and export on `protocol`: sshd_config/nginx.conf have none in the API but ssh/tls in the export; the Postgres config is 'postgres' in the API and an algorithm without protocol in the export; draft round6/cbom/cb-05/bugs/BUG-CB05-2-config-protocol-export.md"
+
+# ---------------------------------------------------------------------------- lab-side rows (CB-02; INTERFACES v5.7)
+- row: LAB-pg-oracle-model
+  gate: [G11]
+  match: {kind: oracle, target_id: pg-tls, reason: [wrong-value, extra]}
+  issue: "#73"
+  owner: CB-02
+  why: "the pg-tls oracle puts supported versions and tls_enabled on database_tls and has no tls_endpoint/database_config in its closed world; the product keeps them on database_config and adds a tls_endpoint for the port (INTERFACES v5.7)"
+- row: LAB-run2-canary-control
+  gate: [G15]
+  match: {id: G15/canary/host-legacy-rsa1024.key/needles}
+  issue: "#73"
+  owner: CB-02
+  why: "gen.py mutate run2 deletes the key file that canaries.json names as the canary's control, so G15 has no needles for it (INTERFACES v5.7)"
+- row: CB05-B3
+  gate: [G11]
+  match: {kind: oracle, target_id: pg-tls, code: DB_MD5_ACCEPTED}
+  issue: "#73"
+  owner: CB-16
+  why: "an md5 HBA rule on a self-managed Postgres is DB_WEAK_HASH (classify.py:577) while the spec and the RDS lane call it DB_MD5_ACCEPTED (classify.py:538): one fact, two codes by lane; draft round6/cbom/cb-05/bugs/BUG-CB05-3-db-md5-code-by-lane.md"
+- row: LAB-host-tier1
+  gate: [G11]
+  match: {kind: oracle, target_id: host, reason: missing}
+  issue: "#93"
+  owner: CB-02
+  why: "S-host runs Tier 1 because the lab defers the Ubuntu .40 with Tier-2 sudo: the product says 'Tier 1 does not search for key and certificate files; use Tier 2', so the planted keys, certificates and keystores are not read; the oracle's host ssh asset has no counterpart in a server source (the product reads sshd_config)"
+- row: LAB-host-tier1-drift
+  gate: [G13]
+  match: {id_prefix: G13/drift_removed_asset_private_key_10.231.0.40}
+  issue: "#93"
+  owner: CB-02
+  why: "the RSA-1024 key file removed in run 2 was never read in run 1 (Tier 1, see LAB-host-tier1), so its removal cannot be a drift event"

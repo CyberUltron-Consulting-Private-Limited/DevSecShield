@@ -82,3 +82,23 @@ def test_the_cb05_rows_name_checks_not_whole_steps():
     for row in ledger.load(gate.DEFAULT_LEDGER):
         assert "step" not in row["match"], f"{row['row']} matches a whole step"
         assert not str(row.get("not_run_ok", "")).startswith(("CB-05", "G5b runs", "G7 runs", "G8 runs", "G13b runs")), row["row"]
+
+
+def test_trace_zips_are_redacted(tmp_path):
+    """G15 found the typed database password and request bodies inside Playwright traces: the bundle scrubs them."""
+    import secrets
+    import zipfile
+    canary = secrets.token_hex(16)  # generated at run time: no secret-shaped literal in the repo
+    run = tmp_path / "run"
+    (run / "steps" / "G6").mkdir(parents=True)
+    z = run / "steps" / "G6" / "trace.zip"
+    with zipfile.ZipFile(z, "w") as out:
+        out.writestr("trace.trace", '{"method":"fill","params":{"value":"%s"}}\n' % canary)
+        out.writestr("resources/abc.json", '{"secrets":{"password":"%s"}}' % canary)
+        out.writestr("resources/shot.jpeg", b"\xff\xd8binary" + canary.encode())
+    problems = gate.redact_run(run, [canary])
+    with zipfile.ZipFile(z) as zin:
+        assert canary not in zin.read("trace.trace").decode() and canary not in zin.read("resources/abc.json").decode()
+        assert "[REDACTED:known-0" in zin.read("trace.trace").decode()
+        assert zin.read("resources/shot.jpeg").startswith(b"\xff\xd8")
+    assert problems == []

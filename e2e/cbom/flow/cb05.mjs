@@ -70,6 +70,20 @@ function notRunDeferred(ctx, s, part, gate = s.gate, what = "") {
   return true;
 }
 
+/** The customer opens a CBOM Sources tab: closes whatever sheet or dialog is open, clicks the tab by its label, and
+ * opens the tab's URL (?tab=<value>) only when no tab is on the page. */
+const TAB_VALUE = { "Scan nodes": "scan-nodes", Servers: "servers", "Kubernetes & Databases": "k8s-db", "Cloud & Identity": "cloud",
+  "Network TLS": "network", Evidence: "evidence", "Review & Run": "review" };
+async function openTab(ctx, label) {
+  const { page } = ctx.A;
+  for (let i = 0; i < 3 && (await page.getByRole("dialog").count()); i++) { await page.keyboard.press("Escape"); await page.waitForTimeout(300); }
+  const tab = page.getByRole("tab", { name: label, exact: true });
+  if (await tab.count()) await tab.first().click();
+  else await page.goto(`${ctx.UI}/${ctx.A.team}/cbom/sources?tab=${TAB_VALUE[label]}`, { waitUntil: "networkidle" });
+  await page.waitForFunction((v) => new URLSearchParams(location.search).get("tab") === v, TAB_VALUE[label], { timeout: 15000 }).catch(() => {});
+  await page.waitForLoadState("networkidle");
+}
+
 function sourceOf(ctx, name) { return (ctx.lab?.sources || []).find((x) => x.name === name) || null; }
 
 async function pickNode(page, testId) {
@@ -139,11 +153,17 @@ async function addServerSource(ctx, s, { name, targets, port, neverScan, install
   s.check(`${name}_saved`, !!src, { expected: `source ${name} in the DB`, observed: src ? { id: src.id, status: src.status } : toast });
   if (src) addScope(ctx, name);
   // the test results card: one row per sample (target, status label) == the DB's last_test_result
-  await page.waitForTimeout(1500);
-  const uiRows = await page.getByTestId("servers-test-results").locator("tbody tr").evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent.trim())))
-    .catch(() => []);
+  let uiRows = [];
+  for (let i = 0; i < 15; i++) {
+    uiRows = await page.getByTestId("servers-test-results").locator("tbody tr").evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent.trim())))
+      .catch(() => []);
+    if (uiRows.length && !uiRows.some((r) => /^(waiting|testing|pending|queued|running)/i.test(String(r[4] || "")))) break;
+    await page.waitForTimeout(2000);
+  }
   ctx.writeJson(join(ctx.RUN, "steps", s.gate, `test-${name}.json`), { window: { from, to }, db: src, ui: uiRows });
   const dbSamples = src?.result?.samples || [];
+  const seenFailed = (uiRows.length > 0 && uiRows.every((r) => !/^(ready|read|ok)/i.test(String(r[4] || "")))) || src?.status === "failed";
+  ctx.state.tests = { ...(ctx.state.tests || {}), [name]: seenFailed ? "failed" : "passed" };
   const uiTargets = uiRows.map((r) => r[0]).filter(Boolean).sort();
   s.check(`${name}_test_ui_eq_db`, dbSamples.length > 0 && JSON.stringify(uiTargets) === JSON.stringify(dbSamples.map((x) => x.target).sort()),
     { expected: dbSamples.map((x) => x.target).sort(), observed: uiTargets, evidence: [await s.shot(page, `test-${name}`)] });
@@ -181,6 +201,7 @@ export async function g4(ctx) {
 
 // ------------------------------------------------------------------------------------------------ G5b IDNA
 export async function g5b(ctx) {
+  for (const name of ctx.state.configured || []) addScope(ctx, name);  // G5 rebuilds state.scope from the network sources
   await ctx.step("G5b", ctx.A.ctx, async (s) => {
     const idn = sourceOf(ctx, "S-idn");
     if (!idn) { s.check("lab_idn_source", false, { expected: "lab.json source S-idn", observed: "absent", reason: "no-lab" }); return; }
@@ -204,7 +225,7 @@ export async function g6(ctx) {
     const password = readFileSync(pwPath, "utf8").trim();
     ctx.remember(password);
     const { page } = ctx.A;
-    await ctx.sourcesTab(page, ctx.A.team, "Kubernetes & Databases");
+    await openTab(ctx, "Kubernetes & Databases");
     await page.locator("#db-form").scrollIntoViewIfNeeded();
     await page.fill("#db-name", pg.name);
     await page.getByTestId("db-engine").click();
@@ -217,6 +238,16 @@ export async function g6(ctx) {
     if (pg.require_tls && !(await tls.isChecked().catch(() => false))) await tls.check().catch(async () => tls.click());
     await page.getByTestId("db-ca").setInputFiles(join(ctx.RUN, pg.ca_pem));
     await pickNode(page, "db-node");
+    // the page shows the grant to run as the database administrator; the customer runs it for its login (the page
+    // says to replace zs_cbom with the login entered), without CREATE ROLE (the login exists)
+    const grantPre = page.getByTestId("db-grant").locator("pre").filter({ visible: true }).first();
+    const grant = (((await grantPre.count()) ? await grantPre.textContent() : await page.getByTestId("db-grant").textContent().catch(() => "")) || "").trim();
+    writeFileSync(join(s.dir, "grant-ui.sql"), grant + "\n");
+    const sql = grant.split("\n").filter((l) => !/^\s*CREATE ROLE /i.test(l)).join("\n").replace(/\bzs_cbom\b/g, pg.user);
+    const pgC0 = (ctx.lab.targets || []).find((t) => t.address === pg.address)?.container;
+    const g = pgC0 ? spawnSync("docker", ["exec", "-i", pgC0, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres"], { input: sql, encoding: "utf8" }) : { status: null, stderr: "no container" };
+    customerSide(ctx, "G6", { what: `ran the page's grant as the DBA on ${pgC0} for ${pg.user} (zs_cbom replaced, CREATE ROLE dropped)`, exit: g.status, stderr: (g.stderr || "").slice(0, 300) });
+    s.check("db_grant_applied", grant.length > 0 && g.status === 0, { expected: "the grant shown on the page runs cleanly", observed: { lines: grant.split("\n").length, exit: g.status, stderr: (g.stderr || "").slice(0, 200) } });
     const from = ctx.iso();
     await page.getByTestId("db-test").click();
     const src = await waitTest(ctx, pg.name);
@@ -231,6 +262,7 @@ export async function g6(ctx) {
     }
     ctx.writeJson(join(s.dir, "test-DB-pg-tls.json"), { window: { from, to }, db: src, ui: line });
     s.check("db_saved", !!src, { expected: "DB-pg-tls in the DB", observed: src && { id: src.id, status: src.status } });
+    ctx.state.tests = { ...(ctx.state.tests || {}), [pg.name]: /fail|error/i.test(line) ? "failed" : "passed" };
     s.check("db_test_passed", !!src && ["passed", "ok", "success"].includes(src.status), { expected: "connection test passed", observed: src && { status: src.status, result: src.result }, evidence: [await s.shot(page, "db-test")] });
     s.check("db_test_ui_eq_db", !!src && line.toLowerCase().includes(src.status === "passed" ? "pass" : String(src.status).toLowerCase()), { expected: src?.status, observed: line.slice(0, 200) });
     // O-8 positive control: the server's own log shows the TLS login of the reader
@@ -249,7 +281,7 @@ export async function g7(ctx) {
     const { page } = ctx.A;
     const settings = await ctx.apiGet(ctx.A, `/${ctx.A.team}/cbom/sources/settings`);
     ctx.writeJson(join(ctx.RUN, "api", "settings-g7.json"), settings.body);
-    await ctx.sourcesTab(page, ctx.A.team, "Cloud & Identity");
+    await openTab(ctx, "Cloud & Identity");
     await page.getByTestId("cloud-provider-aws").click().catch(() => {});
     const awsConfigured = settings.body?.aws_collection_configured ?? settings.body?.settings?.aws_collection_configured;
     const banner = ((await page.getByTestId("aws-not-configured").textContent({ timeout: 5000 }).catch(() => null)) || "").trim();
@@ -278,7 +310,7 @@ export async function g7(ctx) {
     // identity providers: the lab IdP (.42) is deferred by CB-02
     if (!notRunDeferred(ctx, s, "idp")) s.notRun("idp_keys_eq_jwks", "no lab IdP in lab.json", { check: "idp_keys_eq_jwks" });
     // OA-7b: the Zeek ssl.log option is hidden until a reader exists
-    await ctx.sourcesTab(page, ctx.A.team, "Network TLS");
+    await openTab(ctx, "Network TLS");
     const zeek = await page.getByTestId("network-zeek").count();
     const zeekText = await page.getByText(/zeek/i).count();
     s.check("zeek_option_absent", zeek === 0 && zeekText === 0, { expected: "no Zeek option", observed: { testid: zeek, text_hits: zeekText }, subject: { check: "zeek_option_absent" }, evidence: [await s.shot(page, "zeek")] });
@@ -310,7 +342,7 @@ async function answerArea(page, areaKey, { confidenceLabel, evidenceDate, owner 
 export async function g8(ctx) {
   await ctx.step("G8", ctx.A.ctx, async (s) => {
     const { page } = ctx.A;
-    await ctx.sourcesTab(page, ctx.A.team, "Evidence");
+    await openTab(ctx, "Evidence");
     const now = new Date();
     const old = dateOnly(new Date(now.getTime() - 400 * DAY));
     // key hierarchy: documented, but the evidence is 400 days old (> 365): E0 with a Q0 gap (§2.3 rule)
@@ -351,9 +383,11 @@ export async function g8(ctx) {
     try {
       const vp = await vctx.newPage();
       await vp.goto(url, { waitUntil: "networkidle" });
+      await vp.getByRole("button", { name: /send answers|submit/i }).first().waitFor({ timeout: 20000 });
+      await vp.locator("textarea, [role=radiogroup]").first().waitFor({ timeout: 20000 });
       for (const g of await vp.getByRole("radiogroup").all()) await g.getByRole("radio").first().check().catch(() => {});
-      for (const t of await vp.locator("textarea").all()) await t.fill("cbom-e2e vendor answer").catch(() => {});
-      await vp.getByRole("button", { name: /submit|send/i }).first().click();
+      for (const t of await vp.locator("textarea").all()) await t.fill("cbom-e2e vendor answer");
+      await vp.getByRole("button", { name: /send answers|submit/i }).first().click();
       const thanks = await vp.getByText(/thank you/i).first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
       await vp.screenshot({ path: join(s.dir, "vendor-answered.png") }).catch(() => {});
       s.check("vendor_answered_ui", thanks, { expected: "Thank you", observed: thanks ? "shown" : "absent" });
@@ -376,62 +410,94 @@ export async function g8(ctx) {
 }
 
 // ------------------------------------------------------------------------------------------------ G9 / G10 / G11 additions
-/** G9: the estimate recomputed from the source list the customer configured (rates per §4.3 G9). */
-export function g9Rates(ctx, s, estimate) {
-  ctx.state.run1_from = ctx.iso();
+/** Addresses of a CIDR (a /28 has 16). */
+function cidrSize(cidr) { return 2 ** (32 - Number(String(cidr || "").split("/")[1] ?? 32)); }
+
+/** The harness's own view of what a run charges (§4.3 G9 rates; "network 1 per /24 or part" read as 1 credit per 256
+ * addresses or part, over every range's addresses less the team never-scan addresses inside them). Sources whose
+ * connection test the customer saw fail in G4/G5b/G6 are not queued (the Review page says so; checked below). */
+function plannedCharge(ctx) {
   const rows = ctx.db(`SELECT kind, name, config::text FROM cbomcollectionsource WHERE team_id = ${ctx.A.team} AND enabled`);
+  const failed = new Set(Object.entries(ctx.state.tests || {}).filter(([, v]) => v === "failed").map(([k]) => k));
+  const never = ctx.state.never_scan_g5 || [];
   const lines = [];
-  let total = 0;
+  let total = 0, netAddrs = 0;
   for (const [kind, name, cfg] of rows) {
     const c = JSON.parse(cfg || "{}");
-    let units = 1;
-    if (kind === "linux_servers" || kind === "windows_servers") units = (Array.isArray(c.targets) ? c.targets : String(c.targets || "").split(/[\s,]+/)).filter(Boolean).length;
+    if (failed.has(name)) { lines.push({ kind, name, queued: false, why: "connection test failed (seen by the customer)" }); continue; }
     if (kind === "network_range") {
-      const bits = Number(String(c.cidr || "").split("/")[1] ?? 32);
-      units = Math.max(1, Math.ceil(2 ** (32 - bits) / 256));
+      const n = cidrSize(c.cidr) - never.filter((ip) => ctx.inCidr(ip, c.cidr)).length;
+      netAddrs += n;
+      lines.push({ kind, name, queued: true, addresses: n });
+      continue;
     }
+    const units = ["linux_servers", "windows_servers"].includes(kind) ? (Array.isArray(c.targets) ? c.targets : String(c.targets || "").split(/[\s,]+/)).filter(Boolean).length : 1;
     const rate = RATES_C[kind];
-    lines.push({ kind, name, units, rate_c: rate ?? null });
+    lines.push({ kind, name, queued: true, units, rate_c: rate ?? null });
     if (rate !== undefined) total += rate * units;
   }
-  ctx.writeJson(join(s.dir, "estimate-oracle.json"), { rates_c: RATES_C, source: "DEVILS-ADVOCATE.md §4.3 G9", lines, total_c: total });
-  const unknown = lines.filter((l) => l.rate_c === null);
-  s.check("estimate_eq_rates", !unknown.length && Math.round(estimate * 100) === total, { expected: total / 100, observed: estimate, reason: unknown.length ? "rate-unknown" : "estimate-vs-rates",
-    subject: { check: "estimate_eq_rates" } });
+  const netC = netAddrs ? RATES_C.network_range * Math.ceil(netAddrs / 256) : 0;
+  total += netC;
+  return { rates_c: RATES_C, source: "DEVILS-ADVOCATE.md §4.3 G9 (+ OA-10b for G10)", network: { addresses: netAddrs, credits_c: netC }, lines, total_c: total, failed: [...failed] };
 }
 
-/** G10 (OA-10b): the run's final charge = estimate - rate x the targets skipped at run time (ranges pro rata). */
+/** G9: the estimate recomputed from the source list the customer configured; the skipped list names exactly the
+ * sources whose test the customer saw fail. */
+export async function g9Rates(ctx, s, estimate) {
+  ctx.state.run1_from = ctx.iso();
+  const plan = plannedCharge(ctx);
+  ctx.writeJson(join(s.dir, "estimate-oracle.json"), plan);
+  const unknown = plan.lines.filter((l) => l.queued && l.rate_c === null && l.kind !== "network_range");
+  s.check("estimate_eq_rates", !unknown.length && Math.round(estimate * 100) === plan.total_c, { expected: plan.total_c / 100, observed: estimate,
+    reason: unknown.length ? "rate-unknown" : "estimate-vs-rates", subject: { check: "estimate_eq_rates" } });
+  const skippedText = ((await ctx.A.page.getByTestId("review-skipped").textContent().catch(() => "")) || "");
+  const named = plan.failed.filter((n) => skippedText.includes(n));
+  s.check("review_skipped_eq_failed_tests", named.length === plan.failed.length, { expected: plan.failed, observed: skippedText.replace(/\s+/g, " ").slice(0, 300),
+    subject: { check: "review_skipped" } });
+}
+
+/** G10 (OA-10b): final charge = estimate - rate x the CHARGED targets skipped at run time (ranges pro rata by
+ * address). A never-scan address the planner already left out was never charged, so it owes nothing. */
 export async function g10Charge(ctx, s) {
   const runId = ctx.state.runs?.[0];
   if (!runId) { s.notRun("charge_after_runtime_skips", "no run", { check: "charge_after_runtime_skips" }); return; }
   const r = await ctx.apiGet(ctx.A, `/${ctx.A.team}/cbom/sources/runs/${runId}/assets?page=1&page_size=1`);
   const jobs = r.body?.targets || [];
   const srcRows = Object.fromEntries(ctx.db(`SELECT id, kind, config::text FROM cbomcollectionsource WHERE team_id = ${ctx.A.team}`).map(([id, kind, cfg]) => [Number(id), { kind, cfg: JSON.parse(cfg || "{}") }]));
-  let refund = 0;
+  const never = new Set(ctx.state.never_scan_g5 || []);
+  const plan = plannedCharge(ctx);
+  let refund = 0, charged = 0;
   const lines = [];
   for (const j of jobs) {
     const src = srcRows[j.source_id] || {};
     const skipped = (j.targets || []).filter((t) => RUNTIME_SKIPS.has(t.status));
+    const chargedSkips = skipped.filter((t) => !(src.kind === "network_range" && never.has(String(t.target).split(":")[0])));
     if (!skipped.length) continue;
     let owed = 0;
     if (src.kind === "network_range") {
-      const size = 2 ** (32 - Number(String(src.cfg.cidr || "").split("/")[1] ?? 32));
-      owed = Math.round(RATES_C.network_range * Math.max(1, Math.ceil(size / 256)) * skipped.length / size);
-    } else owed = (RATES_C[src.kind] ?? 0) * (["linux_servers", "windows_servers"].includes(src.kind) ? skipped.length : 1);
+      // pro rata: the network charge spread over every charged address
+      const addrs = new Set(chargedSkips.map((t) => String(t.target).split(":")[0]));
+      owed = plan.network.addresses ? Math.round(plan.network.credits_c * addrs.size / plan.network.addresses) : 0;
+      charged += addrs.size;
+    } else if (["linux_servers", "windows_servers"].includes(src.kind)) { owed = RATES_C[src.kind] * chargedSkips.length; charged += chargedSkips.length; }
+    else if (chargedSkips.length) { owed = RATES_C[src.kind] ?? 0; charged += 1; }
     refund += owed;
-    lines.push({ job: j.job_id, source: j.source_name, kind: src.kind, skipped: skipped.map((t) => `${t.target}:${t.status}`), refund_c: owed });
+    lines.push({ job: j.job_id, source: j.source_name, kind: src.kind, skipped: skipped.map((t) => `${t.target}:${t.status}`), charged_skips: chargedSkips.length, refund_c: owed });
   }
-  const [[charged, refunded] = []] = ctx.db(`SELECT credits_charged_c, credits_refunded_c FROM cbomcollectionrun WHERE id = ${runId}`);
-  const final = Number(charged) - Number(refunded);
+  const [[chargedC, refunded] = []] = ctx.db(`SELECT credits_charged_c, credits_refunded_c FROM cbomcollectionrun WHERE id = ${runId}`);
+  const final = Number(chargedC) - Number(refunded);
   const want = Math.round((ctx.state.estimate || 0) * 100) - refund;
   ctx.writeJson(join(s.dir, "charge-oracle.json"), { rule: "OA-10b DA default", estimate_c: Math.round((ctx.state.estimate || 0) * 100), lines, refund_c: refund, expected_final_c: want,
-    db: { charged_c: Number(charged), refunded_c: Number(refunded) } });
-  s.check("charge_after_runtime_skips", final === want, { expected: want / 100, observed: final / 100, subject: { check: "charge_after_runtime_skips" } });
-  // the never-scan targets of the run, per job: skipped_never_scan, and the listeners agree (R-canary by address)
+    db: { charged_c: Number(chargedC), refunded_c: Number(refunded) } });
+  if (!charged) {
+    s.notRun("charge_after_runtime_skips", "not exercised: no charged target was skipped at run time (never-scan addresses are left out at planning; sources whose test failed are not queued)",
+      { check: "charge_after_runtime_skips" });
+  } else {
+    s.check("charge_after_runtime_skips", final === want, { expected: want / 100, observed: final / 100, subject: { check: "charge_after_runtime_skips" } });
+  }
   for (const j of jobs) {
     for (const t of j.targets || []) {
-      const ns = (ctx.state.never_scan_g5 || []).includes(String(t.target).split(":")[0]);
-      if (ns) s.check(`run_target_${t.target}_${j.job_id}_skipped`, t.status === "skipped_never_scan", { expected: "skipped_never_scan", observed: t.status, subject: { check: "never_scan_target_status", never_scan_by: "address" } });
+      if (never.has(String(t.target).split(":")[0])) s.check(`run_target_${t.target}_${j.job_id}_skipped`, t.status === "skipped_never_scan", { expected: "skipped_never_scan", observed: t.status, subject: { check: "never_scan_target_status", never_scan_by: "address" } });
     }
   }
 }
@@ -506,7 +572,8 @@ export async function g11Posture(ctx, s, k = "1") {
   const missing = certs.filter((c) => !cal.includes(c.not_after));
   s.check(`calendar_run${k}_has_oracle_certs`, certs.length > 0 && missing.length === 0, { expected: certs, observed: { missing, calendar: cal.slice(0, 20) }, subject: { check: "calendar_certs", run: k } });
   const cells = (heat.body?.cells || []).reduce((n, c) => n + (c.count || 0), 0);
-  s.check(`heatmap_run${k}_total_eq_assets`, cells === items.length, { expected: items.length, observed: cells, subject: { check: "heatmap_total", run: k } });
+  const collected = items.filter((i) => i.type !== "coverage").length;
+  s.check(`heatmap_run${k}_total_eq_assets`, cells === collected, { expected: `${collected} (assets that are not coverage gaps)`, observed: cells, subject: { check: "heatmap_total", run: k } });
 }
 
 // ------------------------------------------------------------------------------------------------ G12 additions
@@ -627,9 +694,18 @@ export async function g13(ctx) {
     writeFileSync(join(s.dir, "mutate.log"), `${m.stdout || ""}${m.stderr || ""}`);
     customerSide(ctx, "G13", { what: "gen.py mutate --step run2 (the lab's servers change between runs)", exit: m.status });
     if (m.status !== 0) { s.check("lab_mutated", false, { expected: "gen.py mutate exit 0", observed: m.status, reason: "lab" }); return; }
+    // run 1's self-check stays lab/selfcheck.json (the judge's O-3 record for run 1); run 2's goes to selfcheck-run2.json
+    const scPath = join(ctx.RUN, "lab", "selfcheck.json");
+    const run1sc = existsSync(scPath) ? readFileSync(scPath) : null;
     const sc = spawnSync("python3", [gen, "selfcheck", "--run-dir", ctx.RUN], { encoding: "utf8", timeout: 600000 });
     writeFileSync(join(s.dir, "selfcheck.log"), `${sc.stdout || ""}${sc.stderr || ""}`);
-    s.check("lab_selfcheck_run2", sc.status === 0, { expected: "self-check of the run-2 lab agrees (O-3)", observed: sc.status, reason: "lab" });
+    const run2sc = ctx.readJson(scPath) || {};
+    ctx.writeJson(join(ctx.RUN, "lab", "selfcheck-run2.json"), run2sc);
+    if (run1sc) writeFileSync(scPath, run1sc);
+    // "no connection before the scan" (canary listeners) is a pre-scan row: after run 1 it reports what run 1 did,
+    // which G4/G5b/G10 judge; every other disagreement is a lab bug
+    const bad = (run2sc.targets || []).flatMap((x) => (x.checks || []).filter((c) => c.agree === false && c.key !== "no connection before the scan").map((c) => `${x.target_id}:${c.key}`));
+    s.check("lab_selfcheck_run2", sc.status === 0 || (run2sc.targets && bad.length === 0), { expected: "the run-2 lab agrees with its oracle (O-3), pre-scan canary rows aside", observed: { exit: sc.status, disagree: bad }, reason: "lab" });
     // O-5 per run: keep run 1's frozen hash, then freeze the run-2 oracle before the customer starts run 2
     const manPath = join(ctx.RUN, "MANIFEST.json");
     const man = ctx.readJson(manPath) || {};
@@ -638,7 +714,8 @@ export async function g13(ctx) {
     s.check("oracle_run2_frozen_before_start", fr.status === 0, { expected: "freeze-oracle exit 0 before Start (O-5)", observed: fr.status, reason: "lab" });
     // the customer: Review & Run, estimate, acknowledge, Start (a plain click this time)
     const { page } = ctx.A;
-    await ctx.sourcesTab(page, ctx.A.team, "Review & Run");
+    await openTab(ctx, "Review & Run");
+    await s.shot(page, "review-run2");
     await page.getByTestId("review-estimate").click();
     await page.getByTestId("review-credits-required").waitFor({ timeout: 30000 });
     const ack = page.locator("#review-soc-ack");
