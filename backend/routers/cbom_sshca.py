@@ -262,15 +262,15 @@ fetch() {{
   hdr="$(mktemp "$dest.hdr.XXXXXX")" || {{ rm -f "$tmp"; return 1; }}
   set -- -sS --fail --max-time 30 -D "$hdr" -o "$tmp" -H "X-ZS-Trust-Token: $ZS_TRUST_TOKEN" -H "X-ZS-Fetcher: $NAME"
   if [ -s "$dest" ] && [ -s "$tag" ]; then set -- "$@" -H "If-None-Match: $(cat "$tag")"; fi
-  code="$(curl "$@" -w '%{{http_code}}' "$URL/cbom/ssh-ca-trust$path")" || code=000
+  code="$(curl "$@" -w '%{{http_code}}' "$URL/cbom/ssh-ca-trust$path")"  # with --fail: 4xx/5xx exit non-zero
+  [ -n "$code" ] || code=000
   if [ "$code" = 304 ]; then rm -f "$tmp" "$hdr"; return 0; fi
   if [ "$code" != 200 ] || [ ! -s "$tmp" ] || ! $check "$tmp"; then
     echo "zs-trust-fetch: $path: HTTP $code or an unusable file; keeping $dest" >&2
     rm -f "$tmp" "$hdr"; return 1
   fi
   chmod 0644 "$tmp" && mv -f "$tmp" "$dest" || {{ rm -f "$tmp" "$hdr"; return 1; }}
-  sed -n 's/^[Ee][Tt][Aa][Gg]: *//p' "$hdr" | tr -d '
-' > "$tag"
+  sed -n 's/^[Ee][Tt][Aa][Gg]: *//p' "$hdr" | tr -d '\r' > "$tag"
   rm -f "$hdr"; changed=1
 }}
 keys_ok() {{ grep -Eq '^(ssh-|ecdsa-|sk-)' "$1" || ! grep -qv '^#' "$1"; }}  # keys, or only comments (no CA)

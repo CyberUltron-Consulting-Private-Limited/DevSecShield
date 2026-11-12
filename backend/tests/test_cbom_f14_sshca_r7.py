@@ -420,8 +420,9 @@ def test_templates_describe_the_machine_path_and_the_fetch_script_parses(api, ca
     assert "cron" not in sshd and "trust-fetch" in sshd and "X-ZS-Trust-Token" not in sshd  # the script sends it
     script = api("GET", BASE + "/templates/trust-fetch")
     assert script.status_code == 200 and script.text.startswith("#!/bin/sh")
-    for needle in ("If-None-Match", "X-ZS-Trust-Token", "sshd -t", "ssh-keygen -Q -l", "mv -f"):
+    for needle in ("If-None-Match", "X-ZS-Trust-Token", "sshd -t", "ssh-keygen -Q -l", "mv -f", "tr -d '\\r'"):
         assert needle in script.text, needle
+    assert "\r" not in script.text and "{{" not in script.text and "{team_id}" not in script.text  # formatted, no CR
     path = tmp_path / "zs-trust-fetch.sh"
     path.write_text(script.text)
     if shutil.which("sh"):
