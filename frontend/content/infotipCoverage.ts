@@ -9,8 +9,9 @@
  *               this order, and each tip serves one control only:
  *                 1. an `infoId` on the control itself (PathArraysInput, NodeSelect, …);
  *                 2. a `<FieldLabel infoId=… htmlFor=X>` where X is the control's `id` (same expression text);
- *                 3. an `{/* infotip-shared: <reason> *\/}` comment right before it in the same container (an explicit,
- *                    reviewed statement that the control shares the tip of the item before it);
+ *                 3. an `infotip-shared: <reason>` comment right before it: just before its tag, or as `{/* … *\/}` in its
+ *                    container (up to MAX_CLIMB levels) after the previous control: an explicit, reviewed statement
+ *                    that the control shares the tip of the item before it (never a comment inside a heading);
  *                 4. the nearest unused tip in the same container: the control's parent, or up to MAX_CLIMB levels
  *                    above it, before the control (after the previous control) or else after it (before the next),
  *                    at most CONTROL_WINDOW_LINES lines away.
@@ -211,19 +212,31 @@ function analyse(source: string) {
       .sort((a, b) => Math.abs(a.at - c.start) - Math.abs(b.at - c.start))[0];
     if (label) take(c, label, "htmlFor");
   }
-  // 3. an infotip-shared comment right before the control, in its own container (after the previous control)
+  // 3. an infotip-shared comment right before the control: in the comments just before its tag (e.g. inside a
+  // ternary), or as {/* … */} in its container chain (up to MAX_CLIMB levels, e.g. before the <Select> around a
+  // SelectTrigger), after the previous control; never one inside a heading (that one is the heading's)
   const order = controls.slice().sort((a, b) => a.start - b.start);
+  const between = (a: number, b: number) => order.some((o) => o.start > Math.min(a, b) && o.start < Math.max(a, b));
   order.forEach((c, i) => {
-    if (pairing.has(c) || !c.parent) return;
+    if (pairing.has(c)) return;
+    const leading = source.slice(c.node.getFullStart(), c.start);
+    if (/infotip-shared:\s*\S/.test(leading)) {
+      pairing.set(c, { by: "shared" });
+      return;
+    }
     const prevEnd = i > 0 ? order[i - 1].openEnd : -1;
-    const s = tips.filter((t) => !t.used && t.kind === "shared" && t.parent === c.parent && t.at > prevEnd && t.at < c.start).pop();
+    let outer: El | null = c.parent;
+    for (let level = 1; outer?.parent && level < MAX_CLIMB; level++) outer = outer.parent;
+    const s = tips
+      .filter((t) => !t.used && t.kind === "shared" && servesControls(t) && !!outer && contains(outer, t.at))
+      .filter((t) => t.at > prevEnd && t.at < c.start && !between(t.at, c.start))
+      .pop();
     if (s) take(c, s, "shared");
   });
   // 4. a tip in the same container (the parent or up to MAX_CLIMB levels up) with no other control between the two,
   // in document order. Tips sit before their control in forms and after it in filter bars, so a tip between two
   // controls may belong to either: the controls and tips are paired by a maximum matching, which leaves exactly
   // (controls - tips available to them) controls without a tip whatever the layout.
-  const between = (a: number, b: number) => order.some((o) => o.start > Math.min(a, b) && o.start < Math.max(a, b));
   const edges = new Map<El, Tip[]>();
   for (const c of order) {
     if (pairing.has(c)) continue;

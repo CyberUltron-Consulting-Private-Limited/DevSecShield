@@ -160,6 +160,12 @@ for (const text of [
 ]) {
   assert.deepEqual(rules(`<div>${text}<Switch id="s" /></div>`), ["control"], `a tip in ${text} must not cover a control`);
 }
+// an infotip-shared comment: before the wrapper of a control, or just before its tag in an expression; never one
+// inside a heading
+assert.deepEqual(rules(`<div><p>Minute</p>{/* infotip-shared: one part of the cron builder */}<Select><SelectTrigger /></Select></div>`), []);
+assert.deepEqual(rules(`<TableCell>{admin ? "—" : /* infotip-shared: selects a member to remove */ <Checkbox />}</TableCell>`), []);
+assert.deepEqual(rules(`<div><CardTitle>Scan scope {/* infotip-shared: the field below carries the tip */}</CardTitle><Switch id="s" /></div>`), ["control"]);
+assert.deepEqual(rules(`<div>{/* infotip-shared: x */}<Input id="a" /><Input id="b" /></div>`), ["control"], "a shared comment serves one control");
 // a FieldLabel bound to another control (htmlFor) never serves this one
 assert.deepEqual(rules(`<div><Input id="probe" /><FieldLabel htmlFor="real" infoId="x.y">Real</FieldLabel><Input id="real" /></div>`), ["control"]);
 // a tip in another container (beyond MAX_CLIMB levels) or far away does not cover a control
