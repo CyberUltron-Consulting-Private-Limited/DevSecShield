@@ -6,7 +6,8 @@
  * POST /cicd/cbom/scan the way the backend does (compact JSON, gate_failed + gate). Expected exit codes come from the
  * policy: a high crypto finding fails the job; an explicit pass passes; an answer without a verdict (an older server,
  * a cut-off body) fails closed; an HTTP error fails as before. SAST / AI-BOM files must not change.
- * The reference copies in cicd_workflow_files/*.cbom.* must equal the builders' output.
+ * The reference copies in cicd_workflow_files/*.cbom.* must equal the builders' output (the Bamboo one is a .txt: it
+ * is the body of a Bamboo Script task, valid only after Bamboo substitutes ${bamboo.cicd_api_key}, not a shell script).
  * Run (frontend/): npx --yes tsx@4.23.15 components/cicd/ciTemplates.test.ts   (needs bash, sh, curl, jq, zip)
  */
 import assert from "node:assert/strict";
@@ -201,7 +202,7 @@ async function main() {
     ["github_actions.cbom.yaml", githubActionsWorkflow({ kind: "cbom", endpoint: REF_ENDPOINT, branch: "main" })],
     ["gitlab-ci.cbom.yml", gitlabCi({ kind: "cbom", endpoint: REF_ENDPOINT, branch: "main" })],
     ["Jenkinsfile.cbom", jenkinsfile({ kind: "cbom", endpoint: REF_ENDPOINT, apiKey: "<your DevSecShield CI/CD API key>" })],
-    ["bamboo.cbom.sh", bambooScript({ kind: "cbom", endpoint: REF_ENDPOINT })],
+    ["bamboo-script-body.cbom.txt", bambooScript({ kind: "cbom", endpoint: REF_ENDPOINT })],
   ];
   for (const [file, text] of refs) {
     const got = fs.readFileSync(path.join(ref, file), "utf8");
