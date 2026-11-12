@@ -354,7 +354,7 @@ class Gen:
                   "per_source_penalties": "default" if t.get("penalties") == "default"
                   else f"exempt {t.get('penalty_exempt')}",
                   "penalty_exempt": t.get("penalty_exempt"),
-                  "pq_kex": [k for k in t["kex"] if k.startswith(("mlkem", "sntrup"))]}
+                  "pq_kex": [k for k in t["kex"] if oraclefmt.ssh_kex_pq(k)]}   # closed table: unknown raises
         return self.oracle(t, expect, {"host_keys": self.provenance("ssh-keygen", cmds),
                                        "algorithms": self.provenance("ssh-keygen", ["sshd_config written by gen.py"])},
                            aliases=[f"{t['id']}.lab"])
@@ -725,6 +725,18 @@ def mutate_run2(out: Path, now: dt.datetime, commit: str) -> int:
     return 0
 
 
+def touch_listener_logs(out: Path, facts: list[dict]) -> None:
+    """Every listener log exists from `up` on, empty (INTERFACES v4, v7 #4): the product log and the lab's own."""
+    (out / "lab" / "listeners").mkdir(parents=True, exist_ok=True)
+    (out / "lab" / "listeners").chmod(0o777)  # written by the unprivileged listener containers (uid 10001)
+    for o in facts:
+        if o["kind"] == "listener":
+            for name in (o["expect"]["accept_log"], o["expect"]["lab_accept_log"]):
+                log = out / name
+                log.touch()
+                log.chmod(0o666)
+
+
 def parse_keytool(listing: str) -> list[dict]:
     """Entries of `keytool -list -v`: alias, entry type, key algorithm and size, signature, validity, SHA-256."""
     entries = []
@@ -922,14 +934,7 @@ def main(argv: list[str] | None = None) -> int:
     if ca.exists():
         shutil.copy(ca, out / "lab" / "ca.pem")
         (out / "lab" / "ca.pem").chmod(0o644)
-    (out / "lab" / "listeners").mkdir(exist_ok=True)
-    (out / "lab" / "listeners").chmod(0o777)  # written by the unprivileged listener containers (uid 10001)
-    for o in facts:  # every listener log exists from `up` on, empty (INTERFACES v4, v7 #4)
-        if o["kind"] == "listener":
-            for name in (o["expect"]["accept_log"], o["expect"]["lab_accept_log"]):
-                log = out / name
-                log.touch()
-                log.chmod(0o666)
+    touch_listener_logs(out, facts)
     fc = out / "lab" / "forcecommand.log"
     fc.touch()
     fc.chmod(0o666)

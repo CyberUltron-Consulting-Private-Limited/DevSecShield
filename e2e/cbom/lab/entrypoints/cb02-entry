@@ -36,10 +36,11 @@ case "$ROLE" in
     exec /usr/sbin/sshd -D -e -f /lab/sshd_config
     ;;
   listener)
-    # Every accepted connection is one JSON line in /logs/<target>.jsonl (lab/listeners/ in the run directory),
-    # written by cb02-accept from socat's SOCAT_PEER*/SOCAT_SOCK* variables; socat -d -d also logs it.
-    export CB02_LISTENER_LOG="/logs/${TARGET}.jsonl"
-    exec socat -d -d "TCP-LISTEN:${PORT},fork,reuseaddr" EXEC:/usr/local/bin/cb02-accept
+    # Listeners run only from the per-run /lab/listen.sh gen.py writes (compose sets it as the entrypoint): it routes
+    # the lab's own peers (self-check, burst, loopback) away from the product log. Running the image any other way
+    # would put lab connections into the product log, so refuse (review 5878784465).
+    echo "cb02-entry: role listener is started by /lab/listen.sh (gen.py up / compose), not by this entrypoint" >&2
+    exit 64
     ;;
   *)
     echo "cb02-entry: unknown role $ROLE" >&2; exit 64

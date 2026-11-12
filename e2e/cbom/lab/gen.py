@@ -174,22 +174,26 @@ def locked(lock: str, cmd: list[str]) -> list[str]:
     return ["flock", str(path), *cmd] if LOCK_DIR.is_dir() and shutil.which("flock") else cmd
 
 
-INPUTS_LABEL = "com.zeroshield.cbom-lab.inputs"
+# Each image is labelled with the sha256 of its own build inputs: its Dockerfile, its .dockerignore and the files that
+# .dockerignore lets into the context. An entrypoint edit rebuilds the 23 MB target image, never the 500 MB tools
+# image (review 5878784465 nit; disk on the shared machine). The key differs from the earlier combined label
+# (com.zeroshield.cbom-lab.inputs), so checkouts that still compare that one keep working against their own images.
+INPUTS_LABEL = "com.zeroshield.cbom-lab.image-inputs"
+IMAGE_CONTEXT = {"target": ("entrypoints",), "tools": ("tlscheck",)}
 
 
-def image_inputs_hash(lab: Path = HERE) -> str:
-    """sha256 over every build input of the two lab images (Dockerfiles, entrypoints, the Go observer)."""
+def image_inputs_hash(kind: str, lab: Path = HERE) -> str:
+    """sha256 over the build inputs of one lab image (Dockerfile, .dockerignore, the context it copies)."""
     h = hashlib.sha256()
-    for sub in ("images", "entrypoints", "tlscheck"):
-        for p in sorted((lab / sub).rglob("*")):
-            if p.is_file():
-                h.update(str(p.relative_to(lab)).encode() + b"\0" + p.read_bytes() + b"\0")
+    files = [lab / "images" / f"{kind}.Dockerfile", lab / "images" / f"{kind}.Dockerfile.dockerignore"]
+    files += [p for sub in IMAGE_CONTEXT[kind] for p in sorted((lab / sub).rglob("*")) if p.is_file()]
+    for p in files:
+        h.update(str(p.relative_to(lab)).encode() + b"\0" + p.read_bytes() + b"\0")
     return h.hexdigest()
 
 
-def image_label(ref: str) -> str | None:
-    res = run(["docker", "image", "inspect", "-f", "{{ index .Config.Labels \"" + INPUTS_LABEL + "\" }}", ref],
-              check=False)
+def image_label(ref: str, key: str = INPUTS_LABEL) -> str | None:
+    res = run(["docker", "image", "inspect", "-f", "{{ index .Config.Labels \"" + key + "\" }}", ref], check=False)
     return res.stdout.strip() if res.returncode == 0 else None
 
 
@@ -211,8 +215,8 @@ def compose_image(kind: str) -> str:
 def cmd_build(a: argparse.Namespace) -> int:
     ca = os.environ.get("CB_LAB_BUILD_CA", "")  # a TLS-intercepting build proxy's CA, if the builder needs one
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-    inputs = image_inputs_hash()
     for name, ref in IMAGES.items():
+        inputs = image_inputs_hash(name)
         if image_label(ref) == inputs and not getattr(a, "force", False):
             continue  # built from exactly these inputs; a tag alone is never trusted
         cmd = ["docker", "build", "-f", str(HERE / "images" / f"{name}.Dockerfile"), "-t", ref,

@@ -350,6 +350,7 @@ class _FakeCtx:
 
     def __init__(self) -> None:
         self.observed, self.tool_versions = {}, {}
+        self.run = Path("/nonexistent-run")
 
     def tlscheck(self, *args: str) -> dict:
         return {"tool": "tlscheck", "versions": {v: False for v in S.VERSIONS}}
@@ -391,16 +392,6 @@ def test_bench_counts_are_pinned_from_an_independent_read() -> None:
     pinned = S.BENCH_PINNED
     assert (pinned["cases"], pinned["vulnerable"], pinned["secure"]) == (171, 136, 35)
     assert (pinned["judgeable"], pinned["judgeable_vulnerable"]) == (170, 135)
-
-
-def test_image_identity_follows_the_build_inputs(tmp_path: Path) -> None:
-    import shutil
-    copy = tmp_path / "lab"
-    for sub in ("images", "entrypoints", "tlscheck"):
-        shutil.copytree(LAB / sub, copy / sub)
-    before = gen.image_inputs_hash(copy)
-    (copy / "entrypoints" / "cb02-entry").write_text((copy / "entrypoints" / "cb02-entry").read_text() + "\n# x\n")
-    assert gen.image_inputs_hash(copy) != before
 
 
 def test_lab_sshd_targets_exempt_the_lab_but_one_keeps_the_default_penalties() -> None:
@@ -735,13 +726,400 @@ def test_negative_proofs_cover_the_review_mutations() -> None:
     assert "z02-extra-group" in labgen.VARIANTS
 
 
-def test_psp_burst_counts_banners_and_accepts_a_still_penalised_source() -> None:
-    log = "drop connection #0 from [10.231.0.12]:60454 on [10.231.0.28]:22 penalty: connections without attempting auth"
-    assert selfcheck.burst_verdict({"banner": 17, "dropped": 23}, log, True)[0] is True
-    # second self-check within the penalty: every connection dropped, sshd logs nothing new, .11 still served
-    ok, how = selfcheck.burst_verdict({"banner": 0, "dropped": 40}, "", True)
+# ---------------------------------------------------------------- review 5878784465 (PR #79 round 4): fail first on 5ba718c
+PENALTY = "drop connection #0 from [10.231.0.12]:60454 on [10.231.0.28]:22 penalty: connections without attempting auth"
+
+
+def _burst(port: int) -> dict:
+    import subprocess
+    res = subprocess.run([sys.executable, "-c", selfcheck.BURST.format(addr="127.0.0.1", port=port)],
+                         capture_output=True, text=True, timeout=200, check=True)
+    return json.loads(res.stdout.strip().splitlines()[-1])
+
+
+def test_psp_burst_counts_eof_apart_from_errors_and_needs_a_penalty_for_the_source() -> None:
+    import socket
+    import threading
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    closed = probe.getsockname()[1]
+    probe.close()
+    counts = _burst(closed)                                  # the reviewer's closed-port case: 40 refused connections
+    assert (counts["banner"], counts["eof"], counts["error"]) == (0, 0, 40)
+    assert selfcheck.burst_verdict(counts, "", "", True)[0] is False
+    assert selfcheck.burst_verdict(counts, "", PENALTY, True)[0] is False
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(64)
+
+    def drop_all() -> None:                                  # what a penalised source sees: connected, then EOF
+        for _ in range(40):
+            c, _a = srv.accept()
+            c.close()
+    th = threading.Thread(target=drop_all, daemon=True)
+    th.start()
+    counts = _burst(srv.getsockname()[1])
+    th.join(20)
+    srv.close()
+    assert counts == {"banner": 0, "eof": 40, "error": 0, "other": 0}
+    assert selfcheck.burst_verdict(counts, "", "", True)[0] is False                  # no penalty ever logged for .12
+    ok, how = selfcheck.burst_verdict(counts, "", PENALTY, True)                      # full log: penalised earlier
     assert ok is True and "still penalised" in how
-    assert selfcheck.burst_verdict({"banner": 0, "dropped": 40}, "", False)[0] is False      # sshd down, not a penalty
-    assert selfcheck.burst_verdict({"banner": 40, "dropped": 0}, "", True)[0] is False       # no penalty at all
-    assert selfcheck.burst_verdict({"banner": 10, "dropped": 30}, log.replace(".12", ".13"), True)[0] is False
-    assert "banner" in selfcheck.BURST and "dropped" in selfcheck.BURST
+    assert selfcheck.burst_verdict(counts, "", PENALTY, False)[0] is False            # .11 not served either
+    assert selfcheck.burst_verdict(counts, "", PENALTY.replace("[10.231.0.12]", "[10.231.0.120]"), True)[0] is False
+    assert selfcheck.burst_verdict({**counts, "eof": 39, "error": 1}, "", PENALTY, True)[0] is False
+    during = {"banner": 17, "eof": 23, "error": 0, "other": 0}                         # penalty logged in this burst
+    assert selfcheck.burst_verdict(during, PENALTY, PENALTY, True)[0] is True
+    assert selfcheck.burst_verdict({**during, "eof": 0, "error": 23}, PENALTY, PENALTY, True)[0] is False
+    assert selfcheck.burst_verdict({**during, "banner": 40, "eof": 0}, "", PENALTY, True)[0] is False
+
+
+def test_hsm_token_objects_equal_the_run_files_managed_keys_both_ways(tmp_path: Path) -> None:
+    objs = selfcheck.p11tool_objects(P11TOOL)
+    assert objs == [("aes-128-wrap", "Secret Key"), ("ec-p256-signing", "Private Key"),
+                    ("rsa-2048-signing", "Private Key"), ("rsa-2048-signing", "Public Key")]
+    ids = ["softhsm/cb02-tok-a/aes-128-wrap/Secret Key", "softhsm/cb02-tok-a/ec-p256-signing/Private Key",
+           "softhsm/cb02-tok-a/rsa-2048-signing/Private Key"]
+    full = selfcheck.Target("softhsm", {i: {"expect": {}} for i in ids})
+    assert selfcheck.token_set_row(full, "cb02-tok-a", objs, "p11tool") is True
+    dropped = selfcheck.Target("softhsm", {i: {"expect": {}} for i in ids if "aes-128" not in i})   # hsm-parser-drop
+    assert selfcheck.token_set_row(dropped, "cb02-tok-a", objs, "p11tool") is False
+    extra = P11TOOL + "\nObject 4:\n\tType: Data\n\tLabel: stray\n\tID: 09\n"        # nothing is skipped
+    assert selfcheck.token_set_row(full, "cb02-tok-a", selfcheck.p11tool_objects(extra), "p11tool") is False
+    assert selfcheck.token_set_row(full, "cb02-tok-a", selfcheck.p11tool_objects(""), "p11tool") is False
+    import labnegative
+    m = labnegative.PARSER_MUTATIONS["hsm-parser-drop"]
+    assert m["target"] == "softhsm" and m["key"] == selfcheck.TOKEN_SET_KEY and m["old"] in (LAB / m["file"]).read_text()
+    listing = (FIX / "pkcs11-tok-a.txt").read_text()
+    mutant = tmp_path / "labgen_mutant.py"
+    mutant.write_text((LAB / m["file"]).read_text().replace(m["old"], m["new"], 1))
+    spec = importlib.util.spec_from_file_location("labgen_mutant", mutant)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert any(o["label"] == "aes-128-wrap" for o in labgen.parse_pkcs11_objects(listing))
+    assert not any(o["label"] == "aes-128-wrap" for o in mod.parse_pkcs11_objects(listing))  # the mutation drops it
+
+
+def test_quantum_vulnerability_cites_the_final_nist_ir_8547() -> None:
+    src = oraclefmt.QV_SOURCE
+    assert "https://doi.org/10.6028/NIST.IR.8547" in src and "ipd" not in src
+    for part in ("2.1.1", "2.1.2", "4.1.1 Table 2", "4.1.2 Table 4", "FIPS 203", "FIPS 204"):
+        assert part in src, part
+    assert "DSA" not in oraclefmt.QUANTUM_VULNERABLE          # not in IR 8547 (only inside ML-DSA, SLH-DSA, ECDSA, EdDSA)
+    for name in ("oraclefmt.py", "README.md"):
+        text = (LAB / name).read_text()
+        assert "8547 ipd" not in text and "sections 3-4" not in text and "§3-4" not in text, name
+
+
+def test_name_key_tells_names_apart_and_cert_rows_catch_a_wrong_subject() -> None:   # L3
+    import labread as R
+    assert R.name_key("CN=a") != R.name_key("CN=b")
+    assert R.name_key("cn=a,o=B") == R.name_key("CN=a,O=B") and R.name_key("CN=a,O=b") != R.name_key("CN=a,O=B")
+    ders, facts = _certs()
+    o = {**_tls_facts(), "target": "z01"}
+    o["expect"]["certificates"] = [facts[0]]
+    asset = next(a for a in oraclefmt.assets_for(o)[0] if a["oracle_id"] == "z01/cert[0]")
+    for key, wrong in (("subject", "CN=other.lab"), ("issuer", "CN=Other CA,O=ZeroShield CBOM lab")):
+        t = selfcheck.Target("z01", {"z01/cert[0]": {**asset, "expect": {**asset["expect"], key: wrong}}})
+        selfcheck.cert_rows(t, "z01/cert[0]", R.x509_facts(ders[0]), "labread")
+        assert t.result()["agree"] is False, key
+
+
+def test_pkcs8_ec_and_eddsa_key_sizes() -> None:                                       # L8, L10
+    import base64
+    import labread as R
+    ec_oid, p256 = bytes.fromhex("06072a8648ce3d0201"), bytes.fromhex("06082a8648ce3d030107")
+    inner = _der(0x30, _der_int(1) + _der(0x04, b"\x01" * 32))
+    info = _der(0x30, _der_int(0) + _der(0x30, ec_oid + p256) + _der(0x04, inner))
+    pem = "-----BEGIN PRIVATE KEY-----\n" + base64.encodebytes(info).decode() + "-----END PRIVATE KEY-----\n"
+    assert R.pkcs8_facts(pem) == {"algorithm": "EC", "key_size": 256}
+    for oid, n, bits in ((b"\x2b\x65\x70", 32, 256), (b"\x2b\x65\x71", 57, 456)):     # RFC 8410: Ed25519, Ed448
+        spki = _der(0x30, _der(0x06, oid)) + _der(0x03, b"\x00" + b"\x02" * n)
+        got = R._spki(spki)
+        assert got["key_size"] == bits and got["algorithm"] in ("ED25519", "ED448")
+
+
+def test_ranges_check_sees_a_held_empty_address_and_classifies_never_scan() -> None:  # C9, C14
+    zoo = {"source": "S-zoo", "cidr": "10.231.0.16/30", "empty_addresses": ["10.231.0.18"], "never_scan": []}
+    oracle = {"targets": [{"address": "10.231.0.17"}], "ranges": [zoo]}
+    held = selfcheck.check_ranges(oracle, {"10.231.0.17": "cb02-z01", "10.231.0.18": "rv-stray"}).result()
+    assert held["agree"] is False
+    row = next(c for c in held["checks"] if c["key"] == "empty addresses hold no container")
+    assert row["observed"] == {"10.231.0.18": "rv-stray"}
+    assert selfcheck.check_ranges(oracle, {"10.231.0.17": "cb02-z01"}).result()["agree"] is True
+    canary = {"targets": [{"address": "10.231.0.34"}],
+              "ranges": [{"source": "R-canary", "cidr": "10.231.0.32/30", "empty_addresses": [], "never_scan": ["10.231.0.33"]}]}
+    assert selfcheck.check_ranges(canary, {"10.231.0.34": "cb02-control"}).result()["agree"] is True
+
+
+def test_must_report_row_needs_every_suite_accepted() -> None:                         # C13
+    oid = "z02/tls"
+    t = selfcheck.Target("z02", {oid: {"expect": {}, "must_report": {"cipher_suites": ["A", "B"]}}})
+    selfcheck.must_report_row(t, oid, ["A"], "nmap")
+    assert t.result()["agree"] is False
+    t = selfcheck.Target("z02", {oid: {"expect": {}, "must_report": {"cipher_suites": ["A", "B"]}}})
+    selfcheck.must_report_row(t, oid, ["A", "B", "C"], "nmap")
+    assert t.result()["agree"] is True and t.result()["independent_keys"] == {oid: ["must_report"]}
+
+
+def test_oracle_diff_sees_edited_ranges_and_the_rebuild_fails_the_target(tmp_path: Path) -> None:  # O6, C5
+    run = _tls_run(tmp_path)
+    current = json.loads((run / "oracle" / "run1.json").read_text())
+    current["ranges"] = [{"source": "S-zoo", "cidr": "10.231.0.16/28", "empty_addresses": [], "never_scan": []}]
+    assert "ranges" in oraclefmt.oracle_diff(current, oraclefmt.rebuild_run(run, "run1")).get("", [])
+    tls = next(a for a in current["targets"][0]["assets"] if a["oracle_id"] == "z02/tls")
+    tls["expect"]["groups"] = ["X25519"]
+    (run / "oracle" / "run1.json").write_text(json.dumps(current))
+    results = {"z02": selfcheck.Target("z02")}
+    selfcheck.check_oracle_file(run, "run1", results)
+    assert results["z02"].result()["agree"] is False                                 # propagated to the target
+
+
+def test_legacy_group_cross_check_refuses_an_empty_observation() -> None:              # C10
+    assert selfcheck.legacy_groups_agree(["secp256r1"], {}) is False
+    assert selfcheck.legacy_groups_agree(["secp256r1"], {"TLSv1.2": []}) is False
+
+
+def test_endpoint_verdict_needs_tls13_and_classifies_every_ssh_pq_name() -> None:     # O1, O4
+    legacy = {v: v != "TLSv1.3" for v in S.VERSIONS}
+    assert oraclefmt.tls_endpoint_qv(legacy, ["X25519MLKEM768"]) is True              # no PQ group below TLS 1.3
+    for k in ("sntrup761x25519-sha512", "sntrup761x25519-sha512@openssh.com", "mlkem768x25519-sha256"):
+        assert oraclefmt.ssh_endpoint_qv([k]) is False, k
+
+
+def test_every_planted_weak_suite_is_must_report() -> None:                            # S2
+    for t in S.TARGETS:
+        if t["kind"] != "tls":
+            continue
+        weak = sorted(s for s in t["suites"] if "_CBC_" in s or s.startswith("TLS_RSA_WITH_"))
+        assert sorted((t.get("must_report") or {}).get("cipher_suites", [])) == weak, t["id"]
+
+
+def test_listener_logs_are_created_at_up(tmp_path: Path) -> None:                     # G2
+    import datetime as dt
+    g = labgen.Gen(tmp_path, dt.datetime(2026, 11, 12, tzinfo=dt.timezone.utc), "t", None, None)
+    o = g.listener_target(S.by_id("canary"))
+    labgen.touch_listener_logs(tmp_path, [o])
+    for name in (o["expect"]["accept_log"], o["expect"]["lab_accept_log"]):
+        p = tmp_path / name
+        assert p.exists() and p.read_text() == "" and p.stat().st_mode & 0o666 == 0o666
+
+
+def test_listener_runs_only_from_the_generated_listen_sh(tmp_path: Path) -> None:     # nit: dead listener branch
+    import subprocess
+    assert not (LAB / "entrypoints" / "cb02-accept").exists()
+    (tmp_path / "role.env").write_text("TARGET=canary\nROLE=listener\nPORT=443\n")
+    script = (LAB / "entrypoints" / "cb02-entry").read_text().replace("/lab/role.env", str(tmp_path / "role.env"))
+    res = subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=10, check=False)
+    assert res.returncode == 64 and "/lab/listen.sh" in res.stderr
+
+
+def test_readme_names_the_tools_the_self_check_uses() -> None:                         # nit: README tool names
+    text = (LAB / "README.md").read_text()
+    assert "ssh-keygen -l" not in text and "keytool, openssl x509" not in text
+    rows = {r.split("|")[2].strip(): r for r in text.splitlines() if r.startswith("| core |")}
+    assert "labread" in rows["sshd-legacy"] and "ssh-audit" in rows["sshd-legacy"]
+    assert "labread JKS reader" in rows["host"] and "openssl pkcs12" in rows["host"]
+
+
+def test_image_inputs_are_per_image(tmp_path: Path) -> None:                           # an entrypoint edit keeps tools
+    import shutil
+    copy = tmp_path / "lab"
+    for sub in ("images", "entrypoints", "tlscheck"):
+        shutil.copytree(LAB / sub, copy / sub)
+    before = {k: gen.image_inputs_hash(k, copy) for k in gen.IMAGES}
+    (copy / "entrypoints" / "cb02-entry").write_text((copy / "entrypoints" / "cb02-entry").read_text() + "\n# x\n")
+    mid = {k: gen.image_inputs_hash(k, copy) for k in gen.IMAGES}
+    assert mid["target"] != before["target"] and mid["tools"] == before["tools"]
+    (copy / "tlscheck" / "main.go").write_text((copy / "tlscheck" / "main.go").read_text() + "\n// x\n")
+    after = {k: gen.image_inputs_hash(k, copy) for k in gen.IMAGES}
+    assert after["tools"] != mid["tools"] and after["target"] == mid["target"]
+
+
+# ---------------------------------------------------------------- #75 asks (review 5878413538): INTERFACES v7.3
+NOW = "2026-11-12T08:00:00Z"
+
+
+def _cert(**kw) -> dict:
+    base = {"sha256": "cd" * 32, "subject": "CN=x.lab", "issuer": "CN=CBOM Lab Targets CA,O=ZeroShield CBOM lab",
+            "serial": "02", "not_before": "2026-11-11T08:00:00Z", "not_after": "2027-12-14T08:00:00Z",
+            "signature_algorithm": "sha256WithRSAEncryption", "key_algorithm": "RSA", "key_bits": 2048, "curve": None}
+    return {**base, **kw}
+
+
+def _codes(assets: list[dict], oid: str) -> tuple[list, list, str | None]:
+    a = next(x for x in assets if x["oracle_id"] == oid)
+    return a.get("codes_include", []), a.get("codes_exclude", []), a.get("impact_min")
+
+
+def _ssh_facts(tid: str, kex: list[str], host_keys: list[tuple[str, int]]) -> dict:
+    return {"target": tid, "kind": "ssh", "profile": "core", "world": "closed", "address": "10.231.0.23", "port": 22,
+            "aliases": [], "container": f"cb02-{tid}", "provenance": {},
+            "expect": {"kex": kex, "host_key_algorithms": [], "ciphers": [], "macs": [],
+                       "host_keys": [{"type": t, "bits": b, "fingerprint_sha256": "SHA256:x"} for t, b in host_keys]}}
+
+
+def test_planted_weaknesses_carry_the_specs_codes_and_an_impact_floor() -> None:
+    a, _ = oraclefmt.assets_for(_tls_facts(), NOW)          # z02: TLS 1.0 + static-RSA CBC, RSA-1024 SHA-1 self-signed
+    inc, exc, imp = _codes(a, "z02/tls")
+    assert (inc, imp) == (["PROTO_TLS10", "STATIC_RSA_KEX"], "Low") and "NO_PQ_KEX" not in exc
+    assert not {"PROTO_TLS11", "CBC_ACCEPTED"} & set(inc + exc)   # no spec name (O-1): judged by versions/must_report
+    inc, exc, imp = _codes(a, "z02/cert[0]")
+    assert (inc, imp) == (["CERT_SELF_SHA1", "RSA_LT_2048"], "Low") and exc == ["CERT_EXPIRED"]
+    z04 = {**_tls_facts(), "target": "z04", "address": "10.231.0.19"}
+    z04["expect"] = {**z04["expect"], "versions": {v: v in ("TLSv1.2", "TLSv1.3") for v in S.VERSIONS},
+                     "suites": {"TLSv1.2": ["TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"]}, "groups": ["x25519"],
+                     "certificates": [_cert(not_before="2024-10-13T08:00:00Z", not_after="2025-10-08T08:00:00Z"),
+                                      _cert(subject="CN=CBOM Lab Targets CA,O=ZeroShield CBOM lab")]}
+    a, _ = oraclefmt.assets_for(z04, NOW)
+    inc, exc, imp = _codes(a, "z04/cert[0]")
+    assert (inc, imp) == (["CERT_EXPIRED"], "Low") and exc == ["CERT_SELF_SHA1", "RSA_LT_2048"]
+    inc, exc, imp = _codes(a, "z04/cert[1]")                 # the lab CA: self-signed, but SHA-256 and valid
+    assert (inc, imp) == ([], None) and exc == ["CERT_EXPIRED", "CERT_SELF_SHA1", "RSA_LT_2048"]
+    inc, exc, imp = _codes(a, "z04/tls")
+    assert (inc, imp) == ([], None) and exc == ["PROTO_TLS10", "STATIC_RSA_KEX"]
+    z05b = {**_tls_facts(), "target": "z05b"}
+    z05b["expect"] = {**z04["expect"], "versions": {v: v == "TLSv1.3" for v in S.VERSIONS}, "suites": {},
+                      "groups": ["X25519MLKEM768", "x25519"],
+                      "certificates": [_cert(key_algorithm="ML-DSA-65", key_bits=None, signature_algorithm="ML-DSA-65",
+                                             subject="CN=z05b.lab", issuer="CN=z05b.lab")]}
+    a, _ = oraclefmt.assets_for(z05b, NOW)
+    assert "NO_PQ_KEX" in _codes(a, "z05b/tls")[1]           # DA §4.4 KF-3: false NO_PQ_KEX on z05b
+    assert _codes(a, "z05b/cert[0]") == ([], ["CERT_EXPIRED", "CERT_SELF_SHA1", "RSA_LT_2048"], None)
+    a, _ = oraclefmt.assets_for(_ssh_facts("sshd-legacy", S.by_id("sshd-legacy")["kex"],
+                                           [("ssh-rsa", 1024), ("ssh-ed25519", 256)]), NOW)
+    assert _codes(a, "sshd-legacy/ssh") == (["RSA_LT_2048", "SSH_NO_PQ_KEX"], [], "Low")
+    a, _ = oraclefmt.assets_for(_ssh_facts("sshd-pq", ["mlkem768x25519-sha256"], [("ssh-ed25519", 256)]), NOW)
+    assert _codes(a, "sshd-pq/ssh") == ([], ["RSA_LT_2048", "SSH_NO_PQ_KEX"], None)
+    a, _ = oraclefmt.assets_for(_ssh_facts("x", ["curve25519-sha256"], [("ssh-ed25519", 256)]), NOW)
+    assert _codes(a, "x/ssh") == (["SSH_NO_PQ_KEX"], ["RSA_LT_2048"], None)  # a future-risk code alone: no floor
+
+
+def test_host_files_databases_and_hsm_keys_carry_their_planted_codes() -> None:
+    host = _ssh_facts("host", S.by_id("host")["kex"], [("ssh-rsa", 3072), ("ssh-ed25519", 256)])
+    host.update(kind="host", address="10.231.0.40")
+    host["expect"]["files"] = [
+        {"path": "/srv/cbom-lab/keys/legacy-rsa1024.key", "kind": "private_key", "key_algorithm": "RSA", "key_bits": 1024},
+        {"path": "/srv/cbom-lab/certs/expired-rsa2048.crt", "kind": "certificate",
+         "certificate": _cert(subject="CN=expired-rsa2048.lab", not_before="2024-10-13T08:00:00Z",
+                              not_after="2025-10-08T08:00:00Z")},
+        {"path": "/srv/cbom-lab/certs/selfsigned-sha1.crt", "kind": "certificate",
+         "certificate": _cert(subject="CN=selfsigned-sha1.lab", issuer="CN=selfsigned-sha1.lab",
+                              signature_algorithm="sha1WithRSAEncryption")}]
+    a, _ = oraclefmt.assets_for(host, NOW)
+    assert _codes(a, "host:/srv/cbom-lab/keys/legacy-rsa1024.key") == (["RSA_LT_2048"], [], "Low")
+    assert _codes(a, "host:/srv/cbom-lab/certs/expired-rsa2048.crt")[0::2] == (["CERT_EXPIRED"], "Low")
+    assert _codes(a, "host:/srv/cbom-lab/certs/selfsigned-sha1.crt")[0::2] == (["CERT_SELF_SHA1"], "Low")
+    assert _codes(a, "host/ssh") == ([], ["RSA_LT_2048", "SSH_NO_PQ_KEX"], None)
+    ca_sha1 = {**host, "expect": {**host["expect"], "files": [{"path": "/srv/cbom-lab/certs/ca-sha1.crt",
+                                                                "kind": "certificate",
+                                                                "certificate": _cert(signature_algorithm="sha1WithRSAEncryption")}]}}
+    assert "CERT_SELF_SHA1" in _codes(oraclefmt.assets_for(ca_sha1, NOW)[0], "host:/srv/cbom-lab/certs/ca-sha1.crt")[1]
+    pg = {"target": "pg-tls", "kind": "postgres", "profile": "core", "world": "closed", "address": "10.231.0.41",
+          "port": 5432, "aliases": [], "container": "cb02-pg-tls", "provenance": {},
+          "expect": {"ssl": "off", "hba": [{"type": "hostssl", "database": "all", "user": "cbom_md5",
+                                            "address": "0.0.0.0/0", "method": "md5"}]}}
+    a, _ = oraclefmt.assets_for(pg, NOW)
+    assert _codes(a, "pg-tls/auth") == (["DB_MD5_ACCEPTED"], [], "Low")
+    pg["expect"]["hba"][0]["method"] = "scram-sha-256"
+    assert _codes(oraclefmt.assets_for(pg, NOW)[0], "pg-tls/auth") == ([], ["DB_MD5_ACCEPTED"], None)
+    my = {**pg, "target": "mysql-notls", "kind": "mysql",
+          "expect": {"users": {"cbom_native": "mysql_native_password", "cbom_reader": "caching_sha2_password"},
+                     "tls": {"ssl_supported": False}, "tls_version": ""}}
+    assert _codes(oraclefmt.assets_for(my, NOW)[0], "mysql-notls/auth") == (["DB_NATIVE_PW"], [], "Low")
+    a, _ = oraclefmt.assets_for(_hsm_facts(), NOW)
+    assert _codes(a, "softhsm/cb02-tok-a/aes-128-wrap/Secret Key") == (["KEY_EXTRACTABLE"], [], "Low")
+    assert _codes(a, "softhsm/cb02-tok-a/rsa-2048-signing/Private Key") == ([], ["KEY_EXTRACTABLE"], None)
+    codes = oraclefmt.CODE_SOURCES
+    assert set(codes) == {"PROTO_TLS10", "STATIC_RSA_KEX", "CERT_EXPIRED", "RSA_LT_2048", "CERT_SELF_SHA1",
+                          "SSH_NO_PQ_KEX", "DB_MD5_ACCEPTED", "DB_NATIVE_PW", "KEY_EXTRACTABLE", "NO_PQ_KEX"}
+    assert all(("DEVILS-ADVOCATE" in v or "E2E-PLAN" in v) for v in codes.values())
+
+
+def test_codes_follow_the_run_step(tmp_path: Path) -> None:
+    run = _tls_run(tmp_path)                                  # run_oracle states the codes against generated_at
+    cur = json.loads((run / "oracle" / "run1.json").read_text())
+    tls = next(a for a in cur["targets"][0]["assets"] if a["oracle_id"] == "z02/tls")
+    assert tls["codes_include"] == ["PROTO_TLS10", "STATIC_RSA_KEX"] and tls["impact_min"] == "Low"
+    assert oraclefmt.oracle_diff(cur, oraclefmt.rebuild_run(run, "run1")) == {}
+    assert cur["codes_source"] == oraclefmt.CODE_SOURCES                         # every code cites the spec
+
+
+class _MldsaCtx(_FakeCtx):
+    """s_client completes TLS 1.3 and prints the served certificate (canned); the run dir holds the generated file."""
+
+    def __init__(self, run: Path, served_pem: str) -> None:
+        super().__init__()
+        self.run, self.pem = run, served_pem
+
+    def exec(self, *cmd: str, **kw):
+        import re
+        line = " ".join(cmd)
+        group = re.search(r"-groups (\S+)", line)
+        if "-tls1_3" in line and not group:
+            out = "CONNECTED(00000003)\nServer certificate\n" + self.pem + "\nNew, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384\n"
+        elif group and group.group(1) in ("X25519MLKEM768", "X25519"):
+            out = "CONNECTED(00000003)\nNew, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384\n"
+        else:
+            out = "Cipher is (NONE)"
+        return type("R", (), {"stdout": out, "stderr": "", "returncode": 0})()
+
+
+def _z05b(tmp_path: Path, generated_pem: str) -> tuple[dict, selfcheck.Target, _MldsaCtx]:
+    served = (FIX / "cert-z05b-mldsa.crt.txt").read_text()
+    facts = json.loads((FIX / "certs-openssl-facts.json").read_text())["z05b"]
+    o = {**_tls_facts(), "target": "z05b", "address": "10.231.0.21"}
+    o["expect"] = {**o["expect"], "versions": {v: v == "TLSv1.3" for v in S.VERSIONS}, "suites": {},
+                   "tls13_suites": sorted(S.TLS13_SUITES), "groups": ["X25519MLKEM768", "x25519"],
+                   "certificates": facts}
+    d = tmp_path / "lab" / "targets" / "z05b"
+    d.mkdir(parents=True)
+    (d / "cert.pem").write_text(generated_pem)
+    assets, _ = oraclefmt.assets_for(o, NOW)
+    return o, selfcheck.Target("z05b", {a["oracle_id"]: a for a in assets}), _MldsaCtx(tmp_path, served)
+
+
+def test_ml_dsa_certificate_keys_are_verified_when_the_served_der_is_the_generated_file(tmp_path: Path) -> None:
+    served = (FIX / "cert-z05b-mldsa.crt.txt").read_text()
+    o, t, ctx = _z05b(tmp_path, served)
+    r = selfcheck.check_tls_mldsa(ctx, o, t).result()
+    cert_keys = sorted(t.assets["z05b/cert[0]"]["expect"])
+    assert r["agree"] is True and r["independent_keys"]["z05b/cert[0]"] == cert_keys
+    assert "z05b/cert[0]" not in r["unverified_keys"]
+    assert sorted(r["unverified_keys"]["z05b/tls"]) == ["cipher_suites", "groups", "protocol_versions", "quantum_vulnerable"]
+    other = (FIX / "certs-z01-chain.crt.txt").read_text().split("-----END CERTIFICATE-----")[0] + "-----END CERTIFICATE-----\n"
+    o, t, ctx = _z05b(tmp_path / "b", other)                # served bytes differ from the generated file
+    r = selfcheck.check_tls_mldsa(ctx, o, t).result()
+    assert sorted(r["unverified_keys"]["z05b/cert[0]"]) == cert_keys and r["agree"] is False
+
+
+def test_standards_tables_are_closed_and_complete() -> None:
+    iana_pq = {"MLKEM512": 512, "MLKEM768": 513, "MLKEM1024": 514, "SecP256r1MLKEM512": 4585, "MLKEM512X25519": 4586,
+               "SecP256r1MLKEM768": 4587, "X25519MLKEM768": 4588, "SecP384r1MLKEM1024": 4589,
+               "curveSM2MLKEM768": 4590, "MLKEM1024X448": 4591, "X25519Kyber768Draft00": 25497,
+               "SecP256r1Kyber768Draft00": 25498}
+    for name, code in iana_pq.items():
+        assert oraclefmt.TLS_GROUP_CODE[name] == code and oraclefmt.tls_group_pq(name) is True, name
+    for name in ("x25519", "x448", "secp256r1", "secp521r1", "ffdhe2048", "ffdhe8192", "curveSM2"):
+        assert oraclefmt.tls_group_pq(name) is False, name
+    assert set(oraclefmt.TLS_GROUP_CODE) == set(oraclefmt.TLS_GROUP_PQ)
+    v13 = {v: v == "TLSv1.3" for v in S.VERSIONS}
+    with pytest.raises(ValueError):
+        oraclefmt.tls_group_pq("brainpoolP256r1tls13")
+    assert oraclefmt.derive_tls_qv(v13, ["x25519", "brainpoolP256r1tls13"]) is None   # not derived, never classical
+    assert oraclefmt.derive_tls_qv(v13, ["MLKEM1024X448"]) is False
+    assert oraclefmt.derive_tls_qv(v13, ["x25519"]) is True
+    for k in ("mlkem768x25519-sha256", "mlkem768nistp256-sha256", "mlkem1024nistp384-sha384", "sntrup761x25519-sha512",
+              "sntrup761x25519-sha512@openssh.com", "mlkem512-sha256", "mlkem768-sha256", "mlkem1024-sha384"):
+        assert oraclefmt.ssh_kex_pq(k) is True, k
+    for k in ("curve25519-sha256", "curve448-sha512", "diffie-hellman-group1-sha1", "rsa2048-sha256"):
+        assert oraclefmt.ssh_kex_pq(k) is False, k
+    with pytest.raises(ValueError):
+        oraclefmt.ssh_kex_pq("x-unknown-kex@example.com")
+    assert oraclefmt.derive_ssh_qv(["curve25519-sha256", "x-unknown-kex@example.com"]) is None
+    with pytest.raises(ValueError):
+        selfcheck.classical_groups(["x25519", "brainpoolP256r1tls13"])
+    assert selfcheck.classical_groups(["X25519MLKEM768", "x25519"]) == ["x25519"]
+    assert selfcheck.ssh_pq_kex(["mlkem768nistp256-sha256", "curve25519-sha256", "x-new"]) == ["mlkem768nistp256-sha256"]
+    assert "startswith((\"mlkem\", \"sntrup\"))" not in (LAB / "labgen.py").read_text() + (LAB / "labcheck.py").read_text()
