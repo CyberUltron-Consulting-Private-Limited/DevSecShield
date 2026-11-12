@@ -10,7 +10,7 @@ source-address mismatch is refused; a revoked certificate is refused through the
 overlap (old and new certificates), and the retired key stops working once it leaves trusted-keys; a revoked CA is
 refused through the KRL; a long job keeps logging in across several certificate lifetimes (TTL 60 s, renewals).
 
-Run (one small container named f1-4-sshd-proof; no stack lock; check `free -m` first):
+Run (one small container named f1-4-sshd, removed at the end; no stack lock; check `free -m` first):
 
     env ZS_F14_SSHD_PROOF=1 ZS_F14_SSHD_IMAGE=<image with sshd and a zs-cbom user> \
       uv run --frozen --with paramiko==3.5.1 --with pytest==9.2.0 python -m pytest ../bench/f1_sshca/sshd_proof.py -s -q
@@ -45,7 +45,7 @@ if os.environ.get("ZS_F14_SSHD_PROOF") == "1":
 
     import test_cbom_sources_api as _base
     from backend.main import app
-    from backend.routers import cbom_node_sshca, cbom_sshca
+    from backend.routers import cbom_node_sshca
     from backend.utilities.cbom_sources.sshca import certs as C
     from backend.utilities.cbom_sources.sshca import keywrap as KW
     from backend.utilities.cbom_sources.sshca import registry as R
@@ -63,7 +63,7 @@ IMAGE = os.environ.get("ZS_F14_SSHD_IMAGE", "f1-4-sshd:1")
 REPORT = Path(os.environ.get("ZS_F14_REPORT", str(Path(__file__).parent / "out" / "sshd-proof.json")))
 BASE = "/1/cbom/sources/fleet/ssh-ca"
 NODE_SEEN_AS = os.environ.get("ZS_F14_NODE_ADDRESS", "172.17.0.1")  # how the containers see this host (docker0)
-CONTAINER = "f1-4-sshd-proof"
+CONTAINER = os.environ.get("ZS_F14_CONTAINER", "f1-4-sshd")
 results: list[dict] = []
 
 
@@ -81,11 +81,8 @@ def _utcnow() -> dt.datetime:
 @pytest.fixture()
 def lab(world, api, monkeypatch, tmp_path):
     engine, _ids = world
-    paths = {getattr(r, "path", None) for r in app.router.routes}
-    if "/{team_id}/cbom/sources/fleet/ssh-ca" not in paths:
-        app.include_router(cbom_sshca.router)
-    if "/cbom/node/jobs/{job_id}/ssh-cert" not in paths:
-        app.include_router(cbom_node_sshca.router)
+    paths = {getattr(r, "path", None) for r in app.router.routes}  # mounted through the fleet aggregator
+    assert {"/{team_id}/cbom/sources/fleet/ssh-ca", "/cbom/node/jobs/{job_id}/ssh-cert"} <= paths
     monkeypatch.setenv("CBOM_SSH_CA", "1")
     monkeypatch.setattr(cbom_node_sshca, "get_db", lambda: engine)
     KW.forget()

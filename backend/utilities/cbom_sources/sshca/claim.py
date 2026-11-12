@@ -4,8 +4,9 @@
 the payload: ``source.secrets.ssh_certificate`` and ``source.config.ssh_ca`` (``serial``, ``expires_in_s``,
 ``refresh_before_s``).  It never raises for a CA problem: one revoked CA or a KMS outage must not stop a node from
 claiming its other jobs, so the reason goes to ``config.ssh_ca.error`` and the node ends that job with it.  A Vault CA
-is not called inside the claim (a slow Vault would hold the claim's row locks): the node asks the certificate route
-before it connects (``config.ssh_ca.fetch``).
+is not called inside the claim (a slow Vault would hold the claim's row locks), and an unexpected fault (the savepoint
+is rolled back) is not final: in both cases the node asks the certificate route before it connects
+(``config.ssh_ca.fetch``).
 
 ``version_input`` returns None: rotating or promoting a CA must not cancel open jobs (the CA is resolved when the
 certificate is minted).  ``known_secrets`` returns nothing: a certificate is not a secret.
@@ -53,6 +54,12 @@ def claim_extras(session: Session, source: CbomCollectionSource, node: CbomScanN
     except IssueError as exc:
         log("ssh certificate not issued at claim", team=node.team_id, node=node.id, job=job.id, source=source.id)
         config["ssh_ca"] = {"error": str(exc)[:300]}
+        return {"config": config, "secrets": secrets}
+    except Exception as exc:  # a database fault: the savepoint is rolled back, the claim itself goes on, and the node
+        # asks the certificate route before it connects (a passing fault heals; a lasting one fails the job there)
+        log("ssh certificate not issued at claim (internal error)", team=node.team_id, node=node.id, job=job.id,
+            source=source.id, error=type(exc).__name__)
+        config["ssh_ca"] = {"fetch": True}
         return {"config": config, "secrets": secrets}
     payload = minted.payload(now)
     secrets["ssh_certificate"] = payload.pop("certificate")

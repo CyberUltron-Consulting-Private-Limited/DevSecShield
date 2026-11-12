@@ -14,6 +14,8 @@ import hashlib
 import io
 import json
 import logging
+import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -51,19 +53,9 @@ def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
 
-def _mount() -> None:
-    """The routers are included through F1.2's fleet aggregator once it is on dev; until then the tests mount them."""
-    paths = {getattr(r, "path", None) for r in app.router.routes}
-    if BASE.replace("/1/", "/{team_id}/") not in paths:
-        app.include_router(cbom_sshca.router)
-    if "/cbom/node/jobs/{job_id}/ssh-cert" not in paths:
-        app.include_router(cbom_node_sshca.router)
-
-
 @pytest.fixture()
 def ca_world(world, api, monkeypatch):
     engine, ids = world
-    _mount()
     monkeypatch.setenv("CBOM_SSH_CA", "1")
     monkeypatch.delenv(KW.KMS_ENV, raising=False)
     monkeypatch.setattr(cbom_node_sshca, "get_db", lambda: engine)
@@ -156,6 +148,38 @@ def test_flag_off_hides_every_route_and_refuses_ssh_ca_at_save(api, ca_world, mo
     assert r.status_code == 400 and "turned off" in r.json()["detail"]
 
 
+def _concrete(path: str) -> str:
+    return re.sub(r"\{[a-z_]+\}", "1", path).replace("/templates/1", "/templates/sshd-config")
+
+
+def test_flag_off_every_route_is_a_404_and_nothing_is_issued(api, ca_world, monkeypatch):
+    """Every route of both routers, every method, anonymous and as an admin: 404 while CBOM_SSH_CA is off (the route
+    does not exist); the claim plugin and the issuing code do nothing."""
+    engine, _ = ca_world
+    s = setup_job(api)
+    routes = [r for m in (cbom_sshca, cbom_node_sshca) for r in m.router.routes]
+    assert len(routes) == 12
+    for value in ("0", "", "off", "false"):
+        monkeypatch.setenv("CBOM_SSH_CA", value)
+        for route in routes:
+            for method in sorted(route.methods):
+                for who in (None, "alice"):
+                    r = api(method, _concrete(route.path), who, json={"lease_id": s["lease"]},
+                            headers={"X-ZS-Node-Token": s["token"]} if route.path.startswith("/cbom/node") else {})
+                    assert r.status_code == 404, (value, method, route.path, who, r.status_code)
+    monkeypatch.delenv("CBOM_SSH_CA")
+    assert api("GET", BASE).status_code == 404  # unset = off
+    with Session(engine) as session:
+        node = session.get(CbomScanNode, s["node_id"])
+        job = session.get(CbomCollectionJob, s["job_id"])
+        src = session.get(CbomCollectionSource, s["source"]["id"])
+        assert CLAIM.claim_extras(session, src, node, _utcnow(), {"config": dict(src.config), "secrets": {}}) is None
+        with pytest.raises(CA.IssueError, match="turned off"):
+            ISSUE.issue_for_job(session, node, job, src, _utcnow(), via="refresh")
+        assert R.usable_ca(session, 1, s["ca"]["id"]) is False
+        assert session.exec(select(CbomSshCertIssued)).all() == []
+
+
 def test_ttl_bounds_on_the_ca_and_on_issue(api, ca_world):
     for bad in (59, 3601, 0, -5):
         r = api("POST", BASE, json={"name": f"bad{abs(bad)}", "default_ttl_s": bad})
@@ -181,11 +205,11 @@ def test_issued_certificate_fields_and_one_audit_row(api, ca_world):
     assert facts.principals == ("zs-1-prod",)
     assert facts.critical_options == {"source-address": "10.20.1.15"}  # the node's reported address
     assert facts.extensions == ()  # no pty, forwarding, agent or user-rc
-    assert facts.valid_before - facts.valid_after == 300 + 60  # TTL 300 s, valid_after = now - 60 s
+    assert facts.valid_before - facts.valid_after == 300  # the whole window is the TTL, back-dating included
     assert abs(facts.valid_after - (int(before.replace(tzinfo=dt.timezone.utc).timestamp()) - 60)) <= 5
     assert facts.serial == out["serial"] == 1
     assert facts.key_id == f"zs:1:{s['node_id']}:{s['job_id']}:1"
-    assert out["expires_in_s"] in range(295, 301) and out["refresh_before_s"] == 120
+    assert out["expires_in_s"] in range(235, 241) and out["refresh_before_s"] == 120  # 300 s window - 60 s skew
     with Session(engine) as session:
         rows = session.exec(select(CbomSshCertIssued)).all()
         assert len(rows) == 1
@@ -273,7 +297,7 @@ def test_refresh_only_near_expiry(api, ca_world):
         session.commit()
     r = cert_route(api, s["token"], s["job_id"], s["lease"])
     assert r.status_code == 200 and r.json()["serial"] == 2
-    assert (ISSUE.refresh_window(60), ISSUE.refresh_window(300), ISSUE.refresh_window(3600)) == (30, 120, 120)
+    assert (ISSUE.refresh_window(60), ISSUE.refresh_window(300), ISSUE.refresh_window(3600)) == (24, 120, 120)
 
 
 def test_principals_and_source_addresses(api, ca_world):
@@ -442,7 +466,7 @@ def test_claim_plugin_mints_in_the_claim_and_never_raises(api, ca_world):
         session.commit()
     facts = C.read_cert(out["secrets"]["ssh_certificate"])
     assert facts.public_key_blob == C.public_blob(line) and facts.serial == out["config"]["ssh_ca"]["serial"]
-    assert out["config"]["ssh_ca"]["refresh_before_s"] == 120 and out["config"]["ssh_ca"]["expires_in_s"] >= 295
+    assert out["config"]["ssh_ca"]["refresh_before_s"] == 120 and out["config"]["ssh_ca"]["expires_in_s"] >= 235
     with Session(engine) as session:
         rows = session.exec(select(CbomSshCertIssued)).all()
         assert [(r.job_id, r.via) for r in rows] == [(test["job_id"], "claim")]
@@ -548,6 +572,7 @@ class FakeVault:
         self.calls: list[tuple[str, str, dict | None, str | None]] = []
         self.mutate: dict = {}
         self.serial = 0xC73F26D2340276AA  # Vault serials are random 64-bit numbers (above 2^63 here)
+        self.not_before = 30  # the role's not_before_duration (Vault's default: 30 s)
 
     def __call__(self, cfg, method, path, *, token=None, body=None):
         self.calls.append((method, path, body, token))
@@ -572,7 +597,8 @@ class FakeVault:
             load_ssh_public_key
         b = (SSHCertificateBuilder().public_key(load_ssh_public_key(body["public_key"].encode()))
              .serial(self.serial).type(SSHCertificateType.USER).key_id(body["key_id"].encode())
-             .valid_principals([p.encode() for p in principals]).valid_after(now - 30).valid_before(now + ttl))
+             .valid_principals([p.encode() for p in principals]).valid_after(now - self.not_before)
+             .valid_before(now + ttl))
         for name, value in sorted(opts.items()):
             b = b.add_critical_option(name.encode(), value.encode())
         if self.mutate.get("pty"):
@@ -598,7 +624,7 @@ def test_vault_provider_signs_through_the_engine_and_checks_its_answer(api, ca_w
     assert out.status_code == 200, out.text
     sign_call = [c for c in fake.calls if "/sign/" in c[1]][-1]
     assert sign_call[1] == "/v1/ssh-client-signer/sign/zs-cbom" and sign_call[3] == "hvs.fake-approle-token-000000000000"
-    assert sign_call[2]["cert_type"] == "user" and sign_call[2]["extensions"] == {} and sign_call[2]["ttl"] == "300s"
+    assert sign_call[2]["cert_type"] == "user" and sign_call[2]["extensions"] == {} and sign_call[2]["ttl"] == "240s"
     assert sign_call[2]["critical_options"] == {"source-address": "10.20.1.15"}
     assert out.json()["serial"] == fake.serial
     with Session(engine) as session:
@@ -684,7 +710,8 @@ def test_templates_scope_the_ca_to_the_zs_cbom_login(api, ca_world, tmp_path):
     assert api("GET", BASE + "/templates/principals?group=Bad Group").status_code == 400
     assert api("GET", BASE + "/templates/other").status_code == 400
     sshd_bin = shutil.which("sshd") or ("/usr/sbin/sshd" if Path("/usr/sbin/sshd").exists() else None)
-    if sshd_bin:
+    # sshd -t as root also checks its privilege-separation directory (/run/sshd), which only a configured host has
+    if sshd_bin and (os.geteuid() != 0 or Path("/run/sshd").is_dir()):
         tmp = tmp_path
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(tmp / "hk")], check=True)
         (tmp / "sshd_config").write_text(f"HostKey {tmp / 'hk'}\nPidFile {tmp / 'pid'}\nUsePAM no\n" + body)
@@ -714,17 +741,315 @@ def test_usable_ca_seam_for_policies(api, ca_world, monkeypatch):
         assert R.usable_ca(session, 1, ca["id"]) is False
 
 
-def test_every_route_is_flagged_rate_limited_authenticated_and_declares_its_permission(api, ca_world):
+def test_every_route_is_mounted_flagged_rate_limited_authenticated_and_declares_its_permission(api, ca_world):
+    """The routes come into the app through F1.2's fleet aggregator (not mounted by the tests); each declares the
+    permission F4's route-coverage test reads, has a rate limiter, is behind CBOM_SSH_CA and refuses anonymous callers."""
+    from fastapi.routing import APIRoute
+
+    from backend.routers import cbom_fleet
     from backend.utilities.cbom_sources.http import CbomRoute, node_limiter, read_limiter, write_limiter
 
     limiters = {read_limiter, write_limiter, node_limiter}
+    app_routes = {(r.path, m) for r in app.router.routes if isinstance(r, APIRoute) for m in r.methods}
+    fleet_routes = {(r.path, m) for r in cbom_fleet.router.routes if isinstance(r, APIRoute) for m in r.methods}
+    expected = {"GET": "cbom.fleet.read", "POST": "cbom.sshca.admin"}
+    seen = 0
     for module in (cbom_sshca, cbom_node_sshca):
         for route in module.router.routes:
-            assert isinstance(route, CbomRoute) and getattr(route, "flag_env", None) == "CBOM_SSH_CA", route.path
-            assert (route.openapi_extra or {}).get("x-zs-permission"), route.path
-            assert any(d.dependency in limiters for d in route.dependencies), route.path
-            path = route.path.replace("{team_id}", "1").replace("{ca_id}", "1").replace("{cert_id}", "1") \
-                .replace("{job_id}", "1").replace("{name}", "sshd-config")
             for method in route.methods:
-                r = api(method, path, None, json={})
-                assert r.status_code == 401, (method, path, r.status_code)
+                assert (route.path, method) in app_routes and (route.path, method) in fleet_routes, route.path
+            assert isinstance(route, CbomRoute) and getattr(route, "flag_env", None) == "CBOM_SSH_CA", route.path
+            permission = (route.openapi_extra or {}).get("x-zs-permission")
+            if route.path.startswith("/cbom/node/"):
+                assert permission == "cbom.node", route.path  # a scan-node token, not a person's team role
+            else:
+                (method,) = route.methods
+                assert permission == expected[method], (method, route.path, permission)
+            assert any(d.dependency in limiters for d in route.dependencies), route.path
+            for method in route.methods:
+                r = api(method, _concrete(route.path), None, json={})
+                assert r.status_code == 401, (method, route.path, r.status_code)
+                seen += 1
+    assert seen == 12
+
+
+# ----------------------------------------------------------------------------- round 7: the F1.4 criteria, one by one
+def _epoch(moment: dt.datetime) -> int:
+    return int(moment.replace(tzinfo=dt.timezone.utc).timestamp())
+
+
+def _job_rows(engine, s):
+    session = Session(engine)
+    return (session, session.get(CbomScanNode, s["node_id"]), session.get(CbomCollectionJob, s["job_id"]),
+            session.get(CbomCollectionSource, s["source"]["id"]))
+
+
+@pytest.mark.parametrize("ttl, skew", [(60, 12), (300, 60), (3600, 60)])
+def test_certificate_validity_never_exceeds_the_ttl_even_with_clock_skew(api, ca_world, ttl, skew):
+    """valid_before - valid_after is exactly the CA's TTL (5 minutes by default): the back-dating that lets a server
+    whose clock is behind accept the certificate comes out of the TTL, it is never added to it.  The server's clock
+    decides (the node sends no time), and the node is told how long is left (``expires_in_s``)."""
+    engine, _ = ca_world
+    s = setup_job(api)
+    with Session(engine) as session:
+        session.get(CbomSshCa, s["ca"]["id"]).default_ttl_s = ttl
+        session.commit()
+    now = dt.datetime(2026, 11, 12, 10, 0, 0)
+    session, node, job, src = _job_rows(engine, s)
+    with session:
+        minted = ISSUE.issue_for_job(session, node, job, src, now, via="claim")
+        session.commit()
+        facts = C.read_cert(minted.cert.certificate)
+        row = session.exec(select(CbomSshCertIssued)).one()
+        payload = minted.payload(now)
+    assert facts.valid_before - facts.valid_after == ttl  # the whole window, skew included
+    assert facts.valid_after == _epoch(now) - skew  # a target up to `skew` seconds behind still accepts it
+    assert facts.valid_before - _epoch(now) == ttl - skew <= ttl
+    assert (_epoch(row.valid_after), _epoch(row.valid_before)) == (facts.valid_after, facts.valid_before)
+    assert payload["expires_in_s"] == ttl - skew and payload["refresh_before_s"] == ISSUE.refresh_window(ttl)
+    assert payload["refresh_before_s"] <= (ttl - skew) // 2  # never minted more often than every half life
+    assert (CA.skew_s(ttl), CA.usable_s(ttl)) == (skew, ttl - skew)
+    if ttl == 300:  # the default: a 5-minute certificate, as ssh-keygen -L shows it
+        assert facts.valid_before - facts.valid_after == 5 * 60
+
+
+def test_vault_certificates_are_held_to_the_same_window(api, ca_world, monkeypatch):
+    """Vault back-dates by its role's not_before_duration: ZeroShield asks for TTL - skew and refuses an answer whose
+    whole window is longer than the TTL."""
+    fake = FakeVault()
+    monkeypatch.setattr(V, "call", fake)
+    r = api("POST", BASE, json={"name": "vault", "provider": "vault", "secrets": {"token": "hvs.test-token-0000000"},
+                                "vault_config": {"addr": "https://vault.bank.example:8200", "role": "zs-cbom"}})
+    ca = r.json()["ca"]
+    node_id, token, _ = enroll(api)
+    ssh_ca_source(api, node_id, ca["id"])
+    payload = claim(api, token)
+    out = cert_route(api, token, payload["job"]["id"], payload["job"]["lease_id"])
+    assert out.status_code == 200, out.text
+    facts = C.read_cert(out.json()["certificate"])
+    assert facts.valid_before - facts.valid_after <= 300
+    fake.not_before = 120  # a role that back-dates 120 s: 240 + 120 = 360 s > the 300 s TTL
+    engine, _ = ca_world
+    with Session(engine) as session:
+        row = session.exec(select(CbomSshCertIssued)).one()
+        row.valid_before = _utcnow() + dt.timedelta(seconds=5)
+        session.commit()
+    bad = cert_route(api, token, payload["job"]["id"], payload["job"]["lease_id"])
+    assert bad.status_code == 400 and "validity" in bad.json()["detail"], bad.text
+
+
+def test_principals_are_only_the_target_group_of_the_job(api, ca_world):
+    """Two sources (target groups prod and dev) on one node: each job's certificate names only its own source's
+    group, and the node cannot ask for any other principal, address or TTL."""
+    engine, _ = ca_world
+    node_id, token, line = enroll(api)
+    ca = create_ca(api)
+    certs = {}
+    for group in ("prod", "dev"):
+        ssh_ca_source(api, node_id, ca["id"], name=f"linux-{group}", principals=(f"zs-1-{group}",))
+        payload = claim(api, token)
+        out = cert_route(api, token, payload["job"]["id"], payload["job"]["lease_id"])
+        assert out.status_code == 200, out.text
+        certs[group] = (payload["job"], C.read_cert(out.json()["certificate"]))
+        for extra in ({"principals": ["zs-1-prod", "zs-1-dev"]}, {"principal": "root"}, {"ttl": 3600},
+                      {"source_addresses": ["0.0.0.0/0"]}, {"valid_before": "2099-01-01T00:00:00Z"}):
+            r = api("POST", f"/cbom/node/jobs/{payload['job']['id']}/ssh-cert", None,
+                    headers={"X-ZS-Node-Token": token}, json={"lease_id": payload["job"]["lease_id"], **extra})
+            assert r.status_code == 400, extra
+    assert certs["prod"][1].principals == ("zs-1-prod",) and certs["dev"][1].principals == ("zs-1-dev",)
+    for group, (job, facts) in certs.items():
+        assert facts.key_id == f"zs:1:{node_id}:{job['id']}:{facts.serial}"
+    with Session(engine) as session:
+        rows = session.exec(select(CbomSshCertIssued).order_by(CbomSshCertIssued.id)).all()
+    assert [(r.job_id, r.principals) for r in rows] == [(certs["prod"][0]["id"], ["zs-1-prod"]),
+                                                        (certs["dev"][0]["id"], ["zs-1-dev"])]
+
+
+def test_a_node_cannot_get_a_certificate_for_another_teams_group(api, ca_world):
+    """Team 2's node gets nothing for team 1's job; a team-1 source naming team 2's group or team 2's CA gets no
+    certificate (refused when the certificate would be signed, whatever was stored); nothing is recorded."""
+    engine, _ = ca_world
+    s = setup_job(api)
+    t2_node, t2_token, _ = enroll(api, name="t2-node", team=2, who="carol")
+    assert cert_route(api, t2_token, s["job_id"], s["lease"]).status_code == 404
+    t2_ca = api("POST", "/2/cbom/sources/fleet/ssh-ca", "carol", json={"name": "t2-ca"}).json()["ca"]
+    assert api("GET", f"{BASE}/{t2_ca['id']}").status_code == 404  # team 1 cannot even see it
+    # a source of team 1 that names team 2's group (stored as is: the shape is valid) ...
+    node_id, token, _ = enroll(api, name="dc-3")
+    other_group, _ = ssh_ca_source(api, node_id, s["ca"]["id"], name="other-group", principals=("zs-2-prod",))
+    payload = claim(api, token)
+    r = cert_route(api, token, payload["job"]["id"], payload["job"]["lease_id"])
+    assert r.status_code == 400 and "another team" in r.json()["detail"]
+    # ... or team 2's CA
+    other_ca, _ = ssh_ca_source(api, node_id, t2_ca["id"], name="other-ca")
+    payload = claim(api, token)
+    r = cert_route(api, token, payload["job"]["id"], payload["job"]["lease_id"])
+    assert r.status_code == 400 and "no active key" in r.json()["detail"]
+    # the claim plugin refuses the same way (no certificate in the payload, the reason instead)
+    with Session(engine) as session:
+        node = session.get(CbomScanNode, node_id)
+        for src_id in (other_group["id"], other_ca["id"]):
+            src = session.get(CbomCollectionSource, src_id)
+            job = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.source_id == src_id)).one()
+            out = CLAIM.claim_extras(session, src, node, job.claimed_at, {"config": dict(src.config), "secrets": {}})
+            assert "ssh_certificate" not in out["secrets"] and out["config"]["ssh_ca"]["error"]
+        session.rollback()
+        assert session.exec(select(CbomSshCertIssued)).all() == []
+
+
+def _sqlite_dump(engine) -> str:
+    import sqlite3
+
+    with sqlite3.connect(engine.url.database) as conn:
+        return "\n".join(conn.iterdump())
+
+
+def test_the_ca_private_key_never_leaves_the_server_unwrapped(api, ca_world, monkeypatch):
+    """After create, rotate, promote, claim, refresh, revoke and every read: the CA private key is nowhere in the
+    database (every table, every column), in a claim payload or in any HTTP response; only its wrapped form is
+    stored, for the deployment key and for KMS (moto)."""
+    moto = pytest.importorskip("moto")
+    import boto3
+
+    engine, _ = ca_world
+    with moto.mock_aws():
+        arn = boto3.client("kms", region_name="ap-south-1").create_key()["KeyMetadata"]["Arn"]
+        KW.set_kms_client_factory(lambda region: boto3.client("kms", region_name=region))
+        try:
+            s = setup_job(api)  # a fernet CA
+            monkeypatch.setenv(KW.KMS_ENV, arn)
+            kms_ca = create_ca(api, name="kms-ca")
+            assert kms_ca["key_wrap"] == "aws_kms"
+            ssh_ca_source(api, s["node_id"], kms_ca["id"], name="kms-src")
+            kms_claim = claim(api, s["token"])
+            with Session(engine) as session:  # the claim plugin's payload
+                node = session.get(CbomScanNode, s["node_id"])
+                src = session.get(CbomCollectionSource, kms_claim["source"]["id"])
+                job = session.get(CbomCollectionJob, kms_claim["job"]["id"])
+                plugin = CLAIM.claim_extras(session, src, node, job.claimed_at, {"config": dict(src.config),
+                                                                                  "secrets": {}})
+                session.commit()
+            assert cert_route(api, s["token"], s["job_id"], s["lease"]).status_code == 200
+            nxt = api("POST", f"{BASE}/{s['ca']['id']}/rotate").json()["ca"]
+            api("POST", f"{BASE}/{nxt['id']}/promote")
+            for path in ("", "/trusted-keys", "/revoked", "/revoked?format=keys", "/certificates",
+                         "/templates/sshd-config", f"/{kms_ca['id']}"):
+                assert api("GET", BASE + path).status_code == 200, path
+            secrets_: list[str] = []
+            with Session(engine) as session:
+                rows = session.exec(select(CbomSshCa)).all()
+                assert len(rows) == 3
+                for row in rows:
+                    wrapped = row.private_key_encrypted
+                    assert wrapped.split(":", 1)[0] == row.key_wrap in ("fernet", "aws_kms")
+                    pem = KW.unwrap(wrapped, team_id=1, ca_fingerprint=row.fingerprint)
+                    raw = C.private_from_openssh(pem).private_bytes_raw()
+                    body = "".join(pem.decode().strip().splitlines()[1:-1])
+                    secrets_ += [pem.decode().strip(), body[:48], body[-48:], raw.hex(), base64.b64encode(raw).decode()]
+            dump = _sqlite_dump(engine)
+            assert "cbomsshca" in dump and "PRIVATE KEY" not in dump and "BEGIN OPENSSH" not in dump
+            surfaces = {"database": dump, "claim plugin": json.dumps(plugin), "claim": json.dumps(kms_claim),
+                        "responses": "\n".join(api.seen)}
+            for where, text in surfaces.items():
+                for value in secrets_:
+                    assert value not in text, where
+                assert "PRIVATE KEY" not in text, where
+        finally:
+            KW.set_kms_client_factory(None)
+            KW.forget()
+
+
+def test_every_certificate_handed_out_has_its_audit_row_and_none_without_one(api, ca_world, monkeypatch):
+    """Claim and refresh: one cbomsshcertissued row per certificate, with what the certificate says.  If the audit
+    row cannot be written, no certificate leaves the server (and its serial is not consumed)."""
+    engine, _ = ca_world
+    node_id, token, line = enroll(api)
+    ca = create_ca(api)
+    handed: list[str] = []
+    source, test = ssh_ca_source(api, node_id, ca["id"])
+
+    def check_recorded(text: str) -> None:
+        """The row written with this certificate says what the certificate says."""
+        facts = C.read_cert(text)
+        with Session(engine) as session:
+            row = session.exec(select(CbomSshCertIssued).where(CbomSshCertIssued.serial == facts.serial)).one()
+        assert (row.principals, row.source_addresses) == (list(facts.principals),
+                                                          facts.critical_options["source-address"].split(","))
+        assert (_epoch(row.valid_after), _epoch(row.valid_before)) == (facts.valid_after, facts.valid_before)
+        assert row.cert_public_key_sha256 == C.blob_sha256_hex(facts.public_key_blob)
+        assert row.key_id == facts.key_id and row.node_id == node_id and row.job_id == test["job_id"]
+
+    def near_expiry() -> None:  # so the node may ask for the next one
+        with Session(engine) as session:
+            for row in session.exec(select(CbomSshCertIssued)).all():
+                row.valid_before = min(row.valid_before, _utcnow() + dt.timedelta(seconds=30))
+            session.commit()
+
+    with Session(engine) as session:  # the claim plugin (F1.1's secret_refs calls it in the claim transaction)
+        job = session.get(CbomCollectionJob, test["job_id"])
+        now = _utcnow()
+        job.status, job.lease_id, job.claimed_at, job.node_id = "claimed", "lease-audit-0001", now, node_id
+        session.commit()
+        src, node = session.get(CbomCollectionSource, source["id"]), session.get(CbomScanNode, node_id)
+        handed.append(CLAIM.claim_extras(session, src, node, now, {"config": {}, "secrets": {}})["secrets"]
+                      ["ssh_certificate"])
+        session.commit()
+    check_recorded(handed[-1])
+    for _ in range(3):  # three refreshes through the node route
+        near_expiry()
+        r = cert_route(api, token, test["job_id"], "lease-audit-0001")
+        assert r.status_code == 200, r.text
+        handed.append(r.json()["certificate"])
+        check_recorded(handed[-1])
+    with Session(engine) as session:
+        rows = {r.serial: r for r in session.exec(select(CbomSshCertIssued)).all()}
+    assert len(rows) == len(handed) == 4 and sorted(rows) == sorted(C.read_cert(t).serial for t in handed)
+    assert sorted(r.via for r in rows.values()) == ["claim", "refresh", "refresh", "refresh"]
+    listed = api("GET", f"{BASE}/certificates?job_id={test['job_id']}", "bob").json()["certificates"]
+    assert sorted(c["serial"] for c in listed) == sorted(rows)
+    # the audit write fails: the route answers 500 without a certificate, the claim plugin sends none either
+    near_expiry()
+    with Session(engine) as session:
+        serial_before = session.get(CbomSshCa, ca["id"]).serial_next
+
+    def broken(self, **kw):
+        raise RuntimeError("audit table unavailable")
+
+    monkeypatch.setattr(CA._Base, "_record", broken)
+    r = cert_route(api, token, test["job_id"], "lease-audit-0001")
+    assert r.status_code == 500 and "ssh-ed25519-cert" not in r.text and "certificate" not in r.json()
+    with Session(engine) as session:
+        src, node = session.get(CbomCollectionSource, source["id"]), session.get(CbomScanNode, node_id)
+        job = session.get(CbomCollectionJob, test["job_id"])
+        out = CLAIM.claim_extras(session, src, node, job.claimed_at, {"config": {}, "secrets": {}})
+        assert "ssh_certificate" not in out["secrets"] and out["config"]["ssh_ca"] == {"fetch": True}
+        session.rollback()
+        assert len(session.exec(select(CbomSshCertIssued)).all()) == 4
+        assert session.get(CbomSshCa, ca["id"]).serial_next == serial_before
+
+
+def test_kms_access_denied_is_reported_safely(api, ca_world, monkeypatch):
+    """The live sandbox refuses kms:GenerateDataKey (IAM, owner action).  The same refusal from KMS, replayed with
+    botocore's Stubber, gives a 400 that names the problem without echoing the ARN of the IAM user, and stores nothing."""
+    from botocore.stub import Stubber
+    import boto3
+
+    arn = "arn:aws:kms:ap-south-1:935951870001:key/59416634-9568-4534-a00b-3feacd8b3043"
+    monkeypatch.setenv(KW.KMS_ENV, arn)
+    client = boto3.client("kms", region_name="ap-south-1")
+    stub = Stubber(client)
+    message = ("User: arn:aws:iam::935951870001:user/sandbox-user is not authorized to perform: kms:GenerateDataKey "
+               f"on resource: {arn} because no identity-based policy allows the kms:GenerateDataKey action")
+    stub.add_client_error("generate_data_key", service_error_code="AccessDeniedException", service_message=message,
+                          http_status_code=400)
+    KW.set_kms_client_factory(lambda region: client)
+    try:
+        with stub:
+            r = api("POST", BASE, json={"name": "kms-denied"})
+        assert r.status_code == 400 and "AWS KMS refused to create a data key" in r.json()["detail"]
+        assert "iam::" not in r.text and "sandbox-user" not in r.text
+    finally:
+        KW.set_kms_client_factory(None)
+    engine, _ = ca_world
+    with Session(engine) as session:
+        assert session.exec(select(CbomSshCa)).all() == []

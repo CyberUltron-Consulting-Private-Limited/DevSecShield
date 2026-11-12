@@ -77,7 +77,7 @@ def _issue(token: str | None, job_id: int, req: NA.NodeRequest, raw: bytes) -> d
 
 
 @router.post("/cbom/node/jobs/{job_id}/ssh-cert", dependencies=[Depends(node_limiter)],
-             openapi_extra={"x-zs-permission": "node"},
+             openapi_extra={"x-zs-permission": "cbom.node"},  # a scan-node token, not a team role (F4: machine)
              summary="A short-lived SSH certificate for the node's own key, for a job it holds")
 async def ssh_cert(job_id: int, request: Request,
                    token: Annotated[str | None, Security(node_token_header)] = None):

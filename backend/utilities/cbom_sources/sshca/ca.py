@@ -18,8 +18,20 @@ from backend.utilities.cbom_sources.sshca import keywrap as KW
 from backend.utilities.cbom_sources.sshca import vault as V
 from backend.utilities.cbom_sources.sshca.models import MAX_TTL_S, MIN_TTL_S, CbomSshCa, CbomSshCertIssued
 
-SKEW = _dt.timedelta(seconds=60)  # valid_after = now - 60 s: a target whose clock is a little behind still accepts it
-VAULT_TTL_SLACK_S = 5
+MAX_SKEW_S = 60
+VAULT_TTL_SLACK_S = 5  # Vault stamps the validity with its own clock
+
+
+def skew_s(ttl_s: int) -> int:
+    """How far ``valid_after`` is back-dated, so a server whose clock is a little behind still accepts a certificate:
+    60 s, or a fifth of a shorter TTL.  It comes OUT of the TTL: ``valid_before - valid_after`` is exactly the TTL
+    (a 5-minute certificate is valid for 5 minutes in all, whatever the clocks say)."""
+    return min(MAX_SKEW_S, int(ttl_s) // 5)
+
+
+def usable_s(ttl_s: int) -> int:
+    """Seconds a certificate is good for after it is issued (by the server's clock): the TTL less the back-dating."""
+    return int(ttl_s) - skew_s(ttl_s)
 
 
 class IssueError(Exception):
@@ -122,7 +134,8 @@ class BuiltinCA(_Base):
         except KW.WrapError as exc:
             raise IssueError(f"SSH CA {row.name}: {exc}") from None
         now = now or utcnow()
-        valid_after, valid_before = now - SKEW, now + _dt.timedelta(seconds=ttl_s)
+        valid_after = now - _dt.timedelta(seconds=skew_s(ttl_s))
+        valid_before = valid_after + _dt.timedelta(seconds=ttl_s)  # the whole window is the TTL
         serial = self._next_serial()
         key_id = key_id.replace("{serial}", str(serial))
         try:
@@ -147,8 +160,11 @@ class VaultCA(_Base):
         key_id = key_id.replace(":{serial}", "").replace("{serial}", "")
         try:
             cfg = V.check_config(row.vault_config)
+            # Vault back-dates by its role's not_before_duration (default 30 s): ask for the TTL less our skew, so
+            # its whole window stays inside the TTL (checked below)
             text = V.sign(cfg, decrypt_secrets(row.secret_encrypted), public_key_line=public_key,
-                          principals=list(principals), ttl_s=ttl_s, key_id=key_id, source_addresses=list(addresses))
+                          principals=list(principals), ttl_s=usable_s(ttl_s), key_id=key_id,
+                          source_addresses=list(addresses))
         except V.VaultError as exc:
             raise IssueError(f"SSH CA {row.name} (Vault): {exc}") from None
         now = now or utcnow()
@@ -164,7 +180,8 @@ class VaultCA(_Base):
     def check_returned(self, text: str, *, principals: tuple[str, ...], addresses: tuple[str, ...],
                        subject_blob: bytes, ttl_s: int, now: _dt.datetime) -> C.CertFacts:
         """Vault's answer is not trusted blindly: same CA key, a user certificate for our node key, exactly our
-        principals, inside the requested validity, our source-address, and no extensions."""
+        principals, inside the requested validity (whole window at most the TTL), our source-address, and no
+        extensions."""
         name = self.row.name
         try:
             facts = C.read_cert(text)
@@ -180,8 +197,10 @@ class VaultCA(_Base):
             problems.append("it certifies another key than the scan node's")
         if set(facts.principals) != set(principals):
             problems.append("its principals differ from the ones requested")
-        if facts.valid_before > epoch + ttl_s + VAULT_TTL_SLACK_S or facts.valid_before <= epoch:
-            problems.append("its validity is not the one requested")
+        if (facts.valid_before > epoch + usable_s(ttl_s) + VAULT_TTL_SLACK_S or facts.valid_before <= epoch
+                or facts.valid_before - facts.valid_after > ttl_s):
+            problems.append("its validity is not the one requested (the whole window must fit in the TTL; keep the "
+                            f"role's not_before_duration at {skew_s(ttl_s)} s or less)")
         if addresses and facts.critical_options.get("source-address") != ",".join(addresses):
             problems.append("it has no source-address restriction (allow source-address in the role's "
                             "allowed_critical_options)")

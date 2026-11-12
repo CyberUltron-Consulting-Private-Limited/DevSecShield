@@ -9,7 +9,8 @@ A certificate is issued only:
 * for the principals the source names, all ``zs-<team>-<group>`` (never ``root`` or a real login name);
 * for the node's own public key (its private key never leaves the node), bound with ``source-address`` to the
   addresses the source lists, else to the addresses the node reports (none known: refused, never an unbound cert);
-* by the active CA of the source's lineage, for the CA's TTL (60-3600 s, default 300), no extensions.
+* by the active CA of the source's lineage, for the CA's TTL (60-3600 s, default 300; ``valid_before - valid_after``
+  is exactly the TTL, the clock-skew back-dating included), no extensions.
 Each certificate gets one ``cbomsshcertissued`` row in the caller's transaction.  A refresh through the node route is
 allowed only when the job's newest certificate has less than ``refresh_window`` left.
 """
@@ -26,7 +27,7 @@ from backend.utilities.cbom_sources.common import iso_z, log
 from backend.utilities.cbom_sources.http import is_team_admin
 from backend.utilities.cbom_sources.sshca import certs as C
 from backend.utilities.cbom_sources.sshca import flags
-from backend.utilities.cbom_sources.sshca.ca import BuiltinCA, IssueError, IssuedCert, VaultCA, clamp_ttl
+from backend.utilities.cbom_sources.sshca.ca import BuiltinCA, IssueError, IssuedCert, VaultCA, clamp_ttl, usable_s
 from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued
 from backend.utilities.cbom_sources.sshca.registry import signing_ca
 
@@ -35,9 +36,9 @@ REFRESH_WINDOW_MAX_S = 120
 
 
 def refresh_window(ttl_s: int) -> int:
-    """Seconds before expiry from which a job may get its next certificate: 120 s, or half the TTL when shorter (so a
-    node can never mint more often than every ttl/2)."""
-    return min(REFRESH_WINDOW_MAX_S, max(1, ttl_s // 2))
+    """Seconds before expiry from which a job may get its next certificate: 120 s, or half the certificate's usable
+    life when shorter (so a node can never mint more often than every half life)."""
+    return min(REFRESH_WINDOW_MAX_S, max(1, usable_s(ttl_s) // 2))
 
 
 @dataclass(frozen=True)

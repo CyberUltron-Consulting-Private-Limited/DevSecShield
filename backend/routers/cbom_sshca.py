@@ -11,9 +11,9 @@ KRL for RevokedKeys; ``?format=keys`` gives the revoked CA keys as text) and ``t
 from __future__ import annotations
 
 import re
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -22,11 +22,11 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionSource
 from backend.utilities.cbom_sources.common import NAME_RE, iso_z, utcnow
+from backend.utilities.cbom_sources.fleet.http import Member, permission
 from backend.utilities.cbom_sources.http import (
     PRIVATE,
     ObjectId,
     TeamId,
-    authorize,
     check_version,
     read_limiter,
     require_admin,
@@ -38,21 +38,12 @@ from backend.utilities.cbom_sources.sshca import keywrap as KW
 from backend.utilities.cbom_sources.sshca import registry as R
 from backend.utilities.cbom_sources.sshca.models import CbomSshCa, CbomSshCertIssued
 
-try:  # F1.2's shared dependency (fleet/http.py); until it is on dev an identical local one (seam, see flags.route_class)
-    from backend.utilities.cbom_sources.fleet.http import Member  # type: ignore[import-not-found]
-except ImportError:
-    async def require_member(team_id: TeamId, Authorization: Annotated[str | None, Header()] = None) -> tuple:
-        """The caller is a member of the path's team: ``(engine, user)`` (401 / the existing 403 otherwise)."""
-        return await authorize(team_id, Authorization)
-
-    Member = Annotated[tuple, Depends(require_member)]  # type: ignore[misc]
-
 router = APIRouter(tags=["cbom-ssh-ca"], route_class=flags.route_class())
 BASE = "/{team_id}/cbom/sources/fleet/ssh-ca"
 READ = [Depends(read_limiter)]
 WRITE = [Depends(write_limiter)]
-PERM_READ = {"x-zs-permission": "cbom.fleet.read"}
-PERM_ADMIN = {"x-zs-permission": "cbom.sshca.admin"}
+PERM_READ = permission("cbom.fleet.read")
+PERM_ADMIN = permission("cbom.sshca.admin")
 TEXT = {**PRIVATE, "Content-Type": "text/plain; charset=utf-8"}
 _GROUP = re.compile(r"^[a-z0-9][a-z0-9._-]{0,47}$")
 
