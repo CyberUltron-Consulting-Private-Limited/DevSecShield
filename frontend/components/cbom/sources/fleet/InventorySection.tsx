@@ -477,8 +477,8 @@ function TargetsTable({ teamId }: { teamId: number }) {
                 <TableRow>
                   <TableHead>Target</TableHead>
                   <TableHead className="hidden md:table-cell">Kind</TableHead>
-                  <TableHead className="hidden md:table-cell">Tags</TableHead>
-                  <TableHead className="hidden md:table-cell">Where</TableHead>
+                  <TableHead className="hidden xl:table-cell">Tags</TableHead>
+                  <TableHead className="hidden xl:table-cell">Where</TableHead>
                   <TableHead>Decision (which policy won)</TableHead>
                 </TableRow>
               </TableHeader>
@@ -492,7 +492,7 @@ function TargetsTable({ teamId }: { teamId: number }) {
                       <p className="text-xs text-zinc-500 truncate" title={t.external_id}>{t.address && t.hostname ? `${t.address} · ` : ""}{t.external_id}</p>
                     </TableCell>
                     <TableCell className="hidden md:table-cell whitespace-nowrap">{KIND_LABEL[t.kind] ?? t.kind}</TableCell>
-                    <TableCell className="hidden md:table-cell max-w-[240px]">
+                    <TableCell className="hidden xl:table-cell max-w-[240px]">
                       <div className="flex flex-wrap gap-1">
                         {Object.entries(t.tags).slice(0, 4).map(([k, v]) => (
                           <span key={k} className="rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-xs font-mono truncate max-w-[200px]" title={`${k}=${v}`}>{k}={v}</span>
@@ -500,10 +500,10 @@ function TargetsTable({ teamId }: { teamId: number }) {
                         {Object.keys(t.tags).length > 4 && <span className="text-xs text-zinc-500">+{Object.keys(t.tags).length - 4}</span>}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{[t.region, t.account_id].filter(Boolean).join(" · ") || "—"}</TableCell>
+                    <TableCell className="hidden xl:table-cell text-xs text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{[t.region, t.account_id].filter(Boolean).join(" · ") || "—"}</TableCell>
                     <TableCell className="max-w-[300px]">
                       <StatusBadge tone={DECISION_TONE[t.decision.action] ?? "zinc"}>{DECISION_LABEL[t.decision.action] ?? t.decision.action}</StatusBadge>
-                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 truncate" title={t.decision.reason}>{decisionText(t.decision, data.policies)}</p>
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 break-words md:truncate" title={t.decision.reason}>{decisionText(t.decision, data.policies)}</p>
                     </TableCell>
                   </TableRow>
                 ))}

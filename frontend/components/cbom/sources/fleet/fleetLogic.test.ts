@@ -147,7 +147,11 @@ assert.equal(decisionText({ action: "collect", policy_id: 9, matched_policy_ids:
 const inventory = readFileSync(join(__dirname, "InventorySection.tsx"), "utf8");
 assert.ok(inventory.includes("Decision (which policy won)"), "the targets table lost its decision column");
 // On a phone the decision column must be on screen: the secondary columns give way below md (browser QA at 390 px).
-assert.ok(inventory.includes('<TableHead className="hidden md:table-cell">Tags</TableHead>'), "on a phone the decision column is pushed off screen");
+// At 768 px (tablet, with the sidebar) Tags and Where pushed it off screen too: they give way below xl (QA 20-tablet).
+assert.ok(inventory.includes('<TableHead className="hidden xl:table-cell">Tags</TableHead>'), "on a tablet the decision column is pushed off screen");
+assert.ok(inventory.includes('<TableHead className="hidden xl:table-cell">Where</TableHead>'), "on a tablet the decision column is pushed off screen");
+assert.ok(inventory.includes('<TableHead className="hidden md:table-cell">Kind</TableHead>'), "on a phone the decision column is pushed off screen");
+assert.ok(inventory.includes("break-words md:truncate"), "on a phone the winning policy's line is cut");
 assert.ok(!/<TableHead className="hidden[^"]*">Decision/.test(inventory), "the decision column is hidden on small screens");
 assert.ok(inventory.includes("decisionText(t.decision, data.policies)"), "the list does not say which policy won");
 assert.ok(inventory.includes('p.won ? " · won" : " · overridden"'), "the detail does not mark the winner");
