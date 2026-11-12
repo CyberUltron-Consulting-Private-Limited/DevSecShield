@@ -1,0 +1,42 @@
+# Strict known-fail ledger of the CBOM Tier-L gate (DEVILS-ADVOCATE.md §4.1, §4.4; INTERFACES.md §9).
+# Base: dev 83b570b. Every row names the checks it covers (match), the track that flips it (owner) and an issue.
+#   * a failing check no row matches fails the gate;
+#   * a row whose checks all pass is STALE and fails the gate: the PR that fixed it deletes the row;
+#   * a row that matches nothing, or only NOT-RUN checks, fails the gate unless it says not_run_ok.
+# Match keys: any check subject key, or id/gate/kind/reason/verdict; a list means "any of"; <key>_prefix matches a
+# string prefix. Run `cd e2e/cbom && python3 -m harness.gate judge <run>` to see which rows a run holds.
+
+# ---------------------------------------------------------------------------- preconditions on L (CB-03)
+- row: PRE-build-identity
+  gate: [G0]
+  match: {check: [build_health, build_header, build_frontend_meta, build_node_label]}
+  issue: "#TRACKING"
+  owner: CB-03
+  why: "/health has no build field, no X-ZS-Build header, no zs-build meta, node image without ZS_NODE_BUILD (main.py:148)"
+- row: PRE-node-on-L
+  gate: [G3]
+  match: {check: [allowed_diff, node_image_served]}
+  issue: "#TRACKING"
+  owner: CB-03
+  why: "no scan-node image on L (the UI prints registry.zeroshield.ai/cbom/scan-node:1.0), api.dss.test does not
+    resolve inside a container and the lab CA is private: the runner must start the node with more than the allowed diff"
+
+# ---------------------------------------------------------------------------- product rows (DA §4.4)
+- row: KF-2
+  gate: [G4, G5]
+  match: {check: canary_accepts}
+  issue: "#17"
+  owner: "#32"
+  why: "a never-scan entry given by host name still reaches the canary (DA-P2: 7 connections on dev); #32 fixes it"
+- row: KF-9
+  gate: [G11]
+  match: {kind: join, view: export, field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id]}
+  issue: "#TRACKING"
+  owner: CB-06
+  why: "the run export lacks key size, curve, signature algorithm, groups, pqc_class and provenance (R4 p1)"
+- row: KF-9-oracle
+  gate: [G11]
+  match: {kind: oracle, field: pqc_class, reason: export-missing}
+  issue: "#TRACKING"
+  owner: CB-06
+  why: "pqc_class is judged against the oracle from the export, which does not carry it yet"
