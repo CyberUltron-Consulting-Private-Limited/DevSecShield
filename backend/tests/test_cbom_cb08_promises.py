@@ -228,7 +228,7 @@ K8S_EVIDENCE: dict[int, dict[str, tuple[tuple[str, ...], tuple[str, ...]]]] = {
         "ingress TLS hosts and Secret names": (('"/apis/networking.k8s.io/v1/ingresses"', '"secretName"'), ('"ingresses"',)),
         "Istio and Linkerd mTLS policy": (('peerauthentications', 'destinationrules', 'policy.linkerd.io'),
                                           ('"peerauthentications"', '"destinationrules"', '"servers"')),
-        "CA bundles and private keys pasted into ConfigMaps (type and size only)":
+        "CA bundles in ConfigMaps, and private keys pasted into them (type and size only)":
             (('"/api/v1/configmaps"', "embedded_private_keys("), ('"configmaps"',)),
     },
     2: {
@@ -310,29 +310,68 @@ def test_idp_collector_reads_public_metadata_only():
 
 
 # ----------------------------------------------------------------------------- AWS Private CA
-def test_aws_private_ca_connector_is_read_by_its_aws_account():
-    """The AWS account source reads ACM Private CA (aws_collect), so its connector is not 'not available'."""
+READ_BY_AWS = "Read by its AWS account source; nothing separate to collect"
+
+
+def _plan_for(build):
+    """plan_run on SQLite for the sources ``build(session)`` adds (team 1); returns {name: item} and the plan."""
     from sqlmodel import Session, SQLModel, create_engine
 
     from backend.new_models import CbomCollectionSettings, CbomCollectionSource
-    from backend.utilities.cbom_sources import aws_collect
     from backend.utilities.cbom_sources.planning import plan_run
 
-    assert 'client("acm-pca", region)' in Path(aws_collect.__file__).read_text(encoding="utf-8")
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
+
+    def source(session, kind, name, config, **extra):
+        row = CbomCollectionSource(team_id=1, owner_user_id=1, kind=kind, name=name, name_lower=name, config=config, **extra)
+        session.add(row)
+        session.flush()
+        return row
+
     with Session(engine) as session:
         settings = CbomCollectionSettings(team_id=1, aws_external_id="ZS-CB08")
-        aws = CbomCollectionSource(team_id=1, owner_user_id=1, kind="aws_account", name="prod", name_lower="prod", config={"role_arn": "arn:aws:iam::123456789012:role/r"})
-        session.add_all([settings, aws])
-        session.flush()
-        session.add(CbomCollectionSource(team_id=1, owner_user_id=1, kind="ca_connector", name="pca", name_lower="pca",
-                                         config={"provider": "aws_private_ca", "aws_source_id": aws.id}))
-        session.add(CbomCollectionSource(team_id=1, owner_user_id=1, kind="ca_connector", name="venafi", name_lower="venafi",
-                                         config={"provider": "venafi", "api_url": "https://venafi.example"}))
+        session.add(settings)
+        build(session, source)
         session.commit()
         plan = plan_run(session, 1, settings, dt.datetime(2026, 11, 12, 12, 0))
-    by_name = {i.name: i for i in plan.items}
-    assert by_name["pca"].status == "skipped" and by_name["pca"].credits_c == 0
-    assert by_name["pca"].reason == "Read by its AWS account source; nothing separate to collect"
-    assert by_name["venafi"].reason == "Collection for this connector is not available yet" and by_name["venafi"].credits_c == 0
+    return {i.name: i for i in plan.items}, plan
+
+
+ROLE = {"role_arn": "arn:aws:iam::123456789012:role/ZeroShieldCBOMReader"}
+
+
+def test_aws_private_ca_connector_is_read_by_its_aws_account():
+    """The AWS account source reads ACM Private CA (aws_collect), so a connector pointing at a validated account is
+    covered by it: no "not available", no issue, no charge."""
+    from backend.utilities.cbom_sources import aws_collect
+
+    assert 'client("acm-pca", region)' in Path(aws_collect.__file__).read_text(encoding="utf-8")
+
+    def build(session, source):
+        aws = source(session, "aws_account", "prod", ROLE, last_test_status="passed")
+        source(session, "ca_connector", "pca", {"provider": "aws_private_ca", "aws_source_id": aws.id})
+        source(session, "ca_connector", "venafi", {"provider": "venafi", "api_url": "https://venafi.example"})
+
+    items, plan = _plan_for(build)
+    assert items["prod"].status == "queued"
+    assert items["pca"].reason == READ_BY_AWS and items["pca"].status == "covered" and items["pca"].credits_c == 0
+    public = plan.public()
+    assert "pca" not in [i["name"] for i in public["skipped"]], "a covered connector is not an issue to fix"
+    assert public["groups"]["identity"]["skipped"] == 1  # Venafi only
+    assert items["venafi"].reason == "Collection for this connector is not available yet" and items["venafi"].credits_c == 0
+
+
+def test_aws_private_ca_connector_whose_account_is_skipped_or_removed():
+    def build(session, source):
+        aws = source(session, "aws_account", "prod", ROLE)  # never validated: skipped in this plan
+        source(session, "ca_connector", "pca", {"provider": "aws_private_ca", "aws_source_id": aws.id})
+        source(session, "ca_connector", "orphan", {"provider": "aws_private_ca", "aws_source_id": 9999})
+
+    items, plan = _plan_for(build)
+    assert items["prod"].status == "skipped"
+    assert items["pca"].status == "skipped" and items["pca"].reason == (
+        "Not read in this run: AWS account prod is skipped (Validate the AWS role first; only a role that passed "
+        "validation is scanned)")
+    assert items["orphan"].status == "skipped" and items["orphan"].reason == "Not read: its AWS account was removed"
+    assert {"pca", "orphan"} <= {i["name"] for i in plan.public()["skipped"]}

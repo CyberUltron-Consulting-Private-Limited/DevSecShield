@@ -100,6 +100,23 @@ function factsRows(asset: CbomAsset): [string, string][] {
   return out.slice(0, 30);
 }
 
+/** One target that was not fully read: its status, the node's reason and, where there is one, what to do. */
+export function TargetProblemRow({ t }: { t: { target: string; status: string; error?: string | null } }) {
+  const guidance = targetGuidance(t.status, t.error, t.target);
+  return (
+    <li className="flex flex-wrap items-start gap-2 text-xs">
+      <span className="font-mono text-zinc-700 dark:text-zinc-300 break-all">{t.target}</span>
+      <StatusBadge tone={TARGET_TONE[t.status] ?? "red"}>{TARGET_LABEL[t.status] ?? t.status}</StatusBadge>
+      {t.error && <span className="text-zinc-500 break-words min-w-0">{t.error}</span>}
+      {guidance && (
+        <span className="basis-full text-zinc-600 dark:text-zinc-400 break-words" data-testid="run-results-guidance">
+          {guidance}
+        </span>
+      )}
+    </li>
+  );
+}
+
 function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
   const [open, setOpen] = useState<number | null>(null);
   if (jobs.length === 0) return null;
@@ -151,16 +168,7 @@ function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
                   {open === job.job_id && (
                     <ul className="mt-2 space-y-1">
                       {problems.slice(0, 200).map((t, i) => (
-                        <li key={`${t.target}-${i}`} className="flex flex-wrap items-start gap-2 text-xs">
-                          <span className="font-mono text-zinc-700 dark:text-zinc-300 break-all">{t.target}</span>
-                          <StatusBadge tone={TARGET_TONE[t.status] ?? "red"}>{TARGET_LABEL[t.status] ?? t.status}</StatusBadge>
-                          {t.error && <span className="text-zinc-500 break-words min-w-0">{t.error}</span>}
-                          {targetGuidance(t.status, t.error, t.target) && (
-                            <span className="basis-full text-zinc-600 dark:text-zinc-400 break-words" data-testid="run-results-guidance">
-                              {targetGuidance(t.status, t.error, t.target)}
-                            </span>
-                          )}
-                        </li>
+                        <TargetProblemRow key={`${t.target}-${i}`} t={t} />
                       ))}
                     </ul>
                   )}

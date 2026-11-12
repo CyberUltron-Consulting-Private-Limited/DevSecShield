@@ -89,7 +89,7 @@ class PlanItem:
     units: int
     unit: str
     credits_c: int
-    status: str  # queued | skipped
+    status: str  # queued | skipped | covered (read by another source in this plan: an AWS Private CA connector)
     reason: str | None = None
     waiting: bool = False
     # a scan-node job waits for its scan window (the team's, or a server source's own; jobs.job_waiting_reason):
@@ -124,7 +124,7 @@ class Plan:
                 g["credits_c"] += item.credits_c
                 g["queued"] += 1
                 g["units"] += item.units
-            else:
+            elif item.status == "skipped":  # "covered": read by another source of the plan, nothing to fix
                 g["skipped"] += 1
         return {k: {**v, "credits": credits(v.pop("credits_c"))} for k, v in out.items()}
 
@@ -191,9 +191,7 @@ def plan_run(
             item.reason = "Configuration is no longer valid; edit and save it again"
         elif not collectable:
             item.reason = ("Cloud collection is not available yet" if group == "cloud"
-                           # the AWS account source reads ACM Private CA itself (aws_collect "acm-pca")
-                           else "Read by its AWS account source; nothing separate to collect"
-                           if getattr(cfg_model, "provider", None) == "aws_private_ca"
+                           else _AWS_PCA if getattr(cfg_model, "provider", None) == "aws_private_ca"
                            else "Collection for this connector is not available yet")
         elif needs_node and node is None:
             item.reason = "No scan node assigned"
@@ -245,4 +243,29 @@ def plan_run(
             else:
                 item.credits_c = 0
         plan.items.append(item)
+    _aws_private_ca(plan, sources)
     return plan
+
+
+_AWS_PCA = "Read by its AWS account source; nothing separate to collect"
+
+
+def _aws_private_ca(plan: Plan, sources: list[CbomCollectionSource]) -> None:
+    """An AWS Private CA connector is read by the AWS account source it names (aws_collect reads acm-pca with that
+    account's role), so its item says what this plan does with that source (CB-08, review 5876424957)."""
+    by_id = {s.id: s for s in sources}
+    items = {i.source_id: i for i in plan.items}
+    for item in plan.items:
+        if item.reason != _AWS_PCA:
+            continue
+        aws_id = (by_id[item.source_id].config or {}).get("aws_source_id")
+        aws = by_id.get(aws_id) if isinstance(aws_id, int) else None
+        aws_item = items.get(aws.id) if aws is not None and aws.kind == "aws_account" else None
+        if aws is None or aws.kind != "aws_account":
+            item.reason = "Not read: its AWS account was removed"
+        elif aws_item is None:
+            item.reason = f"Not read in this run: AWS account {aws.name} is not in this run"
+        elif aws_item.status != "queued":
+            item.reason = f"Not read in this run: AWS account {aws.name} is skipped ({aws_item.reason})"
+        else:
+            item.status = "covered"

@@ -86,7 +86,7 @@ const K8S_TIER_READS: Record<1 | 2, string[]> = {
     "cert-manager certificates and the issuer each names",
     "ingress TLS hosts and Secret names",
     "Istio and Linkerd mTLS policy",
-    "CA bundles and private keys pasted into ConfigMaps (type and size only)",
+    "CA bundles in ConfigMaps, and private keys pasted into them (type and size only)",
   ],
   2: ["adds the certificate of each TLS Secret (the node drops tls.key without parsing it)"],
 };

@@ -109,10 +109,14 @@ export function nodeInstallNames(nodeName: string): { container: string; volume:
   return { container: `zs-scan-node-${slug}`, volume: `zs-node-${slug}`, release: `zs-scan-node-${slug}` }
 }
 
-/** The scan node accepts only an https:// ZeroShield API (scan_node/zs_scan_node/agent.py: claim answers carry decrypted
- * credentials). On a deployment served over plain HTTP no install command can work, so the UI says this instead. */
+/** The scan node accepts an http:// ZeroShield API only with the lab switch ZS_ALLOW_INSECURE_HTTP=1 (scan_node agent.py:
+ * claim answers carry decrypted credentials; scan_node/README.md). On a plain-HTTP deployment the UI says so and shows
+ * the command only as a test-lab command that carries the switch. */
 export const NODE_API_NOT_HTTPS =
-  "This ZeroShield deployment is not served over HTTPS; scan nodes refuse it. Ask your administrator to serve the API over HTTPS."
+  "This ZeroShield deployment is not served over HTTPS. Scan nodes refuse a plain-HTTP API unless started with ZS_ALLOW_INSECURE_HTTP=1 (test labs only: credentials travel unencrypted)."
+/** zs-ovf-env maps only zs.api_url, zs.registration_token, zs.https_proxy and zs.mode (deploy/node-images). */
+export const OVA_NO_INSECURE_SWITCH =
+  "The OVA has no plain-HTTP switch, so it cannot reach this deployment: use Docker or Helm for a plain-HTTP test lab, or serve the API over HTTPS."
 
 export function nodeApiProblem(apiUrl: string): string | null {
   try {
@@ -130,7 +134,7 @@ export function nodeApiPort(apiUrl: string): string | null {
 
 export function installCommand(
   method: DeployMethod,
-  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string },
+  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
@@ -139,6 +143,7 @@ export function installCommand(
       `docker run -d --name ${names.container} --restart unless-stopped \\`,
       `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
       `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
+      ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
       ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
       `  -v ${names.volume}:/var/lib/zs-node \\`,
       `  ${opts.image}`,
@@ -151,6 +156,7 @@ export function installCommand(
       "  --namespace zs-cbom --create-namespace \\",
       `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
       `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+      ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
       `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
       ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
     ].join("\n")
@@ -164,6 +170,7 @@ export function installCommand(
       "    content: |",
       `      ZS_API_URL=${opts.apiUrl}`,
       `      ZS_REGISTRATION_TOKEN=${opts.token}`,
+      ...(opts.insecureHttp ? ["      ZS_ALLOW_INSECURE_HTTP=1"] : []),
       ...(proxy ? [`      HTTPS_PROXY=${proxy}`] : []),
     ].join("\n")
   }
@@ -220,7 +227,7 @@ export const DEPLOY_SUPPORT: Record<DeployMethod, { proven: boolean; note: strin
 
 /** The Helm command for agent mode: a DaemonSet whose pods each enroll with the agent pool token as their own node
  * (named after the Kubernetes node) and read only that node, from a read-only mount of its file system. */
-export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string }): string {
+export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean }): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const [repo, tag] = opts.image.includes(":") ? [opts.image.slice(0, opts.image.lastIndexOf(":")), opts.image.slice(opts.image.lastIndexOf(":") + 1)] : [opts.image, "latest"]
   return [
@@ -228,6 +235,7 @@ export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; prox
     "  --namespace zs-cbom --create-namespace \\",
     `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
     `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+    ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
     "  --set deployment.enabled=false --set agent.enabled=true \\",
     `  --set agent.poolToken=${shQuote(opts.poolToken)}${proxy ? " \\" : ""}`,
     ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),

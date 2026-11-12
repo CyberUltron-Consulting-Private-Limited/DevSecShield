@@ -20,6 +20,7 @@ import {
   createCbomSource,
   deleteCbomSource,
   getCbomTemplate,
+  getCbomSourcesOverview,
   getCbomSourcesSettings,
   listCbomScanNodes,
   listCbomSources,
@@ -138,8 +139,6 @@ const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
 const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
-// aws_collect reads ACM Private CA with the account's read-only role (planning.py says the same in Review & Run)
-const AWS_PCA_READ = "Read when that AWS account is scanned; nothing separate to collect.";
 // idp_collect reads public OIDC / SAML metadata and sends no credential (backend/tests/test_cbom_cb08_promises.py)
 const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata only; a secret is not used yet.";
 // Cloud, CLM and IdP secrets never go to a scan node, so the node wording of the default hint would be wrong here.
@@ -341,6 +340,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
     retry: 1,
     refetchInterval: 30000,
   });
+  // The planner's own sentence for an AWS Private CA connector: its AWS account source reads it (aws_collect
+  // "acm-pca"), is skipped in this run, or was removed (planning._aws_private_ca). One source of truth with Review & Run.
+  const overviewQuery = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled,
+    retry: 1,
+    refetchInterval: 30000,
+  });
+  const planReason = (sourceId: number) => overviewQuery.data?.plan.items?.find((i) => i.source_id === sourceId)?.reason ?? null;
 
   const resetForm = (provider?: Provider) =>
     setForm((f) => ({ provider: provider ?? f.provider, source: null, nonce: f.nonce + 1 }));
@@ -640,8 +649,8 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <NodeTestLine teamId={teamId} source={s} />
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
-                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"} ·{" "}
-                          {AWS_PCA_READ}
+                          through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"}
+                          {planReason(s.id) ? ` · ${planReason(s.id)}` : ""}
                         </span>
                       ) : (
                         <span className="text-xs text-zinc-500">
@@ -2410,8 +2419,8 @@ function MetadataUrls({
   return (
     <div className="space-y-4">
       <p className="text-xs text-zinc-500">
-        No admin access? Public metadata is enough to read signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when
-        you press Test and during each run; only public https addresses can be read.
+        Public metadata is all ZeroShield reads: signing keys and their rotation. ZeroShield&apos;s cloud reads these URLs when you
+        press Test and during each run; only public https addresses can be read.
       </p>
       {input("saml_metadata", "SAML metadata URL", "https://login.example.com/saml/metadata", "cloud-saml")}
       {input("oidc_discovery", "OIDC discovery URL", "https://login.example.com/.well-known/openid-configuration", "cloud-oidc")}
