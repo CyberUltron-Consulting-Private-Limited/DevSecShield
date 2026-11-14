@@ -146,15 +146,16 @@ MIX = [
     _asset("certificate", "/etc/ssl/certs/ca-bundle.crt", facts={"trust_store": True, "count": 140}),
     _asset("tls_endpoint", "10.20.0.9:443", target="10.20.0.9", facts={"tls": None, "detail": "no TLS version accepted"}),
     _asset("private_key", "/etc/ssl/private/enc.key", facts={"encrypted": True, "detail": "passphrase-protected"}),
-    _asset("kms_key", "arn:aws:kms:eu-west-1:1:key/h", target="aws", facts={"key_spec": "HMAC_256"},
-           algorithm="HMAC_256"),
+    # no public key: was a KMS HMAC key, which CB-33 PR-C (#144) judges symmetric (quantum-safe) when stored
+    _asset("database_config", "pg:5432/password_encryption", target="db1",
+           facts={"password_encryption": "scram-sha-256"}),
     _asset("certificate", "/etc/ssl/composite.pem", facts={"key_alg_oid": "1.3.6.1.5.5.7.6.40", "subject": "CN=c",
                                                            "issuer": "CN=c", "not_after": "2030-01-01T00:00:00Z"},
            algorithm="MLDSA44-ECDSA-P256-SHA256"),
 ]
 EXPECTED = {"/etc/ssl/rsa.pem": "quantum-vulnerable", "/etc/ssl/odd.pem": "unknown",
             "/etc/ssl/certs/ca-bundle.crt": "not-applicable", "10.20.0.9:443": "unknown",
-            "/etc/ssl/private/enc.key": "unknown", "arn:aws:kms:eu-west-1:1:key/h": "not-applicable",
+            "/etc/ssl/private/enc.key": "unknown", "pg:5432/password_encryption": "not-applicable",
             "/etc/ssl/composite.pem": "hybrid"}
 
 
