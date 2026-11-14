@@ -987,7 +987,7 @@ def test_serial_collect_aws_walks_past_200_accounts_too(org, monkeypatch):
     client, mgmt = org
     _members(client, 249)
     monkeypatch.setattr(AC, "_region_services", lambda acct, region, label, emit, cfg, **kw: [("kms", "ok", None)])
-    monkeypatch.setattr(AC, "_global_services", lambda acct, label, emit: [("iam", "ok", None)])
+    monkeypatch.setattr(AC, "_global_services", lambda acct, label, emit, **_k: [("iam", "ok", None)])
     cfg = {"scope": "organization", "role_arn": f"arn:aws:iam::{mgmt}:role/ZeroShieldCBOMReader", "regions": ["us-east-1"]}
     result = AC.collect_aws(1, cfg, "zs-ext-0001", lambda a: None, lambda: None)
     assert result["accounts"] == 250 and result["counts"] == {"total": 500, "ok": 500, "partial": 0, "failed": 0,

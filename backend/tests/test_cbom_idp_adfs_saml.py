@@ -135,7 +135,7 @@ def test_certificate_in_jwks_and_saml_metadata_is_one_asset_with_both_publicatio
     kid_a = next(k for k in keys if k["facts"].get("kid") == "kidA")
     assert kid_a["facts"]["certificate_sha256"] == A_SHA256 and kid_a["facts"]["not_after"] == "2036-01-01T00:00:00Z"
     assert [p["document"] for p in kid_a["facts"]["published_in"]] == ["jwks", "saml"]
-    # every document is still counted as read, with the rows it contributed before de-duplication
+    # every document is still counted as read
     assert [t["status"] for t in out["targets"]] == ["ok", "ok"]
 
 
@@ -152,6 +152,29 @@ def test_a_run_stores_the_shared_certificate_once(api, world, monkeypatch):  # n
     with Session(engine) as s:
         job = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).one()
     assert job.asset_count == len(rows)
+
+
+def test_per_document_asset_counts_add_up_to_the_stored_rows(api, world, monkeypatch):  # noqa: F811
+    """Staging QA B6-4: the ADFS test said 6 + 6 assets for 2 certificates + 2 keys (+ the IdP rows): each document
+    was counted before merge_publications.  A row belongs to the first document that published it; the copies a later
+    document repeats are counted as ``already_found`` there, never twice."""
+    _serve(monkeypatch, ADFS_DOCS)
+    out = idp_collect.collect_idp({"provider": "adfs", "base_url": ADFS}, "ADFS")
+    kept = [a for a in out["assets"] if a["type"] != "coverage"]
+    assert sum(t["assets"] for t in out["targets"]) == len(kept), out["targets"]
+    oidc, saml = out["targets"]
+    # JWKS: IdP row + kidA (cert A + key A) ; SAML: IdP row + cert B + key B, and A (cert + key) published again
+    assert (oidc["assets"], saml["assets"]) == (3, 3), out["targets"]
+    assert (oidc["already_found"], saml["already_found"]) == (0, 3), out["targets"]
+
+    engine, _ids = world
+    assert api("POST", f"{BASE}/items", json={"kind": "idp", "name": "ADFS",
+                                              "config": {"provider": "adfs", "base_url": ADFS}}).status_code == 201
+    run = _run(api, engine, "adfs-run-counts")
+    rows = _rows(engine, run.id)
+    with Session(engine) as s:
+        job = s.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).one()
+    assert sum(t["assets"] for t in job.result["targets"]) == len(rows) == job.asset_count
 
 
 # ----------------------------------------------------------------------------- C10b: unreadable certificate

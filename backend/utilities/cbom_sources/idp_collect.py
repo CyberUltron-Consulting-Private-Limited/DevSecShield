@@ -316,12 +316,28 @@ def idp_test_verdict(out: dict[str, Any]) -> tuple[str, str]:
     return ("failed" if partial and not keys else "partial"), summary[:400]
 
 
+def _count_after_merge(targets: list[dict[str, Any]], origin: dict[int, dict[str, Any]],
+                       merged: list[dict[str, Any]]) -> None:
+    """Each document's ``assets`` = the rows it adds to what is stored (after ``merge_publications``), so the documents'
+    counts add up to the job's rows; the copies of rows an earlier document already published are its
+    ``already_found`` (staging QA B6-4: the ADFS test said 6 + 6 for 3 keys and 3 certificates)."""
+    kept = {id(a) for a in merged}
+    for target in targets:
+        target["assets"] = 0
+    for key, target in origin.items():
+        if key in kept:
+            target["assets"] += 1
+        else:
+            target["already_found"] += 1
+
+
 def collect_idp(cfg: dict[str, Any], label: str) -> dict[str, Any]:
     """Assets plus per-document target rows for one IdP source.  Never raises for a bad document.  A document read
     with certificates that could not be parsed is a ``partial`` target naming the parser's error."""
     started = _dt.datetime.utcnow()
     assets: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
+    origin: dict[int, dict[str, Any]] = {}  # id(asset) -> the target row of the document that published it
     for kind, url in discovery_urls(cfg):
         t0 = _dt.datetime.utcnow()
         try:
@@ -331,19 +347,22 @@ def collect_idp(cfg: dict[str, Any], label: str) -> dict[str, Any]:
             targets.append({"target": url, "status": "partial" if errors else "ok",
                             "error": (f"{len(errors)} certificate(s) {errors[0].removeprefix('certificate ')}"[:256]
                                       if errors else None),
-                            "assets": len(found),
+                            "assets": len(found), "already_found": 0,
                             "duration_ms": int((_dt.datetime.utcnow() - t0).total_seconds() * 1000)})
+            origin.update((id(a), targets[-1]) for a in found)
         except FetchError as exc:
             # A provider without one of the two documents (e.g. Okta has no tenant SAML metadata) is not a failure
             # of the whole source; it is listed, never silent.
             status = "timeout" if isinstance(exc, FetchTimeout) else "error"  # a timeout is never "not JSON" (C10a)
-            targets.append({"target": url, "status": status, "error": str(exc)[:256], "assets": 0,
+            targets.append({"target": url, "status": status, "error": str(exc)[:256], "assets": 0, "already_found": 0,
                             "duration_ms": int((_dt.datetime.utcnow() - t0).total_seconds() * 1000)})
             assets.append({"type": "coverage", "target": label, "location": url,
                            "facts": {"check": f"{kind.upper()} metadata", "status": status, "detail": str(exc)[:200]}})
+    merged = merge_publications(assets)
+    _count_after_merge(targets, origin, merged)
     ok = sum(1 for t in targets if t["status"] == "ok")
     partial = sum(1 for t in targets if t["status"] == "partial")
-    return {"assets": merge_publications(assets), "targets": targets,
+    return {"assets": merged, "targets": targets,
             "counts": {"total": len(targets), "ok": ok, "partial": partial, "failed": len(targets) - ok - partial,
                        "skipped": 0},
             "duration_s": int((_dt.datetime.utcnow() - started).total_seconds())}

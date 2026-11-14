@@ -350,7 +350,13 @@ def test_scope_items_of_a_run(api, world):
     assert wait["reason"] == "source_not_read" and wait["detail"] == "collection not finished"
     assert by_key[f"source:{w['S-zero']['uid']}"]["reason"] == "excluded_by_choice"
     assert not [k for k in by_key if k.startswith(f"coverage:{w['S-ca']['uid']}:")]  # no AD CS CA: nothing there
-    assert by_key[f"coverage:{net}:10.231.0.33:by_choice"]["reason"] == "excluded_by_choice"
+    # CB-11: a never-scan target keeps the signed reason code and is labelled excluded by policy, not a gap
+    policy = by_key[f"coverage:{net}:10.231.0.33:excluded"]
+    assert policy["reason"] == "excluded_by_choice" and policy["policy"] is True
+    assert policy["label"] == "excluded by policy" and policy["detail"].startswith("excluded by policy")
+    zero = by_key[f"source:{w['S-zero']['uid']}"]
+    assert zero["policy"] is True and zero["detail"].startswith("excluded by policy")
+    assert "policy" not in by_key[f"source:{w['S-off']['uid']}"]  # a disabled source is a choice, not the list
     # sources: failed job, truncated job, lost assets, skipped by the planner (HF-5, HF-6)
     assert by_key[f"source:{w['S-fail']['uid']}"]["reason"] == "source_not_read"
     assert by_key[f"source:{w['S-trunc']['uid']}"]["reason"] == "source_truncated"

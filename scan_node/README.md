@@ -31,6 +31,14 @@ would run as that node.
 The ZeroShield server serves the image file, the Helm chart and the OVA/AMI build kits to members of the team
 (`backend/routers/cbom_node_artifacts.py`); how they are made: [Without registry access](#without-registry-access).
 
+**Update a node** (Scan nodes shows "Update available" when a node is not running the server's node build): load
+the new image (download it again from Add scan node, or `docker pull` the reference it shows), then recreate the
+container with the same name, settings and volume and without `ZS_REGISTRATION_TOKEN`:
+`docker rm -f zs-scan-node-dc-mumbai-01 && docker run -d --pull never --name zs-scan-node-dc-mumbai-01 --restart
+unless-stopped -e ZS_API_URL='...' -v zs-node-dc-mumbai-01:/var/lib/zs-node localhost/zeroshield/cbom-scan-node:1.0.0`.
+The volume keeps the node token and keys, so the node is not registered again. Helm: `helm upgrade` the release with
+the new chart (`--reuse-values`).
+
 On first start the node creates an ed25519 SSH key in the volume and exchanges the single-use registration
 token for its own node token. The public key is shown in ZeroShield: add it to the `zs-cbom` user's
 `authorized_keys` on the Linux servers you want collected (the default "node key" credential).

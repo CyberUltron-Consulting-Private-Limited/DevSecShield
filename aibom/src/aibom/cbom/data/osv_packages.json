@@ -1,0 +1,35 @@
+{
+ "note": "Crypto libraries the offline OSV snapshot covers (CB-29), per ecosystem key (maven, nuget, npm, pypi, go, cargo). Names as OSV spells them; matching is case-insensitive. Adding a package here and rebuilding the snapshot (python -m aibom.cbom.osv_snapshot build) is all it takes.",
+ "packages": {
+  "maven": [
+   "org.bouncycastle:bcprov-jdk15on", "org.bouncycastle:bcprov-jdk18on", "org.bouncycastle:bcprov-jdk15to18",
+   "org.bouncycastle:bcprov-jdk14", "org.bouncycastle:bcpkix-jdk15on", "org.bouncycastle:bcpkix-jdk18on",
+   "org.bouncycastle:bc-fips", "com.nimbusds:nimbus-jose-jwt", "io.jsonwebtoken:jjwt", "com.auth0:java-jwt",
+   "org.apache.santuario:xmlsec", "com.google.crypto.tink:tink", "org.bitbucket.b_c:jose4j",
+   "org.apache.wss4j:wss4j-ws-security-common", "commons-codec:commons-codec"
+  ],
+  "nuget": [
+   "BouncyCastle", "BouncyCastle.Cryptography", "Portable.BouncyCastle", "BouncyCastle.NetCore",
+   "System.IdentityModel.Tokens.Jwt", "Microsoft.IdentityModel.JsonWebTokens", "Microsoft.IdentityModel.Tokens",
+   "System.Security.Cryptography.Pkcs", "System.Security.Cryptography.Xml", "jose-jwt", "JWT"
+  ],
+  "npm": [
+   "node-forge", "jsonwebtoken", "jose", "elliptic", "crypto-js", "node-rsa", "jsrsasign", "sshpk", "tweetnacl",
+   "bcrypt", "bcrypt-nodejs", "secp256k1", "browserify-sign", "xml-crypto", "node-jose", "jws", "jwa", "openpgp"
+  ],
+  "pypi": [
+   "cryptography", "pycrypto", "pycryptodome", "pycryptodomex", "pyopenssl", "pyjwt", "python-jose", "ecdsa", "rsa",
+   "paramiko", "m2crypto", "pynacl", "jwcrypto", "authlib", "passlib", "signxml"
+  ],
+  "go": [
+   "golang.org/x/crypto", "github.com/dgrijalva/jwt-go", "github.com/golang-jwt/jwt", "github.com/golang-jwt/jwt/v4",
+   "github.com/golang-jwt/jwt/v5", "github.com/square/go-jose", "gopkg.in/square/go-jose.v2",
+   "github.com/go-jose/go-jose/v3", "github.com/go-jose/go-jose/v4", "github.com/lestrrat-go/jwx",
+   "github.com/lestrrat-go/jwx/v2", "github.com/cloudflare/circl", "github.com/russellhaering/goxmldsig"
+  ],
+  "cargo": [
+   "openssl", "ring", "rustls", "ed25519-dalek", "x25519-dalek", "curve25519-dalek", "rsa", "aes-gcm",
+   "chacha20poly1305", "jsonwebtoken", "libsecp256k1", "sodiumoxide", "ecdsa", "p256"
+  ]
+ }
+}
