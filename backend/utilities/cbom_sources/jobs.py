@@ -300,6 +300,10 @@ def create_test_job(
         parsed = T.parse_targets((source.config or {}).get("targets") or [], allow_empty=True)
         excl = T.parse_exclusions(((source.config or {}).get("exclusions") or []) + params["exclusions"])
         params["samples"] = T.sample_targets(parsed, excl, 5)
+        if not params["samples"]:
+            # every target is on a never-scan list (N10): the node still gets a few of them, refuses each one
+            # itself (never-scan wins there) and reports why, so the test reads "skipped", never "passed: 0 of 0"
+            params["samples"] = parsed.normalized[:5]
     job = CbomCollectionJob(
         team_id=source.team_id, source_id=source.id, node_id=source.node_id, kind="test_connection",
         params=params, source_version=source.row_version, created_by_user_id=user_id, created_at=now,
@@ -658,6 +662,27 @@ def cancel_ids_for_node(session: Session, node: CbomScanNode, settings: CbomColl
     return out
 
 
+def window_ends_for_node(session: Session, node: CbomScanNode, settings: CbomCollectionSettings,
+                         now: _dt.datetime) -> dict[str, str]:
+    """For each job the node runs that has a scan window: when that window ends, as ``now`` when it is closed now (N4,
+    14 Nov 2026: the customer closed the window while a sweep ran, and the job kept scanning for 156 s).  The node
+    moves the job's deadline to it (never later), so the job stops at its next connection with ``skipped_window``
+    outcomes for the rest; what it read is kept and refunded by the usual rules.  Connection tests have no window."""
+    out: dict[str, str] = {}
+    for job in session.exec(select(CbomCollectionJob).where(
+            CbomCollectionJob.node_id == node.id, CbomCollectionJob.status == "claimed",
+            CbomCollectionJob.kind != "test_connection")).all():
+        source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
+        grid = _job_window(source, settings)
+        if not window_allows(grid, settings.window_timezone, now):
+            ends: _dt.datetime | None = now
+        else:
+            ends = window_end(grid, settings.window_timezone, now)
+        if ends is not None:
+            out[str(job.id)] = ends.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return out
+
+
 # ----------------------------------------------------------------------------- finish
 def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.datetime) -> None:
     """Copy a test job's outcome onto its source, but only if it is still the newest test."""
@@ -668,7 +693,13 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
         return
     result = job.result or {}
     samples = result.get("samples") if isinstance(result.get("samples"), list) else None
-    if job.status == "success" and samples:
+    never = [s for s in samples or [] if isinstance(s, dict) and s.get("status") == "skipped_never_scan"]
+    if job.status == "success" and samples and len(never) == len(samples):
+        # N10: every target is on the never-scan list: nothing was tested, and nothing failed either
+        why = str(never[0].get("note") or never[0].get("error") or "").strip()
+        status, summary = "skipped", (f"Skipped: on the never-scan list ({why})" if why else
+                                      "Skipped: on the never-scan list")[:512]
+    elif job.status == "success" and samples:
         ok = sum(1 for s in samples if isinstance(s, dict) and s.get("status") in ("ready", "ok", "passed"))
         status = "passed" if ok == len(samples) else ("failed" if ok == 0 else "partial")
         summary = f"{ok} of {len(samples)} samples ready"
@@ -685,6 +716,10 @@ def _test_result_from_job(session: Session, job: CbomCollectionJob, now: _dt.dat
         if notes and not (ok == 0 and silent and source.kind == "network_range"):
             # the first reason, so lists that show only the summary still say why
             summary = f"{summary}: {notes[0]}"[:512]
+    elif job.status == "success" and isinstance(result.get("samples"), list) and job.source_id is not None and (
+            source.kind == "network_range" or KINDS[source.kind].group == "servers" or source.kind == "appliance"):
+        # a sampled test that sampled nothing proved nothing: never "passed: 0 of 0 samples ready" (N10)
+        status, summary = "error", "No target was tested: the scan node had no sample to try"
     elif job.status == "success":
         status, summary = "passed", str(result.get("summary") or "Connection test passed")[:512]
     elif job.status == "cancelled":
