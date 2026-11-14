@@ -1,6 +1,7 @@
 "use client";
 
-// Source metadata: owner, application, data classification and data lifetime (next to business criticality). They
+// Source metadata: owner, application, data classification, data lifetime and who operates it (next to business
+// criticality). They
 // describe the source, not how it is reached, so saving them never cancels a job or resets the connection test. A
 // form block for the source tabs, and a bulk editor for Review & Run.
 
@@ -17,9 +18,19 @@ import { listCbomSources, updateCbomSource, type CbomSource } from "@/utils/back
 import { cbomSourcesKeys } from "./keys";
 import { EXPOSURE_CHOICES, exposureFrom, withMetadata, type ExposureChoice } from "./logic";
 import { Field, SectionCard, StatusBadge, Truncate } from "./shared";
+import { Tip } from "@/components/cbom/grade/Tip";
 
 export const CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
+
+/** Who runs what the source reaches (CB-24): a vendor-operated source's findings are at least vendor-fixed.
+ * Not set = the team (the backend's default). */
+export const OPERATED_BY = ["us", "vendor"] as const;
+export type OperatedBy = (typeof OPERATED_BY)[number];
+export const OPERATED_BY_LABEL: Record<OperatedBy, string> = {
+  us: "Our team",
+  vendor: "A vendor (SaaS or managed service)",
+};
 
 export interface SourceMetadata {
   owner: string;
@@ -27,6 +38,7 @@ export interface SourceMetadata {
   data_classification: Classification | "";
   data_lifetime_years: string;
   environment: string;
+  operated_by: OperatedBy | "";
 }
 
 export function metadataFrom(config: Record<string, unknown> | null | undefined): SourceMetadata {
@@ -38,6 +50,7 @@ export function metadataFrom(config: Record<string, unknown> | null | undefined)
       ? (c.data_classification as Classification) : "",
     data_lifetime_years: typeof c.data_lifetime_years === "number" ? String(c.data_lifetime_years) : "",
     environment: typeof c.environment === "string" ? c.environment : "",
+    operated_by: (OPERATED_BY as readonly string[]).includes(String(c.operated_by)) ? (c.operated_by as OperatedBy) : "",
   };
 }
 
@@ -51,6 +64,7 @@ export function metadataConfig(m: SourceMetadata): Record<string, unknown> | str
     data_classification: m.data_classification || null,
     data_lifetime_years: years === "" ? null : Number(years),
     environment: m.environment.trim() || null,
+    operated_by: m.operated_by || null,
   };
 }
 
@@ -85,6 +99,20 @@ export function MetadataFields({ value, onChange, idPrefix }: {
       <Field label="Environment" htmlFor={`${idPrefix}-environment`} hint="As your CMDB names it: production, staging, ...">
         <Input id={`${idPrefix}-environment`} maxLength={32} value={value.environment}
                onChange={(e) => set({ environment: e.target.value })} />
+      </Field>
+      <Field label="Operated by" htmlFor={`${idPrefix}-operated-by`}
+             hint="A vendor-operated source's findings are at least vendor-fixed (crypto-agility)">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={value.operated_by || "unset"}
+                  onValueChange={(v) => set({ operated_by: v === "unset" ? "" : (v as OperatedBy) })}>
+            <SelectTrigger id={`${idPrefix}-operated-by`} className="cursor-pointer min-w-0 flex-1" data-testid={`${idPrefix}-operated-by`}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unset" className="cursor-pointer">Not set (our team)</SelectItem>
+              {OPERATED_BY.map((o) => <SelectItem key={o} value={o} className="cursor-pointer">{OPERATED_BY_LABEL[o]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Tip id="cbom.source.operated_by" />
+        </div>
       </Field>
     </div>
   );
@@ -157,7 +185,7 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: cbomSourcesKeys.sources(teamId, "all"), queryFn: () => listCbomSources(teamId), retry: 1 });
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [draft, setDraft] = useState<SourceMetadata>({ owner: "", application: "", data_classification: "", data_lifetime_years: "", environment: "" });
+  const [draft, setDraft] = useState<SourceMetadata>({ owner: "", application: "", data_classification: "", data_lifetime_years: "", environment: "", operated_by: "" });
   const [criticality, setCriticality] = useState("keep");
   const [error, setError] = useState<string | null>(null);
   const sources = query.data?.sources ?? [];
@@ -168,6 +196,7 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
       if (draft.application.trim()) changes.application = draft.application.trim();
       if (draft.data_classification) changes.data_classification = draft.data_classification;
       if (draft.environment.trim()) changes.environment = draft.environment.trim();
+      if (draft.operated_by) changes.operated_by = draft.operated_by;
       if (draft.data_lifetime_years.trim()) {
         const parsed = metadataConfig(draft);
         if (typeof parsed === "string") throw new Error(parsed);
@@ -212,6 +241,7 @@ export function SourceMetadataCard({ teamId }: { teamId: number }) {
                 {m.data_classification && <StatusBadge tone={m.data_classification === "restricted" ? "red" : "zinc"}>{m.data_classification}</StatusBadge>}
                 {m.data_lifetime_years && <span className="text-xs text-zinc-500">· {m.data_lifetime_years} y</span>}
                 {m.environment && <span className="text-xs text-zinc-500">· {m.environment}</span>}
+                {m.operated_by === "vendor" && <span className="text-xs text-zinc-500">· vendor-operated</span>}
               </li>
             );
           })}
