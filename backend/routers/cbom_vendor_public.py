@@ -31,7 +31,8 @@ def _lookup(session: Session, token: str) -> CbomEvidenceVendor:
         raise _GONE
     now = utcnow()
     row = session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.link_token_hash == sha256_hex(token))).first()
-    if row is None or row.answered_at is not None or row.link_expires_at is None or row.link_expires_at <= now:
+    # single use: answering clears the token hash; a vendor that answered before can answer a new link (a refresh)
+    if row is None or row.link_expires_at is None or row.link_expires_at <= now:
         raise _GONE
     return row
 
@@ -67,11 +68,10 @@ def _answer(token: str, body: VendorAnswer) -> dict:
             raise HTTPException(status_code=400, detail=str(exc)) from None
         if not answers:
             raise HTTPException(status_code=400, detail="Answer at least one question")
-        confidence = "Q2" if body.evidence_url else "Q1"
+        confidence = "E2" if body.evidence_url else "E1"  # documented with an evidence link, else self-attested
         changed = session.exec(
             update(CbomEvidenceVendor)
             .where(CbomEvidenceVendor.id == row.id, CbomEvidenceVendor.link_token_hash == sha256_hex(token),
-                   CbomEvidenceVendor.answered_at.is_(None),  # type: ignore[union-attr]
                    CbomEvidenceVendor.link_expires_at > now)
             .values(answered_at=now, answers=answers, evidence_url=body.evidence_url, confidence=confidence,
                     link_token_hash=None, row_version=row.row_version + 1, last_updated=now)
@@ -81,8 +81,8 @@ def _answer(token: str, body: VendorAnswer) -> dict:
         audit(session, team_id=row.team_id, actor_type="vendor", actor_id=row.id, action="vendor.answer",
               object_type="vendor", object_id=row.id, changed_fields=answers.keys())
         session.commit()
-        log("vendor answered", team=row.team_id, vendor=row.id)
-        return {"received": True, "confidence": confidence}
+        log("vendor answered", team=row.team_id, vendor=row.id, level=confidence, refresh=bool(row.answered_at))
+        return {"received": True}  # the vendor is not told the team's internal level (CB-18 EC-12)
 
 
 @router.post("/cbom/vendor-questionnaire/{token}", dependencies=[Depends(vendor_limiter)],

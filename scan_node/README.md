@@ -7,22 +7,29 @@ login) or only performs TLS/SSH handshakes. It calls **out** to ZeroShield over 
 
 ## Install
 
-Create a node in ZeroShield (**CBOM Sources → Scan nodes → Add scan node**) and run the command it shows:
+Create a node in ZeroShield (**CBOM Sources → Scan nodes → Add scan node**), download the image file there
+(**Download scan node image**: `scan-node-<version>.tar.gz` and its `.sha256`), and run the commands it shows:
 
 ```sh
-docker run -d --name zs-scan-node-dc-mumbai-01 --restart unless-stopped \
+sha256sum -c scan-node-1.0.0.tar.gz.sha256
+docker load -i scan-node-1.0.0.tar.gz          # loads localhost/zeroshield/cbom-scan-node:1.0.0
+docker run -d --pull never --name zs-scan-node-dc-mumbai-01 --restart unless-stopped \
   -e ZS_API_URL='https://api.zeroshield.ai' \
   -e ZS_REGISTRATION_TOKEN='zsr_…' \
   -v zs-node-dc-mumbai-01:/var/lib/zs-node \
-  registry.zeroshield.ai/cbom/scan-node:1.0
+  localhost/zeroshield/cbom-scan-node:1.0.0
 ```
+
+`--pull never`: Docker runs the image it loaded from the file and never looks for that name in a registry. When the
+ZeroShield server names a registry customers can pull the image from (`CBOM_NODE_IMAGE_REF`), the wizard also shows
+a `docker run` with that image instead.
 
 The container, its volume (and the Helm release) are named after the node (`dc-mumbai-01` here), so two nodes can
 run on one host: the volume holds the node's credential and SSH key, and a node started on another node's volume
 would run as that node.
 
-A host that cannot pull from `registry.zeroshield.ai` (an air-gapped site, or before the image is published there)
-loads the image from a file first: see [Without registry access](#without-registry-access).
+The ZeroShield server serves the image file, the Helm chart and the OVA/AMI build kits to members of the team
+(`backend/routers/cbom_node_artifacts.py`); how they are made: [Without registry access](#without-registry-access).
 
 On first start the node creates an ed25519 SSH key in the volume and exchanges the single-use registration
 token for its own node token. The public key is shown in ZeroShield: add it to the `zs-cbom` user's
@@ -116,16 +123,17 @@ are reported, not read.
 
 ### Without registry access
 
-Each release is also published as a file. Build it from the repository with `make node-image VERSION=<version>`
-(the same as `scripts/release/scan_node_image.sh build <version>`, or the **Scan node image** workflow): it writes
-`dist/scan-node/scan-node-<version>.tar.gz` and its `.sha256`. `<version>` is what the node reports (with its
+The image is released as a file; customers download it from Add scan node. Internally it is built with
+`make node-image VERSION=<version>` (the same as `scripts/release/scan_node_image.sh build <version>`, or the
+**Scan node image** workflow; `scripts/deploy/staging.sh node-artifacts` builds it with the chart and kits for a
+deploy): it writes `dist/scan-node/scan-node-<version>.tar.gz` and its `.sha256`. `<version>` is what the node reports (with its
 commit, e.g. `1.1.0+0a1b2c3d4e5f`): a digit, then up to 18 digits, letters, dots or dashes; other values are
 refused. Copy both files to the host, check the file, and load
-it; then run the install command unchanged (Docker uses the loaded image and does not pull):
+it; then run the install command (`--pull never`: Docker uses the loaded image and does not pull):
 
 ```sh
 sha256sum -c scan-node-<version>.tar.gz.sha256
-docker load -i scan-node-<version>.tar.gz     # registry.zeroshield.ai/cbom/scan-node:<version>
+docker load -i scan-node-<version>.tar.gz     # localhost/zeroshield/cbom-scan-node:<version>
 ```
 
 The image installs `requirements.lock`: every Python package pinned with sha256 hashes. After editing

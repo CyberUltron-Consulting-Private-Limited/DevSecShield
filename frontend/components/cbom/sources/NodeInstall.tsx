@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 
 import { TableCell, TableRow } from "@/components/ui/table";
 
-import { OVA_NO_INSECURE_SWITCH, helmAgentCommand, installCommand, labSwitchHelps, nodeApiPort, type DeployMethod } from "./logic";
+import { OVA_NO_INSECURE_SWITCH, helmAgentCommand, installCommand, labSwitchHelps, nodeApiPort, type DeployMethod, type NodeImage } from "./logic";
 import { CodeSnippet } from "./shared";
 
 export const LAB_ONLY_WARNING =
@@ -42,17 +42,20 @@ export function NodeInstallCommand({
   name,
   proxyUrl,
   image,
+  source,
 }: {
   apiUrl: string;
   method: DeployMethod;
   token: string;
   name: string;
   proxyUrl?: string | null;
+  /** the image to run: the name the downloaded file loads as (default), or a registry image with source.pull */
   image: string;
+  source?: Omit<NodeImage, "image">;
 }) {
   const lab = labSwitchHelps(apiUrl);
   const language = method === "ami" ? "yaml" : "bash";
-  const code = installCommand(method, { token, apiUrl, proxyUrl, image, name, insecureHttp: lab && method !== "ova" });
+  const code = installCommand(method, { token, apiUrl, proxyUrl, image, name, insecureHttp: lab && method !== "ova", ...source });
   if (!lab) return <CodeSnippet code={code} language={language} />;
   if (method === "ova") {
     return (
@@ -70,9 +73,11 @@ export function NodeInstallCommand({
 }
 
 /** The Helm command for a host-agent pool token: the token is always shown. */
-export function PoolHelmCommand({ apiUrl, poolToken, image, proxyUrl }: { apiUrl: string; poolToken: string; image: string; proxyUrl?: string | null }) {
+export function PoolHelmCommand({ apiUrl, poolToken, image, proxyUrl, source }: {
+  apiUrl: string; poolToken: string; image: string; proxyUrl?: string | null; source?: Omit<NodeImage, "image">;
+}) {
   const lab = labSwitchHelps(apiUrl);
-  const code = helmAgentCommand({ poolToken, apiUrl, image, proxyUrl, insecureHttp: lab });
+  const code = helmAgentCommand({ poolToken, apiUrl, image, proxyUrl, insecureHttp: lab, ...source });
   if (!lab) return <CodeSnippet code={code} language="bash" />;
   return (
     <LabOnly>

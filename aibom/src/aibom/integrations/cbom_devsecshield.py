@@ -116,8 +116,13 @@ def _legacy_strength(row: dict[str, Any]) -> str:
 
 
 def _legacy_quantum_safe(row: dict[str, Any]) -> bool | None:
-    """``True``/``False`` for algorithm assets, ``None`` (N/A) otherwise."""
+    """``True``/``False`` for algorithm assets, ``None`` (not judged) otherwise.
+
+    An algorithm the rule base does not know is not judged either: it is never
+    counted as quantum-safe (CB-18 HF-1)."""
     if row.get("asset_type") != "algorithm":
+        return None
+    if row.get("primitive") in (None, "", "unknown"):
         return None
     return not row.get("quantum_vulnerable")
 

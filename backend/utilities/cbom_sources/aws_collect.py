@@ -26,6 +26,8 @@ from backend.utilities.cbom_sources.aws_validate import _boto, _code
 from backend.utilities.cbom_sources.common import log, new_ref
 from backend.utilities.cbom_sources.idp_collect import saml_assets_from_xml
 from backend.utilities.cbom_sources.kinds import aws_account_id
+from backend.utilities.cbom_sources.lab_mode import LAB_MODE, own_account_decision
+from backend.utilities.cbom_sources.templates import zeroshield_account_id
 
 PER_SERVICE_CAP = 1000
 GLOBAL_REGION = "us-east-1"
@@ -103,14 +105,29 @@ def _gap(label: str, location: str, check: str, status: str, detail: str | None,
 
 
 class _GapTally:
-    """Passes every asset on and counts the coverage gaps that make a target partial (not the ``by_choice`` ones)."""
+    """Passes every asset on and counts what the coverage gaps left unread, which makes a target partial: not the
+    ``by_choice`` rows (an option left off) nor the ``not_reported`` ones (a state in which AWS reports nothing, e.g.
+    a key's rotation while it is pending deletion: known and stable, but still hidden from drift).  A row that lists
+    several items counts each (``not_read_count``).  ``codes`` counts them by service and error code for the log."""
 
     def __init__(self, emit: Emit):
         self.emit, self.gaps = emit, 0
+        self.codes: dict[tuple[str, str], int] = {}
 
     def __call__(self, asset: dict[str, Any]) -> None:
-        if asset.get("type") == "coverage" and not (asset.get("facts") or {}).get("by_choice"):
-            self.gaps += 1
+        facts = asset.get("facts") or {}
+        if asset.get("type") == "coverage" and not facts.get("by_choice") and facts.get("status") != "not_reported":
+            count = facts.get("not_read_count")
+            # 0: a row that only follows from others already counted (custom key stores behind unread keys)
+            count = count if isinstance(count, int) and not isinstance(count, bool) and count >= 0 else 1
+            self.gaps += count
+            location = str(asset.get("location") or "")
+            service = location.split(":")[2] if location.startswith("arn:aws:") and location.count(":") >= 2 else "?"
+            codes = facts.get("codes") if isinstance(facts.get("codes"), dict) else {
+                str(facts.get("code") or facts.get("detail") or facts.get("status") or "?")[:64]: count}
+            for code, n in codes.items():
+                if int(n):
+                    self.codes[(service, code)] = self.codes.get((service, code), 0) + int(n)
         self.emit(asset)
 
 
@@ -125,7 +142,177 @@ def _paginate(client, method: str, key: str, cap: int = PER_SERVICE_CAP, **kwarg
     return out, False
 
 
-def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certificate") -> dict[str, Any]:
+def _paginate_kept(client, method: str, key: str, cap: int = PER_SERVICE_CAP,
+                   **kwargs) -> tuple[list[Any], bool, str | None]:
+    """``_paginate`` that keeps what was listed when a LATER page fails (CB-33 EC-8): (items, truncated, error code of
+    the failed page).  A failing first page raises, as before: nothing was listed."""
+    out: list[Any] = []
+    pages = iter(client.get_paginator(method).paginate(**kwargs))
+    while True:
+        try:
+            page = next(pages)
+        except StopIteration:
+            return out, False, None
+        except AwsCollectError:
+            raise
+        except Exception as exc:
+            if not out:
+                raise
+            return out, False, _code(exc)
+        out.extend(page.get(key) or [])
+        if len(out) > cap:
+            return out[:cap], True, None
+
+
+# --- per-item reads (CB-33 PR-A) -----------------------------------------------------------------------------------
+# Each item a service lists (a KMS key, an ACM certificate) is read on its own: one item that cannot be read is a
+# coverage row scoped to its exact ARN, never the end of the region nor a silent "nothing found".  Botocore's own list
+# of throttling codes, so the two stay in step.
+try:
+    from botocore.retries.standard import ThrottledRetryableChecker as _Throttled
+
+    _THROTTLE = frozenset(_Throttled._THROTTLED_ERROR_CODES)
+except Exception:  # pragma: no cover - an older botocore
+    _THROTTLE = frozenset({"Throttling", "ThrottlingException", "ThrottledException", "RequestThrottledException",
+                           "TooManyRequestsException", "ProvisionedThroughputExceededException", "RequestLimitExceeded",
+                           "LimitExceededException", "RequestThrottled", "SlowDown"})
+_UNSUPPORTED = ("UnsupportedOperationException",)
+ITEM_ROWS = 50  # coverage rows with one exact ARN each, per operation and service-region; the rest go in chunks
+CHUNK_ARNS = 100  # exact ARNs per chunk row beyond ITEM_ROWS (never a prefix: that would hide real fixes nearby)
+BREAKER_THROTTLES = 10  # consecutive throttles that stop one operation (the rest of its items become rows)
+ROLE_WIDE_DENIALS = 25  # consecutive denials with no success: the role cannot do this at all (one row)
+SERVICE_BUDGET_S = 480  # per service-region; what is left after it becomes rows, so the lease never runs out
+_clock = time.monotonic  # the tests drive a fake clock
+
+
+def _item_class(exc: Exception) -> tuple[str, str]:
+    code = _code(exc)
+    if code in _THROTTLE:
+        return "throttled", code
+    if code in _DENIED:
+        return "denied", code
+    if code in _UNSUPPORTED:
+        return "not_supported", code
+    return "error", code  # NotFound, KMSInvalidState, internal errors, timeouts, connection errors: not read
+
+
+class _Op:
+    def __init__(self) -> None:
+        self.ok = self.throttles = self.denials = 0
+        self.stopped: str | None = None
+        self.role_wide: str | None = None
+        self.failed: list[tuple[str, str, str, str]] = []  # (arn, status, code, detail)
+
+
+class _Items:
+    """Per-item reads of one service in one region (state local to one call of ``kms()`` / ``acm()``, so a retried
+    job starts clean).  ``call`` isolates each read; ``step`` (once per item) calls the worker's ``tick`` (lease
+    renewal, cancel, deadline) and keeps to the service's time budget; ``flush`` emits the coverage rows."""
+
+    def __init__(self, service: str, region: str, account: str, label: str, tick: Callable[[], str | None] | None):
+        self.service, self.region, self.account, self.label, self.tick = service, region, account, label, tick
+        self.ops: dict[str, _Op] = {}
+        self.started = _clock()
+        self.stop: str | None = None
+
+    def step(self) -> None:
+        if self.stop is not None:
+            return
+        reason = self.tick() if self.tick is not None else None
+        if reason:
+            self.stop = f"stopped: {reason}"[:200]
+        elif _clock() - self.started >= SERVICE_BUDGET_S:
+            self.stop = f"time budget of {SERVICE_BUDGET_S} s for {self.service} in {self.region} used up"
+
+    def call(self, op: str, arn: str, fn: Callable[[], Any]) -> tuple[str, Any]:
+        """("ok", value) | ("not_supported", code) | (status, code) with the item recorded as not read."""
+        state = self.ops.setdefault(op, _Op())
+        if self.stop:  # cancelled, past the deadline, or the time budget is used up: not asked
+            state.failed.append((arn, "stopped", "stopped", self.stop))
+            return "stopped", self.stop
+        if state.stopped:  # this operation's breaker tripped: not asked
+            status = "denied" if state.role_wide else "throttled"
+            state.failed.append((arn, status, state.role_wide or "breaker", state.stopped))
+            return status, state.stopped
+        try:
+            value = fn()
+        except AwsCollectError:
+            raise
+        except Exception as exc:
+            status, code = _item_class(exc)
+            if status == "not_supported":
+                state.throttles = state.denials = 0
+                return status, code
+            state.failed.append((arn, status, code, code))
+            state.throttles = state.throttles + 1 if status == "throttled" else 0
+            state.denials = state.denials + 1 if status == "denied" else 0
+            if state.throttles >= BREAKER_THROTTLES:
+                state.stopped = f"throttled; stopped after {BREAKER_THROTTLES} in a row ({code})"
+            elif state.ok == 0 and state.denials >= ROLE_WIDE_DENIALS:
+                state.stopped = state.role_wide = code
+            return status, code
+        state.ok += 1
+        state.throttles = state.denials = 0
+        return "ok", value
+
+    def flush(self, emit: Emit, ops: dict[str, tuple[str, bool]]) -> None:
+        """Coverage rows for what was not read.  ``ops``: operation -> (check text, incomplete): ``incomplete`` when
+        the item is still listed with that fact missing (rotation, key material), plain when it was not emitted."""
+        prefix = f"arn:aws:{self.service}:{self.region}:{self.account}:"
+        for op, (what, incomplete) in ops.items():
+            state = self.ops.get(op)
+            if state is None or not state.failed:
+                continue
+            if state.role_wide is not None:  # the role may not do this at all here: one row, never a row per item
+                emit(_gap(self.label, f"{prefix}{self.service}#{op}-denied", f"{self.service} {what} in {self.region}",
+                          "denied", f"{state.role_wide}: no {what} could be read ({len(state.failed)} not read, "
+                          f"{ROLE_WIDE_DENIALS} denied in a row and none allowed)", [prefix], incomplete=incomplete,
+                          code=state.role_wide, not_read_count=len(state.failed)))
+                continue
+            single, rest = state.failed[:ITEM_ROWS], state.failed[ITEM_ROWS:]
+            for arn, status, code, detail in single:
+                emit(_gap(self.label, f"{arn}#{op}", f"{self.service} {what} of {arn.rsplit('/', 1)[-1]}", status,
+                          detail[:200], [arn], incomplete=incomplete, code=code))
+            for n, start in enumerate(range(0, len(rest), CHUNK_ARNS), 1):
+                chunk = rest[start:start + CHUNK_ARNS]
+                codes: dict[str, int] = {}
+                for _arn, _status, code, _detail in chunk:
+                    codes[code] = codes.get(code, 0) + 1
+                statuses = {status for _a, status, _c, _d in chunk}
+                details = sorted({detail for _a, _s, _c, detail in chunk})
+                emit(_gap(self.label, f"{prefix}{self.service}#{op}-not-read-{n}",
+                          f"{self.service} {what} in {self.region} ({len(chunk)} items)",
+                          statuses.pop() if len(statuses) == 1 else "error", "; ".join(details)[:200],
+                          [arn for arn, _s, _c, _d in chunk], incomplete=incomplete, not_read_count=len(chunk),
+                          codes=codes))
+
+
+# KMS rotation (CB-33 RC-1): automatic rotation exists only for customer-managed SYMMETRIC_DEFAULT keys of AWS_KMS
+# origin; its status is readable in these states.  EXTERNAL Enabled keys are still asked as before CB-33 (the rule
+# that reads their answer changes in PR-B, so this PR changes no verdict); custom-store keys never are (AWS raises).
+_ROTATION_STATES = ("Enabled", "Disabled", "Creating", "Updating")
+_ROTATION_NOT_REPORTED = ("PendingDeletion", "PendingReplicaDeletion")  # AWS answers an artificial "false"
+
+
+def _kms_facts(meta: dict[str, Any]) -> dict[str, Any]:
+    """A KMS key's facts from its DescribeKey metadata (rotation is added by the caller)."""
+    spec = meta.get("KeySpec") or meta.get("CustomerMasterKeySpec")
+    multi = meta.get("MultiRegionConfiguration") or {}
+    return {"key_spec": spec, "key_usage": meta.get("KeyUsage"), "key_manager": meta.get("KeyManager"),
+            "key_state": meta.get("KeyState"), "origin": meta.get("Origin"), "multi_region": meta.get("MultiRegion"),
+            "rotation_enabled": None, "signing_algorithms": meta.get("SigningAlgorithms"), "identity": meta["Arn"],
+            "expiration_model": meta.get("ExpirationModel"), "valid_to": _iso(meta.get("ValidTo")),
+            "custom_key_store_id": meta.get("CustomKeyStoreId"), "cloud_hsm_cluster_id": meta.get("CloudHsmClusterId"),
+            "xks_key_id": (meta.get("XksKeyConfiguration") or {}).get("Id"),
+            "multi_region_type": multi.get("MultiRegionKeyType"),
+            "primary_key_arn": (multi.get("PrimaryKey") or {}).get("Arn"),
+            "current_key_material_id": meta.get("CurrentKeyMaterialId")}
+
+
+def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certificate", *,
+                summary: dict[str, Any] | None = None) -> dict[str, Any]:
+    """``summary``: the ACM ListCertificates entry, for the export facts (an exported certificate's key is used
+    outside AWS; ``exported`` is None when ACM does not say)."""
     key_alg = detail.get("KeyAlgorithm") or ""
     family = "RSA" if key_alg.upper().startswith("RSA") else ("ECDSA" if key_alg.upper().startswith("EC") else key_alg)
     in_use = detail.get("InUseBy")
@@ -137,7 +324,10 @@ def _cert_asset(arn: str, label: str, detail: dict[str, Any], kind: str = "certi
                       "san": (detail.get("SubjectAlternativeNames") or [])[:50], "status": detail.get("Status"),
                       "aws_type": detail.get("Type"), "in_use": bool(in_use) if in_use is not None else None,
                       "in_use_by": (in_use or [])[:10], "renewal_eligibility": detail.get("RenewalEligibility"),
-                      "source": "aws", "identity": arn}}
+                      "source": "aws", "identity": arn,
+                      **({"exported": summary.get("Exported"),
+                          "export_option": summary.get("ExportOption") or (detail.get("Options") or {}).get("Export")}
+                         if summary is not None else {})}}
 
 
 _SECRET_NAME = re.compile(r"(private|secret|passw|pwd|token|api[-_]?key|credential|tls[-_]?key|ssh[-_]?key|"
@@ -430,9 +620,11 @@ def _glue_connection_facts(conn: dict[str, Any]) -> dict[str, Any]:
 
 
 def _region_services(acct: _Account, region: str, label: str, emit: Emit,
-                     opts: dict[str, Any] | None = None) -> list[tuple[str, str, str | None]]:
+                     opts: dict[str, Any] | None = None,
+                     tick: Callable[[], str | None] | None = None) -> list[tuple[str, str, str | None]]:
     """Read every regional service.  Returns (service, status, detail) rows; status ``partial`` when the service was
-    read but emitted coverage gaps (a cap, an item it could not read)."""
+    read but emitted coverage gaps (a cap, an item it could not read).  ``tick`` is the worker's ``should_stop``
+    (renews the lease, says when the job is cancelled or past its deadline), called inside per-item loops."""
     opts = opts or {}
     rows: list[tuple[str, str, str | None]] = []
     arn_prefix = f"arn:aws:{{svc}}:{region}:{acct.account}"
@@ -488,38 +680,133 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
 
     def kms() -> str | None:
         client = acct.client("kms", region)
-        keys, truncated = _paginate(client, "list_keys", "Keys")
+        prefix = f"arn:aws:kms:{region}:{acct.account}:"
+        keys, truncated, page_error = _paginate_kept(client, "list_keys", "Keys",
+                                                     PaginationConfig={"PageSize": PER_SERVICE_CAP})
+        items = _Items("kms", region, acct.account, label, tick)
+        found: list[dict[str, Any]] = []
         for key in keys:
-            meta = client.describe_key(KeyId=key["KeyId"])["KeyMetadata"]
-            spec = meta.get("KeySpec") or meta.get("CustomerMasterKeySpec")
-            rotation = None
-            if meta.get("KeyManager") == "CUSTOMER" and spec == "SYMMETRIC_DEFAULT" and meta.get("KeyState") == "Enabled":
-                try:
-                    rotation = bool(client.get_key_rotation_status(KeyId=key["KeyId"]).get("KeyRotationEnabled"))
-                except Exception as exc:  # imported key material has no rotation (None); a denial is a gap
-                    rotation = None
-                    if _code(exc) in _DENIED:  # the key is listed, its rotation is unknown, not "fixed"
-                        emit(_gap(label, f"{meta['Arn']}#rotation", f"kms key {meta['KeyId']} rotation status",
-                                  "denied", _code(exc), [meta["Arn"]], incomplete=True))
-            emit({"type": "kms_key", "target": label, "location": meta["Arn"], "name": meta.get("Description") or meta["KeyId"],
-                  "algorithm": spec, "key_size": 256 if spec == "SYMMETRIC_DEFAULT" else _bits(spec),
-                  "facts": {"key_spec": spec, "key_usage": meta.get("KeyUsage"), "key_manager": meta.get("KeyManager"),
-                            "key_state": meta.get("KeyState"), "origin": meta.get("Origin"),
-                            "multi_region": meta.get("MultiRegion"), "rotation_enabled": rotation,
-                            "signing_algorithms": meta.get("SigningAlgorithms"), "identity": meta["Arn"]}})
+            items.step()
+            kid = key["KeyId"]
+            arn = key.get("KeyArn") or f"{prefix}key/{kid}"
+            status, meta = items.call("metadata", arn, lambda: client.describe_key(KeyId=kid)["KeyMetadata"])
+            if status != "ok":
+                continue  # not emitted: its exact-ARN row says it was not read (never "deleted")
+            arn = meta.get("Arn") or arn
+            facts = _kms_facts(meta)
+            spec, origin, state = facts["key_spec"], meta.get("Origin"), meta.get("KeyState")
+            rotation: bool | None = None
+            if meta.get("KeyManager") != "CUSTOMER" or spec != "SYMMETRIC_DEFAULT":
+                facts["rotation_status"] = "not applicable"
+            elif (origin == "AWS_KMS" and state in _ROTATION_STATES) or (origin == "EXTERNAL" and state == "Enabled"):
+                status, out = items.call("rotation", arn, lambda: client.get_key_rotation_status(KeyId=kid))
+                if status == "ok":
+                    rotation = bool(out.get("KeyRotationEnabled"))
+                    facts.update(rotation_status="on" if rotation else "off",
+                                 rotation_period_days=out.get("RotationPeriodInDays"),
+                                 next_rotation=_iso(out.get("NextRotationDate")),
+                                 on_demand_rotation_started=_iso(out.get("OnDemandRotationStartDate")))
+                elif status == "not_supported":
+                    facts["rotation_status"] = "not supported"
+                else:  # listed, its rotation unknown: an unknown is not a fix (its row is incomplete)
+                    facts["rotation_status"] = f"not read: {out}"[:120]
+            elif origin == "AWS_KMS" and state in _ROTATION_NOT_REPORTED:
+                facts["rotation_status"] = f"not reported while {state}"
+                # AWS reports an artificial "false" in these states: not asked, and the key's rotation verdict is
+                # neither resolved nor opened while it lasts (the row keeps the target "ok")
+                emit(_gap(label, f"{arn}#rotation", f"kms key {kid} rotation status", "not_reported",
+                          f"AWS does not report rotation while the key is {state}", [arn], incomplete=True))
+            else:
+                facts["rotation_status"] = "not applicable"  # imported material not Enabled, custom key stores
+            facts["rotation_enabled"] = rotation
+            if origin == "EXTERNAL" and spec == "SYMMETRIC_DEFAULT":
+                status, out = items.call("materials", arn, lambda: _paginate(
+                    client, "list_key_rotations", "Rotations", KeyId=kid, IncludeKeyMaterial="ALL_KEY_MATERIAL")[0])
+                if status == "ok":  # identifiers and dates of each imported material, never the material
+                    facts["key_materials"] = [
+                        {"id": r.get("KeyMaterialId"), "state": r.get("KeyMaterialState"),
+                         "import_state": r.get("ImportState"), "expiration_model": r.get("ExpirationModel"),
+                         "valid_to": _iso(r.get("ValidTo"))} for r in out][:20]
+            found.append({"type": "kms_key", "target": label, "location": arn,
+                          "name": meta.get("Description") or meta["KeyId"], "algorithm": spec,
+                          "key_size": 256 if spec == "SYMMETRIC_DEFAULT" else _bits(spec), "facts": facts})
+        stores = [a for a in found if a["facts"].get("custom_key_store_id")]
+        if stores:
+            key_stores(client, prefix, stores)
+        else:
+            unread = len((items.ops.get("metadata") or _Op()).failed)
+            if unread:  # a key not read may live in a custom key store: the stores are unknown, not gone (#136)
+                emit(_gap(label, f"{prefix}custom-key-store#unread-keys", f"kms custom key stores in {region}",
+                          "not_read", f"not read: {unread} key(s) whose metadata could not be read may use one",
+                          [f"{prefix}custom-key-store/"], incomplete=True, code="UnreadKeys", not_read_count=0))
+            else:  # read only when a key uses one: a store with no key is not inventoried, never "removed"
+                emit(_gap(label, f"{prefix}custom-key-store#no-key", f"kms custom key stores in {region}",
+                          "not_read", "read only when a key in this region uses a custom key store",
+                          [f"{prefix}custom-key-store/"], by_choice=True))
+        for asset in found:
+            emit(asset)
+        items.flush(emit, {"metadata": ("key metadata", False), "rotation": ("key rotation status", True),
+                           "materials": ("imported key material", True)})
+        if page_error:  # what was listed is read; only what the failed page would have listed is not read
+            emit(_gap(label, f"{prefix}key#list", f"kms keys in {region}", "throttled" if page_error in _THROTTLE
+                      else ("denied" if page_error in _DENIED else "error"),
+                      f"{page_error}: the key list stopped after {len(keys)} keys", [f"{prefix}key/"], code=page_error))
         if truncated:
-            capped("kms", "keys", PER_SERVICE_CAP, [f"arn:aws:kms:{region}:{acct.account}:key/"])
+            capped("kms", "keys", PER_SERVICE_CAP, [f"{prefix}key/"])
         return "truncated" if truncated else None
+
+    def key_stores(client, prefix: str, keys: list[dict[str, Any]]) -> None:
+        """The custom key stores the region's keys live in (read only when a key names one): one ``key_store`` asset
+        each, and each key gets its store's connection state.  The trust anchor certificate is never copied."""
+        try:
+            listed, _cut = _paginate(client, "describe_custom_key_stores", "CustomKeyStores")
+        except AwsCollectError:
+            raise
+        except Exception as exc:  # the stores and the joined key fact are unknown, not "fine"
+            code = _code(exc)
+            emit(_gap(label, f"{prefix}custom-key-store#describe", f"kms custom key stores in {region}",
+                      "denied" if code in _DENIED else ("throttled" if code in _THROTTLE else "error"), code,
+                      [f"{prefix}custom-key-store/", *(k["location"] for k in keys)], incomplete=True, code=code))
+            return
+        state = {}
+        for store in listed:
+            sid = store.get("CustomKeyStoreId")
+            state[sid] = store.get("ConnectionState")
+            xks = store.get("XksProxyConfiguration") or {}
+            emit({"type": "key_store", "target": label, "location": f"{prefix}custom-key-store/{sid}",
+                  "name": store.get("CustomKeyStoreName") or sid,
+                  "facts": {"store": "aws_kms_custom", "custom_key_store_type": store.get("CustomKeyStoreType"),
+                            "connection_state": store.get("ConnectionState"),
+                            "connection_error_code": store.get("ConnectionErrorCode"),
+                            "cloud_hsm_cluster_id": store.get("CloudHsmClusterId"),
+                            "xks_connectivity": xks.get("Connectivity"), "creation_date": _iso(store.get("CreationDate")),
+                            "identity": f"{prefix}custom-key-store/{sid}"}})
+        for key in keys:
+            key["facts"]["key_store_connection_state"] = state.get(key["facts"]["custom_key_store_id"])
 
     def acm() -> str | None:
         client = acct.client("acm", region)
+        prefix = f"arn:aws:acm:{region}:{acct.account}:"
         everything = {"keyTypes": ["RSA_1024", "RSA_2048", "RSA_3072", "RSA_4096", "EC_prime256v1", "EC_secp384r1", "EC_secp521r1"]}
-        summaries, truncated = _paginate(client, "list_certificates", "CertificateSummaryList", Includes=everything)
+        summaries, truncated, page_error = _paginate_kept(client, "list_certificates", "CertificateSummaryList",
+                                                          Includes=everything,
+                                                          PaginationConfig={"PageSize": PER_SERVICE_CAP})
+        items = _Items("acm", region, acct.account, label, tick)
         for summary in summaries:
-            detail = client.describe_certificate(CertificateArn=summary["CertificateArn"])["Certificate"]
-            emit(_cert_asset(summary["CertificateArn"], label, detail))
+            items.step()
+            arn = summary["CertificateArn"]
+            status, detail = items.call("metadata", arn,
+                                        lambda: client.describe_certificate(CertificateArn=arn)["Certificate"])
+            if status == "ok":
+                emit(_cert_asset(arn, label, detail, summary=summary))
+        items.flush(emit, {"metadata": ("certificate", False)})
+        if page_error:
+            emit(_gap(label, f"{prefix}certificate#list", f"acm certificates in {region}",
+                      "throttled" if page_error in _THROTTLE else ("denied" if page_error in _DENIED else "error"),
+                      f"{page_error}: the certificate list stopped after {len(summaries)} certificates",
+                      [f"{prefix}certificate/"], code=page_error))
         if truncated:
-            capped("acm", "certificates", PER_SERVICE_CAP, [f"arn:aws:acm:{region}:{acct.account}:certificate/"])
+            capped("acm", "certificates", PER_SERVICE_CAP, [f"{prefix}certificate/"])
         return "truncated" if truncated else None
 
     def pca() -> str | None:
@@ -1144,6 +1431,12 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
     started = time.monotonic()
     role_arn = cfg["role_arn"]
     regions = list(cfg.get("regions") or ["us-east-1"])
+    # The own-account guard again at collection (a source validated before the collector moved accounts must not read
+    # ZeroShield's own inventory); lab mode on a test deployment is the one exception (lab_mode.py).
+    refusal, lab = own_account_decision(aws_account_id(role_arn), zeroshield_account_id(), str(cfg.get("scope") or "account"),
+                                        team_id=team_id, where="collect")
+    if refusal:
+        raise AwsCollectError(refusal)
     try:
         base, boto_cfg = _boto(retries=5, mode="adaptive")
     except Exception as exc:
@@ -1166,6 +1459,7 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
     except Exception as exc:
         raise AwsCollectError(f"AssumeRole failed: {_code(exc)}") from exc
     targets: list[dict[str, Any]] = []
+    gap_codes: dict[tuple[str, str], int] = {}
     if cfg.get("scope") == "organization":
         # The member list decides which accounts are read at all: when it fails (or is cut) the accounts that were not
         # listed are unknown, so this is a failed target of its own (the job is partial and never compared), not a note.
@@ -1199,7 +1493,8 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
             t0 = time.monotonic()
             tally = _GapTally(emit)
             try:
-                rows = _global_services(acct, label, tally) if region == "global" else _region_services(acct, region, label, tally, cfg)
+                rows = (_global_services(acct, label, tally) if region == "global"
+                        else _region_services(acct, region, label, tally, cfg, tick=should_stop))
             except AwsCollectError as exc:
                 targets.append({"target": f"{label}/{region}", "status": "error", "error": str(exc)[:256], "assets": 0})
                 continue
@@ -1214,14 +1509,24 @@ def collect_aws(team_id: int, cfg: dict[str, Any], external_id: str, emit: Emit,
             targets.append({"target": f"{label}/{region}", "status": status, "error": "; ".join(bad + gappy)[:256] or None,
                             "duration_ms": int((time.monotonic() - t0) * 1000), "gaps": tally.gaps,
                             "services": {svc: status_ for svc, status_, _d in rows}})
-    return _summary(targets, team_id, started, accounts=len(accounts))
+            for code_key, n in tally.codes.items():
+                gap_codes[code_key] = gap_codes.get(code_key, 0) + n
+        # ACM certificates issued through ACME are not returned by ListCertificates in this SDK version (CB-33 EC-3):
+        # said once per account, so "no ACME certificate" is never read as "none exists"
+        emit(_gap(label, f"arn:aws:acm::{acct.account}:certificate#acme", "ACME-issued ACM certificates",
+                  "not_supported", "ACME-issued ACM certificates are not listed by this SDK version", by_choice=True))
+    log_gaps = {"gaps": sum(gap_codes.values()),
+                "gap_codes": ",".join(f"{svc}:{code}:{n}" for (svc, code), n in sorted(gap_codes.items()))[:500] or None}
+    return _summary(targets, team_id, started, log_extra=log_gaps, accounts=len(accounts),
+                    **({"lab_mode": LAB_MODE} if lab else {}))
 
 
-def _summary(targets: list[dict[str, Any]], team_id: int, started: float, **extra: Any) -> dict[str, Any]:
+def _summary(targets: list[dict[str, Any]], team_id: int, started: float, *,
+             log_extra: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
     ok = sum(1 for t in targets if t["status"] == "ok")
     partial = sum(1 for t in targets if t["status"] == "partial")
     skipped = sum(1 for t in targets if t["status"].startswith("skipped"))
-    log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial, **extra,
+    log("aws collected", team=team_id, targets=len(targets), ok=ok, partial=partial, **extra, **(log_extra or {}),
         duration_s=int(time.monotonic() - started))
     return {"targets": targets, **extra,
             "counts": {"total": len(targets), "ok": ok, "partial": partial, "failed": len(targets) - ok - partial - skipped,
