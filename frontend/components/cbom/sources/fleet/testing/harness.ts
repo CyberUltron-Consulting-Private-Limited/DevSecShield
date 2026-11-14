@@ -9,6 +9,7 @@ import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import http from "@/utils/interceptors";
+import { toast } from "@/utils/toast";
 
 export interface Sent {
   method: string;
@@ -143,6 +144,19 @@ export async function press(key: string): Promise<void> {
     target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
   });
   await settle(60);
+}
+
+/** Record the toasts the components raise ({kind, message}), instead of showing them. */
+export function spyToasts(): { kind: string; message: string }[] {
+  const seen: { kind: string; message: string }[] = [];
+  const t = toast as unknown as Record<string, unknown>;
+  for (const kind of ["success", "error", "info", "warning", "message"]) {
+    t[kind] = (message: unknown) => {
+      seen.push({ kind, message: String(message) });
+      return 0;
+    };
+  }
+  return seen;
 }
 
 export function text(): string {

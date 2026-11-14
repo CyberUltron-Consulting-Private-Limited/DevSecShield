@@ -7,7 +7,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Pencil, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
@@ -38,11 +38,15 @@ const TYPES: { value: CbomCredentialType; label: string }[] = [
   { value: "ssh_cert", label: "SSH certificate and key" },
   { value: "vault", label: "From a vault" },
 ];
+// SSH CA credentials are made by the SSH CA section (F1.4); here they can be renamed and their login edited, not added
+const SHOWN_TYPES: { value: CbomCredentialType; label: string }[] = [...TYPES, { value: "ssh_ca", label: "SSH CA (signed certificates)" }];
 // the secrets each type stores, and the settings that say where they are used: changing one of those makes the
 // server ask for the secrets again (a password for one host must not follow the credential to another login)
 const SECRET_LABEL: Record<string, string> = { password: "password", ssh_certificate: "certificate and key", private_key: "certificate and key" };
 const SECRETS_OF: Partial<Record<CbomCredentialType, string[]>> = { password: ["password"], ssh_cert: ["ssh_certificate", "private_key"] };
 const WHERE = ["login_user", "port", "host_key_policy", "known_hosts", "vault"];
+// what this form edits; any other stored setting (an SSH CA credential's ssh_ca_id and ssh_principals) is kept as is
+const FORM_FIELDS = new Set(WHERE);
 
 function vaultOf(c: CbomCredential | null): { provider?: string; path?: string } {
   const v = c?.config.vault;
@@ -68,7 +72,8 @@ function CredentialForm({ teamId, editing, onDone, onCloseAutoFocus }: {
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const config = (): Record<string, unknown> => {
-    const out: Record<string, unknown> = { login_user: login, port, host_key_policy: pinned || type === "password" ? "pinned" : "tofu" };
+    const kept = Object.fromEntries(Object.entries(base?.config ?? {}).filter(([k]) => !FORM_FIELDS.has(k)));
+    const out: Record<string, unknown> = { ...kept, login_user: login, port, host_key_policy: pinned || type === "password" ? "pinned" : "tofu" };
     if (pinned || type === "password") out.known_hosts = knownHosts;
     if (type === "vault") out.vault = { provider: vaultProvider, path: vaultPath };
     return out;
@@ -139,7 +144,7 @@ function CredentialForm({ teamId, editing, onDone, onCloseAutoFocus }: {
             <Select value={type} onValueChange={(v) => setType(v as CbomCredentialType)} disabled={!!base}>
               <SelectTrigger id="cred-type" className="cursor-pointer" title={base ? "The type of a credential cannot change: add another one" : undefined}><SelectValue /></SelectTrigger>
               <SelectContent>
-                {TYPES.map((t) => <SelectItem key={t.value} value={t.value} className="cursor-pointer">{t.label}</SelectItem>)}
+                {(base ? SHOWN_TYPES : TYPES).map((t) => <SelectItem key={t.value} value={t.value} className="cursor-pointer">{t.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>
@@ -219,7 +224,8 @@ export default function CredentialsSection({ teamId }: FleetSectionProps) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<CbomCredential | null | "new">(null);
   const [removing, setRemoving] = useState<CbomCredential | null>(null);
-  const opener = useOpener();
+  const addButton = useRef<HTMLButtonElement>(null);
+  const opener = useOpener(addButton);
   const creds = useQuery({ queryKey: cbomFleetKeys.credentials(teamId), queryFn: () => listCbomCredentials(teamId) });
   const remove = useMutation({
     mutationFn: (id: number) => deleteCbomCredential(teamId, id),
@@ -232,7 +238,7 @@ export default function CredentialsSection({ teamId }: FleetSectionProps) {
       title="Credentials"
       description="Logins that policies give to the sources they manage. Secrets are write-only."
       actions={
-        <Button size="sm" variant="outline" className="cursor-pointer" onClick={(e) => { opener.remember(e); setEditing("new"); }} data-testid="fleet-add-credential">
+        <Button size="sm" variant="outline" className="cursor-pointer" ref={addButton} onClick={(e) => { opener.remember(e); setEditing("new"); }} data-testid="fleet-add-credential">
           <KeyRound className="h-4 w-4 mr-1.5" /> Add credential
         </Button>
       }
@@ -272,7 +278,7 @@ export default function CredentialsSection({ teamId }: FleetSectionProps) {
                     <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Edit ${c.name}`} onClick={(e) => { opener.remember(e); setEditing(c); }}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Delete ${c.name}`} onClick={() => setRemoving(c)}>
+                    <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Delete ${c.name}`} onClick={(e) => { opener.remember(e); setRemoving(c); }}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -290,6 +296,7 @@ export default function CredentialsSection({ teamId }: FleetSectionProps) {
         open={removing !== null}
         onOpenChange={(v) => !v && setRemoving(null)}
         title={`Delete ${removing?.name ?? "this credential"}?`}
+        onCloseAutoFocus={opener.onCloseAutoFocus}
         description="Its secrets are erased. Policies that use it stop collecting their targets until they get another credential."
         confirmLabel="Delete"
         destructive

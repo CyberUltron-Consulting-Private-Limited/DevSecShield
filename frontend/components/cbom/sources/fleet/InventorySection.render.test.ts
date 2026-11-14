@@ -61,6 +61,41 @@ run(
       assert.match(detail, /prod-collect · priority 100 · won/);
       assert.match(detail, /all · priority 1 · overridden/);
     }],
+    ["no tag value is sent without a tag key", async () => {
+      const fake = api();
+      await show();
+      await type(byId("fleet-tag-key"), "env");
+      await type(byId("fleet-tag-value"), "prod");
+      await settle(450);
+      assert.equal(lastTargetsParams(fake).tag_value, "prod");
+      await type(byId("fleet-tag-key"), "");
+      await settle(450);
+      assert.equal(lastTargetsParams(fake).tag_key, undefined);
+      assert.equal(lastTargetsParams(fake).tag_value, undefined, "a value was sent without its key");
+    }],
+    ["the waiting badge wraps in a narrow decision column (390 px: 139 px wide, the badge 159 px)", async () => {
+      api([target(1, { pending: true, pending_since: "2026-11-12T10:00:00Z" })]);
+      await show();
+      const badge = [...document.querySelectorAll('[data-testid="fleet-target-1"] [data-slot="badge"]')]
+        .find((b) => /Waiting for a running job/.test(b.textContent ?? ""));
+      assert.ok(badge, "no waiting badge");
+      assert.ok(badge.classList.contains("whitespace-normal") && !badge.classList.contains("whitespace-nowrap"),
+        `the badge cannot wrap: ${badge.className}`);
+    }],
+    ["closing a source's Delete confirm gives the focus back to its Delete button", async () => {
+      api();
+      await show();
+      for (const how of ["Escape", "Cancel"]) {
+        const del = button("Delete aws-prod");
+        await click(del);
+        const confirm = document.querySelector<HTMLElement>('[role="dialog"]');
+        assert.ok(confirm, "Delete opened no confirm");
+        if (how === "Escape") await press("Escape");
+        else await click([...confirm.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Cancel")!);
+        assert.ok(document.querySelector('[role="dialog"]') === null, `${how} did not close the confirm`);
+        assert.ok(document.activeElement === del, `${how}: focus went to ${document.activeElement?.tagName}`);
+      }
+    }],
     ["a target waiting for a running job and a removed target say so", async () => {
       api([target(1, { pending: true, pending_since: "2026-11-12T10:00:00Z" }), target(2, { deleted_at: "2026-11-12T09:00:00Z", missing_since: "2026-11-12T09:00:00Z" })]);
       await show();

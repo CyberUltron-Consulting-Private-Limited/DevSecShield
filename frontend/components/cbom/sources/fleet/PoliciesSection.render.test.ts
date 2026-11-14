@@ -1,6 +1,6 @@
 // Run: npx --yes tsx components/cbom/sources/fleet/PoliciesSection.render.test.ts
 // The policy form as a customer uses it (PR #81 UX review 5874305598), rendered in jsdom against a fake API.
-import { FakeApi, button, byId, byLabel, click, maybeButton, press, render, run, settle, text, type } from "./testing/harness";
+import { FakeApi, button, byId, byLabel, click, maybeButton, press, render, run, settle, spyToasts, text, type } from "./testing/harness";
 
 import assert from "node:assert/strict";
 import { createElement } from "react";
@@ -161,9 +161,44 @@ run(
       const fake = api();
       fake.on("patch", /\/fleet\/policies\/41$/, (req) => ({ data: { policy: { ...P, ...(req.body as object), row_version: 4 }, evaluation: "queued", decisions_changed: null } }));
       await show();
+      const toasts = spyToasts();
       await click(button("Edit prod-collect"));
       await click(inDialog("Save"));
       assert.ok(dialog() === null, "the form did not close");
+      assert.deepEqual(toasts, [{ kind: "success", message: "Policy saved; the decisions and counts update in a few seconds" }]);
+      fake.on("patch", /\/fleet\/policies\/41$/, (req) => ({ data: { policy: { ...P, ...(req.body as object), row_version: 5 }, evaluation: "done", decisions_changed: 1 } }));
+      await click(button("Edit prod-collect"));
+      await click(inDialog("Save"));
+      assert.deepEqual(toasts.at(-1), { kind: "success", message: "Policy saved" });
+    }],
+    ["after a 409 Save stays off until the latest version is loaded", async () => {
+      const fake = api();
+      fake.on("patch", /\/fleet\/policies\/41$/, { status: 409, data: { detail: "changed" } });
+      await show();
+      await click(button("Edit prod-collect"));
+      await click(inDialog("Save"));
+      assert.match(dialog()?.textContent ?? "", /changed elsewhere/);
+      assert.equal(inDialog("Save").disabled, true, "Save is still on after a 409");
+      fake.on("get", /\/fleet\/policies$/, { data: { policies: [{ ...P, priority: 515, row_version: 9 }, OFF], materialize: false, order: "", evaluation: FRESH } });
+      fake.on("patch", /\/fleet\/policies\/41$/, (req) => ({ data: { policy: { ...P, ...(req.body as object), row_version: 10 }, evaluation: "done", decisions_changed: 0 } }));
+      await click(inDialog("Load the latest version"));
+      assert.equal(byId("policy-priority").value, "515");
+      assert.equal(inDialog("Save").disabled, false);
+      await click(inDialog("Save"));
+      assert.equal((fake.calls("patch", /\/fleet\/policies\/41$/).at(-1)?.body as { expected_version: number }).expected_version, 9);
+    }],
+    ["closing a Delete confirm gives the focus back to its Delete button", async () => {
+      api();
+      await show();
+      for (const how of ["Escape", "Cancel"]) {
+        const del = button("Delete prod-collect");
+        await click(del);
+        assert.ok(dialog(), "Delete opened no confirm");
+        if (how === "Escape") await press("Escape");
+        else await click(inDialog("Cancel"));
+        assert.ok(dialog() === null, `${how} did not close the confirm`);
+        assert.ok(document.activeElement === del, `${how}: focus went to ${document.activeElement?.tagName}`);
+      }
     }],
   ],
   "PoliciesSection render tests",

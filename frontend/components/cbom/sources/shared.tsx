@@ -50,9 +50,9 @@ const TONES: Record<Tone, string> = {
   zinc: "border-zinc-400/50 text-zinc-600 dark:text-zinc-400",
 };
 
-export function StatusBadge({ tone, children, title }: { tone: Tone; children: ReactNode; title?: string }) {
+export function StatusBadge({ tone, children, title, className }: { tone: Tone; children: ReactNode; title?: string; className?: string }) {
   return (
-    <Badge variant="outline" className={TONES[tone]} title={title}>
+    <Badge variant="outline" className={cn(TONES[tone], className)} title={title}>
       {children}
     </Badge>
   );
@@ -397,6 +397,7 @@ export function ConfirmDialog({
   destructive,
   pending,
   onConfirm,
+  onCloseAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -406,10 +407,12 @@ export function ConfirmDialog({
   destructive?: boolean;
   pending?: boolean;
   onConfirm: () => void;
+  /** where the focus goes when it closes (a plain Delete button is no DialogTrigger: see fleet/useOpener.ts) */
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

@@ -56,7 +56,8 @@ export interface CbomInventoryTarget {
   first_seen_at: string | null
   last_seen_at: string | null
   missing_since: string | null
-  /** removed from the inventory by a person (deleted, or its inventory source deleted): never collected again */
+  /** removed from the inventory by a person (deleted, or its inventory source deleted): not collected until its
+   * inventory source lists it again (a never-scan policy excludes a host for good) */
   deleted_at: string | null
   managed_source_id: number | null
   /** its managed source has a job running: the change waits for it (the fleet worker retries every minute) */

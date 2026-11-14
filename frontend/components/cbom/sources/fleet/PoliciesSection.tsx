@@ -6,7 +6,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, Wand2, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
@@ -383,7 +383,8 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<CbomFleetPolicy | null | "new">(null);
   const [removing, setRemoving] = useState<CbomFleetPolicy | null>(null);
-  const opener = useOpener();
+  const addButton = useRef<HTMLButtonElement>(null);
+  const opener = useOpener(addButton);
   const policies = useQuery({
     queryKey: cbomFleetKeys.policies(teamId),
     queryFn: () => listCbomPolicies(teamId),
@@ -429,7 +430,7 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
             title={data?.materialize ? "Create and update the managed sources and schedules now" : "Managed sources are turned off; this refreshes the decisions"}>
             <Wand2 className="h-4 w-4 mr-1.5" /> Apply policies
           </Button>
-          <Button size="sm" className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" onClick={(e) => { opener.remember(e); setEditing("new"); }} data-testid="fleet-add-policy">
+          <Button size="sm" className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" ref={addButton} onClick={(e) => { opener.remember(e); setEditing("new"); }} data-testid="fleet-add-policy">
             <Plus className="h-4 w-4 mr-1.5" /> Add policy
           </Button>
         </div>
@@ -488,7 +489,7 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
                     <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Edit ${p.name}`} onClick={(e) => { opener.remember(e); setEditing(p); }}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Delete ${p.name}`} onClick={() => setRemoving(p)}>
+                    <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Delete ${p.name}`} onClick={(e) => { opener.remember(e); setRemoving(p); }}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -506,6 +507,7 @@ export default function PoliciesSection({ teamId }: FleetSectionProps) {
         open={removing !== null}
         onOpenChange={(v) => !v && setRemoving(null)}
         title={`Delete ${removing?.name ?? "this policy"}?`}
+        onCloseAutoFocus={opener.onCloseAutoFocus}
         description="Its targets fall to the next matching policy. Its managed sources and schedule go at the next Apply; a job running on them is stopped."
         confirmLabel="Delete"
         destructive

@@ -247,7 +247,8 @@ function SourcesTable({ teamId }: { teamId: number }) {
   const queryClient = useQueryClient();
   const [removing, setRemoving] = useState<CbomInventorySource | null>(null);
   const [awsOpen, setAwsOpen] = useState(false);
-  const opener = useOpener();
+  const addButton = useRef<HTMLButtonElement>(null);
+  const opener = useOpener(addButton);
   const sources = useQuery({
     queryKey: cbomFleetKeys.inventorySources(teamId),
     queryFn: () => listCbomInventorySources(teamId),
@@ -291,7 +292,7 @@ function SourcesTable({ teamId }: { teamId: number }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Inventory sources</h3>
-        <Button variant="outline" size="sm" className="cursor-pointer" onClick={(e) => { opener.remember(e); setAwsOpen(true); }} data-testid="fleet-add-aws">
+        <Button variant="outline" size="sm" className="cursor-pointer" ref={addButton} onClick={(e) => { opener.remember(e); setAwsOpen(true); }} data-testid="fleet-add-aws">
           <Cloud className="h-4 w-4 mr-1.5" />
           Discover from AWS
         </Button>
@@ -338,7 +339,7 @@ function SourcesTable({ teamId }: { teamId: number }) {
                           {s.enabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Delete ${s.name}`} onClick={() => setRemoving(s)}>
+                      <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Delete ${s.name}`} onClick={(e) => { opener.remember(e); setRemoving(s); }}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -356,6 +357,7 @@ function SourcesTable({ teamId }: { teamId: number }) {
         open={removing !== null}
         onOpenChange={(v) => !v && setRemoving(null)}
         title={`Delete ${removing?.name ?? "this source"}?`}
+        onCloseAutoFocus={opener.onCloseAutoFocus}
         description="Its targets are removed from the inventory at once: policies stop collecting them at the next Apply (a job running on them is stopped). Importing or syncing them again brings them back."
         confirmLabel="Delete"
         destructive
@@ -412,7 +414,7 @@ function TargetDetail({ teamId, targetId, onClose, onCloseAutoFocus }: {
                 </p>
               )}
               {d.target.deleted_at && (
-                <p className="text-xs text-zinc-500">Removed from the inventory on {formatDateTime(d.target.deleted_at)}; it is not collected.</p>
+                <p className="text-xs text-zinc-500">Removed from the inventory on {formatDateTime(d.target.deleted_at)}; it is not collected until its source lists it again (to exclude a host for good, use a never-scan policy).</p>
               )}
             </div>
             <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
@@ -560,7 +562,7 @@ function TargetsTable({ teamId }: { teamId: number }) {
                       {t.deleted_at && <StatusBadge tone="zinc">Removed</StatusBadge>}
                       {t.pending && (
                         <span title="Its managed source has a job running: the change is applied when it ends">
-                          <StatusBadge tone="amber">Waiting for a running job</StatusBadge>
+                          <StatusBadge tone="amber" className="whitespace-normal text-left rounded-md max-w-full">Waiting for a running job</StatusBadge>
                         </span>
                       )}
                       <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 wrap-anywhere @2xl:truncate" title={t.decision.reason}>{decisionText(t.decision, data.policies)}</p>

@@ -13,13 +13,16 @@ import PoliciesSection from "./PoliciesSection";
 const TEAM = 11;
 const PW = { id: 3, name: "linux-pw", credential_type: "password", row_version: 2, secrets_set: ["password"], managed_sources: 1,
   config: { login_user: "zs-cbom", port: 22, host_key_policy: "pinned", known_hosts: "web-1.example.test ssh-ed25519 (pinned key)" } };
+const CA = { id: 5, name: "ca-cred", credential_type: "ssh_ca", row_version: 1, secrets_set: [], managed_sources: 0,
+  config: { login_user: "zs-cbom", port: 22, host_key_policy: "tofu", ssh_ca_id: 1, ssh_principals: ["zs-cbom"] } };
 const FRESH = { evaluated_at: null, stale: false, evaluation_requested: false, reconcile_requested: false, last_reconcile: {} };
 
 function api(): FakeApi {
   const fake = new FakeApi()
-    .on("get", /\/fleet\/credentials$/, { data: { credentials: [PW] } })
+    .on("get", /\/fleet\/credentials$/, { data: { credentials: [PW, CA] } })
     .on("get", /\/fleet\/policies$/, { data: { policies: [], materialize: false, order: "", evaluation: FRESH } })
     .on("patch", /\/fleet\/credentials\/3$/, (req) => ({ data: { credential: { ...PW, ...(req.body as object), row_version: 3 }, evaluation: "done", decisions_changed: 0 } }))
+    .on("patch", /\/fleet\/credentials\/5$/, (req) => ({ data: { credential: { ...CA, ...(req.body as object), row_version: 2 }, evaluation: "done", decisions_changed: 0 } }))
     .on("post", /\/fleet\/credentials$/, { status: 201, data: { credential: { ...PW, id: 4, name: "new", credential_type: "node_key", secrets_set: [] } } });
   fake.install();
   return fake;
@@ -74,6 +77,68 @@ run(
       await click(button("Edit linux-pw"));
       await type(byId("cred-login"), "other-user");
       assert.match(dialog()?.textContent ?? "", /enter the password again/i);
+    }],
+    ["Edit keeps an SSH CA credential's CA and principals, and shows its type", async () => {
+      const fake = api();
+      await show();
+      await click(button("Edit ca-cred"));
+      assert.match(byId("cred-type").textContent ?? "", /SSH CA/);
+      await type(byId("cred-name"), "ca-cred-2");
+      await click(inDialog("Save"));
+      const sent = fake.calls("patch", /\/fleet\/credentials\/5$/);
+      assert.equal(sent.length, 1, "the rename was not sent");
+      const body = sent[0].body as { name: string; config: Record<string, unknown> };
+      assert.equal(body.name, "ca-cred-2");
+      assert.equal(body.config.ssh_ca_id, 1);
+      assert.deepEqual(body.config.ssh_principals, ["zs-cbom"]);
+      assert.ok(dialog() === null, "the form did not close");
+    }],
+    ["the type cannot change in Edit, and a new credential cannot pick SSH CA", async () => {
+      api();
+      await show();
+      await click(button("Edit linux-pw"));
+      assert.ok(byId("cred-type").hasAttribute("disabled") || byId("cred-type").getAttribute("data-disabled") !== null, "the type is editable");
+      await press("Escape");
+      await click(button("Add credential"));
+      assert.equal(byId("cred-type").hasAttribute("disabled"), false);
+    }],
+    ["a port or known_hosts change also asks for the stored password again", async () => {
+      api();
+      await show();
+      await click(button("Edit linux-pw"));
+      await type(byId("cred-port"), "2222");
+      assert.match(dialog()?.textContent ?? "", /enter the password again/i);
+      await type(byId("cred-port"), "22");
+      assert.doesNotMatch(dialog()?.textContent ?? "", /enter the password again/i);
+      await type(byId<HTMLTextAreaElement>("cred-known-hosts"), "web-2.example.test ssh-ed25519 (another key)");
+      assert.match(dialog()?.textContent ?? "", /enter the password again/i);
+    }],
+    ["after a 409, Load the latest version and Save send the reloaded version", async () => {
+      const fake = api();
+      fake.on("patch", /\/fleet\/credentials\/3$/, { status: 409, data: { detail: "changed" } });
+      await show();
+      await click(button("Edit linux-pw"));
+      await click(inDialog("Save"));
+      assert.equal(inDialog("Save").disabled, true, "Save is still on after a 409");
+      fake.on("get", /\/fleet\/credentials$/, { data: { credentials: [{ ...PW, name: "renamed-elsewhere", row_version: 7 }, CA] } });
+      fake.on("patch", /\/fleet\/credentials\/3$/, (req) => ({ data: { credential: { ...PW, ...(req.body as object), row_version: 8 }, evaluation: "done", decisions_changed: 0 } }));
+      await click(inDialog("Load the latest version"));
+      assert.equal(byId("cred-name").value, "renamed-elsewhere");
+      await click(inDialog("Save"));
+      assert.equal((fake.calls("patch", /\/fleet\/credentials\/3$/).at(-1)?.body as { expected_version: number }).expected_version, 7);
+    }],
+    ["closing a Delete confirm gives the focus back to its Delete button", async () => {
+      api();
+      await show();
+      for (const how of ["Escape", "Cancel"]) {
+        const del = button("Delete linux-pw");
+        await click(del);
+        assert.ok(dialog(), "Delete opened no confirm");
+        if (how === "Escape") await press("Escape");
+        else await click(inDialog("Cancel"));
+        assert.ok(dialog() === null, `${how} did not close the confirm`);
+        assert.ok(document.activeElement === del, `${how}: focus went to ${document.activeElement?.tagName}`);
+      }
     }],
     ["closing the credential form gives the focus back to the button that opened it", async () => {
       api();
