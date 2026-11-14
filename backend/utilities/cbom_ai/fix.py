@@ -14,6 +14,12 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
   ``from os import system``, ``os`` used as a value, ``eval`` / ``exec`` / ``compile`` / ``__import__`` / ``getattr``
   / ``vars`` / ``globals`` / ``open``, ``__builtins__``, dunder attributes, ``subprocess`` / ``socket`` / ``ctypes`` /
   ``importlib`` / ``sys`` ...);
+* allow-list, fail closed: every call / member the rewrite adds must already be used by the stored window or be on
+  the language's list of crypto-configuration APIs (ciphers, hashes, MACs, KDFs, randomness, key generation,
+  encodings, TLS context options); nothing that connects, opens, requests or executes is on any list (Python: every
+  call target and attribute chain from the tree, module members resolved through the window's imports, one hop
+  only; other languages: call and member names from the code with strings and comments blanked; JS / TS computed
+  member access whose key is not a plain literal is withheld);
 * every language: added lines are NFKC-normalised, then no new network or process call (``_NETWORK``, plus computed
   global access, ``new Function`` and non-literal ``require`` / ``import()`` outside Python), no non-ASCII character
   the window did not already have, no URL or domain the window did not already have;
@@ -106,7 +112,8 @@ _NETWORK = re.compile(
 # outside Python only: computed access to the global object, the Function constructor, non-literal require / import()
 _NETWORK_NOT_PY = re.compile(
     r"\b(?:globalThis|window|global|self|top|parent|frames)\s*(?:\[|\?\.\s*\[)|\bglobalThis\b|\bReflect\b|"
-    r"\bFunction\s*\(|\.constructor\b|\[\s*['\"`]constructor|"
+    r"\bFunction\b|\bconstructor\b|\bprototype\b|__proto__|\bgetPrototypeOf\b|\bsetPrototypeOf\b|\[\s*['\"`]constructor|"
+    r"\bmodule\s*(?:\.|\[|\?\.)|"
     r"\b(?:require|import)\s*\(\s*(?!['\"`][^'\"`]*['\"`]\s*\))")
 _SECRET_NAME = r"(?:key|secret|passw(?:or)?d|pwd|token|private|credential|api[_-]?key|iv|nonce|salt)"
 _KEY_LITERAL = re.compile(
@@ -464,6 +471,282 @@ def _key_literals_text(line: str, key_class: bool) -> list[str]:
     return hits
 
 
+# ------------------------------------------------------------------------------- API allow-list (fail closed)
+# A rewrite may call / reach only APIs that the stored window already uses or that configure cryptography (ciphers,
+# hashes, MACs, KDFs, randomness, key generation, encodings, TLS *context options*). Connecting, opening, requesting
+# or executing anything is on no list, so it is withheld whatever module it comes from (ssl.create_connection,
+# tls.connect, tls.Dial, SSLSocketFactory.createSocket ...).
+_PY_PURE_TOP = {"hashlib", "hmac", "secrets", "base64", "binascii", "certifi", "argon2", "bcrypt", "cryptography",
+                "Crypto", "Cryptodome", "nacl"}
+_PY_RESTRICTED = re.compile(
+    r"os\.(?:urandom|getenv|getenvb|getrandom|environ(?:\.get)?|environb(?:\.get)?|linesep|sep|fsencode|fsdecode|"
+    r"name|GRND_NONBLOCK|path\.(?:join|exists|isfile|isdir|basename|dirname|expanduser|abspath|splitext))|"
+    r"ssl\.(?:create_default_context|SSLContext|PROTOCOL_TLS_CLIENT|PROTOCOL_TLS_SERVER|PROTOCOL_TLS|"
+    r"TLSVersion(?:\.\w+)?|Purpose(?:\.\w+)?|CERT_REQUIRED|CERT_OPTIONAL|VerifyMode\.CERT_(?:REQUIRED|OPTIONAL)|"
+    r"VerifyFlags(?:\.\w+)?|Options(?:\.\w+)?|OP_\w+|HAS_\w+|OPENSSL_VERSION\w*|DER_cert_to_PEM_cert|"
+    r"PEM_cert_to_DER_cert|get_default_verify_paths|SSLError|SSLCertVerificationError|CertificateError)")
+_PY_KNOWN_MODULES = {
+    "os", "sys", "ssl", "socket", "subprocess", "ctypes", "cffi", "importlib", "builtins", "pickle", "marshal",
+    "shelve", "shutil", "requests", "urllib", "urllib3", "http", "httpx", "aiohttp", "ftplib", "smtplib", "telnetlib",
+    "poplib", "imaplib", "asyncio", "threading", "multiprocessing", "concurrent", "pty", "pexpect", "paramiko", "io",
+    "codecs", "pathlib", "tempfile", "json", "re", "gc", "inspect", "operator", "types", "runpy", "webbrowser",
+    "zipimport", "signal", "select", "selectors", "struct", "random", "time", "logging", "platform", "getpass",
+    "posix", "nt", "sysconfig", "site", "zipfile", "tarfile", "glob", "sqlite3", "dbm", "xmlrpc", "email", "uuid",
+    "mmap", "fcntl", "resource", "pwd", "grp", "socketserver", "functools", "itertools", "copyreg", "code",
+    "codeop", "pydoc", "dis", "tracemalloc", "faulthandler", "atexit", "warnings", "base64", "binascii", "hashlib",
+    "hmac", "secrets", "certifi", "argon2", "bcrypt", "cryptography", "Crypto", "Cryptodome", "nacl", "string"}
+_PY_BUILTINS_OK = {"len", "bytes", "bytearray", "int", "str", "bool", "float", "isinstance", "range", "min", "max",
+                   "hex", "ord", "chr", "list", "dict", "tuple", "set", "frozenset", "super", "enumerate", "zip",
+                   "sorted", "reversed", "any", "all", "abs", "divmod", "memoryview", "ValueError", "TypeError",
+                   "RuntimeError", "KeyError", "Exception", "NotImplementedError", "PermissionError"}
+# crypto constructors / helpers a fix may call by their usual imported name even when the import sits above a stored
+# fragment (the import itself, when added, still goes through the import allow-list)
+_PY_CRYPTO_NAMES = {"AESGCM", "AESCCM", "AESSIV", "AESOCB3", "AESGCMSIV", "ChaCha20Poly1305", "Fernet", "MultiFernet",
+                    "PBKDF2HMAC", "Scrypt", "HKDF", "HKDFExpand", "Cipher", "get_random_bytes", "default_backend",
+                    "PBKDF2", "pad", "unpad", "token_bytes", "token_hex", "token_urlsafe", "compare_digest",
+                    "pbkdf2_hmac", "b64encode", "b64decode", "urlsafe_b64encode", "urlsafe_b64decode", "hexlify",
+                    "unhexlify", "urandom", "getenv"}
+_PY_METHOD_ALLOW = {
+    "encrypt", "decrypt", "encrypt_and_digest", "decrypt_and_verify", "digest", "hexdigest", "update", "finalize",
+    "finalize_with_tag", "authenticate_additional_data", "encryptor", "decryptor", "derive", "verify", "sign",
+    "public_key", "private_bytes", "public_bytes", "exchange", "generate_key", "encode", "decode", "hex", "fromhex",
+    "set_ciphers", "set_ecdh_curve", "load_verify_locations", "load_cert_chain", "load_default_certs",
+    "set_default_verify_paths", "set_alpn_protocols", "copy", "to_bytes", "from_bytes", "startswith", "endswith",
+    "strip", "rstrip", "lstrip", "split", "join", "lower", "upper", "replace", "append", "extend", "items", "keys",
+    "values", "pad", "unpad", "new", "zfill", "ljust", "rjust"}
+
+
+def _py_chain(node: ast.AST) -> list[str] | None:
+    """``a.b.c`` -> ['a', 'b', 'c'] when the chain starts at a name, else None."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        return [node.id] + parts[::-1]
+    return None
+
+
+def _py_api_refs(tree: ast.AST) -> Counter[str]:
+    """Every call target and every attribute chain in a tree: ``f()``, ``a.b.c`` / ``a.b.c()``, and ``*.m`` /
+    ``*.m()`` for a member of something that is not a name (a call result, a subscript, a literal)."""
+    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    refs: Counter[str] = Counter()
+    for node in ast.walk(tree):
+        called = isinstance(parents.get(node), ast.Call) and parents[node].func is node  # type: ignore[attr-defined]
+        if isinstance(node, ast.Name) and called:
+            refs[f"{node.id}()"] += 1
+        elif isinstance(node, ast.Attribute):
+            parent = parents.get(node)
+            if isinstance(parent, ast.Attribute) and parent.value is node:
+                continue  # not the whole chain
+            chain = _py_chain(node)
+            if chain is not None:
+                refs[".".join(chain) + ("()" if called else "")] += 1
+            else:
+                inner: ast.AST = node
+                while isinstance(inner, ast.Attribute):  # every member of a non-name base
+                    refs[f"*.{inner.attr}" + ("()" if inner is node and called else "")] += 1
+                    inner = inner.value
+    return refs
+
+
+def _py_bindings(trees: list[ast.AST]) -> tuple[dict[str, str], dict[str, str], set[str]]:
+    """(local name -> module for ``import``, local name -> 'module.name' for ``from ... import``, defined names)."""
+    modules: dict[str, str] = {}
+    froms: dict[str, str] = {}
+    defs: set[str] = set()
+    for tree in trees:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.asname:
+                        modules[a.asname] = a.name
+                    else:
+                        modules[a.name.split(".")[0]] = a.name.split(".")[0]
+            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                for a in node.names:
+                    froms[a.asname or a.name] = f"{node.module}.{a.name}"
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                defs.add(node.name)
+    return modules, froms, defs
+
+
+def _py_module_path_ok(full: str, depth_after_root: int) -> bool:
+    """``full`` is a dotted path whose root is a module (or a name imported from one)."""
+    top = full.split(".")[0]
+    if top in ("os", "ssl"):
+        return bool(_PY_RESTRICTED.fullmatch(full))
+    if top not in _PY_PURE_TOP:
+        return False
+    rest = full.split(".")[-depth_after_root:] if depth_after_root else []
+    if any(p.startswith("_") or p in _PY_KNOWN_MODULES for p in rest):
+        return False  # no hop to another module (secrets.base64, hmac._hashlib)
+    return depth_after_root <= 1 or (depth_after_root == 2 and rest[0][:1].isupper())
+
+
+def _py_ref_ok(ref: str, modules: dict[str, str], froms: dict[str, str], defs: set[str]) -> bool:
+    called = ref.endswith("()")
+    path = ref[:-2] if called else ref
+    if path.startswith("*."):
+        return not called or path[2:] in _PY_METHOD_ALLOW
+    parts = path.split(".")
+    root, rest = parts[0], parts[1:]
+    if root in modules:
+        return _py_module_path_ok(".".join([modules[root]] + rest), len(rest))
+    if root in froms:
+        src = froms[root]
+        if src.split(".")[0] in ("os", "ssl"):
+            return _py_module_path_ok(".".join([src] + rest), len(rest) + 1)
+        return _py_module_path_ok(".".join([src] + rest), len(rest))
+    if root in _PY_KNOWN_MODULES:
+        return _py_module_path_ok(path, len(rest))
+    if not rest:
+        return root in _PY_BUILTINS_OK or root in _PY_CRYPTO_NAMES or root in defs
+    return not called or parts[-1] in _PY_METHOD_ALLOW  # a member of a local object
+
+
+_PY_STRINGS = re.compile(r"""[rbuRBUfF]{0,2}(?:'\'\'.*?'\'\'|\"\"\".*?\"\"\"|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*")""", re.S)
+
+
+def _blank_py(text: str) -> str:
+    """Python code with string literals emptied and comments dropped (for "the window already does this")."""
+    return re.sub(r"#[^\n]*", "", _PY_STRINGS.sub("''", text))
+
+
+def _py_unlisted(after: list[ast.Module], before: list[ast.Module], original_code: str) -> list[str]:
+    """API references the rewrite adds that are neither in the stored window nor on the allow-list."""
+    refs_after: Counter[str] = sum((_py_api_refs(t) for t in after), Counter())
+    refs_before: Counter[str] = sum((_py_api_refs(t) for t in before), Counter())
+    modules, froms, defs = _py_bindings(after)
+    out = []
+    for ref in sorted(set(refs_after - refs_before)):
+        if ref in refs_before or (ref[:-2] if ref.endswith("()") else ref) in refs_before:
+            continue
+        text = ref[1:] if ref.startswith("*.") else ref
+        if re.search(r"(?<![\w.])" + re.escape(text.removesuffix("()")) + (r"\s*\(" if ref.endswith("()") else r"\b"),
+                     original_code):
+            continue  # the stored window already does this (a fragment's context lines)
+        if not _py_ref_ok(ref, modules, froms, defs):
+            out.append(ref)
+    for name, src in froms.items():  # from ssl import create_connection
+        mod = src.rsplit(".", 1)[0]
+        if mod.split(".")[0] in ("os", "ssl") and not _PY_RESTRICTED.fullmatch(src) and \
+                not re.search(r"\bimport\b[^\n]*\b" + re.escape(name) + r"\b", original_code):
+            out.append(f"from {mod} import {src.rsplit('.', 1)[1]}")
+    return sorted(set(out))
+
+
+# other languages: call names and member names, from code with strings and comments blanked
+_KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "typeof", "sizeof", "function", "func", "fun", "await",
+             "async", "super", "this", "new", "throw", "throws", "else", "do", "try", "finally", "using", "lock",
+             "fixed", "foreach", "synchronized", "assert", "yield", "delete", "void", "in", "of", "instanceof",
+             "defer", "go", "select", "with", "when", "is", "as", "default", "case", "var", "let", "const", "val",
+             "nameof", "checked", "unchecked", "base", "init", "get", "set", "and", "or", "not", "import", "package",
+             "struct", "interface", "map", "chan", "type", "class", "enum", "record", "object", "static", "public",
+             "private", "protected", "internal", "override", "readonly", "final", "abstract", "out", "ref", "params"}
+_JS_CALLS = {"require", "String", "Number", "Boolean", "Array", "Uint8Array", "Uint32Array", "ArrayBuffer", "DataView",
+             "BigInt", "Error", "TypeError", "RangeError", "parseInt", "isNaN", "Promise", "TextEncoder",
+             "TextDecoder", "Map", "Set", "Date"}
+_JS_MEMBERS = {
+    "randomBytes", "randomFillSync", "randomFill", "randomInt", "randomUUID", "getRandomValues", "createCipheriv",
+    "createDecipheriv", "createHash", "createHmac", "createSign", "createVerify", "createSecretKey",
+    "createPrivateKey", "createPublicKey", "generateKeyPair", "generateKeyPairSync", "generateKey",
+    "generateKeySync", "pbkdf2", "pbkdf2Sync", "scrypt", "scryptSync", "hkdf", "hkdfSync", "timingSafeEqual",
+    "getCiphers", "getHashes", "getCurves", "publicEncrypt", "privateDecrypt", "sign", "verify", "update", "final",
+    "digest", "getAuthTag", "setAuthTag", "setAAD", "setAutoPadding", "export", "subtle", "webcrypto", "encrypt",
+    "decrypt", "importKey", "exportKey", "deriveKey", "deriveBits", "wrapKey", "unwrapKey", "constants", "crypto",
+    "from", "alloc", "concat", "toString", "slice", "subarray", "length", "byteLength", "equals", "compare",
+    "isBuffer", "env", "encode", "decode", "then", "map", "join", "push", "includes", "indexOf", "startsWith",
+    "endsWith", "padStart", "padEnd", "split", "trim", "freeze", "parse", "stringify", "floor", "min", "max",
+    "createSecureContext", "checkServerIdentity", "minVersion", "maxVersion", "ciphers", "secureProtocol",
+    "rejectUnauthorized", "ecdhCurve", "honorCipherOrder", "secureOptions"}
+_JAVA_CALLS = {"SecureRandom", "SecretKeySpec", "IvParameterSpec", "GCMParameterSpec", "PBEKeySpec",
+               "ChaCha20ParameterSpec", "OAEPParameterSpec", "MGF1ParameterSpec", "PSSParameterSpec",
+               "ECGenParameterSpec", "RSAKeyGenParameterSpec", "String", "SSLParameters", "IllegalStateException",
+               "IllegalArgumentException", "RuntimeException", "GeneralSecurityException", "byte", "char", "int"}
+_JAVA_MEMBERS = {
+    "getInstance", "getInstanceStrong", "init", "doFinal", "update", "updateAAD", "getIV", "getParameters",
+    "getBlockSize", "getOutputSize", "generateKey", "generateSecret", "getEncoded", "getAlgorithm", "getFormat",
+    "nextBytes", "digest", "reset", "initialize", "generateKeyPair", "getPublic", "getPrivate", "initSign",
+    "initVerify", "sign", "verify", "getDecoder", "getEncoder", "getUrlDecoder", "getUrlEncoder", "decode",
+    "encode", "encodeToString", "getBytes", "getenv", "arraycopy", "copyOf", "copyOfRange", "fill", "equals",
+    "isEqual", "allocate", "put", "array", "wrap", "length", "getDefaultAlgorithm", "getTrustManagers",
+    "getKeyManagers", "getDefaultSSLParameters", "getSupportedSSLParameters", "setProtocols", "setCipherSuites",
+    "setEndpointIdentificationAlgorithm", "valueOf", "toString", "isEmpty", "orElseThrow"}
+_CS_CALLS = {"AesGcm", "AesCcm", "ChaCha20Poly1305", "HMACSHA256", "HMACSHA384", "HMACSHA512", "Rfc2898DeriveBytes",
+             "ArgumentException", "InvalidOperationException", "CryptographicException", "HashAlgorithmName"}
+_CS_MEMBERS = {
+    "Create", "GetBytes", "Fill", "Encrypt", "Decrypt", "Pbkdf2", "HashData", "ComputeHash", "FixedTimeEquals",
+    "GenerateKey", "GenerateIV", "CreateEncryptor", "CreateDecryptor", "TransformFinalBlock", "TransformBlock",
+    "EncryptCbc", "DecryptCbc", "FromBase64String", "ToBase64String", "FromHexString", "ToHexString",
+    "GetEnvironmentVariable", "GetString", "UTF8", "ASCII", "Key", "IV", "Mode", "Padding", "KeySize", "BlockSize",
+    "NonceByteSizes", "TagByteSizes", "MaxSize", "Length", "CopyTo", "Clear", "AsSpan", "ToArray", "SequenceEqual",
+    "ImportSubjectPublicKeyInfo", "ExportSubjectPublicKeyInfo", "ImportPkcs8PrivateKey", "ExportPkcs8PrivateKey",
+    "SignData", "VerifyData", "OaepSHA256", "OaepSHA384", "Pss", "Pkcs1", "SHA256", "SHA384", "SHA512",
+    "SslProtocols", "Tls12", "Tls13", "EnabledSslProtocols", "CheckCertificateRevocation", "Shared"}
+_GO_CALLS = {"make", "len", "cap", "append", "copy", "panic", "byte", "string", "int", "uint32", "uint64", "int64"}
+_GO_MEMBERS = {
+    "NewCipher", "NewGCM", "NewGCMWithNonceSize", "NonceSize", "Overhead", "Seal", "Open", "Read", "ReadFull",
+    "Reader", "Getenv", "LookupEnv", "DecodeString", "EncodeToString", "StdEncoding", "URLEncoding",
+    "RawStdEncoding", "RawURLEncoding", "Sum256", "Sum512", "New", "Sum", "Write", "Reset", "Size", "BlockSize",
+    "Equal", "IDKey", "Key", "GenerateKey", "P256", "P384", "P521", "SignASN1", "VerifyASN1", "Sign", "Verify",
+    "SignPKCS1v15", "SignPSS", "EncryptOAEP", "DecryptOAEP", "Config", "MinVersion", "MaxVersion", "VersionTLS12",
+    "VersionTLS13", "CipherSuites", "CurvePreferences", "X25519", "SystemCertPool", "NewCertPool",
+    "AppendCertsFromPEM", "RootCAs", "ParseCertificate", "ParsePKCS8PrivateKey", "MarshalPKCS8PrivateKey",
+    "ConstantTimeCompare", "Errorf"}
+_LANG_API: dict[str, tuple[set[str], set[str]]] = {
+    "javascript": (_JS_CALLS, _JS_MEMBERS), "typescript": (_JS_CALLS, _JS_MEMBERS),
+    "java": (_JAVA_CALLS, _JAVA_MEMBERS), "kotlin": (_JAVA_CALLS, _JAVA_MEMBERS),
+    "csharp": (_CS_CALLS, _CS_MEMBERS), "go": (_GO_CALLS, _GO_MEMBERS)}
+_STRINGISH = re.compile(r"""("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)""")
+_COMMENTS = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+_MEMBER = re.compile(r"(?:\?\.|\.|::|->)\s*([A-Za-z_$][\w$]*)")
+_CALL = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)\s*(?:<[\w\s,.<>?\[\]]*>)?\s*\(")
+_LITERAL_KEY = re.compile(r"""[\w$)\]]\s*(?:\?\.)?\[\s*(['"`])([^'"`\\]*)\1\s*\]""")
+_COMPUTED = re.compile(r"[\w$)\]]\s*(?:\?\.)?\[([^\[\]]*)\]")
+_PLAIN_KEY = re.compile(r"""\s*(?:'[^'\\]*'|"[^"\\]*"|`[^`\\$]*`|\d+)?\s*""")
+_DECLARED = (re.compile(r"\b(?:function|class|const|let|var|val|fun|func|struct|interface)\s+([A-Za-z_$][\w$]*)"),
+             re.compile(r"\bfunc\s+\([^)]*\)\s*([A-Za-z_]\w*)"), re.compile(r"\b([A-Za-z_]\w*)\s*:="),
+             re.compile(r"\b([A-Za-z_]\w*)\s*\([^()]*\)\s*(?:throws\s+[\w.,\s]+)?\{"))
+_CAPS = re.compile(r"[A-Z][A-Z0-9_]+")
+
+
+_IMPORT_STMT = re.compile(r"\b(?:import\s+(?:static\s+)?[\w.*]+|using\s+(?:static\s+)?[\w.]+(?:\s*=\s*[\w.]+)?|"
+                          r"package\s+[\w.]+)\s*;?")
+
+
+def _blank(text: str) -> str:
+    """Code with string contents removed (quotes kept), comments and import / using / package statements dropped
+    (imports have their own allow-list)."""
+    return _IMPORT_STMT.sub(" ", _COMMENTS.sub(" ", _STRINGISH.sub(lambda m: m.group(0)[0] * 2, text)))
+
+
+def _names(text: str) -> tuple[set[str], set[str], set[str]]:
+    """(call names, member names, declared names) of a piece of code."""
+    code = _blank(text)
+    calls = {m.group(1) for m in _CALL.finditer(code)} - _KEYWORDS
+    members = {m.group(1) for m in _MEMBER.finditer(code)} | {m.group(2) for m in _LITERAL_KEY.finditer(text)}
+    declared = {m.group(1) for rx in _DECLARED for m in rx.finditer(code)} - _KEYWORDS
+    return calls, members, declared
+
+
+def _text_unlisted(added: list[str], original: str, lang: str) -> list[str]:
+    """Call and member names the rewrite adds that are neither in the stored window nor on the language's
+    allow-list (constants in CAPS aside); JS / TS: computed member access whose key is not a plain literal."""
+    allow_calls, allow_members = _LANG_API.get(lang, (set(), set()))
+    text = "\n".join(added)
+    calls, members, declared = _names(text)
+    o_calls, o_members, o_declared = _names(original)
+    out = [f"{c}()" for c in calls - o_calls - o_declared - allow_calls - declared]
+    out += [f".{m}" for m in members - o_members - allow_members if not _CAPS.fullmatch(m)]
+    if lang in ("javascript", "typescript"):
+        blanked = _STRINGISH.sub(lambda m: m.group(0)[0] * 2, text)
+        out += [f"[{m.group(1).strip()}]" for m in _COMPUTED.finditer(blanked)
+                if not _PLAIN_KEY.fullmatch(m.group(1)) and m.group(0) not in original]
+    return sorted(set(out))
+
+
 def _parses(lang: str, text: str) -> bool | None:
     """True / False when the language is checked, None when it is not."""
     body = textwrap.dedent(text)
@@ -618,6 +901,14 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
                             {m.group(0).strip() for m in rx.finditer(norm_original)} - set(new_calls))
     if not check("no new network or process calls", not new_calls, ", ".join(new_calls)):
         return _withheld(grounding, "it adds a network or process call (" + ", ".join(new_calls[:3]) + ")", checks)
+    # allow-list: every API the rewrite adds is already in the window or configures cryptography (fail closed)
+    if lang == "python":
+        unlisted = _py_unlisted(py_after, py_before, _blank_py(original_text))
+    else:
+        unlisted = _text_unlisted(norm_added, norm_original, lang)
+    if not check("only allow-listed APIs", not unlisted, ", ".join(unlisted[:5])):
+        return _withheld(grounding, "it calls an API that is not on the allow-list for a crypto fix (" +
+                         ", ".join(unlisted[:3]) + ")", checks)
     # look-alike characters: anything NFKC changes, or a non-ASCII character the window does not already have
     odd = sorted({ch for ln in added for ch in ln if ord(ch) > 127 and (
         unicodedata.normalize("NFKC", ch) != ch or ch not in original_text)})
