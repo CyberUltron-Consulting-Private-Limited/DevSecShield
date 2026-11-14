@@ -519,7 +519,8 @@ def _metrics(engine) -> str:
         return OPS.render(session, utcnow())
 
 
-@router.get("/cbom/ops/metrics", summary="Operational metrics (Prometheus text format; platform administrators only)")
+@router.get("/cbom/ops/metrics", dependencies=READ,
+            summary="Operational metrics (Prometheus text format; platform administrators only)")
 async def ops_metrics(Authorization: Annotated[str | None, Header()] = None):
     """Queue depth per job kind, oldest pending age, lease expiries, ingest rejects, node heartbeat age and the
     integration backlog, platform-wide and aggregated (``ops_metrics``).  A platform administrator's session, or the
