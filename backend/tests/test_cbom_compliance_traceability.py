@@ -4,9 +4,9 @@ A run with known findings is seeded through the real node flow (``two_runs`` / `
 uploaded assets). Then, against the real routers:
 
 * every clause the run API maps (``/runs/{id}/posture`` and ``/runs/{id}/results``) traces back to findings: its codes
-  are on the run's assets, its asset count is the number of assets carrying one of them, and every finding code with
-  a compliance area in the knowledge base reaches all of that area's clauses (nothing mapped is dropped, nothing
-  unmapped is shown);
+  are on the run's assets, its asset count is the number of assets carrying one of them, and every finding code
+  reaches exactly the clauses the knowledge base says it breaks on that asset (``crypto_kb.clauses_for``; #269: never
+  a whole compliance area), so nothing mapped is dropped and nothing unmapped is shown;
 * the OSCAL assessment results of the run carry the same codes, each finding linked to its clauses' sources and to the
   observations of the assets that carry the code;
 * the team-wide deliverables (``/cbom/deliverables/{slug}``: the board report with its regulatory exposure and the
@@ -69,17 +69,16 @@ def _posture(api, run_id) -> dict:
 
 def _expected_clauses(assets: list[dict]) -> dict[tuple[str, str], tuple[set[int], set[str]]]:
     """The oracle, from the knowledge base and the run's assets only: clause -> (asset ids, codes)."""
-    table = crypto_kb.load()["compliance"]
     out: dict[tuple[str, str], tuple[set[int], set[str]]] = defaultdict(lambda: (set(), set()))
     for asset in assets:
+        evidence = " ".join(str(asset.get(k)) for k in ("algorithm", "name", "finding") if asset.get(k))
         for code in asset["finding_codes"]:
             if code.startswith("COVERAGE_"):
                 continue
-            for area in (crypto_kb.entry("node", code) or {}).get("compliance") or []:
-                for ref in table.get(area) or []:
-                    ids, codes = out[(ref["framework"], ref["id"])]
-                    ids.add(asset["id"])
-                    codes.add(code)
+            for ref in crypto_kb.clauses_for("node", code, evidence):  # the clauses the code breaks (#269)
+                ids, codes = out[(ref["framework"], ref["id"])]
+                ids.add(asset["id"])
+                codes.add(code)
     return out
 
 

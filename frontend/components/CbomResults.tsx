@@ -99,6 +99,8 @@ import {
   RunWavesSection,
   SectionNote,
 } from "@/components/cbom/results/RunSections";
+import { ReadinessExplainer } from "@/components/cbom/results/ReadinessExplainer";
+import { readinessDrillFilters } from "@/components/cbom/results/readinessExplain";
 import RunTicketingTab from "@/components/cbom/results/RunTicketingTab";
 import type { ResultsSource } from "@/components/cbom/results/source";
 import { advisoryLine, readAdvisoryData, staleNote } from "@/components/cbom/advisoryData";
@@ -852,6 +854,11 @@ export default function CbomResults({
               {/* Post-quantum and risk posture (ids run-posture, posture-*, mosca-*), with the Q-grade distribution and
                   the crypto-agility card; a code scan has no posture payload, so it is not shown there */}
               <RunPostureCard teamId={run.teamId} runId={run.runId} active={run.active} />
+              {/* PQC readiness in plain words and what raises it (issue #271); "show" filters the findings table */}
+              <ReadinessExplainer posture={run.posture} onShowAssets={(action) => {
+                run.onFilters(readinessDrillFilters(action));
+                document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }} />
             </>
           )}
           {/* Scan metadata cards */}
@@ -925,7 +932,7 @@ export default function CbomResults({
               <RunInsights teamId={run.teamId} runId={run.runId} active={run.active} />
               <RunCertificatesSection view={run.plan.certificates} results={run.results} onOpenAsset={(id) => run.openAsset(id)} />
               {run.run && <RunChangesSection teamId={run.teamId} run={run.run} canCompare={run.canCompare} onCompare={() => run.setCompareOpen(true)} />}
-              <RunWavesSection byWave={run.waves.data?.by_wave} labels={run.waves.data?.labels} loading={run.waves.loading}
+              <RunWavesSection byWave={run.waves.data?.by_wave} labels={run.waves.data?.labels} rules={run.waves.data?.rules} loading={run.waves.loading}
                                deferred={!run.waves.wanted && run.active} selected={run.selection.size} />
             </>
           )}

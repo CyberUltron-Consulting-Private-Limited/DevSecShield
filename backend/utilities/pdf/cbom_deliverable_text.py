@@ -680,6 +680,15 @@ CBOM_SCANNERS = (
         "it secures; source path.",
     ),
     ScannerSpec(
+        "crypto_lang_misuse",
+        26,
+        ".NET, C (OpenSSL) and Terraform settings: legacy TLS versions set in code, RSA "
+        "PKCS#1 v1.5 encryption padding, too few PBKDF2 iterations, constant keys and IVs, "
+        "OpenSSL cipher lists, RSA public exponent 3 and tls_private_key key sizes.",
+        "Protocol, algorithm or related-crypto-material asset on the line that carries the "
+        "setting; source path.",
+    ),
+    ScannerSpec(
         "crypto_protocol",
         30,
         "TLS/SSL, SSH and IPsec/IKE usage in source and configuration: pinned protocol "

@@ -29,6 +29,12 @@ def tick(engine, now=None) -> dict[str, Any]:
     fired = fire_due(engine, now)
     drift = record_pending_drift(engine, now)
     out: dict[str, Any] = {"fired": fired, "drift_runs": drift}
+    try:  # CB-20/CB-32: a store that missed a run (deferred by a request with a cold key index, or a failed write)
+        from backend.utilities.cbom_sources.estate import repair_due
+
+        out["estate_repair"] = repair_due(engine, now)
+    except Exception as exc:
+        log("estate repair FAILED", ref=new_ref(), error=type(exc).__name__)
     try:  # CB-23: the register's daily re-judge (day 366 evidence; deleted sources), at most hourly per process
         from backend.utilities.cbom_sources.q0register import tick_due
 

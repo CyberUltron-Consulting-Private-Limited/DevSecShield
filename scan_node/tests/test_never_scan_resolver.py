@@ -247,6 +247,22 @@ def test_a_listed_name_that_does_not_resolve_is_named_in_the_job_result(slow_dns
     result = ctx.result()
     assert result["never_scan_unresolved"] == ["gone.corp.internal"]
     assert "gone.corp.internal" in result["summary"] and "did not resolve from the scan node" in result["summary"]
+    assert result["never_scan_checked"] is True
+
+
+def test_the_job_result_says_whether_any_address_was_checked_against_the_listed_names(slow_dns):
+    """#298 review: the server ends a "held" badge only on a job that checked an address against the listed names; a
+    job that checked none (a PKCS#11 token, a job stopped before its first target) must say so."""
+    slow_dns.table["db.corp.internal"] = ["10.0.0.5"]
+    idle = _ctx(NeverScan(["db.corp.internal"]))
+    assert idle.result()["never_scan_checked"] is False
+    in_cidr = _ctx(NeverScan(["db.corp.internal", "10.9.0.0/16"]))
+    assert in_cidr.never_scan.blocks_ip("10.9.0.1")  # a listed CIDR answers before the names are looked at
+    assert in_cidr.result()["never_scan_checked"] is False
+    checked = _ctx(NeverScan(["db.corp.internal"]))
+    assert not checked.never_scan.blocks_ip("10.0.0.6")
+    result = checked.result()
+    assert result["never_scan_checked"] is True and "never_scan_unresolved" not in result
 
 
 def test_a_connection_test_says_why_every_address_was_held(slow_dns, monkeypatch):

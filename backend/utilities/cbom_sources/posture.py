@@ -28,6 +28,7 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import algid, crypto_kb
+from backend.utilities.cbom_sources import clause_evidence as CE
 from backend.utilities.cbom_sources import standards as STD
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
 from backend.utilities.cbom_sources.classify import (
@@ -329,6 +330,49 @@ def readiness(classes: Mapping[str, int]) -> tuple[float | None, dict[str, Any]]
     return pct, basis
 
 
+# readiness_actions: how many groups the readiness card names (the full list is ``readiness_actions_all``)
+READINESS_ACTIONS_TOP = 3
+
+
+def quantum_code(codes: Iterable[str]) -> str | None:
+    """The finding code that makes an asset quantum-vulnerable (KB ``pqc: quantum-broken``), as the run results'
+    migration rows pick it (``migration_code``); None when the asset carries no such code."""
+    return next((c for c in codes if (crypto_kb.entry("node", c) or {}).get("pqc") == "quantum-broken"), None)
+
+
+def readiness_actions(groups: Mapping[tuple[str, str | None], int],
+                      classes: Mapping[str, int]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """What would raise PQC readiness (issue #271): the quantum-vulnerable assets per (asset type, quantum finding
+    code), largest group first, each with the KB title and fix and ``readiness_after``, the readiness this run would
+    have if that group alone were moved to hybrid or post-quantum cryptography (``readiness`` itself, so the page never
+    computes a readiness). Returns (the top ``READINESS_ACTIONS_TOP``, every group)."""
+    vulnerable = int(classes.get("quantum-vulnerable", 0) or 0)
+    out = []
+    for (a_type, code), n in sorted(groups.items(), key=lambda kv: (-kv[1], kv[0][0], kv[0][1] or "")):
+        entry = (crypto_kb.entry("node", code) or {}) if code else {}
+        fixed = {**classes, "quantum-vulnerable": max(0, vulnerable - n),
+                 "quantum-safe": int(classes.get("quantum-safe", 0) or 0) + min(n, vulnerable)}
+        out.append({"asset_type": a_type, "type_label": type_label(a_type), "code": code, "assets": n,
+                    "title": entry.get("title") or CLASS_BASIS["shor_breaks"][1],
+                    "fix": crypto_kb.summary_fix("node", [code]) if code else None,
+                    "readiness_after": readiness(fixed)[0]})
+    return out[:READINESS_ACTIONS_TOP], out
+
+
+def type_label(asset_type: str | None) -> str:
+    """The run table's type name (``run_assets.type_label``), imported late to keep this module import-cycle free."""
+    from backend.utilities.cbom_sources.run_assets import type_label as label
+
+    return label(asset_type)
+
+
+def readiness_excluded(bases: Mapping[str, int]) -> list[dict[str, Any]]:
+    """The assets outside the readiness denominator (classes unknown and not-applicable), per reason, most first."""
+    rows = [{"class": CLASS_BASIS[b][0], "basis": b, "assets": n, "text": CLASS_BASIS[b][1]}
+            for b, n in bases.items() if b in CLASS_BASIS and CLASS_BASIS[b][0] not in JUDGED_CLASSES and n]
+    return sorted(rows, key=lambda r: (-r["assets"], r["basis"]))
+
+
 def readiness_pct(vulnerable: int, judged: int, unknown: int) -> float | None:
     """``readiness`` for callers that count views, not classes (drift)."""
     return readiness({"quantum-vulnerable": vulnerable, "quantum-safe": max(0, judged - vulnerable),
@@ -435,8 +479,34 @@ def _job_context(session: Session, team_id: int, run_id: int, sources: dict[int,
     jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.team_id == team_id,
                                                         CbomCollectionJob.run_id == run_id)).all()
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
-    return {job.id: job_metadata(job.params, sources.get(job.source_id or 0), nodes.get(job.node_id or 0))
+    # source_name: the source's name, else (a deleted source) the job's snapshot name, as the run's /assets list
+    return {job.id: {**job_metadata(job.params, sources.get(job.source_id or 0), nodes.get(job.node_id or 0)),
+                     "source_name": _job_source_name(job, sources.get(job.source_id or 0))}
             for job in jobs if job.id is not None}
+
+
+def _job_source_name(job: CbomCollectionJob | None, source: CbomCollectionSource | None) -> str | None:
+    """The name a run shows for a job's source: the live name, else the name snapshotted on the job (a deleted
+    source keeps it there, ``removal.remove_source``), else None; the rule of ``inventory.public_asset``."""
+    return (source.name if source is not None else None) or \
+        ((job.params or {}).get("source_name") if job is not None else None) or None
+
+
+CLAUSE_VERDICTS = ("fail", "needs_evidence")
+
+
+def clause_verdict(assets: int, unrecorded: int) -> str:
+    """A knowledge-base clause the run's findings touch: ``fail`` when at least one asset is behind it on a recorded
+    algorithm (or a code that always cites it); ``needs_evidence`` when every asset behind it was cited for review
+    only, because the algorithm the clause depends on was not recorded (#289): neither a violation nor a pass."""
+    return "needs_evidence" if assets > 0 and unrecorded >= assets else "fail"
+
+
+def framework_verdict(clauses: list[dict[str, Any]]) -> str | None:
+    """A framework's verdict from its knowledge-base clauses: ``fail`` when any clause fails, ``needs_evidence`` when
+    every touched clause needs evidence, None when no clause is touched."""
+    verdicts = {c.get("verdict") for c in clauses}
+    return "fail" if "fail" in verdicts else ("needs_evidence" if verdicts else None)
 
 
 def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict[str, Any] | None,
@@ -458,12 +528,12 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     classes: Counter[str] = Counter()
     impacts: Counter[str] = Counter()
     codes: Counter[str] = Counter()
+    vulnerable_groups: Counter[tuple[str, str | None]] = Counter()  # readiness_actions (issue #271)
     hndl_count = 0
     risky: list[dict[str, Any]] = []
     clause_assets: dict[tuple[str, str], set[int]] = defaultdict(set)
     clause_meta: dict[tuple[str, str], dict[str, Any]] = {}
-    kb = crypto_kb.load()
-    compliance = kb.get("compliance") or {}
+    clause_recorded: dict[tuple[str, str], set[int]] = defaultdict(set)  # cited on a recorded algorithm (or always)
     for row in rows:
         aid, a_type, qv, facts, source_id = row.id, row.asset_type, row.quantum_vulnerable, row.facts, row.source_id
         location, name, job_id, target = row.location, row.name, row.job_id, row.target
@@ -476,6 +546,8 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         cls, basis = classify_pqc(row, a_codes, elsewhere=elsewhere)
         classes[cls] += 1
         bases[basis] += 1
+        if cls == "quantum-vulnerable":
+            vulnerable_groups[(a_type, quantum_code(a_codes))] += 1
         agility.add(row, a_codes)
         if impact:
             impacts[impact] += 1
@@ -493,25 +565,39 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         if impact:
             risky.append({"id": aid, "type": a_type, "name": name or location, "location": location, "impact": impact,
                           "criticality": crit, "exposure": exposure, "exposure_basis": basis_exposure,
-                          "source_name": source.name if source else None,
+                          "source_name": (source.name if source else None) or ctx.get("source_name"),
                           "score": round(IMPACT_WEIGHT.get(impact, 0) * CRITICALITY.get(crit, 1.0)
                                          * EXPOSURE_FACTOR[exposure], 1),
                           "hndl": hndl(a_type, qv), "finding": finding})
-        for code in a_codes:
-            for key in (crypto_kb.entry("node", code) or {}).get("compliance") or []:
-                for ref in compliance.get(key) or []:
-                    clause = (ref["framework"], ref["id"])
-                    clause_assets[clause].add(aid)
-                    meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
-                    meta["codes"].add(code)
+        # each code's own clauses; algorithm-specific ones decided on the algorithms the classifier flagged, never on
+        # the asset's name or sentence (#269, #289); clause_evidence is also the run assets filter's (clause=)
+        for code, ref in CE.asset_clauses(row, a_codes):
+            clause = (ref["framework"], ref["id"])
+            clause_assets[clause].add(aid)
+            if ref.get("evidence") != "not_recorded":
+                clause_recorded[clause].add(aid)
+            meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
+            meta["codes"].add(code)
     readiness_value, readiness_basis = readiness(classes)
+    actions_top, actions_all = readiness_actions(vulnerable_groups, classes)
     frameworks: dict[str, list[dict[str, Any]]] = defaultdict(list)
     framework_assets: dict[str, set[int]] = defaultdict(set)  # distinct assets behind any clause (#270)
+    framework_recorded: dict[str, set[int]] = defaultdict(set)
     for clause, assets in sorted(clause_assets.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         meta = clause_meta[clause]
+        recorded = clause_recorded.get(clause) or set()
         framework_assets[clause[0]].update(assets)
+        framework_recorded[clause[0]].update(recorded)
+        # #289: an algorithm clause cited for an asset whose algorithm was not recorded (by none of its codes) needs
+        # evidence: it is listed for review, and a clause that has only such assets is no confirmed violation
+        unrecorded = len(assets - recorded)
+        note = meta.get("note") if meta.get("evidence") != "not_recorded" else None
+        if unrecorded:
+            note = " ".join(p for p in (f"{unrecorded} of {len(assets)} asset(s): {crypto_kb.NOT_RECORDED}", note) if p)
         frameworks[clause[0]].append({"id": meta["id"], "text": meta["text"], "source": meta["source"],
-                                      "note": meta.get("note"), "assets": len(assets), "codes": sorted(meta["codes"])})
+                                      "note": note, "assets": len(assets), "codes": sorted(meta["codes"]),
+                                      "key": meta.get("key"), "verdict": clause_verdict(len(assets), unrecorded),
+                                      **({"unrecorded": unrecorded} if unrecorded else {})})
     risky.sort(key=lambda r: (-r["score"], r["id"]))
     return {
         "assets": sum(classes.values()),
@@ -522,6 +608,10 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "pqc_class_model": PQC_CLASS_MODEL,
         "pqc_readiness_pct": readiness_value,
         "readiness_basis": readiness_basis,
+        # issue #271: what raises the readiness, and which assets it leaves out and why
+        "readiness_actions": actions_top,
+        "readiness_actions_all": actions_all,
+        "readiness_excluded": readiness_excluded(bases),
         "hndl_assets": hndl_count,
         "impacts": {k: impacts.get(k, 0) for k in IMPACT_WEIGHT},
         "top_codes": [{"code": c, "count": n, "title": (crypto_kb.entry("node", c) or {}).get("title", c)}
@@ -532,7 +622,9 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         "top_risks": risky[:top],
         "exposure": {e: exposure_counts.get(e, 0) for e in EXPOSURES},
         "exposure_factors": dict(EXPOSURE_FACTOR),
-        "compliance": [{"framework": fw, "clauses": items, "assets": len(framework_assets[fw])}
+        "compliance": [{"framework": fw, "clauses": items, "assets": len(framework_assets[fw]),
+                        "unrecorded": len(framework_assets[fw] - framework_recorded[fw]),
+                        "verdict": framework_verdict(items)}
                        for fw, items in sorted(frameworks.items())],
         "kb_version": crypto_kb.version(),
         **agility.result(),
@@ -619,7 +711,7 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "pqc_class_basis_text": CLASS_BASIS[pqc_basis][1],
         "pqc_class_read_elsewhere": sibling,
         "hndl": hndl(row.asset_type, row.quantum_vulnerable),
-        "source_name": source.name if source else None,
+        "source_name": _job_source_name(job, source),
         "criticality": crit,
         "exposure": exposure,
         "exposure_basis": exposure_basis,
@@ -630,7 +722,8 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "facts": facts,
         "details": [{**d, "impact": verdict["impacts"].get(d["code"]) or d["impact"]}
                     for d in crypto_kb.render("node", ordered, context=ctx, evidence=view["finding"] or "", texts=texts,
-                                              title=str(row.algorithm or row.name or ""))],
+                                              title=str(row.algorithm or row.name or ""),
+                                              clause_evidence=CE.evidence_by_code(row, ordered))],
         "library": library,
         "kb_version": crypto_kb.version(),
     }
