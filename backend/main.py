@@ -12,6 +12,7 @@ from backend.routers.scans import router as scans_router
 from backend.routers.certin import router as certin_router
 from backend.routers.cbom_deliverables import router as cbom_deliverables_router
 from backend.routers.cbom_sources import router as cbom_sources_router
+from backend.routers.cbom_api_keys import router as cbom_api_keys_router
 from backend.routers.cbom_ai import router as cbom_ai_router
 from backend.routers.cbom_ops import router as cbom_ops_router
 from backend.routers.cbom_register import router as cbom_register_router
@@ -147,6 +148,7 @@ app.include_router(certin_router)
 app.include_router(cbom_deliverables_router)
 # CBOM Sources: team UI routes, the scan-node API and public vendor questionnaire links.
 app.include_router(cbom_sources_router)
+app.include_router(cbom_api_keys_router)  # #226: team-scoped CBOM API keys (zsk_)
 app.include_router(cbom_ai_router)  # CB-38 PR-6: AI remediation (Bedrock or on-prem); off unless configured
 app.include_router(cbom_ops_router)
 app.include_router(cbom_register_router)

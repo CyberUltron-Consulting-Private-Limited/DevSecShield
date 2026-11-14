@@ -106,7 +106,8 @@ def make_key(api, scopes, team=1, who="alice", name="cmdb-sync", **extra):
 def linux_body(name="linux-dc", node_id=None):
     return {"kind": "linux_servers", "name": name, "node_id": node_id,
             "config": {"targets": ["10.20.0.0/29", "app-01.bank.local"], "credential_type": "password",
-                       "login_user": "zs-cbom", "host_key_policy": "pinned", "known_hosts": KNOWN_HOSTS},
+                       "login_user": "zs-cbom", "host_key_policy": "pinned", "known_hosts": KNOWN_HOSTS,
+                       "window": "any"},
             "secrets": {"password": PASSWORD}}
 
 
@@ -203,12 +204,14 @@ def test_a_key_is_refused_on_every_route_outside_the_cbom_sources_runs_and_expor
     _m, key = make_key(api, ["cbom.read", "cbom.sources:write", "cbom.runs:write"], name="everything")
     # CBOM routes that are not sources / runs / export: settings, nodes (registration tokens), evidence, audit
     for method, url, body in [
-        ("PATCH", "/1/cbom/sources/settings", {"stop_all": True}),
+        ("PATCH", "/1/cbom/sources/settings", {}),
         ("GET", "/1/cbom/sources/settings", None),
         ("POST", "/1/cbom/sources/nodes", {"name": "sneaky"}),
         ("GET", "/1/cbom/sources/evidence", None),
         ("GET", "/1/cbom/sources/audit", None),
-        ("PUT", "/1/cbom/remediation", {}),
+        ("GET", "/1/cbom/sources/schedules", None),
+        ("GET", "/1/cbom/estate", None),
+        ("GET", "/1/integrations", None),
     ]:
         r = api(method, url, key=key, json=body)
         assert r.status_code == 403, (method, url, r.status_code, r.text)
@@ -400,3 +403,54 @@ def test_the_guide_curl_example_calls_only_routes_a_key_may_call():
         assert (method, template) in allowed, (method, template)
     assert any(m == "POST" and u.endswith("/cbom/sources/items") for m, u in calls)
     assert any(m == "POST" and u.endswith("/cbom/sources/runs") for m, u in calls)
+
+
+# ----------------------------------------------------------------------------- migration
+def test_the_migration_is_the_one_head_and_round_trips(tmp_path):
+    import importlib.util
+
+    import sqlalchemy as sa
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    versions = _REPO_ROOT / "prod_database_migrations" / "migrations" / "versions"
+    revisions, parents = set(), set()
+    for path in versions.glob("*.py"):
+        text = path.read_text()
+        rev = re.search(r"^revision(?::\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*['\"]([^'\"]+)['\"]", text, re.M)
+        if rev:
+            revisions.add(rev.group(1))
+        if down:
+            parents.add(down.group(1))
+    assert len(revisions - parents) == 1 and ("cb226apikey001" in parents or revisions - parents == {"cb226apikey001"})
+    spec = importlib.util.spec_from_file_location("m226", versions / "cb226apikey001_cbom_api_keys.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    assert mod.down_revision in revisions
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+
+    def run(step):
+        with engine.begin() as conn:
+            with Operations.context(MigrationContext.configure(conn)):
+                getattr(mod, step)()
+
+    with engine.begin() as conn:
+        conn.execute(sa.text("CREATE TABLE team (id integer PRIMARY KEY)"))
+        conn.execute(sa.text("INSERT INTO team (id) VALUES (1)"))
+    run("upgrade")
+    ins = sa.text("INSERT INTO cbomapikey (team_id, name, scopes, key_hash, hint, created_by_user_id) "
+                  "VALUES (1, 'k', '[\"cbom.read\"]', :h, 'abcd', 7)")
+    with engine.begin() as conn:
+        conn.execute(ins, {"h": "a" * 64})
+        with pytest.raises(sa.exc.IntegrityError):  # one row per hash
+            with conn.begin_nested():
+                conn.execute(ins, {"h": "a" * 64})
+    model_cols = set(AK.CbomApiKey.__table__.columns.keys())
+    assert {c["name"] for c in sa.inspect(engine).get_columns("cbomapikey")} == model_cols
+    run("downgrade")
+    assert "cbomapikey" not in sa.inspect(engine).get_table_names()
+    run("upgrade")
+    assert {"ix_cbomapikey_team_created", "ix_cbomapikey_team_id"} <= {
+        i["name"] for i in sa.inspect(engine).get_indexes("cbomapikey")}
+    engine.dispose()
