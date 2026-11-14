@@ -35,6 +35,7 @@ import {
   type CbomTestResponse,
 } from "@/utils/backend_api";
 
+import { caCardStatus, worstCardStatus, type CaCardStatus } from "./caCardStatus";
 import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
 import { SourceMetadataDialog } from "./SourceMetadata";
@@ -150,7 +151,8 @@ const LOGIN_RE = /^[A-Za-z0-9._@$\\-]{1,64}$/;
 const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
-const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
+// Venafi, Keyfactor, DigiCert, Sectigo and other CAs: no collector (kinds._ca_secrets asks for no key; owner bug C6)
+const CLM_NOT_COLLECTED = "Not collected: ZeroShield has no connector for this product yet. Nothing is read from it, no key is needed and it is never charged; only its name and API address are saved. Certificates it issued are found where other sources see them: network TLS scans, Certificate Transparency and cloud accounts.";
 // Same sentences as the backend's planning.CLOUD_NOT_CONNECTED (the run estimate's skip reason).
 const CLOUD_NOT_CONNECTED: Record<"azure" | "gcp", string> = {
   azure: "Not available until the Azure tenant is connected: Save and validate must pass first",
@@ -707,9 +709,16 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                     onMetadata={setMetadataFor}
                     onTest={(s) => testMutation.mutate(s)}
                     onDelete={(s) => setDeleting(s)}
+                    headerStatus={
+                      onNode ? (
+                        <CaStatusBadge status={worstCardStatus(rowSources.map((s) => caCardStatus(s)))} />
+                      ) : row.key === "aws_private_ca" ? undefined : (
+                        <StatusBadge tone="zinc">Not collected</StatusBadge>
+                      )
+                    }
                     renderDetail={(s) =>
                       onNode ? (
-                        <NodeTestLine teamId={teamId} source={s} />
+                        <NodeTestLine teamId={teamId} source={s} showStatus={rowSources.length > 1} />
                       ) : row.key === "aws_private_ca" ? (
                         <span className="text-xs text-zinc-500">
                           through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"}
@@ -718,7 +727,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                       ) : (
                         <span className="text-xs text-zinc-500">
                           {row.key === "other" ? `${CA_OTHER_LABEL[cfgString(s, "provider")] ?? "Other"} · ` : ""}
-                          {NOT_AVAILABLE}
+                          {CLM_NOT_COLLECTED}
                         </span>
                       )
                     }
@@ -2026,6 +2035,7 @@ function ConnectorRow({
   onTest,
   onDelete,
   renderDetail,
+  headerStatus,
 }: {
   testId: string;
   label: string;
@@ -2039,6 +2049,8 @@ function ConnectorRow({
   onTest: (s: CbomSource) => void;
   onDelete: (s: CbomSource) => void;
   renderDetail: (s: CbomSource) => ReactNode;
+  /** replaces "Connected" (a CA a scan node reads shows its one derived status; a CA nothing reads says so) */
+  headerStatus?: ReactNode;
 }) {
   const connected = sources.length > 0;
   return (
@@ -2051,7 +2063,7 @@ function ConnectorRow({
         <div className="flex items-center gap-2">
           {connected ? (
             <>
-              <StatusBadge tone="green">Connected</StatusBadge>
+              {headerStatus ?? <StatusBadge tone="green">Connected</StatusBadge>}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="cursor-pointer" aria-label={`Manage ${label}`} data-testid={`${testId}-manage`}>
@@ -2112,21 +2124,33 @@ function ConnectorRow({
   );
 }
 
-/** AD CS is tested by its scan node: show the queued job and why it waits, then the result. */
-function NodeTestLine({ teamId, source }: { teamId: number; source: CbomSource }) {
+function CaStatusBadge({ status }: { status: CaCardStatus }) {
+  return (
+    <StatusBadge tone={status.tone} title={status.detail ?? undefined}>
+      {status.kind === "testing" && <Loader2 className="animate-spin" />}
+      {status.label}
+    </StatusBadge>
+  );
+}
+
+/** A CA read by a scan node: one status, from the newer of its last test and its last collection (caCardStatus); the
+ *  queued test job and why it waits while a test is pending. The row header shows the same status (the worst one when
+ *  the row has several sources), so this line repeats it only then. */
+function NodeTestLine({ teamId, source, showStatus }: { teamId: number; source: CbomSource; showStatus: boolean }) {
   const pendingJobId = source.last_test_status === "pending" ? source.last_test_job_id : null;
   const job = usePolledJob(teamId, pendingJobId);
-  const samples = source.last_test_result?.samples ?? [];
+  const status = caCardStatus(source);
+  const samples = status.basis === "test" ? source.last_test_result?.samples ?? [] : [];
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
         <span>through {source.node_name ?? "a scan node that was removed"}</span>
-        {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : <TestStatusBadge status={source.last_test_status} title={source.last_test_summary} />}
+        {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : showStatus && <CaStatusBadge status={status} />}
       </div>
       {pendingJobId ? (
         <p className="text-xs text-zinc-500">{job.data?.waiting_reason ?? source.last_test_summary ?? "Waiting for the scan node"}</p>
       ) : (
-        source.last_test_summary && <p className="text-xs text-zinc-500">{source.last_test_summary}</p>
+        status.detail && <p className="text-xs text-zinc-500 break-words" data-testid="cloud-ca-status-detail">{status.detail}</p>
       )}
       {!pendingJobId && samples.length > 0 && (
         <ul className="text-xs text-zinc-600 dark:text-zinc-400">
@@ -2174,7 +2198,6 @@ function CaDialog({
   const [password, setPassword] = useState("");
   const [awsSourceId, setAwsSourceId] = useState<number | null>(cfgNumber(source, "aws_source_id") ?? (awsSources.length === 1 ? awsSources[0].id : null));
   const [apiUrl, setApiUrl] = useState(cfgString(source, "api_url"));
-  const [apiKey, setApiKey] = useState("");
   const [token, setToken] = useState("");
   const [clientCert, setClientCert] = useState("");
   const [clientKey, setClientKey] = useState("");
@@ -2185,7 +2208,6 @@ function CaDialog({
   const isEjbca = provider === "ejbca";
   const onNode = NODE_CA_PROVIDERS.has(provider);
   const passwordSet = !!source?.secrets_set.includes("password");
-  const apiKeySet = !!source?.secrets_set.includes("api_key");
   const tokenSet = !!source?.secrets_set.includes("token");
   const certSet = !!source?.secrets_set.includes("client_cert") && !!source?.secrets_set.includes("client_key");
   const policy = useQuery({
@@ -2214,8 +2236,7 @@ function CaDialog({
         if (isEjbca && clientCert.trim()) secrets.client_cert = clientCert.trim() + "\n";
         if (isEjbca && clientKey.trim()) secrets.client_key = clientKey.trim() + "\n";
       } else {
-        config.api_url = apiUrl.trim();
-        if (apiKey) secrets.api_key = apiKey;
+        config.api_url = apiUrl.trim(); // no collector: no key is asked for or sent (a stored one is dropped on save)
       }
       const body = { name: name.trim(), config, secrets, test_after_save: test, ...(onNode && nodeId ? { node_id: nodeId } : {}) };
       return source
@@ -2257,8 +2278,6 @@ function CaDialog({
         next.clientKey = clientKey.trim()
           ? clientKey.includes("PRIVATE KEY-----") && !clientKey.includes("ENCRYPTED PRIVATE KEY") ? null : "Paste the unencrypted PEM private key"
           : need ? "Paste the PEM private key of the client certificate" : null;
-      } else {
-        next.apiKey = apiKey || (apiKeySet && !whereChanged) ? null : apiKeySet ? "Re-enter the API key: it is cleared when the address changes" : "Enter the API key";
       }
     }
     setErrors(next);
@@ -2283,7 +2302,7 @@ function CaDialog({
                   ? "A scan node reads the CAs and certificate profiles through the EJBCA REST API, signing in with a client certificate."
                   : isAwsCa
                     ? "Read through the read-only role of a connected AWS account. No new credential is needed."
-                    : "Not collected yet: ZeroShield only stores the API address and key. Nothing is read from it and it is never charged."}
+                    : CLM_NOT_COLLECTED}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -2444,19 +2463,6 @@ function CaDialog({
             </Field>
           )}
 
-          {!onNode && !isAwsCa && (
-            <SecretField
-              id="ca-api-key"
-              label="API key"
-              value={apiKey}
-              onChange={setApiKey}
-              isSet={apiKeySet}
-              required
-              error={errors.apiKey}
-              hint={apiKeySet ? "Saved. Leave blank to keep it; changing the address clears it." : STORED_HINT}
-            />
-          )}
-          {!onNode && <p className="text-xs text-zinc-500">{NOT_AVAILABLE}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" className="cursor-pointer" onClick={onClose}>
