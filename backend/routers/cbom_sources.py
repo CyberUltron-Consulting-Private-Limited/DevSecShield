@@ -66,6 +66,7 @@ from backend.utilities.cbom_sources.http import (
 from backend.utilities.cbom_sources import cdx_xml as CDX_XML
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
+from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
 from backend.utilities.cbom_sources import runs as RUNS
 from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
@@ -1407,7 +1408,7 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
 def _run_cbom(engine, team_id: int, run_id: int) -> dict:
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
-        return INV.cyclonedx(session, run, utcnow())
+        return RUN_DELIVERABLES.run_cbom(session, run, utcnow())  # inventory.cyclonedx, timestamp = run data time
 
 
 @router.get(BASE + "/runs/{run_id}/cbom", dependencies=READ,
@@ -1421,7 +1422,9 @@ async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(defaul
         return Response(body, media_type=CDX_XML.XML_MEDIA_TYPE, headers={
             **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.xml"',
             "X-ZS-Signature-Scope": CDX_XML.SIGNATURE_SCOPE})
-    return JSONResponse(payload, headers={**PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
+    # canonical JSON: the exact bytes GET .../runs/{id}/signature signs (CB-38 PR-8)
+    return Response(RUN_DELIVERABLES.cbom_bytes(payload), media_type="application/json", headers={
+        **PRIVATE, "Content-Disposition": f'attachment; filename="cbom-sources-run-{run_id}.cdx.json"'})
 
 
 def _run_posture(engine, team_id: int, run_id: int) -> dict:

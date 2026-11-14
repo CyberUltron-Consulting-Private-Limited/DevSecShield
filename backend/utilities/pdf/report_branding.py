@@ -1241,6 +1241,7 @@ def build_kpi_grid(
     risk_score: Optional[int] = None,
     risk_grade: Optional[str] = None,
     risk_band: Optional[str] = None,
+    time_hint: str = "Completed successfully",
 ) -> Table:
     gap = 6
     # Risk + 4 metrics — compress slightly when risk present
@@ -1333,7 +1334,7 @@ def build_kpi_grid(
             _kpi_card("Total Issues", str(total_issues), total_hint, KPI_ACCENT_TOTAL, styles, card_widths[1]),
             _kpi_card("Critical", str(critical), "Immediate remediation", KPI_ACCENT_CRITICAL, styles, card_widths[2]),
             _kpi_card("High", str(high), "Current sprint priority", KPI_ACCENT_HIGH, styles, card_widths[3]),
-            _kpi_card("Scan Time", scan_time or "—", "Completed successfully", KPI_ACCENT_TIME, styles, card_widths[4]),
+            _kpi_card("Scan Time", scan_time or "—", time_hint, KPI_ACCENT_TIME, styles, card_widths[4]),
         ]
         widths = card_widths
     else:
@@ -1342,7 +1343,7 @@ def build_kpi_grid(
             _kpi_card("Total Issues", str(total_issues), total_hint, KPI_ACCENT_TOTAL, styles, card_w),
             _kpi_card("Critical", str(critical), "Immediate remediation required", KPI_ACCENT_CRITICAL, styles, card_w),
             _kpi_card("High", str(high), "Prioritize in current sprint", KPI_ACCENT_HIGH, styles, card_w),
-            _kpi_card("Scan Time", scan_time or "—", "Completed successfully", KPI_ACCENT_TIME, styles, card_w),
+            _kpi_card("Scan Time", scan_time or "—", time_hint, KPI_ACCENT_TIME, styles, card_w),
         ]
         widths = [card_w] * 4
 
@@ -1655,6 +1656,7 @@ def append_executive_summary(
     project_name: Optional[str] = None,
     scan_time: Optional[str] = None,
     meta_chips: Optional[Sequence[Tuple[str, str]]] = None,
+    scan_time_hint: str = "Completed successfully",
 ) -> None:
     styles = styles or get_report_styles()
     meta = REPORT_META.get(report_key, REPORT_META["sast"])
@@ -1724,6 +1726,7 @@ def append_executive_summary(
             risk_score=risk_score,
             risk_grade=risk_grade,
             risk_band=risk_band,
+            time_hint=scan_time_hint,
         )
     )
     story.append(Spacer(1, 0.06 * inch))

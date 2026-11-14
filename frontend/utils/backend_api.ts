@@ -4962,6 +4962,92 @@ const downloadCbomRunCbom = async (team_id: number, run_id: number): Promise<voi
     }
 }
 
+/** The code page's remaining downloads for a Sources run (CB-38 PR-8): VEX, signature, PDF report, evidence pack. */
+export type CbomRunDeliverable = "vex" | "signature" | "report.pdf" | "evidence-pack"
+
+export type CbomVexState = "exploitable" | "in_triage" | "resolved" | "resolved_with_pedigree" | "false_positive" | "not_affected"
+
+/** One CycloneDX 1.6 VEX entry of a run: one finding code (or CVE) and the assets that share one analysis. */
+export interface CbomRunVexEntry {
+    "bom-ref": string
+    id: string
+    source?: { name?: string; url?: string }
+    ratings?: { severity?: string; score?: number; method?: string; vector?: string }[]
+    description?: string
+    recommendation?: string
+    analysis: { state: CbomVexState; detail: string; response?: ("will_not_fix" | "update")[] }
+    /** BOM-Links into the run CBOM: urn:cdx:<serial>/1#zs-asset-<id> */
+    affects: { ref: string }[]
+}
+
+export interface CbomRunVex {
+    bomFormat: "CycloneDX"
+    specVersion: "1.6"
+    serialNumber: string
+    metadata: { timestamp: string | null; properties: { name: string; value: string }[] }
+    vulnerabilities: CbomRunVexEntry[]
+}
+
+/** HMAC-SHA256 over the exact bytes of GET /runs/{id}/cbom (format=json): the code lane's bom_signature scheme. */
+export interface CbomRunSignature {
+    alg: "HMAC-SHA256"
+    key_id: string
+    digest: string
+    signature_b64: string
+    signed_at: string
+    covers: string
+    scope: string
+    serialNumber: string
+    document_timestamp: string | null
+    bytes: number
+    run_id: number
+    run_status: string
+    /** present while the run is still collecting */
+    as_of?: string
+}
+
+const CBOM_RUN_DELIVERABLE_FILE: Record<CbomRunDeliverable, (run_id: number) => string> = {
+    vex: (id) => `cbom-sources-run-${id}.vex.json`,
+    signature: (id) => `cbom-sources-run-${id}-signature.json`,
+    "report.pdf": (id) => `cbom-sources-run-${id}-report.pdf`,
+    "evidence-pack": (id) => `cbom-sources-run-${id}-evidence-pack.zip`,
+}
+
+const cbomRunDeliverablePath = (team_id: number, run_id: number, kind: CbomRunDeliverable): string =>
+    `${cbomSourcesBase(team_id)}/runs/${run_id}/${kind}`
+
+const cbomRunDeliverableFilename = (run_id: number, kind: CbomRunDeliverable): string =>
+    CBOM_RUN_DELIVERABLE_FILE[kind](run_id)
+
+const getCbomRunVex = async (team_id: number, run_id: number): Promise<CbomRunVex> => {
+    const response = await api.get(cbomRunDeliverablePath(team_id, run_id, "vex"))
+    return response.data as CbomRunVex
+}
+
+const getCbomRunSignature = async (team_id: number, run_id: number): Promise<CbomRunSignature> => {
+    const response = await api.get(cbomRunDeliverablePath(team_id, run_id, "signature"))
+    return response.data as CbomRunSignature
+}
+
+/** Saves one run deliverable as served, byte for byte (never parsed and re-serialised), through the authenticated
+ * client. Toasts and rethrows on failure. */
+const downloadCbomRunDeliverable = async (team_id: number, run_id: number, kind: CbomRunDeliverable): Promise<void> => {
+    try {
+        const response = await api.get(cbomRunDeliverablePath(team_id, run_id, kind), { responseType: "blob" })
+        const url = URL.createObjectURL(response.data as Blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = cbomRunDeliverableFilename(run_id, kind)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+        showErrorToast(error, `Error downloading the run ${kind === "report.pdf" ? "PDF report" : kind.replace("-", " ")}`)
+        throw error
+    }
+}
+
 const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/cancel`)
@@ -4989,6 +5075,11 @@ export {
     getCbomAssetDetail,
     getCbomJobAssets,
     downloadCbomRunCbom,
+    cbomRunDeliverablePath,
+    cbomRunDeliverableFilename,
+    getCbomRunVex,
+    getCbomRunSignature,
+    downloadCbomRunDeliverable,
     estimateCbomSources,
     countCbomTargets,
     getCbomTemplate,
