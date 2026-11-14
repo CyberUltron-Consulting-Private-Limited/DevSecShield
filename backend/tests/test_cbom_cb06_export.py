@@ -374,6 +374,60 @@ def test_the_suite_table_agrees_with_the_running_openssl_and_with_the_node():
     assert tls_suites.canonical("not-a-suite") == ("not-a-suite", None)
 
 
+def test_the_one_suite_table_holds_cb12s_entries_and_the_older_openssl_names():
+    """Coordinator (CB-06 owns the one table; CB-12 #110 reads it through tls_suites): every suite of OpenSSL 3.5.7's
+    `ciphers -V -stdname` (the scan node image, CB-12's own input) by code, IANA name and OpenSSL name, the TLS 1.3
+    suites included, plus the names older OpenSSL builds gave (a database server reports its own)."""
+    import re
+
+    from backend.utilities.cbom_sources import tls_suites as TS
+
+    root = Path(__file__).resolve().parents[2]
+    lines = (root / "scripts/tls_suites/sources/openssl-3.5-ciphers-V-stdname-ALL-COMPLEMENTOFALL.txt").read_text()
+    seen = 0
+    for m in re.finditer(r"0x([0-9A-F]{2}),0x([0-9A-F]{2}) - (\S+)\s+- (\S+)", lines):
+        code, std, openssl = int(m.group(1) + m.group(2), 16), m.group(3), m.group(4)
+        suite = TS.by_code(code)
+        assert suite is not None and suite.iana == std and openssl in suite.openssl, (hex(code), std, openssl)
+        assert TS.by_iana(std) is suite and TS.by_openssl(openssl) is suite and TS.lookup(openssl) is suite
+        seen += 1
+    assert seen == 158  # positive control: the whole list was read
+    tls13 = TS.by_openssl("TLS_AES_128_GCM_SHA256")
+    assert tls13 is not None and (tls13.hex, tls13.pair, tls13.identifiers) == ("0x1301", "0x13,0x01", ["0x13", "0x01"])
+    for old, iana, code in [("DES-CBC3-SHA", "TLS_RSA_WITH_3DES_EDE_CBC_SHA", 0x000A),
+                            ("RC4-SHA", "TLS_RSA_WITH_RC4_128_SHA", 0x0005),
+                            ("EDH-RSA-DES-CBC3-SHA", "TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA", 0x0016),
+                            ("ECDHE-RSA-DES-CBC3-SHA", "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA", 0xC012),
+                            ("SSL_RSA_WITH_RC4_128_SHA", "TLS_RSA_WITH_RC4_128_SHA", 0x0005)]:
+        suite = TS.lookup(old.lower())
+        assert suite is not None and (suite.iana, suite.code) == (iana, code), old
+    assert TS.by_openssl("SSL_RSA_WITH_RC4_128_SHA") is None  # the SSLv3 spelling is not an OpenSSL name
+    for form in (0xC013, "0xC013", "0xc013", "0xC0,0x13", "C013"):
+        assert TS.by_code(form).iana == "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", form
+    for nothing in (None, "", "<NULL>", "(NONE)", "not-a-suite", True, "0x12345", "zz"):
+        assert TS.lookup(nothing) is None and TS.by_code(nothing) is None, nothing
+    assert TS.by_code(0x5600).signalling and not TS.by_code(0xC013).signalling
+    assert len({s.code for s in TS.suites()}) == len(TS.suites()) >= 356
+    names = [n.upper() for s in TS.suites() for n in s.openssl]
+    assert len(names) == len(set(names))  # an OpenSSL name never names two suites
+
+
+def test_only_the_loader_reads_the_suite_table():
+    """One table, one reader: code everywhere else calls tls_suites (by_code / by_iana / by_openssl / lookup)."""
+    root = Path(__file__).resolve().parents[2]
+    allowed = {"backend/utilities/cbom_sources/tls_suites.py", "scripts/tls_suites/build_table.py",
+               "backend/tests/test_cbom_cb06_export.py"}
+    readers = []
+    for top in ("backend", "scan_node", "aibom", "RabbitMQ", "scripts", "e2e"):
+        for path in (root / top).rglob("*.py"):
+            rel = path.relative_to(root).as_posix()
+            if "/.venv/" in f"/{rel}" or "/node_modules/" in rel or rel in allowed:
+                continue
+            if "tls_cipher_suites.json" in path.read_text(errors="replace"):
+                readers.append(rel)
+    assert readers == []
+
+
 def test_an_endpoint_where_nothing_accepted_tls_reports_no_group(exported):
     """[minor] s_client prints "Negotiated TLS1.3 group: <NULL>" when no handshake completed; that is not a group."""
     props = _props(_component(exported, TLS_NONE["location"]))

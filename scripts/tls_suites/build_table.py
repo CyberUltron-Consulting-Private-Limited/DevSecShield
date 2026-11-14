@@ -4,7 +4,8 @@ name and every OpenSSL name, from the vendored sources below (nothing is typed f
 Inputs (sources/, sha256 recorded in the output):
   iana-tls-parameters-4.csv            IANA "TLS Cipher Suites" registry (tls-parameters-4.csv), fetched 2026-11-12
   openssl-3.0.13-...-COMPLEMENTOFALL.txt  `openssl ciphers -V -stdname ALL:COMPLEMENTOFALL`, OpenSSL 3.0.13
-  openssl-3.5-...-COMPLEMENTOFALL.txt     the same command, OpenSSL 3.5 (the scan node image's openssl)
+  openssl-3.5-...-COMPLEMENTOFALL.txt     the same command, OpenSSL 3.5.7 (the scan node image's openssl; the same
+                                          suites, codes and names as CB-12's scan_node/tests/fixtures/iana copy)
   openssl-1.1.1-ciphers.pod            OpenSSL_1_1_1-stable doc/man1/ciphers.pod ("CIPHER SUITE NAMES" tables)
   openssl-1.0.2-ciphers.pod            OpenSSL_1_0_2-stable doc/apps/ciphers.pod (adds EXPORT, single DES, EDH- names)
 
@@ -12,7 +13,10 @@ Rules: the IANA code and name always come from the registry (rows named Unassign
 OpenSSL name comes from a `-stdname` line (code, standard name, OpenSSL name) or from a man-page table row
 (standard name, OpenSSL name; ``SSL_`` standard names are the SSLv3 spellings of the same ``TLS_`` code points). The
 build fails when two sources disagree: an OpenSSL name on two codes, or a `-stdname` standard name that is not the
-registry's name for its code.
+registry's name for its code. Every OpenSSL name is listed, also one equal to the IANA name.
+
+This is the product's one TLS cipher suite table (CB-06 owns it; CB-12 and every other reader go through
+``backend/utilities/cbom_sources/tls_suites.py``, never the JSON).
 
 Usage: python scripts/tls_suites/build_table.py [out.json]   (deterministic: sorted, no timestamps)
 """
@@ -59,7 +63,7 @@ def build() -> dict:
         if openssl in owner and owner[openssl] != code:
             raise SystemExit(f"{where}: OpenSSL name {openssl} on {owner[openssl]} and {code}")
         owner[openssl] = code
-        if openssl != by_code[code]["iana"] and openssl not in by_code[code]["openssl"]:
+        if openssl not in by_code[code]["openssl"]:  # also when it equals the IANA name (the TLS 1.3 suites)
             by_code[code]["openssl"].append(openssl)
 
     for name in STDNAME:
