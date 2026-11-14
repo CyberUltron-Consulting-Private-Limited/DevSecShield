@@ -21,7 +21,9 @@ DEFAULT_PORTS = [
     {"port": 587, "protocol": "starttls-smtp", "label": "Submission"},
     {"port": 465, "protocol": "tls", "label": "SMTPS"},
     {"port": 993, "protocol": "tls", "label": "IMAPS"},
+    {"port": 143, "protocol": "starttls-imap", "label": "IMAP StartTLS"},
     {"port": 995, "protocol": "tls", "label": "POP3S"},
+    {"port": 110, "protocol": "starttls-pop3", "label": "POP3 STLS"},
     {"port": 5432, "protocol": "starttls-postgres", "label": "PostgreSQL"},
     {"port": 3306, "protocol": "starttls-mysql", "label": "MySQL"},
     {"port": 1433, "protocol": "tds", "label": "SQL Server"},
@@ -33,6 +35,11 @@ DEFAULT_PORTS = [
     {"port": 8883, "protocol": "tls", "label": "MQTT"},
 ]
 PORT_PROTOCOLS = ("tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
+                  # CB-34: not in DEFAULT_PORTS.  FTP (21) answers AUTH TLS on most hosts but is a port a team adds on
+                  # purpose; XMPP (5222 client, 5269 server-to-server) needs the server's XMPP domain, which the node
+                  # takes from the team's SNI names for the address (an address alone gets host-unknown from most
+                  # servers, reported as an error, never as "plaintext only")
+                  "starttls-pop3", "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server",
                   "tds", "ssh", "rdp", "ike",
                   # OT (not in DEFAULT_PORTS: a team adds them for its OT ranges; an address with one open is scanned
                   # in fragile mode by the node)
