@@ -168,6 +168,12 @@ def _aws_configured() -> bool:
     return aws_collection_configured()
 
 
+def _aws_lab() -> bool:
+    from backend.utilities.cbom_sources.lab_mode import lab_same_account
+
+    return lab_same_account()
+
+
 def _ct_enabled() -> bool:
     from backend.utilities.cbom_sources.kinds import ct_discovery_enabled
 
@@ -189,6 +195,8 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
     return {
         "aws_external_id": row.aws_external_id,
         "aws_collection_configured": _aws_configured(),
+        # lab mode (lab_mode.py): AWS roles in this test deployment's own account are accepted; the form shows a banner
+        "aws_lab_same_account": _aws_configured() and _aws_lab(),
         "cert_domains": row.cert_domains or [],
         # Certificate Transparency discovery: on only when the server sets CBOM_CT_DISCOVERY; the UI follows it
         "ct_discovery_enabled": _ct_enabled(),

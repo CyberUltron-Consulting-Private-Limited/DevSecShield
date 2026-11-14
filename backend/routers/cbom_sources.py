@@ -860,9 +860,15 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
     _save_live_test(engine, team_id, user_id, source_id, version, "source.validate", now, result["status"],
                     f"{passed} of {len(result['checks'])} checks passed",
                     {k: v for k, v in result.items() if k in ("checks", "member_accounts", "status")})
-    log("aws validated", team=team_id, source=source_id, status=result["status"], by=user_id)
+    lab = result.get("lab_mode")
+    if lab:  # lab mode (lab_mode.py): every use is audited and logged
+        with Session(engine) as session:
+            audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="source.validate.lab_same_account",
+                  object_type="source", object_id=source_id)
+            session.commit()
+    log("aws validated", team=team_id, source=source_id, status=result["status"], by=user_id, lab_mode=lab)
     return {"status": result["status"], "checks": result["checks"], "member_accounts": result.get("member_accounts"),
-            "validated_at": iso_z(now)}
+            "validated_at": iso_z(now), **({"lab_mode": lab} if lab else {})}
 
 
 def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:

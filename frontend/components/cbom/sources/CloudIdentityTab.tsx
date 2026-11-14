@@ -38,6 +38,7 @@ import {
 import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
 import { SourceMetadataDialog } from "./SourceMetadata";
+import { LabModeBanner } from "./LabModeBanner";
 import { ctProviderSentence, ctRunCredits, formatDateTime, pluralize, readTextFile, splitLines } from "./logic";
 import {
   ChoiceCards,
@@ -488,6 +489,12 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
               className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-200">
               {AWS_NOT_CONFIGURED}
             </p>
+          )}
+          {form.provider === "aws" && !awsOff && settings.aws_lab_same_account === true && (
+            <LabModeBanner
+              testId="aws-lab-mode"
+              detail="This test deployment accepts AWS roles in its own AWS account. Every other check (external ID, data-plane deny) still applies. Production deployments refuse this."
+            />
           )}
           {form.provider === "aws" && settings.aws_collection_configured !== false && (
             <AwsForm
