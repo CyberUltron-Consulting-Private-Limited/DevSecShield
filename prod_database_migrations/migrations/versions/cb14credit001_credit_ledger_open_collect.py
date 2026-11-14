@@ -72,8 +72,9 @@ def upgrade() -> None:
 
     # settle duplicate open collections (keep the oldest per source), then build the index
     rows = bind.execute(sa.text(
-        f"SELECT id, team_id, run_id, source_id, weight_c, refunded FROM cbomcollectionjob WHERE {OPEN_COLLECT} "
-        "AND source_id IS NOT NULL ORDER BY source_id, id")).all()
+        "SELECT id, team_id, run_id, source_id, weight_c, refunded FROM cbomcollectionjob "
+        "WHERE kind = 'collect' AND status IN ('pending', 'claimed') AND source_id IS NOT NULL "
+        "ORDER BY source_id, id")).all()
     seen: set[int] = set()
     settled = refunded_c = 0
     for job_id, team_id, run_id, source_id, weight_c, refunded in rows:
