@@ -542,3 +542,27 @@ def test_a_by_choice_gap_carries_nothing(engine, emitted):
     r3 = ch.run([key("k1"), GLUE_OFF])
     ch.record(r3)
     assert ch.not_read(r3) == []  # not carried into r3's baseline: the option is off, nothing to say "not read"
+
+
+# ----------------------------------------------------------------------------- past the walk's bound (#136 review)
+@pytest.mark.parametrize("fixed", [False, True])
+def test_a_finding_held_longer_than_the_walk_is_never_opened_again(engine, emitted, fixed):
+    """A key pending deletion for 30 days: its rotation is held under an incomplete gap for more runs than
+    CARRY_LEVELS.  Cancelling the deletion must not open KMS_NO_ROTATION again; a real fix still resolves it."""
+    ch = Chain(engine)
+    ch.record(ch.run([key("k1")]))
+    for _ in range(D.CARRY_LEVELS + 3):
+        assert ch.record(ch.run([key("k1", rotation=None), rotation_throttled("k1")])) == []
+    last = ch.run([key("k1", rotation=fixed)])
+    assert ch.record(last) == ([("resolved", KMS + "k1", "KMS_NO_ROTATION")] if fixed else [])
+
+
+def test_an_asset_unread_longer_than_the_walk_is_not_new_when_it_is_read_again(engine, emitted):
+    """A key whose policy denied DescribeKey for more runs than CARRY_LEVELS, then allows it again."""
+    ch = Chain(engine)
+    ch.record(ch.run([key("k1"), key("k2")]))
+    for _ in range(D.CARRY_LEVELS + 3):
+        ch.record(ch.run([key("k2"), describe_throttled("k1")]))
+    last = ch.run([key("k1"), key("k2")])
+    assert ch.record(last) == []
+    assert_events_agree_with_compare(ch, last)

@@ -625,7 +625,7 @@ class _State:
 
 
 def _carried(session: Session, base: CbomCollectionJob, ref: str, sources: Mapping[int, CbomCollectionSource],
-             judge, *, stored: bool = False) -> _Carry:
+             judge, *, stored: bool = False, later: Mapping[str, View] | None = None) -> _Carry:
     """The last-known baseline (see above).
 
     * An identity absent from the baseline job under its gaps is carried from the newest older job that has it, if
@@ -635,7 +635,11 @@ def _carried(session: Session, base: CbomCollectionJob, ref: str, sources: Mappi
     * Each level is judged by ``judge(level)`` (re-judged with the current rules when its run's rules differ from the
       compared run's, DA-2b); ``stored`` also builds the views with every level's stored verdicts (rule changes).
     * The walk goes on only while the last level has a real gap (never past a ``by_choice`` one, DA-2c), that gap can
-      share an asset with the baseline job's gaps or something is pending, and for at most CARRY_LEVELS jobs."""
+      share an asset with the baseline job's gaps or something is pending, and for at most CARRY_LEVELS jobs.
+    * When a gap outlasts CARRY_LEVELS jobs (a key pending deletion for 30 days, a key policy that always denies the
+      reader), the identities that still matter are looked up further back by asset key only (``_deep``): those still
+      pending, and those of ``later`` (the compared run's views) the baseline lacks.  So a finding that was never
+      resolved is never opened again when its asset is read again (#136 review)."""
     first = _level(session, base)
     judged = judge(first)
     states = [(_State(node_views(first.rows, ref, reclassify=judged), first.gaps), judge)]
@@ -646,20 +650,64 @@ def _carried(session: Session, base: CbomCollectionJob, ref: str, sources: Mappi
         jobs = _older_jobs(session, base, ref, sources, CARRY_LEVELS - 1)
         rows = _level_rows(session, jobs, _candidates(base_gaps))
         chain: list[list[Gap]] = [base_gaps]
+        exhausted = len(jobs) == CARRY_LEVELS - 1
         for older in jobs:
             level = _level(session, older, rows.pop(older.id, []))
             for state, how in states:
                 judged = how(level)
                 state.absorb(level, node_views(level.rows, ref, reclassify=judged), chain, judged)
             chain.append(level.gaps)
-            if not level.gaps:
+            if not level.gaps or (not any(s.pending for s, _h in states)
+                                  and not any(_overlap(g, h) for g in level.gaps for h in base_gaps)):
+                exhausted = False  # nothing older can carry: the walk ended on its own
                 break
-            if not any(s.pending for s, _h in states) and not any(_overlap(g, h) for g in level.gaps
-                                                                    for h in base_gaps):
-                break  # nothing this level's gaps cover can also be under the baseline's: nothing older can carry
+        if exhausted:
+            _deep(session, jobs[-1], ref, sources, states, chain, later or {})
     main = states[0][0]
     return _Carry(views=main.out, stored=states[1][0].out if stored else None,
                   rejudged=judge(first) or main.rejudged)
+
+
+DEEP_JOBS = 500  # comparable jobs searched by asset key past CARRY_LEVELS (indexed: job id + asset key)
+
+
+def _deep(session: Session, last: CbomCollectionJob, ref: str, sources: Mapping[int, CbomCollectionSource],
+          states: list, chain: list[list[Gap]], later: Mapping[str, View]) -> None:
+    """Past CARRY_LEVELS: the identities still pending, and the later run's identities the baseline lacks that every
+    level so far left unread, looked up by asset key in up to DEEP_JOBS older jobs (their rows with those keys and
+    their coverage rows only), newest first, with the same rules as the walk."""
+    keys: set[str] = set()
+    for state, _how in states:
+        keys.update(r.asset_key for i in state.pending for r in state.out[i].rows)
+        keys.update(r.asset_key for i, v in later.items() if i not in state.known
+                    and all(_gap_for(v, gaps, listed=False) is not None for gaps in chain) for r in v.rows)
+    if not keys:
+        return
+    jobs = _older_jobs(session, last, ref, sources, DEEP_JOBS)
+    if not jobs:
+        return
+    attempts = {j.id: j.attempts for j in jobs}
+    found: dict[int, list[CbomCollectedAsset]] = {j: [] for j in attempts}
+    from sqlalchemy import or_
+
+    for row in session.exec(select(CbomCollectedAsset).where(
+            CbomCollectedAsset.team_id == last.team_id,
+            CbomCollectedAsset.job_id.in_(list(attempts)),  # type: ignore[attr-defined]
+            or_(CbomCollectedAsset.asset_type == "coverage",
+                CbomCollectedAsset.asset_key.in_(sorted(keys))))).all():  # type: ignore[attr-defined]
+        if row.attempt == attempts.get(row.job_id):
+            found[row.job_id].append(row)
+    wanted = {i for i, v in later.items() if any(r.asset_key in keys for r in v.rows)}
+    for older in jobs:
+        level = _level(session, older, found.pop(older.id, []))
+        for state, how in states:
+            judged = how(level)
+            state.absorb(level, node_views(level.rows, ref, reclassify=judged), chain, judged)
+        chain.append(level.gaps)
+        wanted = {i for i in wanted if i not in states[0][0].known
+                  and _gap_for(later[i], level.gaps, listed=False) is not None}
+        if not wanted and not any(s.pending for s, _h in states):
+            break
 
 
 def _judge(run: CbomCollectionRun):
@@ -714,12 +762,12 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
             per_source.append(entry)
             continue
         # the before side is the last known state (the same baseline the drift events use, DA-2a)
-        carry = _carried(session, b_job, ref, sources, _judge(run), stored=reclassify)
-        if carry.rejudged and carry.stored is None:  # only a carried older level was re-judged (rare): walk again
-            carry = _carried(session, b_job, ref, sources, _judge(run), stored=True)
         a_rows = _job_assets(session, a_job)
-        before = carry.views
         after = node_views(a_rows, ref, reclassify=reclassify)
+        carry = _carried(session, b_job, ref, sources, _judge(run), stored=reclassify, later=after)
+        if carry.rejudged and carry.stored is None:  # only a carried older level was re-judged (rare): walk again
+            carry = _carried(session, b_job, ref, sources, _judge(run), stored=True, later=after)
+        before = carry.views
         gaps = job_gaps(a_rows)
         diff = compare(before, after, gaps)
         if reclassify or carry.rejudged:  # also when only a carried older level was re-judged (review #132 nit)
@@ -895,7 +943,7 @@ def record_run_drift(session: Session, run: CbomCollectionRun, now: _dt.datetime
         rows += _expiring(run.team_id, now, after, scope="node", source_ref=ref, source_name=name, run_id=run.id)
         if base is None:
             continue
-        diff = compare(_carried(session, base, ref, sources, _judge(run)).views, after, job_gaps(a_rows))
+        diff = compare(_carried(session, base, ref, sources, _judge(run), later=after).views, after, job_gaps(a_rows))
         not_read += len(diff["not_read"])
         rows += diff_events(run.team_id, now, diff, scope="node", source_ref=ref, source_name=name,
                             anchor=f"run:{run.id}", cause="re-judged with the current rules" if reclassify else None,
