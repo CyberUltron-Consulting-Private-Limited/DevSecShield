@@ -1744,3 +1744,27 @@ def test_round7_in_place_operators_and_sizes_do_not_alias():
     assert f._find("buf") != f._find("ct")
     f = _flow("csharp", "class A { void F(byte[] ct, byte[] k) { var o = new byte[k.Length]; } }")
     assert f._find("o") != f._find("k")
+
+
+# Final review (round 8): a key-named keyword is a key position only on a crypto call that takes a key, so
+# ``dict(secret=key)`` / ``state.update(secret=key)`` keep the key as key material and are withheld.
+_GCM_BODY = "    c = AES.new(key, AES.MODE_GCM, nonce=os.urandom(12))\n    ct, tag = c.encrypt_and_digest(data)\n"
+
+
+@pytest.mark.parametrize("name, tail", [
+    ("dict with a key-named keyword returned", "    return dict(ct=ct, tag=tag, secret=key)\n"),
+    ("dict with key= returned", "    return dict(ct=ct, key=key)\n"),
+    ("update of a local dict with secret=", "    state = {}\n    state.update(secret=key)\n    return state\n"),
+])
+def test_round8_key_named_keywords_on_non_crypto_calls_are_data(name, tail):
+    code = _ECB1.replace("    return AES.new(key, AES.MODE_ECB).encrypt(data)\n", _GCM_BODY + tail)
+    out = _check("python", _ECB1, 5, code)
+    assert out["status"] == "withheld", (name, out)
+
+
+def test_round8_key_keyword_on_a_cipher_is_still_a_key_position():
+    code = _ECB1.replace("    return AES.new(key, AES.MODE_ECB).encrypt(data)\n",
+                         "    c = AES.new(key=key, mode=AES.MODE_GCM, nonce=os.urandom(12))\n"
+                         "    ct, tag = c.encrypt_and_digest(data)\n    return c.nonce + tag + ct\n")
+    out = _check("python", _ECB1, 5, code)
+    assert out["status"] == "ok", out.get("withheld_reason")

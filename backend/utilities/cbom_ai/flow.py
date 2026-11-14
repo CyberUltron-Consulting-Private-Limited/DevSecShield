@@ -805,10 +805,14 @@ class Flow:
         else:
             pos = ()
         keyed_pos = set(range(len(args))) if pos is None else set(pos)
+        # a key-named keyword is a key position only on a crypto call that takes a key; on any other allow-listed
+        # call (dict(secret=key), state.update(secret=key)) it is data, so the key stays key material (round 8)
+        takes_key = pos is None or bool(pos) or name in KEY_TAKERS or name in SIGNERS or \
+            self.classify(n) in ("cipher", "digest", "source")
         keyed, i_pos = set(), 0
         for i, a in enumerate(raw):  # map positional indexes to argument indexes; key-named keywords are keys
             if a.kind == "kwarg":
-                if secret_name(a.name):
+                if takes_key and secret_name(a.name):
                     keyed.add(i)
                 continue
             if i_pos in keyed_pos:
