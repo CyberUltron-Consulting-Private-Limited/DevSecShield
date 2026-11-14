@@ -30,6 +30,7 @@
 #                                        what disk-check and the deploy's retention would remove; removes nothing
 #   staging.sh check                     every service runs DSS_TAG's images and is up; health and hydration via nginx
 #   staging.sh estate-backfill           write every recorded run into the CBOM estate store (idempotent; deploy runs it)
+#   staging.sh agility-heal              compute every missing or stale stored agility class (idempotent; deploy runs it)
 #   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
 #                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
 #                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
@@ -1045,6 +1046,7 @@ cmd_deploy() {
     >>"${HISTORY_FILE}"
   cmd_check
   estate_backfill
+  agility_heal
   last="$(last_passed "${tag}")"
   record_passed "${tag}"
   retain "${tag}" "${previous}" "${last}"
@@ -1064,6 +1066,20 @@ estate_backfill() {
     log "estate backfill done"
   else
     log "WARNING: estate backfill FAILED (output above); the release is running; run staging.sh estate-backfill again"
+  fi
+}
+
+# CB-25's agility store keeps each estate asset's fix class; a release with a new knowledge base or agility version
+# (or an estate backfill) leaves classes missing or stale until something computes them, and the first agility request
+# would pay for it (50k assets: about 11 s). `agility_store heal` computes them now, idempotent (0 in steady state),
+# after the estate backfill, the same way: the release's migrate one-shot, a failure warns and keeps the deploy.
+agility_heal() {
+  log "agility heal (CB-25): python -m backend.utilities.cbom_sources.agility_store heal"
+  if compose run --rm --no-deps -T --entrypoint /backend/.venv/bin/python migrate \
+    -m backend.utilities.cbom_sources.agility_store heal; then
+    log "agility heal done"
+  else
+    log "WARNING: agility heal FAILED (output above); the release is running; run staging.sh agility-heal again"
   fi
 }
 
@@ -1250,12 +1266,13 @@ main() {
     deploy) cmd_deploy "$@" ;;
     check) cmd_check ;;
     estate-backfill) estate_backfill ;;
+    agility-heal) agility_heal ;;
     rollback) cmd_rollback "$@" ;;
     disk-check) cmd_disk check "$@" ;;
     disk-plan) cmd_disk plan "$@" ;;
     node-artifacts) cmd_node_artifacts ;;
     backend-env) cmd_backend_env ;;
-    -h | --help | help | "") sed -n '2,57p' "${BASH_SOURCE[0]}" ;;
+    -h | --help | help | "") sed -n '2,63p' "${BASH_SOURCE[0]}" ;;
     *) die "unknown command ${cmd} (see --help)" ;;
   esac
 }
