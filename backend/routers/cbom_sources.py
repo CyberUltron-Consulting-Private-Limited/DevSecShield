@@ -910,8 +910,10 @@ def _test_cloud_http(engine, team_id: int, user_id: int, source_id: int) -> dict
     out["checks"] = [{**c, "detail": str(scrub(c.get("detail") or "", known))[:300]} for c in out.get("checks") or []]
     now = utcnow()
     passed = sum(1 for c in out["checks"] if c["status"] == "pass")
+    warned = sum(1 for c in out["checks"] if c["status"] == "warning")  # a grant to add: re-run the reader script
     _save_live_test(engine, team_id, user_id, source_id, version, "source.validate", now, out["status"],
-                    f"{passed} of {len(out['checks'])} checks passed" if out["checks"] else out["message"],
+                    (f"{passed} of {len(out['checks'])} checks passed" + (f", {warned} warning(s): re-run the reader script"
+                                                                          if warned else "")) if out["checks"] else out["message"],
                     {"checks": out["checks"], "status": out["status"]})
     log("cloud source tested", team=team_id, source=source_id, kind=kind, status=out["status"], by=user_id)
     return {"status": out["status"], "message": out["message"], "checks": out["checks"], "validated_at": iso_z(now)}
