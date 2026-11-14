@@ -877,6 +877,16 @@ def node_limiter(per_second: float, per_server: int) -> RateLimiter:
         return _NODE_LIMITER
 
 
+def shared_limiter() -> RateLimiter:
+    """The node's one limiter for collectors whose jobs carry no rate limits (databases): the rate the newest network
+    job set (the team's agreed connections per second), or the defaults until one ran.  It never changes the limits."""
+    global _NODE_LIMITER
+    with _NODE_LIMITER_LOCK:
+        if _NODE_LIMITER is None:
+            _NODE_LIMITER = RateLimiter()
+        return _NODE_LIMITER
+
+
 def local_ips() -> list[str]:
     out: list[str] = []
     try:
