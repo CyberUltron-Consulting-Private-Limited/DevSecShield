@@ -82,6 +82,17 @@ test("CryptoHeatmap box sizes to its content (w-fit, max-w-full) instead of fill
   assert.match(html, /<div class="[^"]*overflow-x-auto[^"]*\bw-fit\b[^"]*\bmax-w-full\b/);
 });
 
+test("CryptoHeatmap grid shrinks its columns to the card before scrolling (no min-w-max): 8 sources fit at 1366 px", () => {
+  const cols = ["a", "b", "c", "d", "e", "f", "g", "h"];
+  const html = renderToStaticMarkup(h(CryptoHeatmap, {
+    data: { rows: ["RSA"], columns: cols, cells: [{ row: "RSA", column: "a", count: 1, worst: "High", by_impact: { High: 1 } }] },
+    testId: "hm",
+  }));
+  const grid = html.match(/<div role="grid"[^>]*class="([^"]*)"/);
+  assert.ok(grid, "heat-map grid rendered");
+  assert.doesNotMatch(grid![1], /\bmin-w-max\b/);
+});
+
 test("RunInsights stacks heat-map then calendar, both full width (no 50/50 row)", () => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const data: CbomRunHeatmap = {

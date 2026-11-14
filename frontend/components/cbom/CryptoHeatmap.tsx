@@ -62,7 +62,7 @@ export default function CryptoHeatmap({ data, title = "Algorithm families", colu
         <div
           role="grid"
           aria-label={`${title}: algorithm family by ${data.columns.length} columns, coloured by worst impact`}
-          className="grid gap-px bg-zinc-200 dark:bg-zinc-800 min-w-max"
+          className="grid gap-px bg-zinc-200 dark:bg-zinc-800"
           style={{ gridTemplateColumns: `minmax(8.5rem, max-content) repeat(${data.columns.length}, minmax(4.75rem, 11rem))` }}
         >
           <div role="row" className="contents">
