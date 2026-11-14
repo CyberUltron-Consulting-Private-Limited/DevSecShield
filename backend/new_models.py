@@ -836,6 +836,58 @@ class CbomEstateLinkState(SQLModel, table=True):
     refreshed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
 
 
+class CbomAgilityGroup(SQLModel, table=True):
+    """CB-32 summary: the live classed estate assets of a team per (system, fix class, class without PQ codes,
+    unknown reasons), the agility roll-up's GROUP BY kept current by database triggers on ``cbomestateasset`` in the
+    writing transaction (``estate_summary``). NULL parts are stored as ''. ``system_label``/``system_kind``: the
+    latest written."""
+    __tablename__ = "cbomagilitygroup"
+    __table_args__ = (UniqueConstraint("team_id", "system_key", "fix_class", "fix_class_excl_pq", "fix_reasons",
+                                       name="uq_cbomagilitygroup_team_group"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    system_key: str = Field(default="", max_length=300)
+    fix_class: str = Field(max_length=16)
+    fix_class_excl_pq: str = Field(default="", max_length=16)
+    fix_reasons: str = Field(default="", max_length=200)
+    n: int = Field(default=0)
+    system_label: str | None = Field(default=None, max_length=255)
+    system_kind: str | None = Field(default=None, max_length=16)
+
+
+class CbomRegisterSummary(SQLModel, table=True):
+    """CB-32 summary: the team's risk register rows per (grade, reason, family, presence), the register summary's
+    GROUP BY kept current by triggers on ``cbomriskregister`` (``estate_summary``). NULL grade / family stored as ''."""
+    __tablename__ = "cbomregistersummary"
+    __table_args__ = (UniqueConstraint("team_id", "q_grade", "q_reason", "family", "presence",
+                                       name="uq_cbomregistersummary_team_group"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    q_grade: str = Field(default="", max_length=2)
+    q_reason: str = Field(max_length=32)
+    family: str = Field(default="", max_length=32)
+    presence: str = Field(max_length=16)
+    n: int = Field(default=0)
+
+
+class CbomEstateCount(SQLModel, table=True):
+    """CB-32 summary: team counters kept by triggers (``estate_summary.COUNTS``): live assets, live not-correlated
+    assets, live observations."""
+    __tablename__ = "cbomestatecount"
+    __table_args__ = (UniqueConstraint("team_id", "kind", name="uq_cbomestatecount_team_kind"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    kind: str = Field(max_length=32)
+    n: int = Field(default=0)
+
+
+def _install_estate_summary(target, connection, **kw):  # noqa: ARG001
+    """Every create_all (tests, local) installs the summary triggers too (CB-32; migrations do it themselves)."""
+    from backend.utilities.cbom_sources import estate_summary_ddl
+
+    estate_summary_ddl.install(connection, only_if_tables=True)
+
+
 class CbomEstateTeam(SQLModel, table=True):
     """Per team: whether the estate store missed a run's write (it failed and was rolled back to its savepoint while
     drift committed). ``stale`` stays set until ``estate.backfill`` has replayed the team's runs."""
@@ -1023,3 +1075,9 @@ class CbomOpsCounter(SQLModel, table=True):
     name: str = Field(primary_key=True, max_length=64)
     value: int = Field(default=0, sa_column=Column(_SaBigInteger, nullable=False, server_default="0"))
     updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+# CB-32: the estate summary triggers follow every SQLModel.metadata.create_all
+from sqlalchemy import event as _sa_event  # noqa: E402
+
+_sa_event.listen(SQLModel.metadata, "after_create", _install_estate_summary)

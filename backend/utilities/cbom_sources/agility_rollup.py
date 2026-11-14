@@ -232,7 +232,9 @@ def _store_page(session: Any, team_id: int, *, fix_class: str | None, system: st
         conds.append(cls_col == fix_class)
     if system:
         conds.append(ea.c.system_key == system)
-    total = int(session.execute(sa.select(sa.func.count()).select_from(ea).where(*conds)).scalar() or 0)
+    from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+    total = SUMMARY.agility_total(session, team_id, fix_class=fix_class, excl_pq=excl_pq, system=system)  # CB-32
     if merged:  # few: the store assets a code-scan certificate joined
         total -= int(session.execute(sa.select(sa.func.count()).select_from(ea).where(
             *conds, ea.c.asset_key.in_(sorted(merged)))).scalar() or 0)
@@ -546,19 +548,17 @@ def build_store(session: Any, team_id: int, *, now: _dt.datetime | None = None, 
         STORE.heal(session, team_id, moment)
     ea, eo, es = CbomEstateAsset.__table__, CbomEstateObservation.__table__, CbomEstateSource.__table__
     live = (ea.c.team_id == team_id, ea.c.presence != "removed", ea.c.fix_class.is_not(None))
-    raw = session.execute(sa.select(
-        ea.c.system_key, sa.func.max(ea.c.system_label), sa.func.max(ea.c.system_kind), ea.c.fix_class,
-        ea.c.fix_class_excl_pq, ea.c.fix_reasons, sa.func.count()).where(*live).group_by(
-        ea.c.system_key, ea.c.fix_class, ea.c.fix_class_excl_pq, ea.c.fix_reasons)).all()
+    # CB-32: the GROUP BY is kept by triggers in cbomagilitygroup (milliseconds at 1.5M assets)
+    from backend.utilities.cbom_sources import estate_summary_ddl as SUMMARY
+
+    raw = SUMMARY.agility_groups(session, team_id)
     groups: dict[tuple, int] = {}
     labels: dict[str, tuple[str, str]] = {}
     for key, label, kind, cls, excl, reasons, n in raw:
         labels[key or ""] = (label or "", kind or "")
         groups[(key or "", cls, excl or "none", tuple(v for v in (reasons or "").split(",") if v))] = int(n)
-    observations = int(session.execute(sa.select(sa.func.count()).select_from(eo).where(
-        eo.c.team_id == team_id, eo.c.presence != "removed")).scalar() or 0)
-    not_correlated = int(session.execute(sa.select(sa.func.count()).select_from(ea).where(
-        ea.c.team_id == team_id, ea.c.key_kind == "not_correlated", ea.c.presence != "removed")).scalar() or 0)
+    observations = SUMMARY.count(session, team_id, "observations_live")
+    not_correlated = SUMMARY.count(session, team_id, "not_correlated_live")
     collections = int(session.execute(sa.select(sa.func.count()).select_from(es).where(
         es.c.team_id == team_id)).scalar() or 0)
 
