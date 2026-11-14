@@ -22,6 +22,7 @@ import {
   Ticket,
   Pencil,
   CheckCircle,
+  Eye,
   EyeOff,
   Loader2,
   Circle,
@@ -82,6 +83,8 @@ import { RunPostureCard } from "@/components/cbom/sources/RunPosture";
 import { applyPostureToDistributions, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
 import { RunFindingsTable } from "@/components/cbom/results/RunFindingsTable";
+import { ColumnChooser, useColumnPrefs } from "@/components/cbom/results/ColumnChooser";
+import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_SM, rowOpenProps, SCAN_TABLE_COLUMNS, STICKY_ACTIONS } from "@/components/cbom/results/findingTable";
 import {
   RunCertificatesSection,
   RunChangesSection,
@@ -205,6 +208,9 @@ export default function CbomResults({
   const [filterRiskScore, setFilterRiskScore] = useState<RiskScoreFilter>("all");
   const [selectedFinding, setSelectedFinding] = useState<CbomFinding | null>(null);
   const [selectedFindings, setSelectedFindings] = useState<Set<string>>(new Set());
+  // #267: the code findings table's visible columns (per user, localStorage); select and Actions always show
+  const scanColumns = useColumnPrefs("scan", SCAN_TABLE_COLUMNS);
+  const showCol = scanColumns.isVisible;
 
   // Jira ticketing state
   const jiraFromSettings =
@@ -1029,6 +1035,10 @@ export default function CbomResults({
                     </SelectContent>
                   </Select>
                   <InfoTip id="cbom.res.filter.quantum" className="-ml-2" />
+                  <div className="ml-auto">
+                    <ColumnChooser defs={SCAN_TABLE_COLUMNS} visible={scanColumns.visible} onToggle={scanColumns.toggle}
+                                   onReset={scanColumns.reset} testId="cbom-findings-columns" />
+                  </div>
                 </div>
               )}
               {hasActiveFindingsFilters && (
@@ -1063,16 +1073,16 @@ export default function CbomResults({
                           <InfoTip id="cbom.res.select_all" />
                         </div>
                       </TableHead>
-                      <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
-                      <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
-                      <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>
-                      <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
-                      <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>
-                      <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>
-                      <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>
-                      <TableHead className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>
-                      <TableHead className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>
-                      <TableHead className="min-w-[100px] text-right">
+                      {showCol("algorithm") && <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
+                      {showCol("type") && <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
+                      {showCol("impact") && <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
+                      {showCol("strength") && <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
+                      {showCol("quantum") && <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
+                      {showCol("fixclass") && <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
+                      {showCol("risk") && <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>}
+                      {showCol("location") && <TableHead className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>}
+                      {showCol("status") && <TableHead className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>}
+                      <TableHead className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}>
                         <span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span>
                       </TableHead>
                     </TableRow>
@@ -1080,7 +1090,7 @@ export default function CbomResults({
                   <TableBody>
                     {filteredFindings.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={11} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                        <TableCell colSpan={2 + scanColumns.visible.length} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
                           {relatedFindingRefs.length > 0
                             ? "No findings match these related assets. Related refs may point at inventory-only components without a finding row — clear the related-asset filter to see all findings."
                             : "No findings match your filters."}
@@ -1092,7 +1102,9 @@ export default function CbomResults({
                         return (
                           <TableRow
                             key={finding.id}
-                            className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedFindings.has(finding.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
+                            data-testid={`cbom-finding-row-${finding.id}`}
+                            {...rowOpenProps(() => setSelectedFinding(finding), `Open details of ${finding.algorithm_name || finding.title}`)}
+                            className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 focus-visible:outline-none focus-visible:bg-blue-50 dark:focus-visible:bg-blue-950/40 ${selectedFindings.has(finding.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                           >
                             <TableCell onClick={(e) => e.stopPropagation()} className="w-[72px]">
                               {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
@@ -1108,6 +1120,7 @@ export default function CbomResults({
                                 className="cursor-pointer"
                               />
                             </TableCell>
+                            {showCol("algorithm") && (
                             <TableCell className="font-medium">
                               <button
                                 type="button"
@@ -1118,23 +1131,35 @@ export default function CbomResults({
                                 {finding.algorithm_name || finding.title}
                               </button>
                             </TableCell>
+                            )}
+                            {showCol("type") && (
                             <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">
                               {finding.algorithm_type?.replace(/_/g, " ") ?? "—"}
                             </TableCell>
+                            )}
+                            {showCol("impact") && (
                             <TableCell>
                               <Badge variant="outline" className={getImpactBadgeClass(finding.impact)}>{finding.impact}</Badge>
                             </TableCell>
+                            )}
+                            {showCol("strength") && (
                             <TableCell>
                               <Badge variant="outline" className={getStrengthBadgeClass(finding.crypto_strength)}>
                                 {finding.crypto_strength ?? "—"}
                               </Badge>
                             </TableCell>
+                            )}
+                            {showCol("quantum") && (
                             <TableCell>
                               <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} />
                             </TableCell>
+                            )}
+                            {showCol("fixclass") && (
                             <TableCell>
                               <FixClassChip item={finding as FixClassFields} testId={`cbom-finding-fixclass-${finding.id}`} />
                             </TableCell>
+                            )}
+                            {showCol("risk") && (
                             <TableCell className="text-center">
                               <span
                                 className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${getRiskScoreBoxClass(finding.risk_score)}`}
@@ -1143,15 +1168,22 @@ export default function CbomResults({
                                 {finding.risk_score?.toFixed(1) ?? "—"}
                               </span>
                             </TableCell>
+                            )}
+                            {showCol("location") && (
                             <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[150px] truncate" title={finding.location ?? ""}>
                               {finding.location ?? "—"}
                             </TableCell>
+                            )}
+                            {showCol("status") && (
                             <TableCell>
                               <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getFindingStatusBadgeClass(finding.status ?? "not_started")}`}>
                                 {statusLabel}
                               </span>
                             </TableCell>
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            )}
+                            <TableCell className={`text-right whitespace-nowrap ${STICKY_ACTIONS}`} onClick={(e) => e.stopPropagation()}
+                                       data-testid={`cbom-finding-actions-${finding.id}`}>
+                              <div className="inline-flex items-center gap-1.5">
                               <DropdownMenu>
                                 {/* infotip-shared: explained by the (i) on the Actions column header */}
                                 <DropdownMenuTrigger asChild>
@@ -1175,6 +1207,11 @@ export default function CbomResults({
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
+                              <Button variant="ghost" size="sm" className="cursor-pointer h-8 gap-1" data-testid={`cbom-finding-details-${finding.id}`}
+                                      aria-label={`Details of ${finding.algorithm_name || finding.title}`} onClick={() => setSelectedFinding(finding)}>
+                                <Eye className="h-3.5 w-3.5" /> Details
+                              </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -1241,17 +1278,15 @@ export default function CbomResults({
 
       {/* Finding Detail Dialog */}
       <Dialog open={!!selectedFinding} onOpenChange={(open) => !open && setSelectedFinding(null)}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-white dark:bg-zinc-900">
+        <DialogContent className={`${FINDING_DIALOG_CONTENT} ${FINDING_DIALOG_FULLSCREEN_SM}`}>
           <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
             <DialogTitle className="pr-8">{selectedFinding?.algorithm_name || selectedFinding?.title || "Finding details"}</DialogTitle>
           </DialogHeader>
           {selectedFinding && (
-            <div className="h-[70vh] min-h-0 shrink px-6 pb-6">
-              {/* Radix wraps the content in a display:table box that grows to its widest line: the exploit demo's
-                  unwrapped proof-of-concept script pushed every section past the dialog's right edge (text cut off,
-                  unreadable on a phone). As a block the content keeps the dialog's width; long code scrolls itself. */}
-              <ScrollArea className="h-full w-full rounded-md [&_[data-slot=scroll-area-viewport]>div]:!block" data-testid="cbom-finding-scroll">
-                <div className="space-y-4 pt-2 pr-4">
+            // #266: the body div is the dialog's one scroll container (a min-h-0 flex item of the max-h-[90vh] column),
+            // at every width; a plain block also keeps the exploit demo's long lines inside the dialog's width.
+            <div className={FINDING_DIALOG_BODY} tabIndex={0} role="region" aria-label="Finding details" data-testid="cbom-finding-scroll">
+                <div className="space-y-4 pt-2">
                   {/* Metadata grid */}
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <div>
@@ -1377,7 +1412,6 @@ export default function CbomResults({
                     subject={{ kind: "scan_finding", scanId: Number(scan_id), findingId: selectedFinding.id }}
                   />
                 </div>
-              </ScrollArea>
             </div>
           )}
         </DialogContent>
