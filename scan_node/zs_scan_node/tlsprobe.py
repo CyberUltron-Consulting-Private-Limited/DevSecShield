@@ -22,6 +22,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from zs_scan_node import idn
+
 SSL3, TLS10, TLS11, TLS12, TLS13 = 0x0300, 0x0301, 0x0302, 0x0303, 0x0304
 VERSION_NAMES = {SSL3: "SSLv3", TLS10: "TLSv1.0", TLS11: "TLSv1.1", TLS12: "TLSv1.2", TLS13: "TLSv1.3"}
 HRR_RANDOM = hashlib.sha256(b"HelloRetryRequest").digest()
@@ -163,6 +165,18 @@ def _ext(ext_type: int, body: bytes) -> bytes:
     return struct.pack("!HH", ext_type, len(body)) + body
 
 
+def sni_name(sni: str | None) -> str | None:
+    """The SNI host name as sent: its IDNA 2008 A-label (CB-09; Python's codec, which ``ssl`` and ``.encode("idna")``
+    use, is IDNA 2003 and sends ``fass.lab`` for ``faß.lab``).  None (no SNI) for a name IDNA 2008 refuses, rather
+    than another host's name."""
+    if not sni:
+        return None
+    try:
+        return idn.to_a_label(str(sni).strip().rstrip("."))
+    except idn.IdnError:
+        return None
+
+
 def build_client_hello(version: int, suites: list[int], sni: str | None = None, groups: list[int] | None = None,
                        tls13: bool = False, key_share_groups: list[int] | None = None,
                        fallback_scsv: bool = False, versions13: list[int] | None = None) -> bytes:
@@ -176,8 +190,9 @@ def build_client_hello(version: int, suites: list[int], sni: str | None = None, 
     body += b"\x01\x00"  # null compression only
     exts = b""
     if version >= TLS10:
+        sni = sni_name(sni)
         if sni:
-            name = sni.encode("idna")
+            name = sni.encode("ascii")
             entry = b"\x00" + struct.pack("!H", len(name)) + name
             exts += _ext(0, struct.pack("!H", len(entry)) + entry)
         g = groups if groups is not None else CLASSICAL_GROUPS
@@ -802,6 +817,7 @@ def s_client(ip: str, port: int, protocol: str, sni: str | None, timeout: float 
     host = f"[{ip}]" if ":" in ip else ip
     cmd = ["openssl", "s_client", "-connect", f"{host}:{port}", "-showcerts", "-legacy_server_connect",
            "-cipher", "ALL:COMPLEMENTOFALL:@SECLEVEL=0"]
+    sni = sni_name(sni)
     cmd += ["-servername", sni] if sni else ["-noservername"]
     if protocol in S_CLIENT_STARTTLS:
         cmd += ["-starttls", S_CLIENT_STARTTLS[protocol]]
@@ -834,7 +850,7 @@ def python_handshake(ip: str, port: int, protocol: str, sni: str | None, timeout
         pass
     sock.settimeout(timeout)
     try:
-        with ctx.wrap_socket(sock, server_hostname=sni) as tls:
+        with ctx.wrap_socket(sock, server_hostname=sni_name(sni)) as tls:
             der = tls.getpeercert(binary_form=True)
             cipher = tls.cipher()
             return FullHandshake(ok=True, version=tls.version(), cipher=cipher[0] if cipher else None,

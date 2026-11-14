@@ -95,6 +95,7 @@ import {
   type Tone,
 } from "./shared";
 import { SOURCE_NEVER_SCAN_HINT } from "./teamNeverScan";
+import { displayHostLines } from "./idnDisplay";
 import { InfoTip } from "@/components/ui/info-tip";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
@@ -311,8 +312,8 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
   return {
     kind,
     name: source.name,
-    targets: Array.isArray(cfg.targets) ? cfg.targets.join("\n") : "",
-    exclusions: Array.isArray(cfg.exclusions) ? cfg.exclusions.join("\n") : "",
+    targets: displayHostLines(cfg.targets),
+    exclusions: displayHostLines(cfg.exclusions),
     nodeId: source.node_id,
     port: String(cfg.port ?? info.port),
     loginUser: String(cfg.login_user ?? info.login),
@@ -340,7 +341,7 @@ function initialForm(source: CbomSource | null, nodes: CbomScanNode[]): FormStat
 function whereChanged(form: FormState, source: CbomSource | null): boolean {
   if (!source) return false;
   const cfg = source.config ?? {};
-  const stored = Array.isArray(cfg.targets) ? (cfg.targets as string[]).join("\n") : "";
+  const stored = displayHostLines(cfg.targets);
   // How the node checks the server's identity also counts: a weaker check must not reuse a stored password.
   const linux = source.kind === "linux_servers";
   const policy = linux ? form.hostKeyPolicy : "tofu";
@@ -1067,6 +1068,13 @@ function ServerForm({
                 </StatusBadge>
               </span>
             </div>
+            {count?.valid && (count.notes?.length ?? 0) > 0 && (
+              <ul className="text-xs text-amber-700 dark:text-amber-400 -mt-2 list-disc pl-4" data-testid="servers-idn-notes">
+                {count.notes!.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            )}
             {teamExclusions.length > 0 && (
               <p className="text-xs text-zinc-500 -mt-2">
                 The count also removes the team never-scan list ({pluralize(teamExclusions.length, "entry", "entries")}) from the Network tab.

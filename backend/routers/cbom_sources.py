@@ -1034,7 +1034,7 @@ def _count_targets(body: dict) -> dict:
     except T.TargetError as exc:
         return {"valid": False, "error": str(exc), "count": None}
     return {"valid": True, "error": None, "count": T.count_in_scope(parsed, excl), "lines": len(parsed.normalized),
-            "samples": T.sample_targets(parsed, excl, 5)}
+            "samples": T.sample_targets(parsed, excl, 5), "notes": parsed.notes + excl.notes}
 
 
 @router.post(BASE + "/targets/count", dependencies=READ, summary="Count targets after exclusions (no side effects)")
