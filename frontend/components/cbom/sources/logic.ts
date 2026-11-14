@@ -504,3 +504,20 @@ export function windowStartNotice(items: WindowedItem[]): string | null {
     `when the window opens (${formatDateTime(w.firstStart)}${w.waiting > 1 ? " at the earliest" : ""}) and stay ` +
     "queued until then."
 }
+
+// ---------------------------------------------------------------------------- certificate transparency
+const CT_PROVIDER_LABEL: Record<string, string> = { certspotter: "Cert Spotter", crtsh: "crt.sh" }
+
+/** The providers the server asks, in order, as the CT card names them ("Cert Spotter (then crt.sh when it cannot answer)"). */
+export function ctProviderSentence(providers: string[] | undefined): string {
+  const names = (providers ?? []).map((p) => CT_PROVIDER_LABEL[p] ?? p)
+  if (names.length === 0) return "a public CT search service"
+  return names.length === 1 ? names[0] : `${names[0]} (then ${names.slice(1).join(", ")} when it cannot answer)`
+}
+
+/** Credits one run charges for the CT source: the server's per-domain rate times the domains it searches (the
+ *  planner's units), rounded to cents as the server rounds; null while the rate is unknown. */
+export function ctRunCredits(rate: number | undefined, domainsSearched: number): number | null {
+  if (rate === undefined || !Number.isFinite(rate)) return null
+  return Math.round(rate * 100 * domainsSearched) / 100
+}

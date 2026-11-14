@@ -62,8 +62,9 @@ assert.ok(cloud.includes("/FederationMetadata/2007-06/FederationMetadata.xml"), 
 // 6. Kubernetes tiers: no pods are read (no images), and a TLS Secret's tls.key is dropped unread
 assert.ok(k8s.includes('data.pop("tls.key", None)  # never parsed, never kept'), "the behaviour Tier 2 now describes")
 assert.ok(!clusters.includes("images in use") && !clusters.includes("private keys left in Secrets"))
-assert.ok(clusters.includes("const K8S_TIER_READS: Record<1 | 2, string[]> = {"))
-assert.ok(clusters.includes('description: K8S_TIER_READS[1].join(", ")') && clusters.includes('description: K8S_TIER_READS[2].join(", ")'))
+// dev's CB36-BUG-04 wording (exact grants: backend test_cbom_node_core_classify.py; collector code: test_cbom_cb08_promises.py)
+assert.ok(clusters.includes('title: "Tier 1 · no Secrets"') && clusters.includes('title: "Tier 2 · reads Secrets"'))
+assert.ok(clusters.includes("which are dropped unparsed and never stored or sent"), "Tier 2 says tls.key is dropped")
 
 // Review & Run: the collectors exist; their assets are in each run's results and exports and on the CBOM dashboard
 assert.ok(!review.includes("once the collector for each source type ships"))

@@ -1,0 +1,12 @@
+{
+ "access-control-allow-origin": "*",
+ "cache-control": "public, max-age=86400, must-revalidate",
+ "connection": "close",
+ "content-type": "application/json",
+ "date": "Thu, 12 Nov 2026 17:58:56 GMT",
+ "link": "<https://api.certspotter.com/issuances?after=16737347444&domain=google.com&expand=dns_names&expand=issuer&expand=revocation&expand=cert_der&expand=pubkey&include_subdomains=true>; rel=\"next\"",
+ "server": "sslmatehttpd",
+ "transfer-encoding": "chunked",
+ "vary": "Authorization",
+ "x-content-type-options": "nosniff"
+}

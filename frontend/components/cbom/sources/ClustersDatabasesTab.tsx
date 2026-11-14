@@ -77,20 +77,6 @@ const LOGIN_OPTIONAL: ReadonlySet<Engine> = new Set(["mongodb", "redis"]);
 const CA_REQUIRED_ENGINES: ReadonlySet<Engine> = new Set(["mysql", "redis", "mssql"]);
 const GRANT_LANGUAGE: Record<Engine, string> = { postgres: "sql", mysql: "sql", mssql: "sql", oracle: "sql", mongodb: "javascript", redis: "bash" };
 
-// What each Kubernetes tier reads: every claim is matched to the collector's API paths and the tier's ClusterRole by
-// backend/tests/test_cbom_cb08_promises.py (no pods are read, so no images; a TLS Secret's tls.key is dropped unparsed).
-const K8S_TIER_READS: Record<1 | 2, string[]> = {
-  1: [
-    "API server TLS and certificate chain",
-    "cluster and node versions",
-    "cert-manager certificates and the issuer each names",
-    "ingress TLS hosts and Secret names",
-    "Istio and Linkerd mTLS policy",
-    "CA bundles in ConfigMaps, and private keys pasted into them (type and size only)",
-  ],
-  2: ["adds the certificate of each TLS Secret (the node drops tls.key without parsing it)"],
-};
-
 // templates.py DB_READS (kept equal by test_command_lists_shown_to_customers_match_the_server_and_sudoers)
 const DB_READS: Record<Engine, string[]> = {
   postgres: [
@@ -1082,8 +1068,18 @@ function ClusterForm({
               value={form.tier}
               onChange={(v) => set({ tier: v })}
               options={[
-                { value: 1, title: "Tier 1 · no Secrets", description: K8S_TIER_READS[1].join(", ") },
-                { value: 2, title: "Tier 2 · reads Secrets", description: K8S_TIER_READS[2].join(", ") },
+                // Exactly what the tier's ClusterRole grants and the collector reads (CB36-BUG-04; pinned by
+                // backend/tests/test_cbom_node_core_classify.py). Container images are the Container images source.
+                {
+                  value: 1,
+                  title: "Tier 1 · no Secrets",
+                  description: "Cluster and node versions, API server TLS, ingress TLS hosts and Secret names, cert-manager Certificates, certificates and private keys in ConfigMaps, Istio and Linkerd mTLS policy",
+                },
+                {
+                  value: 2,
+                  title: "Tier 2 · reads Secrets",
+                  description: "Adds the certificates of TLS Secrets (kubernetes.io/tls); the API also returns their private keys, which are dropped unparsed and never stored or sent",
+                },
               ]}
             />
           </div>

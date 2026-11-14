@@ -4167,7 +4167,7 @@ export {
 export type CbomSourceKind =
     | "linux_servers" | "windows_servers" | "active_directory" | "kubernetes" | "database"
     | "aws_account" | "azure_subscription" | "gcp_project" | "ca_connector" | "idp" | "network_range"
-    | "appliance" | "key_manager" | "host_agent" | "container_images"
+    | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
 export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
@@ -4280,6 +4280,8 @@ export interface CbomSourceWrite {
     clear_secrets?: string[]
     expected_version?: number
     test_after_save?: boolean
+    /** ct_logs only, on create: add the saved certificate domains (settings.cert_domains) and empty that list */
+    import_saved_domains?: boolean
 }
 
 export interface CbomJob {
@@ -4412,7 +4414,12 @@ export interface CbomSourcesSettings {
     aws_external_id: string
     /** false: the deployment has no CBOM_AWS_PRINCIPAL_ARN, so AWS accounts cannot be connected */
     aws_collection_configured?: boolean
+    /** Domains saved before Certificate Transparency discovery existed; nothing reads them (a ct_logs source does). */
     cert_domains: string[]
+    /** true: the server runs Certificate Transparency discovery (CBOM_CT_DISCOVERY); a ct_logs source can be added */
+    ct_discovery_enabled?: boolean
+    /** CT providers in the order they are asked, e.g. ["certspotter", "crtsh"] */
+    ct_providers?: string[]
     network_exclusions: CbomExclusionItem[]
     sni_hostnames: string[]
     ports: CbomPortItem[]
@@ -4544,6 +4551,7 @@ export interface CbomSourcesOverview {
         in_window_now: boolean
         window_timezone: string
         aws_external_id: string
+        ct_discovery_enabled?: boolean
         network_exclusions: number
         ports: number
         sni_hostnames: number

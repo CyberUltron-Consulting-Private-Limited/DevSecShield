@@ -14,14 +14,18 @@ import os
 import shutil
 import ssl
 import tempfile
+import threading
 import time
 from typing import Any
 
+from zs_scan_node import tls_registry as R
+from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, load_certs
 from zs_scan_node.collectors import ConfigError
-from zs_scan_node.jobctx import JobContext
-from zs_scan_node.netutil import Blocked, Target, checked_ip, resolve_checked
+from zs_scan_node import netutil
+from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext
+from zs_scan_node.netutil import Blocked, Target, checked_ip, checked_target, is_ip, resolve_checked
 
 SUPPORTED = ("postgres", "mysql", "redis", "mongodb", "mssql", "oracle")
 DEFAULT_PORTS = {"postgres": 5432, "mysql": 3306, "redis": 6379, "mongodb": 27017, "mssql": 1433, "oracle": 1521}
@@ -30,7 +34,7 @@ REDIS_TLS_SETTINGS = ["port", "tls-port", "tls-protocols", "tls-ciphers", "tls-c
 MYSQL_VARIABLES = ["version", "have_ssl", "tls_version", "ssl_cipher", "tls_ciphersuites", "require_secure_transport",
                    "default_authentication_plugin", "authentication_policy", "default_table_encryption",
                    "innodb_redo_log_encrypt", "innodb_undo_log_encrypt", "binlog_encryption", "admin_tls_version",
-                   "ssl_fips_mode", "table_encryption_privilege_check"]
+                   "ssl_fips_mode", "table_encryption_privilege_check", "max_connect_errors"]
 PG_SETTINGS = ["server_version", "ssl", "ssl_min_protocol_version", "ssl_max_protocol_version", "ssl_ciphers",
                "ssl_ecdh_curve", "ssl_prefer_server_ciphers", "ssl_library", "password_encryption",
                "ssl_dh_params_file"]
@@ -104,13 +108,25 @@ def _tls_offered(ip: str, port: int, engine: str, never) -> tuple[bool, dict]:
         return False, {}
 
 
-def _server_tls(ctx: JobContext, target: Target, port: int, engine: str) -> tuple[dict, int]:
-    """Full handshake details + certificate for the database port."""
-    checked_ip(target.ip, ctx.never_scan)
+def _server_tls(ctx: JobContext, target: Target, port: int, engine: str, scope: dict | None = None,
+                enumerate_now: bool = True) -> tuple[dict, int]:
+    """Full handshake details + certificate for the database port, then (``enumerate_now``) what the server accepts:
+    every protocol version, every suite per version, the TLS 1.3 groups (CB-12), each through the engine's own TLS
+    upgrade (PostgreSQL SSLRequest) and the node's rate limiter.  MySQL is enumerated after its login instead
+    (``mysql_accepted_tls``): it counts every unfinished connection against ``max_connect_errors``."""
+    checked_target(target, ctx.never_scan)
     proto = {"postgres": "starttls-postgres", "mysql": "starttls-mysql"}.get(engine, "tls")
-    fh = T.s_client(target.ip, port, proto, None) if T.have_openssl() else T.python_handshake(target.ip, port, proto, None)
-    facts = {"negotiated_version": fh.version, "negotiated_cipher": fh.cipher, "negotiated_group": fh.group,
-             "peer_signature_type": fh.peer_sig_type}
+    limiter = _limiter(scope)
+    if not limiter.acquire(ctx.cancel, ctx.deadline):
+        raise DbFail("skipped_deadline", "the scan window or the job deadline came before the TLS read")
+    with limiter.server(target.ip):
+        fh = T.s_client(target.ip, port, proto, None) if T.have_openssl() else \
+            T.python_handshake(target.ip, port, proto, None)
+    code = R.suite_code(fh.cipher)
+    facts: dict[str, Any] = {"negotiated_version": fh.version,
+                             "negotiated_cipher": R.suite_name(code) if code is not None else fh.cipher,
+                             "negotiated_cipher_code": R.code_hex(code) if code is not None else None,
+                             "negotiated_group": E.iana_group(fh.group), "peer_signature_type": fh.peer_sig_type}
     n = 0
     for i, der in enumerate(fh.certs_der[:5]):
         for cert in load_certs(der):
@@ -118,14 +134,196 @@ def _server_tls(ctx: JobContext, target: Target, port: int, engine: str) -> tupl
             ctx.emit("certificate", target.label, f"{_where(target)}:{port}#chain[{i}]", name=f.get("subject", ""),
                      algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i, "role": engine})
             n += 1
+    if enumerate_now:
+        facts.update(_accepted_tls(ctx, target, port, proto, fh.version if fh.ok else None, code, scope))
     return facts, n
+
+
+DB_TLS_BUDGET = 64  # handshakes per database port: versions, then suites and groups (CB-12)
+DB_TLS_MAX_S = 60.0
+# MySQL blocks a client host after ``max_connect_errors`` successive connections that did not log in, and every probe
+# counts (a raw ClientHello, a full TLS handshake then close, even a bare TCP connect: measured on MySQL 8.4 with its
+# host cache on).  Only a successful login resets the count, so MySQL probes run after the read-only login, in batches
+# of at most half the server's limit, each batch followed by one login: the count never passes half the limit and the
+# scan leaves it at 0.
+MYSQL_ASSUMED_MAX_CONNECT_ERRORS = 10  # when the variable could not be read: a hardened server's usual value
+MYSQL_MAX_BATCHES = 8
+_ENDPOINT_LOCKS: dict[tuple[str, int], threading.Lock] = {}
+_ENDPOINT_LOCKS_LOCK = threading.Lock()
+
+
+def _limiter(scope: dict | None) -> netutil.RateLimiter:
+    rl = (scope or {}).get("rate_limits") or {}
+    if rl.get("connections_per_second"):
+        return netutil.node_limiter(rl["connections_per_second"], rl.get("parallel_per_server") or 2)
+    return netutil.shared_limiter()
+
+
+def _endpoint_lock(ip: str, port: int) -> threading.Lock:
+    """One TLS probe at a time per database endpoint, whatever jobs run on this node."""
+    with _ENDPOINT_LOCKS_LOCK:
+        return _ENDPOINT_LOCKS.setdefault((ip, port), threading.Lock())
+
+
+def mysql_accepted_tls(ctx: JobContext, target: Target, port: int, version: str | None, code: int | None,
+                       max_connect_errors: Any, login, scope: dict | None = None) -> dict[str, Any]:
+    """MySQL's accepted versions, suites and groups after a successful login (``login()`` logs in and out once, which
+    resets the server's count of unfinished connections from this node)."""
+    try:
+        limit = int(max_connect_errors)
+    except (TypeError, ValueError):
+        limit = MYSQL_ASSUMED_MAX_CONNECT_ERRORS
+    batch = max(limit, 0) // 2
+    if batch < 1:
+        return {"enumeration": {"complete": False, "not_complete": [
+            f"MySQL max_connect_errors={limit}: a single probe could block this node, none was sent"]}}
+    return _accepted_tls(ctx, target, port, "starttls-mysql", version, code, scope,
+                         budget=min(DB_TLS_BUDGET, batch * MYSQL_MAX_BATCHES), batch=batch, reset=login)
+
+
+def _accepted_tls(ctx: JobContext, target: Target, port: int, proto: str, version: str | None, code: int | None,
+                  scope: dict | None = None, budget: int | None = None, batch: int | None = None,
+                  reset=None) -> dict[str, Any]:
+    budget = DB_TLS_BUDGET if budget is None else budget
+    used = [0]
+    since_reset = [0]
+    dropped: list[str] = []
+    deadline = time.monotonic() + DB_TLS_MAX_S
+    limiter = _limiter(scope)
+    lock = _endpoint_lock(target.ip, port)
+
+    def send(hello: bytes, want_kex: bool = False):
+        if dropped:
+            raise E.Stop(f"server stopped answering ({dropped[0]})")
+        if used[0] >= budget:
+            raise E.Stop(f"handshake budget ({budget})")
+        if time.monotonic() > deadline or ctx.should_stop():
+            raise E.Stop("time cap")
+        if batch is not None and since_reset[0] >= batch:
+            if not reset():
+                dropped.append("the MySQL login that resets max_connect_errors failed")
+                raise E.Stop(dropped[0])
+            since_reset[0] = 0
+        checked_target(target, ctx.never_scan)  # the list can change while the job runs (every address of a name)
+        if not limiter.acquire(ctx.cancel, min(deadline, ctx.deadline)):
+            raise E.Stop("time cap")
+        used[0] += 1
+        since_reset[0] += 1
+        with lock, limiter.server(target.ip):
+            try:
+                return T.probe(target.ip, port, proto, hello, 8.0, want_kex)
+            except T.ProbeError as exc:
+                if exc.code == "timeout" or isinstance(exc, T.ConnectRefused) or "MySQL refused" in exc.detail:
+                    dropped.append(exc.detail or exc.code)  # every later probe would wait or be refused the same way
+                raise
+
+    try:
+        return _enumerate(send, version, code, budget, used)
+    finally:
+        if reset is not None and since_reset[0]:
+            reset()  # the count back to 0: the next scan, or the customer's own clients, start clean
+
+
+def _enumerate(send, version: str | None, code: int | None, budget: int, used: list[int]) -> dict[str, Any]:
+    known: dict[str, set[int]] = {}
+    if version and code is not None and version in T.VERSION_NAMES.values():
+        known.setdefault(version, set()).add(code)
+    versions: dict[str, bool | None] = {}
+    not_complete: list[str] = []
+    for v in (T.SSL3, T.TLS10, T.TLS11, T.TLS12):
+        name = T.VERSION_NAMES[v]
+        if version == name:
+            versions[name] = True
+            continue
+        try:
+            r = send(T.build_client_hello(v, T.LEGACY_SUITES))
+        except T.ConnectionReset:  # a reset is how some stacks refuse a version
+            versions[name] = False
+            continue
+        except E.Stop as stop:
+            versions[name] = None
+            not_complete.append(f"{name}: {stop.reason}")
+            continue
+        except (T.ProbeError, T.StarttlsUnavailable) as exc:
+            versions[name] = None
+            not_complete.append(f"{name}: {getattr(exc, 'code', 'starttls')}")
+            continue
+        versions[name] = bool(r.ok and r.version == v)
+        if versions[name] and r.cipher is not None:
+            known.setdefault(name, set()).add(r.cipher)
+    if version == "TLSv1.3":
+        versions["TLSv1.3"] = True
+    else:
+        try:
+            r = send(T.build_client_hello(T.TLS12, T.TLS13_SUITES, tls13=True, key_share_groups=[29]))
+            versions["TLSv1.3"] = bool(r.ok and (r.version == T.TLS13 or r.hrr))
+            if versions["TLSv1.3"] and r.cipher is not None:
+                known.setdefault("TLSv1.3", set()).add(r.cipher)
+        except T.ConnectionReset:
+            versions["TLSv1.3"] = False
+        except (E.Stop, T.ProbeError, T.StarttlsUnavailable) as exc:
+            versions["TLSv1.3"] = None
+            not_complete.append(f"TLSv1.3: {getattr(exc, 'reason', None) or getattr(exc, 'code', 'starttls')}")
+    complete: dict[str, bool] = {}
+    found_groups: list[int] = []
+    groups_done = True
+    kex: dict[str, Any] = {}
+    pq = E.Pass()
+    if versions.get("TLSv1.3"):
+        pq = E.tls13_groups(send, E.PQ_OFFER, None)
+        classical = E.tls13_groups(send, E.CLASSICAL13_OFFER, None)
+        for p, label in ((pq, "PQ groups"), (classical, "TLS 1.3 groups")):
+            found_groups += p.found
+            groups_done = groups_done and p.complete
+            if not p.complete:
+                not_complete.append(f"{label}: {p.reason}")
+        p = E.tls13_suites(send, known.get("TLSv1.3", set()), None)
+        known.setdefault("TLSv1.3", set()).update(p.found)
+        complete["TLSv1.3"] = p.complete
+        if not p.complete:
+            not_complete.append(f"TLSv1.3 suites: {p.reason}")
+    for v in E.VERSION_ORDER:
+        vname = T.VERSION_NAMES[v]
+        if versions.get(vname):
+            p = E.legacy_suites(send, v, known.get(vname, set()), None, kex)
+            known.setdefault(vname, set()).update(p.found)
+            complete[vname] = p.complete
+            if not p.complete:
+                not_complete.append(f"{vname} suites: {p.reason}")
+    codes = sorted({c for s in known.values() for c in s})
+    out: dict[str, Any] = {
+        "versions": versions,
+        "ciphers": [R.suite_name(c) for c in codes],
+        "cipher_suites": {v: [E.suite_entry(c) for c in sorted(known[v])] for v in sorted(known)},
+        "cipher_suites_complete": {v: complete.get(v, False) for v in sorted(known)},
+        "groups": sorted({E.group_name(g) for g in found_groups} | {E.group_name(g) for g in kex.get("curves") or ()}),
+        "groups_complete": bool(versions.get("TLSv1.3")) and groups_done,
+        "enumeration": {"complete": not not_complete, "not_complete": not_complete[:12]},
+        "handshakes_used": used[0] + 1, "handshake_budget": budget + 1,  # + the full handshake
+    }
+    if versions.get("TLSv1.3"):
+        # as the network prober: no answer to the PQ pass (budget, time, an error) is "unknown", never "no hybrid"
+        out["pq_hybrid"] = bool(pq.found) if pq.answered else None
+        out["pq_groups"] = [E.group_name(g) for g in pq.found]
+        out["pq_groups_enumerated"] = pq.complete
+    weak: dict[str, set[str]] = {}
+    for vname, cs in known.items():
+        if vname != "TLSv1.3":
+            for c in cs:
+                for label in E.suite_classes(R.suite_name(c)):
+                    weak.setdefault(label, set()).add(R.suite_name(c))
+    if any(versions.get(T.VERSION_NAMES[v]) for v in E.VERSION_ORDER):
+        out["weak_ciphers_accepted"] = {k: sorted(v) for k, v in sorted(weak.items())}
+    if kex.get("dh_bits"):
+        out["dh_bits"] = kex["dh_bits"]
+    return out
 
 
 # ----------------------------------------------------------------------------- engines
 def _postgres(ctx, target, config, password, ca: _CaFile) -> int:
     import psycopg
 
-    ip = checked_ip(target.ip, ctx.never_scan)  # the network gate, again just before the driver connects
+    ip = checked_target(target, ctx.never_scan)  # the network gate, again just before the driver connects
     port = int(config.get("port") or 5432)
     require_tls = bool(config.get("require_tls", True))
     verified = bool(ca.path) and require_tls  # only verify-ca proves the server; "prefer" never checks the CA
@@ -346,10 +544,8 @@ def _strict_mysql():
     return StrictTLSConnection
 
 
-def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
-    import pymysql
-
-    ip = checked_ip(target.ip, ctx.never_scan)
+def _mysql_connect(ctx, target, config, password, ca: _CaFile, tls: bool):
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 3306)
     ssl_arg = None
     if tls:
@@ -358,9 +554,25 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
         if not ca.path:
             sctx.verify_mode = ssl.CERT_NONE
         ssl_arg = sctx
+    return _strict_mysql()(host=ip, port=port, user=config.get("login"), password=password or "",
+                           connect_timeout=10, read_timeout=20, ssl=ssl_arg, autocommit=True)
+
+
+def _mysql_login(ctx, target, config, password, ca: _CaFile, tls: bool) -> bool:
+    """Log in and out once: MySQL resets its count of this node's unfinished connections (max_connect_errors)."""
     try:
-        conn = _strict_mysql()(host=ip, port=port, user=config.get("login"), password=password or "",
-                               connect_timeout=10, read_timeout=20, ssl=ssl_arg, autocommit=True)
+        _mysql_connect(ctx, target, config, password, ca, tls).close()
+        return True
+    except Exception:  # noqa: BLE001  (any failure: the caller stops probing)
+        return False
+
+
+def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool, seen: dict | None = None) -> int:
+    import pymysql
+
+    port = int(config.get("port") or 3306)
+    try:
+        conn = _mysql_connect(ctx, target, config, password, ca, tls)
     except pymysql.err.OperationalError as exc:
         code = exc.args[0] if exc.args else 0
         if code in (2026, 2059) and len(exc.args) > 1 and "the server" in str(exc.args[1]):
@@ -386,6 +598,8 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
         placeholders = ",".join(["%s"] * len(MYSQL_VARIABLES))
         variables = {r[0]: r[1] for r in q(f"SHOW GLOBAL VARIABLES WHERE Variable_name IN ({placeholders})",
                                           "variables", MYSQL_VARIABLES) or []}
+        if seen is not None:
+            seen.update(variables)
         users = q("SELECT user, host, plugin, ssl_type FROM mysql.user", "users")
         own = {r[0]: r[1] for r in q("SHOW SESSION STATUS WHERE Variable_name IN ('Ssl_version','Ssl_cipher')",
                                      "own connection TLS") or []}
@@ -424,7 +638,7 @@ def _mysql(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
 def _redis(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
     import redis
 
-    ip = checked_ip(target.ip, ctx.never_scan)
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 6379)
     kwargs: dict[str, Any] = dict(host=ip, port=port, socket_timeout=10, socket_connect_timeout=5,
                                   username=config.get("login") or None, password=password or None)
@@ -475,7 +689,7 @@ def _redis(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
 def _mongodb(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
     import pymongo
 
-    ip = checked_ip(target.ip, ctx.never_scan)
+    ip = checked_target(target, ctx.never_scan)
     port = int(config.get("port") or 27017)
     kwargs: dict[str, Any] = dict(host=ip, port=port, directConnection=True, serverSelectionTimeoutMS=8000,
                                   connectTimeoutMS=5000, socketTimeoutMS=15000, tls=tls)
@@ -522,16 +736,19 @@ def _mongodb(ctx, target, config, password, ca: _CaFile, tls: bool) -> int:
 
 
 # ----------------------------------------------------------------------------- entry points
-def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str | None, int]:
+def _one(ctx: JobContext, config: dict, secrets: dict, scope: dict | None = None
+         ) -> tuple[Target, str, str | None, int]:
     engine = config.get("engine")
     if engine not in SUPPORTED:
         raise ConfigError(f"{engine} is not collected by this scan node version")
     host = str(config.get("host") or "").strip()
     label = host.strip("[]").lower().rstrip(".")  # an IPv6 literal may come in brackets
     try:  # the network gate: resolve once, apply never-scan, connect only to the checked address
-        target = Target(label, resolve_checked(host, ctx.never_scan)[0])
-    except Blocked:
-        return Target(label, None), "skipped_never_scan", None, 0
+        addresses = resolve_checked(host, ctx.never_scan)
+        # a name keeps every address it resolved to: each connection re-checks all of them (checked_target)
+        target = Target(label, addresses[0], addresses=() if is_ip(label) else tuple(addresses))
+    except Blocked as exc:
+        return Target(label, None), "skipped_never_scan", str(exc), 0
     except OSError as exc:
         return Target(label, None), "unreachable", f"could not resolve {label}: {exc.__class__.__name__}", 0
     port = int(config.get("port") or DEFAULT_PORTS[engine])
@@ -542,37 +759,67 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
                                               _where(target)))
     require_tls = bool(config.get("require_tls", True))
     try:
-        tls, pre = _tls_offered(target.ip, port, engine, ctx.never_scan)
-    except Blocked:
-        return target, "skipped_never_scan", None, 0
+        tls, pre = _tls_offered(checked_target(target, ctx.never_scan), port, engine, ctx.never_scan)
+    except Blocked as exc:
+        return target, "skipped_never_scan", str(exc), 0
     except T.ProbeError as exc:
         return target, exc.code, exc.detail, 0
     n = 0
     tls_facts: dict[str, Any] = {"engine": engine, "tls_offered": tls, **pre}
+    # MySQL's accepted versions and suites are read after its login (max_connect_errors, mysql_accepted_tls)
+    mysql_later = engine == "mysql" and tls
     if tls:
         try:
-            hs, n = _server_tls(ctx, target, port, engine)
-        except Blocked:
-            return target, "skipped_never_scan", None, 0
+            hs, n = _server_tls(ctx, target, port, engine, scope, enumerate_now=not mysql_later)
+        except Blocked as exc:
+            return target, "skipped_never_scan", str(exc), 0
+        except DbFail as fail:
+            return target, fail.status, fail.error, 0
         tls_facts.update(hs)
-    ctx.emit("tls_endpoint", target.label, f"{_where(target)}:{port}", name=f"{engine} {target.ip}:{port}",
-             algorithm=tls_facts.get("negotiated_cipher"), protocol=tls_facts.get("negotiated_version") or engine,
-             facts={**tls_facts, "service": engine, "tls": tls, "plaintext_only": not tls})
-    n += 1
+    if mysql_later:
+        tls_facts["enumeration"] = {"complete": False, "not_complete": [
+            "MySQL: versions and suites are probed only after a successful login (each probe counts against "
+            "max_connect_errors until a login resets it)"]}
+
+    def emit_tls() -> int:
+        E.fit_facts(tls_facts, MAX_FACTS_BYTES)
+        ctx.emit("tls_endpoint", target.label, f"{_where(target)}:{port}", name=f"{engine} {target.ip}:{port}",
+                 algorithm=tls_facts.get("negotiated_cipher"), protocol=tls_facts.get("negotiated_version") or engine,
+                 facts={**tls_facts, "service": engine, "tls": tls, "plaintext_only": not tls})
+        return 1
+
+    if not mysql_later:
+        n += emit_tls()
+    status, error, added = _login_and_read(ctx, target, config, secrets, engine, port, tls, require_tls, tls_facts,
+                                           scope)
+    if mysql_later:
+        added += emit_tls()
+    return target, status, error, n + added
+
+
+def _login_and_read(ctx: JobContext, target: Target, config: dict, secrets: dict, engine: str, port: int, tls: bool,
+                    require_tls: bool, tls_facts: dict[str, Any], scope: dict | None) -> tuple[str, str | None, int]:
+    n = 0
     if require_tls and not tls:
-        return target, "tls_unavailable", "the server does not offer TLS; the password was not sent", n
+        return "tls_unavailable", "the server does not offer TLS; the password was not sent", n
     password = _password(ctx, config, secrets)
     if password and engine in ("mysql", "redis") and not (tls and config.get("ca_pem")):
         # MySQL full authentication and Redis AUTH hand the password to whatever answers; only a server proven by
         # the CA certificate may receive it.  (PostgreSQL is held to SCRAM instead; MongoDB uses SCRAM.)
-        return target, "identity_unverified", ("the server's identity cannot be checked without its CA certificate "
-                                               "and TLS; the password was not sent"), n
+        return "identity_unverified", ("the server's identity cannot be checked without its CA certificate "
+                                       "and TLS; the password was not sent"), n
     ca = _CaFile(config.get("ca_pem"))
     try:
         if engine == "postgres":
             n += _postgres(ctx, target, config, password, ca)
         elif engine == "mysql":
-            n += _mysql(ctx, target, config, password, ca, tls)
+            variables: dict[str, Any] = {}
+            n += _mysql(ctx, target, config, password, ca, tls, variables)
+            if tls:  # logged in: probe, in batches each closed by a login (the count of unfinished connections)
+                tls_facts.update(mysql_accepted_tls(
+                    ctx, target, port, tls_facts.get("negotiated_version"),
+                    R.suite_code(tls_facts.get("negotiated_cipher")), variables.get("max_connect_errors"),
+                    lambda: _mysql_login(ctx, target, config, password, ca, tls), scope))
         elif engine == "redis":
             n += _redis(ctx, target, config, password, ca, tls)
         elif engine == "oracle":
@@ -585,17 +832,17 @@ def _one(ctx: JobContext, config: dict, secrets: dict) -> tuple[Target, str, str
         else:
             n += _mongodb(ctx, target, config, password, ca, tls)
     except DbFail as fail:
-        return target, fail.status, fail.error, n
-    except Blocked:  # added to never-scan while this target was being read
-        return target, "skipped_never_scan", None, n
+        return fail.status, fail.error, n
+    except Blocked as exc:  # added to never-scan while this target was being read
+        return "skipped_never_scan", str(exc), n
     finally:
         ca.close()
-    return target, "ok", None, n
+    return "ok", None, n
 
 
 def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     started = time.monotonic()
-    target, status, error, n = _one(ctx, config, secrets)
+    target, status, error, n = _one(ctx, config, secrets, scope)
     ctx.outcome(target.label, status, error, started=started, assets=n)
     return f"{config.get('engine')} {target.label}: {status}"
 
@@ -603,7 +850,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     started = time.monotonic()
     try:
-        target, status, error, n = _one(ctx, config, secrets)
+        target, status, error, n = _one(ctx, config, secrets, scope)
     except ConfigError as exc:
         ctx.samples.append({"target": str(config.get("host")), "status": "error", "reachable": None, "login": False,
                             "privilege": None, "note": str(exc)})

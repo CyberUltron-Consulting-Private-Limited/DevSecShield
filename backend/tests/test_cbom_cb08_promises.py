@@ -218,34 +218,32 @@ def test_linux_command_list_is_what_the_collector_runs():
         assert check in strings, f"Tier 2 check {check!r} is shown (and in the sudoers file) but never run"
 
 
-# Kubernetes tiers: each claim on the form -> (tokens in kubernetes.py, ClusterRole resources it needs)
+# Kubernetes tiers: each claim on the form -> (tokens in kubernetes.py, ClusterRole resources it needs). The text is
+# dev's CB36-BUG-04 wording; test_cbom_node_core_classify.py pins it to the exact ClusterRole grants, this test to the
+# collector code.
 K8S_EVIDENCE: dict[int, dict[str, tuple[tuple[str, ...], tuple[str, ...]]]] = {
     1: {
-        "API server TLS and certificate chain": (('"Kubernetes API server"', "#chain["), ()),
-        "cluster and node versions": (('"/version"', '"/api/v1/nodes"', '"kubelet"'), ('"nodes"',)),
-        "cert-manager certificates and the issuer each names":
-            (('"/apis/cert-manager.io/v1/certificates"', '"issuerRef"'), ('"certificates"',)),
+        "Cluster and node versions": (('"/version"', '"/api/v1/nodes"', '"kubelet"'), ('"nodes"',)),
+        "API server TLS": (('"Kubernetes API server"', "#chain["), ()),
         "ingress TLS hosts and Secret names": (('"/apis/networking.k8s.io/v1/ingresses"', '"secretName"'), ('"ingresses"',)),
+        "cert-manager Certificates": (('"/apis/cert-manager.io/v1/certificates"',), ('"certificates"',)),
+        "certificates and private keys in ConfigMaps": (('"/api/v1/configmaps"', "embedded_private_keys("), ('"configmaps"',)),
         "Istio and Linkerd mTLS policy": (('peerauthentications', 'destinationrules', 'policy.linkerd.io'),
                                           ('"peerauthentications"', '"destinationrules"', '"servers"')),
-        "CA bundles in ConfigMaps, and private keys pasted into them (type and size only)":
-            (('"/api/v1/configmaps"', "embedded_private_keys("), ('"configmaps"',)),
     },
     2: {
-        "adds the certificate of each TLS Secret (the node drops tls.key without parsing it)":
+        "Adds the certificates of TLS Secrets (kubernetes.io/tls); the API also returns their private keys, which are "
+        "dropped unparsed and never stored or sent":
             (('"type=kubernetes.io/tls"', 'data.pop("tls.key", None)'), ('"secrets"',)),
     },
 }
 
 
 def _ui_k8s_tiers() -> dict[int, list[str]]:
-    """The tier claims as the Clusters form shows them: K8S_TIER_READS, or (older forms) the tier card text."""
+    """The tier claims as the Clusters form shows them: Tier 1 is a comma list of reads; Tier 2 is one sentence."""
     tsx = (_UI / "ClustersDatabasesTab.tsx").read_text(encoding="utf-8")
-    m = re.search(r"const K8S_TIER_READS: Record<1 \| 2, string\[\]> = \{(.*?)\n\};", tsx, re.S)
-    if m:
-        return {int(t): re.findall(r'"((?:[^"\\]|\\.)*)"', body) for t, body in re.findall(r"(\d): \[(.*?)\]", m.group(1), re.S)}
-    cards = re.findall(r'title: "Tier (\d) [^"]*", description: "([^"]*)"', tsx)
-    return {int(t): [c.strip() for c in text.split(", ")] for t, text in cards}
+    cards = re.findall(r'title: "Tier (\d) [^"]*",\s*description: "([^"]*)"', tsx)
+    return {int(t): ([c.strip() for c in text.split(", ")] if t == "1" else [text]) for t, text in cards}
 
 
 def test_k8s_reads_text_matches_collector():
