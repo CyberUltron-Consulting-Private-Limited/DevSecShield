@@ -169,7 +169,7 @@ def test_unknown_ids_and_uncited_explanations_are_withheld():
     assert FIX.validate("not json", g, w)["status"] == "withheld"
 
 
-def test_env_lookups_are_fine_and_fragments_are_not_parsed():
+def test_env_lookups_are_fine_and_fragments_are_parsed_in_a_wrapper():
     g, w = _grounding(), _window()
     env_key = GOOD.replace("def encrypt(data, key):\n", "def encrypt(data, key=None):\n"
                                                           "    key = key or os.environ[\"APP_AES_KEY\"].encode()\n")
@@ -178,8 +178,8 @@ def test_env_lookups_are_fine_and_fragments_are_not_parsed():
                 "snippet_start": 5, "line": 5}
     out = FIX.validate(_fix_answer("        cipher = AESGCM(key)\n        return x\n    else:"),
                        _grounding(fragment), _window(fragment))
-    assert out["status"] == "ok"
-    assert any(c["name"] == "syntax" and "fragment" in c["note"] for c in out["checks"])
+    assert out["status"] == "ok", out.get("withheld_reason")
+    assert any(c["name"] == "syntax (python)" and "fragment" in c["note"] for c in out["checks"])
 
 
 def test_go_and_java_imports_follow_the_allow_list():
@@ -187,7 +187,7 @@ def test_go_and_java_imports_follow_the_allow_list():
             "snippet": "import javax.crypto.Cipher;\nclass A {\n  Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n}"}
     ok = FIX.validate(_fix_answer("import javax.crypto.Cipher;\nimport javax.crypto.spec.GCMParameterSpec;\nclass A {\n"
                                   "  Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n}"), _grounding(java), _window(java))
-    assert ok["status"] == "ok" and any("not checked" in c["note"] for c in ok["checks"])
+    assert ok["status"] == "ok" and any(c["name"] == "syntax (java)" and c["ok"] for c in ok["checks"])
     bad = FIX.validate(_fix_answer("import javax.crypto.Cipher;\nimport org.evil.Lib;\nclass A {\n"
                                    "  Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n}"), _grounding(java), _window(java))
     assert bad["status"] == "withheld" and "org.evil" in bad["withheld_reason"]
@@ -289,7 +289,7 @@ def _js(line):
 
 @pytest.mark.parametrize("code, reason", [
     (_js("  require('ht'+'tp').get('h'+'ttp://x');"), "not allowed"),  # 'ht' is read as the module
-    (_js("  require(mod).get('/x');"), "network or process call"),
+    (_js("  require(mod).get('/x');"), "import that is not allowed for this finding (require(<expression>))"),
     (_js("  globalThis['fe'+'tch']('/x');"), "network or process call"),
     (_js("  window['fe'+'tch']('/x');"), "network or process call"),
     (_js("  const n = require ('net');"), "not allowed"),
@@ -776,3 +776,257 @@ GOOD_FIXES_3 = [
 @pytest.mark.parametrize("name, lang, codes, window, line, code", GOOD_FIXES_3, ids=[g[0] for g in GOOD_FIXES_3])
 def test_round3_more_good_fixes_in_every_language_still_pass(name, lang, codes, window, line, code):
     test_review_good_fixes_in_every_language_still_pass(name, lang, codes, window, line, code)
+
+
+# ------------------------------------------------------------------------------------------------ round 4 of PR 249
+# Real grammars (syntax.py: ast, tree-sitter), data flow of key material, sinks that stay put, options of existing
+# calls, TLS downgrades by value, environment writes (flow.py). Every probe of the six review probe files
+# (rev249 probe_fix.py .. probe_fix6.py, 136 calls of fix.validate) is a row of the fixture with its outcome.
+_PROBES_ALL = json.loads((Path(__file__).resolve().parent / "fixtures" / "cbom_ai_fix_review_probes.json").read_text())
+
+
+@pytest.mark.parametrize("row", _PROBES_ALL, ids=[r["id"] for r in _PROBES_ALL])
+def test_round4_every_review_probe_has_its_outcome(row):
+    finding = {**FINDING, "snippet": row["window"], "snippet_start": row["start"], "language": row["lang"],
+               "line": row["line"], "location": f"x:{row['line']}", "finding_codes": row["codes"]}
+    out = FIX.validate(_fix_answer(row["code"]), _grounding(finding), _window(finding))
+    assert out["status"] == row["expect"], (row["id"], out.get("withheld_reason"))
+    if row["expect"] == "withheld":
+        assert out["fix"] is None and out["baseline"] is True
+
+
+def test_round4_the_probe_fixture_covers_all_six_files():
+    from collections import Counter
+
+    files = Counter(r["id"].split(":")[0] for r in _PROBES_ALL)
+    assert files == {"probe_fix": 23, "probe_fix2": 9, "probe_fix3": 29, "probe_fix4": 2, "probe_fix5": 28,
+                     "probe_fix6": 45}
+    assert sum(r["expect"] == "ok" for r in _PROBES_ALL) == 17  # the reviewers' own GOOD / control rows
+
+
+_G4_JS = "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}\n"
+GOOD_FIXES_4: dict[str, tuple] = {}  # name -> (language, codes, window, reported line, rewrite)
+GOOD_FIXES_4["js regex comment template"] = ("javascript", ["WEAK_CIPHER_MODE"], _G4_JS, 3,
+ "const crypto = require('crypto');\nconst HEX_KEY = /^[0-9a-f]{64}$/i; // 32-byte key, hex encoded\n"
+ "function enc(d, k) {\n  /* AES-256-GCM: a fresh 96-bit IV per message, tag appended */\n"
+ "  const iv = crypto.randomBytes(12);\n  const alg = `aes-${k.length * 8}-gcm`;\n"
+ "  const c = crypto.createCipheriv(alg, k, iv); // never reuse iv with k\n"
+ "  return Buffer.concat([iv, c.update(d), c.final(), c.getAuthTag()]);\n}\n")
+GOOD_FIXES_4["ts regex test and template"] = ("typescript", ["WEAK_CIPHER_MODE"], _G4_JS, 3,
+ "const crypto = require('crypto');\nfunction enc(d: Buffer, k: Buffer): Buffer {\n"
+ "  // reject keys that are not 128 / 256 bits: `${...}` below only names the cipher\n"
+ "  if (!/^(16|32)$/.test(String(k.length))) { throw new Error(`unsupported key length ${k.length}`); }\n"
+ "  const iv: Buffer = crypto.randomBytes(12);\n  const c = crypto.createCipheriv(`aes-${k.length * 8}-gcm`, k, iv);\n"
+ "  return Buffer.concat([iv, c.update(d), c.final(), c.getAuthTag()]);\n}\n")
+_G4_ECB = "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)\n"
+GOOD_FIXES_4["py comments f-string"] = ("python", ["WEAK_CIPHER_MODE"], _G4_ECB, 5,
+ "import os\nfrom Crypto.Cipher import AES\n\nKEY_LEN = 32  # AES-256\n\ndef encrypt(data, key):\n"
+ "    # GCM: fresh 96-bit nonce per message (never reuse with the same key)\n"
+ "    if len(key) != KEY_LEN:\n        raise ValueError(f\"key must be {KEY_LEN} bytes, got {len(key)}\")\n"
+ "    cipher = AES.new(key, AES.MODE_GCM, nonce=os.urandom(12))  # '#' in a string: '#'\n"
+ "    ct, tag = cipher.encrypt_and_digest(data)\n    return cipher.nonce + tag + ct\n")
+_G4_JV = ("import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n"
+      "    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}")
+GOOD_FIXES_4["java comments text block"] = ("java", ["WEAK_CIPHER_MODE"], _G4_JV, 5,
+ "import javax.crypto.Cipher;\nimport javax.crypto.spec.GCMParameterSpec;\nimport javax.crypto.spec.SecretKeySpec;\n"
+ "import java.security.SecureRandom;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n"
+ "    // AES-GCM, 96-bit IV from SecureRandom; \"/* not a comment */\" is a string\n"
+ "    byte[] iv = new byte[12]; /* fresh per message */ new SecureRandom().nextBytes(iv);\n"
+ "    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n"
+ "    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n"
+ "    String aad = \"\"\"\n        {\"alg\": \"A256GCM\"} // not a comment\n        \"\"\";\n"
+ "    c.updateAAD(aad.getBytes());\n    return c.doFinal(d);\n  }\n}")
+_G4_CS = ("using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n"
+      "    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}")
+GOOD_FIXES_4["csharp comments interpolation"] = ("csharp", ["WEAK_CIPHER_MODE"], _G4_CS, 5,
+ "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n"
+ "    // AES-GCM with a random 96-bit nonce; the tag is 16 bytes\n"
+ "    if (k.Length != 32) throw new CryptographicException($\"AES-256 needs 32 key bytes, got {k.Length}\");\n"
+ "    var n = new byte[12]; RandomNumberGenerator.Fill(n); /* nonce */\n"
+ "    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n"
+ "    g.Encrypt(n, d, ct, tag);\n    return ct;\n  }\n}")
+_G4_GO = ('package a\n\nimport (\n\t"crypto/aes"\n)\n\nfunc enc(k, pt []byte) []byte {\n\tb, _ := aes.NewCipher(k)\n'
+      '\tout := make([]byte, len(pt))\n\tb.Encrypt(out, pt)\n\treturn out\n}\n')
+GOOD_FIXES_4["go comments raw string"] = ("go", ["WEAK_CIPHER_MODE"], _G4_GO, 8,
+ 'package a\n\nimport (\n\t"crypto/aes"\n\t"crypto/cipher"\n\t"crypto/rand"\n)\n\n'
+ '// enc seals pt with AES-GCM under k; the random nonce is prepended.\nfunc enc(k, pt []byte) ([]byte, error) {\n'
+ '\tb, err := aes.NewCipher(k) /* 16, 24 or 32 byte key */\n\tif err != nil {\n\t\treturn nil, err // `raw` text in a comment\n\t}\n'
+ '\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\trand.Read(n)\n'
+ '\taad := []byte(`{"alg":"A256GCM","v":1}`) // raw string: no escapes\n\treturn g.Seal(n, n, pt, aad), nil\n}\n')
+_G4_KT = ("import javax.crypto.Cipher\n\nfun enc(k: java.security.Key, p: ByteArray): ByteArray? {\n"
+      "    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    return null\n}")
+GOOD_FIXES_4["kotlin comments template"] = ("kotlin", ["WEAK_CIPHER_MODE"], _G4_KT, 4,
+ "import javax.crypto.Cipher\nimport javax.crypto.spec.GCMParameterSpec\nimport java.security.SecureRandom\n\n"
+ "fun enc(k: java.security.Key, p: ByteArray): ByteArray? {\n    // AES-GCM, fresh 96-bit IV per message\n"
+ "    val iv = ByteArray(12) /* random */\n    SecureRandom().nextBytes(iv)\n"
+ "    if (p.size > 1 shl 30) throw IllegalArgumentException(\"message too long: ${p.size} bytes\")\n"
+ "    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    c.init(Cipher.ENCRYPT_MODE, k, GCMParameterSpec(128, iv))\n"
+ "    return iv + c.doFinal(p)\n}")
+
+
+@pytest.mark.parametrize("name", sorted(GOOD_FIXES_4))
+def test_round4_good_fixes_with_regex_literals_comments_and_templates_pass(name):
+    lang, codes, window, line, code = GOOD_FIXES_4[name]
+    test_review_good_fixes_in_every_language_still_pass(name, lang, codes, window, line, code)
+
+
+_R4_OPTS = ("const tls = require('tls');\n\nfunction open(host) {\n"
+            "  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}")
+_R4_GOT = 'package a\n\nimport (\n\t"crypto/tls"\n)\n\nfunc cfg() *tls.Config {\n\tc := &tls.Config{MinVersion: tls.VersionTLS10}\n\treturn c\n}\n'
+
+
+@pytest.mark.parametrize("lang, window, line, code", [
+    # the options object of an existing tls.connect: its TLS keys may change (values checked), nothing else
+    ("javascript", _R4_OPTS, 4, _R4_OPTS.replace("ciphers: 'DES-CBC3-SHA'", "ciphers: 'ECDHE-ECDSA-AES256-GCM-SHA384:"
+                                                 "ECDHE-RSA-AES256-GCM-SHA384', minVersion: 'TLSv1.2'")),
+    # a field of an allow-listed struct set after the literal
+    ("go", _R4_GOT, 8, _R4_GOT.replace("MinVersion: tls.VersionTLS10}\n", "MinVersion: tls.VersionTLS12}\n"
+                                       "\tc.MaxVersion = tls.VersionTLS13\n")),
+    ("python", _TLSW, 6, _TLSW.replace("    c.check_hostname = False\n", "    c.check_hostname = True\n"
+                                       "    c.minimum_version = ssl.TLSVersion(0x0303)\n"
+                                       "    c.options |= ssl.OP_NO_COMPRESSION\n")),
+], ids=["js tls.connect options", "go MaxVersion field", "py values that are fine"])
+def test_round4_tls_settings_with_good_values_pass(lang, window, line, code):
+    finding = {**FINDING, "snippet": window, "language": lang, "line": line, "location": f"x:{line}",
+               "finding_codes": ["WEAK_ALGORITHM"]}
+    out = FIX.validate(_fix_answer(code), _grounding(finding), _window(finding))
+    assert out["status"] == "ok", out.get("withheld_reason")
+
+
+_R4_SOCK_PY = ("import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n"
+           "    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)\n")
+_R4_GCM_PY = "AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)"
+_R4_SOCK_JS = ("const crypto = require('crypto');\nfunction send(socket, d, key) {\n"
+           "  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  let payload = c.update(d);\n"
+           "  socket.write(payload);\n}\n")
+_R4_GCM_JS = "  const c = crypto.createCipheriv('aes-256-gcm', key, crypto.randomBytes(12));"
+_R4_SOCK_GO = ('package a\n\nimport (\n\t"crypto/aes"\n\t"net"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n'
+           '\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}\n')
+_R4_SOCK_JV = ("import javax.crypto.Cipher;\n\nclass A {\n  void send(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n"
+           "    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n"
+           "    c.init(Cipher.ENCRYPT_MODE, new javax.crypto.spec.SecretKeySpec(k, \"AES\"));\n    byte[] ct = c.doFinal(d);\n"
+           "    out.write(ct);\n  }\n}")
+_R4_SOCK_CS = ("using System.Security.Cryptography;\n\nclass A {\n  void Send(System.IO.Stream s, byte[] k, byte[] d) {\n"
+           "    var a = Aes.Create(); a.Key = k; a.Mode = CipherMode.ECB;\n    var buf = a.EncryptEcb(d, PaddingMode.PKCS7);\n"
+           "    s.Write(buf);\n  }\n}")
+_R4_SOCK_KT = ("import javax.crypto.Cipher\n\nfun send(out: java.io.OutputStream, k: ByteArray) {\n"
+           "    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    c.init(Cipher.ENCRYPT_MODE, javax.crypto.spec.SecretKeySpec(k, \"AES\"))\n    val msg = \"hello\"\n"
+           "    out.write(msg.toByteArray())\n}")
+_R4_TLS_JS = ("const tls = require('tls');\nfunction ctx() {\n  return tls.createSecureContext({ minVersion: 'TLSv1' });\n}\n")
+_R4_TLS_PY = ("import ssl\n\ndef ctx():\n    c = ssl.create_default_context()\n    c.set_ciphers('DES-CBC3-SHA')\n    return c\n")
+_R4_TLS_GO = 'package a\n\nimport (\n\t"crypto/tls"\n)\n\nfunc cfg() *tls.Config {\n\tc := &tls.Config{MinVersion: tls.VersionTLS10}\n\treturn c\n}\n'
+_R4_OPTS_JS = ("const tls = require('tls');\n\nfunction open(host) {\n"
+           "  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}")
+RULES_4 = [  # (name, language, window, reported line, rewrite, a part of the reason)
+ ("go copy(data, k) feeds conn.Write", "go", _R4_SOCK_GO, 9, _R4_SOCK_GO.replace("\t_ = b\n", "\t_ = b\n\tcopy(data, k)\n"), "key material"),
+ ("java arraycopy into ct", "java", _R4_SOCK_JV, 5, _R4_SOCK_JV.replace("    out.write(ct);", "    System.arraycopy(k, 0, ct, 0, 16);\n    out.write(ct);"), "key material"),
+ ("csharp k.CopyTo(buf)", "csharp", _R4_SOCK_CS, 5, _R4_SOCK_CS.replace("    s.Write(buf);", "    k.CopyTo(buf, 0);\n    s.Write(buf);"), "key material"),
+ ("kotlin $k template", "kotlin", _R4_SOCK_KT, 4, _R4_SOCK_KT.replace('val msg = "hello"', 'val msg = "hello $k"'), "key material"),
+ ("js concat key into payload", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  payload = Buffer.concat([payload, key]);\n  socket.write(payload);"), "key material"),
+ ("py local function returns key", "python", _R4_SOCK_PY, 5, _R4_SOCK_PY.replace("    sock.sendall(ct)\n", "    def wrap(x):\n        return x\n    ct = wrap(key)\n    sock.sendall(ct)\n"), "key material"),
+ ("py key in exception message", "python", _R4_SOCK_PY, 5, _R4_SOCK_PY.replace("AES.MODE_ECB).encrypt(data)", _R4_GCM_PY + "\n    if not ct:\n        raise ValueError(f'bad key {key.hex()}')"), "key material"),
+ ("js key in thrown error", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  const c = crypto.createCipheriv('aes-128-ecb', key, null);", _R4_GCM_JS + "\n  if (!d) throw new Error(key.toString('hex'));"), "key material"),
+ ("js closure returning key", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  const f = () => key;\n  payload = f();\n  socket.write(payload);"), "allow-list"),
+ ("py sink moved into a branch", "python", _R4_SOCK_PY, 5, _R4_SOCK_PY.replace("AES.MODE_ECB).encrypt(data)", _R4_GCM_PY).replace("    sock.sendall(ct)\n", "    if data:\n        sock.sendall(ct)\n"), "moves or repeats"),
+ ("js sink repeated", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  socket.write(payload);\n  socket.write(payload);"), "allow-list"),
+ ("js opts.host member write", "javascript", _R4_OPTS_JS, 4, _R4_OPTS_JS.replace("  return tls.connect(opts);", "  opts.host = '203.0.113.7';\n  return tls.connect(opts);"), "allow-list for a crypto fix (opts.host)"),
+ ("js shorthand host rebound", "javascript", _R4_OPTS_JS, 4, _R4_OPTS_JS.replace("  const opts", "  host = '203.0.113.7';\n  const opts"), "is given (host)"),
+ ("go os.Setenv", "go", _R4_SOCK_GO, 9, _R4_SOCK_GO.replace('\t"net"\n', '\t"net"\n\t"os"\n').replace("\t_ = b\n", "\t_ = b\n\tos.Setenv(\"GODEBUG\", \"tls10server=1\")\n"), "process environment"),
+ ("java System.setProperty", "java", _R4_SOCK_JV, 5, _R4_SOCK_JV.replace("    out.write(ct);", "    System.setProperty(\"jdk.tls.disabledAlgorithms\", \"\");\n    out.write(ct);"), "process environment"),
+ ("kotlin System.setProperty", "kotlin", _R4_SOCK_KT, 4, _R4_SOCK_KT.replace('    val msg', '    System.setProperty("jdk.tls.client.protocols", "TLSv1.3")\n    val msg'), "process environment"),
+ ("csharp SetEnvironmentVariable", "csharp", _R4_SOCK_CS, 5, _R4_SOCK_CS.replace("    s.Write(buf);", "    System.Environment.SetEnvironmentVariable(\"DOTNET_X\", \"1\");\n    s.Write(buf);"), "process environment"),
+ ("js Object.assign(process.env)", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  Object.assign(process.env, { NODE_DEBUG: 'tls' });\n  socket.write(payload);"), "process environment"),
+ ("js alias process.env", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  const e = process.env;\n  e.NODE_DEBUG = 'tls';\n  socket.write(payload);"), "process environment"),
+ ("js ciphers ALL", "javascript", _R4_TLS_JS, 3, _R4_TLS_JS.replace("minVersion: 'TLSv1'", "minVersion: 'TLSv1.2', ciphers: 'HIGH:ALL'"), "weakens"),
+ ("js secureProtocol TLSv1_method", "javascript", _R4_TLS_JS, 3, _R4_TLS_JS.replace("minVersion: 'TLSv1'", "minVersion: 'TLSv1.2', secureProtocol: 'TLSv1_1_method'"), "weakens"),
+ ("js secureOptions 0", "javascript", _R4_TLS_JS, 3, _R4_TLS_JS.replace("minVersion: 'TLSv1'", "minVersion: 'TLSv1.2', secureOptions: 0"), "weakens"),
+ ("js maxVersion via template", "javascript", _R4_TLS_JS, 3, _R4_TLS_JS.replace("minVersion: 'TLSv1'", "minVersion: `TLSv1.2`, maxVersion: `TLSv1.1`"), "weakens"),
+ ("js checkServerIdentity callback", "javascript", _R4_TLS_JS, 3, _R4_TLS_JS.replace("minVersion: 'TLSv1'", "minVersion: 'TLSv1.2', checkServerIdentity() { return undefined; }"), "weakens"),
+ ("py verify_mode CERT_OPTIONAL", "python", _R4_TLS_PY, 5, _R4_TLS_PY.replace("DES-CBC3-SHA')", "ECDHE+AESGCM')\n    c.verify_mode = ssl.CERT_OPTIONAL"), "weakens"),
+ ("py options = 0", "python", _R4_TLS_PY, 5, _R4_TLS_PY.replace("DES-CBC3-SHA')", "ECDHE+AESGCM')\n    c.options = 0"), "weakens"),
+ ("py maximum_version TLSv1_1", "python", _R4_TLS_PY, 5, _R4_TLS_PY.replace("DES-CBC3-SHA')", "ECDHE+AESGCM')\n    c.maximum_version = ssl.TLSVersion.TLSv1_1"), "weakens"),
+ ("py check_hostname via a local", "python", _R4_TLS_PY, 5, _R4_TLS_PY.replace("DES-CBC3-SHA')", "ECDHE+AESGCM')\n    off = not True\n    c.check_hostname = off"), "weakens"),
+ ("go InsecureSkipVerify !false", "go", _R4_TLS_GO, 8, _R4_TLS_GO.replace("MinVersion: tls.VersionTLS10", "MinVersion: tls.VersionTLS12, InsecureSkipVerify: !false"), "weakens"),
+ ("go MaxVersion 0x0302", "go", _R4_TLS_GO, 8, _R4_TLS_GO.replace("MinVersion: tls.VersionTLS10}\n", "MinVersion: tls.VersionTLS12}\n\tc.MaxVersion = 0x0302\n"), "weakens"),
+ ("go RC4 suite by name", "go", _R4_TLS_GO, 8, _R4_TLS_GO.replace("MinVersion: tls.VersionTLS10", "MinVersion: tls.VersionTLS12, CipherSuites: []uint16{tls.TLS_RSA_WITH_RC4_128_SHA}"), "weakens"),
+ ("go VerifyPeerCertificate", "go", _R4_TLS_GO, 8, _R4_TLS_GO.replace("MinVersion: tls.VersionTLS10", "MinVersion: tls.VersionTLS12, VerifyPeerCertificate: nil"), "weakens"),
+ # encrypting the key under a key the author knows is not a sanitiser (the cipher took key material in as data)
+ ("py key encrypted under a zero key", "python", _R4_SOCK_PY, 5, _R4_SOCK_PY.replace("AES.new(key, AES.MODE_ECB).encrypt(data)", "AES.new(bytes(16), AES.MODE_ECB).encrypt(key)"), "key material"),
+ ("js cipher that absorbed the key", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  const z = crypto.createCipheriv('aes-128-ecb', Buffer.alloc(16), null);\n  z.update(key);\n  payload = z.final();\n  socket.write(payload);"), "key material"),
+ ("js throw key", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  socket.write(payload);\n  if (!payload) throw key;"), "key material"),
+ ("py assert message", "python", _R4_SOCK_PY, 5, _R4_SOCK_PY.replace("    sock.sendall(ct)\n", "    assert ct, key.hex()\n    sock.sendall(ct)\n"), "key material"),
+ ("js process destructured", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  const {env} = process;\n  env.NODE_OPTIONS = '--require /tmp/x.js';\n  socket.write(payload);"), "process environment"),
+ ("js monkey-patch crypto.randomBytes", "javascript", _R4_SOCK_JS, 3, _R4_SOCK_JS.replace("  socket.write(payload);", "  crypto.randomBytes = (n) => Buffer.alloc(n);\n  socket.write(payload);"), "member of a module or class"),
+ ("py monkey-patch ssl", "python", _R4_TLS_PY, 5, _R4_TLS_PY.replace("DES-CBC3-SHA')", "ECDHE+AESGCM')\n    ssl.create_default_context = ssl.SSLContext"), "member of a module or class"),
+ ("csharp extern method", "csharp", _R4_SOCK_CS, 5, _R4_SOCK_CS.replace("  void Send", "  static extern int Run(string c);\n  void Send"), "construct the checks cannot follow"),
+ ("java native method", "java", _R4_SOCK_JV, 5, _R4_SOCK_JV.replace("  void send", "  static native void run(byte[] k);\n  void send"), "construct the checks cannot follow"),
+]
+
+
+
+@pytest.mark.parametrize("name, lang, window, line, code, reason", RULES_4, ids=[r[0] for r in RULES_4])
+def test_round4_each_rule_withholds_with_its_reason(name, lang, window, line, code, reason):
+    finding = {**FINDING, "snippet": window, "language": lang, "line": line, "location": f"x:{line}"}
+    out = FIX.validate(_fix_answer(code), _grounding(finding), _window(finding))
+    assert out["status"] == "withheld" and reason in out["withheld_reason"], (name, out.get("withheld_reason"))
+    assert out["fix"] is None and out["baseline"] is True
+
+
+_R4_JSG = ("const crypto = require('crypto');\nfunction enc(d, k) {\n"
+           "  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}\n")
+_R4_CSD = "using System.Security.Cryptography;\nclass A {\n  byte[] E(byte[] k) { var a = DES.Create(); return null; }\n}\n"
+_R4_JVW = "class A {\n  void f() {}\n}\n"
+
+
+@pytest.mark.parametrize("lang, window, line, code, reason", [
+    ("ruby", "x = 1\ny = 2\n", 1, "x = 2\ny = 2\n", "no parser for ruby"),
+    ("javascript", JS.replace("const c =", "const = = c ="), 3, _R4_JSG, "stored window could not be parsed"),
+    ("javascript", JS, 3, _R4_JSG.replace("randomBytes(12)", "randomBytes(12"), "not valid javascript"),
+    ("javascript", JS, 3, _R4_JSG.replace("  return c.update(d);", "  const el = <div>{k}</div>;\n  return c.update(d);"),
+     "construct the checks cannot follow"),
+    ("javascript", JS, 3, _R4_JSG.replace("  return c.update(d);", "  \\u0065val('1');\n  return c.update(d);"),
+     "construct the checks cannot follow"),
+    ("csharp", _R4_CSD, 3, _R4_CSD.replace("var a = DES.Create();", "var a = Aes.Create();\n#if DEBUG\n"
+                                           "System.IO.File.Delete(\"x\");\n#endif\n"), "construct the checks cannot follow"),
+    # javac decodes \\u0022 before lexing: the "string" is two strings around a call
+    ("java", _R4_JVW, 2, "class A {\n  void f() { String s = \"\\u0022 + new java.io.File(\\u0022x\\u0022).delete() + "
+                        "\\u0022\"; }\n}\n", "allow-list"),
+], ids=["unsupported language", "window does not parse", "rewrite does not parse", "jsx", "escaped identifier",
+        "csharp preprocessor", "java unicode escapes are decoded"])
+def test_round4_fail_closed(lang, window, line, code, reason):
+    finding = {**FINDING, "snippet": window, "language": lang, "line": line, "location": f"x:{line}"}
+    out = FIX.validate(_fix_answer(code), _grounding(finding), _window(finding))
+    assert out["status"] == "withheld" and reason in out["withheld_reason"], out.get("withheld_reason")
+
+
+def test_round4_a_grammar_that_does_not_load_withholds(monkeypatch):
+    from backend.utilities.cbom_ai import syntax as SX
+
+    monkeypatch.setattr(SX, "_parsers", lambda lang: ())
+    out = FIX.validate(_fix_answer(_R4_JSG), _grounding(JS_FINDING), _window(JS_FINDING))
+    assert out["status"] == "withheld" and "no parser for javascript" in out["withheld_reason"]
+
+
+def test_round4_java_unicode_escapes_follow_javac():
+    from backend.utilities.cbom_ai import syntax as SX
+
+    assert SX.java_unicode_escapes("// \\u000a x();") == "// \n x();"
+    assert SX.java_unicode_escapes("/* \\u002a/ y(); /* */") == "/* */ y(); /* */"
+    assert SX.java_unicode_escapes("\\\\u0041") == "\\\\u0041"  # an escaped backslash, then text
+    assert SX.java_unicode_escapes("\\uuu0041") == "A"
+
+
+def test_round4_grammars_are_bundled_dependencies_and_load_offline():
+    """The tree-sitter grammars are wheels in the backend's lock (installed into the image by uv sync --locked);
+    nothing is fetched at run time."""
+    from backend.utilities.cbom_ai import syntax as SX
+
+    root = Path(__file__).resolve().parents[1]
+    pyproject = (root / "pyproject.toml").read_text()
+    lock = (root / "uv.lock").read_text()
+    for dist in ("tree-sitter", "tree-sitter-javascript", "tree-sitter-typescript", "tree-sitter-java",
+                 "tree-sitter-go", "tree-sitter-c-sharp", "tree-sitter-kotlin"):
+        assert f'"{dist}>=' in pyproject, dist
+        assert f'name = "{dist}"' in lock, dist
+    for lang in SX.SUPPORTED:
+        assert SX.grammar_loaded(lang), lang

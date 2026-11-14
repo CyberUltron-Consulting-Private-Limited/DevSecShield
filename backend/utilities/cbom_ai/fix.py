@@ -6,30 +6,35 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
 * the answer is the required JSON; CVE / CWE ids only those the KB attaches to the finding (validator rule 1);
 * same window, same language: the rewrite replaces exactly the stored lines, changes only lines within
   ``REGION`` lines of the finding (import lines excepted, see below), and at most ``MAX_CHANGED`` lines;
-* syntax: Python ``ast.parse``, JSON, YAML when the original window parses on its own; other languages are not
-  parsed (a note says so);
-* Python is checked on its syntax tree (identifiers NFKC-normalised by the parser, as the interpreter does): the
-  rewritten window, or for a stored fragment the changed lines, must parse, else the fix is withheld (fail closed);
-  any new reference to process / network / dynamic-code machinery withholds it (``os`` beyond ``_PY_OS_OK``,
-  ``from os import system``, ``os`` used as a value, ``eval`` / ``exec`` / ``compile`` / ``__import__`` / ``getattr``
-  / ``vars`` / ``globals`` / ``open``, ``__builtins__``, dunder attributes, ``subprocess`` / ``socket`` / ``ctypes`` /
-  ``importlib`` / ``sys`` ...);
-* allow-list, fail closed: every call / member the rewrite adds must already be used by the stored window or be on
-  the language's list of crypto-configuration APIs (ciphers, hashes, MACs, KDFs, randomness, key generation,
-  encodings, TLS context options); nothing that connects, opens, requests or executes is on any list (Python: every
-  call target and attribute chain from the tree, module members resolved through the window's imports, one hop
-  only, built-ins passed as values or used as decorators count as calls, the environment may only be read; other
-  languages: every call / member chain judged by its receiver - ``Type.member`` / ``pkg.Func`` pairs, members of a
-  local only when the local was made by a listed call -, with interpolations ``${...}`` / ``$"{...}"`` checked as
-  code; JS / TS computed member access only with a plain identifier-character literal key). A call that is not on
-  the list passes only as an exact copy of one of the window's own calls (counted; Python ignores TLS keywords);
-* no security downgrade: verification off (``InsecureSkipVerify``, ``CERT_NONE``, ``verify=False``,
-  ``rejectUnauthorized: false``, trust-all managers ...), TLS 1.0 / 1.1 / SSL, NULL / RC4 / DES / MD5;
-* every language: added lines are NFKC-normalised, then no new network or process call (``_NETWORK``, plus computed
-  global access, ``new Function`` and non-literal ``require`` / ``import()`` outside Python), no non-ASCII character
-  the window did not already have, no URL or domain the window did not already have;
+* real grammars, fail closed (``syntax.py``): the stored window and the rewrite are parsed - Python with ``ast``,
+  JavaScript / TypeScript / Java / Kotlin / Go / C# with the bundled tree-sitter grammars (Java after javac's
+  ``\\uXXXX`` decoding). No grammar for the language, a grammar that does not load, a window or a rewrite that
+  does not parse (an ERROR / MISSING node, also inside a fragment wrapper) withholds the fix. Comments, regex
+  literals, raw / interpolated strings and templates are what the grammar says; interpolations are code. Node
+  types the rules do not follow (JSX, ``with``, C# preprocessor / ``unsafe`` / LINQ, Java string templates,
+  extern / native methods, escaped identifiers) withhold it;
+* Python is also checked on its ``ast``: any new reference to process / network / dynamic-code machinery
+  (``os`` beyond ``_PY_OS_OK``, ``eval`` / ``exec`` / ``__import__`` / ``getattr`` / ``open`` ..., dunders,
+  ``subprocess`` / ``socket`` / ``ctypes`` ...); every language: no new network / process name in the code
+  (comments aside);
 * no new import / require / using except the modules the KB allows for the finding's codes (``ALLOWED_IMPORTS``),
-  wherever it is on the line (Python: every ``Import`` / ``ImportFrom`` node);
+  from the import nodes of the tree (a ``require`` / ``import()`` of anything but a plain literal is withheld);
+* the process environment / system properties are only read (``flow.env_writes``; Python: ``environ`` of ``os``);
+  no assignment to a member of a module / package / class (``flow.module_writes``);
+* allow-list, fail closed: every call / member the rewrite adds must already be used by the stored window (an
+  exact copy, counted, in the same place) or be on the language's list of crypto-configuration APIs (Python:
+  ``_py_unlisted``; other languages: ``flow.unlisted``, each call / member chain judged by its receiver);
+* key material (``flow.Flow``): what the finding marks as key / IV / secret material, what allow-listed key /
+  IV / random calls return and everything derived from it may reach only allow-listed crypto APIs - not a call
+  outside the allow-list (also one the window already makes), an exception / assert message, ``throw``, or a
+  member of a module. Encrypting key material (or using a cipher that took it in) does not clean it;
+* calls of the window that are not on the allow-list stay where they are (same enclosing function / loop /
+  branch), and what they are given (receiver, arguments, one hop through an options object) is not changed,
+  except TLS options (checked below) and a new crypto result (``ct = AESGCM(k).encrypt(...)``);
+* no security downgrade, by value (``flow.downgrades``: constants evaluated - ``!1``, ``0``, ``0x0301``,
+  ``TLSVersion(769)``, ``MINIMUM_SUPPORTED``, cipher strings / suite ids, ``options &= ~OP_NO_*``, verify /
+  hostname callbacks) and by name (``_DOWNGRADE``);
+* no non-ASCII character and no URL or domain the window did not already have;
 * no key material: a long literal assigned to a key-, secret-, password- or token-like name, a PEM block or an AWS
   key id; a literal decoded by ``fromhex`` / ``b64decode`` / ``unhexlify`` / ``Buffer.from`` ...; a key-like literal
   passed to a cipher / MAC / KDF constructor (any variable name); for a hard-coded key / static IV finding any new
@@ -41,14 +46,14 @@ from __future__ import annotations
 import ast
 import builtins
 import difflib
-import json
 import re
 import secrets
-import textwrap
 import unicodedata
 from collections import Counter
 from typing import Any
 
+from backend.utilities.cbom_ai import flow as FL
+from backend.utilities.cbom_ai import syntax as SX
 from backend.utilities.cbom_ai import validator as V
 from backend.utilities.cbom_ai.grounding import Grounding
 from backend.utilities.cbom_sources.fixgen import unified_diff
@@ -114,7 +119,7 @@ _NETWORK = re.compile(
     r"create_subprocess_\w+)|spawn|os\.(?:system|popen\w*|fork\w*|kill\w*|exec\w*|spawn\w*|posix_spawn\w*)|"
     r"getattr|setattr|__builtins__|builtins|Class\.forName|getDeclaredMethod|ScriptEngine\w*|URLClassLoader|"
     r"java\.net\.\w+|java\.lang\.reflect|System\.loadLibrary|System\.Diagnostics|System\.Net|System\.Reflection|"
-    r"Assembly\.Load\w*|Activator\.CreateInstance|DllImport)\b"
+    r"Assembly\.Load\w*|Activator\.CreateInstance|DllImport|LibraryImport)\b"
     r"|\b(?:system|popen|fork|globals|vars|getMethod|invoke)\s*\(|\b(?:setTimeout|setInterval)\s*\(\s*['\"`]")
 # outside Python only: computed access to the global object, the Function constructor, non-literal require / import()
 _NETWORK_NOT_PY = re.compile(
@@ -320,30 +325,6 @@ def _module_ok(module: str, allowed: set[str], lang: str = "") -> bool:
 
 
 # ------------------------------------------------------------------------------------------------ Python trees
-def _parse_py(text: str) -> ast.Module | None:
-    try:
-        return ast.parse(textwrap.dedent(text))
-    except (SyntaxError, ValueError):
-        return None
-
-
-def _parse_py_lines(lines: list[str]) -> ast.Module | None:
-    """The changed lines of a stored fragment, parsed on their own: a dangling block opener gets a body, a leading
-    ``else`` / ``except`` gets its head, a deeper first line gets an enclosing block. None = cannot be checked."""
-    body = [ln for ln in lines if ln.strip()]
-    if not body:
-        return ast.parse("")
-    text = textwrap.dedent("\n".join(body))
-    last = text.split("\n")[-1]
-    tail = "\n" + " " * (len(last) - len(last.lstrip()) + 4) + "pass"
-    for head in ("", "if True:\n", "if True:\n    pass\n", "try:\n    pass\n"):
-        for end in ("", tail):
-            tree = _parse_py(head + text + end)
-            if tree is not None:
-                return tree
-    return None
-
-
 def _py_modules(tree: ast.AST) -> list[str]:
     out = []
     for node in ast.walk(tree):
@@ -670,500 +651,36 @@ def _py_ref_ok(ref: str, modules: dict[str, str], froms: dict[str, str], defs: s
     return not called or parts[-1] in _PY_METHOD_ALLOW  # a member of a local object
 
 
-_PY_STRINGS = re.compile(r"""[rbuRBUfF]{0,2}(?:'\'\'.*?'\'\'|\"\"\".*?\"\"\"|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*")""", re.S)
-
-
-def _blank_py(text: str) -> str:
-    """Python code with string literals emptied and comments dropped (for "the window already does this")."""
-    return re.sub(r"#[^\n]*", "", _PY_STRINGS.sub("''", text))
-
-
-def _py_unlisted(after: list[ast.Module], before: list[ast.Module], original_code: str) -> list[str]:
+def _py_unlisted(after: ast.Module, before: ast.Module) -> list[str]:
     """API references the rewrite adds that are not on the allow-list. A call that is not listed passes only as an
     exact copy of one of the window's own calls (TLS keywords aside), counted: a second ``sock.sendall(...)`` with
     other arguments is withheld. Other references pass when the window already has them."""
-    modules, froms, defs = _py_bindings(after)
+    modules, froms, defs = _py_bindings([after])
     out = []
-    before_calls: Counter[str] = Counter()
-    refs_before: Counter[str] = Counter()
-    for t in before:
-        calls, refs = _py_api_refs(t)
-        before_calls.update(key for _ref, key in calls)
-        refs_before.update(refs)
+    before_calls: Counter[str] = Counter(key for _ref, key in _py_api_refs(before)[0])
+    refs_before = _py_api_refs(before)[1]
     after_calls: Counter[str] = Counter()
-    refs_after: Counter[str] = Counter()
-    for t in after:
-        calls, refs = _py_api_refs(t)
-        refs_after.update(refs)
-        for ref, key in calls:
-            if not _py_ref_ok(ref, modules, froms, defs):
-                after_calls[key] += 1
-                if after_calls[key] > before_calls[key]:
-                    out.append(ref)
-        for node in ast.walk(t):  # trust stores from a literal path (only the environment or certifi)
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and \
-                    node.func.attr in ("load_verify_locations", "load_cert_chain") and any(
-                        isinstance(a, ast.Constant) and isinstance(a.value, str)
-                        for a in node.args + [k.value for k in node.keywords]):
-                out.append(f"{node.func.attr}(<literal path>)")
+    calls, refs_after = _py_api_refs(after)
+    for ref, key in calls:
+        if not _py_ref_ok(ref, modules, froms, defs):
+            after_calls[key] += 1
+            if after_calls[key] > before_calls[key]:
+                out.append(ref)
+    for node in ast.walk(after):  # trust stores from a literal path (only the environment or certifi)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and \
+                node.func.attr in ("load_verify_locations", "load_cert_chain") and any(
+                    isinstance(a, ast.Constant) and isinstance(a.value, str)
+                    for a in node.args + [k.value for k in node.keywords]):
+            out.append(f"{node.func.attr}(<literal path>)")
     for ref in sorted(set(refs_after - refs_before)):
-        text = ref[1:] if ref.startswith("*.") else ref
-        if not ref.endswith("()") and re.search(r"(?<![\w.])" + re.escape(text) + r"\b", original_code):
-            continue  # the stored window already reads this (a fragment's context lines)
         if not _py_ref_ok(ref, modules, froms, defs):
             out.append(ref)
+    _m, froms_before, _d = _py_bindings([before])
     for name, src in froms.items():  # from ssl import create_connection
         mod = src.rsplit(".", 1)[0]
-        if mod.split(".")[0] in ("os", "ssl") and not _PY_RESTRICTED.fullmatch(src) and \
-                not re.search(r"\bimport\b[^\n]*\b" + re.escape(name) + r"\b", original_code):
+        if mod.split(".")[0] in ("os", "ssl") and not _PY_RESTRICTED.fullmatch(src) and froms_before.get(name) != src:
             out.append(f"from {mod} import {src.rsplit('.', 1)[1]}")
     return sorted(set(out))
-
-
-_IMPORT_STMT = re.compile(r"\b(?:import\s+(?:static\s+)?[\w.*]+|using\s+(?:static\s+)?[\w.]+(?:\s*=\s*[\w.]+)?|"
-                          r"package\s+[\w.]+)\s*;?")
-
-
-# ------------------------------------------------------------------- other languages: receiver-qualified allow-list
-# Code is scanned (strings and comments blanked in place, interpolations ${...} / {...} / $"..." pulled out and
-# checked like any other code), split into call / member chains, and every chain judged by its receiver:
-#   Type.member / pkg.Func      -> the pair is on the language's list (Aes.Create, aes.NewCipher, Cipher.getInstance)
-#   local.member                -> the local was initialised from an allow-listed call in the window or the rewrite
-#                                  and the member is on the method list (or harmless on anything: length, toString)
-#   new T(...) / T(...)         -> T is on the constructor list; f(...) -> listed, or declared in the rewrite
-# Anything else passes only as an exact copy of a call / access the window already makes (counted).
-_KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "typeof", "sizeof", "function", "func", "fun", "await",
-             "async", "super", "this", "new", "throw", "throws", "else", "do", "try", "finally", "using", "lock",
-             "fixed", "foreach", "synchronized", "assert", "yield", "delete", "void", "in", "of", "instanceof",
-             "defer", "go", "select", "with", "when", "is", "as", "default", "case", "var", "let", "const", "val",
-             "nameof", "checked", "unchecked", "base", "init", "get", "set", "and", "or", "not", "import", "package",
-             "struct", "interface", "map", "chan", "type", "class", "enum", "record", "object", "static", "public",
-             "private", "protected", "internal", "override", "readonly", "final", "abstract", "out", "ref", "params",
-             "null", "nil", "true", "false", "undefined", "range", "export", "extends", "implements", "break",
-             "continue", "goto", "fallthrough", "byte", "int", "long", "short", "char", "boolean", "bool", "float",
-             "double", "string", "uint", "uint8", "uint32", "uint64", "int32", "int64", "error", "any", "self"}
-_MEMBER_OPS = (".", "?.", "::", "->")
-_JS_FORBIDDEN = {"constructor", "prototype", "__proto__", "__defineGetter__", "__defineSetter__", "__lookupGetter__",
-                 "__lookupSetter__", "getPrototypeOf", "setPrototypeOf", "Function", "eval", "caller", "callee",
-                 "arguments", "mainModule", "binding", "dlopen"}
-
-
-class _Api:
-    """One language's allow-list: ``pairs`` Qualifier.member, ``ctors`` constructors / free functions, ``methods``
-    on allow-listed locals and results, ``safe`` members harmless on any receiver, ``packages`` lower-case names
-    that are packages / modules even without an import in the window."""
-
-    def __init__(self, pairs: str, ctors: str, methods: str, safe: str, packages: str = "") -> None:
-        self.pairs, self.ctors = set(pairs.split()), set(ctors.split())
-        self.methods, self.safe, self.packages = set(methods.split()), set(safe.split()), set(packages.split())
-
-
-_JS_API = _Api(
-    pairs="""crypto.randomBytes crypto.randomFillSync crypto.randomFill crypto.randomInt crypto.randomUUID
-    crypto.getRandomValues crypto.createCipheriv crypto.createDecipheriv crypto.createHash crypto.createHmac
-    crypto.createSign crypto.createVerify crypto.createSecretKey crypto.createPrivateKey crypto.createPublicKey
-    crypto.generateKeyPair crypto.generateKeyPairSync crypto.generateKey crypto.generateKeySync crypto.pbkdf2
-    crypto.pbkdf2Sync crypto.scrypt crypto.scryptSync crypto.hkdf crypto.hkdfSync crypto.timingSafeEqual
-    crypto.getCiphers crypto.getHashes crypto.getCurves crypto.publicEncrypt crypto.privateDecrypt crypto.sign
-    crypto.verify crypto.subtle crypto.webcrypto crypto.constants tls.createSecureContext tls.checkServerIdentity
-    tls.getCiphers tls.rootCertificates Buffer.from Buffer.alloc Buffer.concat Buffer.isBuffer Buffer.compare
-    Buffer.byteLength process.env Object.freeze Object.keys JSON.parse JSON.stringify Math.floor Math.min Math.max
-    Math.ceil Number.isInteger Array.isArray Array.from""",
-    ctors="""require String Number Boolean Uint8Array Uint32Array ArrayBuffer DataView BigInt Error TypeError RangeError
-    parseInt isNaN Promise TextEncoder TextDecoder Map Set""",
-    methods="""update final digest getAuthTag setAuthTag setAAD setAutoPadding export sign verify encrypt decrypt
-    importKey exportKey deriveKey deriveBits wrapKey unwrapKey generateKey then catch encode decode concat
-    asymmetricKeyType symmetricKeySize""",
-    safe="""length byteLength toString slice subarray equals includes indexOf startsWith endsWith split trim join map
-    push padStart padEnd""",
-    packages="""crypto tls net http https http2 dgram dns fs child_process cluster worker_threads vm os path process
-    module Buffer Object JSON Math Number Array Reflect globalThis window global self Promise Date Symbol console
-    String""")
-_JAVA_API = _Api(
-    pairs="""Cipher.getInstance KeyGenerator.getInstance KeyPairGenerator.getInstance SecretKeyFactory.getInstance
-    MessageDigest.getInstance MessageDigest.isEqual Mac.getInstance Signature.getInstance KeyFactory.getInstance
-    KeyAgreement.getInstance SSLContext.getInstance TrustManagerFactory.getInstance
-    TrustManagerFactory.getDefaultAlgorithm KeyManagerFactory.getInstance KeyManagerFactory.getDefaultAlgorithm
-    KeyStore.getInstance KeyStore.getDefaultType SecureRandom.getInstance SecureRandom.getInstanceStrong
-    Base64.getDecoder Base64.getEncoder Base64.getUrlDecoder Base64.getUrlEncoder Base64.getMimeDecoder System.getenv
-    System.arraycopy Arrays.copyOf Arrays.copyOfRange Arrays.fill Arrays.equals ByteBuffer.allocate ByteBuffer.wrap
-    String.valueOf Objects.requireNonNull HexFormat.of""",
-    ctors="""SecureRandom SecretKeySpec IvParameterSpec GCMParameterSpec PBEKeySpec ChaCha20ParameterSpec
-    OAEPParameterSpec MGF1ParameterSpec PSSParameterSpec ECGenParameterSpec RSAKeyGenParameterSpec String
-    SSLParameters IllegalStateException IllegalArgumentException RuntimeException GeneralSecurityException ByteArray
-    CharArray""",
-    methods="""init doFinal update updateAAD getIV getParameters getBlockSize getOutputSize generateKey generateSecret
-    getEncoded getAlgorithm getFormat nextBytes nextInt digest reset initialize generateKeyPair getPublic getPrivate
-    initSign initVerify sign verify decode encode encodeToString getTrustManagers getKeyManagers
-    getDefaultSSLParameters getSupportedSSLParameters setProtocols setCipherSuites setEndpointIdentificationAlgorithm
-    load put array formatHex parseHex orElseThrow""",
-    safe="""length size isEmpty equals toString hashCode getBytes toCharArray toByteArray encodeToByteArray
-    decodeToString copyOf copyOfRange contentEquals""")
-_CS_API = _Api(
-    pairs="""Aes.Create RandomNumberGenerator.Create RandomNumberGenerator.Fill RandomNumberGenerator.GetBytes
-    RandomNumberGenerator.GetInt32 SHA256.Create SHA256.HashData SHA384.Create SHA384.HashData SHA512.Create
-    SHA512.HashData HMACSHA256.HashData HMACSHA512.HashData Rfc2898DeriveBytes.Pbkdf2
-    CryptographicOperations.FixedTimeEquals CryptographicOperations.ZeroMemory Convert.FromBase64String
-    Convert.ToBase64String Convert.FromHexString Convert.ToHexString Encoding.UTF8 Encoding.ASCII
-    Environment.GetEnvironmentVariable RSA.Create ECDsa.Create ECDiffieHellman.Create ECCurve.NamedCurves
-    RSAEncryptionPadding.OaepSHA256 RSAEncryptionPadding.OaepSHA384 RSAEncryptionPadding.OaepSHA512
-    RSASignaturePadding.Pss RSASignaturePadding.Pkcs1 SslProtocols.Tls12 SslProtocols.Tls13 Array.Copy Array.Clear
-    Buffer.BlockCopy AesGcm.IsSupported AesGcm.TagByteSizes AesGcm.NonceByteSizes ChaCha20Poly1305.IsSupported""",
-    ctors="""AesGcm AesCcm ChaCha20Poly1305 HMACSHA256 HMACSHA384 HMACSHA512 Rfc2898DeriveBytes ArgumentException
-    InvalidOperationException CryptographicException HashAlgorithmName""",
-    methods="""Encrypt Decrypt CreateEncryptor CreateDecryptor TransformFinalBlock TransformBlock GenerateKey
-    GenerateIV ComputeHash GetBytes GetString EncryptCbc DecryptCbc SignData VerifyData SignHash VerifyHash
-    ImportSubjectPublicKeyInfo ExportSubjectPublicKeyInfo ImportPkcs8PrivateKey ExportPkcs8PrivateKey Key IV Mode
-    Padding KeySize BlockSize Dispose nistP256 nistP384 nistP521""",
-    safe="Length Count ToArray AsSpan CopyTo SequenceEqual ToString Equals Slice")
-_GO_API = _Api(
-    pairs="""aes.NewCipher cipher.NewGCM cipher.NewGCMWithNonceSize cipher.NewCTR rand.Read rand.Reader rand.Int
-    io.ReadFull os.Getenv os.LookupEnv hex.DecodeString hex.EncodeToString base64.StdEncoding base64.URLEncoding
-    base64.RawStdEncoding base64.RawURLEncoding sha256.Sum256 sha256.New sha512.Sum512 sha512.New hmac.New
-    hmac.Equal subtle.ConstantTimeCompare argon2.IDKey hkdf.New pbkdf2.Key ecdsa.GenerateKey ecdsa.SignASN1
-    ecdsa.VerifyASN1 ed25519.GenerateKey ed25519.Sign ed25519.Verify rsa.GenerateKey rsa.EncryptOAEP
-    rsa.DecryptOAEP rsa.SignPSS rsa.VerifyPSS rsa.SignPKCS1v15 elliptic.P256 elliptic.P384 elliptic.P521
-    tls.Config tls.VersionTLS12 tls.VersionTLS13 tls.X25519 tls.CurveP256 tls.CurveP384 x509.SystemCertPool
-    x509.NewCertPool x509.ParseCertificate x509.ParsePKCS8PrivateKey x509.MarshalPKCS8PrivateKey errors.New
-    fmt.Errorf chacha20poly1305.New chacha20poly1305.NewX""",
-    ctors="make len cap append copy panic new byte string int uint32 uint64 int64",
-    methods="""Seal Open NonceSize Overhead Write Sum Reset Size BlockSize Encrypt Decrypt XORKeyStream CryptBlocks
-    Public Sign DecodeString EncodeToString AppendCertsFromPEM Equal MinVersion MaxVersion CipherSuites
-    CurvePreferences RootCAs Certificates""",
-    safe="",
-    packages="""os io ioutil exec net http syscall filepath aes cipher rand hex base64 sha256 sha512 sha1 md5 hmac
-    subtle tls x509 ecdsa ed25519 rsa elliptic argon2 hkdf pbkdf2 chacha20poly1305 errors fmt bytes strings unsafe
-    reflect plugin bufio log url smtp""")
-_LANG_API2 = {"javascript": _JS_API, "typescript": _JS_API, "java": _JAVA_API, "kotlin": _JAVA_API,
-              "csharp": _CS_API, "go": _GO_API}
-_TOKEN = re.compile(r"[A-Za-z_$][\w$]*|\d[\w.]*|\?\.|::|->|\S")
-_CAPS = re.compile(r"[A-Z][A-Z0-9_]+")
-_IDENT = re.compile(r"[A-Za-z_$][\w$]*")
-
-
-def _match(text: str, i: int, open_: str, close: str) -> int:
-    """Index of the bracket closing the one at ``i`` (counting nesting), or -1."""
-    depth = 0
-    for j in range(i, len(text)):
-        if text[j] == open_:
-            depth += 1
-        elif text[j] == close:
-            depth -= 1
-            if depth == 0:
-                return j
-    return -1
-
-
-def _scan(text: str, lang: str) -> tuple[str, list[str], bool]:
-    """(code with string contents and comments blanked in place - same length, newlines kept -, the code inside
-    every interpolation, whether everything was terminated). Interpolations: JS / TS template ``${...}``, Kotlin
-    ``"${...}"``, C# ``$"{...}"``."""
-    out = list(text)
-    interps: list[str] = []
-    ok = True
-    n, i = len(text), 0
-
-    def blank(a: int, b: int) -> None:
-        for k in range(a, min(b, n)):
-            if out[k] != "\n":
-                out[k] = " "
-
-    while i < n:
-        if text.startswith("//", i) or (text.startswith("#", i) and lang == "python"):
-            j = text.find("\n", i)
-            j = n if j < 0 else j
-            blank(i, j)
-            i = j
-            continue
-        if text.startswith("/*", i):
-            j = text.find("*/", i + 2)
-            j = n if j < 0 else j + 2
-            blank(i, j)
-            i = j
-            continue
-        prefix = re.match(r'\$@"|@\$"|\$"|@"', text[i:]) if lang == "csharp" else None
-        triple = lang in ("kotlin", "java") and text.startswith('"""', i)
-        if prefix:
-            interp, verbatim, quote, start = "$" in prefix.group(0), "@" in prefix.group(0), '"', i + len(
-                prefix.group(0))
-        elif triple:
-            interp, verbatim, quote, start = lang == "kotlin", True, '"""', i + 3
-        elif text[i] in "\"'" or (text[i] == "`" and lang in ("javascript", "typescript", "go")):
-            q = text[i]
-            interp = (q == "`" and lang in ("javascript", "typescript")) or (q == '"' and lang == "kotlin")
-            verbatim, quote, start = q == "`" and lang == "go", q, i + 1
-        else:
-            i += 1
-            continue
-        j = start
-        closed = False
-        while j < n:
-            ch = text[j]
-            if ch == "\\" and not verbatim:
-                j += 2
-                continue
-            if lang == "csharp" and verbatim and text.startswith('""', j):
-                j += 2
-                continue
-            if ch == "\n" and quote in ("'", '"') and not (lang == "csharp" and verbatim):
-                break
-            if interp and lang in ("javascript", "typescript", "kotlin") and text.startswith("${", j):
-                k = _match(text, j + 1, "{", "}")
-                if k < 0:
-                    ok = False
-                    k = n - 1
-                interps.append(text[j + 2:k])
-                j = k + 1
-                continue
-            if interp and lang == "csharp" and ch == "{":
-                if text.startswith("{{", j):
-                    j += 2
-                    continue
-                k = _match(text, j, "{", "}")
-                if k < 0:
-                    ok = False
-                    k = n - 1
-                interps.append(text[j + 1:k])
-                j = k + 1
-                continue
-            if text.startswith(quote, j):
-                closed = True
-                break
-            j += 1
-        if quote == "`" and not closed:
-            ok = False
-        blank(start, j)
-        i = j + (len(quote) if closed else 0)
-    return "".join(out), interps, ok
-
-
-def _pieces(text: str, lang: str) -> tuple[list[tuple[str, str]], bool]:
-    """(code, raw) pairs: the text itself and, recursively, every interpolation."""
-    code, interps, ok = _scan(text, lang)
-    code = _IMPORT_STMT.sub(lambda m: " " * len(m.group(0)), code)
-    out = [(code, text)]
-    for body in interps:
-        more, more_ok = _pieces(body, lang)
-        out += more
-        ok = ok and more_ok
-    return out, ok
-
-
-def _chains(code: str, raw: str) -> list[dict[str, Any]]:
-    """Every chain ``head(...).m1(...).m2`` as {'ctor', 'segs': [(name, called, text up to here)]}; members that
-    follow something other than a name (``"x".getBytes()``, ``a[0].m``, ``(e).m``) are chains with head None."""
-    toks = [(m.group(0), m.start(), m.end()) for m in _TOKEN.finditer(code)]
-    out: list[dict[str, Any]] = []
-    used: set[int] = set()
-
-    def call_at(j: int) -> tuple[bool, int, int]:
-        if j < len(toks) and toks[j][0] == "<":  # a generic argument list just before '('
-            k = j + 1
-            while k < len(toks) and (toks[k][0] in ",.?[]<> " or _IDENT.fullmatch(toks[k][0])) and toks[k][0] != ">":
-                k += 1
-            if k + 1 < len(toks) and toks[k][0] == ">" and toks[k + 1][0] == "(":
-                j = k + 1
-        if j < len(toks) and toks[j][0] == "(":
-            end = _match(code, toks[j][1], "(", ")")
-            end = len(code) - 1 if end < 0 else end
-            k = j
-            while k < len(toks) and toks[k][1] <= end:
-                k += 1
-            return True, k, end + 1
-        return False, j, toks[j - 1][2]
-
-    for i, (tok, start, _end) in enumerate(toks):
-        prev = toks[i - 1][0] if i else ""
-        if i in used or not _IDENT.fullmatch(tok) or (tok in _KEYWORDS and tok not in ("this", "self")):
-            continue
-        orphan = prev in _MEMBER_OPS  # a member of an expression's value: "x".getBytes(), a[0].m, (e).m
-        ctor = prev == "new"
-        called, j, end = call_at(i + 1)
-        first = toks[i - 1][1] if orphan else start
-        segs = [(tok, called, raw[first:end])]
-        while j + 1 < len(toks) and toks[j][0] in _MEMBER_OPS and _IDENT.fullmatch(toks[j + 1][0]):
-            used.add(j + 1)
-            name = toks[j + 1][0]
-            called, j, end = call_at(j + 2)
-            segs.append((name, called, raw[first:end]))
-        out.append({"ctor": ctor, "head": None if orphan else tok, "segs": segs})
-    return out
-
-
-_DECL = {
-    "javascript": r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]+)?=\s*",
-    "go": r"\b([A-Za-z_]\w*)(?:\s*,\s*[A-Za-z_]\w*)*\s*:=\s*|\bvar\s+([A-Za-z_]\w*)[^=\n]*=\s*",
-    "java": r"\b(?:var|val|final\s+\w[\w.<>\[\]]*|[A-Z][\w.]*(?:<[^;=()]*>)?(?:\[\])*|(?:byte|int|char|long)(?:\[\])+)"
-            r"\s+([A-Za-z_]\w*)\s*(?::\s*[\w.<>?\[\]]+\s*)?=\s*",
-}
-_DECL["typescript"] = _DECL["javascript"]
-_DECL["kotlin"] = _DECL["csharp"] = _DECL["java"]
-_FUNC_DECL = re.compile(r"\b(?:function|fun|func)\s+(?:\([^)]*\)\s*)?([A-Za-z_$][\w$]*)")
-# Java / C# / JS method declarations: name(params) [throws ...] { - not a call (those languages have no trailing
-# lambdas; Kotlin's `fun` and Go's `func` are matched above only)
-_METHOD_DECL = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*(?::\s*[\w.<>\[\]|? ]+)?"
-                          r"(?:throws\s+[\w.,\s]+)?\{")
-_JS_BIND = re.compile(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\s*\(\s*['\"`](?:node:)?([\w/.-]+)['\"`]"
-                      r"|\bimport\s+(?:\*\s+as\s+)?([A-Za-z_$][\w$]*)\s+from\s+['\"](?:node:)?([\w/.-]+)['\"]")
-_JS_DESTRUCT = re.compile(r"\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\s*\(\s*['\"`](?:node:)?([\w/.-]+)"
-                          r"|\bimport\s*\{([^}]*)\}\s*from\s*['\"](?:node:)?([\w/.-]+)")
-_GO_IMPORT = re.compile(r'(?:^|\bimport\s+|\n)\s*([A-Za-z_]\w*\s+)?"([\w./-]+)"')
-
-
-class _Ctx:
-    """What the names in a piece of code are: packages / modules (by alias), names imported from them, declared
-    functions, locals with their initialiser text."""
-
-    def __init__(self, lang: str, texts: list[str]) -> None:
-        self.lang, self.api = lang, _LANG_API2[lang]
-        self.aliases: dict[str, str] = {}
-        self.imported: dict[str, str] = {}
-        self.funcs: set[str] = set()
-        self.locals: dict[str, list[str]] = {}
-        for text in texts:
-            code = _scan(text, lang)[0]
-            if lang in ("javascript", "typescript"):
-                for m in _JS_BIND.finditer(text):
-                    self.aliases[m.group(1) or m.group(3)] = (m.group(2) or m.group(4)).split("/")[-1]
-                for m in _JS_DESTRUCT.finditer(text):
-                    for part in (m.group(1) or m.group(3)).split(","):
-                        bits = [b.strip() for b in re.split(r"\s*(?::|\bas\b)\s*", part.strip()) if b.strip()]
-                        if bits:
-                            self.imported[bits[-1]] = f"{(m.group(2) or m.group(4)).split('/')[-1]}.{bits[0]}"
-            if lang == "go":
-                for m in _GO_IMPORT.finditer(text):
-                    self.aliases[(m.group(1) or "").strip() or m.group(2).split("/")[-1]] = m.group(2).split("/")[-1]
-            self.funcs |= {m.group(1) for m in _FUNC_DECL.finditer(code)} - _KEYWORDS
-            if lang in ("java", "csharp", "javascript", "typescript"):
-                self.funcs |= {m.group(1) for m in _METHOD_DECL.finditer(code)} - _KEYWORDS
-            for m in re.finditer(_DECL[lang], code):
-                name = next(g for g in m.groups() if g)
-                end = code.find(";", m.end())
-                line_end = code.find("\n", m.end())
-                stop = min(x for x in (end, line_end, len(code)) if x >= 0)
-                self.locals.setdefault(name, []).append(text[m.end():stop])
-        self.tracked: set[str] = set()
-        for _round in range(4):  # a local made from an allow-listed call, or from a method of one
-            grown = {name for name, inits in self.locals.items() if any(self._init_ok(i) for i in inits)}
-            if grown <= self.tracked:
-                break
-            self.tracked |= grown
-
-    def _init_ok(self, init: str) -> bool:
-        init = re.sub(r"^[\s&*(]*(?:await\s+|new\s+)?", lambda m: "new " if "new" in m.group(0) else "", init)
-        pieces, _ok = _pieces(init, self.lang)
-        chains = _chains(*pieces[0])
-        if not chains or chains[0]["head"] is None:
-            return False
-        first = chains[0]
-        made = first["ctor"] or first["segs"][0][1] or len(first["segs"]) > 1  # a call / constructor / Pkg.Member
-        return bool(made) and not self.judge(first, True)
-
-    def is_package(self, name: str) -> bool:
-        if self.lang in ("java", "kotlin", "csharp"):
-            return name[:1].isupper() and name not in self.locals
-        return name in self.aliases or (name in self.api.packages and name not in self.locals)
-
-    def canon(self, name: str) -> str:
-        return self.aliases.get(name, name)
-
-    def judge(self, chain: dict[str, Any], strict: bool = False) -> list[tuple[str, str]]:
-        """[(what, call text)] of the chain's segments that the allow-list does not cover."""
-        api, segs, bad = self.api, chain["segs"], []
-        rest_from = 1
-        if chain["head"] is None:  # a member of an expression's value
-            name, _called, text = segs[0]
-            if name in _JS_FORBIDDEN or not (name in api.methods or name in api.safe or _CAPS.fullmatch(name)):
-                bad.append((f".{name}", text))
-            rest_from = 1
-        else:
-            head, called, text = segs[0]
-            if chain["ctor"] or called:
-                path = [s[0] for s in segs]
-                k = next((i for i, s in enumerate(segs) if s[1]), 0)
-                if chain["ctor"] and k > 0:  # new java.io.File(...)
-                    bad.append((".".join(path[:k + 1]), segs[k][2]))
-                    rest_from = k + 1
-                elif chain["ctor"] or (self.lang == "kotlin" and head[:1].isupper()):
-                    if head not in api.ctors:
-                        bad.append((f"new {head}", text))
-                elif head in self.imported:
-                    if self.imported[head] not in api.pairs:
-                        bad.append((self.imported[head], text))
-                elif not (head in api.ctors or head in self.funcs) or head in _JS_FORBIDDEN:
-                    bad.append((f"{head}()", text))
-            elif len(segs) > 1:
-                member, _mcalled, mtext = segs[1]
-                if self.is_package(head) or head in self.imported:
-                    q = self.imported.get(head, self.canon(head))
-                    if f"{q}.{member}" not in api.pairs and not _CAPS.fullmatch(member):
-                        bad.append((f"{q}.{member}", mtext))
-                elif head in self.tracked:
-                    if member in _JS_FORBIDDEN or not (member in api.methods or member in api.safe
-                                                       or _CAPS.fullmatch(member)):
-                        bad.append((f"{head}.{member}", mtext))
-                elif strict or member in _JS_FORBIDDEN or not (member in api.safe or _CAPS.fullmatch(member)):
-                    bad.append((f"{head}.{member}", mtext))  # an untracked local: only harmless members
-                rest_from = 2
-        for name, _called, text in segs[rest_from:]:
-            if name in _JS_FORBIDDEN or not (name in api.methods or name in api.safe or _CAPS.fullmatch(name)):
-                bad.append((f".{name}", text))
-        return bad
-
-
-_COMPUTED_AT = re.compile(r"(?:[\w$)\]]|\?\.)\s*\[")
-_PLAIN_KEY = re.compile(r"""\s*(?:(['"])([A-Za-z_$][\w$]*)\1|\d+)?\s*""")
-
-
-def _computed(code: str, raw: str) -> list[tuple[str, str]]:
-    """JS / TS member access by ``[...]``: only a plain literal key of identifier characters (no escapes, no
-    expression) or a number; a literal key is then checked as a member name."""
-    out = []
-    for m in _COMPUTED_AT.finditer(code):
-        open_ = m.end() - 1
-        close = _match(code, open_, "[", "]")
-        body = raw[open_ + 1:close] if close > 0 else raw[open_ + 1:]
-        key = _PLAIN_KEY.fullmatch(body)
-        text = raw[m.start():close + 1]
-        if key is None:
-            out.append((f"[{body.strip()[:30]}]", text))
-        elif key.group(2):
-            out.append((f"[{key.group(2)}]", text))
-    return out
-
-
-def _norm(text: str) -> str:
-    return re.sub(r"\s+", "", text)
-
-
-def _text_unlisted(after: str, original: str, lang: str) -> list[str]:
-    """Calls and members the rewrite reaches that the language's allow-list does not cover, unless the window
-    makes exactly the same call / access (counted, whitespace aside); JS / TS computed keys likewise."""
-    if lang not in _LANG_API2:
-        return []
-    ctx = _Ctx(lang, [original, after])
-    api = ctx.api
-
-    def uncovered(text: str) -> tuple[Counter[str], dict[str, str], bool]:
-        pieces, ok = _pieces(text, lang)
-        counts: Counter[str] = Counter()
-        what: dict[str, str] = {}
-        for code, raw in pieces:
-            found = [b for ch in _chains(code, raw) for b in ctx.judge(ch)]
-            if lang in ("javascript", "typescript"):
-                for name, t in _computed(code, raw):
-                    key = name[1:-1]
-                    if key in _JS_FORBIDDEN or not (key in api.methods or key in api.safe or _CAPS.fullmatch(key)):
-                        found.append((name, t))
-            for name, t in found:
-                counts[_norm(t)] += 1
-                what.setdefault(_norm(t), name)
-        return counts, what, ok
-
-    after_counts, what, ok = uncovered(after)
-    before_counts, _w, _ok = uncovered(original)
-    out = sorted({what[t] for t, n in after_counts.items() if n > before_counts[t]})
-    return out + ([] if ok else ["unterminated template or string"])
 
 
 # security regressions in added code (any language): an existing occurrence in the window subtracts
@@ -1177,23 +694,34 @@ _DOWNGRADE = re.compile(
     r"(?<![!\w])(?:RC4|DES|3DES|DESede|MD5|NULL|aNULL|eNULL|EXPORT)\b|\bPBEWith\w*(?:MD5|DES)\w*")
 
 
-def _parses(lang: str, text: str) -> bool | None:
-    """True / False when the language is checked, None when it is not."""
-    body = textwrap.dedent(text)
-    try:
-        if lang == "python":
-            ast.parse(body)
-        elif lang == "json":
-            json.loads(body)
-        elif lang in ("yaml", "yml"):
-            import yaml  # optional: installed with the backend's dependencies
 
-            yaml.safe_load(body)
-        else:
-            return None
-    except Exception:
-        return False
-    return True
+def _tree_imports(root: Any, lang: str) -> list[str]:
+    """Modules a tree imports: import / using / require nodes; a require / import() whose module is not a plain
+    literal is reported as such."""
+    out: list[str] = []
+    for n in SX.walk(root):
+        if n.kind == "import" and isinstance(n.value, list) and n.value:
+            mod = n.value[0]
+            if lang in ("javascript", "typescript", "go"):
+                out.append(str(mod))
+            else:
+                out += _imports(n.text, lang)
+        elif n.kind == "call" and n.kids and n.kids[0].kind == "name" and n.kids[0].name in ("require", "import") \
+                and lang in ("javascript", "typescript"):
+            arg = n.kids[1] if len(n.kids) > 1 else None
+            if arg is not None and arg.kind == "str" and arg.value is not None and len(n.kids) == 2:
+                out.append(arg.value)
+            else:
+                out.append(f"{n.kids[0].name}(<expression>)")
+    return out
+
+
+def _scope(lang: str, root: Any, other: Any, py_tree: ast.Module | None) -> FL.Scope:
+    if lang != "python" or py_tree is None:
+        return FL.Scope(lang, root, [other])
+    modules, froms, defs = _py_bindings([py_tree])
+    known = set(modules) | set(froms) | _PY_KNOWN_MODULES | (_PY_BUILTIN_NAMES - {"self"})
+    return FL.Scope(lang, root, [other], py_ok=lambda ref: _py_ref_ok(ref, modules, froms, defs), py_modules=known)
 
 
 def _hunks(before: list[str], after: list[str]) -> list[tuple[int, int, list[str], list[str]]]:
@@ -1275,41 +803,41 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
     if not check(f"at most {MAX_CHANGED} lines changed", max(len(added), len(removed)) <= MAX_CHANGED):
         return _withheld(grounding, "it changes too many lines to review", checks)
     original_text = "\n".join(before)
-    original_parses = _parses(lang, original_text)
-    if original_parses:
-        if not check("syntax (" + lang + ")", bool(_parses(lang, fixed_text))):
-            return _withheld(grounding, f"the rewritten window is not valid {lang}", checks)
-    else:
-        check("syntax", True, "not checked: " + ("the stored window is a fragment" if original_parses is False
-                                                  else f"no parser for {lang or 'this language'}"))
     key_class = bool(KEY_CLASS_CODES & set(window.get("codes") or []))
 
-    # Python: the syntax tree of the rewrite (or, for a stored fragment, of each changed hunk) - fail closed
-    py_before: list[ast.Module] = []
-    py_after: list[ast.Module] = []
-    if lang == "python":
-        whole_before, whole_after = _parse_py(original_text), _parse_py(fixed_text)
-        if whole_before is not None and whole_after is not None:
-            py_before, py_after = [whole_before], [whole_after]
-        else:
-            for _a, _b, rem, add in hunks:
-                tree = _parse_py_lines(add)
-                if tree is None:
-                    break
-                py_after.append(tree)
-                old_tree = _parse_py_lines(rem)
-                if old_tree is not None:
-                    py_before.append(old_tree)
-            if not check("the changed lines parse (python)", len(py_after) == len(hunks)):
-                return _withheld(grounding, "the changed lines could not be parsed to check them", checks)
+    # real grammars, fail closed: no grammar, a window or a rewrite that does not parse -> withheld
+    if not check("a grammar for the language", lang in SX.SUPPORTED and SX.grammar_loaded(lang),
+                 lang or "unknown"):
+        return _withheld(grounding, f"there is no parser for {lang or 'this language'} to check it", checks)
+    tree_before = SX.parse(lang, original_text)
+    if not check(f"the stored window parses ({lang})", tree_before is not None):
+        return _withheld(grounding, f"the stored window could not be parsed as {lang} to check the rewrite", checks)
+    tree_after = SX.parse(lang, fixed_text, prefer=tree_before.wrap)
+    if not check(f"syntax ({lang})", tree_after is not None,
+                 "parsed as a fragment (inside a wrapper)" if tree_after is not None and tree_after.fragment else ""):
+        return _withheld(grounding, f"the rewritten window is not valid {lang} (it could not be parsed)", checks)
+    forbidden = sorted(Counter(n.name for n in SX.walk(tree_after.root) if n.kind == "forbidden") -
+                       Counter(n.name for n in SX.walk(tree_before.root) if n.kind == "forbidden"))
+    escaped = sorted({n.name for n in SX.walk(tree_after.root) if n.kind in ("name", "member") and "\\" in n.name})
+    if not check("only constructs the checks read", not forbidden and not escaped, ", ".join(forbidden + escaped)):
+        return _withheld(grounding, "it uses a construct the checks cannot follow (" + ", ".join(
+            (forbidden + escaped)[:3]) + ")", checks)
 
-    # imports: anywhere on a line (Python: every Import / ImportFrom node)
+    py_before = py_after = None
     if lang == "python":
-        existing = {m for t in py_before for m in _py_modules(t)} | {m for ln in before for m in _imports(ln, lang)}
-        found = {m for t in py_after for m in _py_modules(t)}
+        got_before = SX.python_tree(original_text)
+        got_after = SX.python_tree(fixed_text, prefer=got_before[1] if got_before else None)
+        if got_before is None or got_after is None:  # pragma: no cover - parse() above already parsed both
+            return _withheld(grounding, "the rewritten window could not be parsed (python)", checks)
+        py_before, py_after = got_before[0], got_after[0]
+
+    # imports: every import node of the tree (Python: every Import / ImportFrom node)
+    if lang == "python":
+        existing = set(_py_modules(py_before))
+        found = set(_py_modules(py_after))
     else:
-        existing = {m for ln in before for m in _imports(ln, lang)}
-        found = {m for ln in added for m in _imports(ln, lang)}
+        existing = set(_tree_imports(tree_before.root, lang))
+        found = set(_tree_imports(tree_after.root, lang))
     new_modules = sorted(found - existing)
     allowed = allowed_modules(window)
     bad_modules = [m for m in new_modules if not _module_ok(m, allowed, lang)]
@@ -1317,34 +845,64 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
         return _withheld(grounding, "it adds an import that is not allowed for this finding (" +
                          ", ".join(bad_modules[:3]) + ")", checks)
 
-    # network / process / dynamic code: the Python tree, then every language's added lines, NFKC-normalised
+    # network / process / dynamic code: the Python tree, then the code of every language (comments aside)
     new_calls: list[str] = []
     if lang == "python":
-        refs_after: Counter[str] = sum((_py_refs(t) for t in py_after), Counter())
-        refs_before: Counter[str] = sum((_py_refs(t) for t in py_before), Counter())
-        new_calls = sorted(refs_after - refs_before)
-    norm_added = [unicodedata.normalize("NFKC", ln) for ln in added]
-    norm_original = unicodedata.normalize("NFKC", original_text)
+        new_calls = sorted(_py_refs(py_after) - _py_refs(py_before))
+    code_after = unicodedata.normalize("NFKC", tree_after.code)
+    code_before = unicodedata.normalize("NFKC", tree_before.code)
     patterns = (_NETWORK,) if lang == "python" else (_NETWORK, _NETWORK_NOT_PY)
     for rx in patterns:
-        new_calls += sorted({m.group(0).strip() for ln in norm_added for m in rx.finditer(ln)} -
-                            {m.group(0).strip() for m in rx.finditer(norm_original)} - set(new_calls))
+        new_calls += sorted({m.group(0).strip() for m in rx.finditer(code_after)} -
+                            {m.group(0).strip() for m in rx.finditer(code_before)} - set(new_calls))
     if not check("no new network or process calls", not new_calls, ", ".join(new_calls)):
         return _withheld(grounding, "it adds a network or process call (" + ", ".join(new_calls[:3]) + ")", checks)
+
+    scope_after = _scope(lang, tree_after.root, tree_before.root, py_after)
+    scope_before = _scope(lang, tree_before.root, tree_after.root, py_before)
+    # the process environment: written / deleted / aliased (reads are fine)
+    env = sorted(FL.env_writes(tree_after.root, lang, scope_after) - FL.env_writes(tree_before.root, lang, scope_before))
+    if not check("no writes to the process environment", not env, ", ".join(env[:3])):
+        return _withheld(grounding, "it changes the process environment (" + ", ".join(env[:3]) + ")", checks)
+
+    # members of modules / packages / classes: a fix sets its own values (crypto.randomBytes = ..., ssl.X = ...)
+    patched = sorted(FL.module_writes(tree_after.root, scope_after) - FL.module_writes(tree_before.root, scope_before))
+    if not check("no assignments to library members", not patched, ", ".join(patched[:3])):
+        return _withheld(grounding, "it assigns to a member of a module or class (" + ", ".join(patched[:3]) + ")",
+                         checks)
     # allow-list: every API the rewrite adds is already in the window or configures cryptography (fail closed)
     if lang == "python":
-        unlisted = _py_unlisted(py_after, py_before, _blank_py(original_text))
+        unlisted = _py_unlisted(py_after, py_before)
     else:
-        unlisted = _text_unlisted(unicodedata.normalize("NFKC", fixed_text), norm_original, lang)
+        unlisted = FL.unlisted(tree_after.root, tree_before.root, lang)
     if not check("only allow-listed APIs", not unlisted, ", ".join(unlisted[:5])):
         return _withheld(grounding, "it calls an API that is not on the allow-list for a crypto fix (" +
                          ", ".join(unlisted[:3]) + ")", checks)
-    # security regressions: verification off, old protocol versions, broken ciphers / hashes
-    downgrades = sorted(Counter(m.group(0) for m in _DOWNGRADE.finditer(unicodedata.normalize("NFKC", fixed_text))) -
-                        Counter(m.group(0) for m in _DOWNGRADE.finditer(norm_original)))
+
+    # key material may flow only into crypto APIs; calls outside the allow-list stay where they are, as they are
+    flow_after, flow_before = FL.Flow(tree_after.root, scope_after), FL.Flow(tree_before.root, scope_before)
+    leaks = flow_after.leaks()
+    if not check("key material reaches only crypto APIs", not leaks, ", ".join(leaks[:3])):
+        return _withheld(grounding, "it can pass key material to a call that is not a crypto API (" +
+                         ", ".join(leaks[:3]) + ")", checks)
+    moved = FL.moved_sinks(flow_after, flow_before)
+    if not check("calls outside the allow-list stay where they are", not moved, ", ".join(moved[:3])):
+        return _withheld(grounding, "it moves or repeats a call that is not on the allow-list (" +
+                         ", ".join(moved[:3]) + ")", checks)
+    changed = FL.changed_sink_inputs(flow_after, flow_before)
+    if not check("inputs of calls outside the allow-list unchanged", not changed, ", ".join(changed[:3])):
+        return _withheld(grounding, "it changes what a call that is not on the allow-list is given (" +
+                         ", ".join(changed[:3]) + ")", checks)
+
+    # security regressions by value (verification, hostname check, versions, ciphers, callbacks), then by name
+    downgrades = FL.downgrades(tree_after.root, tree_before.root, lang, scope_after)
+    downgrades += sorted(Counter(m.group(0) for m in _DOWNGRADE.finditer(code_after)) -
+                         Counter(m.group(0) for m in _DOWNGRADE.finditer(code_before)))
     if not check("no security downgrade", not downgrades, ", ".join(downgrades[:5])):
         return _withheld(grounding, "it weakens TLS verification, the protocol version or the algorithm (" +
                          ", ".join(downgrades[:3]) + ")", checks)
+    norm_added = [unicodedata.normalize("NFKC", ln) for ln in added]
+    norm_original = unicodedata.normalize("NFKC", original_text)
     # look-alike characters: anything NFKC changes, or a non-ASCII character the window does not already have
     odd = sorted({ch for ln in added for ch in ln if ord(ch) > 127 and (
         unicodedata.normalize("NFKC", ch) != ch or ch not in original_text)})
@@ -1361,9 +919,7 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
     text_after = Counter(h for ln in after for h in _key_literals_text(ln, key_class))
     secrets_found += sorted(text_after - text_before)
     if lang == "python":
-        key_after: Counter[str] = sum((_py_key_literals(t, key_class) for t in py_after), Counter())
-        key_before: Counter[str] = sum((_py_key_literals(t, key_class) for t in py_before), Counter())
-        secrets_found += sorted(key_after - key_before)
+        secrets_found += sorted(_py_key_literals(py_after, key_class) - _py_key_literals(py_before, key_class))
     if not check("no key material in added lines", not secrets_found):
         return _withheld(grounding, "it put a key, password or token literal in the code", checks)
     diff = unified_diff(window["path"], window["start"], before, after)

