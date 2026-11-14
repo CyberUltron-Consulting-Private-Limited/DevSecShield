@@ -7,13 +7,11 @@ import { useState, type ReactNode } from "react";
 import { toast } from "@/utils/toast";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   cancelCbomRun,
   estimateCbomSources,
-  getCbomRun,
   getCbomSourcesOverview,
   listCbomRuns,
   startCbomRun,
@@ -26,22 +24,21 @@ import {
   type CbomSourcesOverview,
 } from "@/utils/backend_api";
 
-import { CompareDialog, RunChanges } from "./ChangesPanel";
+import { CompareDialog } from "./ChangesPanel";
 import GradeInputsCard from "./GradeInputsCard";
 import { runResultsHref } from "@/components/cbom/results/resultsHref";
 import { cbomSourcesKeys, invalidateRunViews, TERMINAL_RUN } from "./keys";
-import RunResults from "./RunResults";
+import { skipText } from "@/components/cbom/results/RunJobsTable";
 import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { startRefusal } from "./startRefusal";
 import { SourceMetadataCard } from "./SourceMetadata";
-import { addressProgress, credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
+import { credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
 import {
   Checkbox2,
   ConfirmDialog,
   EmptyState,
   ErrorBlock,
-  JobStatusBadge,
   LoadingBlock,
   RunStatusBadge,
   SectionCard,
@@ -153,11 +150,6 @@ function skipTab(item: CbomPlanItem): string | null {
   if (g === "evidence") return "evidence";
   if (g === "scan_node") return "scan-nodes";
   return null;
-}
-
-function skipText(item: CbomPlanItem): string {
-  const reason = item.reason ?? "Skipped";
-  return item.name && !reason.includes(item.name) ? `${item.name}: ${reason}` : reason;
 }
 
 function jobSummary(counts: CbomRun["job_counts"]): string {
@@ -759,143 +751,5 @@ function StartCard({ teamId, overview }: { teamId: number; overview: CbomSources
         {!anyIncluded && <p className="text-xs text-zinc-500">Choose at least one group to estimate.</p>}
       </div>
     </SectionCard>
-  );
-}
-
-// ---------------------------------------------------------------------------- run details
-// CB-38: no longer opened from the Runs table (its Results button opens /cbom/runs/<id>/results); kept until the
-// unified results page carries its jobs table and skipped list, then removed.
-export function RunDetailsDialog({ teamId, runId, onClose }: { teamId: number; runId: number; onClose: () => void }) {
-  const runQuery = useQuery({
-    queryKey: cbomSourcesKeys.run(teamId, runId),
-    queryFn: () => getCbomRun(teamId, runId),
-    enabled: Number.isFinite(teamId),
-    retry: 1,
-    refetchInterval: (query) => {
-      if (httpStatus(query.state.error) === 404) return false;
-      const status = query.state.data?.status;
-      return !status || isActiveRun(status) ? 6000 : false;
-    },
-  });
-  const run = runQuery.data;
-  const jobs = run?.jobs ?? [];
-  const skippedAtStart = run?.breakdown?.skipped ?? [];
-
-  return (
-    <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Run #{runId}</DialogTitle>
-          <DialogDescription>
-            {run ? (
-              <>
-                <RunStatusBadge status={run.status} /> · started {formatDateTime(run.created_at)} · {credits(run.credits.charged)} charged,{" "}
-                {credits(run.credits.refunded)} refunded
-              </>
-            ) : (
-              "Loading the run"
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4 min-w-0">
-          {runQuery.isLoading ? (
-            <LoadingBlock />
-          ) : runQuery.isError && !run ? (
-            <ErrorBlock
-              message={httpStatus(runQuery.error) === 404 ? "This run no longer exists." : undefined}
-              error={runQuery.error}
-              onRetry={httpStatus(runQuery.error) === 404 ? undefined : () => runQuery.refetch()}
-            />
-          ) : jobs.length === 0 ? (
-            <EmptyState title="No jobs in this run" />
-          ) : (
-            <ScrollArea className="w-full border rounded-lg">
-              <div className="min-w-max">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Runs on</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Assets</TableHead>
-                      <TableHead className="text-right">Credits</TableHead>
-                      <TableHead className="text-right">Attempts</TableHead>
-                      <TableHead>Error</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {jobs.map((job) => (
-                      <TableRow key={job.id} data-testid={`review-job-${job.id}`}>
-                        <TableCell className="font-medium text-zinc-900 dark:text-white max-w-[220px]">
-                          <Truncate text={job.source_name ?? `Source ${job.source_id ?? "—"}`} />
-                        </TableCell>
-                        <TableCell className="text-zinc-600 dark:text-zinc-400 max-w-[180px]">
-                          <Truncate text={job.runner === "cloud" ? "ZeroShield cloud" : job.node_name ?? "—"} />
-                        </TableCell>
-                        <TableCell className="max-w-[260px]">
-                          <JobStatusBadge status={job.status} title={job.waiting_reason} />
-                          {job.waiting_reason && (
-                            <p className="mt-1 whitespace-normal text-xs text-zinc-500">{job.waiting_reason}</p>
-                          )}
-                          {addressProgress(job) && (
-                            <p className="mt-0.5 whitespace-normal text-xs text-zinc-700 dark:text-zinc-300" data-testid={`review-job-progress-${job.id}`}>
-                              {addressProgress(job)}
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.asset_count ?? 0}</TableCell>
-                        <TableCell className="text-right text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
-                          {credits(job.credits)}
-                          {job.refunded && <span className="ml-1 text-xs text-green-600 dark:text-green-400">refunded</span>}
-                        </TableCell>
-                        <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.attempts}</TableCell>
-                        <TableCell className="max-w-[260px] text-zinc-600 dark:text-zinc-400">
-                          {job.error ? <Truncate text={job.error} className="text-red-600 dark:text-red-400" /> : "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
-          )}
-
-          {skippedAtStart.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Skipped when the run started</p>
-              <ul className="list-disc pl-5 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
-                {skippedAtStart.map((item, index) => (
-                  <li key={`${item.source_id ?? item.name}-${index}`} className="break-words">
-                    {skipText(item)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {run && jobs.length > 0 && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-2">
-              <p className="text-sm font-medium text-zinc-900 dark:text-white">Changes</p>
-              <RunChanges teamId={teamId} runId={runId} finished={TERMINAL_RUN.has(run.status)} />
-            </div>
-          )}
-          {run && jobs.length > 0 && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
-              <RunResults teamId={teamId} runId={runId} active={isActiveRun(run.status)} />
-            </div>
-          )}
-          {run && isActiveRun(run.status) && (
-            <p className="text-xs text-zinc-500">Updates every few seconds while the run is active.</p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" className="cursor-pointer" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

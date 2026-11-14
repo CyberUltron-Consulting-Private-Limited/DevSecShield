@@ -2,10 +2,13 @@
 """Decide what .github/workflows/publish-ghcr.yml publishes, and under which tags (docs/ci/README.md, "Publish images").
 
     ghcr_meta.py decide   reads the event from the environment, writes key=value lines (for $GITHUB_OUTPUT):
-                          publish (true/false), reason, ref (what to check out), prefix, moving, api_url, owner,
-                          registry, source
-    ghcr_meta.py tags     reads PREFIX, SHA (the commit actually checked out) and API_URL, writes sha and
-                          tag=<prefix>-<sha12> (manual runs with another api_url: manual-<sha12>-<8 hex of its sha256>)
+                          publish (true/false), reason, ref (what to check out), prefix, moving, api_url, release
+                          (true on a release branch: staging, main), owner, registry, source
+    ghcr_meta.py tags     reads PREFIX, SHA (the commit actually checked out), API_URL, RELEASE and NODE_VERSION_FILE
+                          (the checked-out scan_node/zs_scan_node/__init__.py), writes sha,
+                          tag=<prefix>-<sha12> (manual runs with another api_url: manual-<sha12>-<8 hex of its sha256>),
+                          node_version (the scan node's VERSION) and node_release_tags (RELEASE only: "1.0.0 1.0 latest"
+                          for a X.Y.Z version, just the version otherwise)
 
 Tag scheme:
     push to dev / staging                 <branch>-<sha12>, moving <branch>
@@ -15,6 +18,9 @@ Tag scheme:
                                           manual-<sha12>, or manual-<sha12>-<hash8> when api_url is not the default
                                           (the frontend differs by api_url), no moving tag
 Immutable tags are written once: publish-ghcr.yml reuses an existing one and never overwrites it.
+Release tags (scan-node only, push to a release branch): <version>, <major.minor> and latest move with the release
+branch like the moving tag (devsecshield-scan-node:1.0.0 = :staging), and the Helm chart is pushed as an OCI artifact
+to <registry>/charts/cbom-scan-node:<version> (deploy/staging/README.md, "Public registry").
 
 Environment (set by the workflow from the event; never pasted into a shell script):
     EVENT, ACTION, REPO, OWNER, REF_NAME, SHA, PR_NUMBER, PR_HEAD_SHA, PR_HEAD_REPO, PR_LABELS (JSON list of names),
@@ -32,6 +38,9 @@ import sys
 
 PREVIEW_LABEL = "publish-preview"
 BRANCHES = ("dev", "staging")
+RELEASE_BRANCHES = ("staging", "main")  # only those that also publish (BRANCHES) ever release
+NODE_VERSION_RE = re.compile(r"^[0-9][0-9A-Za-z.-]{0,18}$")  # scripts/release/scan_node_image.sh NODE_VERSION_RE
+SEMVER_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 DEFAULT_API_URL = "http://localhost:8000"
 REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
 API_URL_RE = re.compile(r"^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
@@ -58,7 +67,7 @@ def common() -> dict[str, str]:
 
 
 def refuse(reason: str) -> dict[str, str]:
-    return {"publish": "false", "reason": reason, "ref": "", "prefix": "", "moving": "", "api_url": ""}
+    return {"publish": "false", "reason": reason, "ref": "", "prefix": "", "moving": "", "api_url": "", "release": "false"}
 
 
 def decide() -> dict[str, str]:
@@ -72,7 +81,8 @@ def decide() -> dict[str, str]:
         if not SHA_RE.match(sha):
             raise InputError(f"unexpected commit {sha!r}")
         return out | {"publish": "true", "reason": f"push to {branch}", "ref": sha, "prefix": branch,
-                      "moving": branch, "api_url": DEFAULT_API_URL}
+                      "moving": branch, "api_url": DEFAULT_API_URL,
+                      "release": "true" if branch in RELEASE_BRANCHES else "false"}
     if event == "pull_request":
         number = env("PR_NUMBER")
         head_repo = env("PR_HEAD_REPO")
@@ -97,7 +107,7 @@ def decide() -> dict[str, str]:
         if not SHA_RE.match(head):
             raise InputError(f"unexpected PR head {head!r}")
         return out | {"publish": "true", "reason": f"PR #{number} ({action}, {PREVIEW_LABEL})", "ref": head,
-                      "prefix": f"pr-{number}", "moving": f"pr-{number}", "api_url": DEFAULT_API_URL}
+                      "prefix": f"pr-{number}", "moving": f"pr-{number}", "api_url": DEFAULT_API_URL, "release": "false"}
     if event == "workflow_dispatch":
         ref = env("INPUT_REF")
         api_url = env("INPUT_API_URL") or DEFAULT_API_URL
@@ -109,7 +119,7 @@ def decide() -> dict[str, str]:
         if not API_URL_RE.match(api_url):
             raise InputError(f"input api_url {api_url!r}: http(s)://host[:port], nothing else")
         return out | {"publish": "true", "reason": f"workflow_dispatch of {ref}", "ref": ref, "prefix": "manual",
-                      "moving": "", "api_url": api_url}
+                      "moving": "", "api_url": api_url, "release": "false"}
     return out | refuse(f"event {event!r} does not publish")
 
 
@@ -129,7 +139,36 @@ def tags() -> dict[str, str]:
             raise InputError(f"only manual runs take another api_url ({prefix}, {api_url!r})")
         # The frontend inlines the API URL: one tag per (commit, api_url), so two hosts never share a tag.
         tag += "-" + hashlib.sha256(api_url.encode()).hexdigest()[:8]
-    return {"sha": sha, "tag": tag}
+    node_version = read_node_version(env("NODE_VERSION_FILE"))
+    release = env("RELEASE") == "true"
+    if release and prefix not in RELEASE_BRANCHES:
+        raise InputError(f"only a release branch ({', '.join(RELEASE_BRANCHES)}) gets release tags, not {prefix!r}")
+    if release and not node_version:
+        raise InputError(f"no scan-node VERSION in {env('NODE_VERSION_FILE') or 'NODE_VERSION_FILE (unset)'}")
+    return {"sha": sha, "tag": tag, "node_version": node_version,
+            "node_release_tags": " ".join(release_tags(node_version)) if release else ""}
+
+
+def read_node_version(path: str) -> str:
+    """VERSION = "<v>" from the scan node's __init__.py (what staging.sh node-artifacts uses); "" when absent."""
+    if not path:
+        return ""
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        return ""
+    m = re.search(r'(?m)^VERSION = "([^"\n]*)"$', text)
+    if not m:
+        return ""
+    if not NODE_VERSION_RE.match(m.group(1)):
+        raise InputError(f"scan-node VERSION {m.group(1)!r} is not a release version")
+    return m.group(1)
+
+
+def release_tags(version: str) -> list[str]:
+    """1.2.3 -> [1.2.3, 1.2, latest]; a pre-release or other version (2.0.0-rc.1) only names itself."""
+    m = SEMVER_RE.match(version)
+    return [version, f"{m.group(1)}.{m.group(2)}", "latest"] if m else [version]
 
 
 def main(argv: list[str]) -> int:

@@ -8,7 +8,7 @@ import { showErrorToast } from "@/utils/error-handler"
 export type IntegrationKind = "servicenow" | "syslog" | "splunk_hec" | "webhook" | "oscal"
 export type IntegrationEventKind =
   | "opened" | "resolved" | "new_asset" | "removed_asset" | "cert_renewed" | "cert_expiring" | "schedule_skipped"
-  | "scan_finished"
+  | "scan_finished" | "q0_closed"
 
 export interface Integration {
   kind: IntegrationKind

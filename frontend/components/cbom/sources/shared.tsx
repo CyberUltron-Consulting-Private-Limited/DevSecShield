@@ -85,12 +85,13 @@ const TEST_STATUS: Record<CbomTestStatus, [Tone, string]> = {
   // every target is on the never-scan list (N10): nothing was tried, nothing failed
   skipped: ["zinc", "Skipped: never scan"],
 };
-export function TestStatusBadge({ status, title }: { status: CbomTestStatus; title?: string | null }) {
+export function TestStatusBadge({ status, title, detail }: { status: CbomTestStatus; title?: string | null; detail?: string | null }) {
   const [tone, label] = TEST_STATUS[status] ?? TEST_STATUS.never;
   return (
     <StatusBadge tone={tone} title={title ?? undefined}>
       {status === "pending" && <Loader2 className="animate-spin" />}
       {label}
+      {detail ? ` · ${detail}` : null}
     </StatusBadge>
   );
 }

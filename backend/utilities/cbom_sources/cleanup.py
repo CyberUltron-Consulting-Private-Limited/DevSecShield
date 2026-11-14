@@ -22,6 +22,10 @@ from backend.new_models import (
     CbomCollectionSettings,
     CbomCollectionSource,
     CbomDriftEvent,
+    CbomEstateAsset,
+    CbomEstateObservation,
+    CbomEstateSource,
+    CbomEstateTeam,
     CbomEvidenceArea,
     CbomEvidenceVendor,
     CbomRemediationAssignment,
@@ -37,6 +41,10 @@ _ORDER = (
     TeamIntegration,
     *FLEET_MODELS,  # F1.2: targets, inventory sources, policies, credentials (no foreign keys to the rows below)
     CbomDriftEvent,
+    CbomEstateObservation,  # CB-20 estate store
+    CbomEstateAsset,
+    CbomEstateSource,
+    CbomEstateTeam,
     CbomRemediationAssignment,
     CbomCollectionSchedule,
     CbomCollectedAsset,
