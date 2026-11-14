@@ -635,7 +635,7 @@ function dialogFields(src: DialogFields | null | undefined) {
 }
 
 /** The findings-table row a run finding dialog renders: the row it was opened from, else (Top risks, the Certificates
- * table, a Q0 item: an asset not on the findings page) the asset detail's copy of that row. GET /sources/assets/{id}
+ * table, a Q0 gap item: an asset not on the findings page) the asset detail's copy of that row. GET /sources/assets/{id}
  * carries every field of the run's /assets item (staging QA B7); null while it loads, on an error, for another asset or
  * from an older backend whose detail has no row fields (the dialog then shows only the asset explanation). */
 export function dialogItem(

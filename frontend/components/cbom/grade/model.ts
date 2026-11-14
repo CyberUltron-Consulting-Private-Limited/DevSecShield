@@ -138,13 +138,15 @@ export function gradeText(grade: string | null | undefined): string | null {
   return isGrade(grade) ? `${grade} ${GRADE_WORD[grade]}` : `${grade} (unrecognised grade)`;
 }
 
-/** A family x source heat-map cell's label and the grade its colour follows: its worst known grade; with none, "Q0
- * Unknown only" when it holds Q0 assets, else "No grade" (libraries, broken-today symmetric ciphers: nothing to grade). */
+/** A family x source heat-map cell's label and the grade its colour follows: its worst known grade; with none, the
+ * Unknown grade's label ("... only") when the cell holds Unknown assets, else "No grade" (libraries, broken-today
+ * symmetric ciphers: nothing to grade). */
 export function heatCellLabel(cell: { worst: string | null; q0?: number | null; counts?: Record<string, number> | null }):
     { text: string; grade: string | null } {
   if (cell.worst) return { text: gradeText(cell.worst) ?? cell.worst, grade: cell.worst };
-  const q0 = Number(cell.q0 ?? cell.counts?.Q0) || 0;
-  return q0 > 0 ? { text: "Q0 Unknown only", grade: "Q0" } : { text: "No grade", grade: null };
+  const unknownKey = GRADE_KEYS[0];
+  const unknown = Number(cell.q0 ?? cell.counts?.[unknownKey]) || 0;
+  return unknown > 0 ? { text: `${gradeText(unknownKey)} only`, grade: unknownKey } : { text: "No grade", grade: null };
 }
 
 export function gradeChipClass(grade: string | null | undefined): string {
@@ -198,7 +200,7 @@ export function q0GapTitle(gap: { item_kind: string; item_key: string; title: st
 
 /** A system's chip in the agility baseline: the API's hardest of the four classes; with none of them, Unknown when
  * some asset could not be classed, else None ("nothing to change today"). */
-export function systemHardestClass(s: { hardest?: string | null; counts?: Record<string, number> | null }): string {
+export function systemHardestClass(s: { hardest?: string | null; counts?: Partial<Record<string, number>> | null }): string {
   if (s.hardest) return s.hardest;
   return (Number(s.counts?.unknown) || 0) > 0 ? "unknown" : "none";
 }

@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { heatCellLabel, q0GapTitle, q0ReasonHeading, systemHardestClass } from "./model";
+import { GRADE_KEYS, gradeText, heatCellLabel, q0GapTitle, q0ReasonHeading, systemHardestClass } from "./model";
 
 const counts = (o: Record<string, number>) => ({ configurable: 0, "code-fixed": 0, "vendor-fixed": 0, "hardware-fixed": 0, unknown: 0, none: 0, ...o });
 // a system whose only non-None assets are Unknown: Unknown, not "nothing to change"
@@ -44,13 +44,17 @@ assert.ok(here("Q0Gaps.tsx").includes("{q0ReasonHeading(group.reason)}"));
 console.log("riskLabels.test.ts: ok");
 
 // Staging QA 14 Nov (b2e86fa), Quantum risk -> family x source heat-map: 17 of 45 cells held only assets with no grade
-// (libraries, DES, "Other": counts {none: n}) and were labelled "Q0 Unknown only" in the Q0 colour, so libraries read
-// as Q0 gaps. A cell with no known grade says "Q0 Unknown only" only when it holds Q0 assets, else "No grade".
+// (libraries, DES, "Other": counts {none: n}) and were labelled as Unknown-only cells in the Unknown colour, so
+// libraries read as gaps. A cell with no known grade carries the Unknown label only when it holds Unknown assets,
+// else "No grade".
 {
+  const [U, , , , LOW] = GRADE_KEYS;
+  const unknownOnly = `${gradeText(U)} only`;
   assert.deepEqual(heatCellLabel({ worst: null, q0: 0, counts: { none: 11 } }), { text: "No grade", grade: null });
-  assert.deepEqual(heatCellLabel({ worst: null, q0: 2, counts: { Q0: 2 } }), { text: "Q0 Unknown only", grade: "Q0" });
-  assert.deepEqual(heatCellLabel({ worst: null, q0: 5, counts: { Q0: 5, none: 1 } }), { text: "Q0 Unknown only", grade: "Q0" });
-  assert.deepEqual(heatCellLabel({ worst: "Q4", q0: 0, counts: { Q4: 5 } }), { text: "Q4 Low", grade: "Q4" });
+  assert.deepEqual(heatCellLabel({ worst: null, q0: 2, counts: { [U]: 2 } }), { text: unknownOnly, grade: U });
+  assert.deepEqual(heatCellLabel({ worst: null, q0: 5, counts: { [U]: 5, none: 1 } }), { text: unknownOnly, grade: U });
+  assert.deepEqual(heatCellLabel({ worst: null, q0: null, counts: { [U]: 1 } }), { text: unknownOnly, grade: U });
+  assert.deepEqual(heatCellLabel({ worst: LOW, q0: 0, counts: { [LOW]: 5 } }), { text: gradeText(LOW), grade: LOW });
   assert.ok(here("RiskRegister.tsx").includes("const label = heatCellLabel(cell);"), "the heat-map does not use heatCellLabel");
   console.log("riskLabels.test.ts: heat-map labels ok");
 }
