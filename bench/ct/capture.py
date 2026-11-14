@@ -179,7 +179,7 @@ def rate_limit(rec: Recorder, tries: int = 40) -> None:
             break
 
 
-def live(rec: Recorder, domains: list[str], provider: str, tag: str) -> None:
+def live(rec: Recorder, domains: list[str], provider: str, tag: str, subdomains: bool = True) -> None:
     """The oracle side of the live proof: each domain's full listing, as the provider answers it (pages followed)."""
     for domain in domains:
         if provider == "crtsh":
@@ -187,7 +187,7 @@ def live(rec: Recorder, domains: list[str], provider: str, tag: str) -> None:
             continue
         after, page = None, 0
         while page < 40:
-            status, body = rec.record(f"{tag}_certspotter_{domain}_p{page}", cs_url(domain, after=after))
+            status, body = rec.record(f"{tag}_certspotter_{domain}_p{page}", cs_url(domain, subdomains=subdomains, after=after))
             rows = json.loads(body) if status == "200" else []
             if status != "200" or not rows:  # Cert Spotter's documented rule: page until an empty array
                 break
@@ -277,10 +277,13 @@ def main() -> int:
     parser.add_argument("--domains", default="zeroshield.ai,example.com")
     parser.add_argument("--provider", default="certspotter", choices=["certspotter", "crtsh"])
     parser.add_argument("--tag", default="oracle")
+    parser.add_argument("--no-subdomains", action="store_true", help="live: the name only (Cert Spotter's single-host "
+                        "quota, 100 an hour unauthenticated, instead of the 10 full-domain queries)")
     args = parser.parse_args()
     rec = Recorder(args.out)
     if args.cases == "live":
-        live(rec, [d.strip() for d in args.domains.split(",") if d.strip()], args.provider, args.tag)
+        live(rec, [d.strip() for d in args.domains.split(",") if d.strip()], args.provider, args.tag,
+             subdomains=not args.no_subdomains)
         rec.write_manifest({"tag": args.tag, "provider": args.provider})
         return 0
     if args.cases in ("all", "fixtures"):

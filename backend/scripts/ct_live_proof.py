@@ -33,6 +33,7 @@ def main() -> int:
     parser.add_argument("--domains", required=True)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--expected-issuers", default="")
+    parser.add_argument("--no-subdomains", action="store_true", help="search each name only (include_subdomains false)")
     args = parser.parse_args()
     if not os.environ.get("ENCRYPTION_KEY"):
         from cryptography.fernet import Fernet
@@ -72,7 +73,7 @@ def main() -> int:
     issuers = [i.strip() for i in args.expected_issuers.split(",") if i.strip()]
     created = client.post(f"{base}/items", headers=headers, json={
         "kind": "ct_logs", "name": "Certificate Transparency",
-        "config": {"domains": domains, "include_subdomains": True, "expected_issuers": issuers}})
+        "config": {"domains": domains, "include_subdomains": not args.no_subdomains, "expected_issuers": issuers}})
     created.raise_for_status()
     estimate = client.post(f"{base}/estimate", headers=headers, json={"include": {"cloud": True}}).json()
     run = client.post(f"{base}/runs", headers=headers, json={"include": {"cloud": True}, "client_request_id": "ct-live-1",

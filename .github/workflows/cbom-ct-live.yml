@@ -141,10 +141,12 @@ jobs:
           path: ${{ github.workspace }}/ct-live
           retention-days: 30
 
-  # Paging, live: google.com lists about 200 unexpired issuances, so 2 full pages and the empty one (3 queries). The
-  # oracle reads before the product run only (3 + 3 queries of the 10): its listing is also the "after" side.
+  # Paging, live: www.google.com alone (include_subdomains false, so Cert Spotter's single-host quota of 100 an hour,
+  # not the 10 full-domain queries: google.com with its subdomains is more than 10 pages, run 43568111083) lists more
+  # than one page with match_wildcards. The oracle reads before the product run only: its listing is also the "after"
+  # side.
   live-paging:
-    name: paging live (google.com)
+    name: paging live (www.google.com)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
@@ -174,10 +176,10 @@ jobs:
         working-directory: backend
         run: uv sync --frozen
       - name: Oracle (Cert Spotter, every page)
-        run: python3 bench/ct/capture.py "$OUT/before" --cases live --domains google.com --tag before
+        run: python3 bench/ct/capture.py "$OUT/before" --cases live --domains www.google.com --no-subdomains --tag before
       - name: Product run (Cert Spotter)
         working-directory: backend
-        run: CBOM_CT_PROVIDER=certspotter uv run --frozen python scripts/ct_live_proof.py --domains google.com --out "$OUT/collector.json"
+        run: CBOM_CT_PROVIDER=certspotter uv run --frozen python scripts/ct_live_proof.py --domains www.google.com --no-subdomains --out "$OUT/collector.json"
       - name: Compare row by row, and the product read more than one page
         if: always()
         run: |
@@ -187,7 +189,7 @@ jobs:
           job = json.load(open(sys.argv[1]))["job"]["result"]
           pages = {t["target"]: t.get("pages") for t in job["targets"]}
           print("pages per name:", pages, "provider calls:", job.get("provider_calls"))
-          sys.exit(0 if pages.get("google.com", 0) >= 3 else 1)  # two pages or more, then the empty one
+          sys.exit(0 if pages.get("www.google.com", 0) >= 3 else 1)  # two pages or more, then the empty one
           EOF
       - name: Summary
         if: always()
