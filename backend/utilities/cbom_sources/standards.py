@@ -395,7 +395,8 @@ REQUIREMENTS: dict[str, tuple[str, str]] = {
         "cnsa_2_0",
         "CNSA 2.0 symmetric + hashing: AES-256 and SHA-384/512 only",
     ),
-    # the code lane's title names the parameter sets; post-quantum names live in algid only
+    # the code lane's title also names the parameter sets: post-quantum names
+    # live in algid only
     "CNSA-2": (
         "cnsa_2_0",
         "Quantum-resistant algorithms at the CNSA 2.0 parameter set",
