@@ -31,6 +31,7 @@ from backend.utilities.cbom_sources import algid, crypto_kb
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
 from backend.utilities.cbom_sources.classify import (
     KEX_PRIMITIVES,
+    aws_pq_policy_groups,
     cert_identity_input,
     kex_identity,
     pq_kex_evidence,
@@ -132,6 +133,7 @@ def _safe_class(asset_type: str, algorithm: Any, facts: dict[str, Any]) -> tuple
     if asset_type in _TLS_TYPES or asset_type in _KEX_ELSEWHERE_TYPES:
         if pq_kex_evidence(facts):  # the raw facts, as stored: classify reads the same evidence (CB-04)
             groups = [facts.get(k) for k in ("negotiated_group", "pq_group", "group")] + _names(facts.get("groups"))
+            groups += aws_pq_policy_groups(facts)  # an AWS PQ policy names its groups in AWS's documentation (algid)
             if any(pq_key_exchange(g, "tls_group") and _named_pq_kex(g) for g in groups):
                 return "hybrid", "pq_kex_accepted"
             return "unknown", "pq_group_unnamed"

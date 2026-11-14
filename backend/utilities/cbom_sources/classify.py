@@ -179,6 +179,13 @@ def aws_pq_policy(facts: dict[str, Any]) -> bool:
     return any(algid.aws_tls_policy(service, facts.get(key)) is not None for key, service in _AWS_POLICY_FACTS)
 
 
+
+def aws_pq_policy_groups(facts: dict[str, Any]) -> list[str]:
+    """The post-quantum hybrid groups AWS documents for the facts' TLS policy (algid's table), [] when the policy is
+    not post-quantum, the load balancer is classic, or AWS names no groups for it (the API Gateway PQ policies)."""
+    if facts.get("classic"):
+        return []
+    return [g for key, service in _AWS_POLICY_FACTS for g in (algid.aws_tls_policy(service, facts.get(key)) or ())]
 def pq_kex_evidence(facts: dict[str, Any]) -> bool | None:
     """Whether a TLS endpoint's facts show a post-quantum key exchange: True, False, or None when they say nothing.
 

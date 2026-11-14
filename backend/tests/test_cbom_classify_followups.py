@@ -104,10 +104,14 @@ def test_every_aws_pq_policy_is_graded_on_its_classical_fallback(asset_type, fac
 
     v = classify(asset_type, None, None, "TLS", facts, NOW)
     row = {"asset_type": asset_type, "quantum_vulnerable": v["quantum_vulnerable"], "facts": facts}
-    cls = classify_pqc(row, v["finding_codes"])[0]
+    cls, basis = classify_pqc(row, v["finding_codes"])
     fallback, why = qgrade.classical_fallback(asset_type, facts, v["finding_codes"])
-    assert cls == "hybrid" and fallback is True and "also accepts classical key exchange" in why
-    assert qgrade.graded_class(cls, fallback) == "quantum-vulnerable"
+    assert fallback is True and "also accepts classical key exchange" in why
+    if asset_type == "load_balancer_tls":  # AWS names the ELB PQ policies' groups (algid): a hybrid, graded classical
+        assert (cls, basis) == ("hybrid", "pq_kex_accepted")
+        assert qgrade.graded_class(cls, fallback) == "quantum-vulnerable"
+    else:  # AWS names no group for the API Gateway PQ policies: unknown (CB-18 EC-1), which grade rule 4 makes Q0
+        assert (cls, basis) == ("unknown", "pq_group_unnamed")
 
 
 def test_a_classic_or_non_pq_aws_policy_gets_no_aws_fallback_reason():
