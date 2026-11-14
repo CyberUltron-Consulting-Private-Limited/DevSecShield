@@ -634,7 +634,7 @@ def _contexts_from_build_images() -> dict[str, tuple]:
     out = {}
     for m in re.finditer(r"\n  build ([a-z-]+) (\S+) (\S+)(.*?)\n(?!    --build-context)", text + "\n", re.S):
         extra = re.findall(r"--build-context (\S+)", m.group(4))
-        out[m.group(1)] = (m.group(3), m.group(2), " ".join(extra))
+        out[m.group(1)] = (m.group(3), m.group(2), ",".join(extra))  # build-push-action lists are comma-separated
     return out
 
 

@@ -26,7 +26,7 @@ export default function GradeInputsCard({ teamId, isAdmin }: { teamId: number; i
   const withLifetime = (sources.data?.sources ?? []).filter((s) => typeof s.config?.data_lifetime_years === "number");
   const gaps = (evidence.data?.q0_gaps ?? []).filter((g) => g.counted);
   return (
-    <SectionCard title="Grade inputs"
+    <SectionCard infoId="cbsrc.rr.grade_inputs" title="Grade inputs"
                  description="Recorded when you start a run: the run's quantum risk grades use these, whatever changes later">
       <div className="space-y-3 text-sm" data-testid="grade-inputs-card">
         <div className="flex flex-wrap items-center gap-2" data-testid="grade-inputs-mosca" data-mosca={moscaText(mosca)}>

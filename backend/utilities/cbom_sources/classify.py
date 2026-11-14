@@ -279,18 +279,50 @@ def _key_rules(out: _Out, algorithm: Any, size: Any, what: str) -> None:
 
 
 def _kms_no_rotation_text(facts: dict[str, Any]) -> str:
-    """KMS_NO_ROTATION's text. Automatic rotation exists only for keys whose material AWS KMS generated (origin
-    AWS_KMS; imported material and custom key stores cannot rotate automatically, CB-33 B1). A multi-Region replica
-    takes its rotation from its primary key, so the text names the primary; a Disabled key must be enabled first."""
+    """KMS_NO_ROTATION's text, naming the command of the provider the key lives in (the KB entry lists all four).
+    AWS: automatic rotation exists only for keys whose material AWS KMS generated (origin AWS_KMS; imported material
+    and custom key stores cannot rotate automatically, CB-33 B1). A multi-Region replica takes its rotation from its
+    primary key, so the text names the primary; a Disabled key must be enabled first."""
+    if facts.get("provider") == "gcp":
+        return gcp_no_rotation_text(facts)
+    if facts.get("provider") == "azure":
+        return azure_no_rotation_text(facts)
     text = "Customer-managed KMS key has automatic rotation off"
     primary = facts.get("primary_key_arn")
-    if facts.get("multi_region_type") == "REPLICA" and primary:
+    replica = facts.get("multi_region_type") == "REPLICA" and primary
+    if replica:
         text += (f"; this is a multi-Region replica, whose rotation is set on its primary key {str(primary)[:200]}: "
                  f"run aws kms enable-key-rotation --key-id {str(primary)[:200]} in the primary's Region")
     if facts.get("key_state") == "Disabled":
         text += ("; the key is disabled: enable the key first (aws kms enable-key), then turn rotation on, or "
                  "schedule its deletion if it is unused")
+    elif not replica:
+        text += f"; turn it on with aws kms enable-key-rotation --key-id {_key_ref(facts, '<key-id>')}"
     return text
+
+
+def _key_ref(facts: dict[str, Any], default: str) -> str:
+    """The key's own identifier for a command in a finding text (ARN, Cloud KMS resource name, Key Vault key id)."""
+    ref = str(facts.get("identity") or "").strip()
+    return ref[:300] if ref and not any(c.isspace() for c in ref) else default
+
+
+def gcp_no_rotation_text(facts: dict[str, Any]) -> str:
+    return ("Cloud KMS key has no automatic rotation (no rotation period); set one with gcloud kms keys update "
+            f"{_key_ref(facts, '<key>')} --rotation-period 90d --next-rotation-time <RFC 3339 time>")
+
+
+def azure_no_rotation_text(facts: dict[str, Any]) -> str:
+    return ("Key Vault key has no automatic rotation (its rotation policy has no Rotate action); set one with "
+            f"az keyvault key rotation-policy update --id {_key_ref(facts, '<key-id>')} --value <policy.json with a "
+            "Rotate lifetime action>")
+
+
+def vault_no_rotation_text(facts: dict[str, Any]) -> str:
+    mount = str(facts.get("mount") or "transit").strip("/")[:64] or "transit"
+    mount = mount if not any(c.isspace() for c in mount) else "transit"
+    return (f"Vault transit key has no automatic rotation (auto_rotate_period 0); set one with vault write "
+            f"{mount}/keys/<key>/config auto_rotate_period=90d")
 
 
 KMS_MATERIAL_WINDOW = _dt.timedelta(days=30)  # owner decision (CB-33 OQ-2): Medium, 30 days ahead
@@ -349,14 +381,18 @@ def _cert_unused_applies(facts: dict[str, Any]) -> bool:
             and facts.get("exported") is not True and facts.get("key_pair_origin") != "ACME")
 
 
-def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now: _dt.datetime) -> None:
+def _expiry_rules(out: _Out, facts: dict[str, Any], now: _dt.datetime, what: str = "Certificate") -> None:
     not_after = _parse_time(facts.get("not_after"))
     if not_after is not None:
         days = (not_after - now).total_seconds() / 86400
         if days < 0:
-            out.add("CERT_EXPIRED", "High", f"Certificate expired on {not_after.date().isoformat()}")
+            out.add("CERT_EXPIRED", "High", f"{what} expired on {not_after.date().isoformat()}")
         elif days <= 30:
-            out.add("CERT_EXPIRES_30D", "Medium", f"Certificate expires in {int(days)} days")
+            out.add("CERT_EXPIRES_30D", "Medium", f"{what} expires in {int(days)} days")
+
+
+def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now: _dt.datetime) -> None:
+    _expiry_rules(out, facts, now)
     sig = _upper(facts.get("sig_alg"))
     sha1 = "SHA1" in sig.replace("-", "")
     if "MD5" in sig or "MD2" in sig:
@@ -730,6 +766,11 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             if facts.get("rotation_enabled") is False and facts.get("key_spec") == "SYMMETRIC_DEFAULT" \
                     and facts.get("key_manager") == "CUSTOMER" and facts.get("origin") in (None, "AWS_KMS"):
                 out.add("KMS_NO_ROTATION", "Medium", _kms_no_rotation_text(facts))
+            elif facts.get("provider") == "azure" and facts.get("rotation_enabled") is False:
+                # Azure Key Vault rotates any key type (RSA, EC, oct-HSM) by its rotation policy: a key whose policy has
+                # no Rotate action never rotates.  Same code and severity as AWS / Google Cloud KMS and Vault transit
+                # (C9); a policy that could not be read (rotation_enabled None) is unknown, not "off".
+                out.add("KMS_NO_ROTATION", "Medium", azure_no_rotation_text(facts))
             if facts.get("key_state") == "PendingDeletion":
                 out.add("KMS_PENDING_DELETION", "Low", "KMS key is pending deletion")
             _kms_material_rules(out, facts, now)
@@ -745,6 +786,10 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
                 qv = False
         if asset_type == "signing_key" and _upper(facts.get("signature_alg")).replace("-", "").endswith("SHA1"):
             out.add("SIG_SHA1", "High", f"Signing uses {facts.get('signature_alg')}")
+        if asset_type == "signing_key":
+            # an IdP signing key published with its certificate (SAML metadata, JWKS x5c) lives as long as that
+            # certificate: expired is CERT_EXPIRED / High like every expired certificate (C10c)
+            _expiry_rules(out, facts, now, "Signing key's certificate")
         if asset_type == "k8s_certificate" and facts.get("not_after"):
             _cert_rules(out, facts, algorithm, key_size, now)
     elif asset_type in ("tls_endpoint", "database_tls", "load_balancer_tls", "cdn_tls", "api_tls", "k8s_ingress_tls"):
@@ -1013,7 +1058,8 @@ CLASSIFIER_VERSION = _rules_version()
 # counts, the posture totals, the heat map, the migration waves, the asset panel and the CycloneDX export) shows the
 # verdict judged TODAY instead, with the run's verdict beside it, so a library that reaches end of life after a run
 # is a finding everywhere at once, not only in the panel, and not only after the next run.
-CERT_DATED_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate"})
+CERT_DATED_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate",
+                              "signing_key"})  # an IdP signing key carries its certificate's notAfter
 LIBRARY_DATED_TYPES = frozenset({"crypto_library", "process_library"})
 KEY_DATED_TYPES = frozenset({"kms_key"})  # imported key material expiry (KMS_KEY_MATERIAL_EXPIRES, CB-33)
 DATED_TYPES = CERT_DATED_TYPES | LIBRARY_DATED_TYPES | KEY_DATED_TYPES

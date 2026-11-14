@@ -32,6 +32,7 @@ import { NodeDownloads } from "./NodeDownloads";
 import {
   DEFAULT_PROXY_CA_FILE,
   DEPLOY_SUPPORT,
+  NETWORK_REQUIREMENTS,
   ago,
   insecureApiWarning,
   nodeApiPort,
@@ -62,6 +63,7 @@ import {
   Truncate,
   useMenuReveal,
 } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 // A build may name a registry customers can pull the node image from; otherwise (and unless the server names one,
 // CBOM_NODE_IMAGE_REF) the wizard offers the image file this server serves, and no pull.
@@ -292,13 +294,14 @@ export default function ScanNodesTab({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Scan nodes" value={nodes.length} />
-        <StatCard label="Online" value={online} tone={online ? "green" : undefined} />
-        <StatCard label="Offline" value={offline} tone={offline ? "red" : undefined} />
-        <StatCard label="Targets assigned" value={assigned.toLocaleString()} hint="Servers and addresses routed through these nodes" />
+        <StatCard infoId="cbsrc.nodes.count" label="Scan nodes" value={nodes.length} />
+        <StatCard infoId="cbsrc.nodes.online" label="Online" value={online} tone={online ? "green" : undefined} />
+        <StatCard infoId="cbsrc.nodes.offline" label="Offline" value={offline} tone={offline ? "red" : undefined} />
+        <StatCard infoId="cbsrc.nodes.assigned" label="Targets assigned" value={assigned.toLocaleString()} hint="Servers and addresses routed through these nodes" />
       </div>
 
       <SectionCard
+        infoId="cbsrc.nodes.list"
         title="Registered scan nodes"
         description={apiPort ? `One node per network segment. Each connects out to ZeroShield on port ${apiPort} only.` : "One node per network segment."}
         actions={
@@ -339,14 +342,14 @@ export default function ScanNodesTab({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Node</TableHead>
-                    <TableHead>Segment</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Runs as</TableHead>
-                    <TableHead>Version</TableHead>
-                    <TableHead>Requests</TableHead>
-                    <TableHead>Last seen</TableHead>
-                    <TableHead className="text-right">Targets</TableHead>
+                    <TableHead>Node <InfoTip id="cbsrc.nodes.col.node" /></TableHead>
+                    <TableHead>Segment <InfoTip id="cbsrc.nodes.col.segment" /></TableHead>
+                    <TableHead>Status <InfoTip id="cbsrc.nodes.col.status" /></TableHead>
+                    <TableHead>Runs as <InfoTip id="cbsrc.nodes.col.runs_as" /></TableHead>
+                    <TableHead>Version <InfoTip id="cbsrc.nodes.col.version" /></TableHead>
+                    <TableHead>Requests <InfoTip id="cbsrc.nodes.col.requests" /></TableHead>
+                    <TableHead>Last seen <InfoTip id="cbsrc.nodes.col.last_seen" /></TableHead>
+                    <TableHead className="text-right">Targets <InfoTip id="cbsrc.nodes.col.targets" /></TableHead>
                     <TableHead className="w-12">
                       <span className="sr-only">Actions</span>
                     </TableHead>
@@ -433,6 +436,7 @@ export default function ScanNodesTab({
 
       {wizardOpen && (
         <SectionCard
+          infoId="cbsrc.nodes.add"
           id={WIZARD_ID}
           className="scroll-mt-4"
           title={created?.again ? `Register ${wizard.name || "this scan node"} again` : "Add a scan node"}
@@ -453,16 +457,16 @@ export default function ScanNodesTab({
             <li>
               <StepTitle n={1} title="Name and segment" />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Field label="Node name" htmlFor="node-name" required error={wizardError}>
+                <Field infoId="cbsrc.nodes.name" label="Node name" htmlFor="node-name" required error={wizardError}>
                   <Input id="node-name" value={wizard.name} disabled={!!created} maxLength={64} placeholder="dc-mumbai-01"
                     onChange={(e) => setWizard({ ...wizard, name: e.target.value })} />
                 </Field>
-                <Field label="Network segment" htmlFor="node-segment" hint="Pick one or type your own">
+                <Field infoId="cbsrc.nodes.segment" label="Network segment" htmlFor="node-segment" hint="Pick one or type your own">
                   <Input id="node-segment" list="cbom-segments" value={wizard.segment} disabled={!!created} maxLength={64}
                     onChange={(e) => setWizard({ ...wizard, segment: e.target.value })} />
                   <datalist id="cbom-segments">{SEGMENTS.map((s) => <option key={s} value={s} />)}</datalist>
                 </Field>
-                <Field label="Time zone" htmlFor="node-tz">
+                <Field infoId="cbsrc.nodes.tz" label="Time zone" htmlFor="node-tz">
                   <Select value={wizard.timezone} disabled={!!created} onValueChange={(v) => setWizard({ ...wizard, timezone: v })}>
                     <SelectTrigger id="node-tz" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -475,7 +479,7 @@ export default function ScanNodesTab({
 
             <li>
               <StepTitle n={2} title="Choose how to run it" />
-              <ChoiceCards name="node-deploy" label="Deployment" columns={4} value={wizard.deployment}
+              <ChoiceCards infoId="cbsrc.nodes.deploy" name="node-deploy" label="Deployment" columns={4} value={wizard.deployment}
                 onChange={(v) => setWizard({ ...wizard, deployment: v })}
                 options={DEPLOY_OPTIONS.map((o) => ({ ...o, disabled: !!created && o.value !== wizard.deployment }))} />
               <NodeDownloads teamId={teamId} method={method} artifacts={artifactsQuery.data}
@@ -488,13 +492,13 @@ export default function ScanNodesTab({
                       <div className="space-y-1" data-testid="node-command-pull">
                         <p className="text-sm font-medium text-zinc-900 dark:text-white">
                           Install with one command: the image comes from{" "}
-                          <span className="font-mono">{registryHost}</span> (public, no login needed)
+                          <span className="font-mono">{registryHost}</span> (public, no login needed) <InfoTip id="cbsrc.nodes.registry_pull" />
                         </p>
                         <NodeCommandBlock apiUrl={apiUrl} code={registryCmd} />
                       </div>
                       <div className="space-y-2 pt-2" data-testid="node-air-gapped">
                         <p className="text-sm font-medium text-zinc-900 dark:text-white">
-                          Air-gapped host, or no access to <span className="font-mono">{registryHost}</span>? Use the files from ZeroShield:
+                          Air-gapped host, or no access to <span className="font-mono">{registryHost}</span>? Use the files from ZeroShield: <InfoTip id="cbsrc.nodes.files_install" />
                         </p>
                         {fileCommands}
                       </div>
@@ -556,7 +560,7 @@ export default function ScanNodesTab({
               <div className="border rounded-lg overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow><TableHead>Destination</TableHead><TableHead>Port</TableHead><TableHead>Used for</TableHead></TableRow>
+                    <TableRow><TableHead>Destination <InfoTip id="cbsrc.nodes.col.destination" /></TableHead><TableHead>Port <InfoTip id="cbsrc.nodes.col.port" /></TableHead><TableHead>Used for <InfoTip id="cbsrc.nodes.col.used_for" /></TableHead></TableRow>
                   </TableHeader>
                   <TableBody>
                     <ApiEgressRow apiUrl={apiUrl} />
@@ -565,11 +569,11 @@ export default function ScanNodesTab({
                 </Table>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                <Field label="Proxy (optional)" htmlFor="node-proxy" hint="http://proxy.example.local:8080">
+                <Field infoId="cbsrc.nodes.proxy" label="Proxy (optional)" htmlFor="node-proxy" hint="http://proxy.example.local:8080">
                   <Input id="node-proxy" value={wizard.proxyUrl} disabled={!!created} placeholder="http://proxy.bank.local:8080"
                     onChange={(e) => setWizard({ ...wizard, proxyUrl: e.target.value })} />
                 </Field>
-                <Field label="Proxy CA certificate" htmlFor="node-proxy-ca" hint={wizard.proxyCaName || "PEM file, only if your proxy inspects TLS"}>
+                <Field infoId="cbsrc.nodes.proxy_ca" label="Proxy CA certificate" htmlFor="node-proxy-ca" hint={wizard.proxyCaName || "PEM file, only if your proxy inspects TLS"}>
                   <Input id="node-proxy-ca" type="file" accept=".pem,.crt,.cer" disabled={!!created} className="cursor-pointer"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
@@ -585,7 +589,7 @@ export default function ScanNodesTab({
                 </Field>
               </div>
               <div className="mt-3">
-                <Checkbox2 id="node-tls-inspect" checked={wizard.tlsInspect} onChange={(v) => !created && setWizard({ ...wizard, tlsInspect: v })}>
+                <Checkbox2 infoId="cbsrc.nodes.tls_inspect" id="node-tls-inspect" checked={wizard.tlsInspect} onChange={(v) => !created && setWizard({ ...wizard, tlsInspect: v })}>
                   My proxy inspects TLS; trust its CA only for ZeroShield hostnames
                 </Checkbox2>
               </div>
@@ -625,7 +629,7 @@ export default function ScanNodesTab({
         </SectionCard>
       )}
 
-      <SectionCard title="What the node does, and never does">
+      <SectionCard infoId="cbsrc.nodes.does" title="What the node does, and never does">
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-zinc-700 dark:text-zinc-300">
           <li>Opens no inbound ports. It only connects out to {apiHost(apiUrl)}{apiPort ? ` on port ${apiPort}` : ""}.</li>
           <li>Secrets you enter are encrypted at rest by ZeroShield and sent only to the scan node that runs the job.</li>
@@ -633,9 +637,12 @@ export default function ScanNodesTab({
           <li>Reads with read-only accounts and the published command list shown on the Servers tab.</li>
           <li>Sends metadata only: algorithms, key sizes, versions and locations. For private keys, only the public half is read.</li>
         </ul>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-4">
-          Fully air-gapped network? Use the on-prem edition: the whole platform runs inside your data centre.
-        </p>
+        <div className="mt-4" data-testid="node-network-requirements">
+          <p className="text-sm font-medium text-zinc-900 dark:text-white">Network requirements <InfoTip id="cbsrc.nodes.network_req" /></p>
+          <ul className="list-disc pl-5 space-y-1 mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            {NETWORK_REQUIREMENTS.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        </div>
       </SectionCard>
 
       {editing && (
@@ -757,7 +764,7 @@ function NodeDialog({
             </dl>
             {node.ssh_public_key && (
               <div className="space-y-2">
-                <p className="text-sm font-medium">Node SSH public key</p>
+                <p className="text-sm font-medium">Node SSH public key <InfoTip id="cbsrc.nodes.ssh_key" /></p>
                 <div className="flex items-start gap-2">
                   <code className="flex-1 min-w-0 break-all rounded-md border bg-zinc-50 dark:bg-zinc-950 p-2 text-xs">{node.ssh_public_key}</code>
                   <CopyButton text={node.ssh_public_key} />
@@ -765,13 +772,13 @@ function NodeDialog({
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Node name" htmlFor="edit-node-name" required error={error}>
+              <Field infoId="cbsrc.nodes.name" label="Node name" htmlFor="edit-node-name" required error={error}>
                 <Input id="edit-node-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
               </Field>
-              <Field label="Network segment" htmlFor="edit-node-segment">
+              <Field infoId="cbsrc.nodes.segment" label="Network segment" htmlFor="edit-node-segment">
                 <Input id="edit-node-segment" value={segment} maxLength={64} list="cbom-segments" onChange={(e) => setSegment(e.target.value)} />
               </Field>
-              <Field label="Time zone" htmlFor="edit-node-tz">
+              <Field infoId="cbsrc.nodes.tz" label="Time zone" htmlFor="edit-node-tz">
                 <Select value={timezone} onValueChange={setTimezone}>
                   <SelectTrigger id="edit-node-tz" className="w-full cursor-pointer"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -779,7 +786,7 @@ function NodeDialog({
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Proxy" htmlFor="edit-node-proxy">
+              <Field infoId="cbsrc.nodes.proxy" label="Proxy" htmlFor="edit-node-proxy">
                 <Input id="edit-node-proxy" value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="http://proxy:8080" />
               </Field>
             </div>
@@ -843,12 +850,13 @@ function RequestSigningCard({ teamId, nodes }: { teamId: number; nodes: CbomScan
   const legacy = nodes.filter((n) => n.enrolled_at && n.signing === "legacy");
   return (
     <SectionCard
+      infoId="cbsrc.nodes.signing"
       title="Request signing"
       description="Scan nodes sign every request with a key made at enrollment, so a copied node token alone is not enough to act as the node."
     >
       <div className="space-y-2" data-testid="require-signed-nodes">
         {isAdmin ? (
-          <Checkbox2 id="require-signed-nodes" checked={settings.require_signed_nodes}
+          <Checkbox2 infoId="cbsrc.nodes.require_signed" id="require-signed-nodes" checked={settings.require_signed_nodes}
             onChange={(on) => { if (!save.isPending) save.mutate(on); }}>
             Require signed scan nodes (refuse nodes that do not sign their requests)
           </Checkbox2>

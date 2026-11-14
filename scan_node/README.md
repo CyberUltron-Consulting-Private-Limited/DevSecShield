@@ -11,16 +11,16 @@ Create a node in ZeroShield (**CBOM Sources → Scan nodes → Add scan node**),
 (**Download scan node image**: `scan-node-<version>.tar.gz` and its `.sha256`), and run the commands it shows:
 
 ```sh
-sha256sum -c scan-node-1.0.0.tar.gz.sha256
-docker load -i scan-node-1.0.0.tar.gz          # loads localhost/zeroshield/cbom-scan-node:1.0.0
+sha256sum -c scan-node-1.0.0.tar.gz.sha256 && \
+docker load -i scan-node-1.0.0.tar.gz && \
 docker run -d --pull never --name zs-scan-node-dc-mumbai-01 --restart unless-stopped \
-  -e ZS_API_URL='https://api.zeroshield.ai' \
+  -e ZS_API_URL='<the API URL shown in the Add scan node wizard>' \
   -e ZS_REGISTRATION_TOKEN='zsr_…' \
   -v zs-node-dc-mumbai-01:/var/lib/zs-node \
   localhost/zeroshield/cbom-scan-node:1.0.0
 ```
 
-`--pull never`: Docker runs the image it loaded from the file and never looks for that name in a registry. When the
+The checks gate the next step (`&&`): a file that fails its SHA-256 check is never loaded or run. `--pull never`: Docker runs the image it loaded from the file and never looks for that name in a registry. When the
 ZeroShield server names a registry customers can pull the image from (`CBOM_NODE_IMAGE_REF`), the wizard also shows
 a `docker run` with that image instead.
 
@@ -132,8 +132,7 @@ refused. Copy both files to the host, check the file, and load
 it; then run the install command (`--pull never`: Docker uses the loaded image and does not pull):
 
 ```sh
-sha256sum -c scan-node-<version>.tar.gz.sha256
-docker load -i scan-node-<version>.tar.gz     # localhost/zeroshield/cbom-scan-node:<version>
+sha256sum -c scan-node-<version>.tar.gz.sha256 && docker load -i scan-node-<version>.tar.gz   # nothing loads if the check fails
 ```
 
 The image installs `requirements.lock`: every Python package pinned with sha256 hashes. After editing
@@ -150,7 +149,12 @@ shell-quoted, and are read with commands that print **public** material only (`o
 use per (address, port, key type); a changed key stops the target before any credential is sent.
 
 **Windows (WinRM HTTPS 5986).** Read-only PowerShell: certificate stores, SCHANNEL protocol keys, TLS cipher
-suite order, BitLocker, RDP security layer.
+suite order, BitLocker, RDP security layer. For a certificate with a private key, the key's provider comes from the
+certificate's KEY_PROV_INFO property in the store's registry value (`HKLM\SOFTWARE\Microsoft\SystemCertificates\
+<store>\Certificates\<thumbprint>`, `Blob`): `key_provider`, `key_provider_type` (CNG or CAPI) and
+`key_provider_class` (`software`, `tpm`, `smartcard`, `hsm`, or `other` for a provider outside the reviewed list).
+No key is ever opened, so exportability is known only from a hardware provider (`key_exportable: false`, basis
+`provider`); for a software key it stays not read.
 
 **Kubernetes.** Static token or client-certificate kubeconfig only (exec plugins and
 `insecure-skip-tls-verify` are refused). Tier 1: version, nodes, ingress TLS, cert-manager Certificates, Istio

@@ -171,6 +171,10 @@ export interface NodeImage {
   /** the downloaded image file and Helm chart (the server's names; default scan-node-<tag>.tar.gz, cbom-scan-node-<tag>.tgz) */
   archive?: string
   chart?: string
+  /** the server's SHA-256 of the image file and of the chart: written into the command, so the check cannot be skipped
+   * by a missing .sha256 file (#228) */
+  archiveSha256?: string
+  chartSha256?: string
 }
 
 /** The name scripts/release/scan_node_image.sh saves the image under (SCAN_NODE_IMAGE's default) for the scan node's
@@ -199,10 +203,17 @@ export interface NodeArtifacts {
 
 /** The image the commands load and run, and the registry image when one is configured. */
 export function nodeImages(data: NodeArtifacts | undefined | null, buildPullRef?: string | null): { loaded: NodeImage; pulled: NodeImage | null } {
-  const file = (kind: NodeArtifact["kind"]) => data?.artifacts.find((a) => a.kind === kind && a.available)?.filename ?? undefined
-  const loaded: NodeImage = { image: data?.image_ref || DEFAULT_NODE_IMAGE, pull: false, archive: file("image"), chart: file("helm-chart") }
+  const found = (kind: NodeArtifact["kind"]) => data?.artifacts.find((a) => a.kind === kind && a.available) ?? null
+  const sha = (kind: NodeArtifact["kind"]) => {
+    const value = found(kind)?.sha256
+    return value && /^[0-9a-f]{64}$/.test(value) ? value : undefined
+  }
+  const loaded: NodeImage = {
+    image: data?.image_ref || DEFAULT_NODE_IMAGE, pull: false, archive: found("image")?.filename ?? undefined,
+    chart: found("helm-chart")?.filename ?? undefined, archiveSha256: sha("image"), chartSha256: sha("helm-chart"),
+  }
   const ref = (data?.pull_image_ref || buildPullRef || "").trim()
-  return { loaded, pulled: ref ? { image: ref, pull: true, chart: loaded.chart } : null }
+  return { loaded, pulled: ref ? { image: ref, pull: true, chart: loaded.chart, chartSha256: loaded.chartSha256 } : null }
 }
 
 function splitImage(image: string): [string, string] {
@@ -218,22 +229,37 @@ export function nodeFiles(img: NodeImage): { archive: string; chart: string; tag
 
 /** Where the Helm chart comes from and which image it runs: the downloaded chart always; the image either pushed by
  * the customer to their own registry ($REGISTRY, set in the first line) or the configured registry image. */
+/** The check of a downloaded file, written to gate the next command (`check && \`): the server's SHA-256 inline when
+ * known (a missing .sha256 file cannot skip it), else the file's .sha256 (missing: sha256sum fails, nothing runs). */
+export function checkFile(file: string, sha256?: string): string {
+  return sha256 && /^[0-9a-f]{64}$/.test(sha256) ? `echo '${sha256}  ${file}' | sha256sum -c -` : `sha256sum -c ${file}.sha256`
+}
+
+/** Where the Helm chart comes from and which image it runs: the downloaded chart always; the image either pushed by
+ * the customer to their own registry ($REGISTRY, set in the first line) or the configured registry image. Every
+ * step is chained with && from the checks on (#228): a file that fails its SHA-256 check is never loaded, pushed or
+ * installed. */
 function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: string; tag: string } {
   const { archive, chart, tag } = nodeFiles(img)
+  const chartCheck = `${checkFile(chart, img.chartSha256)} && \\`
   if (img.pull) {
     const [repo, ptag] = splitImage(img.image)
-    return { steps: [], chart: `./${chart}`, repoArg: shQuote(repo), tag: ptag }
+    return {
+      steps: ["# The chart you downloaded (Download Helm chart); nothing is installed if its check fails:", chartCheck],
+      chart: `./${chart}`, repoArg: shQuote(repo), tag: ptag,
+    }
   }
   const base = splitImage(img.image)[0].split("/").pop() || "cbom-scan-node"
   return {
     steps: [
-      "# 1. The image, from the file you downloaded (Download scan node image), pushed to a registry your cluster pulls from:",
+      "# The image file and the chart you downloaded (Download scan node image, Download Helm chart): the image is pushed",
+      "# to a registry your cluster pulls from, then the chart installed. Nothing is loaded, pushed or installed if a check fails.",
       "REGISTRY=registry.example.internal/zeroshield   # change to your registry",
-      `sha256sum -c ${archive}.sha256`,
-      `docker load -i ${archive}`,
-      `docker tag ${img.image} "$REGISTRY/${base}:${tag}"`,
-      `docker push "$REGISTRY/${base}:${tag}"`,
-      "# 2. The chart you downloaded (Download Helm chart):",
+      `${checkFile(archive, img.archiveSha256)} && \\`,
+      chartCheck,
+      `docker load -i ${archive} && \\`,
+      `docker tag ${img.image} "$REGISTRY/${base}:${tag}" && \\`,
+      `docker push "$REGISTRY/${base}:${tag}" && \\`,
     ],
     chart: `./${chart}`,
     repoArg: `"$REGISTRY/${base}"`,
@@ -274,19 +300,20 @@ function helmInstallLines(release: string, chart: string, repoArg: string, tag: 
 
 export function installCommand(
   method: DeployMethod,
-  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string },
+  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
-  const img: NodeImage = { image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart }
+  const img: NodeImage = { image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart,
+    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256 }
   if (method === "docker") {
     const { archive } = nodeFiles(img)
     return [
       ...(opts.pull ? [] : [
-        "# 1. Check and load the image file you downloaded (Download scan node image):",
-        `sha256sum -c ${archive}.sha256`,
-        `docker load -i ${archive}`,
-        "# 2. Run the node (--pull never: the image just loaded, never one from a registry):",
+        "# Check, load and run the image file you downloaded (Download scan node image); nothing is loaded or run if",
+        "# the check fails. --pull never: the image just loaded, never one from a registry.",
+        `${checkFile(archive, img.archiveSha256)} && \\`,
+        `docker load -i ${archive} && \\`,
       ]),
       ...dockerRunLines(opts, !opts.pull),
     ].join("\n")
@@ -455,16 +482,30 @@ export const DEPLOY_SUPPORT: Record<DeployMethod, { proven: boolean; note: strin
 /** The three steps under a build kit's download button (Add scan node, OVA and AMI). */
 export const KIT_STEPS: Record<"ova" | "ami", string[]> = {
   ova: [
-    "Download the OVA build kit and the scan node image file, unzip the kit and put the image file (and its .sha256) in its folder.",
+    "Download the OVA build kit and the scan node image file, unzip the kit, put the image file and its .sha256 in its folder and check it: sha256sum -c must print OK (never build from a file that fails).",
     "On a Linux machine with KVM, qemu-img and Packer: packer init ova.pkr.hcl, then packer build -var build_password=<random> ova.pkr.hcl (the kit's README.md has the details).",
     "Deploy the OVA in vSphere and set the vApp properties shown after you create the node.",
   ],
   ami: [
-    "Download the AMI build kit and the scan node image file, unzip the kit and put the image file (and its .sha256) in its folder.",
+    "Download the AMI build kit and the scan node image file, unzip the kit, put the image file and its .sha256 in its folder and check it: sha256sum -c must print OK (never build from a file that fails).",
     "With Packer and AWS credentials: packer init ami.pkr.hcl, then packer build -var region=<your region> ami.pkr.hcl (the kit's README.md has the details).",
     "Launch the AMI in the VPC that reaches your targets, with the cloud-config shown after you create the node as user data.",
   ],
 }
+
+/** The OVA/AMI build needs internet access (#230): the wizard says so next to the kit, with the offline ways. */
+export const KIT_NEEDS_INTERNET: Record<"ova" | "ami", string> = {
+  ova: "Building the OVA needs internet access on the build machine: it downloads the Ubuntu 24.04 cloud image (cloud-images.ubuntu.com), Packer's plugin (packer init, from GitHub) and Ubuntu packages (apt-get: Docker and updates). No internet there? Use the Docker image file (docker load on any Linux host with Docker), or the Helm chart with the image pushed to your own registry: neither needs internet at install time.",
+  ami: "Building the AMI needs internet access: Packer's plugin (packer init, from GitHub), AWS APIs, Canonical's Ubuntu 24.04 AMI, and Ubuntu packages (apt-get: Docker and updates) on the build instance. No internet there? Use the Docker image file (docker load on any Linux host with Docker), or the Helm chart with the image pushed to your own registry: neither needs internet at install time.",
+}
+
+/** What needs network access, for restricted networks (#230): shown on the Scan nodes tab. */
+export const NETWORK_REQUIREMENTS: string[] = [
+  "A scan node always needs outbound HTTPS to the ZeroShield API (nothing calls in); it reaches your targets directly.",
+  "Installing it from the image file or the Helm chart (both downloaded from ZeroShield) needs nothing else; pulling the image from a public registry, when the page offers it, needs access to that registry.",
+  "Building the OVA or AMI from the build kits needs internet access (Ubuntu image, Packer plugin, Ubuntu packages).",
+  "Cloud and identity sources (AWS, Azure, GCP, IdPs) are read from ZeroShield's servers, so those providers' APIs must be reachable from ZeroShield.",
+]
 
 /** The downloads Add scan node offers for each way of running a node, main one first. */
 export function downloadKinds(method: DeployMethod): NodeArtifact["kind"][] {
@@ -504,9 +545,10 @@ export function notAvailable(kind: NodeArtifact["kind"], artifact?: NodeArtifact
 
 /** The Helm command for agent mode: a DaemonSet whose pods each enroll with the agent pool token as their own node
  * (named after the Kubernetes node) and read only that node, from a read-only mount of its file system. */
-export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string }): string {
+export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string }): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
-  const src = helmSource({ image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart })
+  const src = helmSource({ image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart,
+    archiveSha256: opts.archiveSha256, chartSha256: opts.chartSha256 })
   return [
     ...src.steps,
     `helm upgrade --install zs-host-agents ${src.chart} \\`,
@@ -619,13 +661,43 @@ export function formatDateTime(iso: string | null | undefined, timeZone?: string
   }
 }
 
-/** "120 of 254 addresses" for a network range while it runs; null when the scan node does not report it (an older
- * node, another kind of job) or the job is not running, so those rows show what they showed before. */
-export function addressProgress(job: { status: string; progress?: { done: number; total: number } | null }): string | null {
+/** "120 of 254 addresses" for a network range while it runs, "377 of 1,200 account-regions" for an AWS source the
+ * cloud pool collects one account x region at a time (``unit`` from the API); null when the job does not report it (an
+ * older node, another kind of job) or is not running, so those rows show what they showed before. */
+export function addressProgress(job: { status: string; progress?: { done: number; total: number; unit?: string } | null }): string | null {
   const p = job.progress
   if (job.status !== "claimed" || !p || !Number.isFinite(p.total) || p.total <= 0) return null
   const done = Math.min(Math.max(0, Math.floor(p.done)), p.total)
+  if (p.unit === "account-regions") return `${done.toLocaleString()} of ${pluralize(p.total, "account-region", "account-regions")}`
   return `${done.toLocaleString()} of ${pluralize(p.total, "address", "addresses")}`
+}
+
+/** An AWS organisation's charge per run, as recorded at its last validation: "Estimated per run: 1,000 accounts × 4
+ * credits = 4,000 credits", and, when the count changed, "changed from 200 accounts (800 credits) on 14 Nov 2026", so
+ * a new charge is visible before the next scheduled run takes it. */
+export function orgEstimateLines(est: { accounts: number; credits_per_account: number; credits_per_run: number;
+  changed_from?: { accounts: number; credits_per_run: number }; changed_at?: string | null } | null | undefined,
+  timeZone?: string): { estimate: string; change: string | null } | null {
+  if (!est || !Number.isFinite(est.accounts) || !Number.isFinite(est.credits_per_run)) return null
+  const estimate = `Estimated per run: ${pluralize(est.accounts, "account")} × ${credits(est.credits_per_account)} credits = ${credits(est.credits_per_run)} credits`
+  let change: string | null = null
+  if (est.changed_from && Number.isFinite(est.changed_from.accounts)) {
+    const when = est.changed_at ? new Date(est.changed_at) : null
+    const day = when && !Number.isNaN(when.getTime())
+      ? when.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: timeZone ?? "UTC" })
+      : null
+    change = `Changed from ${pluralize(est.changed_from.accounts, "account")} (${credits(est.changed_from.credits_per_run)} credits)${day ? ` on ${day}` : ""}`
+  }
+  return { estimate, change }
+}
+
+/** An AWS organisation source validated before F1: its stored count stopped at 200 accounts and it has no recorded
+ * estimate, so its charge per run is not yet what F1 reads and charges. Its row asks for a re-validation. */
+export function orgEstimateStale(source: { kind: string; config?: Record<string, unknown> | null;
+  last_test_result?: { member_accounts?: number; estimate?: unknown } | null }): boolean {
+  if (source.kind !== "aws_account" || source.config?.scope !== "organization") return false
+  const r = source.last_test_result
+  return !!r && typeof r.member_accounts === "number" && r.member_accounts <= 200 && !r.estimate
 }
 
 /** A YYYY-MM-DD date shown without time-zone shifting. */

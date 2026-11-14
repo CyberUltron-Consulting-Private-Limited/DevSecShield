@@ -17,11 +17,13 @@ import time
 from typing import Any
 from urllib.parse import quote
 
+import paramiko
+
 from zs_scan_node import appliance_parsers as AP
 from zs_scan_node import netutil
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.collectors.linux_ssh import TargetFail, _credentials, _targets, open_session
-from zs_scan_node.jobctx import JobContext, register_asset_types
+from zs_scan_node.jobctx import JobContext, LeaseLost, register_asset_types
 from zs_scan_node.netutil import Blocked, Target
 
 register_asset_types("appliance_config")
@@ -210,6 +212,14 @@ def collect_target(ctx: JobContext, target: Target, vendor: str, config: dict, s
     return len(rows)
 
 
+def device_error(exc: Exception) -> str:
+    """What failed on one device, for its outcome or test sample (N6): the exception's class and message, scrubbed by
+    the caller (``ctx.outcome`` / the result scrubber), e.g. "SSHException: Error reading SSH protocol banner"."""
+    text = " ".join(str(exc).split())[:200]
+    kind = "SSH error" if isinstance(exc, (paramiko.SSHException, EOFError)) else "error"
+    return f"{kind} on this device ({exc.__class__.__name__}{': ' + text if text else ''}); the other devices are read"
+
+
 def _vendor(config: dict) -> str:
     vendor = str(config.get("vendor") or "")
     if vendor not in AP.PARSERS:
@@ -236,9 +246,11 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
             ctx.outcome(target.label, fail.status, fail.error, started=started)
         except ConfigError:
             raise
+        except LeaseLost:
+            raise
         except Exception as exc:  # one appliance must never end the job
             ctx.log("appliance error", target=target.label, error=exc.__class__.__name__, level="warn")
-            ctx.outcome(target.label, "error", exc.__class__.__name__, started=started)
+            ctx.outcome(target.label, "error", device_error(exc), started=started)
     return None
 
 
@@ -259,6 +271,11 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
             sample.update(status=fail.status, note=fail.error)
         except ConfigError as exc:
             sample.update(status="error", note=str(exc))
+        except LeaseLost:
+            raise
+        except Exception as exc:  # N6: an SSH (or any) error on one appliance fails that sample, never the test job
+            ctx.log("appliance test error", target=target.label, error=exc.__class__.__name__, level="warn")
+            sample.update(status="error", reachable=True, note=ctx.scrubber.text(device_error(exc)))
         ctx.samples.append(sample)
     ready = sum(1 for s in ctx.samples if s["status"] == "ready")
     return f"{ready} of {len(ctx.samples)} samples ready"

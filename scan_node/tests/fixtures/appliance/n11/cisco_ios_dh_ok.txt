@@ -1,0 +1,6 @@
+### show running-config | include ^ip ssh|^ip http
+ip ssh version 2
+ip ssh dh min size 4096
+ip ssh server algorithm encryption aes256-ctr
+### show running-config | section crypto
+### show crypto key mypubkey rsa

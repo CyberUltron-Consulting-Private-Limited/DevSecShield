@@ -26,6 +26,7 @@ import { FixClassChip, QGradeChip, type FixClassFields, type QGradeFields } from
 import { downloadCbomRunBom } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
+import { jobReadLabel, jobTargetsLine } from "./jobReadLabel";
 import { cbomSourcesKeys } from "./keys";
 import { LabModeBanner } from "./LabModeBanner";
 import { pluralize, targetGuidance } from "./logic";
@@ -33,6 +34,7 @@ import { RunInsights } from "./ChangesPanel";
 import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
 import { BulkAssignBar, useRunRemediation, WaveBadge } from "./WavesControls";
 import { ErrorBlock, LoadingBlock, StatusBadge, Truncate, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export const ASSET_TYPE_LABEL: Record<string, string> = {
   certificate: "Certificate",
@@ -76,7 +78,6 @@ export const ASSET_TYPE_LABEL: Record<string, string> = {
 
 const IMPACTS: CbomImpact[] = ["Critical", "High", "Medium", "Low"];
 const IMPACT_TONE: Record<CbomImpact, Tone> = { Critical: "red", High: "red", Medium: "amber", Low: "blue" };
-const OUTCOME: Record<string, [Tone, string]> = { ok: ["green", "All targets read"], partial: ["amber", "Partly read"], failed: ["red", "Nothing read"] };
 const TARGET_TONE: Record<string, Tone> = { ok: "green", partial: "amber", skipped_never_scan: "zinc", skipped_window: "amber", skipped_stop: "amber",
   skipped_deadline: "amber", skipped_cancelled: "zinc", not_supported: "zinc" };
 const TARGET_LABEL: Record<string, string> = {
@@ -124,17 +125,13 @@ export function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
   if (jobs.length === 0) return null;
   return (
     <div className="space-y-2" data-testid="run-results-targets">
-      <p className="text-sm font-medium text-zinc-900 dark:text-white">Targets</p>
+      <p className="text-sm font-medium text-zinc-900 dark:text-white">Targets <InfoTip id="cbom.run.targets" /></p>
       <ul className="space-y-2">
         {jobs.map((job) => {
           const problems = job.targets.filter((t) => t.status !== "ok");
-          const [tone, label] =
-            job.outcome === "ok" && problems.length > 0
-              ? ["amber", "Read, with errors"]
-              : job.outcome
-                ? OUTCOME[job.outcome] ?? ["zinc", job.outcome]
-                : ["blue", job.status === "pending" ? "Waiting" : "Running"];
-          const counts = job.counts;
+          const [tone, label] = jobReadLabel(job);
+          const targetsLine = jobTargetsLine(job);
+          const assetsRead = typeof job.assets_read === "number";
           return (
             <li key={job.job_id} className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 text-sm" data-testid={`run-results-job-${job.job_id}`}>
               <div className="flex flex-wrap items-center gap-2">
@@ -153,11 +150,9 @@ export function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
                 )}
               </div>
               <p className="mt-1 text-xs text-zinc-500">
-                {counts
-                  ? `${counts.ok ?? 0} read · ${counts.partial ? `${counts.partial} partly read · ` : ""}${counts.failed ?? 0} failed · ${counts.skipped ?? 0} skipped of ${counts.total ?? 0}`
-                  : job.summary ?? "No result yet"}
-                {" · "}
-                {pluralize(job.asset_count, "asset")}
+                {targetsLine ?? job.summary ?? "No result yet"}
+                {/* the badge already says how many assets were read; the stored-row count (gaps included) only when it does not */}
+                {assetsRead ? "" : ` · ${pluralize(job.asset_count, "asset")}`}
                 {job.duration_s != null ? ` · ${job.duration_s}s` : ""}
               </p>
               {job.error && <p className="mt-1 text-xs text-red-600 dark:text-red-400 break-words">{job.error}</p>}
@@ -327,6 +322,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
             ))}
           </SelectContent>
         </Select>
+        <InfoTip id="cbom.run.filter.type" className="self-center" />
         <Input
           className="w-full sm:w-[260px]"
           placeholder="Search location, algorithm or finding"
@@ -336,6 +332,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
           onKeyDown={(e) => e.key === "Enter" && set({ q: search.trim() || undefined })}
           onBlur={() => set({ q: search.trim() || undefined })}
         />
+        <InfoTip id="cbom.run.search" className="self-center" />
         {(filters.type || filters.impact || filters.quantum || filters.q) && (
           <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => { setSearch(""); setFilters({ page: 1, page_size: 50 }); }}>
             Clear filters
@@ -355,16 +352,16 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-6"><span className="sr-only">Expand</span></TableHead>
-                  <TableHead className="w-6"><span className="sr-only">Select for wave assignment</span></TableHead>
-                  <TableHead>Impact</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Where</TableHead>
-                  <TableHead>Algorithm</TableHead>
-                  <TableHead>Finding</TableHead>
-                  <TableHead>Quantum-vulnerable</TableHead>
-                  <TableHead>Quantum risk</TableHead>
-                  <TableHead>Fix class</TableHead>
-                  <TableHead>Wave</TableHead>
+                  <TableHead className="w-6"><span className="sr-only">Select for wave assignment</span><InfoTip id="cbom.run.col.select_wave" /></TableHead>
+                  <TableHead>Impact <InfoTip id="results.table.impact" /></TableHead>
+                  <TableHead>Type <InfoTip id="cbom.run.f.type" /></TableHead>
+                  <TableHead>Where <InfoTip id="cbom.run.col.where" /></TableHead>
+                  <TableHead>Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                  <TableHead>Finding <InfoTip id="cbom.run.col.finding" /></TableHead>
+                  <TableHead>Quantum-vulnerable <InfoTip id="cbom.run.col.qv" /></TableHead>
+                  <TableHead>Quantum risk <InfoTip id="cbom.run.col.qgrade" /></TableHead>
+                  <TableHead>Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>
+                  <TableHead>Wave <InfoTip id="cbom.run.col.wave" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -378,6 +375,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                       <TableCell>{expanded === asset.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {waves.byAsset.get(asset.id) && (
+                          /* infotip-shared: one row of the selection; the header tip of this column explains it */
                           <input
                             type="checkbox"
                             className="cursor-pointer"

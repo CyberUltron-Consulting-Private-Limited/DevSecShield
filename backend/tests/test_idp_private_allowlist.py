@@ -159,7 +159,7 @@ def test_private_idp_is_refused_until_the_operator_lists_it(private_idp, monkeyp
 
     monkeypatch.setenv("CBOM_EXTRA_CA_FILE", private_idp["ca"])
     out = idp_collect.collect_idp(cfg, "corp-sso")
-    assert out["counts"] == {"total": 1, "ok": 1, "failed": 0, "skipped": 0}
+    assert out["counts"] == {"total": 1, "ok": 1, "partial": 0, "failed": 0, "skipped": 0}
     types = sorted(a["type"] for a in out["assets"])
     assert types == ["identity_provider", "signing_key"]
     assert set(private_idp["connected"]) == {PRIVATE_IP}
