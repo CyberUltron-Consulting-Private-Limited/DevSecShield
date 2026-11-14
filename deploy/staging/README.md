@@ -223,6 +223,145 @@ optional for the backend: `CBOM_NODE_IMAGE_REF` (see "Scan node downloads").
 `CLIENT_ID`, `CLIENT_SECRET`, `EMAIL_SENDER`), `CBOM_AWS_*`, `CBOM_IDP_ALLOWED_PRIVATE`, `CBOM_EXTRA_CA_FILE`;
 the full list is `backend/.env.example`.
 
+## AWS collection on staging (lab mode)
+
+Without `CBOM_AWS_PRINCIPAL_ARN` the AWS form says "This ZeroShield deployment is not set up for AWS collection; contact
+your administrator". Staging's only AWS account is the sandbox **935951870001**, which is also the account of the
+collector identity, and a customer role in the deployment's own account is refused ("This role is in ZeroShield's own
+AWS account") unless **lab mode** is on. Lab mode (`CBOM_AWS_LAB_SAME_ACCOUNT=1`, `backend/utilities/cbom_sources/lab_mode.py`)
+accepts such a role for a single-account source, on a deployment whose `DSS_ENV` names a test deployment
+(`docker-compose.yml` sets `DSS_ENV: staging` for `backend` and `cbom-cloud-worker`); `DSS_ENV=production`, any other
+value or none refuses it. Every other check still runs and must pass: AssumeRole with the external ID, refusal
+without it, SecurityAudit, the data-plane deny, the denied secret read. The AWS form and every run of such a source
+show "Lab mode: same-account collection — not for production"; each use is logged (`lab_mode same_account USED`) and
+audited (`source.validate.lab_same_account`, `job.lab_same_account`).
+
+### 1. Set four values (once)
+
+GitHub > repository Settings > Environments > `staging`:
+
+| Where | Name | Value |
+|---|---|---|
+| Environment secret | `CBOM_AWS_PRINCIPAL_ARN` | `arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer` |
+| Environment secret | `CBOM_AWS_ACCESS_KEY_ID` | that user's access key id (`<ACCESS_KEY_ID>`; never in the repo, an issue or a PR) |
+| Environment secret | `CBOM_AWS_SECRET_ACCESS_KEY` | that key's secret (`<SECRET_ACCESS_KEY>`) |
+| Environment variable (or secret) | `CBOM_AWS_LAB_SAME_ACCOUNT` | `1` |
+
+The next Deploy staging run (a push to `staging`, or re-run the latest one) writes exactly these keys into the host's
+`backend.env` (`staging.sh push` sends them over ssh's stdin to `staging.sh backend-env`; they are never on a command
+line or in the log, and GitHub masks the secrets) and recreates the backend containers with them. An unset or empty
+secret leaves the host's value as it is; to turn lab mode off set the variable to `0`. Without GitHub, the same on the
+host: `cd /opt/devsecshield-staging && printf 'CBOM_AWS_LAB_SAME_ACCOUNT=1\n' | scripts/deploy/staging.sh backend-env`
+(one `KEY=VALUE` line per key; type secrets into the pipe from a file you delete, not into shell history), then
+`docker compose --project-directory deploy/staging -f deploy/staging/docker-compose.yml up -d backend cbom-cloud-worker`.
+
+Check: Sources > Cloud & Identity > AWS shows the lab-mode banner and the form (no "not set up" message), and the
+backend log has `cbom sources` lines naming `lab_mode` once you validate.
+
+### 2. The customer role in the sandbox
+
+The existing `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` will NOT pass validation as it is
+(CB-A1 run R1, `V2-validate`): its trust policy has no `sts:ExternalId` condition ("The role can be assumed without the
+external ID") and it has no data-plane deny ("The deny statement is missing: kms:Decrypt, ..."). Use one of these
+(an account administrator does it; the developer user cannot create IAM roles):
+
+**A. Recommended: the product's own reader template.** In Sources > Cloud & Identity > AWS, choose "Single account",
+download the CloudFormation template (it trusts account 935951870001 and carries this team's external ID) and deploy
+it as a stack in the sandbox (CloudFormation console, any region, e.g. ap-south-1; acknowledge IAM resources). It
+creates `arn:aws:iam::935951870001:role/ZeroShieldCBOMReader` with the `sts:ExternalId` condition, SecurityAudit and
+the deny. Its trust policy names the account (`arn:aws:iam::935951870001:root`), so in the SAME account the collector
+user also needs an identity policy allowing the role (AWS evaluates both in that case); unless the user already has
+one, attach this inline policy to `devsecshield-developer`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::935951870001:role/ZeroShieldCBOMReader"
+    }
+  ]
+}
+```
+
+Then add the source with role ARN `arn:aws:iam::935951870001:role/ZeroShieldCBOMReader` and **Validate connection**.
+
+**B. Or fix the existing role** `DevSecShieldScannerReadOnlyRole` (IAM console > Roles > the role):
+1. Trust relationships > Edit: replace the WHOLE trust policy with the one below, putting this team's external ID
+   (shown on the AWS form, `zs-ext-XXXX-XXXX-XXXX-XXXX`) in place of `<EXTERNAL_ID>`. Any other statement that lets
+   the user or the account assume the role without the condition makes "Role refused without external ID" fail.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::935951870001:user/devsecshield/devsecshield-developer" },
+      "Action": "sts:AssumeRole",
+      "Condition": { "StringEquals": { "sts:ExternalId": "<EXTERNAL_ID>" } }
+    }
+  ]
+}
+```
+
+2. Permissions > Add permissions > Create inline policy (JSON), name `ZeroShieldCBOMReaderDeny`; keep the AWS managed
+   `SecurityAudit` attached:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyKeyUseAndDataPlaneReads",
+      "Effect": "Deny",
+      "Action": [
+        "kms:Decrypt",
+        "kms:Encrypt",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyPair",
+        "kms:GenerateDataKeyPairWithoutPlaintext",
+        "kms:GenerateDataKeyWithoutPlaintext",
+        "kms:GenerateMac",
+        "kms:VerifyMac",
+        "kms:ReEncryptFrom",
+        "kms:ReEncryptTo",
+        "kms:Sign",
+        "kms:Verify",
+        "kms:DeriveSharedSecret",
+        "kms:GenerateRandom",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:BatchGetSecretValue",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "ssm:GetParameterHistory",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "acm:ExportCertificate",
+        "dynamodb:GetItem",
+        "dynamodb:BatchGetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "rds-data:*",
+        "lambda:GetFunction",
+        "lambda:InvokeFunction",
+        "ec2:GetPasswordData",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "codecommit:GitPull"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Then add the source with role ARN `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` and validate.
+Every check must pass before a run collects; the run shows the lab-mode banner.
+
 ## Build identity
 
 Every image carries the commit it was built from (`build_images.sh`; the OCI `revision` label and, in the backend,

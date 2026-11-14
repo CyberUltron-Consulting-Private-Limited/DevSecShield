@@ -158,6 +158,8 @@ services:
       CBOM_NODE_ARTIFACT_DIR: /node-artifacts
       # Optional: the node image in a registry customers can pull from; unset = the wizard offers the file only.
       CBOM_NODE_IMAGE_REF: ${CBOM_NODE_IMAGE_REF:-}
+      # A test deployment: CBOM_AWS_LAB_SAME_ACCOUNT (backend.env) may work here; production refuses it (lab_mode.py).
+      DSS_ENV: staging
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -189,6 +191,7 @@ services:
     restart: unless-stopped
     environment:
       SKIP_ALEMBIC: "1"
+      DSS_ENV: staging  # as the backend's (lab mode is decided again at collection)
     depends_on:
       migrate:
         condition: service_completed_successfully
