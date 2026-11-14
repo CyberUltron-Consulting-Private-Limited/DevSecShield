@@ -65,6 +65,10 @@ async function main() {
   let stored = LEGACY.map((e) => ({ ...e }))
   const settings = () => ({
     aws_external_id: "zs-ext", aws_collection_configured: false, cert_domains: [], network_exclusions: stored, sni_hostnames: [],
+    // Minor 2: the node dc-mumbai-01 could not resolve printer.corp.invalid in its latest job
+    never_scan_held: stored.some((e) => e.cidr === "printer.corp.invalid")
+      ? [{ name: "printer.corp.invalid", node_id: 5, node_name: "dc-mumbai-01", since: "2026-11-14T08:30:00Z", last_seen: "2026-11-14T09:00:00Z", job_id: 41 }]
+      : [],
     ports: [{ port: 443, protocol: "tls", label: "" }], zeek_span: false, scan_window: Array.from({ length: 7 }, () => Array(24).fill(true)),
     window_timezone: "UTC", rate_conn_per_s: 20, rate_parallel_per_server: 2, rate_handshakes_per_endpoint: 20,
     soc_email: "soc@bank.example", emergency_contact: null, risk_model: { data_shelf_life_years: null, migration_years: null, threat_years: null },
@@ -151,11 +155,20 @@ async function main() {
     assert.ok(note.textContent!.includes("Host name: resolved on the scan node"))
   }
   const [printerNote, loopbackNote] = notes().map((n) => n.textContent!.replace("Host name: resolved on the scan node", ""))
-  assert.equal(printerNote, words.storedExclusionIssue("printer.corp.invalid"))
+  // the note, then (Minor 2) where the name is held: the node, since when, what it means
+  assert.ok(printerNote.startsWith(words.storedExclusionIssue("printer.corp.invalid")!), printerNote)
+  assert.ok(printerNote.includes("Held on dc-mumbai-01"), printerNote)
   assert.ok(printerNote.includes("in range sweeps too") && printerNote.includes("every job of this team waits"), printerNote)
   assert.equal(loopbackNote, words.storedExclusionIssue("localhost"))
   assert.ok(loopbackNote.includes("keeps only the loopback addresses (127.0.0.0/8 and ::1) out"), loopbackNote)
   assert.ok(!loopbackNote.includes("every job of this team waits"), "localhost does not hold the team's jobs on the node")
+  // Minor 2: the held name says which node holds it, since when, and what that means; the others do not
+  const held = [...tab.host.querySelectorAll('[data-testid="network-exclusion-held"]')]
+  assert.equal(held.length, 1, "one held entry")
+  assert.ok(held[0].closest('[data-testid="network-exclusion-hostname"]')!.textContent!.includes(words.storedExclusionIssue("printer.corp.invalid")!))
+  assert.ok(held[0].textContent!.includes("Held on dc-mumbai-01"), held[0].textContent ?? "")
+  assert.ok(held[0].textContent!.includes("dc-mumbai-01 cannot resolve this name (since "), held[0].textContent ?? "")
+  assert.ok(held[0].textContent!.includes("every job of the team on dc-mumbai-01 holds all its targets"), held[0].textContent ?? "")
   // static notes are not live errors: nothing announces itself as an alert when the tab opens
   assert.equal(tab.host.querySelectorAll('[role="alert"]').length, 0, "no role=alert before the customer acts")
   // the Remove button of a marked entry points to its note; the others point nowhere

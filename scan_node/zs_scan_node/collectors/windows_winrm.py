@@ -19,8 +19,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from zs_scan_node import algid, netutil
-from zs_scan_node.collectors import ConfigError, skipped_never_scan
-from zs_scan_node.jobctx import JobContext
+from zs_scan_node.collectors import ConfigError, skipped_never_scan, target_error
+from zs_scan_node.jobctx import JobContext, LeaseLost
 from zs_scan_node.netutil import Blocked, Target, checked_ip, expand_targets, is_ip, resolve_checked
 from zs_scan_node.scrub import printable
 
@@ -660,7 +660,15 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     skipped_never_scan(ctx, skipped, reasons, samples=True)
     with _ca_file(config) as ca_path:
         for target in targets[:5]:
-            _test_one(ctx, target, config, password, ca_path)
+            try:
+                _test_one(ctx, target, config, password, ca_path)
+            except LeaseLost:
+                raise
+            except Exception as exc:  # noqa: BLE001 - one server's error fails its sample, never the test job
+                ctx.log("test target error", target=target.label, error=exc.__class__.__name__, level="warn")
+                reachable, note = target_error(exc)
+                ctx.samples.append({"target": target.label, "status": "error", "reachable": reachable, "login": False,
+                                    "privilege": None, "note": ctx.scrubber.text(note)})
     return f"{sum(1 for s in ctx.samples if s['status'] == 'ready')} of {len(ctx.samples)} samples ready"
 
 

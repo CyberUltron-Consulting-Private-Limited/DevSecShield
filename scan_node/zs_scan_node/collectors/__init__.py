@@ -7,7 +7,7 @@ Returns ``(status, error)`` where status is the job status posted to the server:
 """
 from __future__ import annotations
 
-from zs_scan_node.jobctx import JobContext
+from zs_scan_node.jobctx import JobContext, LeaseLost
 
 SUPPORTED = {
     ("collect", "linux_servers"), ("collect", "windows_servers"), ("collect", "kubernetes"), ("collect", "database"),
@@ -36,6 +36,24 @@ AGENT_CAPABILITIES = ["host_agent"]
 
 class ConfigError(Exception):
     """The job cannot run as configured (safe to show)."""
+
+
+def target_error(exc: BaseException) -> tuple[bool | None, str]:
+    """(reachable, note) for an unexpected error on ONE target of a connection test: that target's sample fails with
+    the error named, the job and the other targets go on (#250 N6 for appliances; every collector since).  Reachable
+    only when the target spoke the protocol (an SSH-level error, a close mid-session); a socket error before that says
+    it was not reached; anything else does not tell."""
+    import socket
+
+    import paramiko
+
+    text = " ".join(str(exc).split())[:200]
+    detail = f"{exc.__class__.__name__}{': ' + text if text else ''}"
+    if isinstance(exc, (paramiko.SSHException, EOFError)):
+        return True, f"SSH error on this target ({detail}); the other targets are tested"
+    if isinstance(exc, (ConnectionError, TimeoutError, socket.gaierror, socket.timeout, OSError)):
+        return False, f"connection error on this target ({detail}); the other targets are tested"
+    return None, f"error on this target ({detail}); the other targets are tested"
 
 
 def skipped_never_scan(ctx: JobContext, skipped: list[str], reasons: dict[str, str], samples: bool = False) -> None:
@@ -124,6 +142,21 @@ def run_job(ctx: JobContext, job: dict, scope: dict, source: dict | None) -> tup
             summary = (fleet.test if kind == "test_connection" else fleet.collect)(ctx, config, secrets, scope)
     except ConfigError as exc:
         return "failure", str(exc), None
+    except LeaseLost:
+        raise
+    except Exception as exc:  # re-raised below unless it is a connection test
+        if kind != "test_connection":
+            raise  # a collection isolates its targets itself; the agent reports anything else as the job's error
+        # a connection test never ends as "scan node error": the target being tested gets the error as its sample
+        # (collectors with several targets catch per target; this is for the one-target ones)
+        reachable, note = target_error(exc)
+        label = (next((str(t) for t in scope.get("targets") or [] if t), None) or
+                 str(config.get("host") or config.get("url") or (source or {}).get("name") or "-"))
+        tested = {str(s.get("target")) for s in ctx.samples if isinstance(s, dict)}
+        if label not in tested:
+            ctx.samples.append({"target": label, "status": "error", "reachable": reachable, "login": False,
+                                "privilege": None, "note": ctx.scrubber.text(note)})
+        summary = f"{sum(1 for s in ctx.samples if s.get('status') == 'ready')} of {len(ctx.samples)} samples ready"
     if ctx.cancel.is_set():
         return "cancelled", ctx.cancel_reason or "Stopped by ZeroShield", summary
     if kind != "test_connection":

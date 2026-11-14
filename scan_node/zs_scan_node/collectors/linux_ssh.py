@@ -31,8 +31,8 @@ import paramiko
 from zs_scan_node import commands as C
 from zs_scan_node import linux_parsers as P
 from zs_scan_node.certparse import public_key_facts_from_pem
-from zs_scan_node.collectors import ConfigError, skipped_never_scan
-from zs_scan_node.jobctx import JobContext
+from zs_scan_node.collectors import ConfigError, skipped_never_scan, target_error
+from zs_scan_node.jobctx import JobContext, LeaseLost
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Target, expand_targets
 
@@ -900,39 +900,49 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     for target in _targets(ctx, scope, samples=True)[:5]:
         sample = {"target": target.label, "status": "ready", "reachable": False, "login": False,
                   "privilege": None if tier < 2 else False, "note": ""}
-        if target.ip is None:
-            sample.update(status="unreachable", note=target.error or "could not resolve")
-            ctx.samples.append(sample)
-            continue
         try:
-            sess = open_session(ctx, target, config, creds)
-        except TargetFail as fail:
-            sample["reachable"] = None if fail.status.startswith("skipped_") else \
-                fail.status not in ("unreachable", "refused", "timeout", "no_route")
-            sample.update(status=fail.status, note=fail.error)
-            ctx.samples.append(sample)
-            continue
-        sample.update(reachable=True, login=True)
-        missing = ""
-        try:
-            if tier >= 2:
-                state, _out, detail = run_tier2(sess, "listening_sockets")
-                if state == "missing":
-                    # ss is not installed (iproute2): ask sudo with sshd -T, which every server we log in to has
-                    missing = "; ss is not installed (package iproute2), so listening sockets are not read"
-                    state, _out, detail = run_tier2(sess, "sshd_effective_config")
-                if state == "ok":
-                    sample["privilege"] = True
-                else:
-                    sample["status"] = "sudo_denied" if state == "password" else "sudoers_missing"
-                    sample["note"] = ("sudo asks for a password: install the zs-cbom sudoers file with NOPASSWD"
-                                      if state == "password" else
-                                      "the zs-cbom sudoers file is missing or does not match; this server runs at Tier 1")
-            first = " (host key pinned on first use)" if sess.host_key.get("first_use") else ""
-            if sample["status"] == "ready":
-                sample["note"] = f"{sess.host_key['key_type']} {sess.host_key['fingerprint']}{first}{missing}"
-        finally:
-            sess.close()
+            _test_target(ctx, target, config, creds, tier, sample)
+        except LeaseLost:
+            raise
+        except Exception as exc:  # noqa: BLE001 - an SSH (or any) error on one server fails its sample, never the job
+            ctx.log("test target error", target=target.label, error=exc.__class__.__name__, level="warn")
+            reachable, note = target_error(exc)
+            sample.update(status="error", reachable=reachable, note=ctx.scrubber.text(note))
         ctx.samples.append(sample)
     ready = sum(1 for s in ctx.samples if s["status"] == "ready")
     return f"{ready} of {len(ctx.samples)} samples ready"
+
+
+def _test_target(ctx: JobContext, target: Target, config: dict, creds: dict, tier: int, sample: dict) -> None:
+    """Fill ``sample`` for one server: login, host key and (Tier 2) sudo.  Raises on an unexpected error."""
+    if target.ip is None:
+        sample.update(status="unreachable", note=target.error or "could not resolve")
+        return
+    try:
+        sess = open_session(ctx, target, config, creds)
+    except TargetFail as fail:
+        sample["reachable"] = None if fail.status.startswith("skipped_") else \
+            fail.status not in ("unreachable", "refused", "timeout", "no_route")
+        sample.update(status=fail.status, note=fail.error)
+        return
+    sample.update(reachable=True, login=True)
+    missing = ""
+    try:
+        if tier >= 2:
+            state, _out, detail = run_tier2(sess, "listening_sockets")
+            if state == "missing":
+                # ss is not installed (iproute2): ask sudo with sshd -T, which every server we log in to has
+                missing = "; ss is not installed (package iproute2), so listening sockets are not read"
+                state, _out, detail = run_tier2(sess, "sshd_effective_config")
+            if state == "ok":
+                sample["privilege"] = True
+            else:
+                sample["status"] = "sudo_denied" if state == "password" else "sudoers_missing"
+                sample["note"] = ("sudo asks for a password: install the zs-cbom sudoers file with NOPASSWD"
+                                  if state == "password" else
+                                  "the zs-cbom sudoers file is missing or does not match; this server runs at Tier 1")
+        first = " (host key pinned on first use)" if sess.host_key.get("first_use") else ""
+        if sample["status"] == "ready":
+            sample["note"] = f"{sess.host_key['key_type']} {sess.host_key['fingerprint']}{first}{missing}"
+    finally:
+        sess.close()
