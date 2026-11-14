@@ -92,6 +92,7 @@ export function CbomDashboardCharts({
   riskScoresTitle = "Risk scores per finding",
   riskScoresDescription = "Risk score by finding (top 24, descending)",
   riskScoresTip = "cbom.res.risk_scores",
+  quantumTip = "cbom.res.quantum",
 }: {
   dashboard: CbomScanDashboardData;
   findingsList: CbomFinding[];
@@ -100,6 +101,8 @@ export function CbomDashboardCharts({
   riskScoresDescription?: string;
   /** The (i) tip of the risk scores card: what this caller's chart plots. */
   riskScoresTip?: InfoTipId;
+  /** The (i) tip of the Quantum readiness card: a run's bars come from its posture classes, with no Broken today bar. */
+  quantumTip?: InfoTipId;
 }) {
   const cardData = dashboard.card_data;
   const remediation = dashboard.remediation_actions_required;
@@ -463,7 +466,7 @@ export function CbomDashboardCharts({
             <CardTitle className="text-base flex items-center gap-2">
               <Shield className="w-4 h-4" />
               Quantum readiness
-              <InfoTip id="cbom.res.quantum" />
+              <InfoTip id={quantumTip} />
             </CardTitle>
             <CardDescription>Safe vs vulnerable cryptographic assets</CardDescription>
           </CardHeader>

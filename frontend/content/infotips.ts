@@ -3081,10 +3081,10 @@ export const INFO_TIPS = {
     why: "Certificates issued outside your managed CAs are the ones that expire unnoticed.",
     example: "AD CS through node-dc1, and bank.in searched in CT logs.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:84-95, frontend/components/cbom/sources/CloudIdentityTab.tsx:141, backend/utilities/cbom_sources/kinds.py:478 — AD CS, Vault and EJBCA read by a scan node; others stored only
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:98-109, frontend/components/cbom/sources/CloudIdentityTab.tsx:162, backend/utilities/cbom_sources/kinds.py:567-580 — AD CS, Vault and EJBCA by a scan node; AWS Private CA by its AWS account; CLM tools not collected
   "cbsrc.cloud.cas": {
     label: "Certificate authorities and CLM",
-    what: "Microsoft AD CS, HashiCorp Vault PKI and EJBCA are read by a scan node inside your network. AWS Private CA, Venafi, Keyfactor, DigiCert and others are saved for the certificate collector; they are not validated or collected yet.",
+    what: "Microsoft AD CS, HashiCorp Vault PKI and EJBCA are read by a scan node inside your network. AWS Private CA is read by the connected AWS account it names. Venafi, Keyfactor, DigiCert, Sectigo and other CLM tools are not collected: only their name and API address are saved, no key is asked for and nothing is charged.",
     why: "Your CA knows every certificate it issued, including ones on hosts no scan reaches.",
     example: "AD CS on ca01.bank.local, read by node-dc1 over WinRM.",
   },
@@ -3315,7 +3315,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2263-2273 — HTTPS, up to 512 characters
   "cbsrc.ca.api_url": {
     label: "API address",
-    what: "The HTTPS address of the CA or CLM API, up to 512 characters.",
+    what: "The HTTPS address of the CA or CLM API, up to 512 characters. For Venafi, Keyfactor, DigiCert, Sectigo and others only this address and the name are saved: nothing is read from them.",
     why: "The scan node or the certificate collector calls only this address.",
     example: "https://vault.corp.example.com:8200 for Vault PKI.",
   },
@@ -3354,13 +3354,6 @@ export const INFO_TIPS = {
     why: "Needed when the server uses a private CA; without it the TLS check fails.",
     example: "bank-root-ca.pem.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2330-2338 — encrypted at rest; changing the address clears it
-  "cbsrc.ca.api_key": {
-    label: "API key",
-    what: "The CLM tool's API key. Encrypted at rest by ZeroShield and never shown again; changing the address clears it.",
-    why: "Use a key scoped to read-only access to the certificate inventory.",
-    example: "A Venafi API key with the certificate:discover scope.",
-  },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2453-2454 — up to 64 characters
   "cbsrc.idp.name": {
     label: "Name",
@@ -3378,9 +3371,9 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2470-2479 — HTTPS, up to 512 characters
   "cbsrc.idp.base_url": {
     label: "Okta domain or base URL",
-    what: "Okta: your Okta domain. Keycloak: the base URL of the server. HTTPS, up to 512 characters.",
+    what: "Okta: your Okta domain. Keycloak: the base URL of the server. ADFS: the server address; its public OpenID metadata and federation metadata are read from it. HTTPS, up to 512 characters.",
     why: "Signing keys are read from this address's public metadata.",
-    example: "https://bank.okta.com.",
+    example: "https://adfs.bank.in for ADFS.",
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2482-2484 — up to 128 characters
   "cbsrc.idp.realm": {
@@ -3399,7 +3392,7 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:142, frontend/components/cbom/sources/CloudIdentityTab.tsx:2399, frontend/components/cbom/sources/CloudIdentityTab.tsx:2491-2498 — optional; encrypted at rest
   "cbsrc.idp.secret": {
     label: "Client secret or API token",
-    what: "Optional. The Okta API token or the client secret. Signing keys are read from public metadata without it; with it, more is read. Encrypted at rest and never shown again.",
+    what: "Optional, not asked for ADFS. The Okta API token or the client secret. Signing keys are read from public metadata without it; with it, more is read. Encrypted at rest and never shown again.",
     why: "Without it, only the provider's published signing keys are inventoried.",
     example: "A read-only Okta API token.",
   },
@@ -3407,8 +3400,8 @@ export const INFO_TIPS = {
   "cbsrc.idp.saml_url": {
     label: "SAML metadata URL",
     what: "The HTTPS address of an identity provider's SAML metadata, up to 1,000 characters. Its signing and encryption certificates are read from it.",
-    why: "Covers identity providers without a dedicated connector, such as ADFS.",
-    example: "https://adfs.bank.in/FederationMetadata/2007-06/FederationMetadata.xml.",
+    why: "Covers identity providers without a dedicated connector (ADFS has its own row).",
+    example: "https://idp.bank.in/saml/metadata.xml.",
   },
   // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2538-2560 — HTTPS, up to 1,000 characters
   "cbsrc.idp.oidc_url": {
@@ -6068,6 +6061,209 @@ export const INFO_TIPS = {
     what: "What the next run's quantum risk grades use, recorded when you start it: the team's Mosca X, Y and Z, each source's own data lifetime (its X), and the evidence Q0 gaps. Later changes apply to new runs only.",
     why: "Without X, Y and Z, quantum-vulnerable assets grade as Unknown, and the record lets an old run's grade be explained later.",
     example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM: quantum risk register, Q0 gaps and agility baseline (CB-23, CB-25; components/cbom/grade)
+  // src: backend/utilities/cbom_sources/risk_register.py:1-11, frontend/components/cbom/grade/RiskRegister.tsx:3-5 — one row per estate asset, current grade
+  "cbom.reg.section": {
+    label: "Quantum risk register",
+    what: "Every asset of the team once, however many sources see it, with its current quantum risk grade: the team's Mosca inputs now, each source's data lifetime and exposure now, the current grade model. Worst grade first; filter and download the rows as CSV.",
+    why: "The CISO view: one list to plan migration from and report on, not one list per run.",
+    example: "2,140 assets: 37 Q1 Critical, 210 Q2 High, 18 Q0 Unknown.",
+  },
+  // src: backend/utilities/cbom_sources/risk_register.py:3-6 — the worst known grade over the asset's observations
+  "cbom.reg.col.grade": {
+    label: "Grade",
+    what: "The asset's quantum risk grade, Q1 Critical to Q4 Low, or Q0 Unknown when no observation could be graded. Seen by several sources, the worst known grade wins. Also a filter.",
+    why: "Q1 and Q2 assets are where data is exposed first.",
+    example: "Q1 Critical: an internet-facing RSA key exchange with X + Y > Z.",
+  },
+  // src: backend/utilities/cbom_sources/risk_register.py:146-148, backend/utilities/cbom_sources/heatmap.py:88-102 — HEAT.algorithm_family of the asset's algorithm
+  "cbom.reg.col.family": {
+    label: "Family",
+    what: "The algorithm family of the asset, such as RSA, Elliptic curve, AES or Post-quantum, as the heatmap groups it. Also a filter.",
+    why: "Migration work is planned per family: every RSA key needs the same replacement.",
+    example: "RSA, for an RSA-2048 TLS key.",
+  },
+  // src: backend/utilities/cbom_sources/risk_register.py:146, backend/utilities/cbom_sources/qgrade.py:357-361, backend/utilities/cbom_sources/posture.py:47 — internet, internal or unknown, with the source's override
+  "cbom.reg.col.exposure": {
+    label: "Exposure",
+    what: "Whether the asset is reachable from the internet, internal only, or unknown, from its address, the collector's facts and the source's exposure setting. Also a filter.",
+    why: "Internet-facing assets are the ones whose traffic can be recorded today and decrypted later.",
+    example: "Internet: 203.0.113.10:443.",
+  },
+  // src: backend/utilities/cbom_sources/risk_register.py:263-265 — source name, application, number of sources
+  "cbom.reg.col.source": {
+    label: "Source",
+    what: "The source that saw the asset most recently, how many more see it, and its application when the source has one.",
+    why: "Tells the owner where the asset lives and who reads it.",
+    example: "Network TLS DC1 (+2 more), Netbanking.",
+  },
+  // src: backend/utilities/cbom_sources/risk_register.py:267 — observed_at of the latest observation
+  "cbom.reg.col.last_observed": {
+    label: "Last observed",
+    what: "When a collection last read the asset. An asset missing from its source's latest collection is marked \"not read in the latest collection\".",
+    why: "An old date means the grade rests on old data.",
+    example: "14 Nov 2026, 09:12.",
+  },
+  // src: backend/utilities/cbom_sources/risk_register.py:51-53 — CSV_COLUMNS, filtered rows
+  "cbom.reg.csv": {
+    label: "Download CSV",
+    what: "The register rows that match the filters as a CSV file: key, grade and reason, asset, family, exposure, source, application, presence, sources and last observed.",
+    why: "For the board pack, the regulator or a spreadsheet of owners.",
+    example: "register.csv with the 37 Q1 Critical rows.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM: Q0 gaps of the quantum risk register (CB-23 PR-A)
+  // src: backend/utilities/cbom_sources/q0register.py:1-16, frontend/components/cbom/grade/Q0Gaps.tsx:3-6 — evidence, scope, asset and inputs items
+  "cbom.q0.section": {
+    label: "Q0 gaps",
+    what: "Everything the quantum risk register cannot grade yet (Q0 Unknown), grouped by reason: evidence areas and vendors at E0, scope a collection could not read, assets the product could not grade, and missing Mosca inputs. Each opening is tracked until it closes.",
+    why: "A Q0 item is a blind spot, never assumed safe; closing them is how the register becomes complete.",
+    example: "Evidence at E0 (6): payment HSM vendor has not answered.",
+  },
+  // src: backend/utilities/cbom_sources/q0register.py:3-5, frontend/components/cbom/grade/Q0Gaps.tsx:110-118 — open while closed_at is empty
+  "cbom.q0.status": {
+    label: "Open / Closed",
+    what: "Open: gaps that are still Q0 now. Closed: gaps that left Q0, each with its cause and the grade it closed to. A gap that comes back opens a new row.",
+    why: "Closed gaps are the audit trail of what was resolved and how.",
+    example: "Open (18) · Closed (42).",
+  },
+  // src: backend/utilities/cbom_sources/q0register.py:454 — from opened_at to closed_at, or to now
+  "cbom.q0.col.age": {
+    label: "Age",
+    what: "How long the gap has been open, or was open before it closed, in days.",
+    why: "Old gaps are the ones to chase first.",
+    example: "47 days.",
+  },
+  // src: backend/utilities/cbom_sources/q0register.py:3-5 — opened_at of this opening
+  "cbom.q0.col.opened": {
+    label: "Opened",
+    what: "When this gap opened: the evidence turned E0, a collection could not read the scope, or the asset graded Q0.",
+    why: "Ties the gap to the run or the change that caused it.",
+    example: "28 Sep 2026, 10:04.",
+  },
+  // src: backend/utilities/cbom_sources/q0register.py:117-118 — closed_at, close_cause, closed_grade
+  "cbom.q0.col.closed": {
+    label: "Closed",
+    what: "When the gap closed; a dash while it is open.",
+    why: "Shows when the blind spot was resolved.",
+    example: "12 Nov 2026, 18:30.",
+  },
+  // src: backend/utilities/cbom_sources/q0register.py:18-25, frontend/components/cbom/grade/q0gaps.ts:83-89 — closing causes
+  "cbom.q0.col.cause": {
+    label: "Cause",
+    what: "Why the gap closed: evidence answered or renewed, the vendor or source removed, read again in a later collection, Mosca inputs set, or the grade model changed. Shown with the grade it closed to.",
+    why: "Closures other than a grade-model change are sent to your integrations as drift events.",
+    example: "Read again in a later collection, now Q3 Medium.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM: crypto-agility baseline of the team (CB-25)
+  // src: backend/utilities/cbom_sources/agility_rollup.py:1-21, frontend/components/cbom/grade/AgilityBaseline.tsx:3-6 — current estate, one asset per cross-source identity
+  "cbom.agility.baseline": {
+    label: "Agility baseline",
+    what: "How hard the team's current estate is to fix, by fix class: every asset of each source's latest collection and each repository's latest code scan, plus the evidence items with a class. An asset several sources see counts once, at its hardest class.",
+    why: "The enterprise number to track over time: how much of the crypto your own team can change.",
+    example: "1,200 assets, 46% self-fixable; Core banking is mostly vendor-fixed.",
+  },
+  // src: backend/utilities/cbom_sources/agility_rollup.py:16-21 — application, else source; repository; evidence groups
+  "cbom.agility.system": {
+    label: "System",
+    what: "Where an asset belongs: the source's application when it has one, else the source itself; a code scan's repository; or the evidence groups Third parties and Key management. An asset counts in the system of its latest observation, so the systems add up to the team's counts.",
+    why: "Owners plan by system, not by source.",
+    example: "Netbanking (application).",
+  },
+  // src: backend/utilities/cbom_sources/agility_rollup.py:16-17 — the hardest class across the system's assets
+  "cbom.agility.hardest": {
+    label: "Hardest",
+    what: "The hardest fix class among the system's assets.",
+    why: "One hardware-fixed asset can hold a whole system's migration back.",
+    example: "Vendor-fixed.",
+  },
+  // src: backend/utilities/cbom_sources/agility_rollup.py:19-20 — configurable + code-fixed over the four classes
+  "cbom.agility.system_self_fixable": {
+    label: "Self-fixable",
+    what: "The system's configurable and code-fixed assets out of those with one of the four fix classes; Unknown and none are left out.",
+    why: "Shows which systems your team can migrate without a vendor or new hardware.",
+    example: "80%: 16 of 20 assets.",
+  },
+  // src: frontend/components/cbom/grade/AgilityBaseline.tsx:213-220 — drill-down by class and system
+  "cbom.agility.drill": {
+    label: "Fix class",
+    what: "Lists the assets of one fix class, or every class, for the whole team or the system you opened.",
+    why: "Gives the concrete asset list behind each count.",
+    example: "Hardware-fixed assets of Card switch.",
+  },
+  // src: frontend/components/cbom/grade/AgilityBaseline.tsx:118-120, backend/utilities/cbom_sources/agility_rollup.py:83-89 — the codes that decided the class
+  "cbom.agility.why_codes": {
+    label: "Why",
+    what: "The finding codes that decided the asset's fix class. An asset seen several times is classed on all its observations' codes together.",
+    why: "Tells the owner what to change, not just how hard it is.",
+    example: "WEAK_PROTOCOL, NO_PQ_KEX.",
+  },
+  // src: backend/utilities/cbom_sources/agility_rollup.py:12-17, frontend/components/cbom/grade/AgilityBaseline.tsx:121-123 — observations merged into one asset
+  "cbom.agility.seen_by": {
+    label: "Seen by",
+    what: "How many observations, from Sources collections and code scans, were merged into this one asset. Hover for their names.",
+    why: "An asset several sources see is counted once, not once per source.",
+    example: "3 (Network TLS DC1, Servers DC1, repo payments@main).",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM run results: Ticketing tab (CB-38 PR-4)
+  // src: backend/utilities/cbom_sources/run_tickets.py:1-22, frontend/components/cbom/results/RunTicketingTab.tsx:3-6 — one issue per asset across runs
+  "cbom.run.tickets": {
+    label: "Jira tickets for this run",
+    what: "Creates one Jira issue per selected finding with the team's Jira connection. An asset that already has an issue, from this run or an earlier run of the same source, keeps it and no duplicate is opened. Each result shows created, existing, failed or deferred (retry).",
+    why: "Puts the fixes in the tracker your owners already work from.",
+    example: "12 selected: 9 created (SEC-1501 to SEC-1509), 3 existing.",
+  },
+  // src: backend/utilities/cbom_sources/run_tickets.py:3-5, frontend/components/cbom/results/runTicketing.ts:26-33 — key or numeric id, team admin
+  "cbom.run.tickets.project": {
+    label: "Jira project for CBOM Sources",
+    what: "The Jira project, by key or numeric id, for the tickets of every Sources run of the team. Only a team admin sets it; leave it empty to stop creating tickets. Jira credentials stay in Team settings.",
+    why: "Tickets land where the owners of the infrastructure work.",
+    example: "SEC, or 10000.",
+  },
+  // src: backend/utilities/cbom_sources/run_tickets.py:54, frontend/components/cbom/results/RunTicketingTab.tsx:107-110 — default Task
+  "cbom.run.tickets.issue_type": {
+    label: "Issue type",
+    what: "The Jira issue type of the tickets, up to 64 characters. Task when left empty.",
+    why: "Some projects only accept their own issue types, such as Bug or Vulnerability.",
+    example: "Vulnerability.",
+  },
+  // src: frontend/components/cbom/results/RunTicketingTab.tsx:256-260, backend/utilities/cbom_sources/run_tickets.py:18-20 — findings without a ticket on this page
+  "cbom.run.tickets.select": {
+    label: "Select findings",
+    what: "Selects every finding on this page that has no Jira issue yet. Clean inventory and coverage notes are not findings and cannot be ticketed.",
+    why: "Ticket a page of findings in one step.",
+    example: "100 on this page, 88 without a ticket: 88 selected.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: network sweep totals (#234) and the node image pull (#233)
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:932-945, frontend/components/cbom/sources/networkEstimate.ts:18-36 — unique addresses over enabled ranges
+  "cbsrc.net.before_first": {
+    label: "Before the first run",
+    what: "What the first sweep will cover: the unique addresses across the enabled ranges, after the never-scan list, times the ports listed. Disabled ranges are not swept and not counted. A discovery sweep on each scan node with ranges finds the open ports first.",
+    why: "Check the size before you tell your SOC and start the run.",
+    example: "4,096 unique addresses across 2 enabled ranges after the never-scan list, 6 ports. 1 disabled range is not counted.",
+  },
+  // src: frontend/components/cbom/sources/logic.ts:422-444, frontend/components/cbom/sources/ScanNodesTab.tsx:487-497 — docker pull or helm from the public registry
+  "cbsrc.nodes.registry_pull": {
+    label: "Install with one command",
+    what: "When ZeroShield publishes the node image in a public registry, one command pulls the pinned release and starts the node (Docker), or installs the Helm chart from that registry. No registry login is needed. Hosts without access to the registry use the downloaded files below instead.",
+    why: "The quickest install on a host with internet access; the pinned version matches this ZeroShield.",
+    example: "docker pull ghcr.io/… && docker run … on the scan host.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM run results: quantum readiness chart of a run
+  // src: frontend/components/cbom/results/model.ts:98-126, backend/utilities/cbom_sources/posture.py:3-7 — Safe = hybrid + quantum-safe + grover-weakened; Vulnerable = quantum-vulnerable
+  "cbom.run.quantum": {
+    label: "Quantum readiness",
+    what: "The run's assets with a quantum verdict, from the run's posture: Safe counts the hybrid, quantum-safe and grover-weakened classes, Vulnerable the quantum-vulnerable class. Assets with no verdict (unknown, not applicable) are left out. A run has no Broken today bar.",
+    why: "Same counts as the Quantum ready card and the posture section, so the numbers on the page agree.",
+    example: "Safe 412, Vulnerable 168.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: node install without the public registry (#233)
+  // src: frontend/components/cbom/sources/NodeInstall.tsx:96-101, frontend/components/cbom/sources/ScanNodesTab.tsx:281-291 — one paste with curl or wget, or the downloaded files
+  "cbsrc.nodes.files_install": {
+    label: "Air-gapped install",
+    what: "For a host that cannot reach the public registry: one paste that downloads this node's files from ZeroShield, checks their SHA-256 and installs them (curl, or wget), or the same install from files you downloaded in the browser. The download links work only for this node and only until it registers or its token is replaced or expires.",
+    why: "Installs the same pinned release on a host with no internet access.",
+    example: "Copy the files to the host, then run the install command shown below them.",
   },
 } as const satisfies Record<string, InfoTipEntry>;
 

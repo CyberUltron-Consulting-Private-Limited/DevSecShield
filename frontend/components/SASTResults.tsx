@@ -83,6 +83,7 @@ import TicketingIntegrationsSettings from "@/components/ticketing-integrations-s
 import FindingSelectionMenu from "@/components/finding-selection-menu";
 import { Progress } from "@/components/ui/progress";
 import { InfoTip } from "@/components/ui/info-tip";
+import { criticalFixedPct } from "@/components/cbom/remediationKpis";
 
 // Agent output format (from worker_sast_agent_results_testing.json)
 type OwaspOrComplianceItem = Record<string, string>;
@@ -569,8 +570,7 @@ function SASTDashboardCharts({ dashboard }: { dashboard: SastDashboardData }) {
                 const fixed = remediationMetrics.critical_issues_fixed;
                 // risk_metrics counts every Critical finding of the scan, fixed ones included: fixed / all Critical
                 // (was fixed / (fixed + all Critical), which never passed 50%)
-                const totalCritical = criticalCount;
-                const pct = totalCritical > 0 ? Math.min(100, Math.round((fixed / totalCritical) * 100)) : 0;
+                const pct = criticalFixedPct(fixed, criticalCount);
                 const targetPct = 95;
                 const progress = Math.min(100, (pct / targetPct) * 100);
                 const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;

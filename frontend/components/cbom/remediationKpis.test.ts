@@ -17,8 +17,9 @@ assert.equal(criticalFixedPct(2, 3), 67, "rounded to a whole percent");
 assert.equal(criticalFixedPct(5, 3), 100, "never above 100 % (counts from two reads that may disagree)");
 assert.equal(criticalFixedPct(-1, 3), 0, "never below 0 %");
 
-// Wiring: every component that shows "Critical issues fixed" computes it with criticalFixedPct, including the
-// dashboard charts that moved to components/cbom/results (CB-38 #120), and none divides by fixed + all Critical.
+// Wiring: every component that shows "Critical issues fixed" (any letter case: SAST and AI BOM write "Critical Issues
+// Fixed") computes it with criticalFixedPct, including the dashboard charts that moved to components/cbom/results
+// (CB-38 #120), and none divides by fixed + all Critical.
 const frontend = path.resolve(__dirname, "..", "..");
 function tsxFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -28,13 +29,15 @@ function tsxFiles(dir: string): string[] {
   });
 }
 const shows = [...tsxFiles(path.join(frontend, "components")), ...tsxFiles(path.join(frontend, "app"))]
-  .filter((f) => fs.readFileSync(f, "utf8").includes("Critical issues fixed"))
+  .filter((f) => /critical issues fixed/i.test(fs.readFileSync(f, "utf8")))
   .map((f) => path.relative(frontend, f));
-assert.ok(shows.includes(path.join("components", "cbom", "results", "CbomDashboardCharts.tsx")),
-  `the results dashboard shows "Critical issues fixed": ${shows.join(", ")}`);
+for (const page of [path.join("components", "cbom", "results", "CbomDashboardCharts.tsx"), path.join("components", "AiBomResults.tsx"),
+  path.join("components", "SASTResults.tsx"), path.join("app", "[team_id]", "sast", "page.tsx")]) {
+  assert.ok(shows.includes(page), `${page} shows "Critical issues fixed": ${shows.join(", ")}`);
+}
 for (const rel of shows) {
   const src = fs.readFileSync(path.join(frontend, rel), "utf8");
   assert.match(src, /criticalFixedPct\(/, `${rel} computes "Critical issues fixed" with criticalFixedPct`);
-  assert.doesNotMatch(src, /fixed\s*\+\s*criticalCount/, `${rel} does not divide by fixed + all Critical`);
+  assert.doesNotMatch(src, /fixed\s*\+\s*critical/i, `${rel} does not divide by fixed + all Critical`);
 }
 console.log("remediation KPIs: tests passed");

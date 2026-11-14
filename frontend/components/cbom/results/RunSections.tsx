@@ -350,7 +350,7 @@ export function RunDashboardSection({ view, model, riskRows, pageRows, results }
     <div className="space-y-3" data-testid="run-section-dashboard">
       {model.dashboard && (
         <CbomDashboardCharts dashboard={model.dashboard} findingsList={riskRows}
-                             riskScoresTitle={`Risk scores on this table page (${pageRows} rows)`} riskScoresTip="cbom.run.risk_scores"
+                             riskScoresTitle={`Risk scores on this table page (${pageRows} rows)`} riskScoresTip="cbom.run.risk_scores" quantumTip="cbom.run.quantum"
                              riskScoresDescription="Risk score (0-10) of the rows on the findings table's current page and filter, top 24, descending" />
       )}
       {view.note && <SectionNote testId="run-dashboard-note">{view.note}</SectionNote>}

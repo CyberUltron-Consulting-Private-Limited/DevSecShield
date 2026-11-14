@@ -78,6 +78,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { criticalFixedPct } from "@/components/cbom/remediationKpis";
 
 type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
 
@@ -957,8 +958,7 @@ function ScanListDashboard({ dashboardData, scansListData = [] }: { dashboardDat
               {/* Critical Issues Fixed */}
               {(() => {
                 const fixed = dashboardData.remediation_metrics.critical_issues_fixed;
-                const totalCritical = dashboardData.critical_count ?? 0;
-                const pct = totalCritical > 0 ? Math.min(100, Math.round((fixed / totalCritical) * 100)) : 0;
+                const pct = criticalFixedPct(fixed, dashboardData.critical_count ?? 0);
                 const targetPct = 95;
                 const progress = Math.min(100, (pct / targetPct) * 100);
                 const delta = pct >= targetPct ? "+0%" : `+${targetPct - pct}%`;

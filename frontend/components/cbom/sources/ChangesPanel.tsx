@@ -36,6 +36,7 @@ export const DRIFT_LABEL: Record<CbomDriftKind, [string, Tone]> = {
   cert_renewed: ["Certificate renewed", "green"],
   cert_expiring: ["Certificate expiring", "amber"],
   schedule_skipped: ["Scheduled run skipped", "amber"],
+  q0_closed: ["Q0 gap closed", "green"],
 };
 
 export function RunChanges({ teamId, runId, finished }: { teamId: number; runId: number; finished: boolean }) {
