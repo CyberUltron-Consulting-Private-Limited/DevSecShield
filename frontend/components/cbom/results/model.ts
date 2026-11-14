@@ -586,29 +586,35 @@ export function parityNotes(state: ParityState, parity: Pick<CbomRunParity, "sca
 
 // ---------------------------------------------------------------------------- finding dialog chips
 
-/** The code dialog's OWASP Top 10 / Compliance controls / Suggested fix for a run asset: the /assets item's own fields
- * when the server sends them (W2b), else the same facts from the asset's knowledge-base entries (GET /assets/{id}). */
-export function findingChips(
-  item: { owasp_top_10?: Record<string, string> | null; compliance_controls?: Record<string, string> | null; suggested_fix?: string | null } | null,
-  details: Pick<KbFindingDetail, "owasp_2021" | "owasp_2025" | "compliance" | "remediation">[] | null | undefined,
-): { owasp: [string, string][]; controls: [string, string][]; suggestedFix: string | null; basis: "item" | "kb" | "none" } {
-  const fromItem = {
-    owasp: Object.entries(item?.owasp_top_10 ?? {}).filter(([, v]) => !!v) as [string, string][],
-    controls: Object.entries(item?.compliance_controls ?? {}).filter(([, v]) => !!v) as [string, string][],
-    suggestedFix: item?.suggested_fix?.trim() || null,
+type DialogFields = { owasp_top_10?: Record<string, string> | null; compliance_controls?: Record<string, string> | null; suggested_fix?: string | null };
+
+function dialogFields(src: DialogFields | null | undefined) {
+  return {
+    owasp: Object.entries(src?.owasp_top_10 ?? {}).filter(([, v]) => !!v) as [string, string][],
+    controls: Object.entries(src?.compliance_controls ?? {}).filter(([, v]) => !!v) as [string, string][],
+    suggestedFix: src?.suggested_fix?.trim() || null,
   };
+}
+
+/** The code dialog's OWASP Top 10 / Compliance controls / Suggested fix for a run asset, the same from every entry point:
+ * the /assets item's own fields (W2b), else the same fields on GET /assets/{id} (a dialog opened from top risks or a
+ * certificate has no item), else the asset's knowledge-base entries with the same vocabulary: OWASP Top 10:2021 only and
+ * no control families (the KB's regulatory clauses are not the code page's ISO 27001 / NIST 800-53 controls). */
+export function findingChips(
+  item: DialogFields | null,
+  details: Pick<KbFindingDetail, "owasp_2021" | "owasp_2025" | "compliance" | "remediation">[] | null | undefined,
+  detailAsset?: DialogFields | null,
+): { owasp: [string, string][]; controls: [string, string][]; suggestedFix: string | null; basis: "item" | "asset" | "kb" | "none" } {
+  const fromItem = dialogFields(item);
   if (fromItem.owasp.length || fromItem.controls.length || fromItem.suggestedFix) return { ...fromItem, basis: "item" };
+  const fromAsset = dialogFields(detailAsset);
+  if (fromAsset.owasp.length || fromAsset.controls.length || fromAsset.suggestedFix) return { ...fromAsset, basis: "asset" };
   const owasp = new Map<string, string>();
-  const controls = new Map<string, string>();
   let fix: string | null = null;
   for (const d of details ?? []) {
-    for (const o of [...(d.owasp_2021 ?? []), ...(d.owasp_2025 ?? [])]) if (o.id && !owasp.has(o.id)) owasp.set(o.id, o.label ?? o.id);
-    for (const c of d.compliance ?? []) {
-      const key = `${c.framework}:${c.id}`;
-      if (!controls.has(key)) controls.set(key, `${c.framework} ${c.id}`);
-    }
+    for (const o of d.owasp_2021 ?? []) if (o.id && !owasp.has(o.id)) owasp.set(o.id, o.label ?? o.id);
     if (!fix && d.remediation?.summary) fix = d.remediation.summary;
   }
-  const out = { owasp: [...owasp], controls: [...controls], suggestedFix: fix };
-  return { ...out, basis: out.owasp.length || out.controls.length || out.suggestedFix ? "kb" : "none" };
+  const out = { owasp: [...owasp], controls: [] as [string, string][], suggestedFix: fix };
+  return { ...out, basis: out.owasp.length || out.suggestedFix ? "kb" : "none" };
 }

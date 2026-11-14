@@ -7,7 +7,7 @@ $FAKE_STATE/calls.log (a login's password is read from stdin and recorded only a
   helm show chart oci://<registry>/<name> --version V              ok when pushed before, else "not found"
                                                                    ($FAKE_STATE/helm-show-error: a registry error)
   helm push <file> oci://<registry>                                stores the file in $FAKE_STATE/oci/<registry>/<name>,
-                                                                   prints "Pushed: ..." and "Digest: sha256:<hex>"
+                                                                   prints "Pushed: ..." and "Digest: sha256:<hex>" on stderr
 Knob: $FAKE_STATE/helm-push-fail (exists): push fails."""
 import hashlib
 import os
@@ -60,8 +60,10 @@ def main(argv):
         out.mkdir(parents=True, exist_ok=True)
         data = src.read_bytes()
         (out / src.name).write_bytes(data)
-        print(f"Pushed: {target[len('oci://'):]}/{src.name}")
-        print(f"Digest: sha256:{hashlib.sha256(data).hexdigest()}")
+        # like the real helm: the registry client writes these two lines to stderr, not stdout (publish run
+        # 43607365896 pushed chart 1.0.0, printed its Digest line, and still failed "helm push reported no digest")
+        print(f"Pushed: {target[len('oci://'):]}/{src.name}", file=sys.stderr)
+        print(f"Digest: sha256:{hashlib.sha256(data).hexdigest()}", file=sys.stderr)
         return 0
     print(f"fake helm: unsupported {argv}", file=sys.stderr)
     return 2

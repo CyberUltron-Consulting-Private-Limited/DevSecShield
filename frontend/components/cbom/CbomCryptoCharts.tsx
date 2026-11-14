@@ -88,6 +88,7 @@ import {
   pqcDescription,
   pqcHowToFix,
 } from "@/components/cbom/pqcMigrationGroup";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export type {
   ComplianceVerdict,
@@ -307,6 +308,7 @@ function AlgorithmDistribution({ data }: { data: Record<string, number> }) {
         <CardTitle className="text-base flex items-center gap-2">
           <BarChart3 className="w-4 h-4" />
           Algorithm distribution
+        <InfoTip id="cbom.chart.algorithms" />
         </CardTitle>
         <CardDescription>Crypto algorithms by primitive</CardDescription>
       </CardHeader>
@@ -344,6 +346,7 @@ function WeakCryptoFindings({ data }: { data: Record<string, number> }) {
         <CardTitle className="text-base flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-400" />
           Weak-crypto findings
+        <InfoTip id="cbom.chart.weak" />
         </CardTitle>
         <CardDescription>Weak / deprecated crypto by category (High red · Medium orange)</CardDescription>
       </CardHeader>
@@ -391,6 +394,7 @@ function PqcReadinessGauge({ pqc, rows }: { pqc: CbomDistributions["pqc"]; rows?
         <CardTitle className="text-base flex items-center gap-2">
           <Atom className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           PQC readiness
+        <InfoTip id="cbom.chart.pqc" />
         </CardTitle>
         <CardDescription>Quantum-safe share of every crypto asset (findings and clean inventory); algorithms broken today are not quantum-ready</CardDescription>
       </CardHeader>
@@ -586,6 +590,7 @@ function QuantumVulnerableList({
         <CardTitle className="text-base flex items-center gap-2">
           <ShieldX className="w-4 h-4 text-orange-500" />
           Quantum-vulnerable algorithms
+          <InfoTip id="cbom.chart.qv" />
           {migration.length > 0 && (
             <span className="text-xs font-normal text-zinc-500">
               ({groups.length} group{groups.length === 1 ? "" : "s"} · {migration.length})
@@ -603,6 +608,7 @@ function QuantumVulnerableList({
             <ShieldCheck className="h-8 w-8 text-emerald-500" />
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
               No quantum-vulnerable algorithms
+            <InfoTip id="cbom.chart.qv_none" />
             </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Every inventoried algorithm is quantum-resistant at its parameter size.
@@ -694,6 +700,7 @@ function MigrationRoadmap({
         <CardTitle className="text-base flex items-center gap-2">
           <Rocket className="w-4 h-4 text-blue-500" />
           PQC migration roadmap
+          <InfoTip id="cbom.chart.roadmap" />
           {migration.length > 0 && (
             <span className="text-xs font-normal text-zinc-500">
               ({groups.length} target{groups.length === 1 ? "" : "s"})
@@ -709,6 +716,7 @@ function MigrationRoadmap({
           <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
             <CalendarClock className="h-3.5 w-3.5" />
             CNSA 2.0 transition milestones
+            <InfoTip id="cbom.chart.cnsa" />
           </p>
           <ol className="flex flex-wrap gap-2">
             {CNSA_MILESTONES.map((m) => (
@@ -734,6 +742,7 @@ function MigrationRoadmap({
           <div>
             <p className="mb-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
               Recommended replacements
+            <InfoTip id="cbom.chart.replacements" />
             </p>
             <div className="max-h-[28rem] overflow-y-auto pr-1">
               <Accordion
@@ -937,6 +946,7 @@ function CertificateExpiry({
         <CardTitle className="text-base flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           Certificate expiry
+        <InfoTip id="cbom.chart.cert_expiry" />
         </CardTitle>
         <CardDescription>
           X.509 validity and related key / keystore material
@@ -1084,6 +1094,7 @@ function ProtocolTls({ data }: { data: Record<string, number> }) {
         <CardTitle className="text-base flex items-center gap-2">
           <Network className="w-4 h-4" />
           Protocol / TLS
+        <InfoTip id="cbom.chart.protocols" />
         </CardTitle>
         <CardDescription>Transport-security protocols in use</CardDescription>
       </CardHeader>
@@ -1131,6 +1142,7 @@ function AssetTypeDistribution({ graph }: { graph: CbomGraph }) {
         <CardTitle className="text-base flex items-center gap-2">
           <Layers className="w-4 h-4 text-indigo-500" />
           Asset types
+        <InfoTip id="cbom.chart.asset_types" />
         </CardTitle>
         <CardDescription>Crypto inventory by CycloneDX asset class</CardDescription>
       </CardHeader>
