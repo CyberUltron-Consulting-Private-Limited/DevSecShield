@@ -74,6 +74,7 @@ from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
+from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
 from backend.utilities.cbom_sources import runs as RUNS
 from backend.utilities.cbom_sources import run_assets as RUN_ASSETS
 from backend.utilities.cbom_sources import schedules as SCHED
@@ -1433,6 +1434,7 @@ def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
         out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status)
+        RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
 
