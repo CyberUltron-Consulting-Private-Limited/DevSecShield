@@ -246,7 +246,7 @@ jobs:
           add() { images=$(jq -c --argjson i "$1" '. + [$i]' <<< "$images"); }
           # Same contexts and build arguments as scripts/deploy/build_images.sh and scripts/release/scan_node_image.sh.
           if f img-all || f img-backend; then
-            add '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","build-contexts":"migrations=prod_database_migrations"}'
+            add '{"name":"backend","context":"backend","dockerfile":"backend/Dockerfile","build-contexts":"migrations=prod_database_migrations,aibom=aibom"}'
           fi
           if f img-all || f img-frontend; then
             add '{"name":"frontend","context":"frontend","dockerfile":"frontend/Dockerfile","build-args":"NEXT_PUBLIC_BACKEND_URL=http://localhost:8000"}'

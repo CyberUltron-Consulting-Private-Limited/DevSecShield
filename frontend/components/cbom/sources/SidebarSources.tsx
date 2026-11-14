@@ -10,7 +10,6 @@ import { ClipboardCheck, Cloud, Network, Server } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   getCbomSourcesOverview,
@@ -24,6 +23,7 @@ import {
 import { cbomSourcesKeys, TERMINAL_RUN } from "./keys";
 import { credits, pluralize } from "./logic";
 import { RunStatusBadge } from "./shared";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 
 const ITEM = "border-zinc-700 border rounded-lg px-3 mt-2 data-[state=open]:border-blue-500/50";
 const TRIGGER = "text-zinc-300 hover:text-white cursor-pointer py-4 hover:no-underline [&[data-state=open]>svg]:rotate-180";
@@ -41,7 +41,9 @@ export function useSourcesOverview(teamId: number) {
 function IncludeRow({ id, checked, disabled, onChange, label }: { id: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <div className="flex items-center justify-between gap-3 mt-3">
-      <Label htmlFor={id} className="text-zinc-300 text-sm">{label}</Label>
+      <FieldLabel infoId="cbsrc.sidebar.include" htmlFor={id} labelClassName="text-zinc-300 text-sm">
+        {label}
+      </FieldLabel>
       <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} className="cursor-pointer" />
     </div>
   );
@@ -159,10 +161,13 @@ export function SourcesAccordionItems({
             <>
               <IncludeRow id="inc-network" label="Include network TLS" checked={!!include.network} onChange={(v) => onToggle("network", v)} />
               {include.network && (
-                <label className="flex items-start gap-2 text-xs text-zinc-300 mt-3 cursor-pointer">
-                  <input type="checkbox" className="mt-0.5 h-4 w-4 accent-blue-600" checked={socAck} onChange={(e) => setSocAck(e.target.checked)} />
-                  Our SOC has agreed the network ranges and scan windows
-                </label>
+                <div className="flex items-start gap-1 mt-3">
+                  <label className="flex items-start gap-2 text-xs text-zinc-300 cursor-pointer">
+                    <input type="checkbox" className="mt-0.5 h-4 w-4 accent-blue-600" checked={socAck} onChange={(e) => setSocAck(e.target.checked)} />
+                    Our SOC has agreed the network ranges and scan windows
+                  </label>
+                  <InfoTip id="cbsrc.sidebar.soc" className="text-zinc-400 hover:text-white" />
+                </div>
               )}
             </>
           )}

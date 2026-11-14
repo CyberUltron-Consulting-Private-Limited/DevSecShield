@@ -13,10 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CodeBlock } from "@/components/ui/shadcn-io/ai/code-block";
 import { Textarea } from "@/components/ui/textarea";
+import type { InfoTipId } from "@/content/infotips";
 import { cn } from "@/lib/utils";
 import {
   getCbomJob,
@@ -82,6 +83,8 @@ const TEST_STATUS: Record<CbomTestStatus, [Tone, string]> = {
   failed: ["red", "Failed"],
   not_available: ["zinc", "Not available yet"],
   error: ["amber", "Could not test"],
+  // every target is on the never-scan list (N10): nothing was tried, nothing failed
+  skipped: ["zinc", "Skipped: never scan"],
 };
 export function TestStatusBadge({ status, title, detail }: { status: CbomTestStatus; title?: string | null; detail?: string | null }) {
   const [tone, label] = TEST_STATUS[status] ?? TEST_STATUS.never;
@@ -169,6 +172,7 @@ export function SectionCard({
   children,
   className,
   id,
+  infoId,
 }: {
   title: ReactNode;
   description?: ReactNode;
@@ -176,12 +180,17 @@ export function SectionCard({
   children: ReactNode;
   className?: string;
   id?: string;
+  /** The (i) tip beside the title; the coverage test requires it on the Sources tabs. */
+  infoId?: InfoTipId;
 }) {
   return (
     <Card id={id} className={cn("border-zinc-200 dark:border-zinc-800 min-w-0", className)}>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
         <div className="space-y-1.5 min-w-0">
-          <CardTitle className="text-base">{title}</CardTitle>
+          <CardTitle className="text-base">
+            {title}
+            {infoId && <InfoTip id={infoId} className="ml-1" />}
+          </CardTitle>
           {description && <CardDescription>{description}</CardDescription>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -191,12 +200,15 @@ export function SectionCard({
   );
 }
 
-export function StatCard({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: ReactNode; tone?: Tone }) {
+export function StatCard({ label, value, hint, tone, infoId }: { label: string; value: ReactNode; hint?: ReactNode; tone?: Tone; infoId?: InfoTipId }) {
   const color = tone === "green" ? "text-green-600 dark:text-green-400" : tone === "red" ? "text-red-600 dark:text-red-400" : "text-zinc-900 dark:text-white";
   return (
     <Card className="border-zinc-200 dark:border-zinc-800 py-4">
       <CardContent className="px-5">
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">{label}</p>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          {label}
+          {infoId && <InfoTip id={infoId} className="ml-1" />}
+        </p>
         <p className={cn("text-2xl font-semibold mt-1", color)}>{value}</p>
         {hint && <p className="text-xs text-zinc-500 mt-1">{hint}</p>}
       </CardContent>
@@ -242,6 +254,7 @@ export function EmptyState({ title, body, action }: { title: string; body?: Reac
 }
 
 export function Field({
+  infoId,
   label,
   htmlFor,
   required,
@@ -250,6 +263,9 @@ export function Field({
   children,
   className,
 }: {
+  /** The (i) tip beside the label. The coverage test (content/infotips.test.ts) fails any covered file whose Field has
+   * none; it is optional in the type only for the files listed in NOT_YET_COVERED (the Fleet sections, issue #43). */
+  infoId?: InfoTipId;
   label: ReactNode;
   htmlFor?: string;
   required?: boolean;
@@ -260,10 +276,9 @@ export function Field({
 }) {
   return (
     <div className={cn("space-y-2 min-w-0", className)}>
-      <Label htmlFor={htmlFor}>
+      <FieldLabel infoId={infoId} htmlFor={htmlFor} required={required}>
         {label}
-        {required && <span className="text-red-500">*</span>}
-      </Label>
+      </FieldLabel>
       {children}
       {error ? (
         <p className="flex items-center gap-1.5 text-sm text-red-500 dark:text-red-400" role="alert">
@@ -279,6 +294,7 @@ export function Field({
 
 /** Write-only secret input: never prefilled; on edit, blank keeps the stored value. */
 export function SecretField({
+  infoId,
   id,
   label,
   value,
@@ -290,6 +306,7 @@ export function SecretField({
   error,
   placeholder,
 }: {
+  infoId: InfoTipId;
   id: string;
   label: string;
   value: string;
@@ -303,8 +320,9 @@ export function SecretField({
 }) {
   const ph = isSet ? "Saved. Leave blank to keep it" : placeholder ?? "";
   return (
-    <Field label={label} htmlFor={id} required={required && !isSet} hint={hint ?? "Encrypted at rest by ZeroShield; sent only to the scan node that runs the job. Never shown again."} error={error}>
+    <Field infoId={infoId} label={label} htmlFor={id} required={required && !isSet} hint={hint ?? "Encrypted at rest by ZeroShield; sent only to the scan node that runs the job. Never shown again."} error={error}>
       {multiline ? (
+        /* infotip-shared: the caller's infoId, on the Field label above */
         <Textarea
           id={id}
           value={value}
@@ -315,6 +333,7 @@ export function SecretField({
           className="font-mono text-xs min-h-[96px] resize-y"
         />
       ) : (
+        /* infotip-shared: the caller's infoId, on the Field label above */
         <Input id={id} type="password" value={value} onChange={(e) => onChange(e.target.value)} placeholder={ph} autoComplete="new-password" />
       )}
     </Field>
@@ -395,6 +414,7 @@ export function NodeSelect({
 }) {
   return (
     <Select value={value ? String(value) : ""} onValueChange={(v) => onChange(v ? Number(v) : null)}>
+      {/* infotip-shared: NodeSelect is a control in the coverage test; its caller gives it a tip */}
       <SelectTrigger id={id} className="w-full cursor-pointer">
         <SelectValue placeholder={nodes.length ? placeholder : "Add a scan node first"} />
       </SelectTrigger>
@@ -504,6 +524,7 @@ export function ChoiceCards<T extends string | number>({
   options,
   columns = 2,
   label,
+  infoId,
 }: {
   name: string;
   value: T;
@@ -511,10 +532,12 @@ export function ChoiceCards<T extends string | number>({
   options: ChoiceOption<T>[];
   columns?: 1 | 2 | 3 | 4;
   label?: string;
+  /** The (i) tip beside the cards, when no Field label above carries one. */
+  infoId?: InfoTipId;
 }) {
   const grid = { 1: "sm:grid-cols-1", 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-2 lg:grid-cols-4" }[columns];
-  return (
-    <div role="radiogroup" aria-label={label} className={cn("grid grid-cols-1 gap-2", grid)}>
+  const cards = (
+    <div role="radiogroup" aria-label={label} className={cn("grid grid-cols-1 gap-2", grid, infoId && "flex-1 min-w-0")}>
       {options.map((opt) => {
         const checked = opt.value === value;
         return (
@@ -526,6 +549,7 @@ export function ChoiceCards<T extends string | number>({
               checked ? "border-blue-500/70 bg-blue-500/5" : "border-zinc-200 dark:border-zinc-800",
             )}
           >
+            {/* infotip-shared: ChoiceCards is a control in the coverage test; its caller gives it a tip */}
             <input
               type="radio"
               name={name}
@@ -543,13 +567,29 @@ export function ChoiceCards<T extends string | number>({
       })}
     </div>
   );
+  if (!infoId) return cards;
+  return (
+    <div className="flex items-start gap-1">
+      {cards}
+      <InfoTip id={infoId} />
+    </div>
+  );
 }
 
-export function Checkbox2({ id, checked, onChange, children }: { id: string; checked: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
-  return (
+export function Checkbox2({ id, checked, onChange, children, infoId }: { id: string; checked: boolean; onChange: (v: boolean) => void; children: ReactNode; infoId?: InfoTipId }) {
+  const box = (
     <label htmlFor={id} className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300 cursor-pointer">
+      {/* infotip-shared: Checkbox2 is a control in the coverage test; its caller gives it a tip */}
       <input id={id} type="checkbox" className="mt-0.5 h-4 w-4 accent-blue-600 shrink-0" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       <span>{children}</span>
     </label>
+  );
+  if (!infoId) return box;
+  // the tip sits beside the label, not inside it: a button inside a label would join the checkbox's name
+  return (
+    <div className="flex items-start gap-1">
+      {box}
+      <InfoTip id={infoId} />
+    </div>
   );
 }
