@@ -26,6 +26,7 @@ from backend.new_models import (
     CbomScanNode,
     Team,
 )
+from backend.utilities.cbom_sources import billing as BILLING  # CB-14 credit ledger
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.classify import ASSET_TYPES, classify
 from backend.utilities.cbom_sources.node_facts import normalise_tls
@@ -82,11 +83,22 @@ def charge_team(session: Session, team_id: int, centi: int) -> bool:
     return result.rowcount == 1
 
 
-def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun | None) -> int:
-    """Give back a job's credits once.  Returns centi-credits refunded."""
+def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun | None, *,
+               amount: int | None = None, reason: str | None = None) -> int:
+    """Give back a job's credits once: all of its weight, or ``amount`` of it (the runtime-skip share, CB-14).
+    Returns centi-credits refunded.  The ledger row (``billing.refund_key``) is inserted first: when another
+    transaction already refunded this job (a retried result, the reaper racing a cancel) nothing moves."""
     if job.refunded or job.weight_c <= 0:
         return 0
-    amount = job.weight_c
+    amount = job.weight_c if amount is None else max(0, min(int(amount), job.weight_c))
+    if amount <= 0:
+        return 0
+    why = reason or {"cancelled": "cancelled", "failure": "failed", "expired": "expired"}.get(job.status, "refund")
+    if not BILLING.record(session, team_id=job.team_id, run_id=job.run_id, job_id=job.id, kind="refund", reason=why,
+                          amount_c=amount, idem_key=BILLING.refund_key(job.id)):  # type: ignore[arg-type]
+        session.expire(job, ["refunded", "refunded_c"])
+        log("refund SKIPPED: this job was refunded already", team=job.team_id, run=job.run_id, job=job.id)
+        return 0
     if run is not None:
         # One SQL increment, not an ORM read-modify-write: two jobs of a run refunded at the same time (a node's
         # result and the reaper, two cancels) both count.  A run is charged exactly the sum of its jobs' weights, so
@@ -101,8 +113,11 @@ def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun 
             log("refund SKIPPED: the run has no credits left to refund", team=job.team_id, run=run.id, job=job.id,
                 amount_c=amount)
             amount = 0
+            session.exec(update(BILLING.CbomCreditEntry).where(  # the ledger says what moved: nothing
+                BILLING.CbomCreditEntry.idem_key == BILLING.refund_key(job.id)).values(amount_c=0))  # type: ignore[arg-type]
         session.expire(run, ["credits_refunded_c"])  # the next read sees every refund, not this session's copy
     job.refunded = True
+    job.refunded_c = amount
     session.add(job)
     if amount > 0:
         session.exec(update(Team).where(Team.id == job.team_id).values(credit_balance=Team.credit_balance + amount / 100))
@@ -542,13 +557,44 @@ def _pending_for_node(session: Session, node: CbomScanNode):
             yield job
 
 
+def node_max_concurrency() -> int:
+    """Most collections and discoveries one scan node may hold claimed at once (CBOM_NODE_MAX_CONCURRENCY, default 8:
+    the node agent's own ZS_MAX_JOBS ceiling).  Connection tests are not counted: they are short and a customer is
+    waiting on them."""
+    try:
+        value = int(os.environ.get("CBOM_NODE_MAX_CONCURRENCY", "") or 8)
+    except ValueError:
+        value = 8
+    return max(1, min(value, 64))
+
+
+_CAPPED_KINDS = ("collect", "discovery")
+
+
+def _node_busy(node_id: int):
+    """Claimed collections and discoveries of a node (a scalar subquery, re-read inside the claiming UPDATE)."""
+    return (select(func.count()).select_from(CbomCollectionJob)
+            .where(CbomCollectionJob.node_id == node_id, CbomCollectionJob.status == "claimed",
+                   CbomCollectionJob.kind.in_(_CAPPED_KINDS))  # type: ignore[attr-defined]
+            .scalar_subquery())
+
+
 def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSettings, now: _dt.datetime) -> dict | None:
     """Claim the oldest runnable job for this node and return its payload (with decrypted secrets).
 
     Jobs that cannot run now (outside their scan window, network scanning stopped) stay queued and are passed over,
-    however many there are: they never hide a newer job that can run (a connection test ignores the window)."""
+    however many there are: they never hide a newer job that can run (a connection test ignores the window).  A node
+    holding ``node_max_concurrency()`` collections and discoveries gets only connection tests until one ends (CB-14);
+    two claim requests of one node at once are serialised by a lock on its row (PostgreSQL) and the cap is re-checked
+    inside the claiming UPDATE (exact on SQLite)."""
     reap(session, now, node_id=node.id)
+    cap = node_max_concurrency()
+    if session.get_bind().dialect.name == "postgresql":
+        session.exec(select(CbomScanNode.id).where(CbomScanNode.id == node.id).with_for_update())
+    full = session.exec(select(_node_busy(node.id))).one() >= cap
     for job in _pending_for_node(session, node):
+        if full and job.kind in _CAPPED_KINDS:
+            continue
         source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
         reason = _invalid_reason(job, source, node)
         live_ranges = _live_discovery_ranges(session, job) if job.kind == "discovery" else None
@@ -575,13 +621,18 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
         if job.kind != "test_connection" and not window_allows(_job_window(source, settings), settings.window_timezone, now):
             continue
         lease_id = secrets.token_hex(12)
+        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending"]
+        if job.kind in _CAPPED_KINDS:
+            guard.append(_node_busy(node.id) < cap)
         changed = session.exec(
             update(CbomCollectionJob)
-            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
+            .where(*guard)
             .values(status="claimed", lease_id=lease_id, lease_expires_at=now + LEASE, claimed_at=now,
                     attempts=CbomCollectionJob.attempts + 1, asset_count=0, outcome=None)
         ).rowcount
         if not changed:
+            if job.kind in _CAPPED_KINDS:
+                full = True  # another claim of this node filled it meanwhile
             continue
         session.refresh(job)
         _start_attempt(session, job, now)
@@ -865,7 +916,13 @@ def finish_job(
     # deadline) or refused: nothing was collected, so it is refunded like a failure.  Coverage rows (what was not
     # read, and why) are not a collection: a job that stored only those is refunded too.
     if job.kind == "collect" and (status in ("failure", "cancelled") or (outcome == "failed" and int(read) == 0)):
-        refunded = refund_job(session, job, _run_of(session, job))
+        refunded = refund_job(session, job, _run_of(session, job),
+                              reason="nothing_read" if status == "success" else None)
+    elif job.kind == "collect" and status == "success":
+        # partly read: the targets skipped at runtime or whose credential was refused are not charged (CB-14, OA-10b)
+        share = BILLING.runtime_refund_c(job.weight_c, clean_result if isinstance(clean_result, dict) else None)
+        if share:
+            refunded = refund_job(session, job, _run_of(session, job), amount=share, reason="runtime_skips")
     _test_result_from_job(session, job, now)
     recompute_run(session, job.run_id, now)
     audit(session, team_id=job.team_id, actor_type="node" if node else "system", actor_id=node.id if node else None,

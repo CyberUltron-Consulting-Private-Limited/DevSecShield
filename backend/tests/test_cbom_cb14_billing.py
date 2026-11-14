@@ -40,6 +40,7 @@ from backend.new_models import (CbomCollectedAsset, CbomCollectionJob, CbomColle
 from backend.utilities.cbom_sources import jobs as J  # noqa: E402
 from backend.utilities.cbom_sources import runs as R  # noqa: E402
 from backend.utilities.cbom_sources.billing import CbomCreditEntry, runtime_refund_c  # noqa: E402
+from backend.utilities.cbom_sources.common import utcnow  # noqa: E402
 from backend.utilities.cbom_sources.schemas import Include, RunCreate  # noqa: E402
 from backend.utilities.cbom_sources.settings import get_or_create_settings  # noqa: E402
 
@@ -70,7 +71,7 @@ def ledger(engine, **where) -> list[CbomCreditEntry]:
         return list(s.exec(q.order_by(CbomCreditEntry.id)).all())
 
 
-def started(api, engine, rid="cb14-run-0001", node_targets=FOUR):
+def started(api, engine, rid="cb14-run-0001", node_targets=FOUR):  # noqa: F811
     """A node, a four-host source and a started run whose one job the node has claimed."""
     node_id, token = enroll_node(api)[:2]
     src = api("POST", "/1/cbom/sources/items", json=servers(node_id=node_id, targets=node_targets)).json()["source"]
@@ -82,7 +83,7 @@ def started(api, engine, rid="cb14-run-0001", node_targets=FOUR):
     return src, run.json()["run"], claim.json(), hdr
 
 
-def finish(api, claim, hdr, rows, status="success", post_assets=True):
+def finish(api, claim, hdr, rows, status="success", post_assets=True):  # noqa: F811
     counts = {"total": len(rows), "ok": sum(1 for r in rows if r["status"] == "ok"),
               "skipped": sum(1 for r in rows if r["status"].startswith("skipped_")),
               "failed": sum(1 for r in rows if r["status"] != "ok" and not r["status"].startswith("skipped_"))}
@@ -129,7 +130,7 @@ def _race(engine, n: int, *, team_id=1, user_id=1) -> list[object]:
             s.commit()
             try:
                 run, _replayed = R.queue_run(s, team_id, user_id, RunCreate(
-                    include=Include(servers=True), client_request_id=f"race-{i:04d}-tab"), settings, J.utcnow())
+                    include=Include(servers=True), client_request_id=f"race-{i:04d}-tab"), settings, utcnow())
                 s.commit()
                 result: object = "queued"
             except HTTPException as exc:
@@ -153,7 +154,7 @@ def _race(engine, n: int, *, team_id=1, user_id=1) -> list[object]:
     return out
 
 
-def test_f3_two_tabs_that_start_together_queue_one_job_and_charge_once(api, world):
+def test_f3_two_tabs_that_start_together_queue_one_job_and_charge_once(api, world):  # noqa: F811
     engine, ids = world
     node_id = enroll_node(api)[0]
     api("POST", "/1/cbom/sources/items", json=servers(node_id=node_id))
@@ -168,7 +169,7 @@ def test_f3_two_tabs_that_start_together_queue_one_job_and_charge_once(api, worl
     reconciled(engine)
 
 
-def test_a_conflict_refuses_the_whole_start_and_charges_nothing(api, world):
+def test_a_conflict_refuses_the_whole_start_and_charges_nothing(api, world):  # noqa: F811
     engine, ids = world
     node_id = enroll_node(api)[0]
     api("POST", "/1/cbom/sources/items", json=servers(node_id=node_id))
@@ -183,7 +184,7 @@ def test_a_conflict_refuses_the_whole_start_and_charges_nothing(api, world):
     reconciled(engine)
 
 
-def test_the_409_says_already_queued_and_a_replay_still_answers_200(api, world):
+def test_the_409_says_already_queued_and_a_replay_still_answers_200(api, world):  # noqa: F811
     engine, _ids = world
     node_id = enroll_node(api)[0]
     api("POST", "/1/cbom/sources/items", json=servers(node_id=node_id))
@@ -210,7 +211,7 @@ def test_s_fifty_concurrent_starts_on_postgresql_give_one_job(monkeypatch):
         s.add(user)
         s.commit()
         s.add(TeamMembership(team_id=1, user_id=user.id, role="admin"))
-        node = CbomScanNode(team_id=1, owner_user_id=user.id, name="n1")
+        node = CbomScanNode(team_id=1, owner_user_id=user.id, name="n1", node_token_hash="0" * 64)
         s.add(node)
         s.commit()
         s.add(CbomCollectionSource(team_id=1, owner_user_id=user.id, kind="linux_servers", name="hosts",
@@ -236,7 +237,7 @@ def test_s_fifty_concurrent_starts_on_postgresql_give_one_job(monkeypatch):
                 s.commit()
                 try:
                     R.queue_run(s, 1, uid, RunCreate(include=Include(servers=True), client_request_id=f"pg-race-{i:04d}"),
-                                settings, J.utcnow())
+                                settings, utcnow())
                     s.commit()
                     out.append(201)
                 except HTTPException as exc:
@@ -259,7 +260,7 @@ def test_s_fifty_concurrent_starts_on_postgresql_give_one_job(monkeypatch):
 
 
 # ============================================================================ runtime skips (OA-10b)
-def test_r2_two_of_four_targets_skipped_by_the_window_refund_half(api, world):
+def test_r2_two_of_four_targets_skipped_by_the_window_refund_half(api, world):  # noqa: F811
     engine, _ids = world
     before = balance(engine)
     _src, run, claim, hdr = started(api, engine)
@@ -278,7 +279,7 @@ def test_r2_two_of_four_targets_skipped_by_the_window_refund_half(api, world):
     reconciled(engine)
 
 
-def test_contacted_targets_are_charged_and_refused_credentials_are_not(api, world):
+def test_contacted_targets_are_charged_and_refused_credentials_are_not(api, world):  # noqa: F811
     """Charge for what was contacted: unreachable and timed-out hosts were contacted; a refused credential, a
     never-scan entry and a stop were not read at all."""
     engine, _ids = world
@@ -313,7 +314,7 @@ def test_runtime_refund_reads_the_rows_a_node_folded_into_its_summary_row():
     assert runtime_refund_c(800, {"counts": {"total": 2048, "ok": 1048, "skipped": 1000}, "targets": targets}) == 390
 
 
-def test_an_all_skipped_job_is_nothing_read_and_refunded_in_full(api, world):
+def test_an_all_skipped_job_is_nothing_read_and_refunded_in_full(api, world):  # noqa: F811
     engine, _ids = world
     before = balance(engine)
     _src, run, claim, hdr = started(api, engine)
@@ -326,14 +327,14 @@ def test_an_all_skipped_job_is_nothing_read_and_refunded_in_full(api, world):
 
 
 # ============================================================================ refunds move credits once
-def test_a_retried_result_and_a_second_refund_never_give_credits_back_twice(api, world):
+def test_a_retried_result_and_a_second_refund_never_give_credits_back_twice(api, world):  # noqa: F811
     engine, _ids = world
     before = balance(engine)
     _src, _run, claim, hdr = started(api, engine)
     rows = [{"target": "10.20.0.1", "status": "ok"}, {"target": "10.20.0.2", "status": "skipped_stop"},
             {"target": "10.20.0.3", "status": "ok"}, {"target": "10.20.0.4", "status": "ok"}]
     assert finish(api, claim, hdr, rows).status_code == 200
-    assert finish(api, claim, hdr, rows).status_code == 409  # the node retried its POST: no second refund
+    assert finish(api, claim, hdr, rows, post_assets=False).status_code == 409  # the node retried its POST
     with Session(engine) as s:
         job = s.get(CbomCollectionJob, claim["job"]["id"])
         assert J.refund_job(s, job, J._run_of(s, job)) == 0
@@ -342,7 +343,7 @@ def test_a_retried_result_and_a_second_refund_never_give_credits_back_twice(api,
     reconciled(engine)
 
 
-def test_two_transactions_refunding_one_job_at_once_refund_it_once(api, world):
+def test_two_transactions_refunding_one_job_at_once_refund_it_once(api, world):  # noqa: F811
     """The node's cancelled result and the reaper (or two cancels) both load the job before either commits."""
     engine, _ids = world
     before = balance(engine)
@@ -374,12 +375,13 @@ def test_two_transactions_refunding_one_job_at_once_refund_it_once(api, world):
 
 
 # ============================================================================ Stop all
-def test_stop_all_cancels_a_running_range_refunds_it_in_full_and_keeps_what_it_read(api, world):
+def test_stop_all_cancels_a_running_range_refunds_it_in_full_and_keeps_what_it_read(api, world):  # noqa: F811
     engine, _ids = world
     before = balance(engine)
     node_id, token = enroll_node(api)[:2]
+    assert api("PATCH", "/1/cbom/sources/settings", json={"scan_window": [[True] * 24] * 7}).status_code == 200
     r = api("POST", "/1/cbom/sources/items", json={"kind": "network_range", "name": "dc-range", "node_id": node_id,
-                                                  "config": {"cidr": "10.20.0.0/24", "mode": "full", "window": "any"}})
+                                                  "config": {"cidr": "10.20.0.0/24", "mode": "full"}})
     assert r.status_code == 201, r.text
     run = api("POST", "/1/cbom/sources/runs", json={"include": {"network": True}, "client_request_id": "stop-all-001",
                                                     "soc_ack": True})
@@ -407,7 +409,7 @@ def test_stop_all_cancels_a_running_range_refunds_it_in_full_and_keeps_what_it_r
 
 
 # ============================================================================ per-node concurrency
-def test_a_node_never_holds_more_claimed_jobs_than_its_cap_even_with_concurrent_claims(api, world, monkeypatch):
+def test_a_node_never_holds_more_claimed_jobs_than_its_cap_even_with_concurrent_claims(api, world, monkeypatch):  # noqa: F811
     engine, _ids = world
     monkeypatch.setenv("CBOM_NODE_MAX_CONCURRENCY", "2")
     node_id, token = enroll_node(api)[:2]
@@ -438,7 +440,7 @@ def test_a_node_never_holds_more_claimed_jobs_than_its_cap_even_with_concurrent_
     assert api("POST", "/cbom/node/jobs/claim", None, headers=hdr).status_code == 204
 
 
-def test_the_node_cap_never_blocks_a_connection_test_behind_long_collections(api, world, monkeypatch):
+def test_the_node_cap_never_blocks_a_connection_test_behind_long_collections(api, world, monkeypatch):  # noqa: F811
     engine, _ids = world
     monkeypatch.setenv("CBOM_NODE_MAX_CONCURRENCY", "1")
     _src, _run, _claim, hdr = started(api, engine)
@@ -510,8 +512,9 @@ def test_the_migration_settles_duplicate_open_jobs_backfills_the_ledger_and_roun
         assert conn.execute(sa.text("SELECT credit_balance FROM team")).scalar() == pytest.approx(10.8)
         assert conn.execute(sa.text("SELECT credits_refunded_c FROM cbomcollectionrun WHERE id = 2")).scalar() == 80
         entries = conn.execute(sa.text("SELECT run_id, job_id, kind, amount_c FROM cbomcreditentry ORDER BY id")).all()
-        assert sorted(map(tuple, entries)) == sorted([(1, None, "charge", 80), (2, None, "charge", 80),
-                                                      (1, 2, "refund", 20), (2, 4, "refund", 80)])
+        key = lambda e: (e[0], e[1] or 0, e[2])  # noqa: E731
+        assert sorted(map(tuple, entries), key=key) == sorted([(1, None, "charge", 80), (2, None, "charge", 80),
+                                                               (1, 2, "refund", 20), (2, 4, "refund", 80)], key=key)
         with pytest.raises(sa.exc.IntegrityError):  # a second open collection of source 9
             with conn.begin_nested():
                 conn.execute(sa.text("INSERT INTO cbomcollectionjob (id, team_id, run_id, source_id, kind, status, "

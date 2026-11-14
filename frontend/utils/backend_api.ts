@@ -4408,6 +4408,9 @@ export interface CbomJob {
     attempts: number
     credits: number
     refunded: boolean
+    /** credits given back (CB-14): all of ``credits`` for a failed or cancelled job, the share of targets skipped at
+     * runtime for a partly read one */
+    credits_refunded?: number
     created_at: string | null
     claimed_at: string | null
     finished_at: string | null
