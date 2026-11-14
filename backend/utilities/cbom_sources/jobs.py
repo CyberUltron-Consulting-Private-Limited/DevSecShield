@@ -727,9 +727,13 @@ def _owned_job(session: Session, node: CbomScanNode | None, job_id: int, team_id
     return job
 
 
-def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored: int) -> tuple[str, dict[str, Any]]:
+def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored: int,
+             read: int | None = None) -> tuple[str, dict[str, Any]]:
     """ok / partial / failed from the node's own target counts and what the server actually stored.  A ``partial``
-    target (cloud collectors: read, with coverage gaps) makes the job partial, never ok."""
+    target (cloud collectors: read, with coverage gaps) makes the job partial, never ok.  ``read``: the stored rows
+    that are assets, not coverage gaps.  When no target counts as read but assets were stored (an Azure subscription
+    whose vault listing worked while two vaults refused their keys), something WAS read: partial, never "Nothing
+    read"."""
     if status != "success":
         return "failed", {}
     counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
@@ -745,7 +749,7 @@ def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored
     if not counts:
         return ("partial" if extra or result.get("truncated") else "ok"), extra
     if ok == 0 and partial == 0 and (failed or skipped):
-        return "failed", extra
+        return ("partial" if read else "failed"), extra
     if partial or failed or skipped or extra or result.get("truncated"):
         return "partial", extra
     return "ok", extra
@@ -768,7 +772,11 @@ def finish_job(
         status, clean_error = "cancelled", invalid  # collected under settings that no longer apply
     stored = session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
         CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts)).one()
-    outcome, extra = _outcome(job, status, clean_result if isinstance(clean_result, dict) else {}, int(stored))
+    # coverage rows say what was NOT read: they never make a job "read something" (outcome, refund)
+    read = session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
+        CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts,
+        CbomCollectedAsset.asset_type != "coverage")).one()
+    outcome, extra = _outcome(job, status, clean_result if isinstance(clean_result, dict) else {}, int(stored), int(read))
     if extra and isinstance(clean_result, dict):
         clean_result = {**clean_result, **extra}
     if isinstance(clean_result, dict):
@@ -785,9 +793,10 @@ def finish_job(
         raise HTTPException(status_code=409, detail="This job is no longer leased to this node")
     session.refresh(job)
     refunded = 0
-    # "failed" outcome on a success status with nothing stored = every target was skipped (never-scan, window,
-    # stop, deadline): nothing was collected, so it is refunded like a failure.
-    if job.kind == "collect" and (status in ("failure", "cancelled") or (outcome == "failed" and int(stored) == 0)):
+    # "failed" outcome on a success status with nothing read = every target was skipped (never-scan, window, stop,
+    # deadline) or refused: nothing was collected, so it is refunded like a failure.  Coverage rows (what was not
+    # read, and why) are not a collection: a job that stored only those is refunded too.
+    if job.kind == "collect" and (status in ("failure", "cancelled") or (outcome == "failed" and int(read) == 0)):
         refunded = refund_job(session, job, _run_of(session, job))
     _test_result_from_job(session, job, now)
     recompute_run(session, job.run_id, now)
