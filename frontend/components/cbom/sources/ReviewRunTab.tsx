@@ -299,7 +299,9 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     </>
   ));
 
-  const gaps = Math.max(0, overview.evidence.areas - overview.evidence.answered);
+  // the server's one gap count (E0 areas and vendors, the vendor roll-up not counted twice): the same number the
+  // skipped list and the Evidence tab show (CB-18 OB-3)
+  const gaps = overview.evidence.q0_gap_count ?? Math.max(0, overview.evidence.areas - overview.evidence.answered);
   rows.push({
     key: "evidence",
     label: "Evidence",
@@ -307,7 +309,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
     through: "Questionnaires",
     lastTest: `${overview.evidence.answered} of ${overview.evidence.areas} answered`,
     credits: "No charge",
-    status: gaps ? <StatusBadge tone="amber">{pluralize(gaps, "gap")}</StatusBadge> : <StatusBadge tone="green">Ready</StatusBadge>,
+    status: gaps ? <StatusBadge tone="amber">{pluralize(gaps, "Q0 gap")}</StatusBadge> : <StatusBadge tone="green">Ready</StatusBadge>,
   });
 
   return (
@@ -399,7 +401,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
               A proof trail: the CBOM Sources audit log, the scan node source IPs to tell your SOC, and the read-only AWS role whose
               calls appear in your CloudTrail
             </li>
-            <li>Evidence gaps listed as Q0, never assumed safe</li>
+            <li>Evidence at E0 listed as Q0 gaps with their reason, never assumed safe</li>
           </ul>
           <p className="text-xs text-zinc-500 mt-4">Results feed the CBOM report once the collector for each source type ships.</p>
         </SectionCard>

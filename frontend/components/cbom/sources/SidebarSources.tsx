@@ -179,7 +179,7 @@ export function SourcesAccordionItems({
           </div>
         </AccordionTrigger>
         <AccordionContent className="pb-5 pt-0">
-          <p className="text-xs text-zinc-500">Areas that cannot be scanned are answered by owners and vendors. Unanswered areas stay visible as Q0 gaps. No charge.</p>
+          <p className="text-xs text-zinc-500">Areas that cannot be scanned are answered by owners and vendors. Unanswered areas stay E0 Unknown and visible as Q0 gaps. No charge.</p>
           <Manage teamId={teamId} tab="evidence" />
         </AccordionContent>
       </AccordionItem>
