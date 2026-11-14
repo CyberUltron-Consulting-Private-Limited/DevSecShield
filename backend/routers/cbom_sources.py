@@ -45,6 +45,7 @@ from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
@@ -118,7 +119,7 @@ WRITE = [Depends(write_limiter)]
 BASE = "/{team_id}/cbom/sources"
 REGISTRATION_TTL = _dt.timedelta(hours=24)
 MAX_NODES = 50
-MAX_SOURCES = 500
+# the team's source cap: utilities/cbom_sources/source_cap.py (CBOM_MAX_SOURCES, per-team CBOM_MAX_SOURCES_TEAMS; #224)
 MAX_VENDORS = 100
 
 warn_if_key_is_weak()
@@ -229,6 +230,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                          "by_confidence": state["by_confidence"], "vendors": len(state["vendors"]),
                          "q0_gap_count": state["q0_gap_count"]},
             "code": {"cbom_scans": int(code_scans or 0)},
+            "limits": {"sources": SOURCE_CAP.usage(session, team_id)},
             "settings": {k: v for k, v in public_settings(settings, now).items()
                          if k in ("stop_all_network", "next_window_start", "in_window_now", "window_timezone",
                                   "aws_external_id", "aws_collection_configured", "ct_discovery_enabled")} | {
@@ -540,10 +542,9 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
     cfg = _validate_config(body.kind, body.config)
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
-        total = session.exec(select(func.count()).select_from(CbomCollectionSource)
-                             .where(CbomCollectionSource.team_id == team_id)).one()
-        if total >= MAX_SOURCES:
-            raise HTTPException(status_code=400, detail=f"A team can have at most {MAX_SOURCES} sources")
+        cap = SOURCE_CAP.usage(session, team_id)
+        if cap["remaining"] < 1:
+            raise HTTPException(status_code=400, detail=SOURCE_CAP.refusal(cap))
         needs_node = spec.needs_node(cfg)
         if needs_node and body.node_id is None:
             raise HTTPException(status_code=400, detail="node_id: choose the scan node that reaches these targets")
@@ -615,7 +616,8 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
             rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
         return {"server_time": iso_z(now),
-                "sources": [public_source(r, settings, nodes.get(r.node_id), now) for r in rows]}
+                "sources": [public_source(r, settings, nodes.get(r.node_id), now) for r in rows],
+                "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
 
 
 @router.get(BASE + "/items", dependencies=READ, summary="List sources")

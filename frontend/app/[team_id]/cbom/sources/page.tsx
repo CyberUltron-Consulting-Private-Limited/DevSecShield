@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, RefreshCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,9 @@ import NetworkTab from "@/components/cbom/sources/NetworkTab";
 import EvidenceTab from "@/components/cbom/sources/EvidenceTab";
 import ReviewRunTab from "@/components/cbom/sources/ReviewRunTab";
 import CmdbImportDialog from "@/components/cbom/sources/CmdbImportDialog";
+import { StatusBadge } from "@/components/cbom/sources/shared";
+import { sourceUsage } from "@/components/cbom/sources/sourceLimit";
+import { getCbomSourcesOverview } from "@/utils/backend_api";
 import FleetTab, { useFleetStatus } from "@/components/cbom/sources/fleet/FleetTab";
 import { fleetTabMode, fleetTabShown, pickTab } from "@/components/cbom/sources/fleet/fleetLogic";
 import { FLEET_SECTIONS } from "@/components/cbom/sources/fleet/sections";
@@ -47,6 +50,13 @@ function SourcesPage() {
   const showFleet = fleetTabShown(fleetMode, requested);
   const shown = (value: TabValue) => value !== "fleet" || showFleet;
   const tab: TabValue = pickTab(requested, TABS.map((t) => t.value), shown);
+  // #224: usage against the team's source cap, on every tab (same query key as the tabs, so one request)
+  const overview = useQuery({
+    queryKey: cbomSourcesKeys.overview(teamId),
+    queryFn: () => getCbomSourcesOverview(teamId),
+    enabled: Number.isFinite(teamId) && teamId > 0,
+  });
+  const usage = sourceUsage(overview.data?.limits?.sources);
 
   const goTo = useCallback(
     (value: string) => {
@@ -79,7 +89,12 @@ function SourcesPage() {
                 Connect the servers, clusters, cloud accounts and networks a CBOM scan should cover. Collection is read-only, and nothing is installed on the servers it reads unless you deploy host agents.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {usage && (
+                <span title={usage.title} data-testid="cbom-source-usage">
+                  <StatusBadge tone={usage.tone}>{usage.text}</StatusBadge>
+                </span>
+              )}
               <CmdbImportDialog teamId={teamId} />
               <Button
                 className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"

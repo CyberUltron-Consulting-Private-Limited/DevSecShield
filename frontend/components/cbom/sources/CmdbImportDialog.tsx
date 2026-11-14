@@ -38,7 +38,19 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
         <StatusBadge tone="zinc">{plan.unchanged} unchanged</StatusBadge>
         {plan.counts.conflict > 0 && <StatusBadge tone="amber">{plan.counts.conflict} conflicts</StatusBadge>}
         {plan.counts.skipped > 0 && <StatusBadge tone="red">{plan.counts.skipped} rows skipped</StatusBadge>}
+        {(plan.counts.over_limit ?? 0) > 0 && (
+          <StatusBadge tone="red">{plan.counts.over_limit} over the source limit (not created)</StatusBadge>
+        )}
       </div>
+      {plan.limit && (
+        <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="cmdb-limit">
+          Source limit: this team has {plan.limit.used.toLocaleString("en-US")} of {plan.limit.max.toLocaleString("en-US")} sources
+          ({plan.limit.remaining.toLocaleString("en-US")} more allowed, set by {plan.limit.setting}).
+        </p>
+      )}
+      {(plan.warnings ?? []).map((w) => (
+        <p key={w} className="text-sm text-amber-700 dark:text-amber-400" role="alert">{w}</p>
+      ))}
       {plan.updates.length > 0 && (
         <div>
           <p className="font-medium mb-1">Metadata updates</p>
@@ -60,6 +72,19 @@ function PlanView({ plan }: { plan: CmdbPlan }) {
               <li key={c.name}>
                 <span className="font-medium">{c.name}</span> ({c.kind === "network_range" ? `network range ${c.cidr}` : `${c.targets?.length} Linux hosts`})
                 {Object.keys(c.metadata).length > 0 && <span className="text-zinc-500"> · {Object.entries(c.metadata).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", ")}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(plan.over_limit ?? []).length > 0 && (
+        <div data-testid="cmdb-over-limit">
+          <p className="font-medium mb-1 text-red-600 dark:text-red-400">Over the source limit (will not be created)</p>
+          <p className="text-xs text-zinc-500 mb-1">{plan.over_limit![0].reason}</p>
+          <ul className="space-y-1 text-xs max-h-40 overflow-y-auto">
+            {plan.over_limit!.map((c) => (
+              <li key={c.name}>
+                <span className="font-medium">{c.name}</span> ({c.kind === "network_range" ? `network range ${c.cidr}` : `${c.targets?.length} hosts`})
               </li>
             ))}
           </ul>
@@ -112,7 +137,8 @@ export default function CmdbImportDialog({ teamId }: { teamId: number }) {
   const apply = useMutation({
     mutationFn: () => applyCmdbImport(teamId, request(plan?.digest)),
     onSuccess: (r) => {
-      toast.success(`CMDB import: ${r.result.created} sources created, ${r.result.updated} updated`);
+      const over = r.result.over_limit ? `; ${r.result.over_limit} over the source limit were not created` : "";
+      toast.success(`CMDB import: ${r.result.created} sources created, ${r.result.updated} updated${over}`);
       queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.all(teamId) });
       setOpen(false);
       setPlan(null);

@@ -141,7 +141,11 @@ export interface CmdbPlan {
   rows: number
   digest: string
   unchanged: number
-  counts: { create: number; update: number; conflict: number; skipped: number; new_targets: number }
+  counts: { create: number; update: number; conflict: number; skipped: number; new_targets: number; over_limit?: number }
+  // #224: the team's source cap, and the new sources past it (never created), each with its reason
+  limit?: { used: number; max: number; remaining: number; setting: string }
+  warnings?: string[]
+  over_limit?: (CmdbPlanCreate & { reason: string })[]
   creates: CmdbPlanCreate[]
   updates: { source_id: number; source: string; kind: string; changes: Record<string, [unknown, unknown]> }[]
   conflicts: { source_id: number; source: string; field: string; values: Record<string, number[]> }[]
@@ -163,6 +167,6 @@ export async function previewCmdbImport(teamId: number, body: CmdbRequest):
 }
 
 export async function applyCmdbImport(teamId: number, body: CmdbRequest):
-  Promise<{ result: { created: number; updated: number; conflicts: number; skipped: number }; plan: CmdbPlan }> {
+  Promise<{ result: { created: number; updated: number; conflicts: number; skipped: number; over_limit?: number }; plan: CmdbPlan }> {
   return (await api.post(`/${teamId}/cbom/sources/cmdb/apply`, body)).data
 }

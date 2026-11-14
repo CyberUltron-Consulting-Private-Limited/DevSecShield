@@ -13,6 +13,9 @@ and refuses (409) when the result differs from what was previewed (``digest``), 
 * Hosts not found anywhere become NEW Linux server sources (scan-node key login, trust on first use) on the chosen
   scan node, grouped by identical metadata (one source per group, at most 1000 targets each); CIDRs become network
   ranges. Windows hosts are not created (a WinRM login is required): they are listed for the Servers tab.
+* The team's source cap (``source_cap``: ``CBOM_MAX_SOURCES``, per-team overrides) is checked in the preview: new
+  sources past it are listed as ``over_limit`` with the reason, are not counted as created, and are not created by
+  Apply (#224). Apply re-checks the cap in its own transaction.
 """
 from __future__ import annotations
 
@@ -28,13 +31,14 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agents as AG
+from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.common import NAME_RE, audit, log, utcnow
 from backend.utilities.cbom_sources.kinds import KINDS, _metadata_text
 
 MAX_ROWS = 5000
 MAX_CSV_BYTES = 2 * 1024 * 1024
-MAX_SOURCES = 500
+# the team's source cap is source_cap.max_sources(team) (CBOM_MAX_SOURCES), the same one the Sources API applies
 SERVER_KINDS = ("linux_servers", "windows_servers")
 FIELDS = ("owner", "application", "criticality", "exposure", "data_classification", "environment")
 CONFIG_FIELD = {"owner": "owner", "application": "application", "criticality": "business_criticality",
@@ -173,21 +177,29 @@ class Plan:
     updates: list[dict[str, Any]] = field(default_factory=list)
     conflicts: list[dict[str, Any]] = field(default_factory=list)
     skipped: list[dict[str, Any]] = field(default_factory=list)
+    # new sources past the team's source cap: never created; each says why (#224)
+    over_limit: list[dict[str, Any]] = field(default_factory=list)
+    limit: dict[str, Any] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
     unchanged: int = 0
     rows: int = 0
 
     def digest(self) -> str:
-        blob = json.dumps({"c": self.creates, "u": self.updates}, sort_keys=True, separators=(",", ":"), default=str)
+        # over_limit is part of what the user confirms: if the cap or the team's count moves, Apply answers 409
+        blob = json.dumps({"c": self.creates, "u": self.updates, "o": [o["name"] for o in self.over_limit]},
+                          sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(blob.encode()).hexdigest()[:32]
 
     def public(self, limit: int = 500) -> dict[str, Any]:
         return {"rows": self.rows, "digest": self.digest(), "unchanged": self.unchanged,
                 "counts": {"create": len(self.creates), "update": len(self.updates), "conflict": len(self.conflicts),
-                           "skipped": len(self.skipped),
+                           "skipped": len(self.skipped), "over_limit": len(self.over_limit),
                            "new_targets": sum(len(c.get("targets") or [c.get("cidr")]) for c in self.creates)},
+                "limit": self.limit, "warnings": self.warnings,
                 "creates": self.creates[:limit], "updates": self.updates[:limit], "conflicts": self.conflicts[:limit],
-                "skipped": self.skipped[:limit], "truncated": max(len(self.creates), len(self.updates),
-                                                                  len(self.conflicts), len(self.skipped)) > limit}
+                "skipped": self.skipped[:limit], "over_limit": self.over_limit[:limit],
+                "truncated": max(len(self.creates), len(self.updates), len(self.conflicts), len(self.skipped),
+                                 len(self.over_limit)) > limit}
 
 
 def _identities(row: dict[str, Any]) -> tuple[str, list[str], list[str]]:
@@ -318,7 +330,25 @@ def build_plan(session: Session, team_id: int, rows: list[dict[str, Any]], *, cr
         for start in range(0, len(targets), T.MAX_LINES):
             plan.creates.append({"kind": kind, "name": _name(base, used), "targets": targets[start:start + T.MAX_LINES],
                                  "metadata": config_meta, "lines": group["lines"][:50]})
+    _apply_cap(session, team_id, plan)
     return plan
+
+
+def _apply_cap(session: Session, team_id: int, plan: Plan) -> None:
+    """Split the planned creates at the team's remaining capacity: the rest go to ``over_limit`` with the reason."""
+    plan.limit = SOURCE_CAP.usage(session, team_id)
+    remaining = plan.limit["remaining"]
+    if len(plan.creates) <= remaining:
+        return
+    planned = len(plan.creates)
+    reason = (f"over the team's source limit: a team can have at most {plan.limit['max']:,} sources and this team has "
+              f"{plan.limit['used']:,} ({remaining:,} more allowed); raise {plan.limit['setting']} or delete unused "
+              "sources, then import again")
+    plan.over_limit = [{**item, "reason": reason} for item in plan.creates[remaining:]]
+    plan.creates = plan.creates[:remaining]
+    plan.warnings.append(f"{len(plan.over_limit):,} of the {planned:,} new sources are over the team's source limit "
+                         f"({plan.limit['used']:,} of {plan.limit['max']:,} used) and will not be created; "
+                         f"{len(plan.creates):,} will be.")
 
 
 # ----------------------------------------------------------------------------- apply
@@ -335,10 +365,9 @@ def apply_plan(session: Session, team_id: int, user_id: int, plan: Plan, *, node
             problem = AG.kind_problem(node, kind)
             if problem:
                 raise ValueError(f"node_id: {problem}")
-        total = len(session.exec(select(CbomCollectionSource.id).where(CbomCollectionSource.team_id == team_id)).all())
-        if total + len(plan.creates) > MAX_SOURCES:
-            raise ValueError(f"this import would create {len(plan.creates)} sources; a team can have at most "
-                             f"{MAX_SOURCES} (it has {total})")
+        cap = SOURCE_CAP.usage(session, team_id)
+        if len(plan.creates) > cap["remaining"]:  # build_plan split at the cap; this guards its own transaction
+            raise ValueError(SOURCE_CAP.refusal(cap, len(plan.creates)))
     updated = created = 0
     for item in plan.updates:
         source = session.get(CbomCollectionSource, item["source_id"])
@@ -372,4 +401,5 @@ def apply_plan(session: Session, team_id: int, user_id: int, plan: Plan, *, node
         created += 1
     log("cmdb import applied", team=team_id, by=user_id, created=created, updated=updated,
         conflicts=len(plan.conflicts) or None, skipped=len(plan.skipped) or None)
-    return {"created": created, "updated": updated, "conflicts": len(plan.conflicts), "skipped": len(plan.skipped)}
+    return {"created": created, "updated": updated, "conflicts": len(plan.conflicts), "skipped": len(plan.skipped),
+            "over_limit": len(plan.over_limit)}

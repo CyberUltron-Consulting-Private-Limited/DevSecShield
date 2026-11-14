@@ -1,6 +1,7 @@
 import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
 import type { NodeArtifacts } from "@/components/cbom/sources/logic"
+import type { CbomSourceUsage } from "@/components/cbom/sources/sourceLimit"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
 
@@ -4674,6 +4675,7 @@ export interface CbomSourcesOverview {
     plan: CbomEstimate
     evidence: { areas: number; answered: number; by_confidence: Record<CbomConfidence, number>; vendors: number; q0_gap_count?: number }
     code: { cbom_scans: number }
+    limits?: { sources: CbomSourceUsage }  // #224: usage against the team's source cap
     settings: {
         stop_all_network: boolean
         next_window_start: string | null
