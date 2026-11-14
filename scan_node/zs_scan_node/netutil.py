@@ -642,6 +642,15 @@ def is_ip(text) -> bool:
         return False
 
 
+def host_port(host: str, port: int | str) -> str:
+    """``host:port`` for an asset location, with an IPv6 address in brackets (``[fd00::5]:5696``) so the port can be
+    read back; a host already in brackets, an IPv4 address or a name is used as is."""
+    text = str(host)
+    if ":" in text and not text.startswith("["):
+        text = f"[{text}]"
+    return f"{text}:{port}"
+
+
 def checked_ip(ip: str, never: NeverScan) -> str:
     """The address itself, after checking it against the current never-scan list (raises Blocked)."""
     entry = never.match_ip(ip)
