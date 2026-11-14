@@ -160,7 +160,7 @@ def test_organization_member_listing_failure_is_a_failed_target_not_a_note(aws, 
     monkeypatch.setattr(aws_collect, "_boto", lambda **kw: (_Session(False), None))
     monkeypatch.setattr(aws_collect, "_region_services",
                         lambda acct, region, label, emit, cfg, **_k: [("kms", "ok", None)])
-    monkeypatch.setattr(aws_collect, "_global_services", lambda acct, label, emit: [("iam", "ok", None)])
+    monkeypatch.setattr(aws_collect, "_global_services", lambda acct, label, emit, **_k: [("iam", "ok", None)])
     found: list[dict] = []
     result = aws_collect.collect_aws(1, {"role_arn": ROLE, "regions": ["us-east-1"], "scope": "organization"},
                                      EXTERNAL_ID, found.append, lambda: None)

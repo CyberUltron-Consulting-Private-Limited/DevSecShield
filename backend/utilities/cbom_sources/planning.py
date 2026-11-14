@@ -205,6 +205,8 @@ class PlanItem:
     # window_applies says the source has one; window_starts_at is when a run queued now may start (None: now)
     window_applies: bool = False
     window_starts_at: _dt.datetime | None = None
+    # CB-11: what the estimate cannot know (host names on the never-scan list resolve on the node), and what happens
+    note: str | None = None
 
     def public(self) -> dict[str, Any]:
         starts = self.window_starts_at
@@ -214,6 +216,7 @@ class PlanItem:
             "credits": credits(self.credits_c), "status": self.status, "reason": self.reason,
             "waiting_for_node": self.waiting, "window_applies": self.window_applies,
             "window_starts_at": starts.strftime("%Y-%m-%dT%H:%M:%SZ") if starts else None,
+            "note": self.note,
         }
 
 
@@ -272,6 +275,7 @@ def plan_run(
     wanted = set(source_ids) if source_ids else None
     range_ctx = RangeContext.of_sources(list(sources), settings)  # every source of the team: built once
     plan = Plan()
+    listed_names = len(team_exclusions(settings).hostnames)
     counted_blocks: list[T.Interval] = []
     for source in sources:
         spec = KINDS.get(source.kind)
@@ -314,6 +318,8 @@ def plan_run(
             item.reason = kind_problem(node, source.kind)
         elif source.kind == "aws_account" and source.last_test_status != "passed":
             item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
+        elif source.last_test_status == "failed" and (source.last_test_result or {}).get("credential_refused"):
+            item.reason = source.last_test_summary or "Credential refused; edit the credential"  # CB-10
         elif source.last_test_status == "failed":
             item.reason = "Last connection test failed; fix it and test again"
         elif source.kind in CLOUD_NOT_CONNECTED and source.last_test_status != "passed":
@@ -340,6 +346,8 @@ def plan_run(
                         item.status = "skipped"
                         plan.items.append(item)
                         continue
+            if listed_names and (group in ("servers", "network") or source.kind == "appliance"):
+                item.note = never_scan_note(listed_names, per_target=info["unit"] == "targets")
             if source.kind == "container_images":
                 item.credits_c = RATES_C["image"] * units
             elif source.kind == "ct_logs":
@@ -365,6 +373,17 @@ def plan_run(
 
 
 _AWS_PCA = "Read by its AWS account source; nothing separate to collect"
+
+
+def never_scan_note(names: int, *, per_target: bool) -> str:
+    """CB-11: the estimate subtracts every listed address and every listed name that is a target; a listed host name
+    is resolved by the scan node, so the addresses it blocks are known only when the job ends."""
+    lead = (f"{names} host name{'s' if names != 1 else ''} on the never-scan list "
+            f"{'are' if names != 1 else 'is'} resolved by the scan node: a target {'they block' if names != 1 else 'it blocks'} "
+            "is not scanned")
+    if per_target:
+        return f"{lead}, and its charge is refunded when the job ends."
+    return f"{lead} (a range is charged per /24 block, which one blocked address does not change)."
 
 
 def _aws_private_ca(plan: Plan, sources: list[CbomCollectionSource]) -> None:

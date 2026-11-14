@@ -3,11 +3,14 @@
 // Post-quantum and risk posture of a collection run, and the per-asset explanation (CWE / OWASP / CVE, fix and
 // read-only proof commands). Everything comes from the API's offline knowledge base: no AI, no internet.
 
+import { CorrelationSection } from "@/components/cbom/estate/Correlation";
+import type { Correlation } from "@/components/cbom/estate/correlation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Info } from "lucide-react";
 import { Fragment, useState } from "react";
 
 import KbFindingDetails from "@/components/cbom/KbFindingDetails";
+import { StandardsDrawerSection } from "@/components/cbom/standards/Standards";
 import {
   AgilityDrawerSection,
   AgilityPostureCard,
@@ -293,7 +296,7 @@ export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
   );
 }
 
-export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId: number }) {
+export function AssetDetailPanel({ teamId, assetId, mergedStandards = false }: { teamId: number; assetId: number; mergedStandards?: boolean }) {
   const query = useQuery({
     queryKey: cbomSourcesKeys.asset(teamId, assetId),
     queryFn: async () => (await getCbomAssetDetail(teamId, assetId)) as unknown as CbomAssetDetailWithExposure,
@@ -331,6 +334,8 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
       )}
       <QGradeDrawerSection teamId={teamId} asset={a} />
       <AgilityDrawerSection teamId={teamId} agility={a.agility} />
+      <StandardsDrawerSection standards={a.standards} />
+      <CorrelationSection teamId={teamId} correlation={(a as { correlation?: Correlation | null }).correlation} />
       {a.library && (
         <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3 space-y-1" data-testid="asset-library">
           <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
@@ -364,7 +369,7 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
         </div>
       )}
       {(a.type === "crypto_library" || a.type === "process_library") && <SbomLinks teamId={teamId} assetId={a.id} />}
-      <KbFindingDetails details={a.details} />
+      <KbFindingDetails details={a.details} mergedStandards={mergedStandards} />
     </div>
   );
 }

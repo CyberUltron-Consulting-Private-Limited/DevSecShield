@@ -4,8 +4,10 @@
  *   Actions column with Details, and rows that open the finding dialog (tab stop, aria-haspopup=dialog);
  * - the code-scan table in CbomResults.tsx has the same row handlers, chooser and sticky actions;
  * - both finding dialogs scroll their body (no Radix ScrollArea with h-full inside a max-height-only flexbox);
- * - "Standards and regulations" shows once per dialog: once in the KB details (merged across finding codes, each
- *   clause once) and not again as the remediation panel's Standards tab in the run dialog.
+ * - "Standards and regulations" shows once in the run dialog: merged KB details (each clause once) and no
+ *   remediation Standards tab; every other KbFindingDetails caller (code-scan Standards tab, Sources asset drawer)
+ *   keeps one block per finding code, as before (#282 review);
+ * - every cell carries data-col and every run row data-type-label: the gate reads rows by attribute, not position.
  * Run (frontend/): npx --yes tsx@4.23.15 components/cbom/results/findingDialogTable.test.ts
  */
 import assert from "node:assert/strict";
@@ -67,6 +69,13 @@ for (const id of [11, 12]) {
 const actionCells = [...html.matchAll(/<td\b[^>]*data-testid="run-asset-actions-\d+"[^>]*>/g)].map((m) => m[0]);
 assert.equal(actionCells.length, 2, "one actions cell per row");
 for (const c of actionCells) assert.match(c, /md:sticky[^"]*md:right-0/, "actions cell pinned right");
+// stable column hooks (#282 review): every header and cell names its column, whatever is hidden
+const thCols = [...html.matchAll(/<th\b[^>]*data-col="(\w+)"/g)].map((m) => m[1]);
+assert.deepEqual(thCols, ["select", "impact", "algorithm", "where", "quantum", "risk", "status", "actions"]);
+const tdCount = [...html.matchAll(/<td\b/g)].length;
+assert.equal([...html.matchAll(/<td\b[^>]*data-col="\w+"/g)].length, tdCount, "every cell has data-col");
+assert.match(rowTag(11), /data-type-label="TLS endpoint"/, "row carries the rendered type label");
+assert.match(rowTag(11), /data-impact="High"[^>]*data-location="10\.0\.0\.5:443"|data-location="10\.0\.0\.5:443"[^>]*data-impact="High"/);
 assert.match(/<th\b[^>]*>(?:(?!<\/th>)[\s\S])*Actions/.exec(html.slice(html.lastIndexOf("<th", html.indexOf("Actions"))))?.[0] ?? "",
              /md:sticky/, "Actions header pinned right");
 
@@ -77,12 +86,18 @@ const kb = (code: string, extra: Partial<KbFindingDetail> = {}): KbFindingDetail
   cves: [], standards: ["NIST SP 800-52r2"], compliance: [rbi], remediation: { summary: "s", steps: [] }, verify: [],
   references: [], ...extra,
 } as unknown as KbFindingDetail);
-const kbHtml = render(h(KbFindingDetails, { details: [kb("TLS_RSA_KEX"), kb("TLS_OLD", { standards: ["NIST SP 800-52r2", "CNSA 2.0"] })] }));
+const twoCodes = [kb("TLS_RSA_KEX"), kb("TLS_OLD", { standards: ["NIST SP 800-52r2", "CNSA 2.0"] })];
+// default (code-scan Standards tab, Sources drawer): unchanged, one block per code with its own clauses
+const perCode = render(h(KbFindingDetails, { details: twoCodes }));
+assert.equal(count(perCode, "Standards and regulations"), 2, "per-code attribution kept for other callers");
+assert.ok(!perCode.includes('data-testid="kb-standards"'));
+// run dialog (mergedStandards): one merged block
+const kbHtml = render(h(KbFindingDetails, { details: twoCodes, mergedStandards: true }));
 assert.equal(count(kbHtml, "Standards and regulations"), 1, "one Standards and regulations section for two codes");
 assert.equal(count(kbHtml, rbi.text), 1, "the RBI clause once");
 assert.equal(count(kbHtml, "NIST SP 800-52r2"), 1, "each standard once");
 assert.ok(kbHtml.includes("CNSA 2.0"), "standards of every code kept");
-assert.equal(count(render(h(KbFindingDetails, { details: [kb("X", { standards: [], compliance: [] })] })), "Standards and regulations"), 0,
+assert.equal(count(render(h(KbFindingDetails, { details: [kb("X", { standards: [], compliance: [] })], mergedStandards: true })), "Standards and regulations"), 0,
              "no empty section");
 
 // ------------------------------------------------------------------ dialogs (source wiring: portals do not SSR)
@@ -97,6 +112,15 @@ for (const [name, src, testId] of [["run", dialog, "run-finding-scroll"], ["code
 assert.match(dialog, /tabIndex=\{0\}/, "run dialog body is focusable for keyboard scrolling");
 // the run dialog's KB details come from AssetDetailPanel; the remediation panel's Standards tab would repeat them
 assert.match(dialog, /<RemediationPanel[^>]*standardsTab=\{false\}/, "no second Standards in the run dialog");
+assert.match(dialog, /<AssetDetailPanel teamId=\{teamId\} assetId=\{assetId\} mergedStandards \/>/, "the run dialog merges");
+const posture = read("..", "sources", "RunPosture.tsx");
+assert.match(posture, /mergedStandards = false/, "the Sources drawer keeps per-code blocks");
+assert.match(posture, /<KbFindingDetails details=\{a\.details\} mergedStandards=\{mergedStandards\} \/>/);
+// code-scan table: every cell names its column
+const codeTable = template.slice(template.indexOf("<TableHead data-col=\"select\""), template.indexOf("{/* Top Cryptographic Risks */}"));
+for (const id of ["select", "algorithm", "type", "impact", "strength", "quantum", "fixclass", "risk", "location", "status", "actions"]) {
+  assert.equal(count(codeTable, `data-col="${id}"`), 2, `code table header and cell for ${id}`);
+}
 const remediation = read("..", "..", "RemediationPanel.tsx");
 assert.match(remediation, /standardsTab = true/, "the code dialog keeps its Standards tab (its only KB details)");
 assert.match(remediation, /\{standardsTab && \(\s*<TabsTrigger value="details"/);

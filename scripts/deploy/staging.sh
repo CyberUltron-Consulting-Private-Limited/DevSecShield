@@ -194,7 +194,7 @@ cmd_save() {
 # The scan-node downloads of this checkout: the image file (built and checked by scan_node_image.sh), then the chart,
 # the kits and manifest.json (node_artifacts.py). The node image is removed from the builder's Docker afterwards.
 cmd_node_artifacts() {
-  local version image
+  local version image build
   version="${CBOM_NODE_VERSION:-$(sed -n -E 's/^VERSION = "([^"]+)"$/\1/p' "${REPO_ROOT}/scan_node/zs_scan_node/__init__.py")}"
   [[ -n "${version}" ]] || die "cannot read the scan-node VERSION from scan_node/zs_scan_node/__init__.py"
   image="${SCAN_NODE_IMAGE:-localhost/zeroshield/cbom-scan-node}"
@@ -202,8 +202,12 @@ cmd_node_artifacts() {
   mkdir -p "${NODE_BUILD_DIR}"
   log "scan-node downloads ${version} (${image}:${version}) in ${NODE_BUILD_DIR}"
   SCAN_NODE_IMAGE="${image}" OUT_DIR="${NODE_BUILD_DIR}" "${REPO_ROOT}/scripts/release/scan_node_image.sh" build "${version}"
+  # The commit the image reports (scan_node_image.sh labels it; "unknown" for a dirty tree): the manifest's build, which
+  # the server compares every node's reported <version>+<commit> with ("Update available" on Scan nodes).
+  build="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${image}:${version}" 2>/dev/null || true)"
+  [[ "${build}" =~ ^[0-9a-f]{40}$ ]] || { log "WARNING: the node image carries no commit: the server cannot tell which nodes are out of date"; build=""; }
   python3 -I "${REPO_ROOT}/scripts/release/node_artifacts.py" --version "${version}" --image-ref "${image}:${version}" \
-    --out "${NODE_BUILD_DIR}"
+    --out "${NODE_BUILD_DIR}" --build "${build}"
   docker image rm "${image}:${version}" >/dev/null 2>&1 || true
   log "scan-node downloads: $(du -sh "${NODE_BUILD_DIR}" | cut -f1)"
 }

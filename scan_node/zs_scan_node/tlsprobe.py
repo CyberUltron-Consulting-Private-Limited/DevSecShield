@@ -7,6 +7,8 @@ garbage stream or a 40-certificate chain cannot hang or crash the node.
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import errno
 import hashlib
 import os
@@ -19,6 +21,8 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+from zs_scan_node import idn
 
 SSL3, TLS10, TLS11, TLS12, TLS13 = 0x0300, 0x0301, 0x0302, 0x0303, 0x0304
 VERSION_NAMES = {SSL3: "SSLv3", TLS10: "TLSv1.0", TLS11: "TLSv1.1", TLS12: "TLSv1.2", TLS13: "TLSv1.3"}
@@ -161,6 +165,18 @@ def _ext(ext_type: int, body: bytes) -> bytes:
     return struct.pack("!HH", ext_type, len(body)) + body
 
 
+def sni_name(sni: str | None) -> str | None:
+    """The SNI host name as sent: its IDNA 2008 A-label (CB-09; Python's codec, which ``ssl`` and ``.encode("idna")``
+    use, is IDNA 2003 and sends ``fass.lab`` for ``faß.lab``).  None (no SNI) for a name IDNA 2008 refuses, rather
+    than another host's name."""
+    if not sni:
+        return None
+    try:
+        return idn.to_a_label(str(sni).strip().rstrip("."))
+    except idn.IdnError:
+        return None
+
+
 def build_client_hello(version: int, suites: list[int], sni: str | None = None, groups: list[int] | None = None,
                        tls13: bool = False, key_share_groups: list[int] | None = None,
                        fallback_scsv: bool = False, versions13: list[int] | None = None) -> bytes:
@@ -174,8 +190,9 @@ def build_client_hello(version: int, suites: list[int], sni: str | None = None, 
     body += b"\x01\x00"  # null compression only
     exts = b""
     if version >= TLS10:
+        sni = sni_name(sni)
         if sni:
-            name = sni.encode("idna")
+            name = sni.encode("ascii")
             entry = b"\x00" + struct.pack("!H", len(name)) + name
             exts += _ext(0, struct.pack("!H", len(entry)) + entry)
         g = groups if groups is not None else CLASSICAL_GROUPS
@@ -556,10 +573,133 @@ def parse_tds_prelogin(body: bytes) -> dict:
     raise ProbeError("error", "no ENCRYPTION option in PRELOGIN response")
 
 
+# ----------------------------------------------------------------------------- POP3, FTP, XMPP (CB-34)
+def _pop3(sock, deadline):
+    """RFC 2595 section 4: STLS after the greeting; CAPA (RFC 2449) says whether it is offered. A server without CAPA
+    (an RFC 1939-only server) is asked STLS anyway: its answer decides."""
+    banner = _read_line(sock, deadline)
+    if not banner.startswith(b"+OK"):
+        raise ProbeError("error", "not a POP3 greeting")
+    sock.sendall(b"CAPA\r\n")
+    first = _read_line(sock, deadline)
+    if first.startswith(b"+OK"):
+        caps: list[bytes] = []
+        for _ in range(64):
+            line = _read_line(sock, deadline)
+            if line.rstrip(b"\r\n") == b".":
+                break
+            caps.append(line.strip().upper())
+        else:
+            raise ProbeError("error", "POP3 CAPA list too long")
+        if not any(c == b"STLS" or c.startswith(b"STLS ") for c in caps):
+            raise StarttlsUnavailable("STLS not offered")
+    sock.sendall(b"STLS\r\n")
+    if not _read_line(sock, deadline).startswith(b"+OK"):
+        raise StarttlsUnavailable("STLS refused")
+    return {"banner": banner[:120].decode("latin-1", "replace").strip()}
+
+
+def _ftp_reply(sock, deadline) -> bytes:
+    """One FTP reply (RFC 959 section 4.2: a multi-line reply runs from "ddd-" to the line starting "ddd ")."""
+    first = _read_line(sock, deadline)
+    if len(first) < 4 or not first[:3].isdigit():
+        raise ProbeError("error", "not an FTP reply")
+    if first[3:4] != b"-":
+        return first
+    for _ in range(64):
+        line = _read_line(sock, deadline)
+        if line[:3] == first[:3] and line[3:4] == b" ":
+            return first
+    raise ProbeError("error", "FTP reply too long")
+
+
+def _ftp(sock, deadline):
+    """RFC 4217 section 4: AUTH TLS after the greeting; 234 starts TLS, any other reply means no TLS here."""
+    banner = _ftp_reply(sock, deadline)
+    if not banner.startswith(b"220"):
+        raise ProbeError("error", "not an FTP greeting")
+    sock.sendall(b"AUTH TLS\r\n")
+    reply = _ftp_reply(sock, deadline)
+    if not reply.startswith(b"234"):
+        raise StarttlsUnavailable(f"AUTH TLS refused ({reply[:3].decode('latin-1', 'replace')})")
+    return {"banner": banner[:120].decode("latin-1", "replace").strip()}
+
+
+# The XMPP domain a STARTTLS probe names in its stream header ('to', RFC 6120 section 4.7.2): the endpoint's SNI name
+# when the scan knows one (the network collector sets it per endpoint), else the address it connected to.
+XMPP_DOMAIN: contextvars.ContextVar[str | None] = contextvars.ContextVar("zs_xmpp_domain", default=None)
+
+
+@contextlib.contextmanager
+def starttls_name(name: str | None):
+    token = XMPP_DOMAIN.set(name)
+    try:
+        yield
+    finally:
+        XMPP_DOMAIN.reset(token)
+
+
+_XMPP_TLS_NS = b"urn:ietf:params:xml:ns:xmpp-tls"
+_XMPP_ERROR = re.compile(rb"<(?:stream:)?error\b.*?<([a-z-]+)[\s/>]", re.S)
+
+
+def _read_until(sock, deadline, markers: tuple[bytes, ...], limit: int = 16384) -> bytes:
+    buf = b""
+    while not any(m in buf for m in markers):
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise ProbeError("timeout", "no XMPP answer")
+        sock.settimeout(min(left, 2.0))
+        try:
+            chunk = sock.recv(4096)
+        except socket.timeout:
+            continue
+        except OSError:
+            raise ProbeError("error", "connection reset during the XMPP stream") from None
+        if not chunk:
+            raise ProbeError("error", "closed during the XMPP stream")
+        buf += chunk
+        if len(buf) > limit:
+            raise ProbeError("error", "XMPP stream features too long")
+    return buf
+
+
+def _xmpp(sock, deadline, namespace: str = "jabber:client", ip: str | None = None):
+    """RFC 6120 section 5: open a stream, read the features, <starttls/>, expect <proceed/> (<failure/> or no
+    <starttls/> feature: no TLS here). A stream error (host-unknown: the server does not serve the name the node
+    asked for) proves nothing about TLS: it is a probe error that names the domain, never "plaintext only"."""
+    domain = XMPP_DOMAIN.get() or ip or ""
+    if not re.fullmatch(r"[A-Za-z0-9.:\-\[\]]{1,253}", domain):
+        raise ProbeError("error", "no usable XMPP domain")
+    sock.sendall(f"<?xml version='1.0'?><stream:stream xmlns='{namespace}' "
+                 f"xmlns:stream='http://etherx.jabber.org/streams' to='{domain}' version='1.0'>".encode())
+    head = _read_until(sock, deadline, (b"</stream:features>", b"</stream:error>", b"</stream:stream>"))
+    error = _XMPP_ERROR.search(head)
+    if error and b"<stream:features" not in head:
+        cond = error.group(1).decode("latin-1", "replace")[:40]
+        raise ProbeError("error", f"XMPP stream error {cond} for {domain}: add the server's XMPP domain as a server "
+                                  "name for this address")
+    features = head[head.find(b"<stream:features"):]
+    if b"<starttls" not in features or _XMPP_TLS_NS not in features:
+        raise StarttlsUnavailable("XMPP STARTTLS not offered")
+    sock.sendall(b"<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>")
+    answer = _read_until(sock, deadline, (b"<proceed", b"<failure", b"</stream:stream>"))
+    if b"<proceed" not in answer:
+        raise StarttlsUnavailable("XMPP STARTTLS refused")
+    return {"xmpp_domain": domain, "xmpp_required": b"<required" in features.split(b"</starttls>")[0]}
+
+
+def _xmpp_server(sock, deadline, ip: str | None = None):
+    return _xmpp(sock, deadline, "jabber:server", ip)
+
+
 PREAMBLES = {"starttls-smtp": _smtp, "starttls-imap": _imap, "starttls-ldap": _ldap, "starttls-postgres": _postgres,
-             "starttls-mysql": _mysql}
+             "starttls-mysql": _mysql, "starttls-pop3": _pop3, "starttls-ftp": _ftp, "starttls-xmpp": _xmpp,
+             "starttls-xmpp-server": _xmpp_server}
+_NEEDS_ADDRESS = {"starttls-xmpp", "starttls-xmpp-server"}  # preambles that name the server (XMPP 'to')
 S_CLIENT_STARTTLS = {"starttls-smtp": "smtp", "starttls-imap": "imap", "starttls-ldap": "ldap",
-                     "starttls-postgres": "postgres", "starttls-mysql": "mysql"}
+                     "starttls-postgres": "postgres", "starttls-mysql": "mysql", "starttls-pop3": "pop3",
+                     "starttls-ftp": "ftp", "starttls-xmpp": "xmpp", "starttls-xmpp-server": "xmpp-server"}
 
 
 def open_tls_socket(ip: str, port: int, protocol: str, timeout: float = 10.0) -> tuple[socket.socket, dict]:
@@ -568,7 +708,9 @@ def open_tls_socket(ip: str, port: int, protocol: str, timeout: float = 10.0) ->
     sock = connect(ip, port, min(3.0, timeout))
     try:
         facts: dict[str, Any] = {}
-        if protocol in PREAMBLES:
+        if protocol in _NEEDS_ADDRESS:
+            facts = PREAMBLES[protocol](sock, deadline, ip=ip) or {}
+        elif protocol in PREAMBLES:
             facts = PREAMBLES[protocol](sock, deadline) or {}
         elif protocol == "rdp":
             facts = rdp_negotiate(sock, deadline)
@@ -675,9 +817,12 @@ def s_client(ip: str, port: int, protocol: str, sni: str | None, timeout: float 
     host = f"[{ip}]" if ":" in ip else ip
     cmd = ["openssl", "s_client", "-connect", f"{host}:{port}", "-showcerts", "-legacy_server_connect",
            "-cipher", "ALL:COMPLEMENTOFALL:@SECLEVEL=0"]
+    sni = sni_name(sni)
     cmd += ["-servername", sni] if sni else ["-noservername"]
     if protocol in S_CLIENT_STARTTLS:
         cmd += ["-starttls", S_CLIENT_STARTTLS[protocol]]
+        if protocol in _NEEDS_ADDRESS:
+            cmd += ["-xmpphost", XMPP_DOMAIN.get() or sni or ip]
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "OPENSSL_CONF": "/dev/null", "LC_ALL": "C"}
     try:
         proc = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, env=env)
@@ -705,7 +850,7 @@ def python_handshake(ip: str, port: int, protocol: str, sni: str | None, timeout
         pass
     sock.settimeout(timeout)
     try:
-        with ctx.wrap_socket(sock, server_hostname=sni) as tls:
+        with ctx.wrap_socket(sock, server_hostname=sni_name(sni)) as tls:
             der = tls.getpeercert(binary_form=True)
             cipher = tls.cipher()
             return FullHandshake(ok=True, version=tls.version(), cipher=cipher[0] if cipher else None,

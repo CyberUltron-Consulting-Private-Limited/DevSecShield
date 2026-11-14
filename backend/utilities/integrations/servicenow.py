@@ -54,6 +54,9 @@ CLOSE_KINDS = ("resolved", "cert_renewed")
 _PRIORITY = {"Critical": ("1", "1"), "High": ("1", "2"), "Medium": ("2", "2"), "Low": ("3", "3")}
 _RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 CMDB_MAX_ROWS = 5000
+# #225: the optional import columns a CMDB mapping may name (the same keys a CSV row carries; cmdb.EXTRA_ALIASES)
+CMDB_EXTRA_FIELDS = ("segment", "scan_node", "kind", "engine", "port", "login", "database_name", "vault_path",
+                     "vault_provider", "api_url", "context", "module", "token_label")
 CMDB_PAGE = 500
 CMDB_PAGE_BYTES = 8 * 1024 * 1024
 
@@ -69,6 +72,22 @@ class CmdbMapping(BaseModel):
     criticality: str | None = None
     exposure: str | None = None
     data_classification: str | None = None
+    # #225: the CSV import's optional columns, each read from the field named here (off when None). The segment or
+    # scan node routes a row to a scan node; kind / engine / port / login / database_name / api_url / context /
+    # module / token_label describe database, cluster and HSM rows; vault_path names the vault secret of the login.
+    segment: str | None = None
+    scan_node: str | None = None
+    kind: str | None = None
+    engine: str | None = None
+    port: str | None = None
+    login: str | None = None
+    database_name: str | None = None
+    vault_path: str | None = None
+    vault_provider: str | None = None
+    api_url: str | None = None
+    context: str | None = None
+    module: str | None = None
+    token_label: str | None = None
 
     @field_validator("host")
     @classmethod
@@ -78,7 +97,8 @@ class CmdbMapping(BaseModel):
             raise ValueError("cmdb_mapping.host: one or more ServiceNow field names")
         return clean
 
-    @field_validator("owner", "application", "environment", "criticality", "exposure", "data_classification")
+    @field_validator("owner", "application", "environment", "criticality", "exposure", "data_classification",
+                     *CMDB_EXTRA_FIELDS)
     @classmethod
     def _field(cls, v: str | None) -> str | None:
         if v is None or v == "":
@@ -347,7 +367,8 @@ def cmdb_rows(ctx: Context) -> tuple[list[dict[str, Any]], bool]:
     m = cfg.cmdb_mapping
     columns = {"owner": m.owner, "application": m.application, "environment": m.environment,
                "criticality": m.criticality, "exposure": m.exposure, "data_classification": m.data_classification}
-    fields = sorted({*m.host, *(v for v in columns.values() if v), "sys_id", "sys_class_name", "name"})
+    extra = {k: getattr(m, k) for k in CMDB_EXTRA_FIELDS if getattr(m, k)}
+    fields = sorted({*m.host, *(v for v in columns.values() if v), *extra.values(), "sys_id", "sys_class_name", "name"})
     headers = auth_headers(cfg, ctx.secrets)
     rows: list[dict[str, Any]] = []
     offset = 0
@@ -371,9 +392,14 @@ def cmdb_rows(ctx: Context) -> tuple[list[dict[str, Any]], bool]:
                 continue
             hosts = [h for h in (_raw(item, f) for f in m.host) if h]
             cls = (_raw(item, "sys_class_name") or "").lower()
-            rows.append({"hosts": hosts, "os": "windows" if "win" in cls else ("linux" if "linux" in cls else None),
+            # the OS of a server class; any other class is passed as it is, so the import can tell a database
+            # (cmdb_ci_db_*) or a cluster (*kubernetes*) from a server
+            os_ = "windows" if "win" in cls else ("linux" if "linux" in cls else (cls or None))
+            rows.append({"hosts": hosts, "os": os_,
                          "ref": _raw(item, "sys_id"), "label": _value(item, "name") or (hosts[0] if hosts else None),
-                         **{k: _value(item, v) for k, v in columns.items() if v}})
+                         **{k: _value(item, v) for k, v in columns.items() if v},
+                         # like a CSV row: a column is on the row only when its cell has a value
+                         **{k: val for k, v in extra.items() if (val := _value(item, v)) is not None}})
         if len(page) < CMDB_PAGE:
             return rows, False
         offset += CMDB_PAGE

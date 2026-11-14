@@ -39,13 +39,18 @@ import {
   nodeImages,
   nodeInstallNames,
   offersRegistrationToken,
+  pluralize,
   readTextFile,
   registrationOutcome,
   registryInstall,
   singleFlight,
+  trustProblem,
+  TRUST_DIR,
   type DeployMethod,
   type InstallLinks,
+  type NodeTrust,
 } from "./logic";
+import { NODE_UPDATE_STEPS, nodeUpdateBadge, nodesNeedingUpdate } from "./nodeUpdate";
 import { revealById } from "./reveal";
 import {
   Checkbox2,
@@ -101,6 +106,12 @@ interface WizardState {
   proxyCa: string;
   proxyCaName: string;
   tlsInspect: boolean;
+  // CB-15: how the node trusts the ZeroShield API (host paths; never sent to the server, they only shape the command)
+  privateCa: boolean;
+  caPath: string;
+  mtls: boolean;
+  certPath: string;
+  keyPath: string;
 }
 const EMPTY_WIZARD: WizardState = {
   name: "",
@@ -111,7 +122,18 @@ const EMPTY_WIZARD: WizardState = {
   proxyCa: "",
   proxyCaName: "",
   tlsInspect: false,
+  privateCa: false,
+  caPath: "",
+  mtls: false,
+  certPath: "",
+  keyPath: "",
 };
+
+/** The wizard's trust options as the command builders take them (only the ticked ones). */
+function wizardTrust(w: WizardState): NodeTrust | null {
+  if (!w.privateCa && !w.mtls) return null;
+  return { caFile: w.privateCa ? w.caPath : null, clientCert: w.mtls ? w.certPath : null, clientKey: w.mtls ? w.keyPath : null };
+}
 
 const WIZARD_ID = "scan-node-wizard";
 
@@ -150,6 +172,8 @@ export default function ScanNodesTab({
   const [editing, setEditing] = useState<CbomScanNode | null>(null);
   const [deleting, setDeleting] = useState<CbomScanNode | null>(null);
   const [resetting, setResetting] = useState<CbomScanNode | null>(null);
+  // CB-15: the reset is an upgrade of a legacy (unsigned) node to a signing one: the dialog says so
+  const [upgrading, setUpgrading] = useState(false);
   // A pool node was reset: no token to copy, its pod enrolls again by itself (r1 N1)
   const [reenrolling, setReenrolling] = useState<{ name: string; note: string } | null>(null);
   const rowMenu = useMenuReveal();
@@ -201,6 +225,7 @@ export default function ScanNodesTab({
     mutationFn: ({ node, reset }: { node: CbomScanNode; reset: boolean }) => newCbomNodeRegistration(teamId, node.id, reset),
     onSuccess: (data) => {
       setResetting(null);
+      setUpgrading(false);
       const outcome = registrationOutcome(data);
       if (!outcome.wizard) {
         // An agent pool node: the server issued no registration token, so there is no install command to show.
@@ -252,6 +277,8 @@ export default function ScanNodesTab({
 
   const online = nodes.filter((n) => n.status === "online").length;
   const offline = nodes.filter((n) => n.status === "offline").length;
+  const stale = nodesNeedingUpdate(nodes);
+  const serverBuild = nodes.find((n) => n.update?.server_build)?.update?.server_build ?? null;
   const assigned = nodes.reduce((sum, n) => sum + (n.assigned_targets || 0), 0);
 
   if (nodesQuery.isLoading) return <LoadingBlock />;
@@ -270,11 +297,13 @@ export default function ScanNodesTab({
   const caFile = caGiven ? (/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(wizard.proxyCaName) ? wizard.proxyCaName : DEFAULT_PROXY_CA_FILE) : null;
   const nodeName = createdNode?.name ?? wizard.name;
   const nodeProxy = createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null);
+  const trust = wizardTrust(wizard);
+  const trustError = trustProblem(trust);
   // A public registry (the server names its image, and for Helm its chart): docker pull / helm from oci://.
   const registryHost = artifactsQuery.data?.pull_image_ref?.split("/")[0] ?? "";
   const registryCmd = created
     ? registryInstall(method, artifactsQuery.data, { apiUrl, token: created.token, name: nodeName, proxyUrl: nodeProxy,
-        insecureHttp: apiUrl.trim().startsWith("http://") })
+        insecureHttp: apiUrl.trim().startsWith("http://"), trust })
     : null;
   // The commands from files served by ZeroShield: the one-paste download (curl/wget) and the command for files
   // downloaded in the browser. With a public registry they are the air-gapped alternative (the file's image then).
@@ -282,12 +311,12 @@ export default function ScanNodesTab({
   const fileCommands = created ? (
     <>
       <NodeOnePaste apiUrl={apiUrl} method={method} links={created.links} token={created.token} name={nodeName}
-        proxyUrl={nodeProxy} caFile={caFile} image={images.loaded.image} />
+        proxyUrl={nodeProxy} caFile={caFile} image={images.loaded.image} trust={trust} />
       {created.links && (
         <p className="text-xs text-zinc-600 dark:text-zinc-400">Or, with the files you downloaded in the browser above:</p>
       )}
       <NodeInstallCommand apiUrl={apiUrl} method={method} token={created.token} name={nodeName} proxyUrl={nodeProxy}
-        image={fileImage.image} source={fileImage} />
+        image={fileImage.image} source={fileImage} trust={trust} />
     </>
   ) : null;
 
@@ -323,6 +352,16 @@ export default function ScanNodesTab({
             <button type="button" className="cursor-pointer shrink-0" aria-label="Dismiss" onClick={() => setReenrolling(null)}>
               <X className="h-4 w-4" />
             </button>
+          </div>
+        )}
+        {stale > 0 && (
+          <div
+            role="status"
+            className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            data-testid="nodes-update-available"
+          >
+            {pluralize(stale, "scan node")} {stale === 1 ? "is" : "are"} not running this server&apos;s node build
+            {serverBuild ? ` ${serverBuild}` : ""}, so fixes made on the node since then are not in {stale === 1 ? "its" : "their"} results. {NODE_UPDATE_STEPS}
           </div>
         )}
         {nodes.length === 0 ? (
@@ -377,7 +416,9 @@ export default function ScanNodesTab({
                           )}
                         </span>
                       </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">{node.node_version ?? "—"}</TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        <NodeVersion node={node} />
+                      </TableCell>
                       <TableCell>{node.enrolled_at ? <SigningBadge node={node} /> : <span className="text-zinc-500">—</span>}</TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{ago(node.last_heartbeat_at, serverNow)}</TableCell>
                       <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{node.assigned_targets.toLocaleString()}</TableCell>
@@ -432,7 +473,8 @@ export default function ScanNodesTab({
 
       <AgentPoolsCard teamId={teamId} image={images.pulled ?? images.loaded} apiUrl={apiUrl} />
 
-      <RequestSigningCard teamId={teamId} nodes={nodes} />
+      <RequestSigningCard teamId={teamId} nodes={nodes}
+        onUpgrade={(node) => { setUpgrading(true); setResetting(node); }} />
 
       {wizardOpen && (
         <SectionCard
@@ -520,6 +562,7 @@ export default function ScanNodesTab({
                             proxyUrl={createdNode?.proxy_url ?? (wizard.proxyUrl.trim() || null)}
                             image={images.pulled.image}
                             source={images.pulled}
+                            trust={trust}
                           />
                         </div>
                       )}
@@ -593,6 +636,41 @@ export default function ScanNodesTab({
                   My proxy inspects TLS; trust its CA only for ZeroShield hostnames
                 </Checkbox2>
               </div>
+              <div className="mt-4 space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800" data-testid="node-trust">
+                <p className="text-sm font-medium text-zinc-900 dark:text-white">How the node trusts the ZeroShield API (optional) <InfoTip id="cbsrc.nodes.trust" /></p>
+                <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                  For an on-prem ZeroShield or a gateway with its own CA or mTLS. The files stay on the host: the command
+                  mounts them read-only (AMI and OVA read them from {TRUST_DIR}/ on the VM). Nothing here is sent to ZeroShield.
+                </p>
+                <Checkbox2 infoId="cbsrc.nodes.private_ca" id="node-private-ca" checked={wizard.privateCa}
+                  onChange={(v) => setWizard({ ...wizard, privateCa: v })}>
+                  The ZeroShield API uses a private CA
+                </Checkbox2>
+                {wizard.privateCa && (
+                  <Field infoId="cbsrc.nodes.private_ca" label="CA bundle (PEM) path on the host" htmlFor="node-ca-path">
+                    <Input id="node-ca-path" value={wizard.caPath} placeholder="/etc/pki/zeroshield-ca.pem" data-testid="node-ca-path"
+                      onChange={(e) => setWizard({ ...wizard, caPath: e.target.value })} />
+                  </Field>
+                )}
+                <Checkbox2 infoId="cbsrc.nodes.mtls" id="node-mtls" checked={wizard.mtls}
+                  onChange={(v) => setWizard({ ...wizard, mtls: v })}>
+                  The ZeroShield API requires a client certificate (mTLS)
+                </Checkbox2>
+                {wizard.mtls && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Field infoId="cbsrc.nodes.mtls" label="Client certificate (PEM) path" htmlFor="node-cert-path">
+                      <Input id="node-cert-path" value={wizard.certPath} placeholder="/etc/pki/zs-node.crt" data-testid="node-cert-path"
+                        onChange={(e) => setWizard({ ...wizard, certPath: e.target.value })} />
+                    </Field>
+                    <Field infoId="cbsrc.nodes.mtls" label="Client key (PEM) path" htmlFor="node-key-path"
+                      hint="Readable by uid 10001, the node's user (chown 10001, chmod 0400)">
+                      <Input id="node-key-path" value={wizard.keyPath} placeholder="/etc/pki/zs-node.key" data-testid="node-key-path"
+                        onChange={(e) => setWizard({ ...wizard, keyPath: e.target.value })} />
+                    </Field>
+                  </div>
+                )}
+                {trustError && <p role="alert" className="text-xs text-red-600" data-testid="node-trust-error">{trustError}</p>}
+              </div>
               {!created && (
                 <div className="mt-6">
                   <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" disabled={createMutation.isPending} onClick={submitWizard}>
@@ -661,16 +739,18 @@ export default function ScanNodesTab({
       />
       <ConfirmDialog
         open={!!resetting}
-        onOpenChange={(v) => !v && setResetting(null)}
-        title="Reset this scan node?"
+        onOpenChange={(v) => { if (!v) { setResetting(null); setUpgrading(false); } }}
+        title={upgrading ? "Upgrade this scan node to signed requests?" : "Reset this scan node?"}
         description={resetting
-          ? resetting.pool_id != null
+          ? upgrading
+            ? upgradeText(resetting)
+            : resetting.pool_id != null
             // a pool node's pod enrolls again by itself with its pool token (same pool, same node), unless the pool
             // token was revoked or has expired (review fix F)
             ? `${resetting.name} loses its credential immediately. Its pod enrolls again by itself with the agent pool token, as long as that token is not revoked or expired; rotate the pool token instead if it may have leaked.`
             : `${resetting.name} loses its credential immediately and stops receiving jobs until you register it again with a new token. Use this if the node was reinstalled or its credential may have leaked.`
           : ""}
-        confirmLabel="Reset node"
+        confirmLabel={upgrading ? "Reset and show the command" : "Reset node"}
         destructive
         pending={tokenMutation.isPending}
         onConfirm={() => resetting && tokenMutation.mutate({ node: resetting, reset: true })}
@@ -752,6 +832,9 @@ function NodeDialog({
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <Detail label="Host name" value={node.hostname} />
               <Detail label="Version" value={node.node_version} />
+              {nodeUpdateBadge(node.update) && (
+                <Detail label="Update" value={`${nodeUpdateBadge(node.update)!.message}${node.update?.state === "update_available" ? ` ${NODE_UPDATE_STEPS}` : ""}`} wide />
+              )}
               <Detail label="Source IPs (tell your SOC)" value={node.source_ips.join(", ") || null} />
               <Detail label="Registered" value={node.enrolled_at ? ago(node.enrolled_at, serverNow) : "Not yet"} />
               <Detail label="Clock" value={node.clock_skew_s == null ? null : `${node.clock_skew_s > 0 ? "+" : ""}${node.clock_skew_s} s vs ZeroShield`} />
@@ -823,7 +906,19 @@ function SigningBadge({ node }: { node: CbomScanNode }) {
 }
 
 /** Team setting: refuse nodes that do not sign their requests.  Admins change it; everyone sees it. */
-function RequestSigningCard({ teamId, nodes }: { teamId: number; nodes: CbomScanNode[] }) {
+/** CB-15: what upgrading a legacy node does (the reset dialog's text when it is an upgrade). */
+export function upgradeText(node: Pick<CbomScanNode, "name" | "pool_id">): string {
+  return node.pool_id != null
+    ? `${node.name} loses its credential now. Update the agent DaemonSet to the current scan node image (Helm upgrade with the new image tag): each pod then enrolls again by itself with the agent pool token, and signs every request.`
+    : `${node.name} loses its credential now and stops receiving jobs. Run the install command shown next with the current scan node image: it enrolls again with a new token and signs every request (scan node 1.1 or later). The node keeps its name, segment and sources.`;
+}
+
+function RequestSigningCard({ teamId, nodes, onUpgrade }: {
+  teamId: number;
+  nodes: CbomScanNode[];
+  /** CB-15: reset a legacy node and show its install command, to enroll it again as a signing node */
+  onUpgrade?: (node: CbomScanNode) => void;
+}) {
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({
     queryKey: cbomSourcesKeys.settings(teamId),
@@ -872,6 +967,22 @@ function RequestSigningCard({ teamId, nodes }: { teamId: number; nodes: CbomScan
             {settings.require_signed_nodes ? "They are refused until reset and registered again." : "Reset and register them again before you require signing."}
           </p>
         )}
+        {legacy.length > 0 && onUpgrade && (
+          <ul className="space-y-1" data-testid="legacy-nodes">
+            {legacy.slice(0, 20).map((n) => (
+              <li key={n.id} className="flex flex-wrap items-center gap-2 text-sm" data-testid={`legacy-node-${n.id}`}>
+                <span className="font-medium">{n.name}</span>
+                <SigningBadge node={n} />
+                {n.node_version && <span className="text-xs text-zinc-500">node {n.node_version}</span>}
+                <Button variant="outline" size="sm" className="cursor-pointer" data-testid={`upgrade-node-${n.id}`}
+                  onClick={() => onUpgrade(n)}>
+                  Upgrade to signed
+                </Button>
+              </li>
+            ))}
+            {legacy.length > 20 && <li className="text-xs text-zinc-500">and {legacy.length - 20} more</li>}
+          </ul>
+        )}
         {save.isError && <p className="text-sm text-red-600">The setting was not saved: {(save.error as Error)?.message || "try again"}</p>}
       </div>
     </SectionCard>
@@ -884,5 +995,21 @@ function Detail({ label, value, wide }: { label: string; value: string | null | 
       <dt className="text-zinc-500">{label}</dt>
       <dd className="text-zinc-900 dark:text-white break-words">{value || "—"}</dd>
     </div>
+  );
+}
+
+/** The reported version, and "Update available" when the node is not running this server's node build (B6-1). */
+function NodeVersion({ node }: { node: CbomScanNode }) {
+  const badge = nodeUpdateBadge(node.update);
+  return (
+    <span className="inline-flex flex-col items-start gap-1" data-testid={`node-version-${node.id}`}>
+      <span>{node.node_version ?? "—"}</span>
+      {badge && (
+        <StatusBadge tone={badge.tone} title={badge.message}>
+          {badge.label}
+        </StatusBadge>
+      )}
+      {badge && <span className="text-xs text-zinc-500">{badge.short}</span>}
+    </span>
   );
 }

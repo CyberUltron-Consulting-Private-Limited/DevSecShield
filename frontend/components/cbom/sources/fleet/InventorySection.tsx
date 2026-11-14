@@ -38,6 +38,7 @@ import { DECISION_LABEL, coverageGaps, decisionText, targetLabel } from "./fleet
 import { cbomFleetKeys, refreshFleet } from "./keys";
 import type { FleetSectionProps } from "./sections";
 import { useOpener } from "./useOpener";
+import { InfoTip } from "@/components/ui/info-tip";
 
 const KINDS = ["linux_host", "windows_host", "database", "k8s_cluster", "load_balancer", "certificate", "kms_key", "secret", "other"];
 const KIND_LABEL: Record<string, string> = {
@@ -95,7 +96,7 @@ function ImportDialog({ teamId, open, onOpenChange, onCloseAutoFocus }: {
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <Field label="Format" htmlFor="fleet-import-format">
+          <Field infoId="fleet.inv.import_format" label="Format" htmlFor="fleet-import-format">
             <Select value={format} onValueChange={(v) => setFormat(v as "csv" | "json")}>
               <SelectTrigger id="fleet-import-format" className="w-40 cursor-pointer">
                 <SelectValue />
@@ -106,10 +107,10 @@ function ImportDialog({ teamId, open, onOpenChange, onCloseAutoFocus }: {
               </SelectContent>
             </Select>
           </Field>
-          <Field label="File" htmlFor="fleet-import-file" hint="Or paste the content below">
+          <Field infoId="fleet.inv.import_file" label="File" htmlFor="fleet-import-file" hint="Or paste the content below">
             <Input id="fleet-import-file" type="file" accept=".csv,.json,text/csv,application/json" onChange={(e) => readFile(e.target.files?.[0])} />
           </Field>
-          <Field label="Content" htmlFor="fleet-import-content">
+          <Field infoId="fleet.inv.import_content" label="Content" htmlFor="fleet-import-content">
             <Textarea
               id="fleet-import-content"
               rows={8}
@@ -193,10 +194,10 @@ function AwsSourceDialog({ teamId, open, onOpenChange, accounts, onCloseAutoFocu
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <Field label="Name" htmlFor="fleet-aws-name" required>
+          <Field infoId="fleet.inv.aws_name" label="Name" htmlFor="fleet-aws-name" required>
             <Input id="fleet-aws-name" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
-          <Field label="AWS account" htmlFor="fleet-aws-account" required hint="Add and validate it on Cloud & Identity first">
+          <Field infoId="fleet.inv.aws_account" label="AWS account" htmlFor="fleet-aws-account" required hint="Add and validate it on Cloud & Identity first">
             <Select value={account ? String(account) : ""} onValueChange={(v) => setAccount(Number(v))}>
               <SelectTrigger id="fleet-aws-account" className="w-full cursor-pointer">
                 <SelectValue placeholder={accounts.length ? "Choose an AWS account" : "No AWS account yet"} />
@@ -210,7 +211,7 @@ function AwsSourceDialog({ teamId, open, onOpenChange, accounts, onCloseAutoFocu
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Regions" htmlFor="fleet-aws-regions" hint="Comma-separated, e.g. ap-south-1, us-east-1">
+          <Field infoId="fleet.inv.aws_regions" label="Regions" htmlFor="fleet-aws-regions" hint="Comma-separated, e.g. ap-south-1, us-east-1">
             <Input id="fleet-aws-regions" value={regions} onChange={(e) => setRegions(e.target.value)} />
           </Field>
           <fieldset className="space-y-2">
@@ -227,8 +228,9 @@ function AwsSourceDialog({ teamId, open, onOpenChange, accounts, onCloseAutoFocu
                 </label>
               ))}
             </div>
+            <InfoTip id="fleet.inv.aws_services" />
           </fieldset>
-          <Field label="Sync every (minutes)" htmlFor="fleet-aws-every" hint="15 at least">
+          <Field infoId="fleet.inv.aws_every" label="Sync every (minutes)" htmlFor="fleet-aws-every" hint="15 at least">
             <Input id="fleet-aws-every" type="number" min={15} value={every} onChange={(e) => setEvery(Number(e.target.value))} className="w-32" />
           </Field>
           {error && <p className="text-sm text-red-600 dark:text-red-400" role="alert">{error}</p>}
@@ -305,9 +307,9 @@ function SourcesTable({ teamId }: { teamId: number }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Kind</TableHead>
-                <TableHead className="text-right">Targets</TableHead>
-                <TableHead>Last sync</TableHead>
+                <TableHead>Kind <InfoTip id="fleet.inv.col.kind" /></TableHead>
+                <TableHead className="text-right">Targets <InfoTip id="fleet.inv.col.targets" /></TableHead>
+                <TableHead>Last sync <InfoTip id="fleet.inv.col.last_sync" /></TableHead>
                 <TableHead><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
@@ -475,17 +477,17 @@ function TargetsTable({ teamId }: { teamId: number }) {
   return (
     <div className="space-y-3 @container">
       <div className="flex flex-wrap items-end gap-2">
-        <Field label="Search" htmlFor="fleet-q" className="w-48">
+        <Field infoId="fleet.inv.search" label="Search" htmlFor="fleet-q" className="w-48">
           <Input id="fleet-q" placeholder="name, address or ID" value={text.q} onChange={(e) => setText((t) => ({ ...t, q: e.target.value }))} />
         </Field>
-        <Field label="Tag key" htmlFor="fleet-tag-key" className="w-40">
+        <Field infoId="fleet.inv.tag_key" label="Tag key" htmlFor="fleet-tag-key" className="w-40">
           <Input id="fleet-tag-key" placeholder="e.g. env" value={text.tagKey} onChange={(e) => setText((t) => ({ ...t, tagKey: e.target.value }))} />
         </Field>
-        <Field label="Tag value" htmlFor="fleet-tag-value" className="w-36">
+        <Field infoId="fleet.inv.tag_value" label="Tag value" htmlFor="fleet-tag-value" className="w-36">
           <Input id="fleet-tag-value" placeholder="any value" disabled={!text.tagKey.trim()} value={text.tagValue}
             onChange={(e) => setText((t) => ({ ...t, tagValue: e.target.value }))} />
         </Field>
-        <Field label="Kind" htmlFor="fleet-kind" className="w-40">
+        <Field infoId="fleet.inv.kind" label="Kind" htmlFor="fleet-kind" className="w-40">
           <Select value={filters.kind ?? "all"} onValueChange={(v) => set({ kind: v === "all" ? undefined : v })}>
             <SelectTrigger id="fleet-kind" className="cursor-pointer"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -494,7 +496,7 @@ function TargetsTable({ teamId }: { teamId: number }) {
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Decision" htmlFor="fleet-decision" className="w-40">
+        <Field infoId="fleet.inv.decision" label="Decision" htmlFor="fleet-decision" className="w-40">
           <Select value={filters.decision ?? "all"} onValueChange={(v) => set({ decision: v === "all" ? undefined : (v as CbomDecisionAction) })}>
             <SelectTrigger id="fleet-decision" className="cursor-pointer"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -503,7 +505,7 @@ function TargetsTable({ teamId }: { teamId: number }) {
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Missing" htmlFor="fleet-missing" className="w-36">
+        <Field infoId="fleet.inv.missing" label="Missing" htmlFor="fleet-missing" className="w-36">
           <Select value={filters.missing ?? "no"} onValueChange={(v) => set({ missing: v as "yes" | "no" | "all" })}>
             <SelectTrigger id="fleet-missing" className="cursor-pointer"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -530,11 +532,11 @@ function TargetsTable({ teamId }: { teamId: number }) {
             <Table className="@max-2xl:table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="@max-2xl:w-[55%]">Target</TableHead>
-                  <TableHead className="hidden @2xl:table-cell">Kind</TableHead>
-                  <TableHead className="hidden @5xl:table-cell">Tags</TableHead>
-                  <TableHead className="hidden @5xl:table-cell">Where</TableHead>
-                  <TableHead>Decision (which policy won)</TableHead>
+                  <TableHead className="@max-2xl:w-[55%]">Target <InfoTip id="fleet.inv.col.target" /></TableHead>
+                  <TableHead className="hidden @2xl:table-cell">Kind <InfoTip id="fleet.inv.col.kind_t" /></TableHead>
+                  <TableHead className="hidden @5xl:table-cell">Tags <InfoTip id="fleet.inv.col.tags" /></TableHead>
+                  <TableHead className="hidden @5xl:table-cell">Where <InfoTip id="fleet.inv.col.where" /></TableHead>
+                  <TableHead>Decision (which policy won) <InfoTip id="fleet.inv.col.decision" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -588,6 +590,7 @@ export default function InventorySection({ teamId }: FleetSectionProps) {
   const opener = useOpener();
   return (
     <SectionCard
+      infoId="fleet.inv.section"
       id="fleet-inventory"
       title="Inventory"
       description="Every host, database, cluster, certificate, key and secret your inventory sources list, with the policy that decides how each is collected."

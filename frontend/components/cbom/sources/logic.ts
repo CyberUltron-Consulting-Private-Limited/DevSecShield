@@ -193,6 +193,9 @@ export interface NodeArtifact {
 }
 export interface NodeArtifacts {
   version: string | null
+  /** the 40-character commit the shipped node image was built from, and "<version>+<12 characters>" (staging QA B6-1) */
+  build?: string | null
+  node_build?: string | null
   image_ref: string | null
   pull_image_ref: string | null
   /** the Helm chart in the same registry (CBOM_NODE_CHART_REF): oci://... and its version; only with pull_image_ref */
@@ -267,7 +270,86 @@ function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: 
   }
 }
 
-type NodeCommandOpts = { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean }
+/** How the node trusts the ZeroShield API (CB-15): a private CA bundle (ZS_CA_FILE) and/or a client certificate when
+ * the API requires mTLS (ZS_CLIENT_CERT / ZS_CLIENT_KEY). Docker and Helm read the files from the paths given here
+ * (absolute host paths); the AMI and OVA read them from TRUST_DIR on the VM. The files never leave the host. */
+export interface NodeTrust {
+  caFile?: string | null
+  clientCert?: string | null
+  clientKey?: string | null
+}
+/** Where the node reads the trust files: inside the container (Docker, VM kits), and the VM directory zs-node-run mounts. */
+export const TRUST_DIR = "/etc/zs-node/trust"
+export const TRUST_PATHS = { ca: `${TRUST_DIR}/ca.pem`, cert: `${TRUST_DIR}/client.crt`, key: `${TRUST_DIR}/client.key` }
+/** The Helm Secrets the wizard's command creates (chart values trust.caSecret / trust.clientSecret). */
+export const TRUST_SECRETS = { ca: "zs-node-ca", client: "zs-node-client" }
+
+function given(v: string | null | undefined): string | null {
+  const t = (v ?? "").trim()
+  return t ? t : null
+}
+
+/** What is wrong with the trust options, or null: absolute paths only (a Docker bind mount needs one), and a client
+ * certificate always with its key. */
+export function trustProblem(t: NodeTrust | null | undefined): string | null {
+  if (!t) return null
+  const ca = given(t.caFile), cert = given(t.clientCert), key = given(t.clientKey)
+  if (!!cert !== !!key) return "Give both the client certificate and its key, or neither."
+  for (const [label, v] of [["CA bundle", ca], ["Client certificate", cert], ["Client key", key]] as const) {
+    if (v && (!v.startsWith("/") || /[\s'"$`\\]/.test(v))) return `${label}: an absolute path on the host, without spaces or quotes.`
+  }
+  return null
+}
+
+/** The trust options in use (empty paths dropped), or null when none is set or they are invalid. */
+export function activeTrust(t: NodeTrust | null | undefined): Required<NodeTrust> | null {
+  if (!t || trustProblem(t)) return null
+  const out = { caFile: given(t.caFile), clientCert: given(t.clientCert), clientKey: given(t.clientKey) }
+  return out.caFile || out.clientCert ? out : null
+}
+
+/** KEY=value lines of the trust options for an env file (AMI cloud-config, OVA): the files sit in TRUST_DIR on the VM. */
+export function trustEnvLines(t: NodeTrust | null | undefined): string[] {
+  const a = activeTrust(t)
+  if (!a) return []
+  return [
+    ...(a.caFile ? [`ZS_CA_FILE=${TRUST_PATHS.ca}`] : []),
+    ...(a.clientCert ? [`ZS_CLIENT_CERT=${TRUST_PATHS.cert}`, `ZS_CLIENT_KEY=${TRUST_PATHS.key}`] : []),
+  ]
+}
+
+/** `docker run` options: the env and read-only bind mounts of the files. */
+function trustDockerLines(t: NodeTrust | null | undefined): string[] {
+  const a = activeTrust(t)
+  if (!a) return []
+  return [
+    ...(a.caFile ? [`  -e ZS_CA_FILE=${TRUST_PATHS.ca} -v ${a.caFile}:${TRUST_PATHS.ca}:ro \\`] : []),
+    ...(a.clientCert ? [
+      `  -e ZS_CLIENT_CERT=${TRUST_PATHS.cert} -v ${a.clientCert}:${TRUST_PATHS.cert}:ro \\`,
+      `  -e ZS_CLIENT_KEY=${TRUST_PATHS.key} -v ${a.clientKey}:${TRUST_PATHS.key}:ro \\`,
+    ] : []),
+  ]
+}
+
+/** Helm: the Secrets made from the files (before the install, each step chained with &&) and the chart values. */
+function trustHelm(t: NodeTrust | null | undefined): { pre: string[]; sets: string[] } {
+  const a = activeTrust(t)
+  if (!a) return { pre: [], sets: [] }
+  const apply = "--dry-run=client -o yaml | kubectl apply -f - && \\"
+  return {
+    pre: [
+      "kubectl create namespace zs-cbom --dry-run=client -o yaml | kubectl apply -f - && \\",
+      ...(a.caFile ? [`kubectl -n zs-cbom create secret generic ${TRUST_SECRETS.ca} --from-file=ca.pem=${a.caFile} ${apply}`] : []),
+      ...(a.clientCert ? [`kubectl -n zs-cbom create secret tls ${TRUST_SECRETS.client} --cert=${a.clientCert} --key=${a.clientKey} ${apply}`] : []),
+    ],
+    sets: [
+      ...(a.caFile ? [`  --set trust.caSecret=${TRUST_SECRETS.ca} \\`] : []),
+      ...(a.clientCert ? [`  --set trust.clientSecret=${TRUST_SECRETS.client} \\`] : []),
+    ],
+  }
+}
+
+type NodeCommandOpts = { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; trust?: NodeTrust | null }
 
 /** `docker run` of one node (pullNever: the image was just loaded from the file, never one from a registry). */
 function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
@@ -279,6 +361,7 @@ function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
     `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
     ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
     ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
+    ...trustDockerLines(opts.trust),
     `  -v ${names.volume}:/var/lib/zs-node \\`,
     `  ${opts.image}`,
   ]
@@ -287,12 +370,15 @@ function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
 /** `helm upgrade --install` of one node from <chart> (a downloaded .tgz or an oci:// reference with its --version). */
 function helmInstallLines(release: string, chart: string, repoArg: string, tag: string, opts: NodeCommandOpts): string[] {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  const trust = trustHelm(opts.trust)
   return [
+    ...trust.pre,
     `helm upgrade --install ${release} ${chart} \\`,
     "  --namespace zs-cbom --create-namespace \\",
     `  --set image.repository=${repoArg} --set image.tag=${shQuote(tag)} \\`,
     `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
     ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
+    ...trust.sets,
     `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
     ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
   ]
@@ -300,7 +386,7 @@ function helmInstallLines(release: string, chart: string, repoArg: string, tag: 
 
 export function installCommand(
   method: DeployMethod,
-  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string },
+  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string; archiveSha256?: string; chartSha256?: string; trust?: NodeTrust | null },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
@@ -333,6 +419,11 @@ export function installCommand(
       `      ZS_REGISTRATION_TOKEN=${opts.token}`,
       ...(opts.insecureHttp ? ["      ZS_ALLOW_INSECURE_HTTP=1"] : []),
       ...(proxy ? [`      HTTPS_PROXY=${proxy}`] : []),
+      ...trustEnvLines(opts.trust).map((l) => `      ${l}`),
+      ...(activeTrust(opts.trust) ? [
+        `# Put the trust files in ${TRUST_DIR}/ on the instance before the node starts (the key never in user data):`,
+        ...vmTrustFiles(opts.trust).map((l) => `#   ${l}`),
+      ] : []),
     ].join("\n")
   }
   return [
@@ -340,7 +431,23 @@ export function installCommand(
     `zs.api_url = ${opts.apiUrl}`,
     `zs.registration_token = ${opts.token}`,
     ...(proxy ? [`zs.https_proxy = ${proxy}`] : []),
+    ...(activeTrust(opts.trust) ? [
+      `# Then on the VM: put the trust files in ${TRUST_DIR}/, add these lines to /etc/zs-node/env and restart the node:`,
+      ...vmTrustFiles(opts.trust).map((l) => `#   ${l}`),
+      ...trustEnvLines(opts.trust).map((l) => `#   ${l}`),
+      "#   sudo systemctl restart zs-scan-node",
+    ] : []),
   ].join("\n")
+}
+
+/** Which file goes where on an AMI / OVA VM (TRUST_DIR, read by the node's user, uid 10001). */
+export function vmTrustFiles(t: NodeTrust | null | undefined): string[] {
+  const a = activeTrust(t)
+  if (!a) return []
+  return [
+    ...(a.caFile ? [`${TRUST_PATHS.ca} (your CA bundle)`] : []),
+    ...(a.clientCert ? [`${TRUST_PATHS.cert} and ${TRUST_PATHS.key} (chown 10001 and chmod 0400 the key)`] : []),
+  ]
 }
 
 /** One file of a node's install links (POST /nodes, /registration-token, /reset: install_links; backend

@@ -537,9 +537,12 @@ def test_api_gateway_domains_store_their_policy_protocols_and_get_a_quantum_verd
     tls13 = facts["SecurityPolicy_TLS13_1_3_2025_09"]
     assert tls13["protocols"] == ["TLSv1.3"] and tls13["min_version"] == "TLSv1.3"
     assert facts["SecurityPolicy_TLS13_1_2_PQ_2025_09"]["protocols"] == ["TLSv1.2", "TLSv1.3"]
-    # not on the documented list (the SDK enum only) or unknown: protocols unread, min_version as before
-    for name in ("SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09", "SecurityPolicy_Unknown_2099"):
-        assert "protocols" not in facts[name] and facts[name]["min_version"] == "TLSv1.2"
+    # not on the documented list (the SDK enum only): protocols unread, the minimum from the name; unknown: no minimum
+    # (CB-33 B10, test_cbom_aws_cb33_a2.py)
+    assert "protocols" not in facts["SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09"]
+    assert facts["SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09"]["min_version"] == "TLSv1.2"
+    assert "protocols" not in facts["SecurityPolicy_Unknown_2099"]
+    assert facts["SecurityPolicy_Unknown_2099"]["min_version"] is None
 
     def judged(name):
         return classify("api_tls", None, None, "TLS", facts[name])
