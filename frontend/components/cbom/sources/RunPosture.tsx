@@ -27,6 +27,7 @@ import {
   updateCbomSource,
   updateCbomSourcesSettings,
   type CbomPqcClass,
+  type CbomReadinessBasis,
   type CbomRiskModel,
   type CbomSource,
 } from "@/utils/backend_api";
@@ -45,11 +46,24 @@ import { ErrorBlock, LoadingBlock, SectionCard, StatusBadge, Truncate, type Tone
 
 const CLASS_LABEL: Record<CbomPqcClass, [string, Tone, string]> = {
   "quantum-vulnerable": ["Quantum-vulnerable", "red", "RSA, elliptic-curve or Diffie-Hellman: a large quantum computer breaks it"],
-  hybrid: ["Hybrid PQC", "green", "A post-quantum key exchange (ML-KEM) is accepted next to the classical one"],
+  hybrid: ["Hybrid PQC", "green", "An identified post-quantum component (such as ML-KEM) next to classical public-key cryptography, inside one construction or offered beside it"],
   "quantum-safe": ["Quantum-safe", "green", "Symmetric, hash or post-quantum cryptography"],
   "grover-weakened": ["Grover-weakened", "amber", "128-bit symmetric keys: still secure, smaller margin against quantum search"],
+  unknown: ["Unknown", "zinc", "Public-key cryptography the scan could not identify, or a key exchange it could not read: not judged, never counted as ready"],
   "not-applicable": ["Not applicable", "zinc", "Settings and inventory with no public-key algorithm"],
 };
+
+/** The readiness headline (CB-18): withheld when more assets are unknown than judged, and always "of N judged". */
+function readinessText(p: { pqc_readiness_pct: number | null; readiness_basis?: CbomReadinessBasis }):
+  { value: string; hint: string } {
+  const b = p.readiness_basis;
+  const unknown = b && b.unknown ? `; ${b.unknown} unknown not included` : "";
+  if (b && b.status === "not_enough_identified") {
+    return { value: "Not enough identified", hint: `${b.judged} of ${b.judged + b.unknown} public-key assets judged${unknown}` };
+  }
+  if (p.pqc_readiness_pct == null) return { value: "—", hint: "No asset with a quantum verdict" };
+  return { value: `${p.pqc_readiness_pct}%`, hint: `Of ${b ? b.judged : "the"} judged assets, the share not quantum-vulnerable${unknown}` };
+}
 
 const EXPOSURE_TONE: Record<CbomExposure, Tone> = { internet: "red", internal: "zinc", unknown: "zinc" };
 
@@ -171,8 +185,7 @@ export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
         <span className="text-xs text-zinc-500">Knowledge base {p.kb_version} · no AI</span>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat label="PQC readiness" value={p.pqc_readiness_pct == null ? "—" : `${p.pqc_readiness_pct}%`}
-              hint="Assets with a quantum verdict that are not quantum-vulnerable" testId="posture-readiness" />
+        <Stat label="PQC readiness" value={readinessText(p).value} hint={readinessText(p).hint} testId="posture-readiness" />
         <Stat label="Harvest now, decrypt later" value={String(p.hndl_assets)}
               hint="Endpoints whose key exchange a quantum computer breaks later" testId="posture-hndl" />
         <Stat label="Critical / High" value={`${p.impacts.Critical ?? 0} / ${p.impacts.High ?? 0}`} hint={`${p.impacts.Medium ?? 0} medium, ${p.impacts.Low ?? 0} low`} />
@@ -203,7 +216,7 @@ export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
       <div className="flex flex-wrap gap-2">
         {(Object.keys(CLASS_LABEL) as CbomPqcClass[]).map((c) =>
           p.pqc_classes[c] ? (
-            <span key={c} title={CLASS_LABEL[c][2]}>
+            <span key={c} title={CLASS_LABEL[c][2]} data-testid={`posture-class-${c}`} data-count={p.pqc_classes[c]}>
               <StatusBadge tone={CLASS_LABEL[c][1]}>{CLASS_LABEL[c][0]} {p.pqc_classes[c]}</StatusBadge>
             </span>
           ) : null,
@@ -283,11 +296,15 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
   if (query.isLoading) return <LoadingBlock />;
   if (query.isError || !query.data) return <ErrorBlock error={query.error} onRetry={() => query.refetch()} />;
   const a = query.data;
-  const cls = CLASS_LABEL[a.pqc_class];
+  // a class this bundle does not know (a newer backend) reads as Unknown, never as "Not applicable" or a crash
+  const cls = CLASS_LABEL[a.pqc_class] ?? CLASS_LABEL.unknown;
   return (
     <div className="space-y-3" data-testid={`asset-detail-${a.id}`}>
       <div className="flex flex-wrap gap-2 items-center">
-        <StatusBadge tone={cls[1]}>{cls[0]}</StatusBadge>
+        <span title={a.pqc_class_basis_text ?? cls[2]} data-testid="asset-pqc-class" data-class={a.pqc_class}
+              data-basis={a.pqc_class_basis}>
+          <StatusBadge tone={cls[1]}>{cls[0]}</StatusBadge>
+        </span>
         {a.hndl && <StatusBadge tone="red">Harvest now, decrypt later</StatusBadge>}
         <span className="text-xs text-zinc-500">Business criticality: {a.criticality}</span>
         {a.exposure && (
@@ -299,6 +316,12 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
         )}
         {a.exposure_basis && <span className="text-xs text-zinc-500">{a.exposure_basis}</span>}
       </div>
+      {a.pqc_class_basis_text && (
+        <p className="text-xs text-zinc-500" data-testid="asset-pqc-basis">
+          {a.pqc_class_basis_text}
+          {a.pqc_class_read_elsewhere ? ` (asset #${a.pqc_class_read_elsewhere})` : ""}
+        </p>
+      )}
       <QGradeDrawerSection teamId={teamId} asset={a} />
       <AgilityDrawerSection teamId={teamId} agility={a.agility} />
       {a.library && (

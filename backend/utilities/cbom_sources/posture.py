@@ -20,15 +20,23 @@ import datetime as _dt
 import ipaddress
 import re
 from collections import Counter, defaultdict
-from typing import Any
+from typing import Any, Callable, Iterable, Mapping
 
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agility as AGILITY
-from backend.utilities.cbom_sources import crypto_kb
+from backend.utilities.cbom_sources import algid, crypto_kb
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
-from backend.utilities.cbom_sources.classify import pq_kex_evidence
+from backend.utilities.cbom_sources.classify import (
+    KEX_PRIMITIVES,
+    aws_pq_policy_groups,
+    cert_identity_input,
+    kex_identity,
+    pq_kex_evidence,
+    pq_key_exchange,
+)
 
 IN_TRANSIT = {"tls_endpoint", "ssh_endpoint", "ssh_server_config", "database_tls", "load_balancer_tls", "cdn_tls",
               "api_tls", "k8s_ingress_tls"}
@@ -38,22 +46,313 @@ CRITICALITY = {"low": 0.5, "medium": 1.0, "high": 1.5, "critical": 2.0}
 # neutral (1.0), so a missing exposure fact never LOWERS a risk; only a positive internet signal raises it.
 EXPOSURE_FACTOR = {"internet": 1.5, "internal": 1.0, "unknown": 1.0}
 EXPOSURES = tuple(EXPOSURE_FACTOR)
-PQC_CLASSES = ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened", "not-applicable")
+PQC_CLASSES = ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened", "unknown", "not-applicable")
+# the classes with a quantum verdict: the readiness denominator (``unknown`` and ``not-applicable`` are outside it)
+JUDGED_CLASSES = ("quantum-vulnerable", "hybrid", "quantum-safe", "grover-weakened")
+# Bumped whenever a class rule changes: the export serial and ``zs:pqc_class_model`` carry it, so a re-export whose
+# classes changed is a new BOM (CB-18 ST-A). pc-1: dev before CB-18; pc-2: the ``unknown`` class, hybrid only with an
+# identified post-quantum component, the read-elsewhere rule.
+PQC_CLASS_MODEL = "pc-2"
+
+# Why an asset has its class (``pqc_class_basis``): one code per rule of ``classify_pqc``, with the sentence the drawer,
+# the export and the posture card show.
+CLASS_BASIS: dict[str, tuple[str, str]] = {
+    "shor_breaks": ("quantum-vulnerable", "RSA, elliptic-curve or Diffie-Hellman: a large quantum computer breaks it"),
+    "grover_128_bit": ("grover-weakened", "A 128-bit symmetric key: still secure, smaller margin against quantum search"),
+    "pq_kex_accepted": ("hybrid", "A named post-quantum key-exchange group is accepted next to the classical one"),
+    "hybrid_construction": ("hybrid", "A hybrid or composite construction whose post-quantum component is identified; "
+                                      "classical public-key cryptography is still part of it"),
+    "pq_with_classical": ("hybrid", "An identified post-quantum key exchange is offered next to a classical one"),
+    "pq_or_symmetric": ("quantum-safe", "Post-quantum, symmetric or hash cryptography"),
+    "algorithm_unknown": ("unknown", "The collector could not identify the algorithm"),
+    "key_unidentified": ("unknown", "The key's algorithm identifier is one the product does not know (for example an "
+                                    "OID in a private arc)"),
+    "key_encrypted": ("unknown", "The key file is passphrase-protected, so its algorithm was not read"),
+    "key_format_unread": ("unknown", "The key file could not be parsed"),
+    "not_readable": ("unknown", "The file could not be read (permissions)"),
+    "no_tls_handshake": ("unknown", "No TLS handshake completed: not TLS, no common parameters, or the server needs a "
+                                    "server name (SNI)"),
+    "kex_not_read": ("unknown", "The key exchange was not read"),
+    "pq_component_unidentified": ("unknown", "A hybrid or composite identifier whose post-quantum component is not "
+                                             "identified (an arc prefix or a name marker only)"),
+    "pq_group_unnamed": ("unknown", "A post-quantum key exchange was reported without naming the group"),
+    "no_public_key": ("not-applicable", "Settings and inventory with no public-key algorithm"),
+    "no_tls_in_use": ("not-applicable", "No TLS in use (plaintext only)"),
+    "trust_store_summary": ("not-applicable", "A CA bundle summary (inventory, one row per bundle)"),
+    "no_key_material": ("not-applicable", "No key or certificate was found in the file"),
+    "kex_judged_elsewhere": ("not-applicable", "The key exchange is judged on another row (the database's TLS endpoint, "
+                                               "the gateway's first IKE port) or is outside this source (ingress)"),
+    "read_elsewhere": ("not-applicable", "Another collector of the same run read this object and judged it"),
+}
+_CERT_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate",
+                         "ca_authority", "public_key"})
+_PRIVATE_KEY_TYPES = frozenset({"private_key", "ssh_host_key", "signing_key"})
+_KEY_TYPES = _CERT_TYPES | _PRIVATE_KEY_TYPES | {"kms_key", "managed_key"}
+_TLS_TYPES = frozenset({"tls_endpoint", "load_balancer_tls", "cdn_tls", "api_tls"})
+_KEX_ELSEWHERE_TYPES = frozenset({"database_tls", "k8s_ingress_tls"})
+_SSH_TYPES = frozenset({"ssh_endpoint", "ssh_server_config"})
+_UNNAMED = ("marker", "oid-prefix", "fallback")  # algid hits that name no table row
 
 
-def pqc_class(asset_type: str, quantum_vulnerable: bool | None, codes: list[str], facts: dict[str, Any]) -> str:
-    if "DISK_XTS_128" in codes:
-        return "grover-weakened"
-    if asset_type == "disk_encryption" and quantum_vulnerable is False and \
-            "128" in str(facts.get("method") or facts.get("cipher") or ""):
-        return "grover-weakened"  # any 128-bit volume key (BitLocker Aes128, aes-cbc-128), not only XTS
-    if quantum_vulnerable is True:
-        return "quantum-vulnerable"
-    if quantum_vulnerable is False:
+def _named_pq(found: algid.Identity | None) -> bool:
+    """A post-quantum identity algid knows by a table row (not a marker or arc-prefix hit)."""
+    return found is not None and found.quantum == "safe" and bool(found.name) and found.matched_by not in _UNNAMED
+
+
+def _pq_component_named(found: algid.Identity) -> bool:
+    """A hybrid or composite identity whose post-quantum component resolves to a table row (EC-1)."""
+    return found.matched_by not in ("oid-prefix",) and any(_named_pq(algid.resolve(c)) for c in found.components)
+
+
+def _names(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(",") if v.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(v).strip() for v in value if isinstance(v, (str, int)) and str(v).strip()]
+    return []
+
+
+def _list_class(identities: list[algid.Identity | None], pq_flag: bool) -> tuple[str, str]:
+    """The class of a key-exchange list (SSH kex methods, IKE groups) judged quantum-safe by the classifier."""
+    pq = [f for f in identities if f is not None and f.quantum in ("safe", "hybrid")
+          and f.primitive in KEX_PRIMITIVES]
+    if any(f.construction in ("hybrid", "composite") and _pq_component_named(f) for f in pq):
+        return "hybrid", "hybrid_construction"
+    named = [f for f in pq if f.construction not in ("hybrid", "composite") and _named_pq(f)]
+    if named:
+        classical = any(f is not None and f.quantum == "vulnerable" for f in identities)
+        return ("hybrid", "pq_with_classical") if classical else ("quantum-safe", "pq_or_symmetric")
+    if pq or pq_flag:
+        return "unknown", "pq_component_unidentified" if pq else "pq_group_unnamed"
+    return "quantum-safe", "pq_or_symmetric"
+
+
+def _safe_class(asset_type: str, algorithm: Any, facts: dict[str, Any]) -> tuple[str, str]:
+    """``quantum_vulnerable is False``: hybrid only with an identified post-quantum component, else unknown (EC-1); a
+    pure post-quantum or symmetric identity is quantum-safe."""
+    if asset_type in _TLS_TYPES or asset_type in _KEX_ELSEWHERE_TYPES:
         if pq_kex_evidence(facts):  # the raw facts, as stored: classify reads the same evidence (CB-04)
-            return "hybrid"
-        return "quantum-safe"
-    return "not-applicable"
+            groups = [facts.get(k) for k in ("negotiated_group", "pq_group", "group")] + _names(facts.get("groups"))
+            groups += aws_pq_policy_groups(facts)  # an AWS PQ policy names its groups in AWS's documentation (algid)
+            if any(pq_key_exchange(g, "tls_group") and _named_pq_kex(g) for g in groups):
+                return "hybrid", "pq_kex_accepted"
+            return "unknown", "pq_group_unnamed"
+        return "quantum-safe", "pq_or_symmetric"
+    if asset_type in _SSH_TYPES or (asset_type == "appliance_config" and facts.get("kind") == "ssh"):
+        kex = _names(facts.get("kex")) or _names(facts.get("kexalgorithms"))
+        return _list_class([algid.ssh_kex(k) or algid.resolve(k) for k in kex], False)
+    if asset_type == "ike_endpoint":
+        v2 = facts.get("ikev2") if isinstance(facts.get("ikev2"), dict) else {}
+        pq = v2.get("pq") if isinstance(v2.get("pq"), dict) else {}
+        method = pq.get("method")
+        found = (algid.resolve(method, "ike_ke") or algid.resolve(method)) if isinstance(method, str) else None
+        if _named_pq(found) or (found is not None and _pq_component_named(found)):
+            return "hybrid", "pq_with_classical"  # RFC 9370: an additional key exchange after the classical one
+        return ("unknown", "pq_group_unnamed") if pq.get("supported") is True else ("quantum-safe", "pq_or_symmetric")
+    if asset_type == "appliance_config" and facts.get("kind") == "ike_policy":
+        groups = _names(facts.get("groups"))
+        ids = [_ike_group(g) for g in groups]
+        return _list_class(ids, facts.get("pq") is True)
+    if asset_type in _KEY_TYPES:
+        subject = cert_identity_input(algorithm, facts)
+        if asset_type == "kms_key" and facts.get("key_spec") and facts.get("key_spec") != "SYMMETRIC_DEFAULT":
+            spec = algid.aws("kms", "KeySpec", facts.get("key_spec"))
+            subject = spec.name if spec is not None else facts.get("key_spec")
+        found = algid.resolve(subject) if isinstance(subject, str) else None
+        if found is not None and found.construction in ("hybrid", "composite"):
+            return ("hybrid", "hybrid_construction") if _pq_component_named(found) else \
+                ("unknown", "pq_component_unidentified")
+        if found is not None and found.matched_by == "oid-prefix":
+            return "unknown", "pq_component_unidentified"  # an OID in a post-quantum arc that no table row names
+    return "quantum-safe", "pq_or_symmetric"
+
+
+def _named_pq_kex(group: Any) -> bool:
+    found = kex_identity(group, "tls_group")
+    if found is None:
+        return False
+    return _named_pq(found) or (found.construction in ("hybrid", "composite") and _pq_component_named(found))
+
+
+def _ike_group(group: str) -> algid.Identity | None:
+    m = re.fullmatch(r"(?i)group\s*(\d+)", group.strip())
+    if m:
+        return algid.ike_ke(int(m.group(1)))
+    return algid.resolve(group, "ike_ke") or algid.resolve(group)
+
+
+def _key_evidence(facts: dict[str, Any], algorithm: Any) -> str | None:
+    """Why a certificate or key row with no verdict is ``unknown`` (FP-4, EC-2): the basis, or None when the row holds
+    no key material (no certificate found, an empty authorized_keys, an unparsed Kubernetes secret)."""
+    if facts.get("encrypted") is True:
+        return "key_encrypted"
+    if algorithm or facts.get("key_alg") or facts.get("key_alg_oid"):
+        return "key_unidentified"
+    if facts.get("readable") is False:
+        return "not_readable"
+    return None
+
+
+def _unread_class(asset_type: str, algorithm: Any, facts: dict[str, Any]) -> tuple[str, str]:
+    """``quantum_vulnerable is None``: ``unknown`` when public-key cryptography is there but was not identified or not
+    read; ``not-applicable`` otherwise (SPEC §3.3 with review changes FP-3, FP-4, FP-6, EC-2)."""
+    if facts.get("algorithm_unknown"):
+        return "unknown", "algorithm_unknown"
+    if asset_type == "certificate" and facts.get("trust_store"):
+        return "not-applicable", "trust_store_summary"
+    if asset_type in _PRIVATE_KEY_TYPES:  # the type itself says a private key is there (EC-2)
+        if facts.get("parsed") is False and not facts.get("encrypted") and facts.get("readable") is not False:
+            return "unknown", "key_format_unread"
+        return "unknown", _key_evidence(facts, algorithm) or "key_format_unread"
+    if asset_type in _CERT_TYPES:
+        basis = _key_evidence(facts, algorithm)
+        return ("unknown", basis) if basis else ("not-applicable", "no_key_material")
+    if asset_type in _TLS_TYPES:
+        if facts.get("tls") is False or facts.get("plaintext_only"):
+            return "not-applicable", "no_tls_in_use"
+        if "tls" in facts and facts.get("tls") is None:
+            return "unknown", "no_tls_handshake"
+        return "unknown", "kex_not_read"
+    if asset_type in _KEX_ELSEWHERE_TYPES:
+        return "not-applicable", "kex_judged_elsewhere"
+    if asset_type in _SSH_TYPES:
+        return "unknown", "kex_not_read"
+    if asset_type == "ike_endpoint":
+        unread = facts.get("mode") == "fragile" or "packet budget used up" in (facts.get("unknown") or [])
+        return ("unknown", "kex_not_read") if unread else ("not-applicable", "kex_judged_elsewhere")
+    return "not-applicable", "no_public_key"
+
+
+_ROW = object()
+
+
+def _get(row: Any, name: str) -> Any:
+    return row.get(name) if isinstance(row, dict) else getattr(row, name, None)
+
+
+def classify_pqc(row: Any, codes: list[str] | None = None, *, quantum_vulnerable: Any = _ROW,
+                 elsewhere: Callable[[Any], int | None] | None = None) -> tuple[str, str]:
+    """The PQC class of one stored asset and why: ``(class, basis)``, ``basis`` a key of ``CLASS_BASIS``.
+
+    The one class function: the run posture, the asset detail, the run asset list, drift, the heat map, the export
+    (``zs:pqc_class``) and the quantum risk grade all call it. ``row``: a stored asset (or a dict with ``asset_type``,
+    ``quantum_vulnerable``, ``facts``, ``algorithm``); ``codes``: the finding codes as the view shows them;
+    ``quantum_vulnerable``: a re-judged verdict (drift) instead of the stored one; ``elsewhere``: for a run-wide
+    view, the id of a row of the same run that another job read with a verdict (``JudgedElsewhere``): such an
+    ``unknown`` row is ``not-applicable`` / ``read_elsewhere`` (EC-3)."""
+    asset_type = str(_get(row, "asset_type") or "")
+    qv = _get(row, "quantum_vulnerable") if quantum_vulnerable is _ROW else quantum_vulnerable
+    facts = _get(row, "facts")
+    facts = facts if isinstance(facts, dict) else {}
+    algorithm = _get(row, "algorithm")
+    codes = codes or []
+    if "DISK_XTS_128" in codes:
+        return "grover-weakened", "grover_128_bit"
+    if asset_type == "disk_encryption" and qv is False and \
+            "128" in str(facts.get("method") or facts.get("cipher") or ""):
+        return "grover-weakened", "grover_128_bit"  # any 128-bit volume key (BitLocker Aes128, aes-cbc-128), not only XTS
+    if qv is True:
+        return "quantum-vulnerable", "shor_breaks"
+    if qv is False:
+        return _safe_class(asset_type, algorithm, facts)
+    cls, basis = _unread_class(asset_type, algorithm, facts)
+    if cls == "unknown" and elsewhere is not None and elsewhere(row) is not None:
+        return "not-applicable", "read_elsewhere"
+    return cls, basis
+
+
+def sibling_key(row: Any) -> tuple[str, str, str]:
+    """What "the same object" means for the read-elsewhere rule: asset type, target and location as stored."""
+    return (str(_get(row, "asset_type") or ""), str(_get(row, "target") or ""), str(_get(row, "location") or ""))
+
+
+class JudgedElsewhere:
+    """For one run: the id of a row with a quantum verdict that another job read for the same (asset type, target,
+    location), or None (EC-3: one key file read by Tier-1 SSH without permission and by the host agent as root is
+    one quantum-vulnerable key, not one vulnerable and one unknown).
+
+    Built from the run's rows when the caller has them all (posture, export summary), else it asks the database once
+    per key, only for rows whose class would be ``unknown`` (list pages, asset detail)."""
+
+    def __init__(self, rows: Iterable[Any] | None = None, *, session: Session | None = None,
+                 team_id: int | None = None, run_id: int | None = None) -> None:
+        self._known: dict[tuple[str, str, str], list[tuple[int | None, int]]] | None = None
+        self._session, self._team_id, self._run_id = session, team_id, run_id
+        self._cache: dict[tuple[str, str, str], list[tuple[int | None, int]]] = {}
+        if rows is not None:
+            known: dict[tuple[str, str, str], list[tuple[int | None, int]]] = defaultdict(list)
+            for r in rows:
+                if _get(r, "quantum_vulnerable") is not None and _get(r, "asset_type") != "coverage":
+                    known[sibling_key(r)].append((_get(r, "job_id"), _get(r, "id")))
+            self._known = dict(known)
+
+    def _judged(self, key: tuple[str, str, str]) -> list[tuple[int | None, int]]:
+        if self._known is not None:
+            return self._known.get(key, [])
+        if self._session is None or self._run_id is None:
+            return []
+        if key not in self._cache:
+            a_type, target, location = key
+            query = select(CbomCollectedAsset.job_id, CbomCollectedAsset.id).where(
+                CbomCollectedAsset.team_id == self._team_id, CbomCollectedAsset.run_id == self._run_id,
+                CbomCollectedAsset.asset_type == a_type, CbomCollectedAsset.location == location,
+                CbomCollectedAsset.quantum_vulnerable.is_not(None))  # type: ignore[union-attr]
+            query = query.where(CbomCollectedAsset.target == target) if target else query.where(
+                or_(CbomCollectedAsset.target.is_(None), CbomCollectedAsset.target == ""))  # type: ignore[union-attr]
+            self._cache[key] = [(j, i) for j, i in self._session.exec(query.order_by(CbomCollectedAsset.id)).all()]
+        return self._cache[key]
+
+    def __call__(self, row: Any) -> int | None:
+        job_id = _get(row, "job_id")
+        for other_job, other_id in self._judged(sibling_key(row)):
+            if other_job != job_id:
+                return other_id
+        return None
+
+
+def readiness(classes: Mapping[str, int]) -> tuple[float | None, dict[str, Any]]:
+    """PQC readiness and what it rests on. The percentage is ``cbom_metrics.quantum_readiness_pct`` over the judged
+    classes; it is withheld (None, ``status: "not_enough_identified"``) when more assets are ``unknown`` than judged,
+    so 999 unidentified assets and one AES key never read "100 %" (EC-4)."""
+    judged = sum(int(classes.get(c, 0) or 0) for c in JUDGED_CLASSES)
+    vulnerable = int(classes.get("quantum-vulnerable", 0) or 0)
+    unknown = int(classes.get("unknown", 0) or 0)
+    basis = {"judged": judged, "ready": judged - vulnerable, "unknown": unknown,
+             "not_applicable": int(classes.get("not-applicable", 0) or 0), "status": "ok"}
+    if unknown > judged:
+        basis["status"] = "not_enough_identified"
+        return None, basis
+    pct = quantum_readiness_pct(vulnerable, judged)
+    if pct is None:
+        basis["status"] = "nothing_judged"
+    return pct, basis
+
+
+def readiness_pct(vulnerable: int, judged: int, unknown: int) -> float | None:
+    """``readiness`` for callers that count views, not classes (drift)."""
+    return readiness({"quantum-vulnerable": vulnerable, "quantum-safe": max(0, judged - vulnerable),
+                      "unknown": unknown})[0]
+
+
+def run_class_summary(session: Session, *, team_id: int, run_id: int) -> dict[str, Any]:
+    """Whole-run class counts and readiness from ``classify_pqc`` (with the read-elsewhere rule), over every stored
+    asset of the run whatever its size: the export's metadata reads it, so an export cut at its cap still says how
+    many assets of each class the run holds (EC-8). Stored finding codes stand in for today's view: the one code the
+    class reads (``DISK_XTS_128``) is never date-based."""
+    cols = (CbomCollectedAsset.id, CbomCollectedAsset.job_id, CbomCollectedAsset.asset_type,
+            CbomCollectedAsset.target, CbomCollectedAsset.location, CbomCollectedAsset.algorithm,
+            CbomCollectedAsset.quantum_vulnerable, CbomCollectedAsset.facts, CbomCollectedAsset.finding_codes)
+    query = select(*cols).where(CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run_id,
+                                CbomCollectedAsset.asset_type != "coverage").order_by(CbomCollectedAsset.id)
+    names = ("id", "job_id", "asset_type", "target", "location", "algorithm", "quantum_vulnerable", "facts",
+             "finding_codes")
+    rows = [dict(zip(names, r)) for r in session.exec(query).all()]
+    elsewhere = JudgedElsewhere(rows)
+    classes: Counter[str] = Counter(classify_pqc(r, list(r["finding_codes"] or []), elsewhere=elsewhere)[0]
+                                    for r in rows)
+    pct, basis = readiness(classes)
+    return {"assets": len(rows), "pqc_classes": {c: classes.get(c, 0) for c in PQC_CLASSES},
+            "pqc_readiness_pct": pct, "readiness_basis": basis, "pqc_class_model": PQC_CLASS_MODEL}
 
 
 def hndl(asset_type: str, quantum_vulnerable: bool | None) -> bool:
@@ -152,6 +451,8 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     job_ctx = _job_context(session, team_id, run_id, sources)
     agility = AGILITY.RunAgility(session, team_id, run_id, sources)  # CB-24: fix class per asset, at view time
     grades = RunGrades(session, team_id=team_id, run_id=run_id, risk_model=risk_model)  # quantum risk grade (CB-19)
+    elsewhere = JudgedElsewhere(rows)  # CB-18 EC-3: an object another job of this run read is not "unknown"
+    bases: Counter[str] = Counter()
     exposure_counts: Counter[str] = Counter()
     classes: Counter[str] = Counter()
     impacts: Counter[str] = Counter()
@@ -171,7 +472,9 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         if a_type == "coverage":
             grades.add(row, a_codes)
             continue
-        classes[pqc_class(a_type, qv, a_codes, facts or {})] += 1
+        cls, basis = classify_pqc(row, a_codes, elsewhere=elsewhere)
+        classes[cls] += 1
+        bases[basis] += 1
         agility.add(row, a_codes)
         if impact:
             impacts[impact] += 1
@@ -181,13 +484,14 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         source = sources.get(source_id or 0)
         ctx = job_ctx.get(job_id or 0) or {}
         crit = str(ctx.get("criticality") or "medium").lower()
-        exposure, basis = asset_exposure(facts, target, location, override=ctx.get("exposure"),
-                                         node_segment=ctx.get("segment"))
-        grades.add(row, a_codes, (exposure, basis))  # the quantum risk grade reuses the score's exposure (CB-19)
+        exposure, basis_exposure = asset_exposure(facts, target, location, override=ctx.get("exposure"),
+                                                  node_segment=ctx.get("segment"))
+        # the quantum risk grade reuses the score's exposure (CB-19) and this loop's class (one class per row)
+        grades.add(row, a_codes, (exposure, basis_exposure), cls=cls)
         exposure_counts[exposure] += 1
         if impact:
             risky.append({"id": aid, "type": a_type, "name": name or location, "location": location, "impact": impact,
-                          "criticality": crit, "exposure": exposure, "exposure_basis": basis,
+                          "criticality": crit, "exposure": exposure, "exposure_basis": basis_exposure,
                           "source_name": source.name if source else None,
                           "score": round(IMPACT_WEIGHT.get(impact, 0) * CRITICALITY.get(crit, 1.0)
                                          * EXPOSURE_FACTOR[exposure], 1),
@@ -199,8 +503,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
                     clause_assets[clause].add(aid)
                     meta = clause_meta.setdefault(clause, {**ref, "codes": set()})
                     meta["codes"].add(code)
-    judged = classes["quantum-vulnerable"] + classes["hybrid"] + classes["quantum-safe"] + classes["grover-weakened"]
-    readiness = quantum_readiness_pct(classes["quantum-vulnerable"], judged)
+    readiness_value, readiness_basis = readiness(classes)
     frameworks: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for clause, assets in sorted(clause_assets.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         meta = clause_meta[clause]
@@ -210,7 +513,12 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
     return {
         "assets": sum(classes.values()),
         "pqc_classes": {c: classes.get(c, 0) for c in PQC_CLASSES},
-        "pqc_readiness_pct": readiness,
+        # why each class: basis code -> count, and the sentence for each code (CB-18 OB-8)
+        "pqc_class_bases": dict(sorted(bases.items())),
+        "pqc_class_basis_text": {code: CLASS_BASIS[code][1] for code in sorted(bases)},
+        "pqc_class_model": PQC_CLASS_MODEL,
+        "pqc_readiness_pct": readiness_value,
+        "readiness_basis": readiness_basis,
         "hndl_assets": hndl_count,
         "impacts": {k: impacts.get(k, 0) for k in IMPACT_WEIGHT},
         "top_codes": [{"code": c, "count": n, "title": (crypto_kb.entry("node", c) or {}).get("title", c)}
@@ -247,7 +555,7 @@ def _host_port(value: str) -> tuple[str | None, str | None]:
 
 def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *,
                  job: CbomCollectionJob | None = None, node: CbomScanNode | None = None,
-                 today: _dt.date | None = None) -> dict[str, Any]:
+                 today: _dt.date | None = None, session: Session | None = None) -> dict[str, Any]:
     """Everything known about one collected asset: the knowledge-base explanation of each finding code (with commands
     filled in for this host), library CVEs and end-of-life (as of the run, and today when that differs), PQC class,
     HNDL and internet exposure."""
@@ -286,6 +594,13 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
                        "eol_as_of": as_of.isoformat(), "eol_today": eol_now if changed else None}
     meta = job_metadata(job.params if job is not None else None, source, node)
     crit = str(meta["criticality"] or "medium")
+    sibling = None
+    if session is not None and row.run_id is not None:
+        lookup = JudgedElsewhere(session=session, team_id=row.team_id, run_id=row.run_id)
+        pqc_class_value, pqc_basis = classify_pqc(row, codes, elsewhere=lookup)
+        sibling = lookup(row) if pqc_basis == "read_elsewhere" else None
+    else:
+        pqc_class_value, pqc_basis = classify_pqc(row, codes)
     exposure, exposure_basis = asset_exposure(facts, row.target, row.location, override=meta["exposure"],
                                               node_segment=meta["segment"])
     return {
@@ -293,7 +608,10 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "impact": view["impact"], "finding": view["finding"], "finding_codes": codes, "as_of_run": view["as_of_run"],
         "algorithm": row.algorithm,
         "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": row.quantum_vulnerable,
-        "pqc_class": pqc_class(row.asset_type, row.quantum_vulnerable, codes, facts),
+        "pqc_class": pqc_class_value,
+        "pqc_class_basis": pqc_basis,
+        "pqc_class_basis_text": CLASS_BASIS[pqc_basis][1],
+        "pqc_class_read_elsewhere": sibling,
         "hndl": hndl(row.asset_type, row.quantum_vulnerable),
         "source_name": source.name if source else None,
         "criticality": crit,

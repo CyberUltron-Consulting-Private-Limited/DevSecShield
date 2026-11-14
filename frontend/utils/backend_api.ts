@@ -4217,7 +4217,21 @@ export type CbomNodeStatus = "pending_registration" | "registration_expired" | "
 export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
 export type CbomJobStatus = "pending" | "claimed" | "success" | "failure" | "cancelled" | "expired"
 export type CbomRunStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
-export type CbomConfidence = "Q0" | "Q1" | "Q2" | "Q3"
+/** Evidence confidence (CB-18): E0 Unknown, E1 Self-attested, E2 Documented, E3 Verified. Not the quantum risk grade. */
+export type CbomConfidence = "E0" | "E1" | "E2" | "E3"
+/** Why an evidence area or vendor counts at E0: the "Q0 gap" it creates in the risk register. */
+export type CbomQ0GapReason = "no_answer" | "rated_unknown" | "evidence_expired" | "vendor_not_asked" | "vendor_no_response"
+    | "vendor_link_expired" | "vendors_missing"
+export interface CbomQ0Gap { reason: CbomQ0GapReason; text: string; detail: string | null }
+export interface CbomQ0GapEntry extends CbomQ0Gap {
+    id: string
+    kind: "area" | "area_rollup" | "vendor"
+    area_key: string | null
+    vendor_id: number | null
+    title: string
+    counted: boolean
+    as_of: string
+}
 export type CbomIncludeKey = "servers" | "kubernetes" | "databases" | "cloud" | "network"
 export type CbomInclude = Partial<Record<CbomIncludeKey, boolean>>
 
@@ -4414,6 +4428,8 @@ export interface CbomJobTargets {
     error: string | null
     targets: CbomTargetResult[]
     duration_s: number | null
+    /** "same_account": an AWS source read from the deployment's own account in lab mode (test deployments only) */
+    lab_mode?: string | null
 }
 
 export interface CbomAssetPage {
@@ -4444,6 +4460,7 @@ export interface CbomTestResponse {
     checks?: CbomAwsCheck[]
     member_accounts?: number | null
     validated_at?: string
+    lab_mode?: string
 }
 
 export interface CbomSourceSaveResponse {
@@ -4458,6 +4475,8 @@ export interface CbomSourcesSettings {
     aws_external_id: string
     /** false: the deployment has no CBOM_AWS_PRINCIPAL_ARN, so AWS accounts cannot be connected */
     aws_collection_configured?: boolean
+    /** true: lab mode (CBOM_AWS_LAB_SAME_ACCOUNT on a test deployment) accepts roles in the deployment's own account */
+    aws_lab_same_account?: boolean
     /** Domains saved before Certificate Transparency discovery existed; nothing reads them (a ct_logs source does). */
     cert_domains: string[]
     /** true: the server runs Certificate Transparency discovery (CBOM_CT_DISCOVERY); a ct_logs source can be added */
@@ -4494,12 +4513,24 @@ export interface CbomRiskModel {
     threat_years: number | null
 }
 
-export type CbomPqcClass = "quantum-vulnerable" | "hybrid" | "quantum-safe" | "grover-weakened" | "not-applicable"
+export type CbomPqcClass = "quantum-vulnerable" | "hybrid" | "quantum-safe" | "grover-weakened" | "unknown" | "not-applicable"
+/** What a PQC readiness percentage rests on (CB-18): it is withheld when more assets are unknown than judged. */
+export interface CbomReadinessBasis {
+    judged: number
+    ready: number
+    unknown: number
+    not_applicable: number
+    status: "ok" | "not_enough_identified" | "nothing_judged"
+}
 
 export interface CbomRunPosture {
     assets: number
     pqc_classes: Record<CbomPqcClass, number>
+    pqc_class_bases?: Record<string, number>
+    pqc_class_basis_text?: Record<string, string>
+    pqc_class_model?: string
     pqc_readiness_pct: number | null
+    readiness_basis?: CbomReadinessBasis
     hndl_assets: number
     impacts: Record<CbomImpact, number>
     top_codes: { code: string; count: number; title: string }[]
@@ -4530,6 +4561,9 @@ export interface CbomAssetDetail {
     protocol: string | null
     quantum_vulnerable: boolean | null
     pqc_class: CbomPqcClass
+    pqc_class_basis?: string
+    pqc_class_basis_text?: string
+    pqc_class_read_elsewhere?: number | null
     hndl: boolean
     source_name: string | null
     criticality: string
@@ -4587,7 +4621,7 @@ export interface CbomSourcesOverview {
     nodes: { total: number; online: number; offline: number; pending: number }
     groups: Partial<Record<CbomSourceGroup, { sources: number; units: number; by_kind: Record<string, number>; failed_tests: number }>>
     plan: CbomEstimate
-    evidence: { areas: number; answered: number; by_confidence: Record<CbomConfidence, number>; vendors: number }
+    evidence: { areas: number; answered: number; by_confidence: Record<CbomConfidence, number>; vendors: number; q0_gap_count?: number }
     code: { cbom_scans: number }
     settings: {
         stop_all_network: boolean
@@ -4637,6 +4671,8 @@ export interface CbomEvidenceArea {
     effective_confidence: CbomConfidence
     confidence_label: string
     confidence_set_by: number | null
+    q0_gap: CbomQ0Gap | null
+    q0_gap_rollup: boolean
     answers: Record<string, string>
     evidence_title: string | null
     evidence_url: string | null
@@ -4663,12 +4699,16 @@ export interface CbomVendor {
     name: string
     contact_email: string | null
     area_key: string
-    status: "not_sent" | "link_created" | "overdue" | "answered" | "expired"
+    status: "not_sent" | "link_created" | "overdue" | "answered" | "refresh_pending" | "expired"
     link_created_at: string | null
     link_expires_at: string | null
     answered_at: string | null
     answers: Record<string, string>
+    /** The level a user set or the answer gave; it counts only once the vendor answered (effective_confidence). */
     confidence: CbomConfidence
+    effective_confidence: CbomConfidence
+    confidence_label: string
+    q0_gap: CbomQ0Gap | null
     evidence_url: string | null
     row_version: number
     created_at: string | null
@@ -4680,6 +4720,8 @@ export interface CbomEvidenceResponse {
     vendors: CbomVendor[]
     by_confidence: Record<CbomConfidence, number>
     answered: number
+    q0_gaps: CbomQ0GapEntry[]
+    q0_gap_count: number
 }
 
 export interface CbomTargetCount {

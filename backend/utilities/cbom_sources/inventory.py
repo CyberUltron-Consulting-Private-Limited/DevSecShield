@@ -26,7 +26,7 @@ from backend.utilities.cbom_sources.common import iso_z
 # CB-06: per-component provenance, PQC class and algorithm families for the export
 from backend.utilities.cbom_sources import provenance as PROV
 from backend.utilities.cbom_sources.classify import family, quantum_vulnerable
-from backend.utilities.cbom_sources.posture import pqc_class
+from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import tls_suites
 from backend.utilities.cbom_sources import vex_semantics as VEX
 
@@ -36,13 +36,16 @@ EXPORT_CAP = 50_000
 _SERIAL_NS = uuid.uuid5(uuid.NAMESPACE_URL, "https://zeroshield.ai/cbom/sources/run")
 
 
-def export_serial(run_id: int, kb_version: str, judged_on: str | None = None, *, grade_model_version: str | None = None,
-                  grade_inputs_digest: str | None = None, agility_version: str | None = None) -> str:
+def export_serial(run_id: int, kb_version: str, judged_on: str | None = None, class_model: str | None = None, *,
+                  grade_model_version: str | None = None, grade_inputs_digest: str | None = None,
+                  agility_version: str | None = None) -> str:
     """``judged_on``: the day a date-based rule (certificate expiry, library end of life) changed a finding since the
-    run; the export then differs from the run's own record, so it gets its own serial. The quantum risk grade model
-    version and its inputs digest (CB-19 cx3 ST-A) and the agility version (CB-24) are in the key too: an export whose
-    grade or fix-class content differs never reuses a serial."""
-    key = f"{run_id}:{kb_version}" + (f":{judged_on}" if judged_on else "")
+    run; the export then differs from the run's own record, so it gets its own serial. ``class_model``:
+    ``posture.PQC_CLASS_MODEL`` (CB-18 ST-A): a release that changes the class rules changes ``zs:pqc_class`` on old
+    runs, so the same run exported after it is a new BOM. The quantum risk grade model version and its inputs digest
+    (CB-19 cx3 ST-A) and the agility version (CB-24) are in the key too: an export whose grade or fix-class content
+    differs never reuses a serial."""
+    key = f"{run_id}:{kb_version}" + (f":{judged_on}" if judged_on else "") + (f":{class_model}" if class_model else "")
     if grade_model_version is not None or grade_inputs_digest is not None:
         key += f":qg={grade_model_version}:gi={grade_inputs_digest}"
     if agility_version is not None:
@@ -93,7 +96,8 @@ def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: boo
 
 
 def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_names: dict[int, str] | None = None,
-                 view: dict[str, Any] | None = None, grade: dict[str, Any] | None = None) -> dict[str, Any]:
+                 view: dict[str, Any] | None = None, grade: dict[str, Any] | None = None,
+                 pqc: tuple[str, str] | None = None) -> dict[str, Any]:
     """One asset as the list shows it: findings judged today (``classify.shown``); ``as_of_run`` holds the run's own
     verdict when a date-based rule changed it since; ``q_grade`` / ``q_label`` / ``q_reason`` / ``q_item_key`` the
     quantum risk grade (``qgrade``; null when the asset has no grade)."""
@@ -109,6 +113,7 @@ def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_name
         "as_of_run": view["as_of_run"],
         "q_grade": grade.get("q_grade"), "q_label": grade.get("q_label"), "q_reason": grade.get("q_reason"),
         "q_item_key": grade.get("q_item_key"),
+        "pqc_class": pqc[0] if pqc else None, "pqc_class_basis": pqc[1] if pqc else None,
         "facts": row.facts or {},
     }
 
@@ -171,11 +176,15 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
     names = _source_names(session, team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
     grading = QG.load_context(session, team_id=team_id, run_id=run_id, job_id=job_id, risk_model=risk_model)
-    grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False).fields() for r in rows}
+    pqcs = {r.id: POSTURE.classify_pqc(r, list(views[r.id]["finding_codes"]), elsewhere=grading.elsewhere)
+            for r in rows}  # the class the list shows is the one the grade reads (CB-18 OB-1)
+    grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False, cls=pqcs[r.id][0]).fields()
+              for r in rows}
     return {
         "total": total, "all_total": all_total, "page": page, "page_size": page_size,
         "items": AGILITY.annotate_assets(session, team_id, jobs,  # CB-24: fix class per asset
-                                         [public_asset(r, names, job_names, views[r.id], grades[r.id]) for r in rows]),
+                                         [public_asset(r, names, job_names, views[r.id], grades[r.id], pqcs[r.id])
+                                          for r in rows]),
         "grade_model_version": QG.GRADE_MODEL_VERSION, "grade_inputs": grading.inputs(),
         "facets": {"type": by_type, "impact": by_impact, "quantum_vulnerable": quantum_count},
         "targets": [_job_targets(job, names) for job in jobs],
@@ -193,6 +202,7 @@ def _job_targets(job: CbomCollectionJob, names: dict[int, str]) -> dict[str, Any
         "asset_mismatch": result.get("asset_mismatch"), "error": job.error,
         "targets": [t for t in targets[:1000] if isinstance(t, dict)],
         "duration_s": result.get("duration_s"),
+        "lab_mode": result.get("lab_mode") if isinstance(result.get("lab_mode"), str) else None,
     }
 
 
@@ -665,13 +675,14 @@ class Assessment:
 
 
 def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: dict[str, Any], size: int | None,
-                       curve: str | None, signature: str | None, view: dict[str, Any],
+                       curve: str | None, signature: str | None, pqc: tuple[str, str],
                        assessed: list[dict[str, str]] | None = None) -> list[dict[str, str]]:
     """The values the asset table and the oracle compare that CycloneDX has no field for (or not on this asset type):
-    PQC class, then the quantum risk grade and fix class (``assessed``: ``Assessment.add``'s list), key size, curve,
-    signature algorithm, key-exchange groups, SSH algorithm lists, CB-04 identity facts."""
+    PQC class and why (``posture.classify_pqc``), then the quantum risk grade and fix class (``assessed``:
+    ``Assessment.add``'s list), key size, curve, signature algorithm, key-exchange groups, SSH algorithm lists, CB-04
+    identity facts."""
     out: list[tuple[str, str | None]] = [
-        ("zs:pqc_class", pqc_class(row.asset_type, row.quantum_vulnerable, list(view["finding_codes"]), facts)),
+        ("zs:pqc_class", pqc[0]), ("zs:pqc_class_basis", pqc[1]),
         ("zs:key_size", str(size) if size else None), ("zs:curve", curve), ("zs:signature_algorithm", signature),
     ]
     out += [(f"zs:{name}", _text(facts.get(name))) for name in _IDENTITY_FACTS]
@@ -692,14 +703,17 @@ def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: d
         negotiated = _named([v for v in (_text(facts.get("negotiated_group")), _text(facts.get("group"))) if v])
         out += [("zs:groups", ",".join(groups) or None), ("zs:groups_negotiated", negotiated[0] if negotiated else None)]
     props = [{"name": name, "value": value} for name, value in out if value]
-    at = 1 if props and props[0]["name"] == "zs:pqc_class" else 0
-    props[at:at] = assessed or ()  # the shared (read-only) dicts as they are: next to zs:pqc_class
+    at = 0
+    while at < len(props) and props[at]["name"] in ("zs:pqc_class", "zs:pqc_class_basis"):
+        at += 1
+    props[at:at] = assessed or ()  # the shared (read-only) dicts as they are: after the PQC class and its basis
     return props
 
 
 def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None,
                prov: PROV.JobProvenance | None = None, shared: dict[tuple, list] | None = None,
-               parts: CertificateParts | None = None, assessed: list[dict[str, str]] | None = None) -> dict[str, Any]:
+               parts: CertificateParts | None = None, elsewhere: POSTURE.JudgedElsewhere | None = None,
+               assessed: list[dict[str, str]] | None = None) -> dict[str, Any]:
     """One asset as a CycloneDX component. ``shared``: one export's cache of provenance property lists. Rows of one
     job attempt stored in one batch have the same provenance, so their components share the same (read-only)
     property objects: a 50k-asset export then holds a few hundred provenance lists instead of 50,000. ``parts``: the
@@ -708,13 +722,17 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
+    pqc = POSTURE.classify_pqc(row, list(view["finding_codes"]), elsewhere=elsewhere)
+    # one "unknown" per document (OB-7): a verdict-less row reads unknown only when its class is unknown
+    qv_text = str(row.quantum_vulnerable).lower() if row.quantum_vulnerable is not None else (
+        "unknown" if pqc[0] == "unknown" else "not-applicable")
     props = [
         {"name": "zs:location", "value": row.location},
         {"name": "zs:asset_type", "value": row.asset_type},
         {"name": "zs:target", "value": row.target or ""},
         {"name": "zs:source", "value": source_name or ""},
         {"name": "zs:impact", "value": view["impact"] or "Info"},
-        {"name": "zs:quantum_vulnerable", "value": "unknown" if row.quantum_vulnerable is None else str(row.quantum_vulnerable).lower()},
+        {"name": "zs:quantum_vulnerable", "value": qv_text},
     ]
     if view["finding"]:
         props.append({"name": "zs:finding", "value": view["finding"]})
@@ -741,7 +759,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         from backend.utilities.cbom_sources.sbom_link import ecosystem_of, library_purl
 
         package, version = str(facts.get("package") or name)[:255], str(facts.get("version") or "")
-        props += _detail_properties(row, facts, {}, size, curve, signature, view, assessed) + provenance
+        props += _detail_properties(row, facts, {}, size, curve, signature, pqc, assessed) + provenance
         out = {"type": "library", "bom-ref": ref, "name": package, "version": version,
                "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
         # an OS package the node read from a package database carries its own purl (pkg:deb/ubuntu/libssl3@...,
@@ -788,7 +806,7 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         props.append({"name": "zs:algorithm", "value": row.algorithm})
     if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
         props.append({"name": "zs:protocol", "value": row.protocol})
-    props += _detail_properties(row, facts, crypto, size, curve, signature, view, assessed) + provenance
+    props += _detail_properties(row, facts, crypto, size, curve, signature, pqc, assessed) + provenance
     if facts.get("source") == "ct":
         props += ct_properties(facts)
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
@@ -852,6 +870,10 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
     assessment = Assessment(session, run)
     assessed = {row.id: assessment.add(row, views[row.id]["finding_codes"]) for row in rows}
     kb_version = crypto_kb.version()
+    # whole-run class counts from the one class function, so a document cut at EXPORT_CAP still says how many assets
+    # of each class the run holds (CB-18 EC-8); the components' classes use the same read-elsewhere rule
+    summary = POSTURE.run_class_summary(session, team_id=run.team_id, run_id=run.id or 0)
+    elsewhere = POSTURE.JudgedElsewhere(session=session, team_id=run.team_id, run_id=run.id)
     versions = [(name, value) for name, value in (("zs:run_kb_version", run.kb_version),
                                                    ("zs:classifier_version", run.classifier_version),
                                                    ("zs:engine_version", run.engine_version)) if value]
@@ -859,8 +881,9 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
     drift_cut = run.id is not None and VEX.drift_truncated(session, team_id=run.team_id, run_id=run.id)
     head = {
         "bomFormat": "CycloneDX", "specVersion": "1.6",
-        "serialNumber": export_serial(run.id or 0, kb_version, judged_on, grade_model_version=QG.GRADE_MODEL_VERSION,
-                                      grade_inputs_digest=grading.digest, agility_version=AGILITY.version()),
+        "serialNumber": export_serial(run.id or 0, kb_version, judged_on, POSTURE.PQC_CLASS_MODEL,
+                                      grade_model_version=QG.GRADE_MODEL_VERSION, grade_inputs_digest=grading.digest,
+                                      agility_version=AGILITY.version()),
         "version": export_version(run),
         "metadata": {
             "timestamp": iso_z(now),
@@ -879,6 +902,12 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
                 {"name": "zs:grade_inputs_digest", "value": grading.digest},
                 *[{"name": name, "value": str(value)} for name, value in versions],
                 *([{"name": "zs:judged_on", "value": judged_on}] if judged_on else []),
+                {"name": "zs:pqc_class_model", "value": POSTURE.PQC_CLASS_MODEL},
+                {"name": "zs:run_asset_count", "value": str(summary["assets"])},
+                *[{"name": f"zs:pqc_class_count:{cls}", "value": str(n)} for cls, n in summary["pqc_classes"].items()],
+                *([{"name": "zs:pqc_readiness_pct", "value": str(summary["pqc_readiness_pct"])}]
+                  if summary["pqc_readiness_pct"] is not None else []),
+                {"name": "zs:pqc_readiness_status", "value": summary["readiness_basis"]["status"]},
                 *assessment.metadata(session, run.team_id),
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
                 *coverage_gaps(coverage, names, job_names, provs),
@@ -889,7 +918,7 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
     def components() -> Iterator[dict[str, Any]]:
         for row in rows:  # the assets, then the certificate parts they reference
             yield _component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
-                             provs.get(row.job_id), shared, parts, assessed[row.id])
+                             provs.get(row.job_id), shared, parts, elsewhere, assessed[row.id])
         yield from parts.components()
 
     return head, components(), lambda: vulnerabilities(
@@ -910,8 +939,9 @@ def export_identity(session: Session, run: CbomCollectionRun, now: _dt.datetime)
                                              CbomCollectedAsset.run_id == run.id)
     judged_on = today.date().isoformat() if changed_today(session, scope, today) else None
     digest = QG.load_context(session, team_id=run.team_id, run_id=run.id).digest  # the serial keys the grade inputs
-    return export_serial(run.id or 0, crypto_kb.version(), judged_on, grade_model_version=QG.GRADE_MODEL_VERSION,
-                         grade_inputs_digest=digest, agility_version=AGILITY.version()), export_version(run)
+    return export_serial(run.id or 0, crypto_kb.version(), judged_on, POSTURE.PQC_CLASS_MODEL,
+                         grade_model_version=QG.GRADE_MODEL_VERSION, grade_inputs_digest=digest,
+                         agility_version=AGILITY.version()), export_version(run)
 
 
 def _vex_inputs(session: Session, run: CbomCollectionRun, rows: list[CbomCollectedAsset],

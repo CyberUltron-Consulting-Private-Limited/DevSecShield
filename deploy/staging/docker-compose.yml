@@ -153,6 +153,8 @@ services:
       # 1 = GET /health and X-ZS-Build name the deployed commit publicly (staging, labs: the gate compares it);
       # default off (production). Signed-in users read it from GET /version either way. README "Build identity".
       DSS_EXPOSE_BUILD: ${DSS_EXPOSE_BUILD:-0}
+      # A test deployment: CBOM_AWS_LAB_SAME_ACCOUNT (backend.env) may work here; production refuses it (lab_mode.py).
+      DSS_ENV: staging
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -183,6 +185,7 @@ services:
     restart: unless-stopped
     environment:
       SKIP_ALEMBIC: "1"
+      DSS_ENV: staging  # as the backend's (lab mode is decided again at collection)
     depends_on:
       migrate:
         condition: service_completed_successfully
