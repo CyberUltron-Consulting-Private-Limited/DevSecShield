@@ -186,7 +186,7 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
     assert p["risk_data"] == {"total_critical": 1, "total_high": 2, "total_medium": 1, "total_low": 1,
                               "total_informational": 2, "total_quantum_vulnerable": 4}
     assert p["average_risk_score"] == M.average_risk({"critical": 1, "high": 2, "medium": 1, "low": 1}) == 6.0
-    assert p["asset_count"] == 7 and p["endpoints_probed"] == 2  # coverage rows are not assets
+    assert p["asset_count"] == 9 and p["endpoints_probed"] == 2  # coverage rows count as rows of the run (#159)
     assert p["title"] == f"Sources run #{partial} · srv-partial"
     assert p["sources"] == [{"id": p["sources"][0]["id"], "name": "srv-partial", "kind": "linux_servers"}]
     assert p["jobs_total"] == 2 and p["jobs_done"] == 2
@@ -286,8 +286,10 @@ def test_b3_run_list_counts_equal_node_row_summary(api, world, no_mongo, api_run
             assets = s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == run_id)).all()
             jobs = {j.id: j for j in s.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run_id)).all()}
             code_rows = []
+            coverage = 0
             for a in assets:
                 if a.asset_type == "coverage":
+                    coverage += 1
                     continue
                 job = jobs[a.job_id]
                 coll = CV.Collection(run_id=run_id, job_id=job.id, source_ref="ref", source_name="n", source_kind="",
@@ -301,8 +303,30 @@ def test_b3_run_list_counts_equal_node_row_summary(api, world, no_mongo, api_run
                             "total_informational": summary.informational,
                             "total_quantum_vulnerable": summary.quantum["quantum_vulnerable"]}, run_id
             assert rows[run_id]["average_risk_score"] == summary.average_risk
-            assert rows[run_id]["asset_count"] == summary.rows
+            assert rows[run_id]["asset_count"] == summary.rows + coverage  # #159: as GET /runs counts them
             assert run_list.grouped_counts(s, 1, [run_id])[run_id]["risk_data"] == risk
+
+
+def test_159_scans_table_asset_count_equals_run_api_and_assets_api(api, world, no_mongo, api_run):
+    """Issue #159: the Scans table's asset count of a run is the same number Review & Run (GET /runs) and the run's
+    assets API (``all_total``) show. Those count the run's ``coverage`` rows ("could not read X"), so the table does
+    too; the severity/informational counts still leave coverage rows out (B3)."""
+    engine, ids = world
+    seeded = seed_run(engine, 1, ids["alice"])  # 7 assets + 2 coverage rows
+    no_gaps = seed_run(engine, 1, ids["alice"], source_name="srv-nogaps", rows=MIXED[:3])
+    only_gaps = seed_run(engine, 1, ids["alice"], source_name="srv-gaps", rows=MIXED[-2:])
+    table = {r["id"]: r for r in _listing(api)["runs_list_data"]}
+    review = api("GET", "/1/cbom/sources/runs")
+    assert review.status_code == 200, review.text
+    review_counts = {r["id"]: r["asset_count"] for r in review.json()["runs"]}
+    for run_id in (seeded, no_gaps, only_gaps, api_run):
+        assets = api("GET", f"/1/cbom/sources/runs/{run_id}/assets", params={"page_size": 1})
+        assert assets.status_code == 200, assets.text
+        assert table[run_id]["asset_count"] == review_counts[run_id] == assets.json()["all_total"], run_id
+    assert table[seeded]["asset_count"] == 9 and table[no_gaps]["asset_count"] == 3
+    assert table[only_gaps]["asset_count"] == 2
+    assert sum(table[only_gaps]["risk_data"].values()) == 0  # coverage rows are still no finding and no severity
+    assert table[only_gaps]["endpoints_probed"] == 0
 
 
 def test_counts_cache_finished_runs_only(api, world, no_mongo):
