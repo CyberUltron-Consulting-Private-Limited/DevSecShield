@@ -434,3 +434,16 @@ def test_f6_library_weak_flag_follows_its_findings(api, world):
         assert nodes[name]["weak"] is bool(codes), (name, codes)
     assert nodes["libsodium"]["weak"] is False
 
+
+
+def test_f7_asset_detail_carries_the_same_dialog_fields_as_the_run_item(api, world):
+    """Dialogs opened from top risks / certificates read GET /assets/{id}: same OWASP, controls and fix as /assets."""
+    engine, _ = world
+    _s, run, _c, _h = _run_with(api, engine, PROBE)
+    items = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets?page_size=200", "alice").json()["items"]
+    for item in items:
+        detail = api("GET", f"/1/cbom/sources/assets/{item['id']}", "alice").json()["asset"]
+        for key in ("bom_ref", "owasp_top_10", "compliance_controls", "suggested_fix"):
+            assert detail[key] == item[key], (item["location"], key)
+    weak = next(i for i in items if i["location"] == "10.20.0.1:443")
+    assert all(re.match(r"^A\d\d:2021 ", v) for v in weak["owasp_top_10"].values()), weak["owasp_top_10"]

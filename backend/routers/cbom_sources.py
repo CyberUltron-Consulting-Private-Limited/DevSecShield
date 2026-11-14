@@ -1654,7 +1654,11 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
             now_grade = grading.with_inputs(current).grade_row(row, asset["finding_codes"], explain=False,
                                                                cls=asset["pqc_class"])
             q_now = {"q_grade": now_grade.q_grade, "q_label": now_grade.q_label, "q_reason": now_grade.q_reason}
-        return {"asset": {**asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}}
+        out = {**asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}
+        # the code page's dialog fields, from the same function as the run's /assets items (CB-38 W2b): a dialog
+        # opened from top risks or a certificate shows the same OWASP / controls / fix as one opened from the table
+        RUN_ASSETS.add_code_page_fields(out)
+        return {"asset": out}
 
 
 @router.get(BASE + "/grade-model", dependencies=READ,
