@@ -241,10 +241,12 @@ def finalize(session: Session, parent: CbomCollectionJob, now: _dt.datetime, *, 
     pre = list((parent.result or {}).get("targets") or [])
     targets = pre + rows
     ok = sum(1 for t in targets if t.get("status") == "ok")
-    part = sum(1 for t in targets if t.get("status") == "partial")
+    # an opt-in region the account has not enabled is partial, never failed (CB-33 HF-1, aws_collect._region_target)
+    not_enabled = sum(1 for t in targets if t.get("not_enabled"))
+    part = sum(1 for t in targets if t.get("status") == "partial") + not_enabled
     skipped = sum(1 for t in targets if str(t.get("status", "")).startswith("skipped"))
     counts = {"total": len(targets), "ok": ok, "partial": part, "failed": len(targets) - ok - part - skipped,
-              "skipped": skipped}
+              "skipped": skipped, **({"not_enabled": not_enabled} if not_enabled else {})}
     by_status: dict[str, int] = {}
     for j in slices:
         by_status[j.status] = by_status.get(j.status, 0) + 1

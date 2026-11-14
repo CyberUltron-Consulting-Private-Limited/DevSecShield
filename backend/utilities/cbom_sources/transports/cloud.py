@@ -34,7 +34,7 @@ def never_scan(lines: list[str]) -> T.ParsedTargets:
 
 
 def blocked(target: CollectTarget, excl: T.ParsedTargets) -> str | None:
-    hosts = {h.lower().rstrip(".") for h in excl.hostnames}
+    hosts = T.never_scan_names(excl.hostnames)
     for raw in (target.label, *target.addresses):
         text = str(raw or "").strip().strip("[]")
         if not text:
@@ -42,7 +42,7 @@ def blocked(target: CollectTarget, excl: T.ParsedTargets) -> str | None:
         try:
             addr = ipaddress.ip_address(text)
         except ValueError:
-            if text.lower().rstrip(".") in hosts:
+            if T.host_listed(text, hosts):
                 return f"{text} is on the never-scan list"
             continue
         if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:

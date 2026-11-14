@@ -128,13 +128,21 @@ export async function downloadOscal(teamId: number | string, what: { runId?: num
 }
 
 // ----------------------------------------------------------------------------- CMDB import
+export type CmdbVaultProvider = "hashicorp" | "cyberark" | "aws_secrets_manager" | "azure_key_vault"
+
 export interface CmdbPlanCreate {
-  kind: "linux_servers" | "network_range"
+  kind: "linux_servers" | "windows_servers" | "network_range" | "database" | "kubernetes" | "key_manager"
   name: string
   targets?: string[]
   cidr?: string
+  // #225: connection settings of Windows, database, cluster and HSM sources (never a secret)
+  config?: Record<string, unknown>
   metadata: Record<string, string>
   lines: number[]
+  // #225: the row's scan node (null: the import's node, named in node_name when chosen) and its segment
+  node_id?: number | null
+  node_name?: string | null
+  segment?: string | null
 }
 
 export interface CmdbPlan {
@@ -157,6 +165,9 @@ export interface CmdbRequest {
   source: "csv" | "servicenow"
   csv?: string
   node_id?: number | null
+  segment_nodes?: Record<string, number>
+  vault_provider?: CmdbVaultProvider | null
+  windows_vault?: { provider: CmdbVaultProvider; path: string } | null
   create_missing?: boolean
   digest?: string
 }
