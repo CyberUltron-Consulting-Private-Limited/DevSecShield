@@ -138,9 +138,10 @@ def create_issue_in_project(
     description: str,
     jira_email: str = "support@zeroshield.ai",
     issue_type: str = "Task",
+    project_key: str | None = None,
 ):
     """
-    Create an issue in the specified Jira project (by project ID).
+    Create an issue in the specified Jira project (by project ID, or by project key when ``project_key`` is given).
     """
     # SECURITY: Validate Jira URL to prevent SSRF
     validate_jira_url(jira_url)
@@ -156,7 +157,7 @@ def create_issue_in_project(
 
     payload = json.dumps({
         "fields": {
-            "project": {"id": project_id},
+            "project": {"key": project_key} if project_key else {"id": project_id},
             "issuetype": {"name": issue_type},
             "summary": summary,
             "description": {

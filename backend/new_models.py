@@ -495,6 +495,10 @@ class CbomCollectionSettings(SQLModel, table=True):
     # Refuse scan nodes that do not sign their requests (enrolled before signing existed, or an old node version).
     require_signed_nodes: bool = Field(default=False)
     risk_model: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    # CB-38 PR-4: Jira project (key such as "SEC", or a numeric project id) and issue type for CBOM Sources tickets;
+    # the credentials stay in the team's integration settings (the code lane's)
+    jira_project_key: str | None = Field(default=None, max_length=32)
+    jira_issue_type: str | None = Field(default=None, max_length=64)
     stop_all_changed_by: int | None = Field(default=None)
     stop_all_changed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_by_user_id: int | None = Field(default=None)
@@ -630,6 +634,10 @@ class CbomRemediationAssignment(SQLModel, table=True):
     target_date: str | None = Field(default=None, max_length=10)  # YYYY-MM-DD
     status: str = Field(default="open", max_length=16)  # open | in_progress | done | accepted_risk
     note: str | None = Field(default=None, max_length=500)
+    # CB-38 PR-4: the Jira issue of this asset (one per stable key, across runs) and when the status last became done
+    ticket_key: str | None = Field(default=None, max_length=64)
+    ticket_url: str | None = Field(default=None, max_length=512)
+    done_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_by_user_id: int | None = Field(default=None)
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
