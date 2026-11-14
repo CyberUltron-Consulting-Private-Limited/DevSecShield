@@ -5254,6 +5254,80 @@ const downloadCbomRunCbom = async (team_id: number, run_id: number): Promise<voi
     }
 }
 
+// ---------- CB-38 PR-4: Jira tickets for Sources run findings (team Jira credentials, team-level project)
+
+/** A run asset as the Ticketing tab lists it: the asset list item plus its ticket (one per stable key, across runs). */
+export type CbomRunTicketAsset = CbomAsset & {
+    asset_key?: string
+    ticket_key?: string | null
+    ticket_url?: string | null
+}
+
+export interface CbomRunTicketAssetPage extends Omit<CbomAssetPage, "items"> {
+    items: CbomRunTicketAsset[]
+    /** The run's findings (judged today); with ``view=findings`` ``total`` is the same count. */
+    findings_total: number
+}
+
+/** The team's Jira for CBOM Sources: never a credential, only whether one is connected. */
+export interface CbomSourcesTicketing {
+    connected: boolean
+    jira_project_key: string | null
+    jira_issue_type: string
+    issue_type_default: string
+    is_admin: boolean
+    row_version: number
+}
+
+export interface CbomRunTicketRef {
+    asset_id: number
+    asset_key: string
+    ticket_key: string
+    ticket_url: string
+}
+
+export interface CbomRunTicketsResult {
+    created: CbomRunTicketRef[]
+    existing: CbomRunTicketRef[]
+    failed: { asset_id: number; asset_key?: string | null; error: string }[]
+    /** Clean inventory and coverage notes: not findings, never ticketed. */
+    skipped?: { asset_id: number; asset_key?: string | null; reason: string }[]
+    /** Not attempted: another request is creating the ticket, or the request's time budget ran out. Retry. */
+    deferred?: { asset_id: number; asset_key?: string | null; reason: string }[]
+}
+
+/** Findings of a run with their tickets (``view=findings``: not coverage rows, with an impact). */
+export const getCbomRunTicketAssets = async (team_id: number, run_id: number, page = 1, page_size = 100): Promise<CbomRunTicketAssetPage> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets`, { params: { view: "findings", page, page_size } })
+    return response.data as CbomRunTicketAssetPage
+}
+
+export const getCbomSourcesTicketing = async (team_id: number): Promise<CbomSourcesTicketing> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/ticketing`)
+    return (response.data as { ticketing: CbomSourcesTicketing }).ticketing
+}
+
+export const updateCbomSourcesTicketing = async (
+    team_id: number,
+    body: { jira_project_key: string | null; jira_issue_type: string | null; expected_version?: number },
+): Promise<CbomSourcesTicketing> => {
+    try {
+        const response = await api.put(`${cbomSourcesBase(team_id)}/ticketing`, body)
+        toast.success("Jira project saved")
+        return (response.data as { ticketing: CbomSourcesTicketing }).ticketing
+    } catch (error) {
+        showErrorToast(error, "Error saving the Jira project")
+        throw error
+    }
+}
+
+/** One Jira issue per selected finding; assets that already have one are reported in ``existing``. No toast: the
+ * Ticketing tab shows the outcome of every asset, including a batch that failed as a whole. */
+export const createCbomRunTickets = async (team_id: number, run_id: number, asset_ids: number[]): Promise<CbomRunTicketsResult> => {
+    const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/tickets`, { asset_ids, ticket_type: "jira" })
+    return response.data as CbomRunTicketsResult
+}
+
 const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/cancel`)

@@ -15,6 +15,7 @@ import {
   defaultWindow,
   downloadKinds,
   downloadLabel,
+  formatSize,
   EXPOSURE_CHOICES,
   exposureFrom,
   formatDateTime,
@@ -217,7 +218,20 @@ assert.equal(mixedGroupScope("databases", { key_manager: 2 }, 2), "2 HSMs or key
   assert.equal(downloadLabel("image", image), "Download scan node image (63.2 MB, sha256 3f9a1c2b7d4e…)")
   assert.equal(downloadLabel("ova-kit", null), "Download OVA build kit")
   assert.equal(downloadLabel("ami-kit", { ...image, kind: "ami-kit", available: false, size: null, sha256: null }), "Download AMI build kit")
-  assert.equal(downloadLabel("helm-chart", { ...image, kind: "helm-chart", size: 20_480, sha256: null }), "Download Helm chart (0.0 MB)")
+  // Staging QA 14 Nov: the 10 KB OVA kit, 5 KB AMI kit and 8 KB Helm chart were labelled "0.0 MB"
+  assert.equal(downloadLabel("helm-chart", { ...image, kind: "helm-chart", size: 20_480, sha256: null }), "Download Helm chart (20 KB)")
+  assert.equal(formatSize(10_296), "10 KB")
+  assert.equal(formatSize(5_234), "5 KB")
+  assert.equal(formatSize(8_492), "8 KB")
+  assert.equal(formatSize(300), "1 KB")
+  assert.equal(formatSize(0), "0 KB")
+  assert.equal(formatSize(1_048_575), "1024 KB")
+  assert.equal(formatSize(1_048_576), "1.0 MB")
+  assert.equal(formatSize(83_419_895), "79.6 MB")
+  // ... and at 390 px the long button label ran off the card: the button wraps its text
+  const downloads = readFileSync(join(__dirname, "NodeDownloads.tsx"), "utf8")
+  assert.ok(downloads.includes('className="cursor-pointer h-auto max-w-full whitespace-normal break-words text-left"'),
+    "the download button does not wrap its label")
   assert.deepEqual(downloadKinds("docker"), ["image"])
   assert.deepEqual(downloadKinds("helm"), ["helm-chart", "image"])
   assert.deepEqual(downloadKinds("ova"), ["ova-kit", "image"])
