@@ -7,12 +7,13 @@
 
 import { InfoTip } from "@/components/ui/info-tip";
 
-import { readinessExplanation, type ReadinessPostureLike } from "./readinessExplain";
+import { readinessExplanation, type ReadinessAction, type ReadinessPostureLike } from "./readinessExplain";
 
 export function ReadinessExplainer({ posture, onShowAssets }: {
   posture: ReadinessPostureLike | null | undefined;
-  /** filter the findings table below to the quantum-vulnerable assets (of one asset type when given) */
-  onShowAssets?: (assetType?: string) => void;
+  /** filter the findings table below to one readiness group's assets, or (no action) every quantum-vulnerable asset:
+   * readinessDrillFilters(action) is the filter */
+  onShowAssets?: (action?: ReadinessAction) => void;
 }) {
   if (!posture) return null;
   const e = readinessExplanation(posture);
@@ -49,8 +50,8 @@ export function ReadinessExplainer({ posture, onShowAssets }: {
                 {a.effect && <span className="text-emerald-700 dark:text-emerald-400"> · {a.effect}</span>}
                 {a.fix && <span className="block text-zinc-600 dark:text-zinc-400 [overflow-wrap:anywhere]">{a.fix}</span>}
                 {onShowAssets && (
-                  <button type="button" className={link} onClick={() => onShowAssets(a.assetType)}
-                          data-testid="pqc-readiness-action-show">
+                  <button type="button" className={link} onClick={() => onShowAssets(a)}
+                          data-testid="pqc-readiness-action-show" data-pqc-group={a.pqcGroup} data-type={a.assetType}>
                     Show these {a.assets}
                   </button>
                 )}

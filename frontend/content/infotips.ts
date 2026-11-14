@@ -5864,24 +5864,24 @@ export const INFO_TIPS = {
     why: "Drift shows new weak crypto, and fixes that landed, as soon as they happen.",
     example: "+3 certificates, -1 SSH host key, 2 changed.",
   },
-  // src: backend/utilities/cbom_sources/posture.py:313-328, backend/utilities/cbom_sources/cbom_metrics.py:29-46, backend/utilities/cbom_sources/posture.py:367-372 — ready judged / judged; unknown and not-applicable left out (#271)
+  // src: backend/utilities/cbom_sources/posture.py:314-329,368-372, backend/utilities/cbom_sources/cbom_metrics.py:29-46 — ready judged / judged; unknown and not-applicable left out (#271)
   "cbom.run.readiness": {
     label: "PQC readiness explained",
-    what: "Quantum-safe judged assets divided by judged assets. Judged: the scan identified the cryptography and gave it a quantum verdict. Hybrid, post-quantum and symmetric (AES-256; AES-128 as Grover-weakened) count as ready. Unidentified assets and assets with no public-key algorithm are left out of both numbers; the percentage is withheld when more assets are unidentified than judged.",
+    what: "Ready judged assets divided by judged assets. Judged: the scan identified the cryptography and gave it a quantum verdict. Hybrid, post-quantum and symmetric (AES-256; AES-128 as Grover-weakened) count as ready. Unidentified assets and settings with no algorithm to judge (e.g. a password-hash setting) are left out of both numbers; the percentage is withheld when more assets are unidentified than judged.",
     why: "0% means every judged asset is breakable by a future quantum computer, not that the scan failed; the list below says which assets and what moves the score.",
     example: "46 judged, 0 ready: 0%. Moving 38 TLS endpoints to a hybrid key exchange makes it 82.6%.",
   },
-  // src: backend/utilities/cbom_sources/posture.py:341-357 — quantum-vulnerable assets per asset type and quantum finding, top 3, readiness after the fix (#271)
+  // src: backend/utilities/cbom_sources/posture.py:342-358, backend/utilities/cbom_sources/run_assets.py:120-148 — quantum-vulnerable assets per asset type and quantum finding, top 3, readiness after the fix; Show these lists the group (pqc_group) (#271)
   "cbom.run.readiness_actions": {
     label: "What would raise PQC readiness",
     what: "The largest groups of quantum-vulnerable assets (same asset type and same quantum finding), with the knowledge-base fix and the readiness this run would have if that group alone were fixed. Show these filters the findings table to the group.",
     why: "Tells you which change moves the score most, so the first migration step is the biggest one.",
     example: "Fix 38 TLS endpoints: No post-quantum key exchange · Readiness 0% → 82.6%.",
   },
-  // src: backend/utilities/cbom_sources/waves.py:43-52, backend/utilities/cbom_sources/waves.py:56-69 — wave counts of the run's assets; the rule per wave (#271)
+  // src: backend/utilities/cbom_sources/waves.py:58-81,86-98 — wave counts of the run's assets; the rule per wave, the legend text built from it (#271)
   "cbom.run.waves": {
     label: "Remediation waves",
-    what: "This run's assets per remediation wave. Wave 1: Critical or High weaknesses on internet-facing assets, and quantum-vulnerable key exchanges in transit (HNDL). Wave 2: other Critical or High. Wave 3: Medium and Low. Wave 4: quantum-vulnerable assets with no other weakness. A wave no asset matches is not listed. Select findings below to assign a wave, owner, date or status; plans follow the asset.",
+    what: "This run's assets per remediation wave; first matching rule wins. Wave 1: Critical or High weakness on an internet-facing or in-transit asset, or any quantum-vulnerable key exchange in transit (HNDL). Wave 2: other Critical or High. Wave 3: any other weakness, whatever its impact. Wave 4: quantum-vulnerable, no other weakness. Select findings below to set wave, owner, date or status.",
     why: "Turns the findings into an ordered plan with owners and dates.",
     example: "Wave 1: 4 · Wave 2: 11 · Wave 3: 30 · Wave 4: 52.",
   },

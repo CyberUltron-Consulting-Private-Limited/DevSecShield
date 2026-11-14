@@ -7,6 +7,8 @@
 
 import type { CbomReadinessAction, CbomReadinessBasis, CbomReadinessExcluded } from "@/utils/backend_api";
 
+import type { RunTableFilters } from "./model";
+
 export interface ReadinessPostureLike {
   pqc_readiness_pct: number | null;
   pqc_classes?: Partial<Record<string, number>>;
@@ -22,6 +24,8 @@ export interface ReadinessAction {
   fix: string | null;
   assets: number;
   assetType: string;
+  /** the group's key for the findings table's ``pqc_group`` filter: its quantum finding code, "none" without one */
+  pqcGroup: string;
   /** "Readiness 0% -> 26.1%" when the API gave the readiness after the fix */
   effect: string | null;
 }
@@ -30,7 +34,7 @@ export interface ReadinessExplanation {
   /** false: the run judged nothing (or the API is older and sent no basis): only the definition is shown */
   hasBasis: boolean;
   value: string;
-  /** "Quantum-safe judged assets / judged assets = 0 / 46 = 0%" */
+  /** "Ready judged assets ÷ judged assets = 0 ÷ 46 = 0%" */
   formula: string;
   judged: string;
   counts: string[];
@@ -68,7 +72,7 @@ export function readinessExplanation(p: ReadinessPostureLike | null | undefined)
     "symmetric counts as quantum-safe and raises the score; a 128-bit key (AES-128) counts too, as Grover-weakened. " +
     "A TLS or SSH endpoint is judged on its key exchange, not on its AES bulk cipher: an endpoint that encrypts with " +
     "AES-256 but agrees its keys with RSA, elliptic curves or Diffie-Hellman is quantum-vulnerable. " +
-    "Settings and inventory with no public-key algorithm get no verdict and are left out of both numbers.";
+    "Settings with no algorithm to judge (e.g. a password-hash setting) are left out of both numbers.";
   const target =
     "Higher is better: 100% means every judged asset already resists a quantum computer. NIST plans to deprecate " +
     "quantum-vulnerable public-key cryptography after 2030 and disallow it after 2035.";
@@ -78,20 +82,21 @@ export function readinessExplanation(p: ReadinessPostureLike | null | undefined)
     fix: a.fix,
     assets: a.assets,
     assetType: a.asset_type,
+    pqcGroup: a.code ?? "none",
     effect: a.readiness_after == null || p?.pqc_readiness_pct == null
       ? null
       : `Readiness ${pct(p.pqc_readiness_pct)} → ${pct(a.readiness_after)}`,
   }));
   if (!b) {
     return {
-      hasBasis: false, value: pct(p?.pqc_readiness_pct), formula: "Quantum-safe judged assets ÷ judged assets",
+      hasBasis: false, value: pct(p?.pqc_readiness_pct), formula: "Ready judged assets ÷ judged assets",
       judged: "", counts: [], excluded: [], symmetric, target, actions, vulnerable,
     };
   }
   const value = b.status === "not_enough_identified" ? "Not enough identified" : pct(p?.pqc_readiness_pct);
   const formula = b.status === "ok"
-    ? `Quantum-safe judged assets ÷ judged assets = ${b.ready} ÷ ${b.judged} = ${pct(p?.pqc_readiness_pct)}`
-    : "Quantum-safe judged assets ÷ judged assets";
+    ? `Ready judged assets ÷ judged assets = ${b.ready} ÷ ${b.judged} = ${pct(p?.pqc_readiness_pct)}`
+    : "Ready judged assets ÷ judged assets";
   const judged =
     `"Judged" means the scan identified the asset's cryptography and gave it a quantum verdict: quantum-vulnerable, ` +
     `hybrid (a post-quantum key exchange next to the classical one), quantum-safe (post-quantum or symmetric) or ` +
@@ -112,6 +117,20 @@ export function readinessExplanation(p: ReadinessPostureLike | null | undefined)
     excluded.unshift("No asset of this run has a quantum verdict, so there is no percentage (not 0%, not 100%).");
   }
   return { hasBasis: true, value, formula, judged, counts, excluded, symmetric, target, actions, vulnerable };
+}
+
+/** The findings-table filter behind "Show these N" (one readiness group: its asset type and quantum finding code) or,
+ * without an action, "Show the N quantum-vulnerable assets". The server judges the group with posture's own class and
+ * group functions (``pqc_group``), so the table lists exactly the N rows the card counts; every other filter is
+ * cleared so it cannot narrow the list. ``quantum: true`` keeps an older server (no ``pqc_group``) on the vulnerable
+ * assets. */
+export function readinessDrillFilters(action?: Pick<ReadinessAction, "assetType" | "pqcGroup" | "text"> | null): Partial<RunTableFilters> {
+  return {
+    view: "all", quantum: true, type: action?.assetType, pqc_group: action?.pqcGroup ?? "any",
+    drill_label: action ? action.text : "every quantum-vulnerable asset",
+    impact: undefined, q: undefined, source_id: undefined, status: undefined, codes: undefined, asset_ids: undefined,
+    page: 1,
+  };
 }
 
 // ------------------------------------------------------------------------------------------------- NIST levels
@@ -155,12 +174,14 @@ export interface WaveLegendRow {
   empty: string;
 }
 
+// An older backend sends no ``rules``: the same words as waves.py WAVE_RULE (test_cbom_readiness_explained.py
+// test_frontend_fallback_wave_text_is_the_backend_rules keeps the two equal).
 const WAVE_FALLBACK: Record<string, string> = {
-  "1": "Urgent: a Critical or High weakness on an internet-facing asset, or a quantum-vulnerable key exchange in transit (harvest now, decrypt later)",
-  "2": "Every other Critical or High weakness",
-  "3": "Medium and Low weaknesses",
-  "4": "Quantum-vulnerable assets with no other weakness: plan their post-quantum migration",
-  none: "Clean inventory: nothing to remediate",
+  "1": "Urgent: a Critical or High weakness on an internet-facing or in-transit (HNDL) asset, or any quantum-vulnerable key exchange in transit (harvest now, decrypt later: traffic recorded today can be decrypted later)",
+  "2": "Any other Critical or High weakness",
+  "3": "Any other weakness, whatever its impact (Medium, Low, Info or none recorded)",
+  "4": "A quantum-vulnerable asset with no other weakness: plan its post-quantum migration",
+  none: "No weakness and not quantum-vulnerable: nothing to remediate",
 };
 
 /** One legend row per wave (1-4, then "No action"), with this run's count from the wave plan and why a wave is empty.

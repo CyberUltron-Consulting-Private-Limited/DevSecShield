@@ -273,10 +273,12 @@ export const MAX_DRILL_CODES = 50; // backend run_assets.MAX_CODES
  * assets than one request may carry. */
 export function runDrillFilters(target: DrillTarget): {
   patch: { codes?: string[]; asset_ids?: number[]; drill_label: string; view: "all"; page: 1;
-           type: undefined; impact: undefined; quantum: undefined; q: undefined; source_id: undefined; status: undefined };
+           type: undefined; impact: undefined; quantum: undefined; q: undefined; source_id: undefined; status: undefined;
+           pqc_group: undefined };
   truncated: boolean;
 } {
-  const cleared = { type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined } as const;
+  const cleared = { type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined,
+                    pqc_group: undefined } as const;
   if (target.kind === "codes") {
     const codes = target.codes.slice(0, MAX_DRILL_CODES);
     return { patch: { ...cleared, codes, asset_ids: undefined, drill_label: target.label, view: "all", page: 1 }, truncated: codes.length < target.codes.length };

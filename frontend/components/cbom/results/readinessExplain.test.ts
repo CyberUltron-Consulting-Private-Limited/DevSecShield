@@ -18,7 +18,8 @@ import {
 } from "../pqcMigrationGroup";
 import { ReadinessExplainer } from "./ReadinessExplainer";
 import { WaveLegend } from "./RunSections";
-import { nistLevelInfo, readinessExplanation, waveLegend, type ReadinessPostureLike } from "./readinessExplain";
+import { filtersToParams, hasActiveFilters, type RunTableFilters } from "./model";
+import { nistLevelInfo, readinessDrillFilters, readinessExplanation, waveLegend, type ReadinessPostureLike } from "./readinessExplain";
 
 const h = React.createElement;
 const text = (html: string) => html.replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"')
@@ -41,15 +42,18 @@ const POSTURE: ReadinessPostureLike = {
 test("readiness: formula with the API's numbers, judged, exclusions, symmetric rule, actions", () => {
   const e = readinessExplanation(POSTURE);
   assert.equal(e.value, "0%");
-  assert.equal(e.formula, "Quantum-safe judged assets ÷ judged assets = 0 ÷ 46 = 0%");
+  assert.equal(e.formula, "Ready judged assets ÷ judged assets = 0 ÷ 46 = 0%");
   assert.match(e.judged, /This run judged 46 assets\./);
   assert.deepEqual(e.counts, ["0 quantum-safe, hybrid or Grover-weakened (count as ready)", "46 quantum-vulnerable (count against)"]);
   assert.deepEqual(e.excluded, ["8 assets left out, no quantum verdict: Settings and inventory with no public-key algorithm"]);
   assert.match(e.symmetric, /AES-256/);
   assert.match(e.symmetric, /judged on its key exchange, not on its AES bulk cipher/);
-  assert.deepEqual(e.actions.map((a) => [a.text, a.effect, a.assets, a.assetType]), [
-    ["Fix 38 TLS endpoints: No post-quantum key exchange", "Readiness 0% → 82.6%", 38, "tls_endpoint"],
-    ["Fix 8 SSH endpoints: SSH has no post-quantum key exchange", "Readiness 0% → 17.4%", 8, "ssh_endpoint"],
+  // review 5906810504: symmetric assets are judged (ready); only settings with no algorithm to judge are left out
+  assert.match(e.symmetric, /Settings with no algorithm to judge \(e\.g\. a password-hash setting\) are left out/);
+  assert.doesNotMatch(e.symmetric, /no public-key algorithm get no verdict/);
+  assert.deepEqual(e.actions.map((a) => [a.text, a.effect, a.assets, a.assetType, a.pqcGroup]), [
+    ["Fix 38 TLS endpoints: No post-quantum key exchange", "Readiness 0% → 82.6%", 38, "tls_endpoint", "NO_PQ_KEX"],
+    ["Fix 8 SSH endpoints: SSH has no post-quantum key exchange", "Readiness 0% → 17.4%", 8, "ssh_endpoint", "SSH_NO_PQ_KEX"],
   ]);
   assert.equal(e.vulnerable, 46);
 });
@@ -87,7 +91,9 @@ test("waves: one legend row per wave, the plan's counts, and why a wave is empty
   assert.match(rows[2].empty, /No asset of this run matches this rule/);
   assert.equal(rows[0].empty, "");
   // an older backend without rules: the same rule set in words
-  assert.match(waveLegend({}, undefined)[2].rule, /Medium and Low/);
+  // wave 3 is any other weakness whatever its impact (suggested_wave), not only Medium and Low
+  assert.match(waveLegend({}, undefined)[2].rule, /^Any other weakness, whatever its impact/);
+  assert.match(waveLegend({}, undefined)[0].rule, /internet-facing or in-transit \(HNDL\) asset/);
 });
 
 const runRow = (i: number, over: Partial<PqcMigrationRowLike> = {}): PqcMigrationRowLike => ({
@@ -131,7 +137,7 @@ test("render: the readiness explainer and the wave legend", () => {
   const html = renderToStaticMarkup(h(ReadinessExplainer, { posture: POSTURE, onShowAssets: () => undefined }));
   const t = text(html);
   assert.match(t, /What PQC readiness 0% means/);
-  assert.match(t, /Formula: Quantum-safe judged assets ÷ judged assets = 0 ÷ 46 = 0%/);
+  assert.match(t, /Formula: Ready judged assets ÷ judged assets = 0 ÷ 46 = 0%/);
   assert.match(t, /8 assets left out, no quantum verdict/);
   assert.match(t, /Fix 38 TLS endpoints: No post-quantum key exchange · Readiness 0% → 82\.6%/);
   assert.equal((html.match(/data-testid="pqc-readiness-action"/g) ?? []).length, 2);
@@ -141,10 +147,36 @@ test("render: the readiness explainer and the wave legend", () => {
   assert.equal(renderToStaticMarkup(h(ReadinessExplainer, { posture: null })), "");
 
   const legend = text(renderToStaticMarkup(h(WaveLegend, { byWave: { "1": 28, "2": 2, "4": 16 } })));
-  assert.match(legend, /Wave 3 \(0\): Medium and Low weaknesses\. No asset of this run matches this rule/);
+  assert.match(legend, /Wave 3 \(0\): Any other weakness, whatever its impact \(Medium, Low, Info or none recorded\)\. No asset of this run matches this rule/);
   assert.match(legend, /Wave 1 \(28\): Urgent/);
   // while the plan is loading: the rules without counts
   const loading = text(renderToStaticMarkup(h(WaveLegend, { byWave: null })));
   assert.doesNotMatch(loading, /\(0\)/);
-  assert.match(loading, /Wave 4: Quantum-vulnerable assets with no other weakness/);
+  assert.match(loading, /Wave 4: A quantum-vulnerable asset with no other weakness/);
+});
+
+// review 5906810504 blocker: two TLS groups (RSA key exchange, ECDHE) must open two different lists of N rows each, so
+// "Show these N" filters by the group's asset type AND its quantum finding code (server-side pqc_group, judged with
+// posture's own functions; test_each_readiness_group_filters_the_table_to_exactly_its_assets checks N == total).
+test("show these N: the group's type and code, every other filter cleared", () => {
+  const two: ReadinessPostureLike = { ...POSTURE, readiness_actions: [
+    { asset_type: "tls_endpoint", type_label: "TLS endpoint", code: "NO_PQ_KEX", title: "No post-quantum key exchange", fix: null, assets: 4, readiness_after: 10 },
+    { asset_type: "tls_endpoint", type_label: "TLS endpoint", code: "STATIC_RSA_KEX", title: "RSA key exchange without forward secrecy", fix: null, assets: 1, readiness_after: 2 },
+    { asset_type: "private_key", type_label: "Private key", code: null, title: "Quantum-vulnerable algorithm", fix: null, assets: 1, readiness_after: 2 },
+  ] };
+  const [ecdhe, rsa, nocode] = readinessExplanation(two).actions;
+  const before: RunTableFilters = { view: "findings", impact: "High", q: "api", source_id: 3, status: "in_progress", codes: ["X"], page: 4, page_size: 50 };
+  const apply = (a?: Parameters<typeof readinessDrillFilters>[0]) => filtersToParams({ ...before, ...readinessDrillFilters(a) } as RunTableFilters);
+  assert.deepEqual(apply(ecdhe), { view: "all", page: 1, page_size: 50, type: "tls_endpoint", quantum: true, pqc_group: "NO_PQ_KEX" });
+  assert.deepEqual(apply(rsa), { view: "all", page: 1, page_size: 50, type: "tls_endpoint", quantum: true, pqc_group: "STATIC_RSA_KEX" });
+  assert.notDeepEqual(apply(ecdhe), apply(rsa)); // the two TLS buttons open different lists
+  assert.equal(apply(nocode).pqc_group, "none");
+  // "Show the N quantum-vulnerable assets": posture's class (pqc_group=any), any type
+  assert.deepEqual(apply(), { view: "all", page: 1, page_size: 50, quantum: true, pqc_group: "any" });
+  assert.equal(readinessDrillFilters(ecdhe).drill_label, "Fix 4 TLS endpoints: No post-quantum key exchange");
+  assert.ok(hasActiveFilters({ view: "all", page: 1, page_size: 50, pqc_group: "any" }));
+  // the rendered buttons carry their group
+  const html = renderToStaticMarkup(h(ReadinessExplainer, { posture: two, onShowAssets: () => undefined }));
+  assert.deepEqual([...html.matchAll(/data-pqc-group="([^"]+)" data-type="([^"]+)"/g)].map((m) => [m[1], m[2]]),
+    [["NO_PQ_KEX", "tls_endpoint"], ["STATIC_RSA_KEX", "tls_endpoint"], ["none", "private_key"]]);
 });

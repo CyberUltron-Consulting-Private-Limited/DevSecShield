@@ -177,7 +177,7 @@ _NOTES = (
 _PLAN_NOTE = (
     "Wave, target date and owner / status come from the team's remediation plan in DevSecShield. "
     "Where no wave was assigned, the suggested wave is printed with \"(suggested)\": 1 = critical or high "
-    "and internet-facing or harvest-now-decrypt-later, 2 = other critical or high, 3 = medium and low, "
+    "and internet-facing or harvest-now-decrypt-later, 2 = other critical or high, 3 = any other weakness, "
     "4 = quantum-vulnerable with no other weakness. Blank cells are for the assessor."
 )
 _NODE_HEADERS = ("#", "Asset", "Type", "Algorithm / key", "Impact", "Where found", "Collected", "Wave",

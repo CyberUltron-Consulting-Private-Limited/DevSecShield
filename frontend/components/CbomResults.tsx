@@ -100,6 +100,7 @@ import {
   SectionNote,
 } from "@/components/cbom/results/RunSections";
 import { ReadinessExplainer } from "@/components/cbom/results/ReadinessExplainer";
+import { readinessDrillFilters } from "@/components/cbom/results/readinessExplain";
 import RunTicketingTab from "@/components/cbom/results/RunTicketingTab";
 import type { ResultsSource } from "@/components/cbom/results/source";
 import { advisoryLine, readAdvisoryData, staleNote } from "@/components/cbom/advisoryData";
@@ -854,8 +855,8 @@ export default function CbomResults({
                   the crypto-agility card; a code scan has no posture payload, so it is not shown there */}
               <RunPostureCard teamId={run.teamId} runId={run.runId} active={run.active} />
               {/* PQC readiness in plain words and what raises it (issue #271); "show" filters the findings table */}
-              <ReadinessExplainer posture={run.posture} onShowAssets={(assetType) => {
-                run.onFilters({ view: "all", quantum: true, type: assetType, page: 1 });
+              <ReadinessExplainer posture={run.posture} onShowAssets={(action) => {
+                run.onFilters(readinessDrillFilters(action));
                 document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" });
               }} />
             </>

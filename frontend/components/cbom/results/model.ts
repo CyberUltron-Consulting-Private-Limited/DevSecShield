@@ -390,6 +390,9 @@ export interface RunTableFilters {
   /** #270 compliance drill-down: assets with any of these finding codes (a clause), or these asset ids (a requirement) */
   codes?: string[];
   asset_ids?: number[];
+  /** #271 the PQC readiness card's "Show these N": one readiness group (its quantum finding code, "none" without one)
+   * or "any" quantum-vulnerable asset, judged by the server with posture's own functions */
+  pqc_group?: string;
   /** what the drill-down shows, for the table's filter chip ("NIST · SP 800-131A …") */
   drill_label?: string;
   page: number;
@@ -409,11 +412,12 @@ export function filtersToParams(f: RunTableFilters): Record<string, string | num
   if (f.status) out.status = f.status;
   if (f.codes?.length) out.code = f.codes.join(",");
   if (f.asset_ids?.length) out.asset_id = f.asset_ids.join(",");
+  if (f.pqc_group) out.pqc_group = f.pqc_group;
   return out;
 }
 
 export function hasActiveFilters(f: RunTableFilters): boolean {
-  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.codes?.length || f.asset_ids?.length);
+  return !!(f.type || f.impact || f.quantum || f.q || f.source_id != null || f.status || f.codes?.length || f.asset_ids?.length || f.pqc_group);
 }
 
 /** The server understands `view` / `status` (W1) when it reports `findings_total`; an older server lists every asset. */

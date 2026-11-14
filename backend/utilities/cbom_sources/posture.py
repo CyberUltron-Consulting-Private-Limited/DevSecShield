@@ -333,7 +333,7 @@ def readiness(classes: Mapping[str, int]) -> tuple[float | None, dict[str, Any]]
 READINESS_ACTIONS_TOP = 3
 
 
-def _quantum_code(codes: Iterable[str]) -> str | None:
+def quantum_code(codes: Iterable[str]) -> str | None:
     """The finding code that makes an asset quantum-vulnerable (KB ``pqc: quantum-broken``), as the run results'
     migration rows pick it (``migration_code``); None when the asset carries no such code."""
     return next((c for c in codes if (crypto_kb.entry("node", c) or {}).get("pqc") == "quantum-broken"), None)
@@ -521,7 +521,7 @@ def run_posture(session: Session, *, team_id: int, run_id: int, risk_model: dict
         classes[cls] += 1
         bases[basis] += 1
         if cls == "quantum-vulnerable":
-            vulnerable_groups[(a_type, _quantum_code(a_codes))] += 1
+            vulnerable_groups[(a_type, quantum_code(a_codes))] += 1
         agility.add(row, a_codes)
         if impact:
             impacts[impact] += 1

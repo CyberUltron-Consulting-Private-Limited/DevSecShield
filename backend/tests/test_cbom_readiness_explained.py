@@ -126,3 +126,99 @@ def test_remediation_waves_carry_their_rules(api, world):
     assert set(out["rules"]) == {"1", "2", "3", "4", "none"}
     assert out["rules"] == {str(k): v for k, v in W.WAVE_RULE.items()}
     assert all(isinstance(v, str) and len(v) > 20 for v in out["rules"].values())
+
+
+# ----------------------------------------------------------------------------- review 5906810504
+# Groups are (asset type, quantum finding code), so "Show these N" must filter by both: a run with RSA key exchange
+# and ECDHE TLS endpoints has two TLS groups. One ECDHE endpoint also accepts static RSA suites, so it carries two
+# quantum-broken codes (STATIC_RSA_KEX, NO_PQ_KEX): an any-of ``code=`` filter would list it under both groups.
+MIXED = [
+    _tls("10.30.0.11"), _tls("10.30.0.12"), _tls("10.30.0.13", "secp256r1"),  # ECDHE: no post-quantum key exchange
+    _tls("10.30.0.14", static_rsa_kex=True),  # ECDHE that also accepts RSA key exchange suites
+    {"type": "tls_endpoint", "target": "10.30.0.15", "location": "10.30.0.15:443", "name": "HTTPS 10.30.0.15:443",
+     "algorithm": "TLS_RSA_WITH_AES_256_GCM_SHA384", "facts": {"protocols": ["TLSv1.2"], "static_rsa_kex": True}},
+    {"type": "ssh_endpoint", "target": "10.30.0.20", "location": "10.30.0.20:22", "name": "SSH 10.30.0.20:22",
+     "facts": {"kex": ["curve25519-sha256"], "ciphers": ["aes256-gcm@openssh.com"], "macs": ["hmac-sha2-256"]}},
+    *ASSETS[4:],  # certificate, symmetric KMS key, a setting with no public-key algorithm
+]
+
+
+def _assets(api, run_id, **params):
+    r = api("GET", f"/1/cbom/sources/runs/{run_id}/assets", params={"view": "all", "page_size": 200, **params})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_each_readiness_group_filters_the_table_to_exactly_its_assets(api, world):
+    engine, _ = world
+    _src, run = _store(api, engine, MIXED)
+    posture = api("GET", f"/1/cbom/sources/runs/{run['id']}/posture").json()["posture"]
+    groups = posture["readiness_actions_all"]
+    tls = [g for g in groups if g["asset_type"] == "tls_endpoint"]
+    assert len(tls) >= 2, groups  # RSA key exchange and ECDHE are separate TLS groups
+    # the fixture is meaningful: some TLS row carries two quantum-broken codes
+    rows = _assets(api, run["id"], type="tls_endpoint")["items"]
+    broken = [[c for c in r["finding_codes"] if (crypto_kb.entry("node", c) or {}).get("pqc") == "quantum-broken"] for r in rows]
+    assert any(len(b) > 1 for b in broken), broken
+    seen: set[int] = set()
+    for g in groups:  # the page's "Show these N": type + the group's code (none: the group without one)
+        page = _assets(api, run["id"], type=g["asset_type"], quantum="true", pqc_group=g["code"] or "none")
+        assert page["total"] == g["assets"] == len(page["items"]), (g, page["total"])
+        ids = {i["id"] for i in page["items"]}
+        assert not ids & seen  # each vulnerable asset is in exactly one group
+        seen |= ids
+    # "Show the N quantum-vulnerable assets": posture's class, the same source as the count
+    every = _assets(api, run["id"], quantum="true", pqc_group="any")
+    assert every["total"] == posture["pqc_classes"]["quantum-vulnerable"] == len(seen)
+    assert every["pqc_group_filter"] == "any"
+    # the table's own quantum filter (stored column) agrees with posture's class on this run
+    assert _assets(api, run["id"], quantum="true")["total"] == posture["pqc_classes"]["quantum-vulnerable"]
+
+
+def test_pqc_group_filter_rejects_a_malformed_value(api, world):
+    engine, _ = world
+    _src, run = _store(api, engine, ASSETS)
+    for bad in ("no_pq_kex", "A,B", "x" * 70, "' OR 1=1"):
+        r = api("GET", f"/1/cbom/sources/runs/{run['id']}/assets", params={"pqc_group": bad})
+        assert r.status_code in (400, 422), (bad, r.status_code)
+
+
+# one input per wave rule that this rule (and no earlier one) catches; the legend text is built from the same rules
+WAVE_EXAMPLES = {
+    "exposed": {"impact": "High", "codes": ["WEAK_CIPHER"], "quantum_vulnerable": False, "internet": True},
+    "hndl": {"impact": "Low", "codes": ["NO_PQ_KEX"], "quantum_vulnerable": True, "hndl": True},
+    "severe": {"impact": "High", "codes": ["WEAK_CIPHER"], "quantum_vulnerable": False},
+    "weakness": {"impact": None, "codes": ["CBC_ACCEPTED"], "quantum_vulnerable": False},
+    "quantum": {"impact": None, "codes": ["QUANTUM_VULNERABLE"], "quantum_vulnerable": True},
+    "none": {"impact": None, "codes": ["COVERAGE_DENIED"], "quantum_vulnerable": False},
+}
+
+
+def test_wave_legend_text_is_the_suggested_wave_rules():
+    keys = [r.key for r in W.WAVE_RULES] + ["none"]
+    assert keys == list(WAVE_EXAMPLES)  # one example per rule, in rule order
+    for i, rule in enumerate(W.WAVE_RULES):
+        example = dict(WAVE_EXAMPLES[rule.key])
+        assert W.suggested_wave(example.pop("impact"), example.pop("codes"), example.pop("quantum_vulnerable"),
+                                **example) == rule.wave, rule.key
+        assert W.matching_rule(**WAVE_EXAMPLES[rule.key]) is rule  # this rule, not an earlier one
+        assert rule.text[1:] in W.WAVE_RULE[rule.wave]  # the legend sentence (first letter capitalised)
+    example = dict(WAVE_EXAMPLES["none"])
+    assert W.suggested_wave(example.pop("impact"), example.pop("codes"), example.pop("quantum_vulnerable")) is None
+    # wave 1 also takes a Critical or High weakness on an in-transit (HNDL) asset that is not internet-facing
+    assert W.matching_rule("Critical", ["NO_TLS12", "NO_PQ_KEX"], True, hndl=True) is W.WAVE_RULES[0]
+    assert "in-transit (HNDL)" in W.WAVE_RULE[1]
+    # wave 3 is any other weakness, whatever its impact (Info or none recorded too), not only Medium and Low
+    assert W.suggested_wave("Info", ["SOME_CODE"], False) == 3 and W.suggested_wave(None, ["SOME_CODE"], None) == 3
+    assert set(W.WAVE_RULE) == {1, 2, 3, 4, "none"}
+
+
+def test_frontend_fallback_wave_text_is_the_backend_rules():
+    """readinessExplain.ts WAVE_FALLBACK (an older backend sends no rules) carries the same words as WAVE_RULE."""
+    import json
+    import re
+
+    src = (Path(__file__).resolve().parents[2] / "frontend/components/cbom/results/readinessExplain.ts").read_text()
+    block = src.split("const WAVE_FALLBACK", 1)[1].split("};", 1)[0]
+    found = {k: json.loads(v) for k, v in re.findall(r'^\s*"?([0-9]|none)"?:\s*("(?:[^"\\]|\\.)*"),?$', block, re.MULTILINE)}
+    assert found == {str(k): v for k, v in W.WAVE_RULE.items()}
