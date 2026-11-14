@@ -20,8 +20,10 @@ assert.equal(addressProgress({ status: "success", progress: { done: 254, total: 
 assert.equal(addressProgress({ status: "pending", progress: { done: 0, total: 254 } }), null)
 assert.equal(addressProgress({ status: "claimed", progress: { done: 0, total: 0 } }), null)
 
+// the run jobs table moved out of ReviewRunTab's dialog into results/RunJobsTable.tsx (CB-38); the dialog renders it
 for (const [file, use] of [["NetworkTab.tsx", "const progress = addressProgress(live);"],
-                           ["ReviewRunTab.tsx", "{addressProgress(job)}"]] as const) {
+                           ["../results/RunJobsTable.tsx", "{addressProgress(job)}"],
+                           ["ReviewRunTab.tsx", "<RunJobsTable jobs={jobs} />"]] as const) {
   const src = fs.readFileSync(path.join(__dirname, file), "utf8")
   assert.ok(src.includes(use), `${file} shows the running range's address progress`)
 }

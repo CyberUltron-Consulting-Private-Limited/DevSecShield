@@ -234,6 +234,13 @@ if argv[:1] == ["compose"]:
                 st["containers"][svc].update(state="exited", health="", exit=0)
         save({"cmd": "stop", "tag": tag, "services": opts})
         sys.exit(0)
+    if sub == "run" and "backend.utilities.cbom_sources.estate" in opts:  # the CB-20 estate backfill one-shot
+        save({"cmd": "estate_backfill", "tag": tag, "args": opts[opts.index("backend.utilities.cbom_sources.estate") + 1:]})
+        if st.get("fail_backfill"):
+            print("estate backfill: OperationalError", file=sys.stderr)
+            sys.exit(1)
+        print("{'runs': 0, 'sources': 0, 'inserted': 0, 'repaired_teams': 0}")
+        sys.exit(0)
     if sub == "run":
         target = opts[-1]
         save({"cmd": "downgrade", "tag": tag, "target": target, "marker": marker})
@@ -651,6 +658,37 @@ def test_redeploying_the_running_tag_keeps_its_rollback_target(tmp_path):
     assert host.history()[-1].split()[1:5] == ["deploy", "t2", "previous", "t1"]
     ok(host.staging("rollback"))
     assert host.env_tag() == "t1"
+
+
+
+# ------------------------------------------------------------------------------------------------ CB-20 estate backfill
+def test_every_deploy_runs_the_estate_backfill_with_its_own_image_after_the_checks(tmp_path):
+    """The estate store holds runs from before CB-20 only after `estate backfill` (idempotent): every deploy runs it
+    once the release is up and checked, with that release's image (DSS_TAG), never before the switch."""
+    host = Host(tmp_path, {"t1": ["r1"], "t2": ["r1"]})
+    ok(host.ship("t1"))
+    mark = len(host.state["log"])
+    proc = ok(host.ship("t2"))
+    log = host.log_since(mark)
+    runs = [e for e in log if e["cmd"] == "estate_backfill"]
+    assert [(e["tag"], e["args"]) for e in runs] == [("t2", ["backfill"])]
+    assert "estate backfill done" in proc.stdout + proc.stderr
+    assert host.history()[-1].split()[1:3] == ["deploy", "t2"]  # recorded before the backfill: the release is up
+
+
+def test_a_failed_estate_backfill_warns_and_keeps_the_deploy(tmp_path):
+    """The release is running and the dashboards fall back to the per-run view: a failed backfill is reported loudly,
+    the deploy still succeeds and `staging.sh estate-backfill` runs it again."""
+    host = Host(tmp_path, {"t1": ["r1"]})
+    host.update(fail_backfill=True)
+    proc = ok(host.ship("t1"))
+    assert "WARNING: estate backfill FAILED" in proc.stdout + proc.stderr
+    assert host.env_tag() == "t1" and "FAILED" not in host.history()[-1]
+    host.update(fail_backfill=False)
+    mark = len(host.state["log"])
+    rerun = ok(host.staging("estate-backfill"))
+    assert [e["cmd"] for e in host.log_since(mark)].count("estate_backfill") == 1
+    assert "estate backfill done" in rerun.stdout + rerun.stderr
 
 
 # ------------------------------------------------------------------------------------------------ M1: deploy status

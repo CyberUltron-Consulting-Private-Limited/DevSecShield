@@ -64,7 +64,8 @@ def public_assignment(a: CbomRemediationAssignment | None) -> dict[str, Any] | N
     if a is None:
         return None
     return {"wave": a.wave, "owner": a.owner, "target_date": a.target_date, "status": a.status, "note": a.note,
-            "row_version": a.row_version, "last_updated": iso_z(a.last_updated)}
+            "row_version": a.row_version, "last_updated": iso_z(a.last_updated),
+            "ticket_key": a.ticket_key, "ticket_url": a.ticket_url, "done_at": iso_z(a.done_at)}
 
 
 def _assignments(session: Session, team_id: int, keys: Iterable[str]) -> dict[str, CbomRemediationAssignment]:
@@ -237,8 +238,13 @@ def upsert(session: Session, team_id: int, user_id: int, body: AssignmentBulk, n
             existing[item.asset_key] = row
         elif not fields:
             continue
+        was_done = row.status == "done" and row.id is not None
         for key, value in fields.items():
             setattr(row, key, value if key != "status" or value is not None else "open")
+        if row.status == "done" and (not was_done or row.done_at is None):
+            row.done_at = now  # remediation metrics (CB-38 PR-4): when it became done
+        elif row.status != "done":
+            row.done_at = None
         row.label = str(info.get("label") or "")[:255] or None
         row.updated_by_user_id, row.last_updated = user_id, now
         row.row_version = (row.row_version or 0) + 1 if row.id is not None else 1
