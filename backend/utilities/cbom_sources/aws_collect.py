@@ -372,6 +372,34 @@ def _tls_protocol_names(values: list[str]) -> list[str]:
     return out
 
 
+# The TLS versions of each API Gateway security policy, as AWS lists them ("Supported security policies", the
+# Regional/private and the edge-optimized tables; docs.aws.amazon.com/apigateway/latest/developerguide/
+# apigateway-security-policies-list.html, read 2026-11-14).  A name the page does not list (one only the SDK enum has,
+# or a newer one) has no entry: its protocols stay unread rather than guessed.
+_APIGW_POLICY_PROTOCOLS: dict[str, tuple[str, ...]] = {
+    "TLS_1_0": ("TLSv1.0", "TLSv1.1", "TLSv1.2", "TLSv1.3"),
+    "TLS_1_2": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_1_3_2025_09": ("TLSv1.3",),
+    "SecurityPolicy_TLS13_1_3_FIPS_2025_09": ("TLSv1.3",),
+    "SecurityPolicy_TLS13_1_2_FIPS_PFS_PQ_2025_09": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_1_2_PFS_PQ_2025_09": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_1_2_PQ_2025_09": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_1_2_2021_06": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS13_2025_EDGE": ("TLSv1.3",),
+    "SecurityPolicy_TLS12_PFS_2025_EDGE": ("TLSv1.2", "TLSv1.3"),
+    "SecurityPolicy_TLS12_2018_EDGE": ("TLSv1.2", "TLSv1.3"),
+}
+
+
+def _apigw_tls_facts(policy: str) -> dict[str, Any]:
+    """The TLS facts an API Gateway domain's security policy gives: its documented protocols and lowest version, so
+    the rules judge a classical policy (QUANTUM_VULNERABLE, PROTO_TLS10 ...) instead of leaving it without a verdict."""
+    protocols = _APIGW_POLICY_PROTOCOLS.get(policy)
+    if protocols is None:  # not on AWS's list: the version rule the collector used before, protocols unread
+        return {"min_version": "TLSv1.0" if policy == "TLS_1_0" else "TLSv1.2"}
+    return {"protocols": list(protocols), "min_version": protocols[0]}
+
+
 def _exposure(internet_facing: bool | None, basis: str) -> dict[str, Any]:
     """Facts the risk score reads: is the resource reachable from the internet, and what AWS setting says so."""
     return {"internet_facing": internet_facing, "exposure_basis": basis[:200]}
@@ -876,8 +904,8 @@ def _region_services(acct: _Account, region: str, label: str, emit: Emit,
                                  f"API Gateway {'/'.join(types) or 'unknown'} endpoint")
             emit({"type": "api_tls", "target": label, "location": f"arn:aws:apigateway:{region}::/domainnames/{item['domainName']}",
                   "name": item["domainName"], "protocol": "TLS",
-                  "facts": {"security_policy": policy, "min_version": "TLSv1.0" if policy == "TLS_1_0" else "TLSv1.2",
-                            "endpoint_types": types, **exposure}})
+                  "facts": {"security_policy": policy, **_apigw_tls_facts(str(policy)), "endpoint_types": types,
+                            **exposure}})
         return "truncated" if truncated else None
 
     def eks() -> str | None:
