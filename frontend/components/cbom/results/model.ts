@@ -188,6 +188,7 @@ export const RUN_TICKETING_TAB_AVAILABLE = false;
 export const RUN_CAPABILITIES = {
   cdxJson: true, cdxXml: true, oscal: true, vex: false, signature: false, evidencePack: false, pdf: false,
   certInAttest: false, jira: RUN_TICKETING_TAB_AVAILABLE, compare: true, waves: true, statusActions: true,
+  ai: true, // AiRemediationPanel in the finding dialog (CB-38 PR-6); it renders nothing when the assistant is off
 } as const;
 
 export type ResultsState =
