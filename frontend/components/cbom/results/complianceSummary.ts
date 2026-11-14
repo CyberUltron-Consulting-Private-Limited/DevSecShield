@@ -318,10 +318,12 @@ export const MAX_DRILL_CODES = 50; // backend run_assets.MAX_CODES
  * applies the posture's own rule); `truncated` when a requirement names more assets than one request may carry. */
 export function runDrillFilters(target: DrillTarget): {
   patch: { clause?: string; codes?: string[]; asset_ids?: number[]; drill_label: string; view: "all"; page: 1;
-           type: undefined; impact: undefined; quantum: undefined; q: undefined; source_id: undefined; status: undefined };
+           type: undefined; impact: undefined; quantum: undefined; q: undefined; source_id: undefined; status: undefined;
+           pqc_group: undefined };
   truncated: boolean;
 } {
-  const cleared = { type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined } as const;
+  const cleared = { type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined,
+                    pqc_group: undefined } as const;
   if (target.kind === "clause") {
     return { patch: { ...cleared, clause: target.clause, codes: undefined, asset_ids: undefined, drill_label: target.label, view: "all", page: 1 }, truncated: false };
   }

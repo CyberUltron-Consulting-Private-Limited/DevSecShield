@@ -366,12 +366,18 @@ def _add(acc: _Acc, memo: _Memo, row: CbomCollectedAsset, view: dict[str, Any], 
     if klass == "quantum-vulnerable":
         broken = [c for c in codes if (crypto_kb.entry("node", c) or {}).get("pqc") == "quantum-broken"]
         acc.kb_codes.update(codes)
+        # the quantum-vulnerable component names the row's algorithm (a TLS endpoint's key exchange, not its AES
+        # bulk cipher): the results page groups near-identical rows by it (issue #271)
+        weak_id = next((i for i in idents if i.quantum == "vulnerable" and i.name), None)
         entry = {"name": row.name or row.algorithm or row.location, "primitive": idents[0].primitive if idents else None,
+                 "asset_type": row.asset_type, "type_label": POSTURE.type_label(row.asset_type),
+                 "algorithm": weak_id.name if weak_id else (idents[0].name if idents and idents[0].name else row.algorithm),
                  "key_size": None if row.key_size is None else str(row.key_size),
                  "curve": facts.get("curve") or facts.get("group"), "nist_quantum_security_level": 0,
                  # KB text is sent once in pqc.kb, keyed by code: migration_code / fix_code point there
                  "migration_target": None, "migration_roadmap": None, "suggested_fix": None,
                  "migration_code": broken[0] if broken else None, "fix_code": codes[0] if codes else None,
+                 "finding_title": (crypto_kb.entry("node", broken[0]) or {}).get("title") if broken else None,
                  "impact": impact, "location": row.location, "bom_ref": f"zs-asset-{row.id}", "asset_id": row.id,
                  "description": view["finding"] or "", "finding_codes": list(codes)}
         _bounded_push(acc.migration, EMBED_CAP, (_IMPACT_RANK.get(impact or "", 9), int(row.id or 0)), entry)
