@@ -125,19 +125,62 @@ def controls_for(namespace: str, code: str) -> list[str]:
     return [c for c in dict.fromkeys(out or ["sc-13"]) if c in known]
 
 
-def _references(namespace: str, code: str) -> list[dict[str, str]]:
-    from backend.utilities.cbom_sources.crypto_kb import entry, load
+def _references(namespace: str, code: str, evidence: Iterable[Any] = (None,)) -> list[dict[str, str]]:
+    """Links to the clauses the code breaks on the assets that carry it (one algorithm-name list per asset, None when
+    not recorded; #269, #289). A clause cited only for review on some assets (the algorithm it depends on was not
+    recorded) says so in its link text."""
+    return _clause_links(namespace, code, evidence)[0]
 
-    e = entry(namespace, code) or {}
-    table = load().get("compliance") or {}
-    links, seen = [], set()
-    for area in e.get("compliance") or []:
-        for ref in table.get(area) or []:
+
+NOT_RECORDED_ALL = " (algorithm not recorded: needs evidence, verify)"
+
+
+def _clause_links(namespace: str, code: str, evidence: Iterable[Any] = (None,)
+                  ) -> tuple[list[dict[str, str]], list[str]]:
+    """(links, the clauses that need evidence as "<framework>: <id>"): #289 review, a clause cited without a recorded
+    algorithm is no confirmed violation, so its link text is marked and the finding carries a prop per clause."""
+    from backend.utilities.cbom_sources.crypto_kb import clauses_for
+
+    order: list[tuple[str, str]] = []
+    cited: dict[tuple[str, str], list[int]] = {}  # (href, text) -> [assets, of which unrecorded]
+    for text_of_asset in evidence:
+        for ref in clauses_for(namespace, code, text_of_asset):
             href, text = str(ref.get("source") or ""), f"{ref.get('framework')}: {ref.get('id')}"
-            if href.startswith(("http://", "https://")) and (href, text) not in seen:
-                seen.add((href, text))
-                links.append({"href": href, "rel": "reference", "text": text[:300]})
-    return links
+            if not href.startswith(("http://", "https://")):
+                continue
+            if (href, text) not in cited:
+                order.append((href, text))
+                cited[(href, text)] = [0, 0]
+            cited[(href, text)][0] += 1
+            cited[(href, text)][1] += ref.get("evidence") == "not_recorded"
+    links, needs = [], []
+    for href, text in order:
+        assets, unrecorded = cited[(href, text)]
+        label = text
+        if unrecorded and unrecorded >= assets:
+            label += NOT_RECORDED_ALL
+            needs.append(text)
+        elif unrecorded:
+            label += f" (algorithm not recorded for {unrecorded} of {assets} assets: verify)"
+        links.append({"href": href, "rel": "reference", "text": label[:300]})
+    return links, needs
+
+
+def _evidence(view: Any, namespace: str, code: str) -> list[str] | None:
+    """The algorithm names the code's clauses are decided on (#289): for a collected asset the algorithms the
+    classifier flagged for the code on its rows (never its name, label or finding sentence); for a code-scan finding
+    the scanner's own algorithm fields. None when nothing was recorded."""
+    if namespace == "node":
+        from backend.utilities.cbom_sources import clause_evidence as CE
+
+        names = [n for row in view.rows or () if hasattr(row, "asset_type")
+                 for n in (CE.evidence_by_code(row, [code]).get(code) or [])]
+        return list(dict.fromkeys(names)) or None
+    from backend.utilities.cbom_sources.kb_remediation import code_evidence
+
+    # only the scanner's algorithm fields: the view's ``algorithm`` falls back to the title (a file name) (#289)
+    names = [n for row in view.rows or () if isinstance(row, dict) for n in code_evidence(row)]
+    return list(dict.fromkeys(names)) or None
 
 
 def _text(value: Any, fallback: str) -> str:
@@ -161,6 +204,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
     collected = _ts(end or start)
     items, observations = [], []
     by_code: dict[str, list[tuple[str, str | None]]] = {}
+    evidence_by_code: dict[str, list[list[str] | None]] = {}
     for source_name, view in findings_views:
         item_uuid, obs_uuid = _uuid(team_id, "item", view.key), _uuid(team_id, anchor, "obs", view.key)
         extra = view.extra or {}
@@ -180,6 +224,7 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
         })
         for code in codes:
             by_code.setdefault(code, []).append((obs_uuid, view.impact))
+            evidence_by_code.setdefault(code, []).append(_evidence(view, namespace, code))
     findings, reviewed = [], set()
     known = catalog()
     for code in sorted(by_code):
@@ -197,9 +242,14 @@ def assessment_results(*, team_id: int, anchor: str, title: str, namespace: str,
                            "status": {"state": "not-satisfied"}},
                 "related-observations": [{"observation-uuid": o} for o, _i in by_code[code]],
             }
-            links = _references(namespace, code)
+            links, needs = _clause_links(namespace, code, evidence_by_code[code])
             if links:
                 finding["links"] = links
+            if needs:  # #289: cited for review only, never read as a confirmed violation of these clauses
+                finding["props"] += _props(*[("clause-needs-evidence", text) for text in needs])
+                finding["remarks"] = ("Cited for review, not a confirmed violation: the algorithm these clauses depend "
+                                      "on was not recorded for the assets behind them (" + "; ".join(needs)
+                                      + "). Verify which algorithm they use.")
             findings.append(finding)
     all_controls = sorted({c for cs in COMPLIANCE_TO_CONTROLS.values() for c in cs} & set(known))
     not_read, partly_read = list(dict.fromkeys(not_read)), list(partly_read)

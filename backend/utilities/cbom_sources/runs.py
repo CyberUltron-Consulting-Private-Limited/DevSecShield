@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 from backend.new_models import CbomCollectionJob, CbomCollectionRun, CbomCollectionSettings, CbomCollectionSource, \
     CbomScanNode, Scan, Team
+from backend.utilities.cbom_sources import billing as BILLING
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import qgrade as QG
@@ -89,6 +90,9 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
         if existing is None:
             raise
         return existing, True
+    # the charge's ledger row (CB-14): Start is the one place credits are taken
+    BILLING.record(session, team_id=team_id, run_id=run.id, job_id=None, kind="charge", reason="start",
+                   amount_c=total_c, idem_key=BILLING.charge_key(run.id))  # type: ignore[arg-type]
     sources = {s.id: s for s in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()}
     nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
     snapshot = [str(i.get("cidr")) for i in (settings.network_exclusions or []) if isinstance(i, dict)]
@@ -107,6 +111,14 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
             node_id=None if KINDS[source.kind].node_less else source.node_id, kind="collect", params=params,
             source_version=source.row_version, weight_c=item.credits_c, created_by_user_id=user_id, created_at=now,
         ))
+    try:
+        session.flush()
+    except IntegrityError:
+        # CB-14: another Start (a second tab, a schedule) queued one of these sources after this one planned it; the
+        # unique open-collection index refuses the second job, and the rollback takes back this run and its charge
+        session.rollback()
+        raise HTTPException(status_code=409, detail="A selected source was already queued in another run just now. "
+                                                    "Review the plan and start again.") from None
     audit(session, team_id=team_id, actor_type="system" if schedule_id else "user", actor_id=user_id,
           action="run.create", object_type="run", object_id=run.id,
           changed_fields=[k for k, v in include.items() if v] + ([f"schedule:{schedule_id}"] if schedule_id else []))

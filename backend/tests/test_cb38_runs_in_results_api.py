@@ -87,9 +87,11 @@ def seed_run(engine, team_id: int, owner_id: int, *, status: str = "done", rows=
                                 attempts=1, finished_at=NOW, params={"source_uid": src.source_uid,
                                                                      "source_name": src.name})
         s.add(job)
-        for extra in extra_jobs:
-            s.add(CbomCollectionJob(team_id=team_id, run_id=run.id, source_id=src.id, kind="collect", status=extra,
-                                    attempts=0, params={"source_uid": src.source_uid, "source_name": src.name}))
+        for n, extra in enumerate(extra_jobs, 2):
+            # a source has at most one open collection (CB-14): an extra OPEN job collects a source of its own
+            other = _source(s, team_id, owner_id, f"{source_name}-{n}") if extra in ("pending", "claimed") else src
+            s.add(CbomCollectionJob(team_id=team_id, run_id=run.id, source_id=other.id, kind="collect", status=extra,
+                                    attempts=0, params={"source_uid": other.source_uid, "source_name": other.name}))
         s.flush()
         for n, (impact, qv, a_type, codes) in enumerate(rows):
             s.add(_asset(team_id, run, job, n, impact=impact, quantum_vulnerable=qv, asset_type=a_type,

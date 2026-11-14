@@ -1,11 +1,12 @@
 """Remediation waves with owners: a suggested wave per asset, the team's assignments, and the roadmap's rows.
 
-Suggested wave (the user may override it per asset):
-  1. Critical / High with internet exposure, or harvest-now-decrypt-later (quantum-vulnerable key exchange in transit)
-  2. other Critical / High
-  3. Medium and Low findings
+Suggested wave (the user may override it per asset): the first of ``WAVE_RULES`` the asset meets.
+  1. Critical / High weakness on an internet-facing or in-transit asset, or any harvest-now-decrypt-later asset
+     (quantum-vulnerable key exchange in transit)
+  2. other Critical / High weakness
+  3. any other weakness, whatever its impact (Medium, Low, Info or none recorded)
   4. quantum-vulnerable inventory with no other weakness (plan the post-quantum migration)
-  none: clean inventory (nothing to remediate)
+  none: no weakness and not quantum-vulnerable (nothing to remediate)
 
 Assignments (``CbomRemediationAssignment``) are keyed by the asset's STABLE identity (``identity.stable_key``), never by
 a row id or inside ``scan_data``, so a plan made on one run still applies to the same asset in every later run or scan.
@@ -14,7 +15,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
-from typing import Any, Iterable, Literal
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -36,28 +40,63 @@ from backend.utilities.cbom_sources.common import iso_z
 
 WAVES = (1, 2, 3, 4)
 STATUSES = ("open", "in_progress", "done", "accepted_risk")
-WAVE_LABEL = {1: "Wave 1: urgent (exposed or HNDL)", 2: "Wave 2: high", 3: "Wave 3: medium and low",
+WAVE_LABEL = {1: "Wave 1: urgent (exposed or HNDL)", 2: "Wave 2: high", 3: "Wave 3: other weaknesses",
               4: "Wave 4: post-quantum migration"}
+
+
+@dataclass(frozen=True)
+class WaveRule:
+    """One rule of ``suggested_wave``: the first rule an asset meets gives its wave. ``text`` is the rule in words: the
+    results page's wave legend is built from these texts (``WAVE_RULE``), so the legend and the code cannot drift."""
+    key: str
+    wave: int
+    text: str
+    test: Callable[[SimpleNamespace], bool]
+
+
+# ``weakness``: a finding other than the bare quantum verdict (QUANTUM_VULNERABLE) and coverage notes; ``hndl``: a
+# quantum-vulnerable key exchange in transit (posture.hndl), harvest now, decrypt later.
+WAVE_RULES: tuple[WaveRule, ...] = (
+    WaveRule("exposed", 1, "a Critical or High weakness on an internet-facing or in-transit (HNDL) asset",
+             lambda a: a.weakness and a.severe and (a.internet or a.hndl)),
+    WaveRule("hndl", 1, "any quantum-vulnerable key exchange in transit (harvest now, decrypt later: traffic recorded "
+                        "today can be decrypted later)",
+             lambda a: a.hndl and a.quantum_vulnerable),
+    WaveRule("severe", 2, "any other Critical or High weakness", lambda a: a.weakness and a.severe),
+    WaveRule("weakness", 3, "any other weakness, whatever its impact (Medium, Low, Info or none recorded)",
+             lambda a: a.weakness),
+    WaveRule("quantum", 4, "a quantum-vulnerable asset with no other weakness: plan its post-quantum migration",
+             lambda a: bool(a.quantum_vulnerable)),
+)
+
+
+def _rule_text(wave: int) -> str:
+    text = ", or ".join(r.text for r in WAVE_RULES if r.wave == wave)
+    return "Urgent: " + text if wave == 1 else text[:1].upper() + text[1:]
+
+
+# What puts an asset in each wave, in words (the results page's legend, issue #271), built from WAVE_RULES. A wave no
+# asset meets is simply not listed.
+WAVE_RULE: dict[int | str, str] = {**{w: _rule_text(w) for w in WAVES},
+                                   "none": "No weakness and not quantum-vulnerable: nothing to remediate"}
 MAX_ITEMS = 2_000  # per bulk request
 ROADMAP_NODE_CAP = 2_000
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+def matching_rule(impact: str | None, codes: Iterable[str], quantum_vulnerable: bool | None, *,
+                  internet: bool = False, hndl: bool = False) -> WaveRule | None:
+    """The first of ``WAVE_RULES`` the asset meets; None: nothing to remediate."""
+    facts = SimpleNamespace(
+        weakness=any(c and c != "QUANTUM_VULNERABLE" and not c.startswith("COVERAGE_") for c in codes),
+        severe=impact in ("Critical", "High"), quantum_vulnerable=quantum_vulnerable, internet=internet, hndl=hndl)
+    return next((r for r in WAVE_RULES if r.test(facts)), None)
+
+
 def suggested_wave(impact: str | None, codes: Iterable[str], quantum_vulnerable: bool | None, *,
                    internet: bool = False, hndl: bool = False) -> int | None:
-    weakness = [c for c in codes if c and c != "QUANTUM_VULNERABLE" and not c.startswith("COVERAGE_")]
-    severe = impact in ("Critical", "High")
-    if weakness and severe and (internet or hndl):
-        return 1
-    if hndl and quantum_vulnerable:
-        return 1
-    if weakness and severe:
-        return 2
-    if weakness:
-        return 3
-    if quantum_vulnerable:
-        return 4
-    return None
+    rule = matching_rule(impact, codes, quantum_vulnerable, internet=internet, hndl=hndl)
+    return rule.wave if rule else None
 
 
 def public_assignment(a: CbomRemediationAssignment | None) -> dict[str, Any] | None:
@@ -302,5 +341,5 @@ def roadmap_extras(session: Session, team_id: int, view: Any = None) -> dict[str
             "node_rows_omitted": max(len(node_rows) - ROADMAP_NODE_CAP, 0)}
 
 
-__all__ = ["AssignmentBulk", "STATUSES", "WAVES", "WAVE_LABEL", "code_asset_key", "code_items", "node_items",
-           "roadmap_extras", "suggested_wave", "upsert"]
+__all__ = ["AssignmentBulk", "STATUSES", "WAVES", "WAVE_LABEL", "WAVE_RULE", "WAVE_RULES", "WaveRule", "code_asset_key",
+           "code_items", "node_items", "matching_rule", "roadmap_extras", "suggested_wave", "upsert"]

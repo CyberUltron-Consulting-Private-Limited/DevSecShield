@@ -27,35 +27,35 @@ export interface InfoTipEntry {
 
 export const INFO_TIPS = {
   // ────────────────────────────────────────────────────────────── shared by the scan list pages (routers/scans.py)
-  // src: backend/utilities/db/schemas.py:8-9, backend/routers/scans.py:150-155 — title 1-256 characters; creating stores a NOT_STARTED scan, no credits
+  // src: backend/utilities/db/schemas.py:8-9, backend/routers/scans.py:156-161 — title 1-256 characters; creating stores a NOT_STARTED scan, no credits
   "scan.new.title": {
     label: "Scan title",
     what: "A name for the new scan, 1 to 256 characters, shown in the scan list. Creating the scan uses no credits: you choose what to scan, see the credit estimate and start it on the next page.",
     why: "A clear title is how your team finds this scan again among dozens in the list and in reports.",
     example: "payments-api main, November release.",
   },
-  // src: backend/utilities/db/schemas.py:46-47, backend/routers/scans.py:801-831 — rename sets only the title (max 256)
+  // src: backend/utilities/db/schemas.py:46-47, backend/routers/scans.py:815-845 — rename sets only the title (max 256)
   "scan.rename.title": {
     label: "Scan name",
     what: "The new name of this scan, up to 256 characters. Only the label changes: results, findings and credits stay as they are.",
     why: "Renaming keeps lists and reports readable without rerunning or losing anything.",
     example: "payments-api before the PCI audit.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:1165 — case-insensitive match on the title, in the loaded list
+  // src: frontend/app/[team_id]/sast/page.tsx:1259 — case-insensitive match on the title, in the loaded list
   "scan.filter.search": {
     label: "Search by title",
     what: "Shows only the scans whose title contains this text (upper or lower case does not matter). It filters the list already loaded in this page.",
     why: "Finds one scan quickly in a long list without scrolling.",
     example: "Typing \"api\" keeps \"payments-API main\" and \"api-gateway\".",
   },
-  // src: backend/new_models.py:130, backend/routers/scans.py:585-596, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — the scan states and the refunds
+  // src: backend/new_models.py:131, backend/routers/scans.py:599-610, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — the scan states and the refunds
   "scan.status": {
     label: "Scan status",
     what: "Not started: created, never run. Pending: queued for a scan worker. Started: running (the bar shows progress). Retry: the worker is retrying it. Success: finished, findings stored. Failure: stopped with an error; its credits were refunded. Cancelled: stopped by a user; its credits were refunded.",
     why: "The status tells you whether results exist yet and whether the credits were kept or refunded.",
     example: "A scan stuck in Pending is waiting for a free worker; it moves to Started when one picks it up.",
   },
-  // src: backend/new_models.py:131, frontend/utils/datetime.ts:6-7 — stored in UTC; the text names no time zone because an IST browser reads the API's offset-less UTC time as local time until #48 is fixed
+  // src: backend/new_models.py:132, frontend/utils/datetime.ts:6-7 — stored in UTC; the text names no time zone because an IST browser reads the API's offset-less UTC time as local time until #48 is fixed
   "scan.table.created": {
     label: "Created at",
     what: "When the scan was created: the date and time it was added to this list, before it was started.",
@@ -69,21 +69,21 @@ export const INFO_TIPS = {
     why: "Shows which scans are still moving and which have been quiet for a while.",
     example: "A scan queued since yesterday shows today's time once anyone opens the list today.",
   },
-  // src: backend/routers/scans.py:461-472, backend/new_models.py:122, backend/utilities/db/scan_list_item.py:67, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — credit_consumed is the estimate (set by /estimate before any charge; credit_charged is separate), charged at start, refunded on failure or cancel
+  // src: backend/routers/scans.py:475-486, backend/new_models.py:123, backend/utilities/db/scan_list_item.py:72, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — credit_consumed is the estimate (set by /estimate before any charge; credit_charged is separate), charged at start, refunded on failure or cancel
   "scan.table.credits": {
     label: "Credits",
     what: "The scan's credit estimate. It is charged when the scan starts and refunded if the scan fails or is cancelled. A scan that was only estimated, and never started, has not been charged.",
     why: "Lets you see what each scan cost against the team balance.",
     example: "12.4 on a finished scan: 12.4 credits left the balance when it started.",
   },
-  // src: backend/routers/scans.py:150-153, backend/utilities/db/scan_list_item.py:68-69 — owner_user_id is the user who created the scan
+  // src: backend/routers/scans.py:156-159, backend/utilities/db/scan_list_item.py:73-74 — owner_user_id is the user who created the scan
   "scan.table.owner": {
     label: "Owner",
     what: "The team member who created the scan.",
     why: "Tells you whom to ask about a scan's setup or results.",
     example: "Priya Shah, priya@acme.com.",
   },
-  // src: backend/routers/scans.py:620-637, backend/routers/scans.py:474-479, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — start re-estimates; a changed price answers 409 estimate_changed and charges nothing; failure and cancel refund
+  // src: backend/routers/scans.py:634-651, backend/routers/scans.py:488-493, backend/utilities/celery/celery_connection.py:186-192, backend/utilities/scan/cancel_scan.py:1-8 — start re-estimates; a changed price answers 409 estimate_changed and charges nothing; failure and cancel refund
   "scan.cfg.run": {
     label: "Run scan",
     what: "Starts the scan and charges the estimated credits. The start prices the scan again first: if the price changed (another file, repository, branch or option), nothing is charged and you see the new price; press Start scan again to accept it. Failed and cancelled scans are refunded.",
@@ -173,7 +173,7 @@ export const INFO_TIPS = {
     why: "These scans were set up but never run, so they hold no results yet.",
     example: "You created \"payments-api\" but closed the page before estimating: it counts here.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:664-665, backend/routers/scans.py:585-596 — status pending: claimed by start, waiting for a worker
+  // src: backend/utilities/dashboard/scan_list.py:664-665, backend/routers/scans.py:599-610 — status pending: claimed by start, waiting for a worker
   "sast.kpi.pending": {
     label: "Pending",
     what: "SAST scans that were started and are queued, waiting for a scan worker to pick them up.",
@@ -292,14 +292,14 @@ export const INFO_TIPS = {
     why: "Finding issues matters only if they get fixed; these show whether they do.",
     example: "Mark a finding Fixed in the results page and these numbers update.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:43-80, frontend/app/[team_id]/sast/page.tsx:935 — mean of (fixed_at or ignored_at - created_at); target 3 days
+  // src: backend/utilities/dashboard/remediation_metrics.py:43-80, frontend/app/[team_id]/sast/page.tsx:936 — mean of (fixed_at or ignored_at - created_at); target 3 days
   "sast.remed.mttr": {
     label: "Mean Time to Remediate",
     what: "Average time from when a finding was recorded to when it was marked Fixed or Ignored. The target is 3 days.",
     why: "A long time to fix keeps known weaknesses exploitable.",
     example: "One finding fixed after 2 days and one ignored after 4 days: 3.0 days.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:47-49, backend/utilities/dashboard/scan_list.py:796-809, frontend/app/[team_id]/sast/page.tsx:958-962 — fixed critical / all critical findings; target 95%
+  // src: backend/utilities/dashboard/remediation_metrics.py:47-49, backend/utilities/dashboard/scan_list.py:796-809, frontend/app/[team_id]/sast/page.tsx:960-962 — fixed critical / all critical findings; target 95%
   "sast.remed.critical_fixed": {
     label: "Critical Issues Fixed",
     what: "Critical findings marked Fixed, as a percentage of all Critical findings from successful SAST scans. Ignored findings do not count as fixed. The target is 95%.",
@@ -320,14 +320,14 @@ export const INFO_TIPS = {
     why: "Shows whether fixes keep up with new findings.",
     example: "On Wednesday 12 Nov: 12 fixed and 3 ignored since Wednesday 5 Nov gives 15/week.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:1169-1173, backend/utilities/db/scan_list_item.py:33-36 — github/gitlab/bitbucket from repo_type, zip_file when a zip was used
+  // src: frontend/app/[team_id]/sast/page.tsx:1169-1173,1346, backend/utilities/db/scan_list_item.py:38-41 — github/gitlab/bitbucket from repo_type, zip_file when a zip was used
   "sast.filter.type": {
     label: "Scan type",
     what: "Shows only scans of one source: GitHub, GitLab or Bitbucket repositories, or zip uploads.",
     why: "Narrows the list to one code source.",
     example: "Choose Zip file to list only scans of uploaded archives.",
   },
-  // src: frontend/app/[team_id]/sast/page.tsx:105-113, frontend/app/[team_id]/sast/page.tsx:96-103 — tiers on the 0-10 per-scan risk score; scans without findings drop out
+  // src: frontend/app/[team_id]/sast/page.tsx:107-115,1297, frontend/app/[team_id]/sast/page.tsx:98-105,1297 — tiers on the 0-10 per-scan risk score; scans without findings drop out
   "sast.filter.risk": {
     label: "Risk score filter",
     what: "Shows only scans whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Scans without findings have no score and are hidden by any tier.",
@@ -341,35 +341,35 @@ export const INFO_TIPS = {
     why: "Brings the scans you care about to the top.",
     example: "Risk descending puts the riskiest scan first.",
   },
-  // src: backend/utilities/db/scan_list_item.py:72 — app_lang from the scan's settings
+  // src: backend/utilities/db/scan_list_item.py:77 — app_lang from the scan's settings
   "sast.table.language": {
     label: "Language",
     what: "The application language chosen for the scan. It decides which file extension was analysed.",
     why: "Only this language's files were analysed, so other code in the repository was not checked.",
     example: "python: only .py files were analysed.",
   },
-  // src: backend/utilities/db/scan_list_item.py:4-21 — counts per impact of a successful scan
+  // src: backend/utilities/db/scan_list_item.py:9-26 — counts per impact of a successful scan
   "sast.table.vulns": {
     label: "Vulnerabilities",
     what: "Findings of this scan by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted only once the scan succeeded.",
     why: "Shows at a glance how serious this scan's findings are.",
     example: "2 red, 5 orange, 1 amber, 0 blue.",
   },
-  // src: backend/utilities/db/scan_list_item.py:77, frontend/app/[team_id]/sast/page.tsx:97-103 — per-scan weighted sum / count / 4 * 10
+  // src: backend/utilities/db/scan_list_item.py:82, frontend/app/[team_id]/sast/page.tsx:99-105,1465 — per-scan weighted sum / count / 4 * 10
   "sast.table.risk": {
     label: "Risk score",
     what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10. Empty when it found nothing.",
     why: "Lets you compare scans by overall severity.",
     example: "2 High and 2 Low findings: (3+3+1+1)/4 = 2, so 5.0.",
   },
-  // src: backend/utilities/db/scan_list_item.py:33-36 — repo_type or zip_file
+  // src: backend/utilities/db/scan_list_item.py:38-41 — repo_type or zip_file
   "sast.table.type": {
     label: "Scan type",
     what: "Where the code came from: GitHub, GitLab, Bitbucket or a zip upload.",
     why: "Tells you where the scanned code came from.",
     example: "GitLab.",
   },
-  // src: backend/utilities/db/scan_list_item.py:71, frontend/app/[team_id]/sast/page.tsx:1609-1613 — repo_url from the scan's settings; the SAST list item does not return zip_file_used, so a zip upload shows a dash until #49 is fixed
+  // src: backend/utilities/db/scan_list_item.py:76, frontend/app/[team_id]/sast/page.tsx:1609-1613,1467 — repo_url from the scan's settings; the SAST list item does not return zip_file_used, so a zip upload shows a dash until #49 is fixed
   "sast.table.source": {
     label: "Repository",
     what: "The repository that was scanned (its last path segment; hover for the full URL). A scan of an uploaded zip file shows a dash.",
@@ -390,21 +390,21 @@ export const INFO_TIPS = {
     why: "Low coverage means much of the code was not analysed, so a clean result proves less.",
     example: "180 files analysed and 20 excluded: 90.0%.",
   },
-  // src: RabbitMQ/worker/scan_worker.py:138-164, backend/utilities/db/scan_list_item.py:38 — start_time is taken before the context check and the clone, end after the analysis
+  // src: RabbitMQ/worker/scan_worker.py:138-164, backend/utilities/db/scan_list_item.py:43 — start_time is taken before the context check and the clone, end after the analysis
   "sast.detail.duration": {
     label: "Duration",
     what: "How long the scan worker spent on the scan, from start to results, including the clone.",
     why: "Unusually long scans may hit limits; watch for them on large repositories.",
     example: "4m 12s.",
   },
-  // src: backend/utilities/db/scan_list_item.py:41-55 — sum of compliance_controls of the critical and high findings listed
+  // src: backend/utilities/db/scan_list_item.py:46-60 — sum of compliance_controls of the critical and high findings listed
   "sast.detail.policy": {
     label: "Policy Violations",
     what: "How many compliance controls (for example PCI DSS or ISO 27001 clauses) the Critical and High findings listed below map to, added up.",
     why: "Shows how many audit requirements this scan's serious findings touch.",
     example: "Two findings mapped to 3 and 2 controls: 5 violations.",
   },
-  // src: backend/utilities/db/scan_list_item.py:41-55 — critical and high findings of the scan
+  // src: backend/utilities/db/scan_list_item.py:46-60 — critical and high findings of the scan
   "sast.detail.top": {
     label: "Top vulnerabilities",
     what: "The Critical and High findings of this scan, each with the number of compliance controls it maps to.",
@@ -529,7 +529,7 @@ export const INFO_TIPS = {
     why: "Shows whether license obligations are concentrated in a few families.",
     example: "MIT and Apache-2.0 are permissive; GPL-3.0 is strong copyleft.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:1060-1072, frontend/app/[team_id]/sbom_sca/page.tsx:455 — sorted by impact, first 20 shown
+  // src: backend/utilities/dashboard/scan_list.py:1060-1072, frontend/app/[team_id]/sbom_sca/page.tsx:448 — sorted by impact, first 20 shown
   "sbom.chart.top": {
     label: "Top Vulnerabilities by Risk Score",
     what: "The 20 most severe findings (Critical first), each with its reachability, direct or transitive dependency type, and license family.",
@@ -550,42 +550,42 @@ export const INFO_TIPS = {
     why: "Shows which standards your dependency findings affect most.",
     example: "PCI DSS 12 of 20 references: 60%.",
   },
-  // src: backend/utilities/db/scan_list_item.py:152-161 — counts per impact of a successful scan's result rows; packages with no known vulnerability are Low rows (#46)
+  // src: backend/utilities/db/scan_list_item.py:157-166 — counts per impact of a successful scan's result rows; packages with no known vulnerability are Low rows (#46)
   "sbom.table.vulns": {
     label: "Vulnerabilities",
     what: "This scan's result rows by severity once it succeeded: Critical (red), High (orange), Medium (amber), Low (blue). Blue also counts every package found with no known vulnerability.",
     why: "Shows at a glance how serious this scan's results are.",
     example: "0 red, 3 orange, 6 amber, 280 blue for a repository with about 280 packages.",
   },
-  // src: backend/utilities/db/scan_list_item.py:171-173, frontend/app/[team_id]/sbom_sca/page.tsx:113-116 — today's scale: weights 4/3/2/1 averaged over result rows, 0 without rows (#35, #46)
+  // src: backend/utilities/db/scan_list_item.py:176-178, frontend/app/[team_id]/sbom_sca/page.tsx:113-116,927 — today's scale: weights 4/3/2/1 averaged over result rows, 0 without rows (#35, #46)
   "sbom.table.risk": {
     label: "Risk score",
     what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its result rows (packages with no known vulnerability count as Low). 0 when the scan has no rows or did not succeed.",
     why: "Lets you compare scans by overall severity.",
     example: "1 High and 1 Low: (3 + 1) / 2 = 2.",
   },
-  // src: backend/utilities/db/scan_list_item.py:90-112, backend/utilities/db/scan_list_item.py:379-412, frontend/app/[team_id]/iac/page.tsx:123-126, frontend/app/[team_id]/dast/page.tsx:115-118 — today's scale for IaC and DAST: weights 4/3/2/1 averaged over findings, 0 without findings (#35)
+  // src: backend/utilities/db/scan_list_item.py:95-117, backend/utilities/db/scan_list_item.py:384-417, frontend/app/[team_id]/iac/page.tsx:123-126,959, frontend/app/[team_id]/dast/page.tsx:115-118,870 — today's scale for IaC and DAST: weights 4/3/2/1 averaged over findings, 0 without findings (#35)
   "scan.table.risk": {
     label: "Risk score",
     what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. 0 when it found nothing or did not succeed.",
     why: "Lets you compare scans by overall severity.",
     example: "1 High and 1 Low finding: (3 + 1) / 2 = 2.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125, frontend/app/[team_id]/iac/page.tsx:128-135, frontend/app/[team_id]/dast/page.tsx:120-127, frontend/app/[team_id]/ai_bom/page.tsx:114-121, frontend/app/[team_id]/llm/page.tsx:123-130, frontend/app/[team_id]/cbom/page.tsx:120-127 — tiers on the Risk score column; the column is 1-4 for SCA + SBOM, IaC and DAST today (#35), 0-10 for AI BOM, LLM and CBOM; a null score matches no tier
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:118-125,818, frontend/app/[team_id]/iac/page.tsx:128-135,838, frontend/app/[team_id]/dast/page.tsx:120-127,766, frontend/app/[team_id]/ai_bom/page.tsx:114-121,719, frontend/app/[team_id]/llm/page.tsx:123-130,760, frontend/app/[team_id]/cbom/page.tsx:120-127,928 — tiers on the Risk score column; the column is 1-4 for SCA + SBOM, IaC and DAST today (#35), 0-10 for AI BOM, LLM and CBOM; a null score matches no tier
   "scan.filter.risk": {
     label: "Risk score filter",
     what: "Shows only scans whose Risk score is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Where this table's score runs from 1 to 4 (SCA + SBOM, IaC, DAST), every scored scan is in Low. A scan without a score (shown as a dash) is hidden by any tier.",
     why: "Focuses the list on the riskiest scans.",
     example: "On the LLM list, High keeps a scan scored 7.5 and hides one scored 9.2.",
   },
-  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581, frontend/app/[team_id]/cbom/page.tsx:668-681 — sorts the loaded rows; missing values count as -1
+  // src: frontend/app/[team_id]/sbom_sca/page.tsx:699-712, frontend/app/[team_id]/iac/page.tsx:719-732, frontend/app/[team_id]/dast/page.tsx:637-650, frontend/app/[team_id]/ai_bom/page.tsx:601-614, frontend/app/[team_id]/llm/page.tsx:568-581, frontend/app/[team_id]/cbom/page.tsx:668-681,971 — sorts the loaded rows; missing values count as -1
   "scan.filter.sort": {
     label: "Sort",
     what: "Orders the table by creation date, risk score or credits, high or low first. Scans with no value for the chosen column go last when sorting high first.",
     why: "Brings the scans you care about to the top.",
     example: "Credits (high first) puts the most expensive scan on top.",
   },
-  // src: backend/utilities/db/scan_list_item.py:179-181 — repo_url, or zip upload, or SBOM file
+  // src: backend/utilities/db/scan_list_item.py:184-186 — repo_url, or zip upload, or SBOM file
   "sbom.table.source": {
     label: "Repository",
     what: "The repository that was scanned (hover for the full URL), or Zip file for an uploaded archive. Empty for an uploaded SBOM file.",
@@ -594,7 +594,7 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── IaC: scan configuration (components/iac-options-sidebar.tsx)
-  // src: backend/utilities/dashboard/scan_list.py:541-557, backend/utilities/db/scan_list_item.py:143 — stored as a label; the worker does not read it
+  // src: backend/utilities/dashboard/scan_list.py:541-557, backend/utilities/db/scan_list_item.py:148 — stored as a label; the worker does not read it
   "iac.cfg.environment": {
     label: "Environment",
     what: "Which environment this infrastructure code is for: Development, Staging or Production. It is a label for your dashboards (the environment filter and heatmap); it does not change what the scan checks.",
@@ -701,7 +701,7 @@ export const INFO_TIPS = {
     why: "Shows how far the team has got with fixing issues.",
     example: "20 issues, 5 marked Fixed: Fixed 25%.",
   },
-  // src: backend/utilities/dashboard/scan_list.py:493-507, backend/utilities/dashboard/scan_list.py:609, frontend/app/[team_id]/iac/page.tsx:478 — references per standard, share of all references
+  // src: backend/utilities/dashboard/scan_list.py:493-507, backend/utilities/dashboard/scan_list.py:609, frontend/app/[team_id]/iac/page.tsx:469 — references per standard, share of all references
   "iac.chart.compliance": {
     label: "Compliance Framework Violations",
     what: "How many compliance-control references the issues have per standard, and that standard's share of all references. It is not a pass rate.",
@@ -729,35 +729,35 @@ export const INFO_TIPS = {
     why: "Shows which infrastructure formats your scans cover.",
     example: "Terraform 8, Kubernetes 3.",
   },
-  // src: frontend/app/[team_id]/iac/page.tsx:714-717, backend/utilities/db/scan_list_item.py:143 — matches the scan's environment label
+  // src: frontend/app/[team_id]/iac/page.tsx:715-718,874, backend/utilities/db/scan_list_item.py:148 — matches the scan's environment label
   "iac.filter.environment": {
     label: "Environment filter",
     what: "Shows only scans configured for one environment: Development, Staging or Production.",
     why: "Separates production results from development and staging.",
     example: "Production lists only scans labelled Production.",
   },
-  // src: backend/utilities/db/scan_list_item.py:137-138 — repo_url, or zip upload (IaC; the same fields for CBOM and AI BOM)
+  // src: backend/utilities/db/scan_list_item.py:142-143 — repo_url, or zip upload (IaC; the same fields for CBOM and AI BOM)
   "scan.table.source": {
     label: "Repository",
     what: "The repository that was scanned (its last path segment; hover for the full URL), or Zip file for an uploaded archive.",
     why: "Tells you which code the results belong to.",
     example: "infra-live for https://github.com/acme/infra-live.",
   },
-  // src: backend/utilities/db/scan_list_item.py:140 — the IaC context types of the scan
+  // src: backend/utilities/db/scan_list_item.py:145 — the IaC context types of the scan
   "iac.table.provider": {
     label: "Cloud provider",
     what: "The IaC types this scan read (its contexts), such as Terraform or Kubernetes.",
     why: "Tells you which infrastructure formats this scan covered.",
     example: "terraform, helm.",
   },
-  // src: backend/utilities/db/scan_list_item.py:143 — environment label from the scan's settings
+  // src: backend/utilities/db/scan_list_item.py:148 — environment label from the scan's settings
   "iac.table.environment": {
     label: "Environment",
     what: "The environment chosen when the scan was configured. It is a label only.",
     why: "Tells you which environment the results apply to.",
     example: "staging.",
   },
-  // src: backend/utilities/db/scan_list_item.py:89-104 — counts per impact of a successful scan
+  // src: backend/utilities/db/scan_list_item.py:94-109 — counts per impact of a successful scan
   "iac.table.vulns": {
     label: "Vulnerabilities",
     what: "This scan's issues by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
@@ -866,7 +866,7 @@ export const INFO_TIPS = {
     why: "Lets you tell runs of different profiles apart in the scan list.",
     example: "Shop staging nightly.",
   },
-  // src: backend/routers/dast_profiles.py:112-155, backend/routers/dast_profiles.py:253-274, backend/utilities/dast/beat.py:71, backend/routers/cicd.py:88, backend/utilities/dast/dispatch.py:84-121 — saved settings run by schedule, Run now or CI; each run is a new scan charged up front
+  // src: backend/routers/dast_profiles.py:112-155, backend/routers/dast_profiles.py:253-274, backend/utilities/dast/beat.py:71, backend/routers/cicd.py:99, backend/utilities/dast/dispatch.py:84-121 — saved settings run by schedule, Run now or CI; each run is a new scan charged up front
   "dast.profile.form": {
     label: "DAST profile",
     what: "Saved DAST settings (target, sign-in, limits, schedule) that can run without you: on its schedule, with Run now, or from your CI pipeline. Each run becomes a new scan in the list and is charged Max URLs x 0.08 credits when it starts.",
@@ -880,7 +880,7 @@ export const INFO_TIPS = {
     why: "Shows what runs automatically, and when.",
     example: "\"Shop staging · daily 02:00 IST · next 12 Nov 2026, 02:00 am IST\".",
   },
-  // src: frontend/components/dast/DastScheduleFields.tsx:190-215, backend/utilities/dast/schemas.py:37 — the five selects write the cron expression
+  // src: frontend/components/dast/DastScheduleFields.tsx:190-216, backend/utilities/dast/schemas.py:37 — the five selects write the cron expression
   "dast.profile.cron_builder": {
     label: "Visual cron builder",
     what: "Pick minute, hour, day, month and weekday from lists; the builder writes the matching cron expression below. Every means any value.",
@@ -1022,14 +1022,14 @@ export const INFO_TIPS = {
     why: "Shows which audit requirements your web findings touch.",
     example: "PCI DSS 5: findings map to five PCI DSS controls in total.",
   },
-  // src: backend/utilities/db/scan_list_item.py:381-390 — counts per impact of a successful scan
+  // src: backend/utilities/db/scan_list_item.py:386-395 — counts per impact of a successful scan
   "dast.table.vulns": {
     label: "Vulnerabilities",
     what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
     why: "Shows at a glance how serious this scan's findings are.",
     example: "0 red, 1 orange, 3 amber, 5 blue.",
   },
-  // src: backend/utilities/db/scan_list_item.py:429 — target_url from the settings of the scan
+  // src: backend/utilities/db/scan_list_item.py:440 — target_url from the settings of the scan
   "dast.table.target": {
     label: "Target URL",
     what: "The site this scan tested.",
@@ -1173,14 +1173,14 @@ export const INFO_TIPS = {
     why: "These are the AI components to review first.",
     example: "gpt-4o · external_provider · openai · proprietary · High.",
   },
-  // src: backend/utilities/db/scan_list_item.py:484-505 — counts per impact of a successful scan
+  // src: backend/utilities/db/scan_list_item.py:489-510 — counts per impact of a successful scan
   "aibom.table.risks": {
     label: "Risks",
     what: "This scan's AI asset findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
     why: "Shows at a glance how serious this scan's findings are.",
     example: "0 red, 2 orange, 5 amber, 11 blue.",
   },
-  // src: backend/utilities/db/scan_list_item.py:521-524 — weighted 4/3/2/1 average, /4 *10
+  // src: backend/utilities/db/scan_list_item.py:526-529 — weighted 4/3/2/1 average, /4 *10
   "aibom.table.risk": {
     label: "Risk score",
     what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10.",
@@ -1359,42 +1359,42 @@ export const INFO_TIPS = {
     why: "Findings that stayed open long show where fixing is slow.",
     example: "A finding fixed after 45 days counts in 30-60 days.",
   },
-  // src: frontend/app/[team_id]/mcp/page.tsx:711-715 — sorts the loaded rows by created_at
+  // src: frontend/app/[team_id]/mcp/page.tsx:712-716 — sorts the loaded rows by created_at
   "scan.filter.sort_created": {
     label: "Sort",
     what: "Orders the table by creation date, newest or oldest first.",
     why: "Brings the newest or oldest scans to the top.",
     example: "Newest puts the scan you created last on top.",
   },
-  // src: backend/utilities/db/scan_list_item.py:277 — host part of the server URL
+  // src: backend/utilities/db/scan_list_item.py:282 — host part of the server URL
   "mcp.table.server": {
     label: "Server",
     what: "A short name for the MCP server, taken from its URL's host.",
     why: "Tells you which server the findings belong to.",
     example: "example for https://mcp.example.com.",
   },
-  // src: backend/utilities/db/scan_list_item.py:200-261, frontend/app/[team_id]/mcp/page.tsx:1007-1011 — today's scale: weights 4/3/2/1 averaged over findings, 0 without findings (#35)
+  // src: backend/utilities/db/scan_list_item.py:205-266, frontend/app/[team_id]/mcp/page.tsx:1007-1011,949 — today's scale: weights 4/3/2/1 averaged over findings, 0 without findings (#35)
   "mcp.table.risk": {
     label: "Risk Score",
     what: "This scan's severity-weighted average on a 1 to 4 scale: Critical 4, High 3, Medium 2, Low 1, averaged over its findings. 0 when it found nothing or did not succeed.",
     why: "Lets you compare scans by overall severity.",
     example: "1 High and 1 Low finding: (3 + 1) / 2 = 2.",
   },
-  // src: backend/utilities/db/scan_list_item.py:199-210, backend/utilities/db/scan_list_item.py:279-284 — tools, prompts and resources the server exposed
+  // src: backend/utilities/db/scan_list_item.py:204-215, backend/utilities/db/scan_list_item.py:284-289 — tools, prompts and resources the server exposed
   "mcp.table.discovery": {
     label: "Discovery",
     what: "What the scan found on the server: T tools, P prompts, R resources.",
     why: "Shows how much the server exposes to an AI agent.",
     example: "T: 40 P: 4 R: 6.",
   },
-  // src: backend/utilities/db/scan_list_item.py:244-256 — tools/prompts/resources rated high or critical
+  // src: backend/utilities/db/scan_list_item.py:249-261 — tools/prompts/resources rated high or critical
   "mcp.table.risky": {
     label: "Risky assets",
     what: "Tools, prompts and resources the scan rated High or Critical risk.",
     why: "These are the tools, prompts or resources to review first.",
     example: "3: two tools and one resource.",
   },
-  // src: backend/utilities/db/scan_list_item.py:212-240 — counts per impact of a successful scan
+  // src: backend/utilities/db/scan_list_item.py:217-245 — counts per impact of a successful scan
   "mcp.table.vulns": {
     label: "Vulnerabilities",
     what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
@@ -1410,7 +1410,7 @@ export const INFO_TIPS = {
     why: "The scan must speak the provider's API to send its attack prompts.",
     example: "Custom for your own chatbot API.",
   },
-  // src: backend/utilities/db/schemas.py:178, backend/utilities/db/scan_list_item.py:350 — the provider's model id
+  // src: backend/utilities/db/schemas.py:178, backend/utilities/db/scan_list_item.py:355 — the provider's model id
   "llm.cfg.model_name": {
     label: "Model Name",
     what: "The model id the provider expects, exactly as in its API, or a name for your custom model. It also labels the scan in the Model Risk Comparison chart.",
@@ -1566,42 +1566,42 @@ export const INFO_TIPS = {
     why: "Failures point to configuration or provider problems.",
     example: "5 Success, 1 Failure.",
   },
-  // src: backend/utilities/db/scan_list_item.py:366 — model type from the scan's settings
+  // src: backend/utilities/db/scan_list_item.py:371 — model type from the scan's settings
   "llm.table.model_type": {
     label: "Model type",
     what: "Where the tested model is hosted: openai, anthropic, gemini or custom.",
     why: "Tells you where the tested model runs.",
     example: "openai.",
   },
-  // src: backend/utilities/db/scan_list_item.py:350, backend/utilities/db/scan_list_item.py:367 — model name from the settings or the results
+  // src: backend/utilities/db/scan_list_item.py:355, backend/utilities/db/scan_list_item.py:372 — model name from the settings or the results
   "llm.table.model_name": {
     label: "Model name",
     what: "The model id that was tested.",
     why: "Results apply only to this model.",
     example: "gpt-4o-mini.",
   },
-  // src: backend/utilities/db/scan_list_item.py:369 — number of selected probes
+  // src: backend/utilities/db/scan_list_item.py:374 — number of selected probes
   "llm.table.probes": {
     label: "Probes",
     what: "How many security benchmarks (garak probes) the scan was configured with.",
     why: "More benchmarks mean a broader test.",
     example: "10 probes selected.",
   },
-  // src: backend/utilities/db/scan_list_item.py:338-346, backend/utilities/db/scan_list_item.py:372 — distinct MITRE ATLAS tactics of the findings
+  // src: backend/utilities/db/scan_list_item.py:343-351, backend/utilities/db/scan_list_item.py:377 — distinct MITRE ATLAS tactics of the findings
   "llm.table.mitre": {
     label: "MITRE",
     what: "How many different MITRE ATLAS tactics (the adversarial-AI attack stages) the scan's findings map to.",
     why: "Shows how many adversarial-AI attack stages the findings cover.",
     example: "3: initial access, ML model access and exfiltration.",
   },
-  // src: backend/utilities/db/scan_list_item.py:293-310 — counts per impact of a successful scan
+  // src: backend/utilities/db/scan_list_item.py:298-315 — counts per impact of a successful scan
   "llm.table.vulns": {
     label: "Vulnerabilities",
     what: "This scan's findings by severity: Critical (red), High (orange), Medium (amber), Low (blue). Counted once the scan succeeded.",
     why: "Shows at a glance how serious this scan's findings are.",
     example: "1 red, 0 orange, 3 amber, 2 blue.",
   },
-  // src: backend/utilities/db/scan_list_item.py:330-336 — 0-10 weighted per scan
+  // src: backend/utilities/db/scan_list_item.py:335-341 — 0-10 weighted per scan
   "llm.table.risk": {
     label: "Risk score",
     what: "This scan's severity-weighted average, 0 to 10: Critical 4, High 3, Medium 2, Low 1, averaged over its findings, divided by 4 and multiplied by 10.",
@@ -1654,49 +1654,49 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── CBOM: list page (app/[team_id]/cbom/page.tsx)
-  // src: backend/utilities/dashboard/scan_list.py:1701-1755, backend/utilities/cbom_sources/cbom_metrics.py:160-167 — inventory rows of code scans + latest Sources collections, each asset once
+  // src: backend/utilities/dashboard/scan_list.py:1701-1755, backend/utilities/cbom_sources/cbom_metrics.py:164-171 — inventory rows of code scans + latest Sources collections, each asset once
   "cbom.kpi.assets": {
     label: "Crypto Assets",
     what: "Cryptographic assets found: algorithms, keys, certificates, protocols and libraries, from successful code scans and the latest CBOM Sources collections. An asset seen by both is counted once, from its latest observation.",
     why: "This is your cryptographic bill of materials; everything else is a view of it.",
     example: "A TLS certificate found in the repository and on the live server counts 1.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:118-124, aibom/src/aibom/cbom/weakness.py:93-108 — rows graded weak (broken digests, asymmetric keys under 2048 bits, ...)
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:122-128, aibom/src/aibom/cbom/weakness.py:93-108 — rows graded weak (broken digests, asymmetric keys under 2048 bits, ...)
   "cbom.kpi.weak": {
     label: "Weak Algorithms",
     what: "Assets graded weak: cryptography that is broken or too short today, for example MD5 or SHA-1 in signatures, or RSA, DSA and DH keys under 2048 bits.",
     why: "Weak cryptography can be attacked now, without a quantum computer.",
     example: "A password hash using MD5.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:125-131, backend/utilities/cbom_sources/cbom_metrics.py:28-40 — verdict quantum-vulnerable
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:129-135, backend/utilities/cbom_sources/cbom_metrics.py:28-40 — verdict quantum-vulnerable
   "cbom.kpi.quantum_vulnerable": {
     label: "Quantum Vulnerable",
     what: "Assets a large quantum computer would break: public-key cryptography such as RSA, ECDSA, ECDH and DH, which need moving to post-quantum algorithms.",
     why: "Data protected by these can be recorded now and decrypted later (harvest now, decrypt later).",
     example: "An ECDHE key exchange without a post-quantum hybrid.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:132-133 — algorithm_type certificate
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:136-137 — algorithm_type certificate
   "cbom.kpi.certificates": {
     label: "Certificates",
     what: "X.509 certificates found in code, files or on live endpoints.",
     why: "Certificates expire and carry keys and signature algorithms that need migrating.",
     example: "The certificate served on api.example.com:443.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:134-135 — algorithm_type key or secret
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:138-139 — algorithm_type key or secret
   "cbom.kpi.keys": {
     label: "Keys",
     what: "Keys and secrets found: private keys, symmetric keys and other key material.",
     why: "Exposed keys must be rotated; long-lived keys need a migration plan.",
     example: "A PEM private key committed in config/.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:28-46, backend/utilities/cbom_sources/cbom_metrics.py:170-174 — judged assets not vulnerable / judged; none judged shows no value
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:28-46, backend/utilities/cbom_sources/cbom_metrics.py:174-178 — judged assets not vulnerable / judged; none judged shows no value
   "cbom.kpi.readiness": {
     label: "Quantum Readiness",
     what: "Share of assets with a quantum verdict that are safe: post-quantum, hybrid, or symmetric with enough margin (AES-128 counts as ready). Assets broken today count as not ready. Assets without a verdict (hashes, settings) are left out.",
     why: "Tracks your post-quantum migration in one number.",
     example: "10 judged assets, 3 quantum-vulnerable: 70%.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:20-21, backend/utilities/cbom_sources/cbom_metrics.py:78-85 — 0-10 over findings: critical 9, high 7, medium 5, low 2
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:20-21, backend/utilities/cbom_sources/cbom_metrics.py:82-89 — 0-10 over findings: critical 9, high 7, medium 5, low 2
   "cbom.kpi.avg_risk": {
     label: "Avg Risk Score",
     what: "Average risk of the crypto findings, 0 to 10: Critical counts 9, High 7, Medium 5, Low 2. Clean inventory rows are not findings and are left out.",
@@ -1717,21 +1717,21 @@ export const INFO_TIPS = {
     why: "Critical and High findings are the ones to fix first.",
     example: "High 4, Medium 9, Informational 120.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:112-117, backend/utilities/dashboard/scan_list.py:1804 — algorithm_type of every row
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:116-121, backend/utilities/dashboard/scan_list.py:1804 — algorithm_type of every row
   "cbom.chart.algorithm_type": {
     label: "Algorithm Type Distribution",
     what: "All crypto assets by the type the engine gave them (for example certificate, key or secret); assets without a type count as other.",
     why: "Shows which kinds of cryptography dominate your migration work.",
     example: "certificate 6, key 3, other 12.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:95, backend/utilities/cbom_sources/cbom_metrics.py:118-124 — weak / moderate / strong / quantum-safe
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:99, backend/utilities/cbom_sources/cbom_metrics.py:122-128 — weak / moderate / strong / quantum-safe
   "cbom.chart.strength": {
     label: "Crypto Strength Distribution",
     what: "All crypto assets by strength grade: weak (replace now), moderate, strong, quantum-safe. Assets without a grade are not shown.",
     why: "Weak and moderate assets are the near-term fixes.",
     example: "weak 5, moderate 12, strong 60, quantum_safe 2.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:97, backend/utilities/cbom_sources/cbom_metrics.py:125-131 — quantum_safe / quantum_vulnerable / broken_today
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:101, backend/utilities/cbom_sources/cbom_metrics.py:129-135 — quantum_safe / quantum_vulnerable / broken_today
   "cbom.chart.quantum": {
     label: "Quantum Readiness",
     what: "Assets with a quantum verdict: quantum-safe, quantum-vulnerable (breakable by a future quantum computer), and broken today (already insecure without one).",
@@ -1759,7 +1759,7 @@ export const INFO_TIPS = {
     why: "Shows at a glance how serious each scan's or run's crypto findings are.",
     example: "0 red, 2 orange, 5 amber, 1 blue, QV:3.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:26, backend/utilities/cbom_sources/run_list.py:223 — 0-10: critical 9, high 7, medium 5, low 2; a Sources run uses the same average over its counts as collected
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:26, backend/utilities/cbom_sources/run_list.py:228 — 0-10: critical 9, high 7, medium 5, low 2; a Sources run uses the same average over its counts as collected
   "cbom.table.risk": {
     label: "Risk score",
     what: "This row's average finding risk, 0 to 10: Critical 9, High 7, Medium 5, Low 2; inventory rows are left out. A Sources run's score is the same average over its counts as collected.",
@@ -1831,7 +1831,7 @@ export const INFO_TIPS = {
     why: "Shows the serious findings of the last month at a glance.",
     example: "Critical 3, High 17.",
   },
-  // src: backend/utilities/dashboard/team.py:199-205, frontend/app/[team_id]/page.tsx:94 — scans by creation date
+  // src: backend/utilities/dashboard/team.py:199-205, frontend/app/[team_id]/page.tsx:463 — scans by creation date
   "team.chart.daily": {
     label: "Daily scan volume",
     what: "How many scans the team created each day, all products together, in any status.",
@@ -1880,7 +1880,7 @@ export const INFO_TIPS = {
     why: "Many ignored findings may point to noisy scan settings.",
     example: "3 ignored on 8 Nov.",
   },
-  // src: backend/utilities/dashboard/team.py:89, frontend/app/[team_id]/page.tsx:817-830 — CI/CD integrations by creation date
+  // src: backend/utilities/dashboard/team.py:89, frontend/app/[team_id]/page.tsx:821-834 — CI/CD integrations by creation date
   "team.section.integrations": {
     label: "Your Team's Integrations",
     what: "CI/CD integrations your team created, by creation date.",
@@ -1910,28 +1910,28 @@ export const INFO_TIPS = {
     why: "Expired or unaccepted invitations may need resending or revoking.",
     example: "dev@acme.com · pending · expires 18 Nov.",
   },
-  // src: backend/utilities/db/schemas.py:24-37, backend/utilities/integrations/jira.py:100-160 — Jira Cloud REST v3 with email + API token
+  // src: backend/utilities/db/schemas.py:24-37, backend/utilities/integrations/jira.py:111-208 — Jira Cloud REST v3 with email + API token
   "settings.jira": {
     label: "Jira",
     what: "Connects the team to Jira (REST API v3, as used by Jira Cloud) so scans can create Jira issues from findings. Each scan chooses its project and whether tickets are created automatically.",
     why: "Findings reach your team's normal work queue instead of staying in a dashboard.",
     example: "https://acme.atlassian.net with a bot account's API token.",
   },
-  // src: backend/utilities/integrations/jira.py:100-110 — basic auth email + token
+  // src: backend/utilities/integrations/jira.py:111-121 — basic auth email + token
   "settings.jira.email": {
     label: "Jira email",
     what: "The email of the Jira account the tickets are created as. It needs access to the projects you will pick.",
     why: "Tickets are created as this account, so it needs access to the projects.",
     example: "security-bot@acme.com.",
   },
-  // src: backend/utilities/db/schemas.py:27, backend/utilities/integrations/jira.py:107 — the site URL; REST paths are added to it
+  // src: backend/utilities/db/schemas.py:27, backend/utilities/integrations/jira.py:118 — the site URL; REST paths are added to it
   "settings.jira.url": {
     label: "Jira URL",
     what: "The address of your Jira site, without a path.",
     why: "Tickets are created on this site only.",
     example: "https://acme.atlassian.net.",
   },
-  // src: backend/utilities/db/schemas.py:26, backend/utilities/integrations/jira.py:100-110 — secret field, never printed; basic auth with the email
+  // src: backend/utilities/db/schemas.py:26, backend/utilities/integrations/jira.py:111-121 — secret field, never printed; basic auth with the email
   "settings.jira.token": {
     label: "Jira API token",
     what: "An API token of that Jira account (Atlassian account settings > Security > API tokens). It is stored for the team and never printed in logs.",
@@ -1961,14 +1961,14 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── Per-scan ticketing (components/ticketing-integrations-settings.tsx)
-  // src: backend/utilities/db/schemas.py:39-45, backend/utilities/integrations/jira.py:148 — project used for issues created from this scan
+  // src: backend/utilities/db/schemas.py:39-45, backend/utilities/integrations/jira.py:196 — project used for issues created from this scan
   "ticketing.jira_project": {
     label: "Jira project ID",
     what: "The Jira project where tickets for this scan's findings are created, using the Jira connection in team Settings.",
     why: "Tickets land in this project, so pick the one the owners work in.",
     example: "10001 (the numeric id of project SEC).",
   },
-  // src: backend/utilities/db/schemas.py:39-41, backend/utilities/celery/celery_connection.py:236-239, backend/utilities/integrations/jira_ticketing.py:20, backend/utilities/integrations/jira_ticketing.py:170-200 — one task per finding when the scan succeeds, cap 50
+  // src: backend/utilities/db/schemas.py:39-41, backend/utilities/celery/celery_connection.py:236-239, backend/utilities/integrations/jira_ticketing.py:20, backend/utilities/integrations/jira_ticketing.py:199-242 — one task per finding when the scan succeeds, cap 50
   "ticketing.auto_create": {
     label: "Create tickets automatically",
     what: "When on, one Jira task is created per finding as soon as this scan succeeds (at most 50 per scan). Marking a finding Fixed closes its ticket.",
@@ -1977,7 +1977,7 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── Account (app/[team_id]/account/page.tsx)
-  // src: backend/routers/auth.py:333-345 — the current password is checked before the change
+  // src: backend/routers/auth.py:351-363 — the current password is checked before the change
   "account.current_password": {
     label: "Current password",
     what: "Your present password, to prove it is you before the change.",
@@ -1991,7 +1991,7 @@ export const INFO_TIPS = {
     why: "A strong, unique password protects access to your team's findings.",
     example: "A passphrase such as \"correct-horse-battery-staple\".",
   },
-  // src: frontend/app/[team_id]/account/page.tsx:55-67 — must equal the new password
+  // src: frontend/app/[team_id]/account/page.tsx:56-68,123 — must equal the new password
   "account.confirm_password": {
     label: "New password again",
     what: "Type the new password once more, so a typo does not lock you out.",
@@ -2072,35 +2072,35 @@ export const INFO_TIPS = {
     why: "Tells you where the scanned input came from.",
     example: "ZIP upload for a scan started from payments-api.zip.",
   },
-  // src: backend/utilities/db/findings.py:29-42, backend/utilities/celery/create_findings.py:10-48, backend/routers/scans.py:1189-1240 — the scan's stored findings, one per row, each with a status the team sets
+  // src: backend/utilities/db/findings.py:29-42, backend/utilities/celery/create_findings.py:10-48, backend/routers/scans.py:1203-1254 — the scan's stored findings, one per row, each with a status the team sets
   "results.findings": {
     label: "Findings",
     what: "This scan's findings, one per row, each with a status your team sets. Click a title for the details; select rows to file Jira tickets; use Action to set a finding's status.",
     why: "Each row is something to fix, accept or track.",
     example: "\"SQL injection in orders.py\", High, Not started.",
   },
-  // src: frontend/components/SASTResults.tsx:724-725, frontend/components/SbomResults.tsx:630-631 — exact match on the finding's impact
+  // src: frontend/components/SASTResults.tsx:1083, frontend/components/SbomResults.tsx:1189 — exact match on the finding's impact
   "results.filter.impact": {
     label: "Impact filter",
     what: "Shows only the findings of one impact (severity): Critical, High, Medium or Low. It filters the findings already loaded in this page.",
     why: "Focuses the table on the most serious findings.",
     example: "Choose Critical to see only the Critical findings.",
   },
-  // src: frontend/components/SASTResults.tsx:786-791, frontend/components/SbomResults.tsx:840-846, backend/routers/scans.py:1137-1160 — selects the rows shown (after search and filters); the selection menu files them in Jira
+  // src: frontend/components/SASTResults.tsx:793-798,1164, frontend/components/SbomResults.tsx:844-850,1272, backend/routers/scans.py:1151-1174 — selects the rows shown (after search and filters); the selection menu files them in Jira
   "results.select_all": {
     label: "Select all",
     what: "Selects every finding the table shows (after search and filters). The selected findings can then be filed in Jira from the Actions menu above the table.",
     why: "Lets you act on a whole group of findings at once.",
     example: "Filter Impact to Critical, select all, then Actions > Create Jira ticket.",
   },
-  // src: backend/routers/scans.py:1189-1240, backend/utilities/db/finding_state.py:20-35, backend/utilities/dashboard/remediation_metrics.py:17-90 — fixed sets fixed_at and closes the Jira issue; ignored sets ignored_at; the remediation metrics read these
+  // src: backend/routers/scans.py:1203-1254, backend/utilities/db/finding_state.py:20-35, backend/utilities/dashboard/remediation_metrics.py:17-90 — fixed sets fixed_at and closes the Jira issue; ignored sets ignored_at; the remediation metrics read these
   "results.finding.action": {
     label: "Action",
     what: "Sets a finding's status. Fixed records when it was fixed and closes its Jira issue, if it has one. Ignored records when it was dismissed. In progress and Not started only change the status. The remediation metrics are computed from these statuses.",
     why: "Statuses drive the remediation metrics and close linked Jira issues.",
     example: "Mark a false positive Ignored: it leaves the high-priority backlog.",
   },
-  // src: backend/new_models.py:130, backend/utilities/db/schemas.py:15-17, backend/routers/scans.py:1216-1235 — finding_status not_started (new), in_progress, fixed, ignored
+  // src: backend/new_models.py:131, backend/utilities/db/schemas.py:15-17, backend/routers/scans.py:1230-1249 — finding_status not_started (new), in_progress, fixed, ignored
   "results.table.status": {
     label: "Status",
     what: "The status your team set on this finding: Not started (every finding starts here), In progress, Fixed or Ignored. Change it with Action.",
@@ -2114,21 +2114,21 @@ export const INFO_TIPS = {
     why: "Fix Critical and High first.",
     example: "High for a vulnerable dependency with a known remote exploit.",
   },
-  // src: frontend/components/SASTResults.tsx:643-648, frontend/components/SbomResults.tsx:149-154 — number of entries in the finding's owasp_top_10
+  // src: frontend/components/SASTResults.tsx:650-655,1172, frontend/components/SbomResults.tsx:150-155,1282 — number of entries in the finding's owasp_top_10
   "results.table.owasp": {
     label: "OWASP Top 10",
     what: "How many OWASP Top 10 categories this finding maps to. Click the title to see which.",
     why: "Lets you report findings in the OWASP framework.",
     example: "1: A03:2021 Injection.",
   },
-  // src: frontend/components/SASTResults.tsx:643-648, frontend/components/SbomResults.tsx:149-154 — number of entries in the finding's compliance_controls
+  // src: frontend/components/SASTResults.tsx:650-655,1173, frontend/components/SbomResults.tsx:150-155,1283 — number of entries in the finding's compliance_controls
   "results.table.compliance": {
     label: "Compliance controls",
     what: "How many compliance controls (for example PCI DSS requirements or ISO 27001 clauses) this finding maps to. Click the title to see which.",
     why: "Shows which audit requirements a finding touches.",
     example: "3: PCI DSS 6.2.4, ISO 27001 A.8.28 and ISO 27002 8.28.",
   },
-  // src: frontend/components/finding-selection-menu.tsx:44-119, backend/routers/scans.py:1108-1160 — one Jira issue per selected stored finding (a finding with an issue keeps it); needs a successful scan, the scan's Jira project and the team's Jira connection
+  // src: frontend/components/finding-selection-menu.tsx:44-119, backend/routers/scans.py:1122-1174 — one Jira issue per selected stored finding (a finding with an issue keeps it); needs a successful scan, the scan's Jira project and the team's Jira connection
   "results.selection.actions": {
     label: "Actions for the selection",
     what: "Acts on the selected findings. Create Jira ticket files one Jira issue per finding in the project set on this scan's Ticketing integrations tab; a finding that already has an issue is not filed again. Some results pages also set the status of all selected findings here.",
@@ -2137,7 +2137,7 @@ export const INFO_TIPS = {
   },
 
   // ────────────────────────────────────────────────────────────── SAST: results view (components/SASTResults.tsx)
-  // src: backend/utilities/dashboard/scan.py:181-192, frontend/components/SASTResults.tsx:218-231 — findings per OWASP category; each bar relative to the largest
+  // src: backend/utilities/dashboard/scan.py:181-192, frontend/components/SASTResults.tsx:220-233,279 — findings per OWASP category; each bar relative to the largest
   "sast.res.owasp": {
     label: "OWASP Top 10 metrics",
     what: "This scan's findings per OWASP Top 10 category. Each ring's length is relative to the largest category; hover a ring for its count. A finding mapped to two categories counts in both.",
@@ -2151,28 +2151,28 @@ export const INFO_TIPS = {
     why: "Critical and High findings are the ones to fix first.",
     example: "Critical 1, High 4, Medium 7, Low 2.",
   },
-  // src: backend/utilities/dashboard/scan.py:207-215, frontend/components/SASTResults.tsx:238-241 — findings per CVE id, top 20
+  // src: backend/utilities/dashboard/scan.py:207-215, frontend/components/SASTResults.tsx:240-243,364 — findings per CVE id, top 20
   "sast.res.cves": {
     label: "CVEs per vulnerability",
     what: "For each CVE the analysis linked to a finding, how many of this scan's findings reference it; the 20 most referenced.",
     why: "A CVE shared by many findings is one fix with a large effect.",
     example: "CVE-2021-44228 referenced by 3 findings.",
   },
-  // src: backend/utilities/dashboard/scan.py:194-201, frontend/components/SASTResults.tsx:234-236 — findings per compliance control, all, largest first
+  // src: backend/utilities/dashboard/scan.py:194-201, frontend/components/SASTResults.tsx:409 — findings per compliance control, all, largest first
   "sast.res.compliance": {
     label: "Compliance Controls Failed count",
     what: "How many of this scan's findings map to each compliance control (for example a PCI DSS requirement), every control, largest first. A finding mapped to three controls counts once for each.",
     why: "Shows which audit requirements this scan's findings put at risk.",
     example: "PCI DSS 6.2.4: 4 findings.",
   },
-  // src: backend/utilities/dashboard/scan.py:220-228, frontend/components/SASTResults.tsx:249-256, frontend/components/SASTResults.tsx:457-462 — control references grouped by standard (text before " - "), share of the total, top 12; icons mark the share
+  // src: backend/utilities/dashboard/scan.py:220-228, frontend/components/SASTResults.tsx:251-258,447, frontend/components/SASTResults.tsx:463-468,447 — control references grouped by standard (text before " - "), share of the total, top 12; icons mark the share
   "sast.res.policy": {
     label: "Policy Violations",
     what: "This scan's compliance-control references grouped by standard, with each standard's share of all references (top 12). It is a share, not a pass rate: the tick or cross only marks how large the share is.",
     why: "Shows which standards this scan affects most.",
     example: "6 PCI DSS and 4 ISO 27001 references: PCI DSS 60%, ISO 27001 40%.",
   },
-  // src: backend/utilities/dashboard/scan.py:28-33, backend/utilities/dashboard/scan.py:216-218, frontend/components/SASTResults.tsx:260-264 — score by impact (10/7.5/5/2.5), keyed by title, top 24
+  // src: backend/utilities/dashboard/scan.py:28-33, backend/utilities/dashboard/scan.py:216-218, frontend/components/SASTResults.tsx:262-266,487 — score by impact (10/7.5/5/2.5), keyed by title, top 24
   "sast.res.risk_scores": {
     label: "Risk scores per finding",
     what: "Each finding's risk score from its impact, on a 0 to 10 scale: Critical 10, High 7.5, Medium 5, Low 2.5. The 24 highest are shown as F1, F2…; hover for the title. Findings with the same title appear once.",
@@ -2186,28 +2186,28 @@ export const INFO_TIPS = {
     why: "Shows whether this scan's findings are being fixed.",
     example: "Mark a finding Fixed in the table below and these numbers update.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:43-80, frontend/components/SASTResults.tsx:545-547 — mean of (fixed_at or ignored_at - created_at); target 3 days
+  // src: backend/utilities/dashboard/remediation_metrics.py:43-80, frontend/components/SASTResults.tsx:552-554 — mean of (fixed_at or ignored_at - created_at); target 3 days
   "sast.res.remed.mttr": {
     label: "Mean Time to Remediate",
     what: "Average time from when this scan's findings were recorded to when they were marked Fixed or Ignored. The target is 3 days.",
     why: "A long time to fix keeps known weaknesses exploitable.",
     example: "One finding fixed after 2 days and one ignored after 4 days: 3.0 days.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:47-49, backend/utilities/dashboard/scan.py:203-205, frontend/components/SASTResults.tsx:569-574 — fixed critical / all critical findings of the scan; target 95%
+  // src: backend/utilities/dashboard/remediation_metrics.py:47-49, backend/utilities/dashboard/scan.py:203-205, frontend/components/SASTResults.tsx:576-581 — fixed critical / all critical findings of the scan; target 95%
   "sast.res.remed.critical_fixed": {
     label: "Critical Issues Fixed",
     what: "This scan's Critical findings marked Fixed, as a percentage of all its Critical findings. Ignored findings do not count as fixed. The target is 95%.",
     why: "Critical findings are the most likely to be exploited.",
     example: "4 Critical findings, 3 marked Fixed: 75%.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:38-40, frontend/components/SASTResults.tsx:594-595 — critical or high and not fixed/ignored; target 10
+  // src: backend/utilities/dashboard/remediation_metrics.py:38-40, frontend/components/SASTResults.tsx:601-602 — critical or high and not fixed/ignored; target 10
   "sast.res.remed.backlog": {
     label: "High Priority Backlog",
     what: "This scan's Critical and High findings that are not yet marked Fixed or Ignored. The target is 10 or fewer.",
     why: "Open Critical and High findings are this scan's current exposure.",
     example: "12 open Critical/High findings: 2 above target.",
   },
-  // src: backend/utilities/dashboard/remediation_metrics.py:30, backend/utilities/dashboard/remediation_metrics.py:55-69, frontend/components/SASTResults.tsx:615-616 — fixed_at/ignored_at date >= today - 7 days (UTC): 8 dates; target 20
+  // src: backend/utilities/dashboard/remediation_metrics.py:30, backend/utilities/dashboard/remediation_metrics.py:55-69, frontend/components/SASTResults.tsx:622-623 — fixed_at/ignored_at date >= today - 7 days (UTC): 8 dates; target 20
   "sast.res.remed.velocity": {
     label: "Remediation Velocity",
     what: "This scan's findings marked Fixed or Ignored today or on the 7 dates before it (UTC), so over up to 8 calendar days. The target is 20 a week.",
@@ -2228,14 +2228,14 @@ export const INFO_TIPS = {
     why: "Shows how much of the repository was analysed.",
     example: "180 / 200: 20 files were excluded by patterns.",
   },
-  // src: frontend/components/SASTResults.tsx:710-721 — case-insensitive match on title, description, impact, status, suggested fix and location of the loaded findings
+  // src: frontend/components/SASTResults.tsx:717-728,1070 — case-insensitive match on title, description, impact, status, suggested fix and location of the loaded findings
   "sast.res.search": {
     label: "Search findings",
     what: "Shows only the findings whose title, description, impact, status, suggested fix or location contains this text (upper or lower case does not matter).",
     why: "Finds the findings for one file or topic quickly.",
     example: "\"orders.py\" keeps the findings located in orders.py.",
   },
-  // src: backend/utilities/db/findings.py:44-49, backend/utilities/db/findings.py:96, frontend/components/SASTResults.tsx:692-698 — the per-finding score is 1-4 (impact), the tiers are 0-10, so only Low matches; bug reported to the coordinator, issue not yet filed
+  // src: backend/utilities/db/findings.py:44-49, backend/utilities/db/findings.py:96, frontend/components/SASTResults.tsx:699-705,1106 — the per-finding score is 1-4 (impact), the tiers are 0-10, so only Low matches; bug reported to the coordinator, issue not yet filed
   "sast.res.filter.risk": {
     label: "Risk score filter",
     what: "Shows only findings whose risk score is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5. Today a SAST finding's score is 1 to 4, so Low keeps every finding and the other tiers none (a known bug); filter by Impact instead.",
@@ -2256,7 +2256,7 @@ export const INFO_TIPS = {
     why: "Lets you sort and compare findings by severity.",
     example: "4 for a Critical finding.",
   },
-  // src: frontend/components/SASTResults.tsx:1187, frontend/components/SASTResults.tsx:643-648 — number of CVE ids on the finding
+  // src: frontend/components/SASTResults.tsx:1174, frontend/components/SASTResults.tsx:650-655,1174 — number of CVE ids on the finding
   "sast.res.table.cves": {
     label: "CVE count",
     what: "How many CVE identifiers the analysis linked to this finding. Click the title to see them.",
@@ -2314,7 +2314,7 @@ export const INFO_TIPS = {
     why: "A vulnerability your code reaches is far more urgent than one it never calls.",
     example: "A CVE in a web framework's request parser may be labelled Reachable although your code never uses that parser.",
   },
-  // src: backend/utilities/dashboard/scan.py:871-879, backend/utilities/dashboard/finding_metrics.py:18-40, frontend/components/SbomResults.tsx:246-250 — stored result rows of the scan by status, share of all; packages with no known vulnerability included (#46)
+  // src: backend/utilities/dashboard/scan.py:871-879, backend/utilities/dashboard/finding_metrics.py:18-40, frontend/components/SbomResults.tsx:246-250,338 — stored result rows of the scan by status, share of all; packages with no known vulnerability included (#46)
   "sbom.res.remediation": {
     label: "Remediation actions",
     what: "This scan's result rows by the status your team set (Fixed, In progress, Not started, Ignored), each as a count and a share of all its rows.",
@@ -2356,21 +2356,21 @@ export const INFO_TIPS = {
     why: "Shows whether the riskiest vulnerabilities are also reachable.",
     example: "Reachable 8.8: the vulnerabilities labelled Reachable are mostly Critical or High.",
   },
-  // src: backend/utilities/dashboard/scan.py:916-929, frontend/components/SbomResults.tsx:525-530 — sorted by impact, first 20
+  // src: backend/utilities/dashboard/scan.py:916-929, frontend/components/SbomResults.tsx:529-534,516 — sorted by impact, first 20
   "sbom.res.top": {
     label: "Top vulnerabilities by risk score",
     what: "This scan's vulnerabilities, Critical first, the first 20, each with its reachability label, direct or transitive dependency, and license family.",
     why: "These are the dependency issues to fix first.",
     example: "lodash 4.17.15, reachable, direct, permissive, Critical.",
   },
-  // src: frontend/components/SbomResults.tsx:607-623 — case-insensitive match on title, description, impact, dependency and finding id of the loaded findings
+  // src: frontend/components/SbomResults.tsx:611-627,1176 — case-insensitive match on title, description, impact, dependency and finding id of the loaded findings
   "sbom.res.search": {
     label: "Search findings",
     what: "Shows only the findings whose title, description, impact, dependency or finding id contains this text (upper or lower case does not matter).",
     why: "Finds the findings for one package quickly.",
     example: "\"lodash\" keeps every finding in a lodash version.",
   },
-  // src: backend/utilities/db/findings.py:142, backend/utilities/dashboard/bom_risk_score.py:152-173, frontend/components/SbomResults.tsx:590-596 — tiers on the 0-10 per-finding score
+  // src: backend/utilities/db/findings.py:142, backend/utilities/dashboard/bom_risk_score.py:152-173, frontend/components/SbomResults.tsx:594-600,1212 — tiers on the 0-10 per-finding score
   "sbom.res.filter.risk": {
     label: "Risk score filter",
     what: "Shows only findings whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5.",
@@ -2405,7 +2405,7 @@ export const INFO_TIPS = {
     why: "Tells you the obligations that come with the package.",
     example: "Permissive for a package licensed MIT.",
   },
-  // src: frontend/components/SbomResults.tsx:583, frontend/components/SbomResults.tsx:1429-1435, RabbitMQ/worker/helpers/context/schema.py:30-35 — shown when the scan has no stored findings: the analysis's own list
+  // src: frontend/components/SbomResults.tsx:1414, frontend/components/SbomResults.tsx:1429-1435, RabbitMQ/worker/helpers/context/schema.py:30-35 — shown when the scan has no stored findings: the analysis's own list
   "sbom.res.vuln.title": {
     label: "Vulnerability",
     what: "The vulnerabilities the analysis reported, shown when this scan has no stored findings. Click a title for the description and the suggested fix.",
@@ -2419,7 +2419,7 @@ export const INFO_TIPS = {
     why: "Names the package to upgrade or replace.",
     example: "\"3 dependencies\" for a CVE found in three lodash copies.",
   },
-  // src: frontend/components/SbomResults.tsx:863-900, backend/routers/scans.py:1165-1175 — rows without a stored finding id: one combined Jira issue from the summary
+  // src: frontend/components/SbomResults.tsx:867-904,1411, backend/routers/scans.py:1179-1189 — rows without a stored finding id: one combined Jira issue from the summary
   "sbom.res.vuln.select": {
     label: "Select rows",
     what: "Selects rows of this list for a Jira ticket. These rows are not stored findings, so all the selected rows go into one combined Jira issue.",
@@ -2427,140 +2427,140 @@ export const INFO_TIPS = {
     example: "Select 4 rows, Create Jira ticket: one issue listing the 4 vulnerabilities.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: shared by the tabs, and Servers (components/cbom/sources/ServersTab.tsx)
-  // src: frontend/components/cbom/sources/ServersTab.tsx:173-174, backend/utilities/cbom_sources/kinds.py:26 — 1-64 letters, digits, spaces, dots, dashes, underscores
+  // src: frontend/components/cbom/sources/ServersTab.tsx:967, backend/utilities/cbom_sources/kinds.py:26 — 1-64 letters, digits, spaces, dots, dashes, underscores
   "cbsrc.common.name": {
     label: "Source name",
     what: "A name for this source, 1 to 64 letters, digits, spaces, dots, dashes or underscores. It labels the source in lists, run results, the CBOM and reports.",
     why: "Every asset a run finds records the source it came from, so a clear name tells an auditor where a weak key or certificate lives.",
     example: "dc-mumbai-linux for the Linux servers of the Mumbai data centre.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:963-972, backend/utilities/cbom_sources/jobs.py:302 — jobs of the source run on this node
+  // src: frontend/components/cbom/sources/ServersTab.tsx:977-987, backend/utilities/cbom_sources/jobs.py:323 — jobs of the source run on this node
   "cbsrc.common.node": {
     label: "Scan node",
     what: "The scan node, inside your network, that connects to these targets and collects their crypto. Every job of this source (connection tests and collection) runs on it.",
     why: "Only a node that can reach the targets on the right port can read them; a node in the wrong network segment makes every target unreachable.",
     example: "node-dc1 in the 10.20.0.0/16 segment for servers in 10.20.5.0/24.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:976-982, frontend/components/cbom/sources/ServersTab.tsx:176-177 — 1,000 lines; ranges up to /16; 262,144 addresses per source
+  // src: frontend/components/cbom/sources/ServersTab.tsx:991-999, frontend/components/cbom/sources/ServersTab.tsx:993 — 1,000 lines; ranges up to /16; 262,144 addresses per source
   "cbsrc.servers.targets": {
     label: "Targets",
     what: "The servers to read: IP addresses, CIDR ranges or hostnames, one per line, up to 1,000 lines. A range may be at most a /16 and a source at most 262,144 addresses. Import CSV adds the first column of a file.",
     why: "Only listed targets are scanned, so a server left out is a blind spot in the CBOM.",
     example: "10.20.0.0/24, 10.20.5.17 and app-01.bank.local: 256 + 1 + 1 targets.",
   },
-  // src: frontend/components/cbom/sources/teamNeverScan.ts:96-97 — per-source exclusions; never-scan always wins
+  // src: frontend/components/cbom/sources/teamNeverScan.ts:93-94 — per-source exclusions; never-scan always wins
   "cbsrc.common.never_scan": {
     label: "Never scan",
     what: "Addresses, ranges or hostnames this source must never touch, one per line or comma-separated. A hostname also covers every address it resolves to from the scan node. The team never-scan list on the Network tab applies as well. Never-scan always wins over targets.",
     why: "Keeps fragile or out-of-scope systems (a core banking host, a partner's range) out of every job.",
     example: "10.20.0.1, 10.20.0.254 keeps the two gateways out of 10.20.0.0/24.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:120-123 — SSH 22, WinRM over HTTPS 5986, LDAPS 636 by default
+  // src: frontend/components/cbom/sources/ServersTab.tsx:121-124 — SSH 22, WinRM over HTTPS 5986, LDAPS 636 by default
   "cbsrc.servers.port": {
     label: "Port",
     what: "The port the scan node connects to: SSH for Linux (default 22), WinRM over HTTPS for Windows (5986), LDAPS for Active Directory (636).",
     why: "A port that is closed or filtered from the node fails the connection test for every server.",
     example: "2222 when your Linux servers run sshd on a non-standard port.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1072-1078, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters; DOMAIN\\user accepted for Windows and AD
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1092-1099, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters; DOMAIN\\user accepted for Windows and AD
   "cbsrc.servers.login": {
     label: "Login user",
     what: "The account the scan node logs in as, up to 64 characters. For Linux a read-only account on each server (zs-cbom by default); for Windows and Active Directory a local or domain account, DOMAIN\\user accepted.",
     why: "A dedicated read-only account limits what a leaked credential could do and makes the scan easy to spot in audit logs.",
     example: "zs-cbom on Linux; BANK\\svc-zscbom for Active Directory.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1093-1110 — trust on first use or pinned known_hosts; a password forces pinning
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1115-1132 — trust on first use or pinned known_hosts; a password forces pinning
   "cbsrc.servers.host_key_policy": {
     label: "Host key policy",
     what: "How the node checks each server's SSH host key before logging in. Trust on first use remembers the key on first contact and refuses and alerts if it changes. Pin fingerprints accepts only the keys you paste. A password credential requires pinned keys.",
     why: "The host key check stops a machine impersonating the server from capturing the credential.",
     example: "Pin fingerprints with the output of ssh-keyscan for servers you already trust.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1114-1120 — public keys only
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1136-1143 — public keys only
   "cbsrc.servers.known_hosts": {
     label: "known_hosts lines",
     what: "The SSH host keys to accept, in known_hosts format: the output of ssh-keyscan or your existing known_hosts file. Public keys only; upload a file or paste the lines.",
     why: "A server whose key is not listed is refused, so a spoofed server never receives the login.",
     example: "10.20.0.11 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1153-1160, backend/utilities/cbom_sources/kinds.py:21 — PEM up to 64 KB, checked before the login is sent
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1177-1185, backend/utilities/cbom_sources/kinds.py:21 — PEM up to 64 KB, checked before the login is sent
   "cbsrc.servers.ca_pem": {
     label: "CA certificate",
     what: "Optional PEM certificate of the CA that issued the WinRM (HTTPS) or LDAPS certificate of the servers. The server's certificate is checked against it before the login is sent. Needed when an internal CA issued it.",
     why: "Without the right CA the TLS check fails and the node never sends the password.",
     example: "The root certificate of BANK-ISSUING-CA, as -----BEGIN CERTIFICATE-----...",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:127-133, frontend/components/cbom/sources/ServersTab.tsx:1200-1212 — node key, SSH CA, SSH certificate, vault reference or password; vault and SSH CA for admins only
+  // src: frontend/components/cbom/sources/ServersTab.tsx:128-134,1226, frontend/components/cbom/sources/ServersTab.tsx:1226-1238 — node key, SSH CA, SSH certificate, vault reference or password; vault and SSH CA for admins only
   "cbsrc.servers.credential": {
     label: "Credential",
     what: "How the node proves who it is. Node-generated SSH key (recommended, the private key never leaves the node), SSH CA certificate (signed per job for minutes), your own SSH certificate, a vault reference, or a password. Only team admins choose vault or SSH CA.",
     why: "The credential is the most sensitive thing a source holds; options that keep secrets off ZeroShield reduce what a breach could expose.",
     example: "Linux: Node-generated SSH key, then install the shown public key for zs-cbom.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1266-1277, backend/utilities/cbom_sources/kinds.py:20 — secrets up to 256 KB, encrypted at rest
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1293-1305, backend/utilities/cbom_sources/kinds.py:20 — secrets up to 256 KB, encrypted at rest
   "cbsrc.servers.ssh_certificate": {
     label: "SSH certificate",
     what: "An OpenSSH user certificate signed by your own SSH CA, used together with the private key below. Encrypted at rest and sent only to the scan node that runs the job.",
     why: "A short-lived certificate expires on its own, so a copied credential stops working.",
     example: "ssh-ed25519-cert-v01@openssh.com AAAA... zs-cbom valid for 8 hours.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1278-1289, backend/utilities/cbom_sources/kinds.py:20 — secrets up to 256 KB, encrypted at rest
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1306-1318, backend/utilities/cbom_sources/kinds.py:20 — secrets up to 256 KB, encrypted at rest
   "cbsrc.servers.private_key": {
     label: "Private key",
     what: "The private key that goes with the SSH certificate, in OpenSSH or PEM format. Encrypted at rest, never shown again, sent only to the scan node that runs the job.",
     why: "Without the matching private key the certificate cannot be used to log in.",
     example: "-----BEGIN OPENSSH PRIVATE KEY----- ....",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1296-1306 — the CA's active key signs the node's key for each job
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1325-1335 — the CA's active key signs the node's key for each job
   "cbsrc.servers.ssh_ca": {
     label: "SSH CA",
     what: "The ZeroShield SSH CA (created on Fleet > SSH CA) whose active key signs the scan node's own key for each job; the certificate lives for minutes. Rotating the CA needs no change here.",
     why: "Servers trust one CA instead of a key per node, and no long-lived credential exists to steal.",
     example: "prod-ssh-ca, trusted on the servers through TrustedUserCAKeys.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:175, frontend/components/cbom/sources/ServersTab.tsx:1309-1312 — zs-<team>-<name>, one per line
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1338, frontend/components/cbom/sources/ServersTab.tsx:1338-1341 — zs-<team>-<name>, one per line
   "cbsrc.servers.principals": {
     label: "Principals",
     what: "The principals written into each job's certificate, one per line, in the form zs-<team id>-<name>. A server accepts the certificate only for a login whose principals file lists one of them.",
     why: "Principals decide which servers accept the certificate, so prod and test servers can trust different ones.",
     example: "zs-12-prod, listed in /etc/ssh/zs-cbom/principals/zs-cbom on the production servers.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1314-1318 — source-address of the certificate; /16 or narrower (IPv6 /48)
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1343-1347 — source-address of the certificate; /16 or narrower (IPv6 /48)
   "cbsrc.servers.source_addresses": {
     label: "Addresses the servers see the node as",
     what: "The source-address restriction written into each certificate: the addresses or networks (/16 or narrower, IPv6 /48) the servers see the node connect from. Blank uses the node's own addresses.",
     why: "A certificate copied off the node cannot be used from anywhere else.",
     example: "10.20.1.15, or 10.20.1.0/28 when the node sits behind a NAT pool.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:135-140 — HashiCorp Vault, CyberArk, AWS Secrets Manager, Azure Key Vault
+  // src: frontend/components/cbom/sources/ServersTab.tsx:136-141 — HashiCorp Vault, CyberArk, AWS Secrets Manager, Azure Key Vault
   "cbsrc.common.vault_provider": {
     label: "Vault",
     what: "The secrets manager the scan node reads the credential from when a job runs: HashiCorp Vault, CyberArk, AWS Secrets Manager or Azure Key Vault.",
     why: "The password stays in your vault and is never stored by ZeroShield.",
     example: "CyberArk, where the svc-zscbom password is already rotated daily.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1344-1351 — only the reference is stored
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1373-1381 — only the reference is stored
   "cbsrc.common.vault_path": {
     label: "Secret path",
     what: "Where the secret lives in your vault. The scan node reads it when the job runs; ZeroShield stores only this reference. Only a team admin can add or change it.",
     why: "A wrong path fails every job of the source at the login step.",
     example: "secret/data/cbom/linux-prod for HashiCorp Vault KV v2.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1367-1376, backend/utilities/cbom_sources/kinds.py:20 — encrypted at rest; blank on edit keeps the saved one
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1397-1407, backend/utilities/cbom_sources/kinds.py:20 — encrypted at rest; blank on edit keeps the saved one
   "cbsrc.common.password": {
     label: "Password",
     what: "The account's password. Encrypted at rest by ZeroShield, sent only to the scan node that runs the job and never shown again. When editing, leave it blank to keep the saved one.",
     why: "Changing the targets, port, login or node clears a stored password, so it is never sent to a host it was not meant for.",
     example: "The password of svc-zscbom, rotated every 90 days.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:141-170, frontend/components/cbom/sources/ServersTab.tsx:1384-1398 — Tier 1 read-only commands; Tier 2 adds an exact sudo allowlist
+  // src: frontend/components/cbom/sources/ServersTab.tsx:142-171,1415, frontend/components/cbom/sources/ServersTab.tsx:1415-1429 — Tier 1 read-only commands; Tier 2 adds an exact sudo allowlist
   "cbsrc.servers.tier": {
     label: "Privilege tier",
     what: "Tier 1 runs read-only commands as the login user: packages, crypto configs, readable keys, certificates and keystores. Tier 2 adds an exact sudo allowlist (no wildcards) to see which process loads which crypto library, socket owners, the effective SSH config and disk encryption.",
     why: "Tier 2 finds crypto in use at runtime that config files alone do not show, at the cost of a sudoers entry.",
     example: "Tier 2 shows that java on port 8443 loads libssl 1.1.1 with TLS 1.0 enabled.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1231-1240 — the public key for the login user
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1257-1267 — the public key for the login user
   "cbsrc.servers.node_key_install": {
     label: "Install the node's key",
     what: "Copy this public key into authorized_keys of the login user on every server of this source.",
@@ -2581,35 +2581,35 @@ export const INFO_TIPS = {
     why: "One hung server cannot stall the whole run.",
     example: "600 for servers with very large keystores to read.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1514-1545 — team network window, any time, or a custom copy
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1546-1578 — team network window, any time, or a custom copy
   "cbsrc.common.window": {
     label: "Scan window",
     what: "When collection may run: the team scan window set on the Network tab, any time, or a custom copy of the weekly hours for this source. Connection tests always run straight away.",
     why: "Keeps scans out of business hours or change freezes on production systems.",
     example: "Network window (team): weekdays 22:00 to 06:00 IST.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:919-923, frontend/components/cbom/sources/ServersTab.tsx:117-124 — Linux, Windows or Active Directory sources
+  // src: frontend/components/cbom/sources/ServersTab.tsx:932-937, frontend/components/cbom/sources/ServersTab.tsx:118-125,476 — Linux, Windows or Active Directory sources
   "cbsrc.servers.form": {
     label: "Add servers",
     what: "A server source is one list of Linux servers, Windows servers or an Active Directory, read through one scan node with a read-only account. Pick the type, then where the servers are and how to log in.",
     why: "Servers hold most of the keys, certificates and crypto libraries an inventory has to cover.",
     example: "Linux: 10.20.0.0/24 through node-dc1, login zs-cbom with the node's SSH key.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:513-546 — each source with its target count after exclusions
+  // src: frontend/components/cbom/sources/ServersTab.tsx:514-549 — each source with its target count after exclusions
   "cbsrc.servers.list": {
     label: "Configured server sources",
     what: "The server sources of this team with their type, target count after exclusions, scan node, privilege tier and last connection test.",
     why: "Sources here are what a run on the Review & Run tab collects from.",
     example: "dc-mumbai-linux · Linux · 256 targets · node-dc1 · Tier 1 · Passed.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:141-170, frontend/components/cbom/sources/ServersTab.tsx:1594-1598 — the command lists; nothing is installed
+  // src: frontend/components/cbom/sources/ServersTab.tsx:142-171,1629, frontend/components/cbom/sources/ServersTab.tsx:1627-1633 — the command lists; nothing is installed
   "cbsrc.servers.what_runs": {
     label: "Exactly what runs on each server",
     what: "The exact commands the node runs on each server for the chosen type and tier. Nothing is installed; output is parsed on the node.",
     why: "Your change board can review every command before approving the scan.",
     example: "Tier 1 runs openssl version -a and cat /etc/ssh/sshd_config, among others.",
   },
-  // src: backend/utilities/cbom_sources/jobs.py:302, backend/utilities/cbom_sources/jobs.py:670-674 — up to 5 sampled targets
+  // src: backend/utilities/cbom_sources/jobs.py:323, backend/utilities/cbom_sources/jobs.py:716-726 — up to 5 sampled targets
   "cbsrc.servers.test": {
     label: "Connection test",
     what: "The result of the last connection test: up to 5 sampled targets, each checked for reachability, login and privilege. Passed when every sample is ready, Partly ready when some are.",
@@ -2665,63 +2665,63 @@ export const INFO_TIPS = {
     why: "Each type uses a different protocol, port and credential.",
     example: "Linux servers over SSH; Active Directory over LDAPS.",
   },
-  // src: backend/utilities/cbom_sources/jobs.py:302 — targets after exclusions
+  // src: backend/utilities/cbom_sources/jobs.py:323 — targets after exclusions
   "cbsrc.col.targets": {
     label: "Targets",
     what: "How many addresses or names this source covers after its never-scan list and the team never-scan list are removed.",
     why: "Collection credits and run time grow with the number of targets.",
     example: "254 for 10.20.0.0/24 minus the two gateways.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:963-972 — the scan node that runs the source's jobs
+  // src: frontend/components/cbom/sources/ServersTab.tsx:977-987 — the scan node that runs the source's jobs
   "cbsrc.col.node": {
     label: "Node",
     what: "The scan node that runs this source's jobs.",
     why: "An offline node means the source cannot be tested or collected.",
     example: "node-dc1 · Online.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1384-1398 — Tier 1 or Tier 2
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1415-1429 — Tier 1 or Tier 2
   "cbsrc.col.tier": {
     label: "Tier",
     what: "The privilege tier of a Linux source: Tier 1 without sudo, Tier 2 with the exact sudo allowlist.",
     why: "Tier 2 sees runtime crypto use that Tier 1 cannot.",
     example: "Tier 2 on the application servers, Tier 1 elsewhere.",
   },
-  // src: backend/utilities/cbom_sources/jobs.py:670-684 — passed, partial, failed, could not test
+  // src: backend/utilities/cbom_sources/jobs.py:716-736 — passed, partial, failed, could not test
   "cbsrc.col.last_test": {
     label: "Last test",
     what: "The result of the latest connection test: Not tested, Testing, Passed (every sample ready), Partly ready, Failed or Could not test, with its summary below.",
     why: "A source that has not passed a test is likely to fail its collection jobs.",
     example: "Partly ready · 3 of 5 samples ready.",
   },
-  // src: backend/utilities/cbom_sources/jobs.py:302 — sampled target
+  // src: backend/utilities/cbom_sources/jobs.py:323 — sampled target
   "cbsrc.test.server": {
     label: "Server",
     what: "One of the targets sampled for the connection test.",
     why: "Samples stand in for the whole range, so fix their failures before running.",
     example: "10.20.0.17.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1764-1766 — yes, no, or waiting
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1800-1802 — yes, no, or waiting
   "cbsrc.test.reachable": {
     label: "Reachable",
     what: "Whether the scan node could open a connection to the server on the configured port.",
     why: "No here points at routing, a firewall or the wrong port, not the credential.",
     example: "No: port 22 is filtered between node-dc1 and 10.20.0.17.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1764-1767 — yes, no, or waiting
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1800-1803 — yes, no, or waiting
   "cbsrc.test.login": {
     label: "Login",
     what: "Whether the login user could authenticate with the configured credential.",
     why: "No here means the key, certificate or password is not accepted on that server.",
     example: "No: the node's key is not in authorized_keys of zs-cbom.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1755, frontend/components/cbom/sources/ServersTab.tsx:1768 — sudo allowlist (Linux Tier 2) or Windows group
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1791, frontend/components/cbom/sources/ServersTab.tsx:1804 — sudo allowlist (Linux Tier 2) or Windows group
   "cbsrc.test.privilege": {
     label: "Privilege",
     what: "Linux Tier 2: whether the sudo allowlist works. Windows: whether the account may open a WinRM shell (Remote Management Users with WinRM access). Not needed for Linux Tier 1.",
     why: "Without it, runtime crypto use is not collected even though the login works.",
     example: "No: the sudoers file was not installed on 10.20.0.17.",
   },
-  // src: frontend/components/cbom/sources/ServersTab.tsx:1769-1774 — the sample's status and note
+  // src: frontend/components/cbom/sources/ServersTab.tsx:1779-1784 — the sample's status and note
   "cbsrc.test.result": {
     label: "Result",
     what: "The sample's overall status with the node's note, for example Ready, Unreachable or Login failed.",
@@ -2729,7 +2729,7 @@ export const INFO_TIPS = {
     example: "Login failed · Permission denied (publickey).",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: source metadata (components/cbom/sources/SourceMetadata.tsx)
-  // src: backend/utilities/cbom_sources/kinds.py:55-56, backend/utilities/cbom_sources/kinds.py:67, backend/utilities/cbom_sources/waves.py:120 — up to 128 characters; the default remediation owner
+  // src: backend/utilities/cbom_sources/kinds.py:55-56, backend/utilities/cbom_sources/kinds.py:67, backend/utilities/cbom_sources/waves.py:121 — up to 128 characters; the default remediation owner
   "cbsrc.meta.owner": {
     label: "Owner",
     what: "The team or person who answers for this source, up to 128 characters. Remediation waves use it as the owner of this source's findings.",
@@ -2764,14 +2764,14 @@ export const INFO_TIPS = {
     why: "Lets you plan production fixes separately from test systems.",
     example: "production.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:54, backend/utilities/cbom_sources/posture.py:39, backend/utilities/cbom_sources/posture.py:99 — overrides the derived exposure; internet x1.5
+  // src: backend/utilities/cbom_sources/kinds.py:54, backend/utilities/cbom_sources/posture.py:47, backend/utilities/cbom_sources/posture.py:398 — overrides the derived exposure; internet x1.5
   "cbsrc.meta.exposure": {
     label: "Internet exposure",
     what: "Overrides the internet exposure worked out from the collected facts: From collected facts (no override), Internet-facing, Internal or Unknown. Internet-facing multiplies the risk score of this source's findings by 1.5.",
     why: "Systems reachable from the internet are attacked first, so their weak crypto ranks higher.",
     example: "Internet-facing for the API gateway servers behind the public load balancer.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:53, backend/utilities/cbom_sources/posture.py:36, backend/utilities/cbom_sources/posture.py:192-193 — low 0.5, medium 1, high 1.5, critical 2
+  // src: backend/utilities/cbom_sources/kinds.py:53, backend/utilities/cbom_sources/posture.py:44, backend/utilities/cbom_sources/posture.py:496-497 — low 0.5, medium 1, high 1.5, critical 2
   "cbsrc.meta.criticality": {
     label: "Business criticality",
     what: "How critical the systems of the selected sources are to the business. It scales the risk score of their findings: Low x0.5, Medium x1 (the default), High x1.5, Critical x2.",
@@ -2785,7 +2785,7 @@ export const INFO_TIPS = {
     why: "Ownership and sensitivity drive risk scores and remediation waves for every run that follows.",
     example: "Select the 4 Mumbai sources and set Owner to Payments platform team.",
   },
-  // src: frontend/components/cbom/sources/SourceMetadata.tsx:200-210 — which sources the bulk edit changes
+  // src: frontend/components/cbom/sources/SourceMetadata.tsx:240-250 — which sources the bulk edit changes
   "cbsrc.meta.select": {
     label: "Select sources",
     what: "Choose the sources the values below are written to; the first box selects every source.",
@@ -2793,161 +2793,161 @@ export const INFO_TIPS = {
     example: "Tick dc-mumbai-linux and dc-mumbai-windows, then Apply.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Kubernetes, databases, HSMs and key managers (components/cbom/sources/ClustersDatabasesTab.tsx)
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:373 — read through a scan node
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:374 — read through a scan node
   "cbsrc.k8sdb.intro": {
     label: "Kubernetes clusters and databases",
     what: "Kubernetes clusters, databases, HSMs and key managers, each read through a scan node inside your network.",
     why: "Clusters and databases terminate much of your TLS and store keys and certificates that servers alone do not show.",
     example: "prod-payments cluster and pg-core-01 database, both through node-dc1.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:425-470 — clusters, databases, HSMs and key managers of the team
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:426-472 — clusters, databases, HSMs and key managers of the team
   "cbsrc.k8sdb.list": {
     label: "Configured clusters and databases",
     what: "The cluster, database, HSM and key manager sources of this team with their endpoint, access level or login, scan node and last connection test.",
     why: "These sources are what a run collects from on the Review & Run tab.",
     example: "pg-core-01 · PostgreSQL · pg-core-01.bank.local:5432 · zs_cbom · Passed.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:466 — API server URL, host and port, module or KMIP host
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:468 — API server URL, host and port, module or KMIP host
   "cbsrc.col.endpoint": {
     label: "Endpoint",
     what: "Where the source is reached: the cluster's API server URL, the database host and port, the PKCS#11 module, or the KMIP server.",
     why: "The scan node must reach this endpoint for the source's jobs to succeed.",
     example: "https://10.30.0.5:6443 for a cluster.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:467 — tier for clusters, login for databases
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:469 — tier for clusters, login for databases
   "cbsrc.col.access": {
     label: "Access / login",
     what: "How the source is read: the access tier of a cluster (Tier 1 without Secrets, Tier 2 with) or the login of a database.",
     why: "It shows how much each source's credential can see.",
     example: "Tier 1 for prod-payments; zs_cbom for pg-core-01.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:906-911 — read through the Kubernetes API with a read-only ClusterRole
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:909-915 — read through the Kubernetes API with a read-only ClusterRole
   "cbsrc.k8s.form": {
     label: "Kubernetes cluster",
     what: "A Kubernetes cluster read through its API with a read-only ClusterRole: versions, API server and ingress TLS, cert-manager certificates, keys in ConfigMaps and service mesh mTLS policy.",
     why: "Clusters hold many certificates that rotate on their own and are easy to lose track of.",
     example: "prod-payments, https://10.30.0.5:6443, Tier 1, through node-dc1.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:914-915 — 1-64 characters
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:918-919 — 1-64 characters
   "cbsrc.k8s.name": {
     label: "Cluster name",
     what: "A name for this cluster, 1 to 64 letters, digits, spaces, dots, dashes or underscores, shown in lists, run results and reports.",
     why: "Each asset found records it as its source.",
     example: "prod-payments.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:917-928 — the Kubernetes API endpoint
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:921-932 — the Kubernetes API endpoint
   "cbsrc.k8s.api_url": {
     label: "API server URL",
     what: "The HTTPS address of the cluster's Kubernetes API server, as in the server field of your kubeconfig.",
     why: "The scan node talks only to this URL; it must be reachable from the node.",
     example: "https://10.30.0.5:6443.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:930-936, backend/utilities/cbom_sources/kinds.py:21 — PEM up to 64 KB; optional with certificate-authority-data
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:934-941, backend/utilities/cbom_sources/kinds.py:21 — PEM up to 64 KB; optional with certificate-authority-data
   "cbsrc.k8s.ca": {
     label: "Cluster CA certificate",
     what: "The PEM certificate of the cluster's CA, used to verify the API server before the token is sent. Optional when the kubeconfig embeds certificate-authority-data.",
     why: "Without verification a spoofed API server could capture the service account token.",
     example: "The ca.crt from /etc/kubernetes/pki on a control plane node.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:982-991 — kubeconfig or token from vault
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:988-997 — kubeconfig or token from vault
   "cbsrc.k8s.credential": {
     label: "Cluster credential",
     what: "Upload kubeconfig: encrypted at rest and sent only to the scan node. Token from vault: the node fetches it when the job runs (team admins only).",
     why: "A token kept in your vault never rests on ZeroShield.",
     example: "A kubeconfig for the service account zs-cbom bound to the ClusterRole below.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:887-891, frontend/components/cbom/sources/ClustersDatabasesTab.tsx:999-1010 — exec and auth-provider plugins refused
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:890-894,1006, frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1005-1017 — exec and auth-provider plugins refused
   "cbsrc.k8s.kubeconfig": {
     label: "Kubeconfig file",
     what: "The kubeconfig of the zs-cbom service account. It is sent once, encrypted at rest and sent only to the scan node that runs the job. Configs that use exec or auth-provider plugins are refused.",
     why: "Plugins would run commands on the scan node; a static token keeps the node's footprint read-only.",
     example: "zs-cbom.kubeconfig with a token for the zs-cbom service account.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1045-1046 — up to 128 characters; blank uses current-context
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1052-1053 — up to 128 characters; blank uses current-context
   "cbsrc.k8s.context": {
     label: "Context",
     what: "Which context of the kubeconfig to use, up to 128 characters. Blank uses its current-context.",
     why: "A kubeconfig with several clusters would otherwise read whichever was last selected.",
     example: "prod-payments-admin.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1065-1086 — Tier 1 without Secrets; Tier 2 reads TLS Secrets, private keys dropped unparsed
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1072-1093 — Tier 1 without Secrets; Tier 2 reads TLS Secrets, private keys dropped unparsed
   "cbsrc.k8s.tier": {
     label: "Access tier",
     what: "Tier 1 reads versions, API server and ingress TLS, Secret names, cert-manager Certificates, certificates in ConfigMaps and mesh mTLS policy. Tier 2 also reads the certificates of TLS Secrets; their private keys are dropped unparsed and never stored or sent.",
     why: "Tier 2 covers certificates kept only in Secrets, but its token can read Secret values.",
     example: "Tier 2 finds the expiring ingress certificate stored in secret payments-tls.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1088-1096 — Kubernetes cannot grant Secret names without values
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1095-1103 — Kubernetes cannot grant Secret names without values
   "cbsrc.k8s.tier2_warning": {
     label: "Tier 2 can read Secret values",
     what: "Kubernetes cannot grant access to Secret names without their values, so a Tier 2 token can read them. Only metadata such as fingerprints is sent to ZeroShield.",
     why: "The token is as sensitive as the Secrets it can read; protect it accordingly.",
     example: "Try Tier 2 on a staging cluster before production.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1129-1131 — link the cloud account that runs it
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1136-1138 — link the cloud account that runs it
   "cbsrc.k8s.managed": {
     label: "Managed cluster",
     what: "Tick for EKS, AKS or GKE clusters to link the cloud account source that runs the cluster.",
     why: "The cloud account holds the encryption-at-rest settings of the cluster's Secrets.",
     example: "EKS cluster prod-payments, linked to the AWS account aws-prod.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1134-1139 — stored as a link until cloud collection reads it
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1141-1147 — stored as a link until cloud collection reads it
   "cbsrc.k8s.cloud": {
     label: "Cloud account",
     what: "The cloud account source that runs this managed cluster. Secret encryption at rest is read from this account once cloud collection is available; until then it is stored as a link.",
     why: "Ties the cluster's findings to the account where the fix is made.",
     example: "aws-prod · AWS account.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1379-1383, backend/utilities/cbom_sources/kinds.py:347-356 — read-only login
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1387-1392, backend/utilities/cbom_sources/kinds.py:382-391 — read-only login
   "cbsrc.db.form": {
     label: "Database",
     what: "A database server read with a read-only login: its TLS setup, certificates and encryption settings. Run the grant shown below once as an admin.",
     why: "Databases hold the most sensitive data; weak TLS or unencrypted storage there is a top finding.",
     example: "pg-core-01.bank.local:5432, login zs_cbom, Require TLS with the bank CA.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1387-1388 — 1-64 characters
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1396-1397 — 1-64 characters
   "cbsrc.db.name": {
     label: "Name",
     what: "A name for this database source, 1 to 64 characters, shown in lists, run results and reports.",
     why: "Each asset found records it as its source.",
     example: "pg-core-01.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:61-68, backend/utilities/cbom_sources/kinds.py:344 — PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, MongoDB, Redis
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:62-69, backend/utilities/cbom_sources/kinds.py:379 — PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, MongoDB, Redis
   "cbsrc.db.engine": {
     label: "Engine",
     what: "The database engine: PostgreSQL, MySQL / MariaDB, SQL Server, Oracle, MongoDB or Redis. It sets the default port, the grant to run and how the login is protected.",
     why: "Each engine exposes its crypto settings differently, so the wrong engine reads nothing.",
     example: "SQL Server, default port 1433.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:349 — up to 253 characters
+  // src: backend/utilities/cbom_sources/kinds.py:384 — up to 253 characters
   "cbsrc.db.host": {
     label: "Host",
     what: "The database server's hostname or IP address, up to 253 characters, as the scan node reaches it.",
     why: "Use the name in the server's certificate so the TLS check passes.",
     example: "pg-core-01.bank.local.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:344, backend/utilities/cbom_sources/kinds.py:350 — 1-65535; engine default when blank
+  // src: backend/utilities/cbom_sources/kinds.py:379, backend/utilities/cbom_sources/kinds.py:385 — 1-65535; engine default when blank
   "cbsrc.db.port": {
     label: "Port",
     what: "The database port, 1 to 65535. Blank uses the engine's default: PostgreSQL 5432, MySQL 3306, SQL Server 1433, Oracle 1521, MongoDB 27017, Redis 6379.",
     why: "A wrong port fails the connection test before the login is tried.",
     example: "6432 when PostgreSQL sits behind PgBouncer.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:351, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters; optional for engines that run without authentication
+  // src: backend/utilities/cbom_sources/kinds.py:386, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters; optional for engines that run without authentication
   "cbsrc.db.login": {
     label: "Login",
     what: "The read-only login the node connects with, up to 64 characters. Optional for MongoDB and Redis servers that run without authentication.",
     why: "A dedicated login with only the grants below limits what a leaked password can do.",
     example: "zs_cbom.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:356 — up to 128 characters; required for Oracle
+  // src: backend/utilities/cbom_sources/kinds.py:391 — up to 128 characters; required for Oracle
   "cbsrc.db.database": {
     label: "Database or service name",
     what: "For Oracle, the service (PDB) the login and grants belong to (required). For other engines, the database to connect to first (optional); server-wide settings are read from there.",
     why: "Oracle logins exist per service, so a wrong name fails the login.",
     example: "ORCLPDB1 for Oracle; postgres for PostgreSQL.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1444-1452 — password or password from vault
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1455-1463 — password or password from vault
   "cbsrc.db.credential": {
     label: "Database credential",
     what: "Password: encrypted at rest and sent only to the scan node. Password from vault: the node fetches it when the job runs (team admins only).",
@@ -2961,63 +2961,63 @@ export const INFO_TIPS = {
     why: "Those engines would otherwise send the password in a form an impostor can read.",
     example: "The password of zs_cbom, with the bank CA uploaded below.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:354 — on by default
+  // src: backend/utilities/cbom_sources/kinds.py:389 — on by default
   "cbsrc.db.require_tls": {
     label: "Require TLS to the database",
     what: "On (the default): the node connects only over TLS. Off: it may connect without TLS and records that the server allows plaintext.",
     why: "TLS keeps the login and the data in transit away from anyone on the network path.",
     example: "Leave on; turn off only for a legacy server you are documenting as plaintext.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1489-1505, backend/utilities/cbom_sources/kinds.py:355 — PEM up to 64 KB; required with a password for MySQL, Redis, SQL Server
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1501-1518, backend/utilities/cbom_sources/kinds.py:390 — PEM up to 64 KB; required with a password for MySQL, Redis, SQL Server
   "cbsrc.db.ca": {
     label: "Database CA certificate",
     what: "The PEM certificate of the CA that signed the database server's certificate. The node checks the server against it before sending a password. Required with a password for MySQL, Redis and SQL Server; optional otherwise.",
     why: "It proves the node is talking to the real database, not an impostor collecting credentials.",
     example: "bank-root-ca.pem.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1775-1779, frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1615-1626 — attributes only, never key values
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1788-1793, frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1628-1639,1789 — attributes only, never key values
   "cbsrc.km.form": {
     label: "HSM or key manager",
     what: "An HSM or token read through PKCS#11, or a KMIP key manager. Keys are inventoried by their attributes only: type, size, flags, state and dates. No key value ever leaves the device.",
     why: "Keys in HSMs sign payments and certificates; their algorithms and sizes decide the post-quantum migration work.",
     example: "hsm-payments-01, a Luna HSM read through module luna.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1782-1783 — 1-64 characters
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1796-1797 — 1-64 characters
   "cbsrc.km.name": {
     label: "Name",
     what: "A name for this HSM or key manager source, 1 to 64 characters, shown in lists, run results and reports.",
     why: "Each key found records it as its source.",
     example: "hsm-payments-01.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1786-1795 — PKCS#11 or KMIP
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1800-1809 — PKCS#11 or KMIP
   "cbsrc.km.provider": {
     label: "Kind of key manager",
     what: "HSM or token (PKCS#11): read through the vendor library on the scan node. KMIP server: read over TLS with a client certificate.",
     why: "It decides how the node connects and which credential it needs.",
     example: "KMIP for a Thales CipherTrust Manager.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1801-1808 — mapped in ZS_PKCS11_MODULES on the node
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1815-1823 — mapped in ZS_PKCS11_MODULES on the node
   "cbsrc.km.module": {
     label: "Module name",
     what: "The name the scan node's operator maps to a PKCS#11 library in ZS_PKCS11_MODULES on the node. ZeroShield never sends a library path.",
     why: "Only libraries the node's operator approved can be loaded.",
     example: "luna, mapped to /usr/safenet/lunaclient/lib/libCryptoki2_64.so.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1810-1811 — up to 32 characters; blank reads every initialised token
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1825-1826 — up to 32 characters; blank reads every initialised token
   "cbsrc.km.token": {
     label: "Token label",
     what: "The label of the token or partition to read, up to 32 characters. Required when the module shows more than one token; blank works for a module with one token.",
     why: "The PIN is only ever tried on this token, so a wrong PIN cannot count toward locking other partitions of a shared HSM.",
     example: "payments-partition.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1816-1822 — PIN, PIN from vault; optional
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1831-1837 — PIN, PIN from vault; optional
   "cbsrc.km.pin_source": {
     label: "PIN source",
     what: "The crypto user PIN, typed here (encrypted at rest) or fetched from your vault when the job runs. Optional: without it only public objects are read.",
     why: "Private and secret keys are only listed after a login with the PIN.",
     example: "PIN from vault for the crypto user of payments-partition.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1827, backend/utilities/cbom_sources/kinds.py:20 — encrypted at rest
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1842, backend/utilities/cbom_sources/kinds.py:20 — encrypted at rest
   "cbsrc.km.pin": {
     label: "User PIN",
     what: "The PIN of the crypto user or partition role. Encrypted at rest, never shown again, sent only to the scan node; the session it opens is read-only.",
@@ -3031,28 +3031,28 @@ export const INFO_TIPS = {
     why: "Use the name in the server's certificate so the TLS check passes.",
     example: "kms01.bank.local.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1847 — default 5696
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1862 — default 5696
   "cbsrc.km.port": {
     label: "KMIP port",
     what: "The KMIP port, default 5696.",
     why: "A wrong port fails the connection test before TLS starts.",
     example: "5696.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1851-1857 — optional PEM; verifies the KMIP server
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1866-1873 — optional PEM; verifies the KMIP server
   "cbsrc.km.ca": {
     label: "Server CA certificate",
     what: "Optional PEM certificate of the CA that issued the KMIP server's certificate. With it the node verifies the server; TLS client authentication never reveals the client key either way.",
     why: "Verifying the server proves the inventory comes from your real key manager.",
     example: "The CipherTrust root CA certificate.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1860, backend/utilities/cbom_sources/kinds.py:20 — PEM, encrypted at rest
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1876, backend/utilities/cbom_sources/kinds.py:20 — PEM, encrypted at rest
   "cbsrc.km.client_cert": {
     label: "Client certificate",
     what: "The PEM client certificate the node presents to the KMIP server. Encrypted at rest and sent only to the scan node.",
     why: "KMIP servers admit only clients with a certificate they trust.",
     example: "zs-cbom-client.crt issued by the KMIP server's CA.",
   },
-  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1861, backend/utilities/cbom_sources/kinds.py:20 — PEM, unencrypted; encrypted at rest
+  // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1877, backend/utilities/cbom_sources/kinds.py:20 — PEM, unencrypted; encrypted at rest
   "cbsrc.km.client_key": {
     label: "Client private key",
     what: "The unencrypted PEM private key of the client certificate. Encrypted at rest by ZeroShield, never shown again, sent only to the scan node.",
@@ -3060,392 +3060,392 @@ export const INFO_TIPS = {
     example: "-----BEGIN PRIVATE KEY----- ....",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Cloud & Identity (components/cbom/sources/CloudIdentityTab.tsx)
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:70-74 — AWS by role, Azure by app registration, Google Cloud by service account
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:75-89,520 — AWS by role, Azure by app registration, Google Cloud by service account
   "cbsrc.cloud.connect": {
     label: "Connect a cloud account",
     what: "Connect an AWS account (ZeroShield assumes a read-only role with your external ID, no keys exchanged), an Azure subscription (Key Vault metadata through an app registration) or Google Cloud (KMS, CA Service and Secret Manager metadata through a service account).",
     why: "Cloud KMS keys, certificates and secrets are a large part of the crypto estate and are invisible to network scans.",
     example: "AWS account 111122223333 with the ZeroShieldCBOMReader role in eu-west-1 and ap-south-1.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:500-512 — the checks of the last validation
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:579-592 — the checks of the last validation
   "cbsrc.cloud.validation": {
     label: "Validation",
     what: "The checks of the last validation of the selected account: each read-only call ZeroShield tried and whether it passed, failed, was skipped or hit an error.",
     why: "An account that fails a check is collected only partly, so fix the role or permission it names.",
     example: "kms:ListKeys in ap-south-1 · Fail: the role is missing kms:ListKeys.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:516-519 — 4 credits per account per run
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:596-600 — 4 credits per account per run
   "cbsrc.cloud.list": {
     label: "Connected cloud accounts",
     what: "The cloud accounts of this team. Accounts that pass validation are scanned read-only from ZeroShield's cloud, 4 credits per account per run.",
     why: "Only accounts listed here are part of a run's cloud inventory.",
     example: "payments-prod · AWS · One account · 2 regions · Valid.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:543 — the provider's account or tenant
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:624 — the provider's account or tenant
   "cbsrc.cloud.col.account": {
     label: "Account",
     what: "The cloud provider and the account, subscription or project identifier.",
     why: "Tells you where to make a fix in the provider's console.",
     example: "AWS 111122223333.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1003-1012 — one account or a whole AWS Organization
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1115-1125 — one account or a whole AWS Organization
   "cbsrc.cloud.col.scope": {
     label: "Scope",
     what: "What the connection covers: one account, or every member account of an AWS Organization through a StackSet.",
     why: "An Organization connection picks up new member accounts without another setup.",
     example: "Whole AWS Organization · 37 accounts.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1143-1150 — regions read in each run
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1259-1266 — regions read in each run
   "cbsrc.cloud.col.regions": {
     label: "Regions",
     what: "For an AWS account, how many regions are read in each run; resources in other regions are not inventoried. A dash for Azure and Google Cloud.",
     why: "Keys and certificates in a forgotten region are a common blind spot.",
     example: "2: eu-west-1 and ap-south-1.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:547 — time of the last validation
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:628 — time of the last validation
   "cbsrc.cloud.col.validated": {
     label: "Last validated",
     what: "When the account was last validated (ZeroShield tried each read-only call), or Never.",
     why: "A role changed since then may make the next run fail.",
     example: "12 Nov 2026, 10:42 am IST.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:123-128, frontend/components/cbom/sources/CloudIdentityTab.tsx:548 — result of the last validation
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:143-149, frontend/components/cbom/sources/CloudIdentityTab.tsx:629 — result of the last validation
   "cbsrc.cloud.col.status": {
     label: "Status",
     what: "The result of the last validation: Not tested, Testing, Passed (every check passed), Partly ready (some checks failed), Failed or Could not test. Hover the badge for its summary.",
     why: "Only valid accounts are scanned fully in a run.",
     example: "Partly ready: KMS passed, ACM was denied.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:614 — CAs, CLM tools and your domains
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:705 — CAs, CLM tools and your domains
   "cbsrc.cloud.certificates": {
     label: "Certificates",
     what: "Where your certificates come from: certificate authorities and CLM tools you connect, and the domains you own (searched in Certificate Transparency logs where available).",
     why: "Certificates issued outside your managed CAs are the ones that expire unnoticed.",
     example: "AD CS through node-dc1, and bank.in searched in CT logs.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:98-109, frontend/components/cbom/sources/CloudIdentityTab.tsx:162, backend/utilities/cbom_sources/kinds.py:567-580 — AD CS, Vault and EJBCA by a scan node; AWS Private CA by its AWS account; CLM tools not collected
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:100-111,714, frontend/components/cbom/sources/CloudIdentityTab.tsx:714, backend/utilities/cbom_sources/kinds.py:605-618 — AD CS, Vault and EJBCA by a scan node; AWS Private CA by its AWS account; CLM tools not collected
   "cbsrc.cloud.cas": {
     label: "Certificate authorities and CLM",
     what: "Microsoft AD CS, HashiCorp Vault PKI and EJBCA are read by a scan node inside your network. AWS Private CA is read by the connected AWS account it names. Venafi, Keyfactor, DigiCert, Sectigo and other CLM tools are not collected: only their name and API address are saved, no key is asked for and nothing is charged.",
     why: "Your CA knows every certificate it issued, including ones on hosts no scan reaches.",
     example: "AD CS on ca01.bank.local, read by node-dc1 over WinRM.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:663, frontend/components/cbom/sources/CloudIdentityTab.tsx:142 — public OIDC and SAML metadata, free
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:761, frontend/components/cbom/sources/CloudIdentityTab.tsx:761 — public OIDC and SAML metadata, free
   "cbsrc.cloud.idps": {
     label: "Identity providers",
     what: "Signing keys and certificates of your identity providers, read by ZeroShield's cloud from each provider's public OIDC and SAML metadata. Free.",
     why: "An IdP signing with RSA-2048 or SHA-1 signs every login; it is a key migration target.",
     example: "Okta at https://bank.okta.com: 2 signing keys, RS256, one expiring in 30 days.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1003-1012 — CloudFormation stack or StackSet
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1115-1125 — CloudFormation stack or StackSet
   "cbsrc.aws.scope": {
     label: "Scope",
     what: "One account: create a CloudFormation stack in that account. Whole AWS Organization: deploy a StackSet from the management account to every member account.",
     why: "It decides which template you deploy and which accounts are inventoried.",
     example: "Whole AWS Organization for 37 accounts managed by Control Tower.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1039-1070 — off by default; template parameters follow the switches
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1152-1185 — off by default; template parameters follow the switches
   "cbsrc.aws.optional_reads": {
     label: "Optional reads",
     what: "Extra permissions you may grant the read-only role, off by default. The template's parameters follow these switches; changing one later means updating the stack and validating again.",
     why: "Each adds coverage but also a permission that could, in a misconfigured account, return a secret.",
     example: "Turn on Read Glue connections to see which connections skip TLS.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1040-1054 — kms:Decrypt for Lambda environments; only their shape is kept
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1153-1168 — kms:Decrypt for Lambda environments; only their shape is kept
   "cbsrc.aws.lambda_cmk": {
     label: "Decrypt Lambda environment variables",
     what: "Lets the role decrypt Lambda environment variables so ZeroShield can check them for keys and passwords; only their shape is kept, never the values. Off: each function's environment is listed as not inspected.",
     why: "Hard-coded keys in Lambda environments are a frequent finding.",
     example: "On: a function with DB_PASSWORD set in plain text is flagged.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1056-1068 — TLS enforcement and password storage of each connection
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1170-1183 — TLS enforcement and password storage of each connection
   "cbsrc.aws.glue": {
     label: "Read Glue connections",
     what: "Reports whether each Glue connection enforces TLS and where its password is stored. ZeroShield asks with HidePassword and keeps only those settings.",
     why: "If Data Catalog password encryption is off, this permission could return a password in plain text.",
     example: "jdbc-core-banking: TLS not enforced, password in the connection.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:29, frontend/components/cbom/sources/CloudIdentityTab.tsx:1124-1138 — arn:aws:iam::<12 digits>:role/<name>
+  // src: backend/utilities/cbom_sources/kinds.py:29, frontend/components/cbom/sources/CloudIdentityTab.tsx:1239-1254 — arn:aws:iam::<12 digits>:role/<name>
   "cbsrc.aws.role_arn": {
     label: "Role ARN",
     what: "The ARN of the read-only role the stack created (the RoleArn output). For an Organization, the role in the management account.",
     why: "ZeroShield assumes this role with your external ID; nothing else gives it access.",
     example: "arn:aws:iam::111122223333:role/ZeroShieldCBOMReader.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:133, frontend/components/cbom/sources/CloudIdentityTab.tsx:1143-1160 — AWS region codes; the first one is used for the test read
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1259, frontend/components/cbom/sources/CloudIdentityTab.tsx:1259-1276 — AWS region codes; the first one is used for the test read
   "cbsrc.aws.regions": {
     label: "Regions",
     what: "The AWS regions to read, as region codes; press Enter or Add region after each. The first region is used for the validation read.",
     why: "Resources in regions not listed are not inventoried.",
     example: "ap-south-1 and ap-south-2 for the Mumbai and Hyderabad regions.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1177-1183 — up to 64 characters; blank uses aws-<account id>
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1293-1300 — up to 64 characters; blank uses aws-<account id>
   "cbsrc.aws.name": {
     label: "Name",
     what: "A name for this account, up to 64 characters. Blank uses aws-<account id>.",
     why: "Each asset found records it as its source.",
     example: "payments-prod.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1347-1348 — up to 64 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1468-1469 — up to 64 characters
   "cbsrc.azure.name": {
     label: "Name",
     what: "A name for this Azure connection, 1 to 64 characters, shown in lists, run results and reports.",
     why: "Each asset found records it as its source.",
     example: "azure-prod.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:28, frontend/components/cbom/sources/CloudIdentityTab.tsx:1350-1360 — a GUID
+  // src: backend/utilities/cbom_sources/kinds.py:28, frontend/components/cbom/sources/CloudIdentityTab.tsx:1471-1481 — a GUID
   "cbsrc.azure.tenant": {
     label: "Directory (tenant) ID",
     what: "The GUID of your Microsoft Entra directory (tenant), from the app registration's Overview page.",
     why: "The app registration signs in to this tenant only.",
     example: "72f988bf-86f1-41af-91ab-2d7cd011db47.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:28, frontend/components/cbom/sources/CloudIdentityTab.tsx:1362-1372 — a GUID
+  // src: backend/utilities/cbom_sources/kinds.py:28, frontend/components/cbom/sources/CloudIdentityTab.tsx:1483-1493 — a GUID
   "cbsrc.azure.client": {
     label: "Application (client) ID",
     what: "The GUID of the app registration that the reader script gave Key Vault Reader access.",
     why: "ZeroShield signs in as this app; its roles decide what can be read.",
     example: "0f3c6a2e-1b5d-4c8e-9a7f-2d4e6b8c0a1f.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1375-1386 — client secret or certificate
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1496-1508 — client secret or certificate
   "cbsrc.azure.credential": {
     label: "Credential",
     what: "Client secret: from Certificates & secrets in the app registration. Certificate: a PEM certificate with its private key; ZeroShield signs a client assertion with it.",
     why: "A certificate credential never sends a reusable secret over the network.",
     example: "Certificate, with the same certificate uploaded to the app registration.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:144, frontend/components/cbom/sources/CloudIdentityTab.tsx:1389-1397 — encrypted at rest; changing tenant, client ID or credential clears it
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1512, frontend/components/cbom/sources/CloudIdentityTab.tsx:1511-1520 — encrypted at rest; changing tenant, client ID or credential clears it
   "cbsrc.azure.secret": {
     label: "Client secret or certificate",
     what: "The client secret, or the PEM certificate with its private key. Encrypted at rest by ZeroShield and never shown again; changing the tenant, client ID or credential type clears it.",
     why: "It is the only credential of the connection; rotate it in Azure and paste the new one here.",
     example: "A client secret value created today, valid for 6 months.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1400-1410 — one GUID per line, optional
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1523-1534 — one GUID per line, optional
   "cbsrc.azure.subs": {
     label: "Subscription IDs",
     what: "Optional: the subscriptions to read, one GUID per line. Blank reads every subscription the app can see.",
     why: "Narrowing it keeps a shared app registration from inventorying another unit's subscriptions.",
     example: "11111111-2222-3333-4444-555555555555.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1512-1513 — up to 64 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1637-1638 — up to 64 characters
   "cbsrc.gcp.name": {
     label: "Name",
     what: "A name for this Google Cloud connection, 1 to 64 characters, shown in lists, run results and reports.",
     why: "Each asset found records it as its source.",
     example: "gcp-payments.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1515-1525 — numeric; blank lists projects instead
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1640-1650 — numeric; blank lists projects instead
   "cbsrc.gcp.org": {
     label: "Organization ID",
     what: "The numeric ID of your Google Cloud organization. Leave blank to list the projects below instead.",
     why: "With an organization ID every project under it is read, including new ones.",
     example: "123456789012.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1527-1536 — one per line; needed without an organization ID
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1652-1661 — one per line; needed without an organization ID
   "cbsrc.gcp.projects": {
     label: "Project IDs",
     what: "The project IDs to read, one per line. Needed when there is no organization ID.",
     why: "Projects not listed are not inventoried.",
     example: "payments-prod and core-banking-dr.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1538-1548 — up to 254 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1663-1673 — up to 254 characters
   "cbsrc.gcp.email": {
     label: "Service account",
     what: "The email of the service account that the gcloud script granted the viewer roles to.",
     why: "ZeroShield reads as this account; its roles decide what is visible.",
     example: "zs-cbom@payments-prod.iam.gserviceaccount.com.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:144, frontend/components/cbom/sources/CloudIdentityTab.tsx:1550-1562 — encrypted at rest; changing the service account clears it
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1676, frontend/components/cbom/sources/CloudIdentityTab.tsx:1675-1688 — encrypted at rest; changing the service account clears it
   "cbsrc.gcp.key": {
     label: "Service account key (JSON)",
     what: "The JSON key of the service account, pasted or uploaded. Encrypted at rest by ZeroShield and never shown again; changing the service account clears it.",
     why: "Anyone with this key can act as the service account, so it should hold viewer roles only.",
     example: "The .json file from IAM > Service accounts > Keys.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1564-1575 — .json up to 64 KB
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1690-1701 — .json up to 64 KB
   "cbsrc.gcp.key_file": {
     label: "Upload the key file",
     what: "Pick the .json key file instead of pasting it; it fills the key field above. Up to 64 KB.",
     why: "Uploading avoids copy-paste errors in the long key.",
     example: "zs-cbom-payments-prod-3f2a.json.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:139, frontend/components/cbom/sources/CloudIdentityTab.tsx:1672-1677 — up to 200 domains; saved, not yet searched
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1831, frontend/components/cbom/sources/CloudIdentityTab.tsx:1830-1836 — up to 200 domains; saved, not yet searched
   "cbsrc.cert.domains": {
     label: "Domains to search in Certificate Transparency logs",
     what: "Domains you own, up to 200. They are saved for the certificate collector; ZeroShield does not query Certificate Transparency logs on this deployment yet.",
     why: "CT logs list every public certificate issued for your domains, including ones nobody registered with IT.",
     example: "bank.in and bankonline.co.in.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1786-1795 — searched every run from ZeroShield's cloud; credits per domain
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1945-1954 — searched every run from ZeroShield's cloud; credits per domain
   "cbsrc.ct.discovery": {
     label: "Certificate Transparency",
     what: "Every run, ZeroShield's cloud searches public Certificate Transparency logs for certificates issued for these domains, including hosts no scan node reaches. Expiring, expired, revoked and weak certificates, and certificates from CAs you have not listed, are flagged. 0.2 credits per domain searched, per run.",
     why: "A certificate issued by a CA you do not use can mean a mis-issuance or a shadow IT service.",
     example: "bank.in: 412 certificates found, 3 from an unexpected CA.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1721, frontend/components/cbom/sources/CloudIdentityTab.tsx:1797-1830 — up to 1,000 domains; a leading *. is dropped
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1880, frontend/components/cbom/sources/CloudIdentityTab.tsx:1956-1989 — up to 1,000 domains; a leading *. is dropped
   "cbsrc.ct.domains": {
     label: "Domains",
     what: "The domains to search, up to 1,000. A leading *. is dropped; add each registered domain once.",
     why: "Each domain is one search per run, so list the ones you own.",
     example: "bank.in.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1849-1852 — search subdomains too
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2008-2011 — search subdomains too
   "cbsrc.ct.subdomains": {
     label: "Include subdomains",
     what: "Also search certificates for every subdomain of the listed domains.",
     why: "Most forgotten certificates sit on subdomains such as uat-api.bank.in.",
     example: "On: certificates for netbanking.bank.in are found too.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:1722, frontend/components/cbom/sources/CloudIdentityTab.tsx:1854-1856 — up to 50; matched on name, organisation or CN
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2013, frontend/components/cbom/sources/CloudIdentityTab.tsx:2013-2015 — up to 50; matched on name, organisation or CN
   "cbsrc.ct.issuers": {
     label: "Certificate authorities you use",
     what: "Optional, up to 50: the CAs you expect. A certificate from any other CA is flagged as unexpected. Matched against the CA's name, organisation or CN: the whole value or its first words (at least 3 characters).",
     why: "Unexpected issuers point at mis-issuance or teams buying certificates outside policy.",
     example: "DigiCert and Let's Encrypt.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2173-2190 — Sectigo or other
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2342-2359 — Sectigo or other
   "cbsrc.ca.product": {
     label: "Product",
     what: "Which certificate product this connection is for, when the row covers several.",
     why: "It names the source in reports.",
     example: "Sectigo Certificate Manager.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2195-2196 — up to 64 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2364-2365 — up to 64 characters
   "cbsrc.ca.name": {
     label: "Name",
     what: "A name for this CA connection, 1 to 64 characters, shown in lists, run results and reports.",
     why: "Each certificate found records it as its source.",
     example: "AD CS Mumbai.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2201-2203, backend/utilities/cbom_sources/kinds.py:478 — AD CS, Vault, EJBCA are read through a node
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2370-2372, backend/utilities/cbom_sources/kinds.py:513 — AD CS, Vault, EJBCA are read through a node
   "cbsrc.ca.node": {
     label: "Scan node",
     what: "The scan node, in a segment that reaches the certificate authority, that reads it.",
     why: "Internal CAs are rarely reachable from the internet, so a node inside the network reads them.",
     example: "node-dc1, which reaches ca01.bank.local on 5986.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2222-2223 — reached over WinRM HTTPS (5986)
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2391-2392 — reached over WinRM HTTPS (5986)
   "cbsrc.ca.host": {
     label: "CA server",
     what: "The AD CS server's hostname, reached over WinRM HTTPS (5986). Run the Windows setup script from the Servers tab on it first.",
     why: "The CA database lists every certificate it issued, including ones on hosts no scan reaches.",
     example: "ca01.bank.local.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2225-2226, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2394-2395, backend/utilities/cbom_sources/kinds.py:27 — up to 64 characters
   "cbsrc.ca.login": {
     label: "Read-only Windows account",
     what: "A read-only Windows account on the CA server, in Remote Management Users; DOMAIN\\user is accepted.",
     why: "A non-admin account limits what a leaked password can do on your CA.",
     example: "BANK\\svc-zscbom.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2228-2236 — encrypted at rest; changing server, account, CA or node clears it
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2397-2406 — encrypted at rest; changing server, account, CA or node clears it
   "cbsrc.ca.password": {
     label: "Password",
     what: "The password of the read-only account. Encrypted at rest and sent only to the scan node; changing the server, account, CA or node clears it.",
     why: "Clearing it on change keeps the password from going to a host it was not meant for.",
     example: "The password of svc-zscbom.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2242-2258 — read through a connected AWS account's role
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2412-2428 — read through a connected AWS account's role
   "cbsrc.ca.aws": {
     label: "AWS account",
     what: "The connected AWS account whose read-only role reads AWS Private CA. No new credential is needed.",
     why: "Private CAs in AWS issue internal certificates that never appear in CT logs.",
     example: "payments-prod · 111122223333.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2263-2273 — HTTPS, up to 512 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2433-2443 — HTTPS, up to 512 characters
   "cbsrc.ca.api_url": {
     label: "API address",
     what: "The HTTPS address of the CA or CLM API, up to 512 characters. For Venafi, Keyfactor, DigiCert, Sectigo and others only this address and the name are saved: nothing is read from them.",
     why: "The scan node or the certificate collector calls only this address.",
     example: "https://vault.corp.example.com:8200 for Vault PKI.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2278-2286 — read-only policy; encrypted at rest
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2448-2457 — read-only policy; encrypted at rest
   "cbsrc.ca.vault_token": {
     label: "Vault token",
     what: "A Vault token bound to the read-only policy shown below. Encrypted at rest and sent only to the scan node; changing the address, CA or node clears it.",
     why: "The policy lets it list PKI mounts and transit keys without signing or decrypting.",
     example: "A periodic token created with vault token create -policy=zs-cbom-read.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2287-2295 — the read-only HCL policy
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2458-2466 — the read-only HCL policy
   "cbsrc.ca.vault_policy": {
     label: "Policy for the token",
     what: "The Vault policy to bind to the token: read and list on PKI and transit metadata only.",
     why: "Review it before creating the token; it grants no sign, issue or decrypt rights.",
     example: "vault policy write zs-cbom-read zs-cbom-read.hcl.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2303 — PEM, encrypted at rest
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2474 — PEM, encrypted at rest
   "cbsrc.ca.client_cert": {
     label: "Client certificate",
     what: "The PEM client certificate the scan node presents to the EJBCA REST API. Encrypted at rest and sent only to the scan node.",
     why: "EJBCA admits only clients whose certificate maps to an administrator role.",
     example: "zs-cbom-reader.crt issued by the EJBCA ManagementCA.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2304-2312 — PEM, unencrypted; encrypted at rest
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2475-2484 — PEM, unencrypted; encrypted at rest
   "cbsrc.ca.client_key": {
     label: "Client private key",
     what: "The unencrypted PEM private key of the client certificate. Encrypted at rest and sent only to the scan node; changing the address, CA or node clears it.",
     why: "Give the matching EJBCA role read-only rights so the key cannot issue certificates.",
     example: "-----BEGIN PRIVATE KEY----- ....",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2319-2326 — optional PEM; verified before signing in
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2491-2499 — optional PEM; verified before signing in
   "cbsrc.ca.ca_pem": {
     label: "CA of the server certificate",
     what: "Optional PEM certificate of the CA that issued the server's TLS (or WinRM) certificate. The node verifies the server with it before signing in.",
     why: "Needed when the server uses a private CA; without it the TLS check fails.",
     example: "bank-root-ca.pem.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2453-2454 — up to 64 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2618-2619 — up to 64 characters
   "cbsrc.idp.name": {
     label: "Name",
     what: "A name for this identity provider, 1 to 64 characters, shown in lists, run results and reports.",
     why: "Each signing key found records it as its source.",
     example: "Okta workforce.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2457-2465 — a GUID
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2622-2630 — a GUID
   "cbsrc.idp.tenant": {
     label: "Directory (tenant) ID",
     what: "The GUID of your Microsoft Entra directory (tenant).",
     why: "The app registration signs in to this tenant only.",
     example: "72f988bf-86f1-41af-91ab-2d7cd011db47.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2470-2479 — HTTPS, up to 512 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2641-2650,2636 — HTTPS, up to 512 characters
   "cbsrc.idp.base_url": {
     label: "Okta domain or base URL",
     what: "Okta: your Okta domain. Keycloak: the base URL of the server. ADFS: the server address; its public OpenID metadata and federation metadata are read from it. HTTPS, up to 512 characters.",
     why: "Signing keys are read from this address's public metadata.",
     example: "https://adfs.bank.in for ADFS.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2482-2484 — up to 128 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2653-2655 — up to 128 characters
   "cbsrc.idp.realm": {
     label: "Realm",
     what: "The Keycloak realm whose clients and keys are read, up to 128 characters.",
     why: "Each realm has its own signing keys.",
     example: "corp.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2487-2489 — Entra application ID or Keycloak client ID
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2658-2660 — Entra application ID or Keycloak client ID
   "cbsrc.idp.client": {
     label: "Client ID",
     what: "Entra ID: the application (client) ID of the app registration with Application.Read.All. Keycloak: the confidential client with read-only access to clients and keys.",
     why: "With it ZeroShield also reads the app registrations' certificates and secrets metadata.",
     example: "zs-cbom-reader.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:142, frontend/components/cbom/sources/CloudIdentityTab.tsx:2399, frontend/components/cbom/sources/CloudIdentityTab.tsx:2491-2498 — optional; encrypted at rest
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2663, frontend/components/cbom/sources/CloudIdentityTab.tsx:2663, frontend/components/cbom/sources/CloudIdentityTab.tsx:2662-2670 — optional; encrypted at rest
   "cbsrc.idp.secret": {
     label: "Client secret or API token",
     what: "Optional, not asked for ADFS. The Okta API token or the client secret. Signing keys are read from public metadata without it; with it, more is read. Encrypted at rest and never shown again.",
     why: "Without it, only the provider's published signing keys are inventoried.",
     example: "A read-only Okta API token.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2538-2560 — HTTPS, up to 1,000 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2710-2732 — HTTPS, up to 1,000 characters
   "cbsrc.idp.saml_url": {
     label: "SAML metadata URL",
     what: "The HTTPS address of an identity provider's SAML metadata, up to 1,000 characters. Its signing and encryption certificates are read from it.",
     why: "Covers identity providers without a dedicated connector (ADFS has its own row).",
     example: "https://idp.bank.in/saml/metadata.xml.",
   },
-  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2538-2560 — HTTPS, up to 1,000 characters
+  // src: frontend/components/cbom/sources/CloudIdentityTab.tsx:2710-2732 — HTTPS, up to 1,000 characters
   "cbsrc.idp.oidc_url": {
     label: "OIDC discovery URL",
     what: "The HTTPS address of an OpenID Connect discovery document, up to 1,000 characters. Its JWKS signing keys are read from it.",
@@ -3453,161 +3453,161 @@ export const INFO_TIPS = {
     example: "https://sso.bank.in/.well-known/openid-configuration.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Network TLS (components/cbom/sources/NetworkTab.tsx)
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:450-458 — the team emergency stop
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:446-454 — the team emergency stop
   "cbsrc.net.stopped": {
     label: "All network scanning is stopped",
     what: "A team admin stopped all network scanning. Scan nodes skip network ranges and discovery sweeps until a team admin resumes it; other sources are not affected.",
     why: "The emergency stop exists so the SOC can halt probing at once if a device misbehaves.",
     example: "Stopped 12 minutes ago after a PLC on 10.50.0.0/24 raised an alarm.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:469, frontend/components/cbom/sources/NetworkTab.tsx:471-500 — allowed ranges, never scan, SNI names, ports
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:465, frontend/components/cbom/sources/NetworkTab.tsx:467-497 — allowed ranges, never scan, SNI names, ports
   "cbsrc.net.scope": {
     label: "Scope",
     what: "What the network scan may touch and how: the allowed ranges and their scan nodes, the never-scan list, hostnames for SNI and the ports and protocols to probe.",
     why: "Nothing outside the allowed ranges is ever probed, and never-scan always wins.",
     example: "10.20.0.0/16 through node-dc1, except 10.20.99.0/24 (OT), on ports 443, 8443 and 22.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:471-500, frontend/components/cbom/sources/NetworkTab.tsx:1153-1160 — nothing is scanned until a range is allowed
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:467-497, frontend/components/cbom/sources/NetworkTab.tsx:1180-1187,468 — nothing is scanned until a range is allowed
   "cbsrc.net.ranges": {
     label: "Allowed ranges",
     what: "The address ranges the network scan may probe, each with the scan node that reaches it. Nothing is scanned until you allow a range.",
     why: "An explicit allow list keeps scans inside the networks you approved.",
     example: "10.20.0.0/16 through node-dc1, Full mode.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:1153 — a /16 or smaller, one IP, or a-b
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:1180 — a /16 or smaller, one IP, or a-b
   "cbsrc.net.col.range": {
     label: "Range",
     what: "The addresses: a CIDR range of /16 or smaller, one IP address, or a first-last range. A /24 or larger skips its network and broadcast addresses; a /25 or smaller is scanned whole.",
     why: "Each address in it may be probed on every listed port.",
     example: "10.20.5.0/24.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:530, frontend/components/cbom/sources/NetworkTab.tsx:1176-1190 — Full or Fragile (version check only)
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:540, frontend/components/cbom/sources/NetworkTab.tsx:1203-1217 — Full or Fragile (version check only)
   "cbsrc.net.col.mode": {
     label: "Mode",
     what: "Full: complete TLS and SSH handshakes on every listed port. Fragile: a version check only, for OT or devices that may not cope with many handshakes.",
     why: "Old PLCs and medical devices can crash under repeated handshakes.",
     example: "Fragile for the SCADA network 10.50.0.0/24.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:115, frontend/components/cbom/sources/NetworkTab.tsx:580-680 — up to 500 entries; always wins in every job of the team
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:590, frontend/components/cbom/sources/NetworkTab.tsx:590-692 — up to 500 entries; always wins in every job of the team
   "cbsrc.net.never_scan": {
     label: "Never scan",
     what: "Addresses and ranges, up to 500, that no job of this team may touch. The node refuses them even if a job asks; a server, database, registry or Kubernetes API whose name resolves to a listed address is skipped as a whole. Add each with a reason.",
     why: "It protects OT networks, core routers and partner systems from any probe, whatever a source says.",
     example: "10.20.99.0/24 · OT plant network.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:591, frontend/components/cbom/sources/NetworkTab.tsx:659-668 — up to 120 characters
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:601, frontend/components/cbom/sources/NetworkTab.tsx:671-680 — up to 120 characters
   "cbsrc.net.col.reason": {
     label: "Reason",
     what: "Why the range is excluded, up to 120 characters, so others know not to remove it.",
     why: "An exclusion without a reason tends to be deleted during clean-ups.",
     example: "OT plant network, no active scanning per IT-OT policy.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:114, frontend/components/cbom/sources/NetworkTab.tsx:689-698 — up to 10,000 names
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:701, frontend/components/cbom/sources/NetworkTab.tsx:701-710 — up to 10,000 names
   "cbsrc.net.sni": {
     label: "Hostnames for SNI",
     what: "Hostnames, up to 10,000, sent as SNI in TLS handshakes so servers that host several sites return each site's certificate.",
     why: "Without SNI a shared server shows only its default certificate and the others go uninventoried.",
     example: "www.bank.in and api.bank.in on the same load balancer address.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:76-90, frontend/components/cbom/sources/NetworkTab.tsx:113, frontend/components/cbom/sources/NetworkTab.tsx:700-770 — up to 64 ports; TLS, StartTLS, SSH, RDP, IKE, OT
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:78-92,712, frontend/components/cbom/sources/NetworkTab.tsx:712, frontend/components/cbom/sources/NetworkTab.tsx:712-785 — up to 64 ports; TLS, StartTLS, SSH, RDP, IKE, OT
   "cbsrc.net.ports": {
     label: "Ports and protocols",
     what: "The ports probed on each address, up to 64, each with its protocol: TLS, StartTLS for LDAP, SMTP, IMAP, PostgreSQL or MySQL, SQL Server, SSH, RDP, IKE, and OT protocols (OPC UA, Modbus). Add a port, its protocol and an optional label.",
     why: "A service on a port that is not listed is never seen.",
     example: "7443 · TLS · admin console.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:781 — window, rates, SOC contacts
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:791 — window, rates, SOC contacts
   "cbsrc.net.safety": {
     label: "Safety",
     what: "When network scans may run, how fast they may go, and who your SOC should call.",
     why: "Probing at the wrong hour or speed can set off alarms or disturb fragile devices.",
     example: "Weekday nights only, 50 connections per second per node.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:783-830 — weekly hours in a time zone; work pauses at the end
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:793-842 — weekly hours in a time zone; work pauses at the end
   "cbsrc.net.window": {
     label: "Scan window",
     what: "The weekly hours, in the chosen time zone, when network scans and sources set to the team window may run. Work pauses at the end of the window and resumes in the next one.",
     why: "Keeps probes out of business hours and change freezes.",
     example: "Weekday nights, 22:00 to 06:00 Asia/Kolkata: 40 hours a week.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:109 — 1 to 500
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:111 — 1 to 500
   "cbsrc.net.rate_conn": {
     label: "Connections/s per node",
     what: "The most new connections per second each scan node opens, 1 to 500.",
     why: "Lower values avoid tripping IDS alerts and connection limits on firewalls.",
     example: "50 for a branch network behind a small firewall.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:110 — 1 to 32
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:112 — 1 to 32
   "cbsrc.net.rate_parallel": {
     label: "Parallel per server",
     what: "The most connections a node keeps open to one server at a time, 1 to 32.",
     why: "Protects small servers from being overloaded by parallel handshakes.",
     example: "4 for older appliances that limit concurrent TLS sessions.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:111 — 1 to 200
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:113 — 1 to 200
   "cbsrc.net.rate_handshakes": {
     label: "Handshakes per endpoint",
     what: "The most TLS or SSH handshakes made to one endpoint (address and port), 1 to 200. More handshakes test more protocol versions and cipher suites.",
     why: "A full cipher-suite enumeration needs many handshakes; fewer is gentler but less complete.",
     example: "60 enumerates TLS 1.0 to 1.3 suites on a typical web server.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:861-915 — each node's source IPs and your contacts
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:876-930 — each node's source IPs and your contacts
   "cbsrc.net.soc": {
     label: "Tell your SOC",
     what: "The source IP addresses of each scan node, to give your SOC so the scans are recognised, and the contacts they can reach.",
     why: "An unannounced scan looks like an attack and may be blocked mid-run.",
     example: "node-dc1 scans from 10.20.1.15.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:879 — the node
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:894 — the node
   "cbsrc.net.col.node": {
     label: "Scan node",
     what: "The scan node whose source addresses are listed.",
     why: "Each node scans from its own addresses.",
     example: "node-dc1.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:880 — addresses the node reported
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:895 — addresses the node reported
   "cbsrc.net.col.source_ips": {
     label: "Source IPs",
     what: "The addresses the node reported it connects from, to whitelist or recognise in your SOC tools.",
     why: "Behind NAT the address seen by targets may differ; check with your network team.",
     example: "10.20.1.15, fd00:20::15.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:118, frontend/components/cbom/sources/NetworkTab.tsx:894-902 — up to 254 characters
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:909, frontend/components/cbom/sources/NetworkTab.tsx:909-917 — up to 254 characters
   "cbsrc.net.soc_email": {
     label: "SOC email",
     what: "Your SOC's email address, up to 254 characters, recorded with the team's network settings as the contact for these scans.",
     why: "Gives operators one place to send questions about a scan they see.",
     example: "soc@bank.in.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:119, frontend/components/cbom/sources/NetworkTab.tsx:905-913 — a phone number, up to 64 characters
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:920, frontend/components/cbom/sources/NetworkTab.tsx:920-928 — a phone number, up to 64 characters
   "cbsrc.net.emergency": {
     label: "Emergency stop contact",
     what: "A phone number, up to 64 characters, for whoever can stop the scans at once.",
     why: "If a device misbehaves during a scan, someone must be reachable to stop it.",
     example: "+91 22 5555 0100 (NOC, 24x7).",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:1171-1174 — the node that reaches the range
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:1198-1201 — the node that reaches the range
   "cbsrc.net.range_form_node": {
     label: "Scan node",
     what: "The scan node that probes this range. It must reach every address in it on the listed ports.",
     why: "A node in another segment sees every address as silent.",
     example: "node-dc1 for 10.20.0.0/16.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:116, frontend/components/cbom/sources/NetworkTab.tsx:1392-1393 — BIND export up to 8 MB; A, AAAA, CNAME names
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:1419, frontend/components/cbom/sources/NetworkTab.tsx:1419-1420 — BIND export up to 8 MB; A, AAAA, CNAME names
   "cbsrc.net.sni_zone": {
     label: "Import a DNS zone file",
     what: "Add hostnames from a BIND zone export, up to 8 MB: the names of its A, AAAA and CNAME records.",
     why: "A zone file lists names nobody remembers to type in.",
     example: "bank.in.zone exported from the DNS server.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:1395-1396 — text or CSV; first column
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:1422-1423 — text or CSV; first column
   "cbsrc.net.sni_list": {
     label: "Import a plain list",
     what: "Add hostnames from a text or CSV file; the first column of each row is used.",
     why: "Reuse an existing asset list instead of typing names.",
     example: "hosts.csv exported from the CMDB.",
   },
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:114, frontend/components/cbom/sources/NetworkTab.tsx:1399-1406 — one per line, up to 10,000; duplicates dropped
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:1426, frontend/components/cbom/sources/NetworkTab.tsx:1426-1433 — one per line, up to 10,000; duplicates dropped
   "cbsrc.net.sni_text": {
     label: "Hostnames",
     what: "One hostname per line, up to 10,000; duplicates are dropped.",
@@ -3615,182 +3615,182 @@ export const INFO_TIPS = {
     example: "www.bank.in, api.bank.in, mail.bank.in.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Evidence (components/cbom/sources/EvidenceTab.tsx)
-  // src: frontend/components/cbom/sources/shared.tsx:130-136, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at E0
+  // src: backend/utilities/cbom_sources/evidence.py:16-17, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E0
   "cbsrc.ev.e0": {
     label: "E0 Unknown",
     what: "Areas with no usable answer: never answered, answered without evidence where evidence is needed, or with evidence older than 12 months.",
     why: "Each E0 area is a Q0 gap in the risk register, listed on Review & Run and never treated as safe.",
     example: "3 areas: the payment HSM vendor has not answered.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:130-136, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at E1
+  // src: backend/utilities/cbom_sources/evidence.py:16-17, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E1
   "cbsrc.ev.e1": {
     label: "E1 Self-attested",
     what: "Areas answered by their owner or vendor without supporting evidence.",
     why: "A self-attested answer is better than nothing but would not satisfy an auditor.",
     example: "The card vendor says its terminals use AES-256, with no document.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:130-136, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at E2
+  // src: backend/utilities/cbom_sources/evidence.py:16-17, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E2
   "cbsrc.ev.e2": {
     label: "E2 Documented",
     what: "Areas answered with a dated evidence document, such as a policy, certificate or report.",
     why: "Documented answers can be shown to an auditor and re-checked when the document is renewed.",
     example: "Key management policy v3 (PDF), dated March 2026.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:130-136, frontend/components/cbom/sources/EvidenceTab.tsx:275-284 — areas at E3
+  // src: backend/utilities/cbom_sources/evidence.py:16-17, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E3
   "cbsrc.ev.e3": {
     label: "E3 Verified",
     what: "Areas whose evidence your team has checked and confirmed.",
     why: "Verified evidence carries the same weight as a scan result.",
     example: "The HSM's FIPS 140-3 certificate checked against the NIST CMVP list.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:268-272, frontend/components/cbom/sources/EvidenceTab.tsx:287-312 — owner questionnaires with a confidence level
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:280-284,300, frontend/components/cbom/sources/EvidenceTab.tsx:299-325 — owner questionnaires with a confidence level
   "cbsrc.ev.areas": {
     label: "Areas that cannot be scanned",
     what: "Parts of your crypto estate no scan can read, such as vendor services and offline key ceremonies. Each has an owner questionnaire, a confidence level and an optional evidence link; a missing answer stays a visible gap.",
     why: "A CBOM that only lists what scans can see overstates your readiness.",
     example: "Card personalisation bureau: owner Cards ops, E1, due 30 Nov.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:307 — the evidence area
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:320 — the evidence area
   "cbsrc.ev.col.area": {
     label: "Area",
     what: "The part of the estate the questionnaire covers.",
     why: "Each area is one gap until it is answered.",
     example: "Offline root CA key ceremony.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:308, frontend/components/cbom/sources/EvidenceTab.tsx:768 — who answers
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:321, frontend/components/cbom/sources/EvidenceTab.tsx:794 — who answers
   "cbsrc.ev.col.owner": {
     label: "Owner",
     what: "The person or team asked to answer for this area.",
     why: "An area without an owner is never answered.",
     example: "PKI team.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:130-136 — E0 Unknown to E3 Verified
+  // src: frontend/components/cbom/sources/shared.tsx:136-149 — E0 Unknown to E3 Verified
   "cbsrc.ev.col.confidence": {
     label: "Confidence",
     what: "How much the answer can be trusted: E0 Unknown, E1 Self-attested, E2 Documented (evidence document), E3 Verified (evidence checked by your team).",
     why: "Reports and the run's coverage weigh answers by this level.",
     example: "E2 Documented.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:310, frontend/components/cbom/sources/EvidenceTab.tsx:848-873 — the evidence document and its date
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:323, frontend/components/cbom/sources/EvidenceTab.tsx:876-902 — the evidence document and its date
   "cbsrc.ev.col.evidence": {
     label: "Evidence",
     what: "The supporting document's title and link, and its date. Evidence older than 12 months drops back to E0 until renewed.",
     why: "Dated evidence shows the answer was true recently, not years ago.",
     example: "HSM FIPS certificate (PDF), 4 Feb 2026.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:311, frontend/components/cbom/sources/EvidenceTab.tsx:881 — when the owner should answer by
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:324, frontend/components/cbom/sources/EvidenceTab.tsx:910 — when the owner should answer by
   "cbsrc.ev.col.due": {
     label: "Due",
     what: "When the owner should answer by.",
     why: "Overdue areas are the gaps to chase before an audit.",
     example: "30 Nov 2026.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:397-400 — single-use links, no login, 14 days
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:414-418 — single-use links, no login, 14 days
   "cbsrc.ev.vendors": {
     label: "Vendors",
     what: "Vendors asked to answer a questionnaire through a single-use link, with no login; the link expires in 14 days. A vendor who does not answer stays E0 Unknown, a Q0 gap.",
     why: "Third-party services use crypto you cannot scan but still answer for in an audit.",
     example: "Acme Payments, link sent 2 Nov, answered 6 Nov, E2.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:424 — vendor name
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:442 — vendor name
   "cbsrc.ev.col.vendor": {
     label: "Vendor",
     what: "The vendor asked to answer.",
     why: "Each vendor is one evidence area of its own.",
     example: "Acme Payments.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:425 — the single-use link
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:443 — the single-use link
   "cbsrc.ev.col.link": {
     label: "Link status",
     what: "The state of the vendor's single-use link: not sent, sent and waiting, answered, or expired (after 14 days).",
     why: "An expired link needs a new one before the vendor can answer.",
     example: "Expired: press New link and send the vendor the fresh link.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:508, frontend/components/cbom/sources/EvidenceTab.tsx:640-670 — read-only preview
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:531, frontend/components/cbom/sources/EvidenceTab.tsx:663-696,531 — read-only preview
   "cbsrc.ev.preview": {
     label: "Questionnaire preview",
     what: "Read-only view of exactly what an owner or vendor is asked for the chosen area.",
     why: "Check the questions before sending a link to a vendor.",
     example: "Preview Card personalisation bureau: 5 questions and an evidence link.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:511-513 — which area to preview
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:534-536 — which area to preview
   "cbsrc.ev.preview_area": {
     label: "Area",
     what: "The evidence area whose questionnaire is shown below.",
     why: "Each area asks different questions.",
     example: "Offline root CA key ceremony.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:783-816, frontend/components/cbom/sources/EvidenceTab.tsx:644-662 — yes/no/unknown or a free-text answer
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:809-843, frontend/components/cbom/sources/EvidenceTab.tsx:667-686 — yes/no/unknown or a free-text answer
   "cbsrc.ev.question": {
     label: "Question",
     what: "One question of the area's questionnaire, answered with a choice or in free text.",
     why: "Each answer feeds the area's confidence; an unanswered question keeps it a gap.",
     example: "Are keys generated inside a FIPS 140-3 Level 3 HSM? Yes.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:664-666 — E2 and E3 need one
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:688 — E2 and E3 need one
   "cbsrc.ev.preview_link": {
     label: "Link to supporting evidence",
     what: "Where the person answering links a policy, certificate or report. Documented (E2) and Verified (E3) need one.",
     why: "Without evidence an answer stays Self-attested at best.",
     example: "https://intranet.bank.in/pki/ceremony-2026.pdf.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:768-770 — the person or team who answers
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:794-796 — the person or team who answers
   "cbsrc.ev.owner": {
     label: "Owner",
     what: "Who answers for this area: a person or team. The area may suggest a usual owner.",
     why: "Named owners are who auditors ask, and who remediation is routed to.",
     example: "PKI team (usually: Information security).",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:822-829 — Documented and Verified need a document and date
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:849-857 — Documented and Verified need a document and date
   "cbsrc.ev.confidence": {
     label: "Confidence",
     what: "The confidence of this area's answer: E0 Unknown, E1 Self-attested, E2 Documented or E3 Verified. Documented and Verified need an evidence document and its date.",
     why: "It decides how the area counts in coverage and reports.",
     example: "E3 after you checked the vendor's certificate yourself.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:848-849 — up to 200 characters
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:876-877 — up to 200 characters
   "cbsrc.ev.title": {
     label: "Evidence title",
     what: "A short title for the evidence document, up to 200 characters.",
     why: "Auditors find the document by its title in the evidence pack.",
     example: "Key management policy v3 (PDF).",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:851-858 — http or https, up to 1,000 characters
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:879-886 — http or https, up to 1,000 characters
   "cbsrc.ev.url": {
     label: "Evidence link",
     what: "An http:// or https:// link to the document, up to 1,000 characters.",
     why: "The link lets a reviewer open the evidence in one click.",
     example: "https://intranet.bank.in/policies/kms-v3.pdf.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:861-873 — evidence older than 12 months drops to E0
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:876-888 — evidence older than 12 months drops to E0
   "cbsrc.ev.date": {
     label: "Evidence date",
     what: "The date of the document, not later than today. Evidence older than 12 months drops back to E0 until renewed.",
     why: "Crypto policies change; old evidence may describe a setup that no longer exists.",
     example: "14 Mar 2026.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:881-882 — when the owner should answer by
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:910-911 — when the owner should answer by
   "cbsrc.ev.due": {
     label: "Due date",
     what: "When the owner should answer by.",
     why: "A due date turns an open gap into a tracked task.",
     example: "30 Nov 2026.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:954-955 — required
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:983-984 — required
   "cbsrc.ev.vendor_name": {
     label: "Vendor name",
     what: "The vendor's name, as shown in lists and reports.",
     why: "Each vendor becomes an evidence area of its own.",
     example: "Acme Payments Pvt Ltd.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:964-965 — for your records only
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:993-994 — for your records only
   "cbsrc.ev.vendor_email": {
     label: "Contact email",
     what: "Optional: the vendor contact's email, for your records only. ZeroShield does not email the vendor; you send the link yourself.",
     why: "Keeps who was asked next to the answer.",
     example: "security@acmepayments.in.",
   },
-  // src: frontend/components/cbom/sources/EvidenceTab.tsx:1054-1060 — E1 when answered, E2 with a link, E3 once verified
+  // src: frontend/components/cbom/sources/EvidenceTab.tsx:1069-1075,1084 — E1 when answered, E2 with a link, E3 once verified
   "cbsrc.ev.vendor_confidence": {
     label: "Confidence",
     what: "The confidence of the vendor's answer. Set E1 when answered, E2 when the vendor gave an evidence link, E3 once you have verified the evidence.",
@@ -3798,126 +3798,126 @@ export const INFO_TIPS = {
     example: "E2: the vendor linked its PCI PIN attestation.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run (components/cbom/sources/ReviewRunTab.tsx)
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:235-309, frontend/components/cbom/sources/ReviewRunTab.tsx:319 — one row per source group
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:231-307,317, frontend/components/cbom/sources/ReviewRunTab.tsx:317 — one row per source group
   "cbsrc.rr.coverage": {
     label: "Coverage",
     what: "Every kind of source and what a run would collect from it: how much is in scope, what reaches it (scan nodes, ZeroShield's cloud or questionnaires), failed tests, the credits it costs per run and whether it is ready.",
     why: "Shows at a glance which parts of the estate the next run covers and which it leaves out.",
     example: "Servers · 3 sources, 612 targets · node-dc1 · No failed tests · 122.40 (0.2 per target) · Ready.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:325 — the source group
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:323 — the source group
   "cbsrc.rr.col.source": {
     label: "Source",
     what: "The group of sources: servers, Kubernetes, databases, cloud, network, identity, evidence or code scans.",
     why: "A run is started per group with the boxes under Start a scan.",
     example: "Databases.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:326 — what the group covers
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:324 — what the group covers
   "cbsrc.rr.col.in_scope": {
     label: "In scope",
     what: "How much of the group a run would cover: sources, targets, accounts or areas.",
     why: "Zero in scope means the group adds nothing to the CBOM yet.",
     example: "2 sources, 4 databases.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:327 — scan nodes or ZeroShield's cloud
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:325 — scan nodes or ZeroShield's cloud
   "cbsrc.rr.col.through": {
     label: "Reached through",
     what: "What does the collecting: the scan nodes for in-network sources, or ZeroShield's cloud for cloud accounts, CT logs and identity providers.",
     why: "An offline node here means that group's jobs wait.",
     example: "node-dc1, node-dr1.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:243, frontend/components/cbom/sources/ReviewRunTab.tsx:267, frontend/components/cbom/sources/ReviewRunTab.tsx:309 — estimated credits per run for the group
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:239, frontend/components/cbom/sources/ReviewRunTab.tsx:263, frontend/components/cbom/sources/ReviewRunTab.tsx:307 — estimated credits per run for the group
   "cbsrc.rr.col.credits": {
     label: "Credits",
     what: "The credits one run of this group is estimated to charge; code scans are charged per scan and evidence costs nothing.",
     why: "Credits come off the team balance when the run starts and are refunded for jobs that fail or expire.",
     example: "4.00 for one AWS account (4 credits per account per run).",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:328 — ready, needs attention or not set up
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:326 — ready, needs attention or not set up
   "cbsrc.rr.col.status": {
     label: "Status",
     what: "Ready, a count of issues to fix (for example an offline node or a failed test), Not configured, or for evidence the number of gaps.",
     why: "Groups that are not ready are skipped and listed below with the fix.",
     example: "1 issue: a source has a failed connection test.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:358 — sources the plan would skip
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:357 — sources the plan would skip
   "cbsrc.rr.skipped": {
     label: "Will be skipped unless you fix it",
     what: "Sources the next run would skip, each with the reason: an offline or missing node, a failed or missing test, a missing credential, or a closed scan window.",
     why: "A skipped source is a gap in the CBOM; fixing it before starting saves a second run.",
     example: "dc-mumbai-windows: the connection test failed (Login failed).",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:394-405 — jobs, run record, proof trail, evidence gaps
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:393-404 — jobs, run record, proof trail, evidence gaps
   "cbsrc.rr.after": {
     label: "What you get after the scan",
     what: "What a run produces: collection jobs per source for your scan nodes, a run record with the credits charged and refunded, a proof trail (audit log, node source IPs, the AWS role's CloudTrail calls) and evidence gaps listed as Q0, never assumed safe.",
     why: "The proof trail lets your SOC and auditors confirm exactly what was touched.",
     example: "Run #42: 2 databases, 1 AWS account and 32 server targets: 12.40 credits charged; 1.00 refunded for a database job that failed.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:636, frontend/components/cbom/sources/ReviewRunTab.tsx:52-58 — choose groups, estimate the credits, start
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:630, frontend/components/cbom/sources/ReviewRunTab.tsx:53-59,408 — choose groups, estimate the credits, start
   "cbsrc.rr.start": {
     label: "Start a scan",
     what: "Choose which groups to collect, estimate the credits, confirm the SOC agreement for network scans, then start the run.",
     why: "Credits are charged when the run starts; the estimate shows the cost and what will be skipped first.",
     example: "Servers (612 targets) and one AWS account: 122.40 + 4.00 = 126.40 credits.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:52-58, frontend/components/cbom/sources/ReviewRunTab.tsx:640-646 — one box per group; how many sources are ready
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:53-59,636, frontend/components/cbom/sources/ReviewRunTab.tsx:633-639 — one box per group; how many sources are ready
   "cbsrc.rr.include": {
     label: "Include in the run",
     what: "Tick each group of sources to collect in this run; the count shows how many of its sources are ready.",
     why: "Leave out groups whose systems are in a change freeze.",
     example: "Servers · 3 ready.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:705-716 — required when Network is included
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:698-709 — required when Network is included
   "cbsrc.rr.soc_ack": {
     label: "SOC agreement",
     what: "Confirm that your SOC has agreed the network ranges and scan windows. Required when the run includes Network.",
     why: "Active network probing without SOC agreement is often treated as an incident.",
     example: "Tick after the SOC acknowledged ranges 10.20.0.0/16 and the 22:00-06:00 window.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:424 — the 50 most recent runs
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:423 — the 50 most recent runs
   "cbsrc.rr.runs": {
     label: "Runs",
     what: "The 50 most recent collection runs of this team, newest first, with their status, jobs, assets and credits. Open Results for a run's findings, or Compare two finished runs.",
     why: "Comparing runs shows what changed: new weak keys, fixed ones, expired certificates.",
     example: "Run #42 · Done · 9 done · 1,284 assets · 12.40 charged / 1.00 refunded.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:450 — run number
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:449 — run number
   "cbsrc.rr.col.run": {
     label: "Run",
     what: "The run's number, unique within ZeroShield.",
     why: "Reports and exports name the run by this number.",
     example: "#42, the run started on 13 Nov.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:451 — when the run was created
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:450 — when the run was created
   "cbsrc.rr.col.started": {
     label: "Started",
     what: "When the run was started.",
     why: "Findings reflect the estate at this time.",
     example: "13 Nov 2026, 11:05 pm IST.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:114-121, backend/utilities/cbom_sources/jobs.py:120-132 — jobs.py run status: partial also when every job succeeded but one reported a partial or failed outcome
+  // src: frontend/components/cbom/sources/shared.tsx:118-125, backend/utilities/cbom_sources/jobs.py:121-133 — jobs.py run status: partial also when every job succeeded but one reported a partial or failed outcome
   "cbsrc.rr.col.run_status": {
     label: "Status",
     what: "Queued, Running, Done (every job succeeded completely), Partial (some jobs failed or expired, or a job finished but reported a partial or failed outcome), Failed or Cancelled.",
     why: "A Partial run's results miss the sources whose jobs failed.",
     example: "Partial: 8 of 9 jobs done, 1 expired.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:160-164 — job counts by status
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:156-160 — job counts by status
   "cbsrc.rr.col.jobs": {
     label: "Jobs",
     what: "The run's collection jobs (one per source) counted by status.",
     why: "Waiting jobs usually mean an offline scan node.",
     example: "8 done · 1 failed.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:470-472 — assets collected
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:469-471 — assets collected
   "cbsrc.rr.col.assets": {
     label: "Assets",
     what: "How many crypto assets the run collected: certificates, keys, protocols, libraries and other items.",
     why: "A sudden drop between runs can mean a source stopped reporting.",
     example: "1,284.",
   },
-  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:473-475, backend/utilities/cbom_sources/jobs.py:85-107 — charged and refunded
+  // src: frontend/components/cbom/sources/ReviewRunTab.tsx:472-474, backend/utilities/cbom_sources/jobs.py:86-108 — charged and refunded
   "cbsrc.rr.col.run_credits": {
     label: "Credits",
     what: "Credits charged when the run started, and credits refunded for jobs that failed, expired or were cancelled.",
@@ -3931,7 +3931,7 @@ export const INFO_TIPS = {
     why: "Points you at the node to check when a job fails.",
     example: "node-dc1.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:96-103 — waiting, running, done, failed, cancelled, expired
+  // src: frontend/components/cbom/sources/shared.tsx:101-108 — waiting, running, done, failed, cancelled, expired
   "cbsrc.rr.job.status": {
     label: "Status",
     what: "Waiting (for its node or window), Running, Done, Failed, Cancelled or Expired (never claimed in time; refunded). The note below says why it waits.",
@@ -3982,161 +3982,161 @@ export const INFO_TIPS = {
     example: "dc-mumbai-linux.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Scan nodes (components/cbom/sources/ScanNodesTab.tsx)
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:265 — nodes of the team
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:297 — nodes of the team
   "cbsrc.nodes.count": {
     label: "Scan nodes",
     what: "How many scan nodes this team has registered or is registering.",
     why: "Each network segment you want to scan needs a node inside it.",
     example: "3: one per data centre and one in the DMZ.",
   },
-  // src: backend/utilities/cbom_sources/planning.py:21, backend/utilities/cbom_sources/planning.py:35-44 — heartbeat within the last 120 s
+  // src: backend/utilities/cbom_sources/planning.py:22, backend/utilities/cbom_sources/planning.py:69-78 — heartbeat within the last 120 s
   "cbsrc.nodes.online": {
     label: "Online",
     what: "Nodes that sent a heartbeat in the last 2 minutes and can take jobs now.",
     why: "Jobs for sources behind an offline node wait and expire.",
     example: "2 of 3 online.",
   },
-  // src: backend/utilities/cbom_sources/planning.py:21, backend/utilities/cbom_sources/planning.py:35-44 — registered, no heartbeat for 120 s
+  // src: backend/utilities/cbom_sources/planning.py:22, backend/utilities/cbom_sources/planning.py:69-78 — registered, no heartbeat for 120 s
   "cbsrc.nodes.offline": {
     label: "Offline",
     what: "Registered nodes with no heartbeat for more than 2 minutes: stopped, unable to reach ZeroShield, or their host is down.",
     why: "An offline node silently removes its whole segment from the next run.",
     example: "node-dr1 offline since the DR site's proxy changed.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:268 — servers and addresses routed through these nodes
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:300 — servers and addresses routed through these nodes
   "cbsrc.nodes.assigned": {
     label: "Targets assigned",
     what: "Servers and addresses routed through these nodes by your sources and network ranges.",
     why: "Shows how much depends on each node staying online.",
     example: "4,612 targets across 3 nodes.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:271-273 — one per segment; outbound only
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:303-306 — one per segment; outbound only
   "cbsrc.nodes.list": {
     label: "Registered scan nodes",
     what: "Your scan nodes: small read-only collectors inside your network, one per network segment. Each connects out to ZeroShield on one HTTPS port only and opens no inbound ports.",
     why: "Nodes are how ZeroShield reads systems that are not reachable from the internet.",
     example: "node-dc1 · DC1-core · Online · Docker container.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:312 — node name
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:345 — node name
   "cbsrc.nodes.col.node": {
     label: "Node",
     what: "The node's name, as chosen when it was added.",
     why: "Sources and ranges pick their node by this name.",
     example: "node-dc1.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:313, frontend/components/cbom/sources/ScanNodesTab.tsx:430-433 — the network segment it sits in
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:346, frontend/components/cbom/sources/ScanNodesTab.tsx:464-467 — the network segment it sits in
   "cbsrc.nodes.col.segment": {
     label: "Segment",
     what: "The network segment the node sits in.",
     why: "A source must use a node in a segment that reaches its targets.",
     example: "DC1-core.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:62-67 — online, offline, waiting to register, token expired
+  // src: frontend/components/cbom/sources/shared.tsx:64-69 — online, offline, waiting to register, token expired
   "cbsrc.nodes.col.status": {
     label: "Status",
     what: "Online (heartbeat in the last 2 minutes), Offline, Waiting to register (installed with a token that was not used yet) or Token expired (create a new registration token).",
     why: "Only online nodes take jobs.",
     example: "Token expired: the install command was not run within 24 hours.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:64-70, frontend/components/cbom/sources/ScanNodesTab.tsx:337-345 — Docker, OVA, AMI or Helm; host agent mode
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:73-79,348, frontend/components/cbom/sources/ScanNodesTab.tsx:370-378,348 — Docker, OVA, AMI or Helm; host agent mode
   "cbsrc.nodes.col.runs_as": {
     label: "Runs as",
     what: "How the node runs: Docker container, OVA appliance, AWS AMI or Helm chart. Host agent means it collects only its own host from read-only mounts and is never given a credential.",
     why: "It tells you where to look when a node needs restarting or upgrading.",
     example: "Helm chart in the prod-payments cluster.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:342 — node_version reported by the node
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:349 — node_version reported by the node
   "cbsrc.nodes.col.version": {
     label: "Version",
     what: "The software version the node reported.",
     why: "Old versions may miss newer collectors; upgrade them with the install command.",
     example: "1.8.2.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:343, frontend/components/cbom/sources/ScanNodesTab.tsx:789-791 — signed or legacy unsigned
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:350, frontend/components/cbom/sources/ScanNodesTab.tsx:852-855,350 — signed or legacy unsigned
   "cbsrc.nodes.col.requests": {
     label: "Requests",
     what: "Whether the node signs every request with a key made at enrollment (Signed), or is a legacy node that does not.",
     why: "With signing, a copied node token alone cannot act as the node.",
     example: "Legacy: unsigned. Reset the node and register it again to sign.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:344 — last heartbeat
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:351 — last heartbeat
   "cbsrc.nodes.col.last_seen": {
     label: "Last seen",
     what: "How long ago the node's last heartbeat arrived.",
     why: "More than 2 minutes means it is offline.",
     example: "12 seconds ago.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:345 — targets routed through the node
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:352 — targets routed through the node
   "cbsrc.nodes.col.targets": {
     label: "Targets",
     what: "How many servers and addresses are routed through this node.",
     why: "A heavily loaded node may need the parallel limits lowered or a second node.",
     example: "2,304.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:405-409 — run on any VM or cluster inside the segment
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:438-443 — run on any VM or cluster inside the segment
   "cbsrc.nodes.add": {
     label: "Add a scan node",
     what: "Register a new scan node: name it, choose how to run it, allow its outbound traffic, then run the install command on a VM or cluster inside the segment you want to scan.",
     why: "Without a node, servers, clusters, databases and network ranges cannot be collected.",
     example: "node-dc1 as a Docker container on a Linux VM in DC1-core.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:426-427 — up to 64 characters
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:460-461 — up to 64 characters
   "cbsrc.nodes.name": {
     label: "Node name",
     what: "A name for the node, up to 64 characters, shown wherever a source picks its node.",
     why: "Name it after its location so the right node is picked for each source.",
     example: "node-dc1.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:430-433 — pick one or type your own
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:464-467 — pick one or type your own
   "cbsrc.nodes.segment": {
     label: "Network segment",
     what: "The network segment the node sits in; pick an existing one or type your own, up to 64 characters.",
     why: "Segments group nodes and appear in run results, so findings can be traced to a network.",
     example: "DC1-core.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:435-437 — the node's time zone
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:469-471 — the node's time zone
   "cbsrc.nodes.tz": {
     label: "Time zone",
     what: "The time zone of the node's location, used in its install settings.",
     why: "Makes the node's own logs line up with your local time.",
     example: "Asia/Kolkata.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:64-70 — Docker, OVA, AMI, Helm
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:73-79,482 — Docker, OVA, AMI, Helm
   "cbsrc.nodes.deploy": {
     label: "Deployment",
     what: "How to run the node: a Docker container on any Linux VM, an OVA appliance for VMware, an AWS AMI in your VPC, or a Helm chart in your Kubernetes cluster. Docker and Helm are the proven ways; the others you build from the published template.",
     why: "It decides the install command you get.",
     example: "Docker container on an existing RHEL 9 VM.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:503-508 — ZeroShield API and your targets
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:563-568 — ZeroShield API and your targets
   "cbsrc.nodes.col.destination": {
     label: "Destination",
     what: "Where the node connects to: ZeroShield's API host, and the targets it reads.",
     why: "Firewalls must allow these connections from the node, and nothing inbound.",
     example: "api.zeroshield.ai.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:503-508 — HTTPS to ZeroShield; 22, 5986, 6443, database and TLS ports to targets
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:563-568 — HTTPS to ZeroShield; 22, 5986, 6443, database and TLS ports to targets
   "cbsrc.nodes.col.port": {
     label: "Port",
     what: "The destination port: HTTPS to ZeroShield, and 22, 5986, 6443 and your database and TLS ports to targets.",
     why: "A blocked port shows up as unreachable targets in the connection test.",
     example: "443 to api.zeroshield.ai.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:503-508 — jobs in, results out; read-only collection
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:563-568 — jobs in, results out; read-only collection
   "cbsrc.nodes.col.used_for": {
     label: "Used for",
     what: "What the connection is for: jobs in and results out (HTTPS to ZeroShield), or read-only collection from your targets.",
     why: "Lets your firewall team approve each rule for a stated purpose.",
     example: "Jobs in, results out (HTTPS).",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:512-513, frontend/components/cbom/sources/ScanNodesTab.tsx:726-727 — an http proxy URL
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:572-573, frontend/components/cbom/sources/ScanNodesTab.tsx:789-790 — an http proxy URL
   "cbsrc.nodes.proxy": {
     label: "Proxy",
     what: "Optional: the HTTP proxy the node uses to reach ZeroShield.",
     why: "Nodes in locked-down segments often reach the internet only through a proxy.",
     example: "http://proxy.bank.local:8080.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:516-525 — PEM up to 64 KB
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:576-585 — PEM up to 64 KB
   "cbsrc.nodes.proxy_ca": {
     label: "Proxy CA certificate",
     what: "Only if your proxy inspects TLS: the PEM certificate of the proxy's CA, up to 64 KB.",
@@ -4171,28 +4171,28 @@ export const INFO_TIPS = {
     why: "Limiting the extra trust to ZeroShield's hostnames keeps the node's other TLS checks strict.",
     example: "Tick for a Zscaler or Blue Coat proxy with SSL inspection on.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:572-583 — outbound only, read-only, metadata only
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:632-646 — outbound only, read-only, metadata only
   "cbsrc.nodes.does": {
     label: "What the node does, and never does",
     what: "The node opens no inbound ports, uses each credential only on its targets, reads with read-only accounts, and sends metadata only: algorithms, key sizes, versions and locations, never private keys.",
     why: "These are the guarantees your security team reviews before approving a node.",
     example: "For a private key file, only its public half and type are sent.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:702-708 — the node's own SSH key
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:765-771 — the node's own SSH key
   "cbsrc.nodes.ssh_key": {
     label: "Node SSH public key",
     what: "The public half of the SSH key this node generated. Install it for the login user on servers that use the node-generated key.",
     why: "The private key never leaves the node, so nothing secret is stored by ZeroShield.",
     example: "ssh-ed25519 AAAAC3Nza... zs-node-7.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:789-800 — require signed scan nodes
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:852-864 — require signed scan nodes
   "cbsrc.nodes.signing": {
     label: "Request signing",
     what: "Scan nodes sign every request with a key made at enrollment. A team admin can require it, so nodes that do not sign are refused.",
     why: "A copied node token alone is then not enough to act as the node.",
     example: "Turn on once every node shows Signed.",
   },
-  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:795-797 — refuse unsigned nodes
+  // src: frontend/components/cbom/sources/ScanNodesTab.tsx:859-861 — refuse unsigned nodes
   "cbsrc.nodes.require_signed": {
     label: "Require signed scan nodes",
     what: "Refuse requests from nodes that do not sign them. Legacy unsigned nodes stop working until reset and registered again.",
@@ -4200,77 +4200,77 @@ export const INFO_TIPS = {
     example: "On, after resetting the one legacy node.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: agent pools, schedules, run comparison, scan sidebar, remediation waves
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:1-2, frontend/components/cbom/sources/AgentPoolsCard.tsx:92-95 — one token for a Helm DaemonSet
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:105, frontend/components/cbom/sources/AgentPoolsCard.tsx:104-108 — one token for a Helm DaemonSet
   "cbsrc.pool.card": {
     label: "Host agents on Kubernetes",
     what: "One token for a Helm DaemonSet: every pod enrolls as its own agent-mode scan node named after its Kubernetes node, reads only that node's files through a read-only mount, and is never given a credential.",
     why: "Covers every worker node's crypto (keys, certificates, libraries) without SSH access to each one.",
     example: "A pool token for prod-cluster enrolls 24 host agents, one per worker node.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:112-113 — up to 64 characters
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:125-126 — up to 64 characters
   "cbsrc.pool.name": {
     label: "Name",
     what: "A name for the pool, up to 64 characters; its agents are named after their Kubernetes nodes.",
     why: "Identifies which cluster the agents belong to.",
     example: "prod-cluster.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:116-117 — up to 64 characters
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:129-130 — up to 64 characters
   "cbsrc.pool.segment": {
     label: "Network segment",
     what: "The network segment recorded for every agent of the pool, up to 64 characters.",
     why: "Findings from the agents are grouped by segment in run results.",
     example: "DC1-k8s.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:119-126 — enrolled nodes keep working
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:132-139 — enrolled nodes keep working
   "cbsrc.pool.expiry": {
     label: "Token expires in",
     what: "How long the pool token can enroll new agents. Agents that already enrolled keep working after it expires.",
     why: "A short expiry limits the damage if the token leaks from the Helm values.",
     example: "24 hours: long enough to roll out the DaemonSet.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:127-128 — 1 to 1,000; at least the number of Kubernetes nodes
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:140-141 — 1 to 1,000; at least the number of Kubernetes nodes
   "cbsrc.pool.max": {
     label: "Nodes that may enroll",
     what: "The most agents the token may enroll, 1 to 1,000. Set at least the number of Kubernetes nodes.",
     why: "A cap stops a leaked token from enrolling unlimited fake nodes.",
     example: "30 for a 24-node cluster that may grow.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:162 — the pool token's name
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:176 — the pool token's name
   "cbsrc.pool.col.token": {
     label: "Token",
     what: "The pool token, by name. The token value itself is shown once, when it is created.",
     why: "Revoke a token here if it may have leaked.",
     example: "prod-cluster.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:163 — active, expired or revoked
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:177 — active, expired or revoked
   "cbsrc.pool.col.status": {
     label: "Status",
     what: "Whether the token can still enroll agents: Active, All enrollments used, Expired or Revoked.",
     why: "Only active tokens accept new agents; enrolled agents keep working either way.",
     example: "Expired.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:164 — agents enrolled out of the maximum
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:178 — agents enrolled out of the maximum
   "cbsrc.pool.col.enrolled": {
     label: "Enrolled",
     what: "How many agents enrolled with this token, out of the maximum allowed.",
     why: "Fewer than your node count means some pods did not start or could not reach ZeroShield.",
     example: "22 of 30.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:165 — when the token stops enrolling
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:179 — when the token stops enrolling
   "cbsrc.pool.col.expires": {
     label: "Expires",
     what: "When the token stops enrolling new agents.",
     why: "Create a new token before scaling the cluster after this time.",
     example: "15 Nov 2026, 11:00 am IST.",
   },
-  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:166 — agent nodes of the pool
+  // src: frontend/components/cbom/sources/AgentPoolsCard.tsx:180 — agent nodes of the pool
   "cbsrc.pool.col.nodes": {
     label: "Nodes",
     what: "The agent scan nodes this token enrolled, as listed under Registered scan nodes.",
     why: "Each agent appears as its own node with its own status.",
     example: "prod-cluster-ip-10-30-1-12, prod-cluster-ip-10-30-1-13, ...",
   },
-  // src: frontend/components/cbom/sources/SchedulesCard.tsx:1-3, frontend/components/cbom/sources/SchedulesCard.tsx:166 — daily, weekly or monthly; charged like Start scan
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:166, frontend/components/cbom/sources/SchedulesCard.tsx:166 — daily, weekly or monthly; charged like Start scan
   "cbsrc.sched.card": {
     label: "Scheduled runs",
     what: "Collection runs that start on their own, daily, weekly or monthly, at a time in the team's time zone. Each run charges credits like Start a scan and is skipped, with the reason, when the team has too few.",
@@ -4326,28 +4326,28 @@ export const INFO_TIPS = {
     why: "Scan critical systems more often without paying for every source each time.",
     example: "High: a daily run of only high and critical sources.",
   },
-  // src: frontend/components/cbom/sources/SchedulesCard.tsx:1-3, frontend/components/cbom/sources/SchedulesCard.tsx:125-127 — kept with the schedule
+  // src: frontend/components/cbom/sources/SchedulesCard.tsx:125, frontend/components/cbom/sources/SchedulesCard.tsx:125-127 — kept with the schedule
   "cbsrc.sched.soc": {
     label: "SOC agreement for schedules",
     what: "Confirm that your SOC has agreed the network ranges and scan windows for every scheduled run. It is kept with the schedule.",
     why: "Unattended network scans need standing SOC approval.",
     example: "Tick after the SOC approved weekly scans of 10.20.0.0/16.",
   },
-  // src: frontend/components/cbom/sources/ChangesPanel.tsx:1-3, frontend/components/cbom/sources/ChangesPanel.tsx:228-232 — the previous complete run or a chosen one
+  // src: frontend/components/cbom/sources/ChangesPanel.tsx:242, frontend/components/cbom/sources/ChangesPanel.tsx:242-246 — the previous complete run or a chosen one
   "cbsrc.compare.with": {
     label: "Compare with",
     what: "The run to compare this one with: by default each source's previous complete collection, or a run you choose. Partial or failed jobs show as not compared, never as everything removed.",
     why: "Comparing shows exactly what changed between two points in time.",
     example: "Run #38, before the TLS hardening change.",
   },
-  // src: frontend/components/cbom/sources/SidebarSources.tsx:1-3 — off by default; adds the group's run and credits to the estimate
+  // src: frontend/components/cbom/sources/SidebarSources.tsx:44 — off by default; adds the group's run and credits to the estimate
   "cbsrc.sidebar.include": {
     label: "Include CBOM Sources",
     what: "Also run a collection of this group of CBOM Sources with this scan. Off by default; turning it on adds that group's collection run and its credits to the estimate. Sources are managed on the CBOM Sources page.",
     why: "One action then covers the code and the infrastructure that runs it.",
     example: "Include servers: 3 sources with 31 targets add 6.20 credits (0.2 per target).",
   },
-  // src: frontend/components/cbom/sources/SidebarSources.tsx:160-165 — required with network TLS
+  // src: frontend/components/cbom/sources/SidebarSources.tsx:162-170 — required with network TLS
   "cbsrc.sidebar.soc": {
     label: "SOC agreement",
     what: "Confirm that your SOC has agreed the network ranges and scan windows. Required when network TLS is included.",
@@ -4361,42 +4361,42 @@ export const INFO_TIPS = {
     why: "Waves turn a long findings list into an ordered plan with owners and dates.",
     example: "Wave 1: RSA-2048 key exchange on api.bank.in:443, owner Payments, due 31 Dec.",
   },
-  // src: frontend/components/cbom/sources/WavesControls.tsx:142-145 — hides assets without a wave
+  // src: frontend/components/cbom/sources/WavesControls.tsx:151-155 — hides assets without a wave
   "cbsrc.waves.only_planned": {
     label: "Only assets that need action",
     what: "Show only assets that have a wave, hiding those that need no action.",
     why: "Keeps the list to what someone has to fix.",
     example: "On: 1,284 assets narrow to 96.",
   },
-  // src: frontend/components/cbom/sources/WavesControls.tsx:160-164 — selection for the bulk bar
+  // src: frontend/components/cbom/sources/WavesControls.tsx:164-168 — selection for the bulk bar
   "cbsrc.waves.select": {
     label: "Select asset",
     what: "Select assets to assign together with the bar above.",
     why: "Assign a whole group to one owner and date in one step.",
     example: "Tick the 12 wave-1 certificates of api.bank.in.",
   },
-  // src: frontend/components/cbom/sources/WavesControls.tsx:93-99 — set or keep the wave
+  // src: frontend/components/cbom/sources/WavesControls.tsx:98-104 — set or keep the wave
   "cbsrc.waves.bulk_wave": {
     label: "Wave",
     what: "The wave to give the selected assets: 1 to 4, Use suggested (the wave worked out from impact and exposure), or Keep wave.",
     why: "Override the suggestion when you know better, for example a system due to be retired.",
     example: "Wave 2.",
   },
-  // src: frontend/components/cbom/sources/WavesControls.tsx:100-101 — up to 128 characters
+  // src: frontend/components/cbom/sources/WavesControls.tsx:106-107 — up to 128 characters
   "cbsrc.waves.bulk_owner": {
     label: "Owner",
     what: "Who fixes the selected assets, up to 128 characters. Blank keeps each one's owner.",
     why: "Each fix needs a named owner to happen.",
     example: "Payments platform team.",
   },
-  // src: frontend/components/cbom/sources/WavesControls.tsx:102-103 — date
+  // src: frontend/components/cbom/sources/WavesControls.tsx:109-110 — date
   "cbsrc.waves.bulk_date": {
     label: "Target date",
     what: "When the selected assets should be fixed by. Blank keeps each one's date.",
     why: "Dates let you track the plan against regulator deadlines.",
     example: "31 Mar 2027.",
   },
-  // src: frontend/components/cbom/sources/WavesControls.tsx:27, frontend/components/cbom/sources/WavesControls.tsx:105-112 — open, in progress, done, risk accepted
+  // src: frontend/components/cbom/sources/WavesControls.tsx:29, frontend/components/cbom/sources/WavesControls.tsx:113-120 — open, in progress, done, risk accepted
   "cbsrc.waves.bulk_status": {
     label: "Status",
     what: "The status to set: Open, In progress, Done or Risk accepted; or Keep status.",
@@ -4404,63 +4404,63 @@ export const INFO_TIPS = {
     example: "In progress.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: network appliances, container images, CMDB import
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:1-3, frontend/components/cbom/sources/AppliancesSection.tsx:59-61, backend/utilities/cbom_sources/kinds.py:673-674 — Cisco IOS/ASA, FortiOS over SSH; PAN-OS, F5 over API
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:1-3, frontend/components/cbom/sources/AppliancesSection.tsx:60-63, backend/utilities/cbom_sources/kinds.py:714-715 — Cisco IOS/ASA, FortiOS over SSH; PAN-OS, F5 over API
   "cbsrc.app.card": {
     label: "Network appliances",
     what: "Read-only configuration pulls from routers, firewalls and load balancers through a scan node: Cisco IOS and ASA and FortiOS over SSH show commands, PAN-OS and F5 BIG-IP over API reads. TLS, SSH and IKE/IPsec settings and key sizes are inventoried.",
     why: "VPN tunnels and load balancers carry most traffic; weak IKE groups there are harvest-now-decrypt-later targets.",
     example: "fw-dc1 (FortiGate): IKE phase 1 uses DH group 14 (2048-bit MODP), quantum-vulnerable.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:28-35 — the appliance platform
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:29-36 — the appliance platform
   "cbsrc.app.col.vendor": {
     label: "Vendor",
     what: "The appliance platform and how it is read (SSH show commands or API).",
     why: "Each platform has its own read commands and credential type.",
     example: "Cisco ASA.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:216 — devices of the source
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:218 — devices of the source
   "cbsrc.app.col.targets": {
     label: "Targets",
     what: "The devices this source reads, all with the same account.",
     why: "Group devices that share an account and platform into one source.",
     example: "3 devices.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:76-84 — last connection test
+  // src: frontend/components/cbom/sources/shared.tsx:78-88 — last connection test
   "cbsrc.col.test": {
     label: "Test",
     what: "The result of the last connection test: Not tested, Testing, Passed, Partly ready, Failed or Could not test.",
     why: "A source that has not passed a test is likely to fail its collection jobs.",
     example: "Passed.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:28-35, frontend/components/cbom/sources/AppliancesSection.tsx:199-210 — what is read on each platform
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:29-36, frontend/components/cbom/sources/AppliancesSection.tsx:201-212 — what is read on each platform
   "cbsrc.app.vendor": {
     label: "Vendor",
     what: "The platform of the devices. The hint lists exactly what is read: show commands for Cisco IOS, ASA and FortiOS; read-only API calls for PAN-OS and F5 BIG-IP.",
     why: "Only the listed reads are sent, so your change board can approve them up front.",
     example: "F5 BIG-IP: GET client-ssl profiles and key type and size only.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:213-214 — up to 64 characters
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:215-216 — up to 64 characters
   "cbsrc.app.name": {
     label: "Name",
     what: "A name for this appliance source, up to 64 characters, shown in lists, run results and reports.",
     why: "Each finding records it as its source.",
     example: "dc1-firewalls.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:216-218 — one address or host name per line
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:218-220 — one address or host name per line
   "cbsrc.app.devices": {
     label: "Devices",
     what: "The devices to read, one address or host name per line; all use the same account.",
     why: "Devices not listed keep their weak VPN settings unseen.",
     example: "10.20.0.1 and fw-dc1.bank.local.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:221-222 — default 22 for SSH, 443 for API
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:223-224 — default 22 for SSH, 443 for API
   "cbsrc.app.port": {
     label: "Port",
     what: "The management port: 22 by default for SSH platforms, 443 for API platforms.",
     why: "A management interface on a custom port fails the test until it is set here.",
     example: "8443 for a BIG-IP management port.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:225-226 — a read-only account, up to 64 characters
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:227-228 — a read-only account, up to 64 characters
   "cbsrc.app.login": {
     label: "Login",
     what: "A read-only account on the devices, up to 64 characters. On Cisco ASA it must land in privileged EXEC.",
@@ -4474,35 +4474,35 @@ export const INFO_TIPS = {
     why: "Pinning stops a spoofed device from capturing the password.",
     example: "The PAN-OS API key generated for zs-cbom.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:231-232 — the node that reaches the management interface
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:233-234 — the node that reaches the management interface
   "cbsrc.app.node": {
     label: "Scan node",
     what: "The scan node that reaches the devices' management interfaces.",
     why: "Management networks are usually isolated; the node must sit where it can reach them.",
     example: "node-mgmt in the out-of-band network.",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:235-238 — known_hosts lines, required for SSH
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:237-240 — known_hosts lines, required for SSH
   "cbsrc.app.known_hosts": {
     label: "Pinned host key",
     what: "The devices' SSH host keys in known_hosts format. Required for SSH platforms.",
     why: "A device whose key does not match is refused before the password is sent.",
     example: "fw-dc1.bank.local ssh-rsa AAAAB3Nza...",
   },
-  // src: frontend/components/cbom/sources/AppliancesSection.tsx:241-242 — PEM, for a privately issued management certificate
+  // src: frontend/components/cbom/sources/AppliancesSection.tsx:243-244 — PEM, for a privately issued management certificate
   "cbsrc.app.ca": {
     label: "CA certificate",
     what: "Optional PEM certificate of the CA that issued the management certificate of API platforms. The certificate is always verified.",
     why: "Needed when the management interface uses an internal CA.",
     example: "bank-root-ca.pem.",
   },
-  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:1-5, frontend/components/cbom/sources/ContainerImagesSection.tsx:54-56 — pulled over HTTPS, 1 credit per image per run
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:1-5, frontend/components/cbom/sources/ContainerImagesSection.tsx:55-58 — pulled over HTTPS, 1 credit per image per run
   "cbsrc.img.card": {
     label: "Container images",
     what: "The scan node pulls images from your registry over HTTPS (verified by digest, never written to disk) and lists the crypto packages inside with package URLs. 1 credit per image per run.",
     why: "Images ship their own OpenSSL and crypto libraries, often older than the host's.",
     example: "registry.bank.in/payments/api:2.4.1 contains openssl 1.1.1k.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:735, backend/utilities/cbom_sources/kinds.py:741 — up to 50 per source
+  // src: backend/utilities/cbom_sources/kinds.py:776, backend/utilities/cbom_sources/kinds.py:782 — up to 50 per source
   "cbsrc.img.col.images": {
     label: "Images",
     what: "How many images this source pulls, up to 50.",
@@ -4516,70 +4516,70 @@ export const INFO_TIPS = {
     why: "Private registries need a credential; keeping it in your vault keeps it off ZeroShield.",
     example: "Vault: secret/zs-cbom/registry.",
   },
-  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:179-180 — up to 64 characters
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:181-182 — up to 64 characters
   "cbsrc.img.name": {
     label: "Name",
     what: "A name for this image source, up to 64 characters, shown in lists, run results and reports.",
     why: "Each package found records it as its source.",
     example: "payments-images.",
   },
-  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:182-183 — an agentless node that reaches the registry
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:184-185 — an agentless node that reaches the registry
   "cbsrc.img.node": {
     label: "Scan node",
     what: "An agentless scan node that reaches the registry over HTTPS.",
     why: "Host-agent nodes never pull images.",
     example: "node-dc1.",
   },
-  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:185-187, backend/utilities/cbom_sources/kinds.py:735 — up to 50; registry/repository:tag or @sha256
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:187-189, backend/utilities/cbom_sources/kinds.py:776 — up to 50; registry/repository:tag or @sha256
   "cbsrc.img.refs": {
     label: "Images",
     what: "Up to 50 images, one per line: registry/repository:tag or @sha256:digest. Docker Hub is used when no registry is named.",
     why: "A digest pins exactly what was scanned; a tag may move.",
     example: "registry.bank.in/payments/api@sha256:4f1c...",
   },
-  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:190-200 — anonymous or from a vault (admins)
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:192-202 — anonymous or from a vault (admins)
   "cbsrc.img.cred": {
     label: "Registry credentials",
     what: "Anonymous for public pulls, or From a vault (team admins): the node reads the credential from your vault and sends it only to the registry's own host or its token service.",
     why: "The credential never passes through ZeroShield.",
     example: "From a vault for the private registry.bank.in.",
   },
-  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:213-214 — up to 512 characters; under ZS_VAULT_PATH_PREFIX on the node
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:215-216 — up to 512 characters; under ZS_VAULT_PATH_PREFIX on the node
   "cbsrc.img.vault_path": {
     label: "Secret path",
     what: "Where the registry credential lives in your vault, up to 512 characters, under the prefix the node's operator allows (ZS_VAULT_PATH_PREFIX).",
     why: "The prefix keeps a source from reading arbitrary secrets through the node.",
     example: "secret/zs-cbom/registry/bank.",
   },
-  // src: backend/utilities/cbom_sources/kinds.py:745 — 1 to 8,192 MB, default 2,048
+  // src: backend/utilities/cbom_sources/kinds.py:786 — 1 to 8,192 MB, default 2,048
   "cbsrc.img.max": {
     label: "Largest image",
     what: "The largest image to pull, compressed, 1 to 8,192 MB (default 2,048). Bigger images are reported as not read.",
     why: "Caps the node's bandwidth and time on one huge image.",
     example: "4096 for ML images with large CUDA layers.",
   },
-  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:222-223 — only for a private CA
+  // src: frontend/components/cbom/sources/ContainerImagesSection.tsx:224-225 — only for a private CA
   "cbsrc.img.ca": {
     label: "Registry CA certificate",
     what: "Optional PEM certificate of the CA that issued the registry's certificate. The registry's certificate is always verified.",
     why: "Needed for an internal registry with a private CA.",
     example: "bank-root-ca.pem.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:44-55 — existing sources keep how they connect
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4,45, frontend/components/cbom/sources/CmdbImportDialog.tsx:45-56 — existing sources keep how they connect
   "cbsrc.cmdb.updates": {
     label: "Metadata updates",
     what: "Existing sources whose owner, application, criticality, exposure, data classification or environment would change. How they connect is untouched, so running and queued jobs are kept.",
     why: "Keeps CBOM ownership in line with your CMDB without re-testing sources.",
     example: "dc-mumbai-linux: owner none → Payments platform team.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:57-68 — new Linux server sources or network ranges
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4,58, frontend/components/cbom/sources/CmdbImportDialog.tsx:58-69 — new Linux server sources or network ranges
   "cbsrc.cmdb.creates": {
     label: "New sources",
     what: "Sources the import would create, each on its scan node: new Linux hosts become Linux server sources, Windows hosts WinRM sources (login from your vault), database, cluster and HSM rows sources of those kinds; CIDRs become network ranges. Nothing past the team's source limit is created.",
     why: "New sources still need a credential and a passing test before they are collected.",
     example: "cmdb-import-1 (14 Linux hosts) · owner: Cards ops.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:70-80 — left unchanged
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:71-81 — left unchanged
   "cbsrc.cmdb.conflicts": {
     label: "Conflicts",
     what: "Rows that disagree with what is already set, for example a host in two sources with different owners. They are left unchanged.",
@@ -4600,28 +4600,28 @@ export const INFO_TIPS = {
     why: "Fix them at the source so the next import covers them.",
     example: "Row 37: criticality \"P1\" is not low, medium, high or critical.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:142-151 — CSV or ServiceNow CMDB
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:143-153 — CSV or ServiceNow CMDB
   "cbsrc.cmdb.source": {
     label: "Import from",
     what: "CSV file: host / fqdn / ip / cidr, owner, application, criticality, exposure, data_classification, environment, os, segment or scan_node; for databases, clusters and HSMs also kind, engine, port, login, api_url, module, vault_path. ServiceNow CMDB: the table set in Settings > Integrations.",
     why: "Importing keeps owners and criticality in one place instead of typing them per source.",
     example: "ServiceNow CMDB, table cmdb_ci_server.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:153-168 — up to 5,000 rows and 2 MB, header row required
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:155-171 — up to 5,000 rows and 2 MB, header row required
   "cbsrc.cmdb.csv": {
     label: "CSV",
     what: "The CSV to import, pasted or uploaded: up to 5,000 rows and 2 MB, with a header row.",
     why: "The header names the columns, so their order does not matter.",
     example: "host,owner,criticality\\napp-01.bank.local,Payments,high.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4, frontend/components/cbom/sources/CmdbImportDialog.tsx:171-173 — new hosts become Linux server sources
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:1-4,174, frontend/components/cbom/sources/CmdbImportDialog.tsx:171-173 — new hosts become Linux server sources
   "cbsrc.cmdb.create": {
     label: "Create sources for new hosts",
     what: "Also create sources for hosts and CIDRs that are not in any source yet. Off: only existing sources are updated.",
     why: "Bringing every CMDB host into scope closes blind spots.",
     example: "On: 14 new hosts become a Linux server source on node-dc1.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:175-176 — the node that can reach the new hosts
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:178-179 — the node that can reach the new hosts
   "cbsrc.cmdb.node": {
     label: "Scan node for new sources",
     what: "The scan node for rows with no segment or scan_node column. A row's segment picks the scan node of that segment instead.",
@@ -4657,140 +4657,140 @@ export const INFO_TIPS = {
     example: "Preview: 12 metadata updates, 1 new source, 2 conflicts.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Fleet > SSH CA (components/cbom/sources/fleet/SshCaSection.tsx)
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:1-5, frontend/components/cbom/sources/fleet/SshCaSection.tsx:178-181 — short-lived per-job certificates for the node's own key
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:1-5, frontend/components/cbom/sources/fleet/SshCaSection.tsx:179-183 — short-lived per-job certificates for the node's own key
   "cbsrc.sshca.card": {
     label: "SSH certificate authority",
     what: "ZeroShield signs each scan node's own key into a short-lived certificate for every job (5 minutes by default), with principals zs-<team>-<group>, bound to the node's address and with no forwarding or terminal. Servers trust this CA for the zs-cbom login only; every certificate issued is listed below.",
     why: "Servers trust one CA instead of every node key, and a stolen certificate is useless within minutes.",
     example: "prod-servers-ca, Ed25519, 300-second certificates.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:191-192 — up to 64 characters
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:193-194 — up to 64 characters
   "cbsrc.sshca.name": {
     label: "Name",
     what: "A name for the CA, up to 64 characters.",
     why: "Linux sources pick their SSH CA by this name.",
     example: "prod-servers-ca.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:194-201 — built in or HashiCorp Vault SSH engine
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:196-203 — built in or HashiCorp Vault SSH engine
   "cbsrc.sshca.provider": {
     label: "Where the CA key lives",
     what: "Built in: ZeroShield holds the CA key, encrypted (with AWS KMS when this deployment has a key). Vault: your HashiCorp Vault SSH secrets engine signs and the key never leaves Vault.",
     why: "With Vault, the signing key stays under your own controls and audit.",
     example: "Vault, using the ssh-client-signer mount.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:203-205 — 60 to 3,600 seconds; renewed during a job
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:205-207 — 60 to 3,600 seconds; renewed during a job
   "cbsrc.sshca.ttl": {
     label: "Certificate lifetime",
     what: "How long each job certificate is valid, 60 to 3,600 seconds. A job renews its certificate before it runs out.",
     why: "Shorter lifetimes shrink the window in which a copied certificate works.",
     example: "300 seconds.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:208-214 — Ed25519 or ECDSA P-256
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:210-216 — Ed25519 or ECDSA P-256
   "cbsrc.sshca.alg": {
     label: "Key type",
     what: "The CA key's algorithm: Ed25519 (recommended) or ECDSA P-256.",
     why: "Both are widely supported by OpenSSH; neither is quantum-safe, so plan a rotation when post-quantum SSH keys are supported.",
     example: "Ed25519.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:217-225 — AWS KMS or the deployment key
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:219-227 — AWS KMS or the deployment key
   "cbsrc.sshca.wrap": {
     label: "Key encryption",
     what: "How the built-in CA key is encrypted at rest: with AWS KMS when this deployment has a KMS key, otherwise with the deployment key (ENCRYPTION_KEY).",
     why: "KMS keeps the CA key unusable without access to your KMS key.",
     example: "AWS KMS.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:228-233 — labels of the allowed KMS keys
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:230-235 — labels of the allowed KMS keys
   "cbsrc.sshca.kms": {
     label: "KMS key",
     what: "Which of this deployment's allowed AWS KMS keys wraps the CA key.",
     why: "Separate keys per environment limit the reach of one KMS policy.",
     example: "cbom-sshca-prod (default).",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:238-239 — https, the active node
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:240-241 — https, the active node
   "cbsrc.sshca.vault_addr": {
     label: "Vault address",
     what: "The HTTPS address of your Vault's active node.",
     why: "Signing requests go only to this address.",
     example: "https://vault.bank.in:8200.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:241-242 — the SSH secrets engine path
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:243-244 — the SSH secrets engine path
   "cbsrc.sshca.vault_mount": {
     label: "SSH engine mount",
     what: "The path where the SSH secrets engine is mounted in Vault.",
     why: "The token below is limited to signing under this mount.",
     example: "ssh-client-signer.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:244-245 — allowed_critical_options must include source-address
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:246-247 — allowed_critical_options must include source-address
   "cbsrc.sshca.vault_role": {
     label: "Signing role",
     what: "The Vault SSH role that signs. Its allowed_critical_options must include source-address and its default_extensions must be empty.",
     why: "Without source-address the certificates would work from any machine.",
     example: "zs-cbom-signer.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:247-248 — write-only; may only call <mount>/sign/<role>
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:249-250 — write-only; may only call <mount>/sign/<role>
   "cbsrc.sshca.vault_token": {
     label: "Vault token",
     what: "A Vault token that may only call <mount>/sign/<role>. Write-only: it is never shown again.",
     why: "A token limited to signing cannot read secrets or change the CA.",
     example: "A periodic token with a policy allowing update on ssh-client-signer/sign/zs-cbom-signer.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:47-52 — active, rotation, retired, revoked
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:48-53 — active, rotation, retired, revoked
   "cbsrc.sshca.col.state": {
     label: "State",
     what: "Active (signs), Rotation (trusted, not signing yet), Retired (still trusted during the overlap) or Revoked.",
     why: "Promote a rotation only once every server trusts the new key, or scan logins fail.",
     example: "Rotation: trusted, not signing yet.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:285 — algorithm and fingerprint
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:287 — algorithm and fingerprint
   "cbsrc.sshca.col.key": {
     label: "Key",
     what: "The CA key's algorithm and SHA-256 fingerprint.",
     why: "Compare the fingerprint with TrustedUserCAKeys on a server to confirm it trusts this CA.",
     example: "ssh-ed25519 SHA256:3f9c...",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:286 — default certificate lifetime in seconds
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:280 — default certificate lifetime in seconds
   "cbsrc.sshca.col.lifetime": {
     label: "Lifetime",
     what: "The default lifetime of the certificates this CA issues, in seconds.",
     why: "Shorter is safer; jobs renew as needed.",
     example: "300 s.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:287-290 — certificates issued by this CA
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:289-292,280 — certificates issued by this CA
   "cbsrc.sshca.col.certs": {
     label: "Certificates",
     what: "How many certificates this CA has issued.",
     why: "Each one is listed in the certificate audit below.",
     example: "1,284.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:326-327 — lowercase letters, digits, . _ -
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:328-329 — lowercase letters, digits, . _ -
   "cbsrc.sshca.group": {
     label: "Server group",
     what: "The server group for the principals file: certificates carry zs-<team>-<group>, and a server accepts only the groups in its file. Lowercase letters, digits, dots, underscores and dashes.",
     why: "Groups let production servers refuse certificates meant for test servers.",
     example: "prod.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:340-345 — read trusted keys, KRL and principals only
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:342-347 — read trusted keys, KRL and principals only
   "cbsrc.sshca.trust_tokens": {
     label: "Trust tokens",
     what: "A trust token lets your servers or configuration management fetch this team's trusted keys, revocation list and principals, and nothing else. It is shown once.",
     why: "Servers keep their trust files current on their own, so rotations need no manual roll-out.",
     example: "prod-servers, used by 212 servers in the last 24 hours.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:351-352 — up to 64 characters
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:353-354 — up to 64 characters
   "cbsrc.sshca.token_name": {
     label: "Token name",
     what: "A name for the trust token, up to 64 characters.",
     why: "Name it after the servers that will use it, so you know what breaks if it is revoked.",
     example: "prod-servers.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:361-364 — shown once; keep it root-only
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:363-366 — shown once; keep it root-only
   "cbsrc.sshca.new_token": {
     label: "Copy it now",
     what: "The new trust token is shown only once. Store it in a file only root can read and point ZS_TRUST_TOKEN at it.",
     why: "Anyone with the token can read your trusted keys and revocation list.",
     example: "/etc/zs-cbom/trust-token, mode 0600.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:375 — the token's prefix
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:377 — the token's prefix
   "cbsrc.sshca.col.token": {
     label: "Token",
     what: "The first characters of the token, to match it with the file on your servers.",
@@ -4804,21 +4804,21 @@ export const INFO_TIPS = {
     why: "During a rotation it shows how many servers already have the new key.",
     example: "212 of your 230 production servers.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:377 — last fetch
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:373 — last fetch
   "cbsrc.sshca.col.last_used": {
     label: "Last used",
     what: "When a server last fetched with this token.",
     why: "A token unused for weeks may belong to retired servers; revoke it.",
     example: "14 Nov 2026, 02:05 am IST.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:378 — active or revoked
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:380 — active or revoked
   "cbsrc.sshca.col.token_status": {
     label: "Status",
     what: "Whether the token still works: active, or revoked (servers using it get 401 and keep their current files).",
     why: "Revoke a token as soon as it may have leaked.",
     example: "Active.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:409 — when the certificate was issued
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:411 — when the certificate was issued
   "cbsrc.sshca.col.issued": {
     label: "Issued",
     what: "When the certificate was issued.",
@@ -4846,35 +4846,35 @@ export const INFO_TIPS = {
     why: "A certificate copied elsewhere is refused.",
     example: "10.20.1.15/32.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:413 — node, job, at claim or renewal
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:409 — node, job, at claim or renewal
   "cbsrc.sshca.col.node_job": {
     label: "Node / job",
     what: "The scan node and job the certificate was issued for, and whether at the job's claim or as a renewal.",
     why: "Lets you trace every login back to a specific collection job.",
     example: "node #7 · job #4410 · at claim.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:414 — valid_before
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:409 — valid_before
   "cbsrc.sshca.col.valid_until": {
     label: "Valid until",
     what: "When the certificate stops working.",
     why: "After this time it cannot be used even if copied.",
     example: "14 Nov 2026, 02:05:07 am IST.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:53, frontend/components/cbom/sources/fleet/SshCaSection.tsx:415 — valid, expired, revoked
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:54, frontend/components/cbom/sources/fleet/SshCaSection.tsx:409 — valid, expired, revoked
   "cbsrc.sshca.col.cert_status": {
     label: "Status",
     what: "valid, expired or revoked (in the revocation list; servers refuse it once they have the new list).",
     why: "Revoke a certificate if its node may be compromised before it expires.",
     example: "expired.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:444-449 — promote before the readiness check passes
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:446-451 — promote before the readiness check passes
   "cbsrc.sshca.promote_now": {
     label: "Promote now",
     what: "Promote the new key now, before the readiness check shows every server has it. Servers that do not trust it yet refuse every scan login.",
     why: "Use only when you know every server already has the new trusted keys.",
     example: "Tick after your Ansible run pushed the new trusted keys everywhere.",
   },
-  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:456-458 — recorded in the audit, up to 512 characters
+  // src: frontend/components/cbom/sources/fleet/SshCaSection.tsx:461-466 — recorded in the audit, up to 512 characters
   "cbsrc.sshca.reason": {
     label: "Reason",
     what: "Why you are revoking, up to 512 characters. It is recorded in the audit.",
@@ -4882,7 +4882,7 @@ export const INFO_TIPS = {
     example: "Node VM snapshot copied to an untrusted host.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Review & Run, business criticality
-  // src: backend/utilities/cbom_sources/posture.py:12-14, backend/utilities/cbom_sources/posture.py:35-39 — impact weight x criticality x exposure
+  // src: backend/utilities/cbom_sources/posture.py:12-14, backend/utilities/cbom_sources/posture.py:43-47 — impact weight x criticality x exposure
   "cbsrc.rr.criticality": {
     label: "Business criticality and exposure",
     what: "Per source: business criticality (Low x0.5, Medium x1 by default, High x1.5, Critical x2) and internet exposure (from the collected facts, or set; internet-facing x1.5). A finding's risk score is its impact weight times both. Runs snapshot them when they start.",
@@ -4890,259 +4890,350 @@ export const INFO_TIPS = {
     example: "High finding (7) on a Critical, internet-facing source: 7 x 2 x 1.5 = 21.",
   },
   // ────────────────────────────────────────────────────────────── Settings > Integrations (components/integrations/IntegrationsPage.tsx)
-  // src: frontend/components/integrations/IntegrationsPage.tsx:126-127 — one record per finding; resolved when a later complete run no longer finds it
+  // src: frontend/components/integrations/IntegrationsPage.tsx:139-140 — one record per finding; resolved when a later complete run no longer finds it
   "int.card.servicenow": {
     label: "ServiceNow",
     what: "Opens one ServiceNow record per new finding (de-duplicated by a correlation id) and resolves it when a later complete run no longer finds it. Also the source for the CMDB import on CBOM Sources.",
     why: "Findings land in the queue your teams already work from, and close themselves when fixed.",
     example: "INC0012345: RSA-1024 certificate on api.bank.in:443, assigned to Payments.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:128 — RFC 5424 with CEF or JSON
+  // src: frontend/components/integrations/IntegrationsPage.tsx:133 — RFC 5424 with CEF or JSON
   "int.card.syslog": {
     label: "Syslog (SIEM)",
     what: "Sends every event as an RFC 5424 syslog message with a CEF or JSON payload to your SIEM or SOAR.",
     why: "Your SOC sees crypto findings next to other security alerts.",
     example: "A CEF event Finding opened, severity High, to ArcSight on 6514.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:129 — batched JSON events
+  // src: frontend/components/integrations/IntegrationsPage.tsx:134 — batched JSON events
   "int.card.splunk_hec": {
     label: "Splunk HEC",
     what: "Sends every event to a Splunk HTTP Event Collector, batched as JSON events.",
     why: "Lets you build Splunk dashboards and alerts on crypto findings.",
     example: "sourcetype zeroshield:cbom in index security.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:130 — HMAC-SHA256 over timestamp and body
+  // src: frontend/components/integrations/IntegrationsPage.tsx:135 — HMAC-SHA256 over timestamp and body
   "int.card.webhook": {
     label: "Signed webhook",
     what: "POSTs every event as JSON to your receiver, signed with HMAC-SHA256 over the timestamp and the body.",
     why: "Any SOAR or in-house tool can act on events and prove they came from ZeroShield.",
     example: "A Certificate expiring event POSTed to https://soar.bank.in/hooks/zeroshield.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:131 — OSCAL 1.2.3 assessment results, schema-validated, signed
+  // src: frontend/components/integrations/IntegrationsPage.tsx:136 — OSCAL 1.2.3 assessment results, schema-validated, signed
   "int.card.oscal": {
     label: "OSCAL push",
     what: "When a Sources run or a CBOM code scan finishes, pushes its OSCAL 1.2.3 assessment results (schema-validated) to your GRC tool, signed like the webhook.",
     why: "Auditors get machine-readable evidence without exports by hand.",
     example: "Run #42's assessment results pushed to https://grc.bank.in/api/oscal.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:271-273 — on or off per integration
+  // src: frontend/components/integrations/IntegrationsPage.tsx:289-291 — on or off per integration
   "int.enabled": {
     label: "Forward events",
     what: "On: events are queued and delivered to this destination. Off: nothing is sent; the settings are kept.",
     why: "Turn it off during a destination's maintenance instead of deleting the integration.",
     example: "Off while the SIEM is being migrated.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:51-54 — PEM; certificates are always verified
+  // src: frontend/components/integrations/IntegrationsPage.tsx:55-58,73 — PEM; certificates are always verified
   "int.common.ca_pem": {
     label: "CA certificate",
     what: "Optional PEM certificate of the CA that signed the destination's certificate, when it is not publicly trusted. The destination's certificate is always verified.",
     why: "Without it, a destination with an internal CA fails every delivery on the TLS check.",
     example: "bank-root-ca.pem for siem.bank.local.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:57 — https://<instance>.service-now.com
+  // src: frontend/components/integrations/IntegrationsPage.tsx:79 — https://<instance>.service-now.com
   "int.sn.instance_url": {
     label: "Instance URL",
     what: "Your ServiceNow instance's address.",
     why: "Records are created only on this instance.",
     example: "https://bank.service-now.com.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:58 — incident or sn_vul_vulnerable_item
+  // src: frontend/components/integrations/IntegrationsPage.tsx:80 — incident or sn_vul_vulnerable_item
   "int.sn.table": {
     label: "Table",
     what: "The table records are created in: incident, or sn_vul_vulnerable_item with Vulnerability Response.",
     why: "Use the table your remediation teams work from.",
     example: "sn_vul_vulnerable_item.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:59 — user and password or OAuth client credentials
+  // src: frontend/components/integrations/IntegrationsPage.tsx:81 — user and password or OAuth client credentials
   "int.sn.auth": {
     label: "Authentication",
     what: "How ZeroShield signs in to ServiceNow: a user and password, or OAuth client credentials.",
     why: "OAuth credentials can be scoped and rotated without a user account.",
     example: "OAuth client credentials for the zeroshield-integration app.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:60 — basic authentication user
+  // src: frontend/components/integrations/IntegrationsPage.tsx:82 — basic authentication user
   "int.sn.username": {
     label: "User",
     what: "The ServiceNow user for basic authentication, with rights to create and update records in the table.",
     why: "A dedicated integration user makes the records' origin clear in audit history.",
     example: "svc_zeroshield.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:61 — OAuth client credentials
+  // src: frontend/components/integrations/IntegrationsPage.tsx:83 — OAuth client credentials
   "int.sn.client_id": {
     label: "OAuth client ID",
     what: "The client ID of the OAuth application registered in ServiceNow.",
     why: "Pairs with the client secret below.",
     example: "3f9c1e2a7b...",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:62 — optional
+  // src: frontend/components/integrations/IntegrationsPage.tsx:84 — optional
   "int.sn.assignment_group": {
     label: "Assignment group",
     what: "Optional: the group new records are assigned to.",
     why: "Records without a group may sit unassigned.",
     example: "PKI Operations.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:63 — optional
+  // src: frontend/components/integrations/IntegrationsPage.tsx:85 — optional
   "int.sn.category": {
     label: "Category",
     what: "Optional: the category set on new records.",
     why: "Lets you filter and report crypto findings in ServiceNow.",
     example: "Security.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:64 — incident: 6 (Resolved)
+  // src: frontend/components/integrations/IntegrationsPage.tsx:86 — incident: 6 (Resolved)
   "int.sn.resolve_state": {
     label: "Resolved state value",
     what: "The state value set when a finding is no longer found by a later complete run.",
     why: "A wrong value leaves fixed findings open in ServiceNow.",
     example: "6 (Resolved) for incident.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:65 — close code on resolve
+  // src: frontend/components/integrations/IntegrationsPage.tsx:87 — close code on resolve
   "int.sn.close_code": {
     label: "Resolution code",
     what: "The resolution (close) code set when a record is resolved.",
     why: "Some instances refuse to resolve a record without a close code.",
     example: "Solution provided.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:66-68 — resolving always goes through
+  // src: frontend/components/integrations/IntegrationsPage.tsx:88 — resolving always goes through
   "int.sn.min_severity": {
     label: "Open records from severity",
     what: "The lowest severity that opens a new record. Resolving a record always goes through.",
     why: "Keeps low findings out of the ticket queue while still closing records that exist.",
     example: "High and above.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:69-70 — one record per finding
+  // src: frontend/components/integrations/IntegrationsPage.tsx:91 — one record per finding
   "int.sn.correlation_field": {
     label: "Correlation field",
     what: "The field that stores ZeroShield's finding id. Before creating a record, ZeroShield looks it up by this field, so each finding has one record.",
     why: "Prevents duplicates when a finding is seen in every run.",
     example: "correlation_id.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:71 — the table the CMDB import reads
+  // src: frontend/components/integrations/IntegrationsPage.tsx:93 — the table the CMDB import reads
   "int.sn.cmdb_table": {
     label: "CMDB table",
     what: "The CMDB table the CMDB import on CBOM Sources reads.",
     why: "Point it at the class that holds your servers.",
     example: "cmdb_ci_server.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:72 — encoded query, optional
+  // src: frontend/components/integrations/IntegrationsPage.tsx:94 — encoded query, optional
   "int.sn.cmdb_query": {
     label: "CMDB filter",
     what: "Optional: a ServiceNow encoded query that limits which CMDB records are imported.",
     why: "Leaves decommissioned or non-production CIs out.",
     example: "operational_status=1.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:73 — fields tried in order
+  // src: frontend/components/integrations/IntegrationsPage.tsx:95 — fields tried in order
   "int.sn.cmdb_host": {
     label: "CMDB host fields",
     what: "The CMDB fields that hold the host, tried in order.",
     why: "The first non-empty field becomes the target the import matches or adds.",
     example: "fqdn, ip_address, host_name, name.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:74 — maps to the source owner
+  // src: frontend/components/integrations/IntegrationsPage.tsx:96 — maps to the source owner
   "int.sn.cmdb_owner": {
     label: "CMDB owner field",
     what: "The CMDB field mapped to the source owner.",
     why: "Owners from the CMDB become the remediation owners.",
     example: "owned_by.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:75 — maps to the source application
+  // src: frontend/components/integrations/IntegrationsPage.tsx:97 — maps to the source application
   "int.sn.cmdb_application": {
     label: "CMDB application field",
     what: "The CMDB field mapped to the source application.",
     why: "Groups findings by the application they affect.",
     example: "u_application.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:76 — maps to the source environment
+  // src: frontend/components/integrations/IntegrationsPage.tsx:98 — maps to the source environment
   "int.sn.cmdb_environment": {
     label: "CMDB environment field",
     what: "The CMDB field mapped to the source environment.",
     why: "Separates production from test in plans and reports.",
     example: "used_for.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:77 — optional; maps to business criticality
+  // src: frontend/components/integrations/IntegrationsPage.tsx:99 — optional; maps to business criticality
   "int.sn.cmdb_criticality": {
     label: "CMDB criticality field",
     what: "Optional: the CMDB field mapped to business criticality (low, medium, high or critical).",
     why: "Criticality scales the risk score of every finding of the source.",
     example: "busines_criticality.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:78 — optional; maps to internet exposure
+  // src: frontend/components/integrations/IntegrationsPage.tsx:100 — optional; maps to internet exposure
   "int.sn.cmdb_exposure": {
     label: "CMDB exposure field",
     what: "Optional: the CMDB field mapped to internet exposure.",
     why: "Internet-facing multiplies the risk score by 1.5.",
     example: "u_internet_facing.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:79 — optional
+  // src: frontend/components/integrations/IntegrationsPage.tsx:101 — optional
   "int.sn.cmdb_classification": {
     label: "CMDB data classification field",
     what: "Optional: the CMDB field mapped to the data classification (public, internal, confidential, restricted).",
     why: "Sensitive data under weak crypto is migrated first.",
     example: "u_data_classification.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:83 — syslog collector
+  // src: frontend/components/integrations/IntegrationsPage.tsx:104, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_segment": {
+    label: "CMDB segment field",
+    what: "The CMDB field holding each CI's network segment or site. A row goes to the scan node whose segment matches (or the one chosen for it in the import).",
+    why: "Hosts in two data centres each reach the scan node that can see them.",
+    example: "location.name for dc-mumbai and dc-chennai.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:105, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_scan_node": {
+    label: "CMDB scan node field",
+    what: "The CMDB field naming the scan node (by its name in ZeroShield) that reaches the CI. It wins over the segment.",
+    why: "Pins CIs that only one node can reach.",
+    example: "u_scan_node = mum-01.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:106, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_kind": {
+    label: "CMDB source kind field",
+    what: "The CMDB field saying what a CI is for the import: linux, windows, database (or an engine name), kubernetes, hsm or kmip. Without it the CI class decides (cmdb_ci_db_*, *kubernetes*, Windows or Linux).",
+    why: "A CI read as the wrong kind is imported as the wrong source, or skipped.",
+    example: "u_cbom_kind = hsm.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:107, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_engine": {
+    label: "CMDB database engine field",
+    what: "The CMDB field with a database CI's engine: postgres, mysql, mssql, oracle, mongodb or redis (PostgreSQL and SQL Server spellings are understood).",
+    why: "A database row without its engine is skipped with the reason.",
+    example: "u_db_engine = PostgreSQL.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:108, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_port": {
+    label: "CMDB port field",
+    what: "The CMDB field with a database CI's port. Blank: the engine's default port.",
+    why: "A wrong port makes the source fail its connection test.",
+    example: "tcp_port = 5433.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:109, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_login": {
+    label: "CMDB login field",
+    what: "The CMDB field with the read-only login of a database, or the WinRM login of a Windows server. The password is read from the vault, never from ServiceNow.",
+    why: "Database rows with a login need it to collect.",
+    example: "u_db_login = cbom_ro.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:110, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_database_name": {
+    label: "CMDB database name field",
+    what: "The CMDB field with a database name; required for Oracle (the service name).",
+    why: "An Oracle row without its service name is skipped.",
+    example: "u_db_name = ORCLPDB1.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:111, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_vault_path": {
+    label: "CMDB vault path field",
+    what: "The CMDB field with the vault secret path of the CI's login: a database password, a cluster kubeconfig, an HSM PIN or a Windows login. Read from the vault chosen in the import.",
+    why: "Credentials stay in your vault; rows that need one and have none are skipped.",
+    example: "u_vault_path = secret/data/db/pg1.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:112, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_vault_provider": {
+    label: "CMDB vault provider field",
+    what: "The CMDB field naming the vault of a CI's vault path when it is not the one chosen in the import: hashicorp, cyberark, aws_secrets_manager or azure_key_vault.",
+    why: "Lets one import read logins from more than one vault.",
+    example: "u_vault_provider = cyberark.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:113, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_api_url": {
+    label: "CMDB API URL field",
+    what: "The CMDB field with a Kubernetes cluster's API server URL (https://...).",
+    why: "A cluster row without its API URL is skipped with the reason.",
+    example: "u_api_url = https://k8s-prod.bank.local:6443.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:114, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_context": {
+    label: "CMDB kube context field",
+    what: "The CMDB field with the kubeconfig context to use for a cluster. Blank: the kubeconfig's current context.",
+    why: "The wrong context reads the wrong cluster.",
+    example: "u_kube_context = prod.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:115, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_module": {
+    label: "CMDB PKCS#11 module field",
+    what: "The CMDB field with an HSM's PKCS#11 module name, as the scan node lists it in ZS_PKCS11_MODULES.",
+    why: "An HSM row without its module is skipped.",
+    example: "u_pkcs11_module = luna.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:116, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_token_label": {
+    label: "CMDB token label field",
+    what: "The CMDB field with the HSM token (slot) label to read. Blank: the module's first token.",
+    why: "Each token is its own source.",
+    example: "u_token_label = payments-01.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:120 — syslog collector
   "int.sys.host": {
     label: "Collector host",
     what: "The hostname or address of your syslog collector.",
     why: "Every event is sent here.",
     example: "siem.bank.local.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:84-85 — TLS, TCP, UDP
+  // src: frontend/components/integrations/IntegrationsPage.tsx:106 — TLS, TCP, UDP
   "int.sys.transport": {
     label: "Transport",
     what: "TLS (RFC 5425, port 6514), TCP with octet counting, or UDP (RFC 5426, no delivery confirmation).",
     why: "Only TLS protects the events in transit; UDP may lose them silently.",
     example: "TLS to siem.bank.local on 6514.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:86 — default 6514 for TLS, 514 for TCP and UDP
+  // src: frontend/components/integrations/IntegrationsPage.tsx:91 — default 6514 for TLS, 514 for TCP and UDP
   "int.sys.port": {
     label: "Port",
     what: "Optional: the collector's port. Default 6514 for TLS, 514 for TCP and UDP.",
     why: "A wrong port fails the test event.",
     example: "6514.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:87 — CEF or JSON
+  // src: frontend/components/integrations/IntegrationsPage.tsx:109 — CEF or JSON
   "int.sys.format": {
     label: "Message format",
     what: "The payload format: CEF (ArcSight) or JSON.",
     why: "Pick the one your SIEM parses without a custom parser.",
     example: "CEF for ArcSight; JSON for Elastic.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:88 — syslog facility number
+  // src: frontend/components/integrations/IntegrationsPage.tsx:110 — syslog facility number
   "int.sys.facility": {
     label: "Facility",
     what: "The syslog facility number set on each message; 16 is local0.",
     why: "Lets the collector route ZeroShield events to their own file or index.",
     example: "16 (local0).",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:89 — the HOSTNAME field
+  // src: frontend/components/integrations/IntegrationsPage.tsx:111 — the HOSTNAME field
   "int.sys.sender": {
     label: "Sender name",
     what: "The name put in the HOSTNAME field of each message.",
     why: "Identifies the events as ZeroShield's in the SIEM.",
     example: "zeroshield.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:93 — https
+  // src: frontend/components/integrations/IntegrationsPage.tsx:115 — https
   "int.hec.url": {
     label: "HEC URL",
     what: "The address of your Splunk HTTP Event Collector.",
     why: "Events are posted only here.",
     example: "https://splunk.bank.local:8088.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:94 — optional
+  // src: frontend/components/integrations/IntegrationsPage.tsx:116 — optional
   "int.hec.index": {
     label: "Index",
     what: "Optional: the Splunk index to write to. Blank uses the token's default index.",
     why: "Keeps crypto events in the index your SOC searches.",
     example: "security.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:95 — sourcetype of each event
+  // src: frontend/components/integrations/IntegrationsPage.tsx:117 — sourcetype of each event
   "int.hec.sourcetype": {
     label: "Sourcetype",
     what: "The sourcetype set on each event.",
     why: "Splunk searches and field extraction key off the sourcetype.",
     example: "zeroshield:cbom.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:96 — source of each event
+  // src: frontend/components/integrations/IntegrationsPage.tsx:118 — source of each event
   "int.hec.source": {
     label: "Source",
     what: "The source set on each event.",
@@ -5163,42 +5254,42 @@ export const INFO_TIPS = {
     why: "Events are posted only here.",
     example: "https://soar.bank.local/hooks/zeroshield.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:121 — https
+  // src: frontend/components/integrations/IntegrationsPage.tsx:126 — https
   "int.oscal.url": {
     label: "GRC endpoint URL",
     what: "The HTTPS address of your GRC tool's OSCAL endpoint.",
     why: "Assessment results are pushed only here.",
     example: "https://grc.bank.local/api/oscal.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:135, frontend/components/integrations/IntegrationsPage.tsx:307-310 — write-only
+  // src: frontend/components/integrations/IntegrationsPage.tsx:148, frontend/components/integrations/IntegrationsPage.tsx:325-328 — write-only
   "int.secret.password": {
     label: "Password",
     what: "The ServiceNow user's password. Encrypted at rest and never shown again; changing the URL or user clears it unless you enter it again.",
     why: "Clearing it on change keeps it from going to a host it was not meant for.",
     example: "The svc_zeroshield password.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:135, frontend/components/integrations/IntegrationsPage.tsx:307-310 — write-only
+  // src: frontend/components/integrations/IntegrationsPage.tsx:148, frontend/components/integrations/IntegrationsPage.tsx:325-328,150 — write-only
   "int.secret.client_secret": {
     label: "OAuth client secret",
     what: "The OAuth application's client secret. Encrypted at rest and never shown again.",
     why: "With the client ID it obtains tokens to create records.",
     example: "The secret shown when the OAuth app was created.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:136, frontend/components/integrations/IntegrationsPage.tsx:307-310 — write-only
+  // src: frontend/components/integrations/IntegrationsPage.tsx:153, frontend/components/integrations/IntegrationsPage.tsx:325-328,153 — write-only
   "int.secret.hec_token": {
     label: "HEC token",
     what: "The Splunk HEC token. Encrypted at rest and never shown again.",
     why: "Anyone with it can write events to your Splunk; scope it to one index.",
     example: "A token created under Data inputs > HTTP Event Collector.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:137, frontend/components/integrations/IntegrationsPage.tsx:307-310 — 16 or more characters; write-only
+  // src: frontend/components/integrations/IntegrationsPage.tsx:154, frontend/components/integrations/IntegrationsPage.tsx:325-328,154 — 16 or more characters; write-only
   "int.secret.signing": {
     label: "Signing secret",
     what: "The shared secret, 16 characters or more, used to sign each request (HMAC-SHA256). Generate creates one; copy it to your receiver before saving, as it is never shown again.",
     why: "Your receiver uses it to reject requests not sent by ZeroShield.",
     example: "A 43-character random value from Generate.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:31-40, frontend/components/integrations/IntegrationsPage.tsx:333-343 — which events are sent
+  // src: frontend/components/integrations/IntegrationsPage.tsx:31-40,354, frontend/components/integrations/IntegrationsPage.tsx:351-364 — which events are sent
   "int.events": {
     label: "Events",
     what: "Which events this destination receives: finding opened or resolved, asset added or removed, certificate renewed or expiring in 30 days, scheduled run skipped, run or code scan finished.",
@@ -5212,56 +5303,56 @@ export const INFO_TIPS = {
     why: "Shows whether your SIEM or ServiceNow actually received each event.",
     example: "Dead-lettered: HTTP 400 from ServiceNow, field u_category not found.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:410-416 — one integration or all
+  // src: frontend/components/integrations/IntegrationsPage.tsx:432-439 — one integration or all
   "int.log.filter_kind": {
     label: "Integration filter",
     what: "Show deliveries of one integration, or of all.",
     why: "Retry all needs one integration chosen.",
     example: "ServiceNow.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:417-423 — pending, delivered, dead-lettered
+  // src: frontend/components/integrations/IntegrationsPage.tsx:440-446 — pending, delivered, dead-lettered
   "int.log.filter_status": {
     label: "Status filter",
     what: "Show deliveries by status: pending, delivered or dead-lettered.",
     why: "Dead-lettered events were not received and may need a retry.",
     example: "Dead-lettered.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:440 — when the event was queued
+  // src: frontend/components/integrations/IntegrationsPage.tsx:464 — when the event was queued
   "int.log.col.queued": {
     label: "Queued",
     what: "When the event was queued for this destination.",
     why: "Events are delivered oldest first.",
     example: "14 Nov 2026, 02:31 am IST.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:441 — destination
+  // src: frontend/components/integrations/IntegrationsPage.tsx:465 — destination
   "int.log.col.integration": {
     label: "Integration",
     what: "The destination the event is for.",
     why: "Each destination has its own queue.",
     example: "Splunk HEC.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:31-40, frontend/components/integrations/IntegrationsPage.tsx:442 — event type
+  // src: frontend/components/integrations/IntegrationsPage.tsx:31-40, frontend/components/integrations/IntegrationsPage.tsx:466 — event type
   "int.log.col.event": {
     label: "Event",
     what: "What happened: finding opened or resolved, asset added or removed, certificate renewed or expiring, scheduled run skipped, run or scan finished.",
     why: "Lets you check a specific finding reached the destination.",
     example: "Finding resolved.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:443 — pending, delivered, dead
+  // src: frontend/components/integrations/IntegrationsPage.tsx:467 — pending, delivered, dead
   "int.log.col.status": {
     label: "Status",
     what: "Pending (queued or backing off), delivered, or dead-lettered (refused for good, or still undelivered after the maximum age).",
     why: "Dead-lettered events need fixing at the destination, then a retry.",
     example: "Pending: next attempt in 4 minutes.",
   },
-  // src: backend/utilities/integrations/dispatch.py:46, frontend/components/integrations/IntegrationsPage.tsx:444 — delivery attempts
+  // src: backend/utilities/integrations/dispatch.py:46, frontend/components/integrations/IntegrationsPage.tsx:468 — delivery attempts
   "int.log.col.attempts": {
     label: "Attempts",
     what: "How many times delivery was tried.",
     why: "Many attempts point at a destination that is down or refusing the credentials.",
     example: "3: two timeouts, then delivered.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:445 — last response or error
+  // src: frontend/components/integrations/IntegrationsPage.tsx:469 — last response or error
   "int.log.col.result": {
     label: "Result",
     what: "The destination's last answer or the error.",
@@ -5269,49 +5360,49 @@ export const INFO_TIPS = {
     example: "HTTP 401: the HEC token is disabled.",
   },
   // ────────────────────────────────────────────────────────────── CBOM code-scan results (components/CbomResults.tsx)
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:162-170, backend/utilities/dashboard/scan.py:1207-1208 — every row of the inventory table: findings and clean inventory
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:166-174, backend/utilities/dashboard/scan.py:1207-1208 — every row of the inventory table: findings and clean inventory
   "cbom.res.kpi.assets": {
     label: "Crypto assets",
     what: "Every cryptographic asset this scan found: algorithms, keys, certificates, protocols and libraries in use, whether or not it is a finding.",
     why: "This is your cryptographic bill of materials; everything else on the page is a view of it.",
     example: "57 assets: 41 clean (such as AES-256-GCM) and 16 findings.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:118-125 — crypto_strength weak
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:122-129 — crypto_strength weak
   "cbom.res.kpi.weak": {
     label: "Weak",
     what: "Assets whose cryptographic strength is weak today: broken or deprecated algorithms and too-short keys.",
     why: "Weak crypto can be attacked now, without a quantum computer.",
     example: "MD5 password hashing in auth/legacy.py.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:126-131 — the Quantum column's verdict
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:130-135 — the Quantum column's verdict
   "cbom.res.kpi.qv": {
     label: "Quantum vulnerable",
     what: "Assets that a large quantum computer could break: public-key algorithms such as RSA, Diffie-Hellman and elliptic curves (ECDH, ECDSA).",
     why: "Data encrypted with them today can be recorded now and decrypted later (harvest now, decrypt later).",
     example: "RSA-2048 key exchange on api.bank.in:443: a future quantum computer could recover the key, so recorded traffic is at risk.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:132-133 — algorithm_type certificate
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:136-137 — algorithm_type certificate
   "cbom.res.kpi.certs": {
     label: "Certificates",
     what: "X.509 certificates found in the code and files of this scan.",
     why: "Certificates expire and carry keys and signature algorithms that need migrating.",
     example: "3: two in config/tls, one test certificate in fixtures.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:134-135 — algorithm_type key or secret
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:138-139 — algorithm_type key or secret
   "cbom.res.kpi.keys": {
     label: "Keys",
     what: "Keys and secrets found: private keys, symmetric keys and key material in code or files.",
     why: "A key committed to a repository should be treated as exposed and rotated.",
     example: "A PEM private key in deploy/certs/server.key.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:29-43, backend/utilities/cbom_sources/cbom_metrics.py:171-175, frontend/utils/cbomReadiness.ts:19-21 — quantum-safe share of judged assets; n/a when none judged
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:29-43, backend/utilities/cbom_sources/cbom_metrics.py:175-179, frontend/utils/cbomReadiness.ts:19-21 — quantum-safe share of judged assets; n/a when none judged
   "cbom.res.kpi.ready": {
     label: "Quantum ready",
     what: "The share of judged assets that are quantum-safe: post-quantum, hybrid or symmetric with enough margin. Assets that are quantum-vulnerable or broken today count against it; assets without a quantum verdict (hashes, settings) are left out. n/a when no asset was judged.",
     why: "It tracks your post-quantum migration in one number.",
     example: "12 judged: 9 safe, 2 RSA, 1 DES: 9 / 12 = 75%.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:26, backend/utilities/cbom_sources/cbom_metrics.py:78-84 — 0-10 over findings: critical 9, high 7, medium 5, low 2
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:26, backend/utilities/cbom_sources/cbom_metrics.py:82-88 — 0-10 over findings: critical 9, high 7, medium 5, low 2
   "cbom.res.kpi.avg_risk": {
     label: "Avg risk score",
     what: "The average risk over this scan's findings, 0 to 10: Critical 9, High 7, Medium 5, Low 2. Clean inventory is left out. One decimal.",
@@ -5325,42 +5416,42 @@ export const INFO_TIPS = {
     why: "Shows how far the fixing has got.",
     example: "16 findings: 4 Fixed (25%), 2 In progress, 10 Not started.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:142-143 — owasp_top_10 values of the findings
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:146-147 — owasp_top_10 values of the findings
   "cbom.res.owasp": {
     label: "OWASP Top 10 issues",
     what: "How many findings map to each OWASP Top 10 category; most crypto findings fall under A02 Cryptographic Failures.",
     why: "Lets you report crypto findings in the framework your AppSec team uses.",
     example: "A02:2021 Cryptographic Failures: 14.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:178-181 — findings by severity
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:182-185 — findings by severity
   "cbom.res.severity": {
     label: "Risk metrics",
     what: "This scan's findings by impact: Critical, High, Medium and Low.",
     why: "Fix Critical and High first.",
     example: "Critical 1, High 5, Medium 7, Low 3.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:144-145, backend/utilities/dashboard/scan.py:1213-1224 — controls the findings map to, and framework fails
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:148-149, backend/utilities/dashboard/scan.py:1213-1224 — controls the findings map to, and framework fails
   "cbom.res.compliance": {
     label: "Compliance controls",
     what: "Findings mapped to compliance controls and frameworks (for example CERT-In, RBI, NIST, PCI DSS): the 10 with the most findings.",
     why: "Shows which audit requirements the crypto weaknesses put at risk.",
     example: "PCI DSS 4.2.1 (strong cryptography in transit): 6.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:112-116 — algorithm_type of every row
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:116-120 — algorithm_type of every row
   "cbom.res.algo_types": {
     label: "Algorithm types",
     what: "Every asset by type of cryptography: symmetric cipher, asymmetric, hash, signature, key exchange, certificate, key, protocol and others.",
     why: "Shows where your crypto is concentrated and which migration work dominates.",
     example: "hash 18, symmetric 12, asymmetric 9, certificate 3.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:117-125 — weak, moderate, strong, quantum_safe
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:121-129 — weak, moderate, strong, quantum_safe
   "cbom.res.strength": {
     label: "Crypto strength",
     what: "Every asset by strength today: weak, moderate, strong or quantum-safe.",
     why: "Weak and moderate assets are the near-term fixes.",
     example: "weak 4, moderate 6, strong 40, quantum-safe 2.",
   },
-  // src: backend/utilities/cbom_sources/cbom_metrics.py:96-131 — quantum-safe, quantum-vulnerable, broken today
+  // src: backend/utilities/cbom_sources/cbom_metrics.py:100-135 — quantum-safe, quantum-vulnerable, broken today
   "cbom.res.quantum": {
     label: "Quantum readiness",
     what: "Every judged asset by its quantum verdict: quantum-safe, quantum-vulnerable (public-key crypto a quantum computer breaks), or broken today (already weak, such as MD5 or DES).",
@@ -5381,98 +5472,98 @@ export const INFO_TIPS = {
     why: "Shows whether fixes keep pace with what the scans find.",
     example: "Mark a finding Fixed in the table below and these numbers update.",
   },
-  // src: frontend/components/CbomResults.tsx:660 — the CycloneDX import report
+  // src: frontend/components/CbomResults.tsx:699 — the CycloneDX import report
   "cbom.res.import_notes": {
     label: "About the uploaded CBOM file",
     what: "What happened when your uploaded CycloneDX CBOM was read: how many cryptographic assets were imported, and which components were skipped as not crypto, unreadable, duplicate or past the limit.",
     why: "Skipped components are missing from the results, so check them.",
     example: "40 of 42 cryptographic assets imported · CycloneDX 1.6 · 2 unreadable.",
   },
-  // src: frontend/components/CbomResults.tsx:685 — coverage notes of the scan
+  // src: frontend/components/CbomResults.tsx:724 — coverage notes of the scan
   "cbom.res.coverage": {
     label: "What this scan covered",
     what: "Which files and languages the scan read and what it skipped, with the reason.",
     why: "Skipped files are not in the inventory, so a clean result may be incomplete.",
     example: "312 files read; 14 skipped as larger than the size limit.",
   },
-  // src: frontend/components/CbomResults.tsx:792 — an uploaded CBOM file
+  // src: frontend/components/CbomResults.tsx:843 — an uploaded CBOM file
   "cbom.res.input": {
     label: "Input",
     what: "This scan read an uploaded CycloneDX CBOM file instead of source code.",
     why: "Results are only as complete as the file.",
     example: "CBOM file.",
   },
-  // src: frontend/components/CbomResults.tsx:845 — finding rows; clean inventory is not listed here
+  // src: frontend/components/CbomResults.tsx:940 — finding rows; clean inventory is not listed here
   "cbom.res.findings": {
     label: "Cryptographic findings",
     what: "This scan's findings, one per row, each with a status your team sets. Clean assets (for example AES-GCM or SHA-256) are in the charts and the CycloneDX download, not in this table.",
     why: "Each row is something to fix, accept or plan for migration.",
     example: "RSA-2048 in src/crypto/keys.py:42, High, quantum-vulnerable, Not started.",
   },
-  // src: frontend/components/CbomResults.tsx:873 — algorithm, description, location or id
+  // src: frontend/components/CbomResults.tsx:266 — algorithm, description, location or id
   "cbom.res.search": {
     label: "Search",
     what: "Shows only the findings whose algorithm, description, location or id contains this text (upper or lower case does not matter).",
     why: "Find every use of one algorithm or file quickly.",
     example: "\"rsa\" keeps RSA-2048 and RSA-1024 findings.",
   },
-  // src: frontend/components/CbomResults.tsx:899, frontend/components/SASTResults.tsx:692-700 — tiers on the 0-10 risk score
+  // src: frontend/components/CbomResults.tsx:994 — tiers on the 0-10 risk score
   "cbom.res.filter.risk": {
     label: "Risk score filter",
     what: "Shows only findings whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5.",
     why: "Focus on the findings that score highest.",
     example: "High keeps a finding scored 7.6 and hides one scored 9.4.",
   },
-  // src: frontend/components/CbomResults.tsx:912 — exact crypto_strength
+  // src: frontend/components/CbomResults.tsx:1007 — exact crypto_strength
   "cbom.res.filter.strength": {
     label: "Strength filter",
     what: "Shows only findings of one strength: weak, moderate, strong or quantum-safe.",
     why: "Weak findings are exploitable today.",
     example: "Weak.",
   },
-  // src: frontend/components/CbomResults.tsx:924 — exact algorithm_type
+  // src: frontend/components/CbomResults.tsx:1019 — exact algorithm_type
   "cbom.res.filter.type": {
     label: "Type filter",
     what: "Shows only findings of one algorithm type, from the types found in this scan.",
     why: "Plan migration work one type at a time.",
     example: "certificate.",
   },
-  // src: frontend/components/cbom/quantumFilter.ts:10-23 — safe, broken today, vulnerable
+  // src: frontend/components/cbom/quantumFilter.ts:10-29 — safe, broken today, vulnerable
   "cbom.res.filter.quantum": {
     label: "Quantum filter",
     what: "Shows only findings that are quantum-safe, broken today (weak even without a quantum computer, such as MD5) or quantum-vulnerable.",
     why: "Vulnerable gives your post-quantum migration list; Broken today the fixes that cannot wait.",
     example: "Vulnerable: the RSA and ECDH findings.",
   },
-  // src: frontend/components/CbomResults.tsx:968 — selects the rows shown
+  // src: frontend/components/CbomResults.tsx:1063 — selects the rows shown
   "cbom.res.select_all": {
     label: "Select all",
     what: "Selects every finding the table shows (after search and filters), for the actions above the table: change their status or file Jira tickets.",
     why: "Handle a group of similar findings in one step.",
     example: "Filter Type: certificate, select all, mark In progress.",
   },
-  // src: frontend/components/CbomResults.tsx:971 — algorithm name
+  // src: frontend/components/CbomResults.tsx:1066 — algorithm name
   "cbom.res.col.algorithm": {
     label: "Algorithm",
     what: "The algorithm, key, certificate or protocol found, as named in the code or file. Click it for the details and the suggested fix.",
     why: "Names exactly what to replace.",
     example: "RSA-2048.",
   },
-  // src: frontend/components/CbomResults.tsx:972 — algorithm_type
+  // src: frontend/components/CbomResults.tsx:1067 — algorithm_type
   "cbom.res.col.type": {
     label: "Type",
     what: "The kind of cryptography: symmetric, asymmetric, hash, signature, key exchange, certificate, key, protocol or other.",
     why: "Each type has its own replacement path.",
     example: "asymmetric.",
   },
-  // src: frontend/components/CbomResults.tsx:974, backend/utilities/cbom_sources/cbom_metrics.py:117-125 — weak, moderate, strong, quantum-safe
+  // src: frontend/components/CbomResults.tsx:1069, backend/utilities/cbom_sources/cbom_metrics.py:121-129 — weak, moderate, strong, quantum-safe
   "cbom.res.col.strength": {
     label: "Strength",
     what: "How strong it is today: weak (broken or deprecated), moderate, strong, or quantum-safe.",
     why: "Weak is exploitable now; moderate is due for an upgrade.",
     example: "weak for SHA-1 signatures.",
   },
-  // src: frontend/components/cbom/quantumFilter.ts:10-23 — safe, broken today, vulnerable
+  // src: frontend/components/cbom/quantumFilter.ts:10-29 — safe, broken today, vulnerable
   "cbom.res.col.quantum": {
     label: "Quantum",
     what: "Whether a quantum computer breaks it: Quantum-safe, Vulnerable (RSA, Diffie-Hellman, elliptic curves) or Broken today (weak even without one).",
@@ -5486,21 +5577,21 @@ export const INFO_TIPS = {
     why: "Orders findings of the same impact by how much they matter.",
     example: "9.8 for an RSA-1024 signing key.",
   },
-  // src: frontend/components/CbomResults.tsx:978 — file and line
+  // src: frontend/components/CbomResults.tsx:1073 — file and line
   "cbom.res.col.location": {
     label: "Location",
     what: "Where it was found: the file and line, or the component in an uploaded CBOM.",
     why: "Takes you straight to the code to change.",
     example: "src/crypto/keys.py:42.",
   },
-  // src: backend/utilities/dashboard/scan.py:1256, backend/utilities/cbom_sources/cbom_metrics.py:182-184 — the 10 highest risk scores
+  // src: backend/utilities/dashboard/scan.py:1256, backend/utilities/cbom_sources/cbom_metrics.py:186-188 — the 10 highest risk scores
   "cbom.res.top": {
     label: "Top cryptographic risks",
     what: "The 10 findings with the highest risk scores in this scan.",
     why: "Start here when you have time for only a few fixes.",
     example: "RSA-1024 signing key, weak, not quantum-safe, Critical.",
   },
-  // src: frontend/components/CbomResults.tsx:1109 — QuantumBadge yesNo: Yes, No, Broken today (weak and quantum-safe), or a dash when quantum readiness does not apply
+  // src: frontend/components/CbomResults.tsx:1206 — QuantumBadge yesNo: Yes, No, Broken today (weak and quantum-safe), or a dash when quantum readiness does not apply
   "cbom.res.col.quantum_safe": {
     label: "Quantum safe",
     what: "Whether the asset is quantum-safe: Yes, No (needs a post-quantum replacement), Broken today (weak even without a quantum computer, such as MD5), or a dash when quantum readiness does not apply to it.",
@@ -5508,84 +5599,91 @@ export const INFO_TIPS = {
     example: "No for RSA-2048; Broken today for MD5.",
   },
   // ────────────────────────────────────────────────────────────── CBOM crypto-asset charts (components/cbom/CbomCryptoCharts.tsx, CertCalendar.tsx)
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:306-310 — algorithms by primitive
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:308-313 — algorithms by primitive
   "cbom.chart.algorithms": {
     label: "Algorithm distribution",
     what: "Cryptographic algorithms found, grouped by primitive: block cipher, hash, signature, key agreement, public-key encryption and others.",
     why: "Shows which primitives your migration has to cover and how often each is used.",
     example: "signature 14, hash 11, key agreement 6.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:343-347 — weak or deprecated crypto by category
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:346-351 — weak or deprecated crypto by category
   "cbom.chart.weak": {
     label: "Weak-crypto findings",
     what: "Weak or deprecated cryptography by category, coloured by severity (High red, Medium orange).",
     why: "These can be attacked today and are the first fixes.",
     example: "Deprecated hash (SHA-1): 4 High.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:373-386 — PqcReadinessGauge counts every row of the page (quantumFilter.inventoryRows) by the Quantum column verdict (quantumCounts); distributions.pqc (NIST levels) only when the page has no rows
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:374-387 — PqcReadinessGauge counts every row of the page (quantumFilter.inventoryRows) by the Quantum column verdict (quantumCounts); distributions.pqc (NIST levels) only when the page has no rows
   "cbom.chart.pqc": {
     label: "PQC readiness",
     what: "The quantum-ready share of every crypto asset on the page (findings and clean inventory), by the same verdict as the table's Quantum column: quantum-safe counts as ready; quantum-vulnerable and broken today (weak even without a quantum computer) do not. Only when the page has no rows does it fall back to the NIST quantum security levels stored with the scan.",
     why: "One view of how much of your crypto survives a quantum computer.",
     example: "12 judged: 9 safe, 2 RSA (vulnerable), 1 DES (broken today): 9 / 12 = 75%.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:585-597 — NIST level 0 public-key assets
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:590-603 — NIST level 0 public-key assets
   "cbom.chart.qv": {
     label: "Quantum-vulnerable algorithms",
-    what: "Public-key algorithms a cryptographically relevant quantum computer breaks (NIST level 0), each with where it is used.",
+    what: "Public-key algorithms a cryptographically relevant quantum computer breaks (NIST level 0: no quantum resistance), each with where it is used. Near-identical assets (same algorithm, finding and fix) share one card with a count; open it for the asset list.",
     why: "Data protected by them can be harvested now and decrypted later.",
     example: "RSA-2048 key exchange on api.bank.in:443: a future quantum computer could recover the key; harvest-now-decrypt-later applies.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:600-608 — no NIST level 0 assets
+  // src: frontend/components/cbom/pqcMigrationGroup.ts:202-220 — each distinct fix text once, with the assets it covers (#271)
+  "cbom.chart.qv_fixes": {
+    label: "How to fix",
+    what: "Each distinct fix once, numbered by how many assets it covers; every card above shows the number of its fix. The text comes from the offline knowledge base.",
+    why: "One configuration change often fixes dozens of endpoints: reading it once makes the plan clear.",
+    example: "Fix 1 · 28 assets · X25519 on TLS endpoint: offer a hybrid key-exchange group first.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:632-643 — no NIST level 0 assets
   "cbom.chart.qv_none": {
     label: "No quantum-vulnerable algorithms",
     what: "No algorithm in this inventory is broken by a quantum computer at its parameter size.",
     why: "Keep scanning: new code can add RSA or ECDH again.",
     example: "Only AES-256-GCM, SHA-384 and ML-KEM-768 found.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:693-704 — NIST replacement per algorithm against CNSA 2.0
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:700-712 — NIST replacement per algorithm against CNSA 2.0
   "cbom.chart.roadmap": {
     label: "PQC migration roadmap",
     what: "The NIST-standardised replacement for each quantum-vulnerable algorithm, against the CNSA 2.0 timeline.",
     why: "Turns the inventory into a migration plan with dates regulators recognise.",
     example: "RSA-2048 signatures → ML-DSA-65; ECDH P-256 → ML-KEM-768.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:271-276, frontend/components/cbom/CbomCryptoCharts.tsx:708-716 — 2025 signing, 2030 networking, 2033 OS, 2035 all NSS
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:273-278,719, frontend/components/cbom/CbomCryptoCharts.tsx:716-725 — 2025 signing, 2030 networking, 2033 OS, 2035 all NSS
   "cbom.chart.cnsa": {
     label: "CNSA 2.0 transition milestones",
     what: "The NSA CNSA 2.0 dates by which systems should use quantum-resistant algorithms: software and firmware signing 2025, networking and traditional protocols 2030, operating systems 2033, all national security systems 2035.",
     why: "Many regulators and vendors plan against these dates.",
     example: "A VPN gateway falls under networking: 2030.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:734-740 — replacement per algorithm
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:743-750 — replacement per algorithm
   "cbom.chart.replacements": {
     label: "Recommended replacements",
     what: "For each quantum-vulnerable algorithm found, the recommended post-quantum replacement and where the old one is used.",
     why: "Gives each owner a concrete target, not just a finding.",
     example: "ECDSA P-256 code signing → ML-DSA-65 (FIPS 204).",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:905-912, aibom/src/aibom/cbom/weakness.py:38 — two bars, Valid and Expired; Near expiry is a badge in the list (aibom/src/aibom/cbom/weakness.py:38, 90 days)
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:906-913,949, aibom/src/aibom/cbom/weakness.py:38 — two bars, Valid and Expired; Near expiry is a badge in the list (aibom/src/aibom/cbom/weakness.py:38, 90 days)
   "cbom.chart.cert_expiry": {
     label: "Certificate expiry",
     what: "X.509 certificates as two bars, Valid and Expired, with the certificates and related key or keystore material listed below; a certificate expiring within 90 days carries a Near expiry badge in the list.",
     why: "An expired certificate breaks a service; a long-lived one delays migration to post-quantum signatures.",
     example: "18 Valid and 2 Expired; 3 of the valid ones show Near expiry (within 90 days).",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:1083-1087 — transport-security protocols in use
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:1094-1099 — transport-security protocols in use
   "cbom.chart.protocols": {
     label: "Protocol / TLS",
     what: "Transport-security protocols and versions found in use: TLS, SSH, IPsec and others.",
     why: "Old versions such as TLS 1.0 or SSLv3 are exploitable today.",
     example: "TLS 1.2: 9, TLS 1.3: 4, TLS 1.0: 1.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:1130-1134 — CycloneDX asset classes
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:1142-1147 — CycloneDX asset classes
   "cbom.chart.asset_types": {
     label: "Asset types",
     what: "The crypto inventory by CycloneDX asset class: algorithm, certificate, protocol, related crypto material (keys, secrets).",
     why: "Mirrors the CBOM file you can download.",
     example: "algorithm 40, certificate 6, protocol 5, related material 3.",
   },
-  // src: frontend/components/cbom/CertCalendar.tsx:1-3, frontend/components/cbom/CertCalendar.tsx:95-99 — month calendar, 30/60/90 days
+  // src: frontend/components/cbom/CertCalendar.tsx:100, frontend/components/cbom/CertCalendar.tsx:95-99 — month calendar, 30/60/90 days
   "cbom.cal.expiry": {
     label: "Certificate expiry calendar",
     what: "A month calendar of certificate expiry dates (UTC), coloured for 30, 60 and 90 days ahead. Choose a day to list its certificates; arrow keys move by day and week, Page Up and Page Down change the month.",
@@ -5672,14 +5770,14 @@ export const INFO_TIPS = {
     example: "Code-fixed: KeyPairGenerator.initialize(1024) in src/crypto/keys.py.",
   },
   // ────────────────────────────────────────────────────────────── CBOM: list empty state and test-lab node warning
-  // src: frontend/app/[team_id]/cbom/page.tsx:984-992 — the merged table of code scans and Sources runs is empty
+  // src: frontend/app/[team_id]/cbom/page.tsx:1014-1022 — the merged table of code scans and Sources runs is empty
   "cbom.list.empty": {
     label: "No scans or runs yet",
     what: "This table lists both CBOM code scans and CBOM Sources runs; this team has neither yet. A code scan reads a repository, zip or CBOM file; a Sources run reads servers, clusters, databases, cloud accounts and networks.",
     why: "Each feeds the same inventory, so start with whichever holds your most sensitive crypto.",
     example: "Create a CBOM scan of payments-api, then start a Sources run of the Mumbai servers.",
   },
-  // src: frontend/components/cbom/sources/NodeInstall.tsx:16-17, frontend/components/cbom/sources/NodeInstall.tsx:27-33 — ZS_ALLOW_INSECURE_HTTP
+  // src: frontend/components/cbom/sources/NodeInstall.tsx:41, frontend/components/cbom/sources/NodeInstall.tsx:37-43 — ZS_ALLOW_INSECURE_HTTP
   "cbsrc.nodes.lab_only": {
     label: "Test lab only",
     what: "This install command sets ZS_ALLOW_INSECURE_HTTP=1 because the API is plain HTTP: the node's credentials and the decrypted secrets of every job travel unencrypted.",
@@ -5687,28 +5785,28 @@ export const INFO_TIPS = {
     example: "A lab on 192.168.56.0/24 with no other users; never a production network.",
   },
   // ────────────────────────────────────────────────────────────── CBOM list: code scans and Sources runs in one table (CB-38 #117)
-  // src: frontend/app/[team_id]/cbom/page.tsx:1043-1055, backend/utilities/cbom_sources/run_list.py:1-6 — code scans and Sources runs in one table
+  // src: frontend/app/[team_id]/cbom/page.tsx:1112-1136, backend/utilities/cbom_sources/run_list.py:1-6 — code scans and Sources runs in one table
   "cbom.table.title": {
     label: "Title",
     what: "The scan's title, or for a CBOM Sources run \"Sources run #<id>\" with the names of its sources and a Sources run badge. Click it to open the results.",
     why: "Code scans and infrastructure runs land in one list, so the badge tells them apart.",
     example: "Sources run #42 · dc-mumbai-linux, aws-prod.",
   },
-  // src: frontend/app/[team_id]/cbom/page.tsx:139-149, contracts/cbom/status_buckets.json:1 — code-scan statuses; a run's queued, running, done, partial, failed, cancelled
+  // src: frontend/app/[team_id]/cbom/page.tsx:142-152, contracts/cbom/status_buckets.json:1 — code-scan statuses; a run's queued, running, done, partial, failed, cancelled
   "cbom.table.status": {
     label: "Status",
     what: "A code scan: Not started, Pending, Started (with progress), Retry, Success, Failure or Cancelled. A Sources run: Pending (queued), Started (running, with jobs done of total), Success (done), Partial (some jobs failed or expired; the results that were collected open like a success), Failure or Cancelled.",
     why: "A Partial run's results miss the sources whose jobs did not finish.",
     example: "Partial · 3/4 jobs: one database job expired.",
   },
-  // src: frontend/app/[team_id]/cbom/page.tsx:1093-1113, frontend/components/cbom/results/resultRows.ts:360-365 — repository, zip, or the run's sources and counts
+  // src: frontend/app/[team_id]/cbom/page.tsx:1159-1190,1044, frontend/components/cbom/results/resultRows.ts:360-365 — repository, zip, or the run's sources and counts
   "cbom.table.source": {
     label: "Repo / Source",
     what: "For a code scan, the repository (or Zip file). For a Sources run, the sources it collected from, with how many assets it found and endpoints it probed.",
     why: "Tells you what each row covers before you open it.",
     example: "dc-mumbai-linux, aws-prod · 1,284 assets · 12 endpoints.",
   },
-  // src: backend/utilities/cbom_sources/run_list.py:227-228, frontend/components/cbom/results/resultRows.ts:367-370 — charged; refunded shown below
+  // src: backend/utilities/cbom_sources/run_list.py:232-233, frontend/components/cbom/results/resultRows.ts:367-370 — charged; refunded shown below
   "cbom.table.credits": {
     label: "Credits",
     what: "Credits charged for the scan or run. For a run, credits refunded for jobs that failed, expired or were cancelled are shown below in brackets.",
@@ -5716,7 +5814,7 @@ export const INFO_TIPS = {
     example: "12.4 (1 refunded).",
   },
   // ────────────────────────────────────────────────────────────── CBOM results: AI remediation assistant, crypto-agility and quantum-risk headings
-  // src: frontend/components/cbom/results/AiRemediationPanel.tsx:1-5, frontend/components/cbom/results/aiPanelLogic.ts:22-35 — shown only when available; every answer validated against the knowledge base
+  // src: frontend/components/cbom/results/AiRemediationPanel.tsx:1-5,72, frontend/components/cbom/results/aiPanelLogic.ts:22-35 — shown only when available; every answer validated against the knowledge base
   "cbom.ai.panel": {
     label: "AI assistant",
     what: "Explain describes this finding in plain words; Plan gives ordered remediation steps; Ask a question answers about this finding only. Answers come from the configured model (AWS Bedrock, or an on-prem model) grounded in ZeroShield's knowledge base: every step cites it, and an answer that fails validation is withheld. The line beside it names the only outbound host.",
@@ -5738,168 +5836,182 @@ export const INFO_TIPS = {
     example: "40 of 100 assets self-fixable: 30 configurable, 10 code-fixed.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources run results page (components/cbom/results/*, CB-38 #120)
-  // src: frontend/components/cbom/results/RunSections.tsx:76-78 — jobs, skipped sources, provenance
+  // src: frontend/components/cbom/results/RunSections.tsx:211-213 — jobs, skipped sources, provenance
   "cbom.run.covered": {
     label: "Collection jobs and targets",
     what: "Every job of the run with where it ran and how it ended, the sources skipped when it started, per source what was collected, and each target's outcome.",
     why: "A finding list is only as complete as what was read; this shows what the run could and could not read.",
     example: "9 jobs: 8 done, 1 expired on node-dr1; dc-mumbai-windows skipped (node offline).",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:82-96 — per source: kind, runner, outcome, assets, endpoints, duration, credits
+  // src: frontend/components/cbom/results/RunSections.tsx:217-231 — per source: kind, runner, outcome, assets, endpoints, duration, credits
   "cbom.run.provenance": {
     label: "Provenance per source",
     what: "For each source of the run: its kind, where it ran (a scan node or ZeroShield's cloud), its outcome, the assets collected (not counting the Not collected rows), endpoints probed, duration and credits.",
     why: "Lets an auditor trace every asset back to the job that read it.",
     example: "dc-mumbai-linux · Linux servers · node-dc1 · success · 212 assets · 0 endpoints · 4 min · 51.20.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:89 — the source kind
+  // src: frontend/components/cbom/results/RunSections.tsx:228 — the source kind
   "cbom.run.col.kind": {
     label: "Kind",
     what: "The kind of source: Linux servers, database, AWS account, network range and so on.",
     why: "Each kind is read differently and has its own blind spots.",
     example: "AWS account.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:91 — job outcome
+  // src: frontend/components/cbom/results/RunSections.tsx:230 — job outcome
   "cbom.run.col.outcome": {
     label: "Outcome",
     what: "How the source's job ended: success, partial (some targets or checks could not be read), failed, expired or cancelled.",
     why: "A partial or failed outcome means some of that source's crypto is missing from the results.",
     example: "partial: 2 of 254 servers refused the login.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:92 — collected assets only
+  // src: frontend/components/cbom/results/RunSections.tsx:231 — collected assets only
   "cbom.run.col.assets_collected": {
     label: "Assets (excl. not collected)",
     what: "Assets collected from this source. Rows that only record a part the job could not read (Not collected) are left out; the jobs table above counts them.",
     why: "Separates what was actually read from what was attempted.",
     example: "212 assets collected.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:93 — TLS/SSH endpoints probed
+  // src: frontend/components/cbom/results/RunSections.tsx:232 — TLS/SSH endpoints probed
   "cbom.run.col.endpoints": {
     label: "Endpoints probed",
     what: "How many network endpoints (address and port) the job probed with a TLS or SSH handshake.",
     why: "Shows how much of a network range answered.",
     example: "48 endpoints on 10.20.0.0/24.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:94 — job duration
+  // src: frontend/components/cbom/results/RunSections.tsx:233 — job duration
   "cbom.run.col.duration": {
     label: "Duration",
     what: "How long the source's job ran, from claim to result.",
     why: "A very long job may hit timeouts; consider splitting the source.",
     example: "4 min 12 s.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:95, backend/utilities/cbom_sources/planning.py:24 — credits of the source's job
+  // src: frontend/components/cbom/results/RunSections.tsx:234, backend/utilities/cbom_sources/planning.py:25 — credits of the source's job
   "cbom.run.col.credits": {
     label: "Credits",
     what: "The credits charged for this source's job (0.2 per server target, 1 per database, 2 per cluster, 4 per cloud account, 1 per /24).",
     why: "Shows where the run's cost went.",
     example: "51.20 for 256 server targets.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:214-221 — within this run's scope
+  // src: frontend/components/cbom/results/RunSections.tsx:349-356 — within this run's scope
   "cbom.run.certs": {
     label: "Orphaned and unmanaged certificates",
     what: "Within this run's scope: orphaned certificates are stored somewhere but presented by no endpoint the run read; unmanaged ones are held by no managing system the run saw (ACM, cert-manager, AD CS, Key Vault and similar).",
     why: "Orphaned certificates are clutter that can be stolen; unmanaged ones expire without anyone being told.",
     example: "3 orphaned (old keystore copies), 5 unmanaged (hand-installed on web servers).",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:219 — stored, presented by no endpoint read
+  // src: frontend/components/cbom/results/RunSections.tsx:358 — stored, presented by no endpoint read
   "cbom.run.certs.orphaned": {
     label: "Orphaned certificates",
     what: "Certificates found in files, keystores or secrets that no endpoint read by this run presents.",
     why: "A forgotten certificate with its private key is a credential waiting to be misused.",
     example: "/opt/app/old/server.p12, CN=api-old.bank.in.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:220 — no managing system saw them
+  // src: frontend/components/cbom/results/RunSections.tsx:355 — no managing system saw them
   "cbom.run.certs.unmanaged": {
     label: "Unmanaged certificates",
     what: "Certificates the run found that no certificate manager in this run's scope (ACM, cert-manager, AD CS, Key Vault and similar) holds.",
     why: "Nothing renews or reports on them, so they expire unnoticed.",
     example: "CN=intranet.bank.local installed by hand on web-07.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:173 — certificate subject
+  // src: frontend/components/cbom/results/RunSections.tsx:312 — certificate subject
   "cbom.run.cert.subject": {
     label: "Subject",
     what: "The certificate's subject: whom it was issued to.",
     why: "Identifies the service the certificate belongs to.",
     example: "CN=api.bank.in, O=Bank Ltd.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:174 — certificate issuer
+  // src: frontend/components/cbom/results/RunSections.tsx:313 — certificate issuer
   "cbom.run.cert.issuer": {
     label: "Issuer",
     what: "The CA that issued the certificate.",
     why: "An unexpected issuer can mean a certificate bought outside policy.",
     example: "CN=BANK-ISSUING-CA.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:175 — not_after
+  // src: frontend/components/cbom/results/RunSections.tsx:314 — not_after
   "cbom.run.cert.expires": {
     label: "Expires",
     what: "When the certificate stops being valid.",
     why: "Expired certificates break services; long-lived ones delay migration.",
     example: "2 Dec 2026.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:176 — where it was found
+  // src: frontend/components/cbom/results/RunSections.tsx:315 — where it was found
   "cbom.run.cert.location": {
     label: "Location",
     what: "Where the run found the certificate: a file path, keystore, secret or endpoint.",
     why: "Tells you where to remove or renew it.",
     example: "web-07:/etc/ssl/intranet.pem.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:177 — the source that found it
+  // src: frontend/components/cbom/results/RunSections.tsx:316 — the source that found it
   "cbom.run.cert.source": {
     label: "Source",
     what: "The source whose job found the certificate.",
     why: "Points to the owner of the system.",
     example: "dc-mumbai-linux.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:248-256 — drift against each source's previous complete collection
+  // src: frontend/components/cbom/results/RunSections.tsx:365-373 — drift against each source's previous complete collection
   "cbom.run.changes": {
     label: "Changes",
     what: "What changed against each source's previous complete collection: assets added, removed or changed. Partial or failed collections are not compared.",
     why: "Drift shows new weak crypto, and fixes that landed, as soon as they happen.",
     example: "+3 certificates, -1 SSH host key, 2 changed.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:271-290, backend/utilities/cbom_sources/waves.py:44-60 — wave counts of the run's assets
+  // src: backend/utilities/cbom_sources/posture.py:314-329,368-372, backend/utilities/cbom_sources/cbom_metrics.py:29-46 — ready judged / judged; unknown and not-applicable left out (#271)
+  "cbom.run.readiness": {
+    label: "PQC readiness explained",
+    what: "Ready judged assets divided by judged assets. Judged: the scan identified the cryptography and gave it a quantum verdict. Hybrid, post-quantum and symmetric (AES-256; AES-128 as Grover-weakened) count as ready. Unidentified assets and settings with no algorithm to judge (e.g. a password-hash setting) are left out of both numbers; the percentage is withheld when more assets are unidentified than judged.",
+    why: "0% means every judged asset is breakable by a future quantum computer, not that the scan failed; the list below says which assets and what moves the score.",
+    example: "46 judged, 0 ready: 0%. Moving 38 TLS endpoints to a hybrid key exchange makes it 82.6%.",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:342-358, backend/utilities/cbom_sources/run_assets.py:120-148 — quantum-vulnerable assets per asset type and quantum finding, top 3, readiness after the fix; Show these lists the group (pqc_group) (#271)
+  "cbom.run.readiness_actions": {
+    label: "What would raise PQC readiness",
+    what: "The largest groups of quantum-vulnerable assets (same asset type and same quantum finding), with the knowledge-base fix and the readiness this run would have if that group alone were fixed. Show these filters the findings table to the group.",
+    why: "Tells you which change moves the score most, so the first migration step is the biggest one.",
+    example: "Fix 38 TLS endpoints: No post-quantum key exchange · Readiness 0% → 82.6%.",
+  },
+  // src: backend/utilities/cbom_sources/waves.py:58-81,86-98 — wave counts of the run's assets; the rule per wave, the legend text built from it (#271)
   "cbom.run.waves": {
     label: "Remediation waves",
-    what: "This run's assets per remediation wave (1 most urgent to 4 post-quantum migration). Select findings in the table below to assign a wave, owner, target date or status; plans follow the asset to later runs.",
+    what: "This run's assets per remediation wave; first matching rule wins. Wave 1: Critical or High weakness on an internet-facing or in-transit asset, or any quantum-vulnerable key exchange in transit (HNDL). Wave 2: other Critical or High. Wave 3: any other weakness, whatever its impact. Wave 4: quantum-vulnerable, no other weakness. Select findings below to set wave, owner, date or status.",
     why: "Turns the findings into an ordered plan with owners and dates.",
     example: "Wave 1: 4 · Wave 2: 11 · Wave 3: 30 · Wave 4: 52.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:301-330 — CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
+  // src: frontend/components/cbom/results/RunSections.tsx:446-475 — CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0
   "cbom.run.compliance": {
     label: "Compliance mapping",
     what: "Per framework (CERT-In, RBI, SEBI CSCRF, NIST, CNSA 2.0): a verdict (Pass, Fail, Partial or Not assessed) from the compliance checks' requirement results, the clauses the findings touch and the assets affected; then each failing clause with its findings, how to fix them and the regulation's text behind Show text. Click an asset count to filter the findings table. Knowledge base and checks, no AI.",
     why: "Shows auditors what fails, where, and what to change, without reading every clause.",
     example: "NIST · Partial · 3/6 requirements pass · 1 clause · 3 assets: SHA-1 based SSH key exchange. How to fix: use curve25519-sha256.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:370-386, backend/utilities/cbom_sources/posture.py:35-39 — impact x criticality x exposure
+  // src: frontend/components/cbom/results/RunSections.tsx:476-500, backend/utilities/cbom_sources/posture.py:43-47 — impact x criticality x exposure
   "cbom.run.top_risks": {
     label: "Top cryptographic risks",
     what: "The run's riskiest assets, ranked by priority = impact weight x the source's business criticality x its internet exposure, from the run posture.",
     why: "Puts the fixes that cut the most risk first.",
     example: "Priority 21: RSA-1024 on api.bank.in:443, High, critical source, internet-facing, HNDL.",
   },
-  // src: backend/utilities/cbom_sources/posture.py:35-39, backend/utilities/cbom_sources/posture.py:192-193 — impact x criticality x exposure
+  // src: backend/utilities/cbom_sources/posture.py:43-47, backend/utilities/cbom_sources/posture.py:496-497 — impact x criticality x exposure
   "cbom.run.col.priority": {
     label: "Priority",
     what: "Impact weight (Critical 10, High 7, Medium 4, Low 1) x business criticality (0.5 to 2) x exposure (1.5 internet-facing, else 1).",
     why: "Ranks the same weakness higher on critical, exposed systems.",
     example: "7 x 2 x 1.5 = 21.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:380 — the asset
+  // src: frontend/components/cbom/results/RunSections.tsx:488 — the asset
   "cbom.run.col.asset": {
     label: "Asset",
     what: "The cryptographic asset: an endpoint, key, certificate or library, with where it is.",
     why: "Names exactly what to change.",
     example: "api.bank.in:443 TLS.",
   },
-  // src: backend/utilities/cbom_sources/posture.py:36 — the source's business criticality
+  // src: backend/utilities/cbom_sources/posture.py:44 — the source's business criticality
   "cbom.run.col.criticality": {
     label: "Criticality",
     what: "The business criticality of the asset's source when the run started: low, medium, high or critical.",
     why: "Critical systems rank higher.",
     example: "critical.",
   },
-  // src: backend/utilities/cbom_sources/posture.py:39, backend/utilities/cbom_sources/posture.py:99 — from facts or the source's override
+  // src: backend/utilities/cbom_sources/posture.py:47, backend/utilities/cbom_sources/posture.py:398 — from facts or the source's override
   "cbom.run.col.exposure": {
     label: "Exposure",
     what: "Whether the asset is internet-facing, internal or unknown, from the collected facts or the source's override. Hover for the basis.",
@@ -5941,35 +6053,35 @@ export const INFO_TIPS = {
     why: "Focuses on the most serious findings.",
     example: "Critical.",
   },
-  // src: frontend/components/cbom/results/RunFindingsTable.tsx:229-237 — asset type
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:229-237,241 — asset type
   "cbom.run.filter.type": {
     label: "Type filter",
     what: "Shows only one type of asset: TLS endpoint, certificate, key, SSH host key, library and others.",
     why: "Plan migration one asset type at a time.",
     example: "Certificate.",
   },
-  // src: frontend/components/cbom/results/RunFindingsTable.tsx:238-245 — quantum-vulnerable only
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:238-245,249 — quantum-vulnerable only
   "cbom.run.filter.quantum": {
     label: "Quantum filter",
     what: "Shows only quantum-vulnerable assets.",
     why: "This is your post-quantum migration list.",
     example: "Quantum-vulnerable.",
   },
-  // src: frontend/components/cbom/results/RunFindingsTable.tsx:247-253 — one source
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:247-253,260 — one source
   "cbom.run.filter.source": {
     label: "Source filter",
     what: "Shows only the assets of one source of the run.",
     why: "Hand one source's list to its owner.",
     example: "dc-mumbai-linux.",
   },
-  // src: frontend/components/cbom/results/RunFindingsTable.tsx:256-262 — Not started, In progress, Fixed, Ignored
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:256-262,272 — Not started, In progress, Fixed, Ignored
   "cbom.run.filter.status": {
     label: "Status filter",
     what: "Shows only findings with one status: Not started, In progress, Fixed or Ignored.",
     why: "Track what is still open.",
     example: "Not started.",
   },
-  // src: frontend/components/cbom/results/RunFindingsTable.tsx:310 — host, port, path
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:324 — host, port, path
   "cbom.run.col.where": {
     label: "Where",
     what: "Where the asset is: host and port, file path, keystore or cloud resource.",
@@ -5983,7 +6095,7 @@ export const INFO_TIPS = {
     why: "Explains why it is a finding before you open it.",
     example: "TLS 1.0 accepted; key exchange quantum-vulnerable.",
   },
-  // src: frontend/components/cbom/results/RunFindingsTable.tsx:315 — the source
+  // src: frontend/components/cbom/results/RunFindingsTable.tsx:329 — the source
   "cbom.run.col.source": {
     label: "Source",
     what: "The source whose job collected this asset.",
@@ -6004,105 +6116,105 @@ export const INFO_TIPS = {
     why: "Fixed and Ignored findings leave the open backlog.",
     example: "In progress.",
   },
-  // src: backend/utilities/cbom_sources/qgrade.py:46-99 — Q0..Q4
+  // src: backend/utilities/cbom_sources/qgrade.py:51-104 — Q0..Q4
   "cbom.run.col.qgrade": {
     label: "Quantum risk",
     what: "The asset's quantum risk grade, Q1 Critical to Q4 Low, or Q0 Unknown when a deciding fact or the team's Mosca settings are missing.",
     why: "Ranks post-quantum migration by how soon the data is at risk.",
     example: "Q1 Critical: quantum-vulnerable, internet-facing, X + Y > Z.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:347-351 — the rows of the current table page
+  // src: frontend/components/cbom/results/RunSections.tsx:492-496 — the rows of the current table page
   "cbom.run.risk_scores": {
     label: "Risk scores on this table page",
     what: "The risk score (0 to 10) of the rows on the findings table's current page and filter, highest first, at most 24. It never counts the whole run.",
     why: "Shows whether this page's risk is concentrated in a few rows.",
     example: "F1: RSA-1024 signing key, 9.8.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:126-133 — CycloneDX JSON and XML, OSCAL
+  // src: frontend/components/cbom/results/RunSections.tsx:128-135 — CycloneDX JSON and XML, OSCAL
   "cbom.run.downloads": {
     label: "Downloads",
     what: "The run's CBOM as CycloneDX 1.6 JSON or XML (schema-valid), and OSCAL 1.2.3 assessment results for a GRC tool once the run has finished.",
     why: "Hands the inventory to auditors and other tools in standard formats.",
     example: "CycloneDX JSON (1,284) for the auditor's CBOM request.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:63 — asset type
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:85 — asset type
   "cbom.run.f.type": {
     label: "Type",
     what: "The kind of asset: TLS endpoint, certificate, key, SSH host key, library and others.",
     why: "Each type has its own replacement path.",
     example: "TLS endpoint.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:64-66 — weak, moderate, strong, quantum-safe
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:81-83 — weak, moderate, strong, quantum-safe
   "cbom.run.f.strength": {
     label: "Crypto strength",
     what: "How strong the cryptography is today: weak, moderate, strong or quantum-safe.",
     why: "Weak is exploitable now.",
     example: "weak.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:67 — bits
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:89 — bits
   "cbom.run.f.key_size": {
     label: "Key size",
     what: "The key length in bits, when the asset has one.",
     why: "Short keys can be broken without a quantum computer.",
     example: "1024 bits.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:68-72 — quantum verdict
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:85-89 — quantum verdict
   "cbom.run.f.quantum": {
     label: "Quantum",
     what: "Whether a quantum computer breaks it: quantum-vulnerable, quantum-safe or broken today.",
     why: "Quantum-vulnerable assets need a post-quantum replacement.",
     example: "Quantum-vulnerable.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:73-75 — impact as collected
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:90-92 — impact as collected
   "cbom.run.f.impact": {
     label: "Impact",
     what: "The impact the asset was judged with when it was collected: Critical, High, Medium, Low, or Info for clean inventory.",
     why: "Fix Critical and High first.",
     example: "High.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:76-80 — 0-10
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:93-97 — 0-10
   "cbom.run.f.risk": {
     label: "Risk score",
     what: "The asset's risk score, 0 to 10, from its impact, findings, strength and quantum verdict.",
     why: "Orders findings of the same impact.",
     example: "8.6 out of 10.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:81-85 — remediation status
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:98-102 — remediation status
   "cbom.run.f.status": {
     label: "Status",
     what: "The status of the asset's remediation plan: Not started, In progress, Fixed or Ignored.",
     why: "Shows whether anyone is working on it.",
     example: "In progress.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:89-95 — linked Jira ticket
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:106-112 — linked Jira ticket
   "cbom.run.f.ticket": {
     label: "Ticket",
     what: "The Jira ticket filed for this asset, if any.",
     why: "Follow the fix in your team's tracker.",
     example: "SEC-1423.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:99-106 — where it is
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:116-123 — where it is
   "cbom.run.f.location": {
     label: "Location",
     what: "Exactly where the asset is: host and port, file path, keystore or cloud resource.",
     why: "Takes you to the system to change.",
     example: "web-07:/etc/ssl/intranet.pem.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:109-110 — the finding text
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:126-127 — the finding text
   "cbom.run.f.finding": {
     label: "Finding",
     what: "What is wrong, from the knowledge base.",
     why: "Explains the risk in plain words.",
     example: "Key exchange uses RSA: quantum-vulnerable.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:112-113 — extra description
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:129-130 — extra description
   "cbom.run.f.description": {
     label: "Description",
     what: "More detail about the asset and the finding.",
     why: "Context helps choose the right fix.",
     example: "Endpoint offers TLS 1.0-1.2 with RSA key exchange.",
   },
-  // src: frontend/components/cbom/results/RunFindingDialog.tsx:117-125 — source, job, node
+  // src: frontend/components/cbom/results/RunFindingDialog.tsx:134-170 — source, job, node
   "cbom.run.f.origin": {
     label: "Where it came from",
     what: "The source, job and scan node (or cloud) that collected this asset, and when.",
@@ -6110,26 +6222,12 @@ export const INFO_TIPS = {
     example: "dc-mumbai-linux · job #4410 · node-dc1 · 13 Nov 23:10.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: in-tab run results and posture (components/cbom/sources/RunResults.tsx, RunPosture.tsx)
-  // src: frontend/components/cbom/sources/RunResults.tsx:125-130 — each target's outcome
+  // src: frontend/components/cbom/sources/RunResults.tsx:103-108 — each target's outcome
   "cbom.run.targets": {
     label: "Targets",
     what: "Each target the run's jobs tried, with its outcome: read, unreachable, login failed and so on.",
     why: "Targets that could not be read are blind spots in this run.",
     example: "10.20.0.17 · unreachable (port 22 filtered).",
-  },
-  // src: frontend/components/cbom/sources/RunResults.tsx:379-392 — assets with a wave can be selected
-  "cbom.run.col.select_wave": {
-    label: "Select for wave assignment",
-    what: "Select assets that have a remediation wave, to assign a wave, owner, target date or status together.",
-    why: "Plans a group of similar assets in one step.",
-    example: "Tick the 12 certificates of api.bank.in, set Wave 2.",
-  },
-  // src: backend/utilities/cbom_sources/posture.py:3-5 — quantum-vulnerable class
-  "cbom.run.col.qv": {
-    label: "Quantum-vulnerable",
-    what: "Whether the asset was judged quantum-vulnerable when it was collected: public-key cryptography a quantum computer breaks (RSA, DH, elliptic curves).",
-    why: "These assets need a post-quantum replacement.",
-    example: "Yes for ECDHE P-256 key exchange.",
   },
   // src: backend/utilities/cbom_sources/posture.py:1-15 — HNDL, Mosca, risk score, compliance, from the knowledge base
   "cbom.run.posture": {
@@ -6138,7 +6236,7 @@ export const INFO_TIPS = {
     why: "Turns the inventory into the questions a board and a regulator ask.",
     example: "14 HNDL endpoints; with X 10, Y 3, Z 10 the data is at risk now.",
   },
-  // src: frontend/components/cbom/sources/RunPosture.tsx:93-97,155, backend/utilities/cbom_sources/posture.py:10-11 — X, Y, Z in years, 0-100, team admins
+  // src: frontend/components/cbom/sources/RunPosture.tsx:108-112,170,144, backend/utilities/cbom_sources/posture.py:10-11 — X, Y, Z in years, 0-100, team admins
   "cbom.run.mosca": {
     label: "Mosca inputs",
     what: "The team's Mosca values in whole years, 0 to 100: X how long data must stay secret, Y how long migration takes, Z years until a cryptographically relevant quantum computer. Team admins only; blank clears.",
@@ -6154,7 +6252,7 @@ export const INFO_TIPS = {
     example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
   },
   // ────────────────────────────────────────────────────────────── CBOM: quantum risk register, Q0 gaps and agility baseline (CB-23, CB-25; components/cbom/grade)
-  // src: backend/utilities/cbom_sources/risk_register.py:1-11, frontend/components/cbom/grade/RiskRegister.tsx:3-5 — one row per estate asset, current grade
+  // src: backend/utilities/cbom_sources/risk_register.py:1-11, frontend/app/[team_id]/cbom/page.tsx:844 — one row per estate asset, current grade
   "cbom.reg.section": {
     label: "Quantum risk register",
     what: "Every asset of the team once, however many sources see it, with its current quantum risk grade: the team's Mosca inputs now, each source's data lifetime and exposure now, the current grade model. Worst grade first; filter and download the rows as CSV.",
@@ -6290,14 +6388,14 @@ export const INFO_TIPS = {
     why: "Gives the concrete asset list behind each count.",
     example: "Hardware-fixed assets of Card switch.",
   },
-  // src: frontend/components/cbom/grade/AgilityBaseline.tsx:118-120, backend/utilities/cbom_sources/agility_rollup.py:83-89 — the codes that decided the class
+  // src: frontend/components/cbom/grade/AgilityBaseline.tsx:104, backend/utilities/cbom_sources/agility_rollup.py:83-89 — the codes that decided the class
   "cbom.agility.why_codes": {
     label: "Why",
     what: "The finding codes that decided the asset's fix class. An asset seen several times is classed on all its observations' codes together.",
     why: "Tells the owner what to change, not just how hard it is.",
     example: "WEAK_PROTOCOL, NO_PQ_KEX.",
   },
-  // src: backend/utilities/cbom_sources/agility_rollup.py:12-17, frontend/components/cbom/grade/AgilityBaseline.tsx:121-123 — observations merged into one asset
+  // src: backend/utilities/cbom_sources/agility_rollup.py:12-17, frontend/components/cbom/grade/AgilityBaseline.tsx:106 — observations merged into one asset
   "cbom.agility.seen_by": {
     label: "Seen by",
     what: "How many observations, from Sources collections and code scans, were merged into this one asset. Hover for their names.",
@@ -6305,7 +6403,7 @@ export const INFO_TIPS = {
     example: "3 (Network TLS DC1, Servers DC1, repo payments@main).",
   },
   // ────────────────────────────────────────────────────────────── CBOM run results: Ticketing tab (CB-38 PR-4)
-  // src: backend/utilities/cbom_sources/run_tickets.py:1-22, frontend/components/cbom/results/RunTicketingTab.tsx:3-6 — one issue per asset across runs
+  // src: backend/utilities/cbom_sources/run_tickets.py:1-22, frontend/components/cbom/results/RunTicketingTab.tsx:3-6,191 — one issue per asset across runs
   "cbom.run.tickets": {
     label: "Jira tickets for this run",
     what: "Creates one Jira issue per selected finding with the team's Jira connection. An asset that already has an issue, from this run or an earlier run of the same source, keeps it and no duplicate is opened. Each result shows created, existing, failed or deferred (retry).",
@@ -6334,14 +6432,14 @@ export const INFO_TIPS = {
     example: "100 on this page, 88 without a ticket: 88 selected.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: network sweep totals (#234) and the node image pull (#233)
-  // src: frontend/components/cbom/sources/NetworkTab.tsx:932-945, frontend/components/cbom/sources/networkEstimate.ts:18-36 — unique addresses over enabled ranges
+  // src: frontend/components/cbom/sources/NetworkTab.tsx:935-948, frontend/components/cbom/sources/networkEstimate.ts:18-36 — unique addresses over enabled ranges
   "cbsrc.net.before_first": {
     label: "Before the first run",
     what: "What the first sweep will cover: the unique addresses across the enabled ranges, after the never-scan list, times the ports listed. Disabled ranges are not swept and not counted. A discovery sweep on each scan node with ranges finds the open ports first.",
     why: "Check the size before you tell your SOC and start the run.",
     example: "4,096 unique addresses across 2 enabled ranges after the never-scan list, 6 ports. 1 disabled range is not counted.",
   },
-  // src: frontend/components/cbom/sources/logic.ts:422-444, frontend/components/cbom/sources/ScanNodesTab.tsx:487-497 — docker pull or helm from the public registry
+  // src: frontend/components/cbom/sources/logic.ts:612-634, frontend/components/cbom/sources/ScanNodesTab.tsx:488-498 — docker pull or helm from the public registry
   "cbsrc.nodes.registry_pull": {
     label: "Install with one command",
     what: "When ZeroShield publishes the node image in a public registry, one command pulls the pinned release and starts the node (Docker), or installs the Helm chart from that registry. No registry login is needed. Hosts without access to the registry use the downloaded files below instead.",
@@ -6349,7 +6447,7 @@ export const INFO_TIPS = {
     example: "docker pull ghcr.io/… && docker run … on the scan host.",
   },
   // ────────────────────────────────────────────────────────────── CBOM run results: quantum readiness chart of a run
-  // src: frontend/components/cbom/results/model.ts:98-126, backend/utilities/cbom_sources/posture.py:3-7 — Safe = hybrid + quantum-safe + grover-weakened; Vulnerable = quantum-vulnerable
+  // src: frontend/components/cbom/results/model.ts:100-128, backend/utilities/cbom_sources/posture.py:3-7 — Safe = hybrid + quantum-safe + grover-weakened; Vulnerable = quantum-vulnerable
   "cbom.run.quantum": {
     label: "Quantum readiness",
     what: "The run's assets with a quantum verdict, from the run's posture: Safe counts the hybrid, quantum-safe and grover-weakened classes, Vulnerable the quantum-vulnerable class. Assets with no verdict (unknown, not applicable) are left out. A run has no Broken today bar.",
@@ -6357,7 +6455,7 @@ export const INFO_TIPS = {
     example: "Safe 412, Vulnerable 168.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: node install without the public registry (#233)
-  // src: frontend/components/cbom/sources/NodeInstall.tsx:96-101, frontend/components/cbom/sources/ScanNodesTab.tsx:281-291 — one paste with curl or wget, or the downloaded files
+  // src: backend/routers/cbom_node_artifacts.py:26-33, frontend/components/cbom/sources/ScanNodesTab.tsx:312-322,501 — one paste with curl or wget, or the downloaded files
   "cbsrc.nodes.files_install": {
     label: "Air-gapped install",
     what: "For a host that cannot reach the public registry: one paste that downloads this node's files from ZeroShield, checks their SHA-256 and installs them (curl, or wget), or the same install from files you downloaded in the browser. The download links work only for this node and only until it registers or its token is replaced or expires.",
@@ -6365,14 +6463,14 @@ export const INFO_TIPS = {
     example: "Copy the files to the host, then run the install command shown below them.",
   },
   // ────────────────────────────────────────────────────────────── CBOM run results on the one results template (#239, #124)
-  // src: frontend/components/cbom/results/RunDeliverablesMenu.tsx:19-44 — VEX, HMAC signature, evidence zip, PDF report
+  // src: frontend/components/cbom/results/RunDeliverablesMenu.tsx:20-45,83 — VEX, HMAC signature, evidence zip, PDF report
   "cbom.run.deliverables": {
     label: "VEX, Signature, Evidence pack, PDF Report",
     what: "The run's CycloneDX 1.6 VEX (exploitable, in triage, resolved or will-not-fix from the remediation plan), an HMAC-SHA256 signature over the exact bytes of the CycloneDX JSON download, an evidence pack (zip of CycloneDX JSON and XML, OSCAL, VEX, signature and PDF with a sha256 manifest) and a PDF report. While the run is collecting, each file says it holds what was collected so far.",
     why: "The documents an auditor or a regulator asks for, built from the same data as this page.",
     example: "Evidence pack for the RBI inspection: one zip with its sha256 manifest.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:161-190 — verifyCbomRunSignature; the key stays on the server
+  // src: frontend/components/cbom/results/RunSections.tsx:163-192 — verifyCbomRunSignature; the key stays on the server
   "cbom.run.verify": {
     label: "Verify file",
     what: "Checks a CycloneDX JSON file you downloaded from this run against the run's signature. The signing key stays on the server; the result says whether the file is unchanged.",
@@ -6401,12 +6499,442 @@ export const INFO_TIPS = {
     example: "Disable TLS 1.0 and 1.1; allow TLS 1.2 and 1.3 only.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: scan node network requirements (#243)
-  // src: frontend/components/cbom/sources/logic.ts:502-508 — outbound HTTPS to the API; registry, build kits and cloud APIs
+  // src: frontend/components/cbom/sources/logic.ts:543-549 — outbound HTTPS to the API; registry, build kits and cloud APIs
   "cbsrc.nodes.network_req": {
     label: "Network requirements",
     what: "What needs network access: the scan node only needs outbound HTTPS to the ZeroShield API and direct reach to your targets. Pulling the image from a public registry needs that registry; building the OVA or AMI kits needs internet; cloud and identity sources are read from ZeroShield's servers.",
     why: "Tells your network team which firewall rules to open, and that nothing calls in.",
     example: "Allow node-dc1 out to the ZeroShield API on 443; no inbound rule.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Fleet > Credentials (F1.2, PR #81)
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:3-6, backend/utilities/cbom_sources/fleet/credentials.py:1-7 — logins policies hand to managed sources; secrets write-only
+  "fleet.cred.section": {
+    label: "Credentials",
+    what: "Logins that fleet policies give to the managed sources they create: how to sign in to a Linux host over SSH, and the secret if the type stores one. Secrets are encrypted and never shown again.",
+    why: "One credential serves every host a policy matches, so a fleet of thousands needs no per-host setup.",
+    example: "linux-fleet: SSH certificate and key, login zs-cbom on port 22, used by 14 managed sources.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/credentials.py:73 — 1 to 64 characters
+  "fleet.cred.name": {
+    label: "Name",
+    what: "A name for this credential, 1 to 64 characters, shown when you choose one in a policy.",
+    why: "Policies pick credentials by name.",
+    example: "linux-fleet.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:36-43, backend/utilities/cbom_sources/fleet/credentials.py:3-7 — node key, password, SSH certificate, vault, SSH CA
+  "fleet.cred.type": {
+    label: "Type",
+    what: "How the scan node signs in: its own node key (nothing stored here), a password (host keys must be pinned), an SSH certificate and key, or a secret read from a vault. SSH CA credentials are made in the SSH CA section. The type cannot change once added.",
+    why: "Decides which secret is stored and where it may be used.",
+    example: "SSH certificate and key.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/credentials.py:27 — login_user, up to 64 characters
+  "fleet.cred.login": {
+    label: "Login",
+    what: "The account the scan node signs in with on each host, up to 64 characters.",
+    why: "Use a dedicated read-only account so the scan can be audited and limited.",
+    example: "zs-cbom.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/credentials.py:28 — 1 to 65535, default 22
+  "fleet.cred.port": {
+    label: "Port",
+    what: "The SSH port on the hosts, 1 to 65535.",
+    why: "Hosts that run SSH on another port are unreachable on 22.",
+    example: "22, or 2222 where SSH was moved.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:156-164, backend/utilities/cbom_sources/fleet/credentials.py:29-30 — pinned or trust on first use
+  "fleet.cred.pinned": {
+    label: "Pin host keys",
+    what: "Pinned: the node only accepts the host keys listed below. Off: it trusts each host's key the first time and then expects the same key (trust on first use). A password credential is always pinned.",
+    why: "Pinning stops a password or session from going to a host that impersonates the real one.",
+    example: "On for the PCI segment, with its known_hosts lines pasted.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:165-169, backend/utilities/cbom_sources/fleet/credentials.py:30 — pinned host keys
+  "fleet.cred.known_hosts": {
+    label: "known_hosts lines",
+    what: "The hosts' public keys in OpenSSH known_hosts format, one per line. Required when host keys are pinned.",
+    why: "Only hosts whose key is listed are accepted.",
+    example: "web-01.bank.local ssh-ed25519 AAAAC3Nza… (one line per host).",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:170-174, backend/utilities/cbom_sources/fleet/credentials.py:21 — encrypted, write-only; re-entered when the login changes
+  "fleet.cred.password": {
+    label: "Password",
+    what: "The account's password. Encrypted at rest and never shown again; leave it blank on edit to keep it. Changing the login, port, host keys or vault asks for it again.",
+    why: "A password for one login never follows the credential to another one.",
+    example: "The password of zs-cbom.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:175-183, backend/utilities/cbom_sources/fleet/credentials.py:21 — ssh_certificate with private_key
+  "fleet.cred.cert": {
+    label: "SSH certificate",
+    what: "The OpenSSH user certificate signed by your SSH CA for the login account. Stored encrypted with the private key below; never shown again.",
+    why: "Short-lived certificates avoid copying a long-lived key to every host.",
+    example: "ssh-ed25519-cert-v01@openssh.com AAAA… zs-cbom.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:180-182, backend/utilities/cbom_sources/fleet/credentials.py:21 — encrypted, write-only
+  "fleet.cred.key": {
+    label: "Private key",
+    what: "The private key that belongs to the SSH certificate. Encrypted at rest and sent only to the scan node that runs the job; never shown again.",
+    why: "The certificate is useless without it, so keep it read-only on the hosts' side.",
+    example: "The OpenSSH private key that matches zs-cbom-cert.pub.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:185-197, backend/utilities/cbom_sources/kinds.py:81-83 — VaultRef provider
+  "fleet.cred.vault": {
+    label: "Vault",
+    what: "Where the scan node reads the secret at run time: HashiCorp Vault, CyberArk, AWS Secrets Manager or Azure Key Vault. Nothing secret is stored in ZeroShield.",
+    why: "Keeps the secret in the vault your team already rotates and audits.",
+    example: "HashiCorp.",
+  },
+  // src: backend/utilities/cbom_sources/kinds.py:83 — 1 to 512 characters
+  "fleet.cred.vault_path": {
+    label: "Secret path",
+    what: "The path of the secret in the vault, 1 to 512 characters.",
+    why: "The node reads exactly this secret and nothing else.",
+    example: "secret/data/cbom/zs-cbom.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:278 — credential_type
+  "fleet.cred.col.type": {
+    label: "Type",
+    what: "The credential's type: node_key, password, ssh_cert, vault or ssh_ca.",
+    why: "Tells you at a glance which secret, if any, is stored.",
+    example: "ssh_cert.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:279 — login_user:port
+  "fleet.cred.col.login": {
+    label: "Login",
+    what: "The login account and SSH port the credential uses.",
+    why: "Shows which account the hosts must allow.",
+    example: "zs-cbom:22.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:264, backend/utilities/cbom_sources/fleet/credentials.py:5-7 — secrets_set, names only
+  "fleet.cred.col.secrets": {
+    label: "Secrets stored",
+    what: "Which secrets are stored for this credential, by name only; the values are never shown.",
+    why: "Confirms the secret is in place without exposing it.",
+    example: "ssh_certificate, private_key.",
+  },
+  // src: frontend/components/cbom/sources/fleet/CredentialsSection.tsx:265 — managed_sources
+  "fleet.cred.col.managed": {
+    label: "Managed sources",
+    what: "How many managed sources, created by policies, use this credential now.",
+    why: "Deleting or changing a credential affects every one of them.",
+    example: "14 managed sources.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Fleet > Inventory (F1.2, PR #81)
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:3-4, backend/utilities/cbom_sources/fleet/policy.py:1-14 — targets from inventory sources, each with its policy decision
+  "fleet.inv.section": {
+    label: "Inventory",
+    what: "Every host, database, cluster, certificate, key and secret your inventory sources list (a CSV or JSON import, an AWS account, the API), each with the policy decision on it: collect, never scan or not collected, which policy won and why.",
+    why: "Shows which part of the estate the fleet policies cover and which part nothing collects.",
+    example: "4,210 targets: 3,980 collect, 120 never scan, 110 not collected (no policy matches).",
+  },
+  // src: backend/utilities/cbom_sources/fleet/inventory_sources.py:7-12 — CSV with a header row, or JSON
+  "fleet.inv.import_format": {
+    label: "Format",
+    what: "CSV with a header row (external_id, kind, address, addresses, hostname, account_id, region, platform, tags, tag:<key> and handle: or attr: columns) or JSON (a list of objects, or {\"targets\": [...]}). Unknown CSV columns are refused. Picked from the file name when you choose a file.",
+    why: "A typo in a column name must not silently drop a tag a policy depends on.",
+    example: "CSV exported from your CMDB.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:82-87, backend/utilities/cbom_sources/fleet/inventory_sources.py:29 — up to 10,000 rows
+  "fleet.inv.import_file": {
+    label: "File",
+    what: "A .csv or .json file of up to 10,000 targets; its content is loaded into the box below. Importing the same file again changes nothing; targets it no longer lists are marked missing.",
+    why: "Keeps the inventory in step with your CMDB export.",
+    example: "cmdb-linux-2026-11.csv.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:113-125, backend/utilities/cbom_sources/fleet/inventory_sources.py:13 — external_id defaults to hostname, else address
+  "fleet.inv.import_content": {
+    label: "Content",
+    what: "The rows to import, pasted or loaded from the file. external_id defaults to the hostname, else the address; kind defaults to linux_host. Preview shows what would change without saving.",
+    why: "Check the preview before an import marks hosts missing.",
+    example: "A header external_id,kind,address,tag:env and a row web-01,linux_host,10.0.1.5,prod.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/schemas.py:43 — 1 to 64 characters
+  "fleet.inv.aws_name": {
+    label: "Name",
+    what: "A name for this AWS inventory source, 1 to 64 characters.",
+    why: "Each target shows the source that lists it.",
+    example: "aws-payments-prod.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/aws_inventory.py:1-8 — the validated read-only role; list and describe calls only
+  "fleet.inv.aws_account": {
+    label: "AWS account",
+    what: "The AWS account, added and validated on Cloud & Identity, whose read-only role lists the resources. Only list and describe calls are made: no secret value or key material is read.",
+    why: "Discovery reuses the role you already approved; no new credential is needed.",
+    example: "payments-prod · 111122223333.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/aws_inventory.py:32,40 — 1 to 20 regions
+  "fleet.inv.aws_regions": {
+    label: "Regions",
+    what: "The regions to list, comma-separated, 1 to 20.",
+    why: "Resources in a region not listed here are not discovered.",
+    example: "ap-south-1, ap-south-2.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:48,217-232, backend/utilities/cbom_sources/fleet/aws_inventory.py:10-14 — names and tags only; a status per region and service
+  "fleet.inv.aws_services": {
+    label: "Services",
+    what: "Which AWS services to list: EC2, RDS, EKS, load balancers, ACM certificates, KMS keys and Secrets Manager secrets (names and tags only). Each region and service gets a status; only a fully read one can mark vanished targets missing.",
+    why: "Leave out services your role may not list, so they do not show as denied.",
+    example: "ec2, rds and acm only.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/schemas.py:45 — 15 minutes to 7 days
+  "fleet.inv.aws_every": {
+    label: "Sync every (minutes)",
+    what: "How often the account is listed again, from 15 minutes to 7 days (10,080 minutes).",
+    why: "New and removed hosts reach the policies at the next sync.",
+    example: "60 minutes.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:325 — CSV, JSON, API or AWS with its regions
+  "fleet.inv.col.kind": {
+    label: "Kind",
+    what: "Where the source's targets come from: an import (CSV or JSON), the API, or an AWS account with its regions.",
+    why: "AWS sources sync themselves; imports change only when you import again.",
+    example: "AWS · ap-south-1, us-east-1.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:311 — target_count
+  "fleet.inv.col.targets": {
+    label: "Targets",
+    what: "How many targets this source lists now.",
+    why: "A sudden drop usually means a sync could not read part of the account.",
+    example: "1,240.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:327-332,312, backend/utilities/cbom_sources/fleet/aws_inventory.py:10-14 — status, time, error, scopes not read
+  "fleet.inv.col.last_sync": {
+    label: "Last sync",
+    what: "The result and time of the last sync or import, its error if any, and the regions and services it could not read (access denied, region not enabled and so on).",
+    why: "Targets in a scope that was not read are not marked missing, and may be out of date.",
+    example: "partial · 14 Nov 2026, 09:00 · Not read: us-east-1 rds (access denied).",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:462-475 — name, address or ID; applied when typing pauses
+  "fleet.inv.search": {
+    label: "Search",
+    what: "Finds targets by name, address or external ID; the list updates when you pause typing.",
+    why: "Jump to one host in an inventory of thousands.",
+    example: "web-01.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:462-464 — a key may contain colons
+  "fleet.inv.tag_key": {
+    label: "Tag key",
+    what: "Shows only targets that have this tag key. A key may contain colons.",
+    why: "Check what a tag policy will match before you write it.",
+    example: "env, or aws:cloudformation:stack-name.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:486-489 — with a tag key; any value when empty
+  "fleet.inv.tag_value": {
+    label: "Tag value",
+    what: "With a tag key: shows only targets whose tag has this value. Empty means any value.",
+    why: "Narrows the list to one environment or owner.",
+    example: "prod.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:43-47 — target kinds
+  "fleet.inv.kind": {
+    label: "Kind",
+    what: "Shows only one kind of target: Linux or Windows host, database, Kubernetes, load balancer, certificate, KMS key, secret or other. Policies collect Linux hosts; the other kinds are listed for the inventory.",
+    why: "See how much of each kind the inventory holds.",
+    example: "Linux host.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:3-12 — collect, never scan, unmanaged
+  "fleet.inv.decision": {
+    label: "Decision",
+    what: "Shows only targets with one decision: Collect (a policy collects it), Never scan (a never-scan policy or the team's never-scan list), or Not collected (no policy matches, or something the policy needs is not usable).",
+    why: "Not collected is the list of hosts nothing reads yet.",
+    example: "Not collected: 110 targets.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:508-517, backend/utilities/cbom_sources/fleet/policy.py:9-11 — missing for more than 7 days is not collected
+  "fleet.inv.missing": {
+    label: "Missing",
+    what: "Present: targets the last sync or import listed. Missing: targets a fully read sync or a re-import no longer lists. A target missing for more than 7 days is not collected.",
+    why: "Missing hosts were often decommissioned; check before you chase them.",
+    example: "Missing: 6 targets since 2 Nov.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:546-551 — name, address and external ID; click for the detail
+  "fleet.inv.col.target": {
+    label: "Target",
+    what: "The target's host name or address and its external ID. Click a row for its decision, every matching policy, addresses and tags.",
+    why: "The detail shows why a policy did or did not win.",
+    example: "web-01 · 10.0.1.5 · i-0abc123.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:552 — KIND_LABEL
+  "fleet.inv.col.kind_t": {
+    label: "Kind",
+    what: "What the target is: Linux host, Windows host, database, Kubernetes, load balancer, certificate, KMS key, secret or other.",
+    why: "Policies collect Linux hosts over SSH; other kinds are inventory only.",
+    example: "Linux host.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:553-560, backend/utilities/cbom_sources/fleet/policy.py:19 — keys compared lower-cased, values exactly
+  "fleet.inv.col.tags": {
+    label: "Tags",
+    what: "The target's tags as key=value (the first four). Policies match tag keys lower-cased and values exactly.",
+    why: "Tags are what policies select on.",
+    example: "env=prod, owner=payments.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:538 — region and account
+  "fleet.inv.col.where": {
+    label: "Where",
+    what: "The cloud region and account of the target, when it came from a cloud source.",
+    why: "Policies can select on region and account_id too.",
+    example: "ap-south-1 · 111122223333.",
+  },
+  // src: frontend/components/cbom/sources/fleet/InventorySection.tsx:562-571,539, backend/utilities/cbom_sources/fleet/policy.py:3-14 — the first matching policy wins
+  "fleet.inv.col.decision": {
+    label: "Decision (which policy won)",
+    what: "Collect, Never scan or Not collected, the policy that won (highest priority, then the older one) and the reason. Waiting for a running job means its managed source changes when that job ends.",
+    why: "Shows exactly which rule decides each host, so overlaps are easy to spot.",
+    example: "Collect · prod-weekly won (priority 200) over linux-default.",
+  },
+  // ────────────────────────────────────────────────────────────── CBOM Sources: Fleet > Policies (F1.2, PR #81)
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:3-5, backend/utilities/cbom_sources/fleet/policy.py:1-14 — first match by priority wins; never-scan list overrides
+  "fleet.pol.section": {
+    label: "Policies",
+    what: "Rules that decide how each inventory target is collected: a selector over tags and fields, and an action (collect over SSH with a credential, scan node and schedule, or never scan). The highest-priority match wins, then the older policy; the team's never-scan list overrides every policy. Apply policies creates and updates the managed sources and schedules.",
+    why: "Thousands of hosts are covered by a few rules instead of one source per host.",
+    example: "pci (priority 500): never scan; prod-weekly (200): collect weekly; linux-default (0): collect monthly.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/schemas.py:69 — 1 to 64 characters
+  "fleet.pol.name": {
+    label: "Name",
+    what: "A name for the policy, 1 to 64 characters, shown on each target it wins.",
+    why: "The targets table names the policy that decided each host.",
+    example: "prod-weekly.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/schemas.py:71, backend/utilities/cbom_sources/fleet/policy.py:6-7 — 0 to 1,000,000; higher wins, then the older policy
+  "fleet.pol.priority": {
+    label: "Priority",
+    what: "0 to 1,000,000. When several policies match a target, the highest priority wins; on a tie the older policy wins.",
+    why: "Put exceptions, such as never scan for PCI hosts, above the broad rules.",
+    example: "500 for pci, 100 for the default.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:17-19 — all / any / not, leaves on tags and fields, at most 20
+  "fleet.pol.selector": {
+    label: "Targets it matches",
+    what: "The conditions a target must meet: on a tag (any key) or a field (kind, account_id, region, platform). No condition matches every target. At most 20 conditions; no regular expressions.",
+    why: "Decides which hosts this policy governs.",
+    example: "env is prod and region starts with ap-.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:129-151, backend/utilities/cbom_sources/fleet/policy.py:17-19 — tag or field; keys lower-cased, values exact
+  "fleet.pol.condition": {
+    label: "Condition",
+    what: "What the condition tests: a tag, by key (compared lower-cased), or a field: kind, account_id, region or platform.",
+    why: "Tags carry your own grouping; fields come from the inventory source.",
+    example: "Tag env, or Field region.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:153-162, frontend/components/cbom/sources/fleet/fleetLogic.ts:81-87 — is, is not, is one of, is set, starts with
+  "fleet.pol.operator": {
+    label: "Operator",
+    what: "How the value is compared: is, is not, is one of (comma-separated, up to 50 values), is set (any value), or starts with. Values are compared exactly.",
+    why: "Pick the narrowest test that matches what you mean.",
+    example: "env is one of prod, dr.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:250-261, backend/utilities/cbom_sources/fleet/policy.py:17 — all or any
+  "fleet.pol.combine": {
+    label: "Combine conditions",
+    what: "All conditions must hold, or any one is enough.",
+    why: "Changes how many targets the policy matches; preview it before saving.",
+    example: "All: env is prod and platform is ubuntu.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:277-281, backend/utilities/cbom_sources/fleet/policy.py:17-19 — the selector grammar
+  "fleet.pol.selector_json": {
+    label: "Selector (JSON)",
+    what: "A selector that uses not or nesting is edited as JSON: {\"all\": [...]}, {\"any\": [...]}, {\"not\": {...}} and leaves {\"tag\": k, \"op\": op, \"value\": v} or {\"field\": f, \"op\": op, \"value\": v}. At most 20 leaves, 6 levels deep.",
+    why: "Expresses exclusions the simple form cannot.",
+    example: "env is prod but not tagged pci: {\"all\": [{\"tag\": \"env\", \"op\": \"eq\", \"value\": \"prod\"}, {\"not\": {\"tag\": \"pci\", \"op\": \"exists\"}}]}.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:8-12 — collect, never scan, or not collected with the reason
+  "fleet.pol.action": {
+    label: "What happens to them",
+    what: "Collect the matched targets over SSH with the credential, scan node, tier, batch size and schedule below, or never scan them. A target that cannot be collected (not a Linux host, no address, a deleted credential or node, missing for over 7 days) is listed as not collected with the reason.",
+    why: "Decides what a run does with every host this policy wins.",
+    example: "Collect weekly on Sunday 02:00 through node-dc1.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:8 — a never-scan winner gives never_scan
+  "fleet.pol.never_scan": {
+    label: "Never scan them",
+    what: "Targets this policy wins are never collected, whatever lower-priority policies say.",
+    why: "Keeps sensitive systems out of every scan by rule, not by hand.",
+    example: "tag pci is set: never scan.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:294-303 — from Fleet > Credentials
+  "fleet.pol.credential": {
+    label: "Credential (SSH)",
+    what: "The credential the managed sources sign in with. Add one in Credentials below.",
+    why: "Without a usable credential the targets are not collected.",
+    example: "linux-fleet · ssh_cert.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:180-182,304-306 — agentless nodes only
+  "fleet.pol.node": {
+    label: "Scan node",
+    what: "The agentless scan node, in a segment that reaches these hosts, that runs the collection.",
+    why: "The node must reach every matched host on the SSH port.",
+    example: "node-dc1.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:307-315, backend/utilities/cbom_sources/fleet/policy.py:275-278 — 1 or 2
+  "fleet.pol.tier": {
+    label: "Tier",
+    what: "Tier 1 reads without sudo. Tier 2 also runs the read-only sudo lines published on the Servers tab, for files only root can read.",
+    why: "Tier 2 finds more (private key files, service configs) but needs the sudoers lines on each host.",
+    example: "Tier 2 on hosts where the sudoers file is rolled out.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:279-282, backend/utilities/cbom_sources/fleet/materialize.py:7-9 — 25 to 1,000 targets per managed source
+  "fleet.pol.batch": {
+    label: "Batch size",
+    what: "How many targets go into one managed source, 25 to 1,000. A target keeps its managed source while its policy, credential and node stay the same.",
+    why: "Smaller batches spread the work over more jobs; larger ones mean fewer sources to watch.",
+    example: "100 targets per managed source.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:287-297, backend/utilities/cbom_sources/fleet/materialize.py:322,373 — daily, weekly or monthly in the team's scan window time zone
+  "fleet.pol.schedule": {
+    label: "Schedule",
+    what: "When the policy's managed sources are collected: on demand, daily, weekly or monthly, at a time in the team's scan window time zone. One managed schedule per policy.",
+    why: "Keeps the inventory current without starting runs by hand.",
+    example: "Weekly, Sunday at 02:00.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:298-304 — HH:MM, 24 hour
+  "fleet.pol.time": {
+    label: "Time",
+    what: "The time of day the scheduled run starts, 24-hour HH:MM.",
+    why: "Pick a quiet hour for the hosts and the network.",
+    example: "02:00.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:305-310 — Monday to Sunday
+  "fleet.pol.weekday": {
+    label: "Day",
+    what: "The day of the week a weekly schedule runs.",
+    why: "Avoid your change-window days.",
+    example: "Sunday.",
+  },
+  // src: backend/utilities/cbom_sources/fleet/policy.py:312-314 — 1 to 28
+  "fleet.pol.monthday": {
+    label: "Day of month",
+    what: "The day of the month a monthly schedule runs, 1 to 28, so every month has it.",
+    why: "Line the run up with your monthly reporting.",
+    example: "1, the first of each month.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:485-493 — name, priority, disabled
+  "fleet.pol.col.policy": {
+    label: "Policy",
+    what: "The policy's name and priority, in the order the policies apply; Disabled when it is switched off.",
+    why: "The first matching policy in this order wins.",
+    example: "1. pci · priority 500.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:475, frontend/components/cbom/sources/fleet/fleetLogic.ts:153-155 — the selector in words
+  "fleet.pol.col.matches": {
+    label: "Matches",
+    what: "The policy's selector in words.",
+    why: "Read what the policy covers without opening it.",
+    example: "env is prod and region starts with ap-.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:476 — actionText
+  "fleet.pol.col.does": {
+    label: "Does",
+    what: "The policy's action in words: never scan, or collect with which credential, node, tier and schedule.",
+    why: "Shows what happens to the targets it wins.",
+    example: "Collect over SSH with linux-fleet on node-dc1, tier 1, weekly.",
+  },
+  // src: frontend/components/cbom/sources/fleet/PoliciesSection.tsx:477, backend/utilities/cbom_sources/fleet/policy.py:6-7 — won by this policy / matched by its selector
+  "fleet.pol.col.targets": {
+    label: "Targets (won / matched)",
+    what: "Targets this policy decides (won) over targets its selector matches. Matched but not won means a higher-priority policy or the never-scan list decided them.",
+    why: "A big gap between the two shows policies overlapping.",
+    example: "1,180 / 1,240.",
   },
 } as const satisfies Record<string, InfoTipEntry>;
 

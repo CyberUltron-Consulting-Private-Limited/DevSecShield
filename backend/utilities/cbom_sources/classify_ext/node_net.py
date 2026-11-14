@@ -66,16 +66,17 @@ SHA1_NOTE = ("RFC 8247 (IKEv2) and RFC 8221 (ESP) still list HMAC-SHA-1 as MUST-
 
 def _weak_findings(out: Any, enc: list[str], integ: list[str], dh: list[str], what: str) -> None:
     if enc:
-        out.add("IKE_WEAK_ENCR", "High", f"{what} accepts weak IKE encryption ({', '.join(enc[:5])})")
+        out.add("IKE_WEAK_ENCR", "High", f"{what} accepts weak IKE encryption ({', '.join(enc[:5])})", enc)
     if integ and _md5_class(integ):
         out.add("IKE_WEAK_INTEG", "Medium", f"{what} accepts MD5/SHA-1 in IKE ({', '.join(integ[:5])}); MD5 is MUST "
-                                            "NOT in RFC 8247")
+                                            "NOT in RFC 8247", integ)
     elif integ:
-        out.add("IKE_WEAK_INTEG", "Low", f"{what} accepts HMAC-SHA-1 in IKE ({', '.join(integ[:5])}); {SHA1_NOTE}")
+        out.add("IKE_WEAK_INTEG", "Low", f"{what} accepts HMAC-SHA-1 in IKE ({', '.join(integ[:5])}); {SHA1_NOTE}",
+                integ)
     if dh:
         high = any(g.split(" ")[0] in WEAK_GROUPS_HIGH or g.startswith("one of") for g in dh)
         out.add("IKE_WEAK_DH", "High" if high else "Medium",
-                f"{what} accepts weak Diffie-Hellman groups ({', '.join(dh[:5])})")
+                f"{what} accepts weak Diffie-Hellman groups ({', '.join(dh[:5])})", dh)
 
 
 def ike_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now: Any) -> bool | None:
@@ -116,7 +117,7 @@ def ot_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: Any, now:
                                                                                                      "Basic256")})
     if deprecated:
         out.add("OPCUA_DEPRECATED_POLICY", "Medium", f"OPC UA server offers deprecated security policies "
-                                                     f"({', '.join(deprecated)}: SHA-1, RSA PKCS#1 v1.5)")
+                                                     f"({', '.join(deprecated)}: SHA-1, RSA PKCS#1 v1.5)", deprecated)
     anon = [e for e in eps if any((t or {}).get("type") == "Anonymous" for t in e.get("user_tokens") or [])]
     if anon:
         on_none = any(e in none_eps for e in anon)
@@ -230,10 +231,11 @@ def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: An
         pfs = [f"PFS {g}" for g in C.fact_list(facts.get("pfs_groups")) if isinstance(g, str) and g in WEAK_GROUPS]
         weak = enc + integ + pfs
         if enc or pfs or _md5_class(integ):
-            out.add("IPSEC_WEAK_TRANSFORM", "Medium", f"{what} allows weak ESP transforms ({', '.join(weak[:5])})")
+            out.add("IPSEC_WEAK_TRANSFORM", "Medium", f"{what} allows weak ESP transforms ({', '.join(weak[:5])})",
+                    weak)
         elif integ:
             out.add("IPSEC_WEAK_TRANSFORM", "Low", f"{what} allows HMAC-SHA-1 ESP integrity ({', '.join(integ[:5])}); "
-                                                   f"{SHA1_NOTE}")
+                                                   f"{SHA1_NOTE}", integ)
         return None
     if kind == "ssh":
         versions = [int(v) for v in C.fact_list(facts.get("versions")) if str(v).isdigit()]
@@ -248,7 +250,7 @@ def appliance_rule(out: Any, facts: dict[str, Any], algorithm: Any, key_size: An
         _appliance_weak_dh(out, facts, what)
         if facts.get("strong_crypto") is False:
             out.add("WEAK_CIPHER", "High", f"{what}: strong-crypto is disabled, so weak ciphers and hashes stay "
-                                           "allowed for administrative TLS/SSH")
+                                           "allowed for administrative TLS/SSH")  # no algorithm named: not recorded
         return None
     return None
 

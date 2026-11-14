@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 from typing import Any
 
 from backend.new_models import (
@@ -18,12 +19,30 @@ from backend.utilities.cbom_sources.common import iso_z
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, area_level, level, vendor_level, vendor_status
 from backend.utilities.cbom_sources.jobs import job_waiting_reason, run_credit_summary
 from backend.utilities.cbom_sources.kinds import KINDS
+from backend.utilities.cbom_sources.node_release import node_update, parse_reported, server_label, server_release
 from backend.utilities.cbom_sources.planning import RangeContext, node_status, source_targets
 from backend.utilities.cbom_sources.settings import next_window_start
 
 
-def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int = 0, sources: int = 0) -> dict[str, Any]:
+_log = logging.getLogger(__name__)
+
+
+def node_update_or_unknown(reported: str | None, server: tuple[str | None, str | None]) -> dict[str, Any]:
+    """``node_update`` for one node, never raising: ``node_version`` is node-controlled text, and one node the comparison
+    cannot handle must not 500 the whole Scan nodes list (review of PR #286); that node says "unknown" instead."""
+    try:
+        return node_update(reported, *server)
+    except Exception:  # noqa: BLE001 - report "unknown" for this node, keep the rest of the list
+        _log.warning("cbom node update check failed for reported version %r", (reported or "")[:64], exc_info=True)
+        return {"state": "unknown", "reason": "compare_failed", "message": None,
+                "server_build": server_label(*server)}
+
+
+def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int = 0, sources: int = 0,
+                server: tuple[str | None, str | None] | None = None) -> dict[str, Any]:
+    """``server``: ``server_release()`` read once by a caller serialising many nodes; read here when not given."""
     status = node_status(node, now)
+    _version, build = parse_reported(node.node_version)
     return {
         "id": node.id,
         "team_id": node.team_id,
@@ -41,6 +60,11 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
         "enrolled_at": iso_z(node.enrolled_at),
         "hostname": node.hostname,
         "node_version": node.node_version,
+        # the commit the node's image was built from (12 characters), None when it reports none (staging QA B6-1)
+        "node_build": build,
+        # does it run this server's node build? {"state": current|update_available|newer|unknown, "reason", "message",
+        # "server_build"} (node_release.node_update)
+        "update": node_update_or_unknown(node.node_version, server if server is not None else server_release()),
         "source_ips": node.source_ips or [],
         "ssh_public_key": node.ssh_public_key,
         "capabilities": node.capabilities or {},
@@ -158,6 +182,8 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
         "attempts": job.attempts,
         "credits": round(job.weight_c / 100, 2),
         "refunded": job.refunded,
+        # what was given back (CB-14): all of "credits" for a failed or cancelled job, the runtime-skip share otherwise
+        "credits_refunded": round((job.refunded_c or 0) / 100, 2),
         "created_at": iso_z(job.created_at),
         "claimed_at": iso_z(job.claimed_at),
         "finished_at": iso_z(job.finished_at),

@@ -1,7 +1,9 @@
 """The team's estate store (CB-20): one row per cross-source asset key, its latest observation per source.
 
 ``GET /{team_id}/cbom/estate`` (keyset pages of at most 500, filters ``source`` / ``type`` / ``presence``) and
-``GET /{team_id}/cbom/estate/{asset_key}`` (the asset and its observation per source). Same conventions as the other
+``GET /{team_id}/cbom/estate/{asset_key}`` (the asset and its observation per source). Both carry the asset's
+correlation (``estate_links``): owners, applications and data classification from its sources, and the code / SBOM
+components that use it. Same conventions as the other
 CBOM routes (``backend/utilities/cbom_sources/http.py``): team members only, another team's or a missing key is a
 404, validation errors are a 400 that never echoes input.
 """
@@ -15,6 +17,7 @@ from fastapi.responses import JSONResponse
 from sqlmodel import Session
 
 from backend.utilities.cbom_sources import estate as ESTATE
+from backend.utilities.cbom_sources import estate_links as LINKS
 from backend.utilities.cbom_sources.http import PRIVATE, CbomRoute, TeamId, authorize, read_limiter, server_error
 
 router = APIRouter(tags=["cbom-estate"], route_class=CbomRoute)
@@ -36,12 +39,23 @@ async def _run(what: str, team_id: int, fn, *args, **kwargs):
 
 def _list(engine, team_id: int, **kw) -> dict:
     with Session(engine) as session:
-        return ESTATE.list_estate(session, team_id, **kw)
+        out = ESTATE.list_estate(session, team_id, **kw)
+        # engine step 3: each row's owners, applications and data classification, and how many code / SBOM
+        # components use it (stored links, rebuilt only when the team's scans or estate changed)
+        corr = LINKS.correlation(session, team_id, [i["asset_key"] for i in out["items"]])
+    for item in out["items"]:
+        c = corr.get(item["asset_key"]) or {}
+        item.update({"owners": c.get("owners", []), "applications": c.get("applications", []),
+                     "data_classification": c.get("data_classification"),
+                     "linked_components": len(c.get("links", []))})
+    return out
 
 
 def _one(engine, team_id: int, asset_key: str) -> dict:
     with Session(engine) as session:
         out = ESTATE.get_estate_asset(session, team_id, asset_key)
+        if out is not None:
+            out["correlation"] = LINKS.correlation(session, team_id, [asset_key])[asset_key]
     if out is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return out

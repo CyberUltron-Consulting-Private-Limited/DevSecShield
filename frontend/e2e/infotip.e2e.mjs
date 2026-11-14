@@ -1,6 +1,6 @@
 /**
- * Browser test of the (i) info tips (F2), in real Chrome through Playwright: hover, keyboard focus and Escape,
- * aria-describedby, touch tap at 390x844, and no tip clipped at the viewport edges, plus axe on the harness page.
+ * Browser test of the (i) info tips (F2), in real Chrome through Playwright: hover, Tab focus and Escape,
+ * aria-describedby (open and closed), touch tap at 390x844, and no tip clipped at the viewport edges, plus axe on the harness page.
  *
  * It bundles e2e/infotip-harness.tsx (the real <InfoTip>, Radix and registry) with esbuild and compiles the app's
  * app/globals.css with Tailwind, so the tooltip has the app's real size and styles. Not part of `next build` or of the
@@ -77,6 +77,16 @@ async function openTip(p, trigger) {
   assert.ok(box, "the tip's content is visible");
   return { text, box };
 }
+/** Moves the keyboard focus to a trigger with Tab, as a keyboard user does: a programmatic .focus() does not open a tip
+ * (a dialog focusing its first button must not pop one open), so the checks press Tab. */
+async function tabTo(p, trigger) {
+  await p.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
+  for (let i = 0; i < 80; i++) {
+    await p.keyboard.press("Tab");
+    if (await trigger.evaluate((el) => el === document.activeElement)) return;
+  }
+  throw new Error("Tab never reached the tip");
+}
 const vp = (p) => p.viewportSize();
 const inside = (box, size, label) => {
   assert.ok(box.x >= 0 && box.y >= 0, `${label}: starts off-screen (${box.x.toFixed(0)}, ${box.y.toFixed(0)})`);
@@ -93,7 +103,13 @@ const inside = (box, size, label) => {
   await check("desktop: the (i) is a button named About <label>", async () => {
     assert.equal(await credits.evaluate((el) => el.tagName), "BUTTON");
     assert.equal(await credits.getAttribute("aria-label"), "About Credits");
-    assert.equal(await credits.getAttribute("aria-describedby"), null);
+    // described by the tip's text while closed too (a hidden copy), so a screen reader reads it without a popup
+    const desc = await credits.getAttribute("aria-describedby");
+    assert.ok(desc, "the closed trigger has aria-describedby");
+    const hidden = p.locator(`[id="${desc}"]`);
+    assert.equal(await hidden.getAttribute("hidden"), "", "the description is hidden");
+    assert.ok((await hidden.textContent()).includes("credit estimate"), "the description is the tip's text");
+    assert.equal(await p.locator('[data-slot="tooltip-content"]').count(), 0, "no tip on screen");
   });
   await check("desktop: hover opens, moving away closes", async () => {
     await credits.hover();
@@ -125,7 +141,7 @@ const inside = (box, size, label) => {
     for (const spot of await p.locator("[data-spot]").all()) {
       const name = await spot.getAttribute("data-spot");
       const trigger = spot.locator("button");
-      await trigger.focus();
+      await tabTo(p, trigger);
       await p.waitForSelector('[data-slot="tooltip-content"]', { timeout: 2000 });
       await p.waitForTimeout(200); // the open animation (zoom-in-95) ends
       const { box } = await openTip(p, trigger);
@@ -136,8 +152,9 @@ const inside = (box, size, label) => {
     }
   });
   await check("desktop: axe finds no serious or critical violation (tip open)", async () => {
-    await credits.focus();
+    await tabTo(p, credits);
     await p.waitForSelector('[data-slot="tooltip-content"]', { timeout: 2000 });
+    await p.waitForTimeout(300); // the open animation (fade-in) ends: axe measures contrast on the final colours
     await p.addScriptTag({ content: axeSource });
     const res = await p.evaluate(async () => await window.axe.run(document, { resultTypes: ["violations"] }));
     const bad = res.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
@@ -163,7 +180,11 @@ const inside = (box, size, label) => {
   await check("phone: a tap outside closes", async () => {
     await credits.tap();
     await p.waitForSelector('[data-slot="tooltip-content"]', { timeout: 2000 });
-    await p.locator("[data-outside]").tap();
+    // a tap on the page, clear of the open tip (a long tip can cover the "Somewhere else" button on a phone)
+    const tipBox = await p.locator('[data-slot="tooltip-content"]').boundingBox();
+    const size = vp(p);
+    const y = tipBox.y + tipBox.height + 40 < size.height - 60 ? tipBox.y + tipBox.height + 40 : Math.max(60, tipBox.y - 40);
+    await p.touchscreen.tap(size.width / 2 - 60, y);
     await p.waitForSelector('[data-slot="tooltip-content"]', { state: "detached", timeout: 2000 });
   });
   await check("phone: the (i) hit area is at least 24x24 CSS px", async () => {

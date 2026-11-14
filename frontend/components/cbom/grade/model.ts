@@ -102,6 +102,10 @@ export interface QPosture {
   assets?: number;
   q_grades?: Partial<Record<string, number>>;
   q0_reasons?: Record<string, number>;
+  /** the run's assets graded Q0 Unknown per reason (sums to the Q0 Unknown bucket of q_grades); absent on an older backend */
+  q0_reason_assets?: Record<string, number>;
+  /** the unread scope per reason, in items (sums to q0_counts.scope_items); absent on an older backend */
+  q0_scope_reasons?: Record<string, number>;
   q0_items?: Q0Item[];
   q0_items_total?: number;
   q0_counts?: { assets: number; scope_items: number; scope_rows: number };
@@ -241,6 +245,46 @@ export function q0Reasons(p: QPosture): { code: string; count: number }[] {
   return Object.entries(p.q0_reasons ?? {})
     .map(([code, count]) => ({ code, count: Number(count) || 0 }))
     .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+
+function reasonList(counts: Record<string, number> | undefined): { code: string; count: number }[] {
+  return Object.entries(counts ?? {})
+    .map(([code, count]) => ({ code, count: Number(count) || 0 }))
+    .filter((r) => r.count > 0)
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+
+/** The posture card's "Q0 Unknown: why" (staging QA B7): per reason, the run's assets it leaves Q0 Unknown (summing to
+ * the Q0 Unknown bar), and apart from them the unread scope per reason (items: places and sources not read, not assets). The item
+ * list's total split as CB-19 OQ-5 says: items to close, and the team's by-choice exclusions as their own group. An
+ * older backend sends only q0_reasons (items): basis "items", every reason in one list, said as items. */
+export interface Q0Breakdown {
+  basis: "assets" | "items";
+  assets: { code: string; count: number }[];
+  assetsTotal: number;
+  scope: { code: string; count: number }[];
+  scopeTotal: number;
+  byChoice: number;
+  toClose: number;
+  total: number;
+}
+
+export function q0Breakdown(p: QPosture): Q0Breakdown {
+  const total = Number(p.q0_items_total ?? p.q0_items?.length ?? 0) || 0;
+  const byChoice = Math.min(total, Number(p.q0_reasons?.excluded_by_choice) || 0);
+  const byAssets = !!p.q0_reason_assets && !!p.q0_scope_reasons;
+  const assets = byAssets ? reasonList(p.q0_reason_assets) : q0Reasons(p);
+  const scope = byAssets ? reasonList(p.q0_scope_reasons) : [];
+  return {
+    basis: byAssets ? "assets" : "items",
+    assets,
+    assetsTotal: assets.reduce((n, r) => n + r.count, 0),
+    scope,
+    scopeTotal: scope.reduce((n, r) => n + r.count, 0),
+    byChoice,
+    toClose: total - byChoice,
+    total,
+  };
 }
 
 /** One line per Q0 Unknown item: what is unread or ungraded, where, and how many rows it stands for. */

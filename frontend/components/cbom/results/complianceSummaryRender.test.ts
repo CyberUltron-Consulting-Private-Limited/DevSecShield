@@ -20,6 +20,7 @@ const html = (frameworks: ReturnType<typeof buildComplianceSummary>, extra: Reco
   renderToStaticMarkup(h(ComplianceMappingSection, { frameworks, onDrill: () => undefined, scope: "run", ...extra }));
 const visibleText = (markup: string) => markup
   .replace(/<details[^>]*data-testid="compliance-clause-[^"]*-text"[^>]*>[\s\S]*?<\/details>/g, " ")  // collapsed text
+  .replace(/<span[^>]*\shidden=""[^>]*>[^<]*<\/span>/g, " ")  // an (i) tip's hidden description (read by screen readers only)
   .replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/g, " ");
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 
@@ -84,5 +85,28 @@ assert.match(noted, /data-testid="run-compliance-note"/);
 // without a drill-down handler the counts are plain text (nothing clickable that does nothing)
 const plain = renderToStaticMarkup(h(ComplianceMappingSection, { frameworks: run, scope: "run" }));
 assert.ok(!/<button[^>]*data-testid="compliance-[^"]*-assets"/.test(plain), "no handler, no count buttons");
+
+// #289 review: a clause cited for review only reads "Needs evidence" (not Fail) and every unrecorded count shows a
+// visible "Verify" badge in the summary row and the clause header, outside the collapsed text
+const unverified = buildComplianceSummary({ engine: null, mapping: [
+  { framework: "NIST", assets: 2, unrecorded: 1, clauses: [
+    { clause: "SP 800-131A Rev. 2, Sec. 2 Table 1 (TDEA)", title: "Three-key TDEA ...", assets: 1, codes: ["WEAK_CIPHER"], unrecorded: 1, verdict: "needs_evidence", note: "1 of 1 asset(s): Cited for review" },
+    { clause: "SP 800-131A Rev. 2, Sec. 4 (112-bit)", title: "112 bits ...", assets: 2, codes: ["SSH_CBC_CIPHER"], unrecorded: 1, verdict: "fail" }] },
+  { framework: "SEBI CSCRF", assets: 1, unrecorded: 1, clauses: [
+    { clause: "Annexure-H, item 5", title: "Strong encryption ...", assets: 1, codes: ["WEAK_CIPHER"], unrecorded: 1, verdict: "needs_evidence" }] },
+] });
+const ue = html(unverified);
+assert.match(ue, /data-testid="compliance-summary-SEBI-CSCRF-verdict"[^>]*>Needs evidence</, "only unrecorded: Needs evidence, not Fail");
+assert.match(ue, /data-testid="compliance-summary-NIST-verdict"[^>]*>Fail</, "one confirmed clause: Fail");
+assert.match(ue, /data-testid="compliance-summary-NIST-verify"[^>]*>Verify 1 of 2</);
+assert.match(ue, /data-testid="compliance-summary-SEBI-CSCRF-verify"[^>]*>Verify 1</);
+assert.match(ue, /data-testid="compliance-clause-NIST-SP-800-131A-Rev-2-Sec-2-Table-1-TDEA-verdict"[^>]*>Needs evidence</);
+assert.match(ue, /data-testid="compliance-clause-NIST-SP-800-131A-Rev-2-Sec-4-112-bit-verdict"[^>]*>Fail</);
+assert.match(ue, /data-testid="compliance-clause-NIST-SP-800-131A-Rev-2-Sec-4-112-bit-verify"[^>]*>Verify 1 of 2</);
+const shownText = visibleText(ue);
+assert.ok(shownText.includes("Needs evidence") && shownText.includes("Verify 1 of 2"), "visible, not only behind Show text");
+assert.match(ue, /<details id="compliance-fw-SEBI-CSCRF" open=""/, "a framework that needs evidence opens");
+assert.ok(!out.includes("-verify\""), "nothing unrecorded: no verify badge");
+assert.ok(!/data-testid="compliance-[^"]*-verify"/.test(out), "nothing unrecorded: no verify badge");
 
 console.log("complianceSummaryRender.test.ts: ok");

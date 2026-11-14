@@ -79,3 +79,25 @@ row `moved` or `stale` (report.md lists the unexpected and missing identities) a
 ledger judged it (`report.json` / MANIFEST `ledger: {path, sha256}`), and G17 fails when the judge or the ledger is not
 committed (`harness.dirty`, untracked files under `e2e/cbom`). The golden fixture is refreshed
 with `python3 tools/golden.py <run> tests/golden` plus its own ledger snapshot when the lab or the judge changes shape.
+
+## Nightly waves (CB-35)
+
+`waves.yaml` holds the §4.5 waves: the paths that trigger each one on a PR, and the steps it runs. Each step is a
+command with `needs` (what it must find on the machine) and a budget; `live` steps use the Tier-L stack or lab.
+
+```
+python3 -m harness.waves select --base origin/dev   # the waves this branch triggers (§4.6: they must pass)
+python3 -m harness.waves plan                       # the nightly: hermetic steps, then hold A and hold B
+run-waves.sh                                        # Tier-L cron: every wave on dev, two stack.lock holds, report
+run-waves.sh --hermetic                             # no stack (the GitHub nightly, cbom-waves-nightly.yml)
+python3 -m harness.waves issues <run> [--file]      # a draft per new failure with its evidence set
+```
+
+A step is PASS (exit 0), FAIL (non-zero, or killed at twice its budget) or NOT-RUN with the missing need named.
+NOT-RUN is never a pass: a wave is PASS only when every step passed, INCOMPLETE when nothing failed but something did
+not run. Live steps run inside one stack.lock hold per group (`holds` in waves.yaml, each within `hold_budget_min`),
+released in between; inside a hold `run-gate.sh` sees `CBOM_STACK_LOCK_HELD=1`, restacks to the SHA there, and takes
+no lock of its own. Each nightly writes `<root>/N-<sha>-<UTC>/` with `results.json`, `report.json`, `report.md`
+(verdicts, budgets, the holds, new failures and fixes since the previous nightly), every step's `output.log`, and
+`issues/*.md`. Steps whose lab targets or inputs do not exist yet (the W-NET zoo, the W-HOST canaries, a previous
+release's dump or node image, Tier A) say so as NOT-RUN until they do.

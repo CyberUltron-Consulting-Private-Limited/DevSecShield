@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import and_, case, delete, func, or_, update
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from backend.new_models import (
@@ -26,12 +27,14 @@ from backend.new_models import (
     CbomScanNode,
     Team,
 )
+from backend.utilities.cbom_sources import billing as BILLING  # CB-14 credit ledger
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.classify import ASSET_TYPES, CDX_TYPE, classify
 from backend.utilities.cbom_sources.node_facts import normalise_tls
 from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
+from backend.utilities.cbom_sources import ops_metrics as OPS
 from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources.planning import credits, node_status, team_range_cidrs
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
@@ -84,11 +87,22 @@ def charge_team(session: Session, team_id: int, centi: int) -> bool:
     return result.rowcount == 1
 
 
-def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun | None) -> int:
-    """Give back a job's credits once.  Returns centi-credits refunded."""
+def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun | None, *,
+               amount: int | None = None, reason: str | None = None) -> int:
+    """Give back a job's credits once: all of its weight, or ``amount`` of it (the runtime-skip share, CB-14).
+    Returns centi-credits refunded.  The ledger row (``billing.refund_key``) is inserted first: when another
+    transaction already refunded this job (a retried result, the reaper racing a cancel) nothing moves."""
     if job.refunded or job.weight_c <= 0:
         return 0
-    amount = job.weight_c
+    amount = job.weight_c if amount is None else max(0, min(int(amount), job.weight_c))
+    if amount <= 0:
+        return 0
+    why = reason or {"cancelled": "cancelled", "failure": "failed", "expired": "expired"}.get(job.status, "refund")
+    if not BILLING.record(session, team_id=job.team_id, run_id=job.run_id, job_id=job.id, kind="refund", reason=why,
+                          amount_c=amount, idem_key=BILLING.refund_key(job.id)):  # type: ignore[arg-type]
+        session.expire(job, ["refunded", "refunded_c"])
+        log("refund SKIPPED: this job was refunded already", team=job.team_id, run=job.run_id, job=job.id)
+        return 0
     if run is not None:
         # One SQL increment, not an ORM read-modify-write: two jobs of a run refunded at the same time (a node's
         # result and the reaper, two cancels) both count.  A run is charged exactly the sum of its jobs' weights, so
@@ -103,8 +117,11 @@ def refund_job(session: Session, job: CbomCollectionJob, run: CbomCollectionRun 
             log("refund SKIPPED: the run has no credits left to refund", team=job.team_id, run=run.id, job=job.id,
                 amount_c=amount)
             amount = 0
+            session.exec(update(BILLING.CbomCreditEntry).where(  # the ledger says what moved: nothing
+                BILLING.CbomCreditEntry.idem_key == BILLING.refund_key(job.id)).values(amount_c=0))  # type: ignore[arg-type]
         session.expire(run, ["credits_refunded_c"])  # the next read sees every refund, not this session's copy
     job.refunded = True
+    job.refunded_c = amount
     session.add(job)
     if amount > 0:
         session.exec(update(Team).where(Team.id == job.team_id).values(credit_balance=Team.credit_balance + amount / 100))
@@ -130,31 +147,27 @@ def policy_refund_units(job: CbomCollectionJob, result: dict[str, Any]) -> int:
 
 def refund_policy_excluded(session: Session, job: CbomCollectionJob, run: CbomCollectionRun | None,
                            result: dict[str, Any]) -> int:
-    """Refund the per-target charge of the targets ``policy_refund_units`` counts, once (the job's result records
-    it as ``policy_refund_c``).  Returns centi-credits refunded."""
-    units = policy_refund_units(job, result)
-    if units <= 0 or job.refunded or job.weight_c <= 0 or (job.result or {}).get("policy_refund_c"):
+    """The refund of a collection that ended ``success`` but did not read all it was charged for, in one ledger row
+    (``refund_job``): the per-target charge of the never-scan targets ``policy_refund_units`` counts (CB-11; recorded
+    in the result as ``policy_refund_c``), plus the runtime-skip share of the rest (CB-14, ``billing.runtime_refund_c``).
+    Returns centi-credits refunded."""
+    if job.refunded or job.weight_c <= 0:
         return 0
-    amount = min(job.weight_c, job.weight_c * units // max(int((job.params or {}).get("units") or 1), 1))
+    units = policy_refund_units(job, result)
+    policy_c = 0
+    if units > 0:
+        policy_c = min(job.weight_c, job.weight_c * units // max(int((job.params or {}).get("units") or 1), 1))
+    share = BILLING.runtime_refund_c(job.weight_c - policy_c, result)
+    amount = min(job.weight_c, policy_c + share)
     if amount <= 0:
         return 0
-    if run is not None:
-        refunded = CbomCollectionRun.credits_refunded_c
-        if not session.exec(
-            update(CbomCollectionRun)
-            .where(CbomCollectionRun.id == run.id, CbomCollectionRun.credits_charged_c - refunded >= amount)
-            .values(credits_refunded_c=refunded + amount)
-            .execution_options(synchronize_session=False)
-        ).rowcount:
-            log("never-scan refund SKIPPED: the run has no credits left to refund", team=job.team_id, run=run.id,
-                job=job.id, amount_c=amount)
-            return 0
-        session.expire(run, ["credits_refunded_c"])
-    job.result = {**(job.result or {}), "policy_refund_c": amount, "policy_refund_units": units}
-    session.add(job)
-    session.exec(update(Team).where(Team.id == job.team_id).values(credit_balance=Team.credit_balance + amount / 100))
-    log("never-scan targets refunded", team=job.team_id, run=job.run_id, job=job.id, units=units, amount_c=amount)
-    return amount
+    if policy_c:
+        job.result = {**(job.result or {}), "policy_refund_c": policy_c, "policy_refund_units": units}
+        session.add(job)
+    refunded = refund_job(session, job, run, amount=amount, reason="runtime_skips" if share else "never_scan")
+    if refunded and policy_c:
+        log("never-scan targets refunded", team=job.team_id, run=job.run_id, job=job.id, units=units, amount_c=policy_c)
+    return refunded
 
 
 # ----------------------------------------------------------------------------- run status
@@ -266,6 +279,7 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
                 _test_result_from_job(session, job, now)
                 audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action=f"job.lease_expired.{target}",
                       object_type="job", object_id=job.id)
+                OPS.bump(session, OPS.LEASE_EXPIRED[target], now=now)  # cbom_job_lease_expiries_total (CB-31)
                 log("job lease expired", team=job.team_id, job=job.id, node=job.node_id, status=target,
                     attempt=job.attempts, refunded_c=refunded)
                 moved += 1
@@ -590,13 +604,44 @@ def _pending_for_node(session: Session, node: CbomScanNode):
             yield job
 
 
+def node_max_concurrency() -> int:
+    """Most collections and discoveries one scan node may hold claimed at once (CBOM_NODE_MAX_CONCURRENCY, default 8:
+    the node agent's own ZS_MAX_JOBS ceiling).  Connection tests are not counted: they are short and a customer is
+    waiting on them."""
+    try:
+        value = int(os.environ.get("CBOM_NODE_MAX_CONCURRENCY", "") or 8)
+    except ValueError:
+        value = 8
+    return max(1, min(value, 64))
+
+
+_CAPPED_KINDS = ("collect", "discovery")
+
+
+def _node_busy(node_id: int):
+    """Claimed collections and discoveries of a node (a scalar subquery, re-read inside the claiming UPDATE)."""
+    return (select(func.count()).select_from(CbomCollectionJob)
+            .where(CbomCollectionJob.node_id == node_id, CbomCollectionJob.status == "claimed",
+                   CbomCollectionJob.kind.in_(_CAPPED_KINDS))  # type: ignore[attr-defined]
+            .scalar_subquery())
+
+
 def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSettings, now: _dt.datetime) -> dict | None:
     """Claim the oldest runnable job for this node and return its payload (with decrypted secrets).
 
     Jobs that cannot run now (outside their scan window, network scanning stopped) stay queued and are passed over,
-    however many there are: they never hide a newer job that can run (a connection test ignores the window)."""
+    however many there are: they never hide a newer job that can run (a connection test ignores the window).  A node
+    holding ``node_max_concurrency()`` collections and discoveries gets only connection tests until one ends (CB-14);
+    two claim requests of one node at once are serialised by a lock on its row (PostgreSQL) and the cap is re-checked
+    inside the claiming UPDATE (exact on SQLite)."""
     reap(session, now, node_id=node.id)
+    cap = node_max_concurrency()
+    if session.get_bind().dialect.name == "postgresql":
+        session.exec(select(CbomScanNode.id).where(CbomScanNode.id == node.id).with_for_update())
+    full = session.exec(select(_node_busy(node.id))).one() >= cap
     for job in _pending_for_node(session, node):
+        if full and job.kind in _CAPPED_KINDS:
+            continue
         source = session.get(CbomCollectionSource, job.source_id) if job.source_id else None
         reason = _invalid_reason(job, source, node)
         live_ranges = _live_discovery_ranges(session, job) if job.kind == "discovery" else None
@@ -623,13 +668,18 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
         if job.kind != "test_connection" and not window_allows(_job_window(source, settings), settings.window_timezone, now):
             continue
         lease_id = secrets.token_hex(12)
+        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending"]
+        if job.kind in _CAPPED_KINDS:
+            guard.append(_node_busy(node.id) < cap)
         changed = session.exec(
             update(CbomCollectionJob)
-            .where(CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending")
+            .where(*guard)
             .values(status="claimed", lease_id=lease_id, lease_expires_at=now + LEASE, claimed_at=now,
                     attempts=CbomCollectionJob.attempts + 1, asset_count=0, outcome=None)
         ).rowcount
         if not changed:
+            if job.kind in _CAPPED_KINDS:
+                full = True  # another claim of this node filled it meanwhile
             continue
         session.refresh(job)
         _start_attempt(session, job, now)
@@ -885,6 +935,12 @@ def _owned_job(session: Session, node: CbomScanNode | None, job_id: int, team_id
     return job
 
 
+def _count_field(result: dict[str, Any], name: str) -> int | None:
+    """A non-negative integer the node reported, else None (absent, a bool, a string: not trusted as a count)."""
+    value = result.get(name)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored: int,
              read: int | None = None) -> tuple[str, dict[str, Any]]:
     """ok / partial / failed from the node's own target counts and what the server actually stored.  A ``partial``
@@ -909,7 +965,18 @@ def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored
         extra["excluded_by_policy"] = excluded
         skipped -= excluded
     reported = result.get("asset_count")
-    if job.kind == "collect" and isinstance(reported, int) and reported != stored:
+    sent = _count_field(result, "sent")
+    if job.kind == "collect" and sent is not None:
+        # CB-31 (R4 OBS-5): a node that reports what it sent.  Every asset it sent is stored, a duplicate of one
+        # already stored (a retried batch), or lost on the way (``assets_lost``, also the Truncated badge); anything
+        # else, assets the server refused among them, is a mismatch the badge must show.
+        duplicate = _count_field(result, "duplicate") or 0
+        lost = _count_field(result, "assets_lost") or 0
+        expected = sent - duplicate - lost
+        if expected != stored:
+            extra["asset_mismatch"] = {"reported": expected, "stored": stored, "sent": sent, "duplicate": duplicate,
+                                       "rejected": _count_field(result, "rejected") or 0, "lost": lost}
+    elif job.kind == "collect" and isinstance(reported, int) and reported != stored:  # an older node
         extra["asset_mismatch"] = {"reported": reported, "stored": stored}
     if not counts:
         return ("partial" if extra or result.get("truncated") else "ok"), extra
@@ -966,8 +1033,11 @@ def finish_job(
     # deadline) or refused: nothing was collected, so it is refunded like a failure.  Coverage rows (what was not
     # read, and why) are not a collection: a job that stored only those is refunded too.
     if job.kind == "collect" and (status in ("failure", "cancelled") or (outcome == "failed" and int(read) == 0)):
-        refunded = refund_job(session, job, _run_of(session, job))
+        refunded = refund_job(session, job, _run_of(session, job),
+                              reason="nothing_read" if status == "success" else None)
     elif job.kind == "collect" and status == "success" and isinstance(clean_result, dict):
+        # partly read: never-scan targets the estimate could not subtract (CB-11), and the targets skipped at runtime
+        # or whose credential was refused (CB-14, OA-10b), are not charged
         refunded = refund_policy_excluded(session, job, _run_of(session, job), clean_result)
     _test_result_from_job(session, job, now)
     _credential_refused_from_job(session, job, status, clean_result, now)
@@ -1068,6 +1138,7 @@ def add_assets(
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
     rows, rejected, in_batch_dups = asset_rows(job, assets, known, now)
     inserted, existing, dropped, cap_reached = store_rows(session, job, job, lease_id, rows)
+    OPS.bump(session, OPS.INGEST_REJECTED, rejected, now)  # cbom_ingest_rejected_assets_total (CB-31)
     total = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
         CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts)).one())
     duplicate = in_batch_dups + existing
@@ -1240,25 +1311,29 @@ def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_ca
     whose oldest pending job is oldest).  While more than one team has pending work, a team already running
     ``team_cap`` jobs is passed over, so a team with one job is served by the next free worker however many slices
     another team has queued; a team that is alone in the queue may use the whole pool.  On PostgreSQL the team's rows
-    are taken ``FOR UPDATE SKIP LOCKED`` and, while the cap applies, under a per-team transaction advisory lock taken
-    with ``pg_try_advisory_xact_lock`` (a team another claimer is busy with is skipped, never waited for: no lock
-    cycle between claimers).  The guarded ``status = 'pending'`` UPDATE re-checks the cap, which keeps SQLite (tests)
-    exact too.  The caller commits."""
+    are taken ``FOR UPDATE SKIP LOCKED`` under a per-team transaction advisory lock taken with
+    ``pg_try_advisory_xact_lock`` (a team another claimer is busy with is skipped, never waited for: no lock cycle
+    between claimers).
+
+    Whether the cap applies is decided again inside the claiming UPDATE, never only from the queue read above: the
+    guarded ``status = 'pending'`` UPDATE claims only while the team is under the cap OR no other team has pending
+    work at that moment.  The queue read is an unlocked snapshot: another team's work can appear between it and the
+    UPDATE (its collection fanned out into slices just then), and a claim decided "alone" from that snapshot took the
+    team past its cap while the other team waited (the flaky test_the_team_cap_holds_while_another_team_is_waiting).
+    On SQLite the UPDATE holds the write lock, so the guard is exact; on PostgreSQL the advisory lock serialises the
+    team's claims and the guard reads the queue at the UPDATE's own snapshot.  The caller commits."""
     pg = session.get_bind().dialect.name == "postgresql"
     running = _cloud_running(session)
     waiting = session.exec(
         select(CbomCollectionJob.team_id, func.min(CbomCollectionJob.id))
         .where(*_cloud_queue(), CbomCollectionJob.status == "pending").group_by(CbomCollectionJob.team_id)).all()
-    cap = (team_cap or team_max_concurrency()) if len(waiting) > 1 else None
+    cap = team_cap or team_max_concurrency()
+    contended = len(waiting) > 1
     for team_id, _oldest in sorted(waiting, key=lambda row: (running.get(int(row[0]), 0), row[1])):
-        if cap is not None:
-            if running.get(int(team_id), 0) >= cap:
-                continue
-            if pg:
-                if not session.exec(select(func.pg_try_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id)))).one():
-                    continue  # another claimer is taking this team's place now
-                if _cloud_running(session, int(team_id)).get(int(team_id), 0) >= cap:
-                    continue
+        if contended and running.get(int(team_id), 0) >= cap:
+            continue  # the snapshot already says no; the UPDATE's guard decides every other case
+        if pg and not session.exec(select(func.pg_try_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id)))).one():
+            continue  # another claimer is taking this team's place now
         payload = _claim_for_team(session, now, worker, int(team_id), pg, cap)
         if payload is not None:
             return payload
@@ -1266,7 +1341,7 @@ def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_ca
 
 
 def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: int, pg: bool,
-                    cap: int | None) -> dict | None:
+                    cap: int) -> dict | None:
     query = (
         select(CbomCollectionJob)
         .where(*_cloud_queue(), CbomCollectionJob.team_id == team_id, CbomCollectionJob.status == "pending")
@@ -1304,12 +1379,15 @@ def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: i
                           object_type="job", object_id=job.id, changed_fields=["stale_source"])
             continue
         lease_id = secrets.token_hex(12)
-        # the team's cap, checked again inside the claiming UPDATE (on SQLite the UPDATE holds the write lock, so this
-        # is exact; on PostgreSQL the advisory lock above serialises the team's claims)
-        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending"]
-        if cap is not None:
-            guard.append(select(func.count()).select_from(CbomCollectionJob)
-                         .where(CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery() < cap)
+        # the team's cap, decided inside the claiming UPDATE: under the cap, or no other team waiting right now (on
+        # SQLite the UPDATE holds the write lock, so this is exact; on PostgreSQL the advisory lock above serialises
+        # the team's claims). Never from the queue snapshot alone (see claim_cloud_job).
+        other = aliased(CbomCollectionJob)
+        others_waiting = (select(other.id).where(other.node_id.is_(None), other.kind.in_(CLOUD_KINDS),  # type: ignore[union-attr,attr-defined]
+                                                  other.status == "pending", other.team_id != team_id).exists())
+        under_cap = select(func.count()).select_from(CbomCollectionJob).where(
+            CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery() < cap
+        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending", or_(under_cap, ~others_waiting)]
         changed = session.exec(
             update(CbomCollectionJob)
             .where(*guard)
