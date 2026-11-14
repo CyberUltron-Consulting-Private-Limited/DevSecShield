@@ -46,6 +46,7 @@ import { toast } from "@/utils/toast";
 import { useRouter, useParams } from "next/navigation";
 import ApiKeyRevealDialog from "@/components/cicd/ApiKeyRevealDialog";
 import { hasIssuedKey, keyStateLabel } from "@/components/cicd/apiKey";
+import { singleFlight } from "@/components/cicd/singleFlight";
 
 const vulnsOverTimeChartConfig = {
   date: { label: "Date" },
@@ -124,6 +125,23 @@ export default function CicdPage() {
       showErrorToast(error);
     }
   });
+
+  // One create at a time: a double Enter (or Enter then a click) before isPending re-renders would start two creates,
+  // and only the second integration's one-time key would be shown (components/cicd/singleFlight.ts).
+  const createAsync = createCicdIntegrationMutation.mutateAsync;
+  const createOnce = useMemo(() => singleFlight((data: CreateCicdIntegrationData) => createAsync(data)), [createAsync]);
+  const submitCreate = () => {
+    if (!formTitle.trim()) {
+      toast.error("Title is required");
+      return;
+    }
+    if (!formScanType) {
+      toast.error("Scan type is required");
+      return;
+    }
+    if (createCicdIntegrationMutation.isPending) return;
+    createOnce({ title: formTitle.trim(), scan_type: formScanType as "sast" | "dast" | "cbom" });
+  };
 
   const deleteCicdIntegrationMutation = useMutation({
     mutationFn: (integration_id: number) => deleteCicdIntegration(Number(team_id), integration_id),
@@ -475,12 +493,7 @@ export default function CicdPage() {
                 placeholder="Integration name"
                 required
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && formTitle.trim() && formScanType) {
-                    createCicdIntegrationMutation.mutate({
-                      title: formTitle.trim(),
-                      scan_type: formScanType as "sast" | "dast" | "cbom",
-                    });
-                  }
+                  if (e.key === "Enter" && formTitle.trim() && formScanType && !createCicdIntegrationMutation.isPending) submitCreate();
                 }}
               />
             </div>
@@ -516,21 +529,7 @@ export default function CicdPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => {
-                if (!formTitle.trim()) {
-                  toast.error("Title is required");
-                  return;
-                }
-                if (!formScanType) {
-                  toast.error("Scan type is required");
-                  return;
-                }
-                
-                createCicdIntegrationMutation.mutate({
-                  title: formTitle.trim(),
-                  scan_type: formScanType as "sast" | "dast" | "cbom",
-                });
-              }}
+              onClick={submitCreate}
               disabled={!formTitle.trim() || !formScanType || createCicdIntegrationMutation.isPending}
               className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
             >

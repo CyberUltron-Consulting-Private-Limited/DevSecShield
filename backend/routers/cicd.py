@@ -581,7 +581,9 @@ async def update_cicd_integration(
 
         # STEP [ 3 ] : ======================================== Update the integration ====================================
         with Session(engine) as session:
-            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id)).first()
+            # FOR UPDATE: the settings are read, merged and written back; a key rotate/revoke (which writes the key
+            # record into the same JSON column) waits for this commit instead of being overwritten by it
+            integration = session.exec(select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id).with_for_update()).first()
             if not integration:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")
             if integration.owner_user_id != user.id: # only the owner of the integration can update it ⭐⭐
@@ -603,7 +605,7 @@ async def update_cicd_integration(
                     else:
                         settings_dict = {}
                     settings_dict["jira"] = specific_settings_dict["jira"]
-                    console.print(settings_dict, style="bold yellow")
+                    console.print(public_settings(settings_dict), style="bold yellow")
                     integration.integration_settings= settings_dict
 
             if data.scan_settings is not None:
@@ -653,8 +655,11 @@ async def update_cicd_integration(
 def _manageable_integration(session: Session, team_id: int, integration_id: int, user_id: int, engine) -> CicdIntegration:
     """The integration whose key the caller may rotate or revoke: 404 when it is not this team's, 403 unless the
     caller owns it or is a team admin (membership is checked by the caller first)."""
+    # FOR UPDATE: rotate / revoke rewrite integration_settings; a concurrent settings PUT (also FOR UPDATE) or
+    # another rotate waits, so the stored key record always describes the key that is active
     integration = session.exec(
         select(CicdIntegration).where(CicdIntegration.id == integration_id).where(CicdIntegration.team_id == team_id)
+        .with_for_update()
     ).first()
     if not integration:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cicd integration not found")

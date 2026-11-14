@@ -4,7 +4,7 @@
 // (the mutation answer): it is never written to storage, the URL or the query cache, and is gone once the dialog
 // closes. The dialog closes only through its button, so a stray click or Escape cannot lose the key.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, Copy, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -36,6 +36,17 @@ export default function ApiKeyRevealDialog({ apiKey, scanType, title, onDone }: 
   const snippets = useMemo(() => ciSnippets(kind, `${apiBaseURL}/cicd/${kind}/scan`), [kind]);
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+
+  // A reload or back navigation would drop the key: ask the browser to confirm while it is on screen
+  useEffect(() => {
+    if (!apiKey) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [apiKey]);
 
   const close = () => {
     setCopiedKey(false);

@@ -57,6 +57,10 @@ class _NoLogs:
 def env(monkeypatch: pytest.MonkeyPatch):
     eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     SQLModel.metadata.create_all(eng)
+    yield from _world(monkeypatch, eng)
+
+
+def _world(monkeypatch: pytest.MonkeyPatch, eng):
     from backend.routers import cicd as router
 
     monkeypatch.setattr("backend.get_db.get_db", lambda: eng)
@@ -258,3 +262,100 @@ def test_a_key_issued_before_this_change_still_works_and_shows_no_hint(env):
     assert detail["api_key"] == f"cicd{ids['a']}-…"
     assert _authenticates(legacy)
     assert json.dumps(detail).find(hashlib.sha256(legacy.encode()).hexdigest()[:8]) == -1
+
+
+def test_a_plaintext_stored_legacy_key_is_never_shown_and_rotates_to_a_hash(env):
+    """The oldest rows stored the key itself (the path auth's plaintext fallback and its revoked: guard serve)."""
+    call, eng, ids = env
+    legacy = f"cicd{ids['a']}-" + "cd" * 64
+    with Session(eng) as session:
+        owner = session.exec(select(User).where(User.email == "owner@example.com")).one()
+        integ = CicdIntegration(team_id=ids["a"], owner_user_id=owner.id, title="oldest", scan_type="cbom",
+                                api_key=legacy, integration_settings=None)
+        session.add(integ)
+        session.commit()
+        session.refresh(integ)
+        iid = integ.id
+    assert _authenticates(legacy)
+    listed = call("GET", f"/{ids['a']}/cicd/integrations", "member")
+    got = call("GET", f"/{ids['a']}/cicd/integration/{iid}", "member")
+    for res in (listed, got):
+        assert res.status_code == 200, res.text
+        for part in (legacy, legacy[:12], legacy[6:30], legacy[-8:]):
+            assert part not in res.text
+    assert got.json()["api_key_state"] == "active" and got.json()["api_key_hint"] is None
+    rotated = call("POST", f"/{ids['a']}/cicd/integration/{iid}/api-key/rotate", "owner").json()
+    assert not _authenticates(legacy)
+    assert _authenticates(rotated["api_key"])
+    assert _stored(eng, iid) == hashlib.sha256(rotated["api_key"].encode()).hexdigest()
+
+
+def test_the_settings_log_never_carries_the_key_record(env, monkeypatch):
+    call, eng, ids = env
+    from backend.routers import cicd as router
+
+    printed: list[str] = []
+    monkeypatch.setattr(router.console, "print", lambda *a, **_k: printed.append(" ".join(map(str, a))))
+    body = _create(call, ids)
+    jira = {"integration_settings": {"jira": {"jira_project_id": "10001"}}}
+    assert call("PUT", f"/{ids['a']}/cicd/integration/{body['integration_id']}", "owner", json=jira).status_code == 200
+    text = "\n".join(printed)
+    assert "10001" in text  # the Jira settings are still logged
+    assert "cicd_api_key" not in text and "owner@example.com" not in text and body["api_key"][-4:] not in text
+
+
+# ---------------------------------------------------------------------------------- PostgreSQL: the row lock
+PG = os.environ.get("CBOM_TEST_PG_URL")
+
+
+@pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL (as in CI)")
+def test_a_rotate_during_a_settings_save_waits_and_the_hint_follows_the_new_key(monkeypatch):
+    """R-code minor 1: PUT reads integration_settings, merges Jira into it and writes it back. A rotate that commits in
+    between used to be overwritten, so the page showed the old key's last 4. Both now take the row FOR UPDATE: the
+    rotate waits for the save, then writes its record on top of it."""
+    import threading
+    import time
+
+    from backend.routers import cicd as router
+
+    eng = create_engine(PG, pool_size=8, max_overflow=4)
+    SQLModel.metadata.drop_all(eng)
+    SQLModel.metadata.create_all(eng)
+    gen = _world(monkeypatch, eng)
+    call, _eng, ids = next(gen)
+    body = _create(call, ids)
+    iid = body["integration_id"]
+
+    read_done, go = threading.Event(), threading.Event()
+    real_print = router.console.print
+
+    def paused_print(*a, **k):
+        # the PUT logs the merged settings after reading the row and before its commit: hold it open there
+        if a and isinstance(a[0], dict) and "jira" in a[0] and not read_done.is_set():
+            read_done.set()
+            go.wait(10)
+        return real_print(*a, **k)
+
+    monkeypatch.setattr(router.console, "print", paused_print)
+    out: dict[str, object] = {}
+    jira = {"integration_settings": {"jira": {"jira_project_id": "10001"}}}
+    put = threading.Thread(target=lambda: out.update(
+        put=call("PUT", f"/{ids['a']}/cicd/integration/{iid}", "owner", json=jira)))
+    rot = threading.Thread(target=lambda: out.update(
+        rot=call("POST", f"/{ids['a']}/cicd/integration/{iid}/api-key/rotate", "admin")))
+    put.start()
+    assert read_done.wait(10), "the PUT reached its read"
+    rot.start()
+    time.sleep(1.0)
+    rotate_blocked = rot.is_alive()
+    go.set()
+    put.join(20)
+    rot.join(20)
+    assert out["put"].status_code == 200 and out["rot"].status_code == 200
+    assert rotate_blocked, "the rotate waited for the settings save (row lock)"
+    new_key = out["rot"].json()["api_key"]
+    detail = call("GET", f"/{ids['a']}/cicd/integration/{iid}", "owner").json()
+    assert detail["api_key_hint"] == new_key[-4:], "the hint is the active key's"
+    assert detail["integration_settings"]["jira"]["jira_project_id"] == "10001"
+    assert _authenticates(new_key) and not _authenticates(body["api_key"])
+    eng.dispose()

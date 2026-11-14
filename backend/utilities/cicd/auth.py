@@ -140,7 +140,8 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
         if not user_id or not integration_id or not team_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
         
-        console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with API key ******{api_key[-6:]}", style="bold yellow")
+        # no part of the key in the log (the UI shows at most its last 4 characters)
+        console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with its CI/CD API key", style="bold yellow")
         return {
             "user_id": user_id,
             "integration_id": integration_id,

@@ -36,12 +36,22 @@ export default function ApiKeyPanel({ teamId, integrationId, scanType, view, onC
       if (hasIssuedKey(data)) setIssuedKey(data.api_key);
       onChanged();
     },
+    // the API client already toasts why (e.g. 404 after a delete in another tab, 403 after a role change): close
+    // the confirm and reload, so the panel never keeps showing a state the server no longer has
+    onError: () => {
+      setConfirm(null);
+      onChanged();
+    },
   });
   const revoke = useMutation({
     mutationFn: () => revokeCicdApiKey(teamId, integrationId),
     onSuccess: () => {
       setConfirm(null);
       toast.success("API key revoked. Pipelines using it are now refused.");
+      onChanged();
+    },
+    onError: () => {
+      setConfirm(null);
       onChanged();
     },
   });

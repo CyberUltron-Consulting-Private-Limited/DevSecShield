@@ -26,7 +26,7 @@ export function JenkinsGuide({ scanType = "sast" }: JenkinsIntegrationGuideProps
 
   const copyToClipboard = async () => {
     try {
-            await navigator.clipboard.writeText(jenkinsfileContent);
+      await navigator.clipboard.writeText(jenkinsfileContent);
       setCopied(true);
       toast.success("Jenkinsfile content copied to clipboard!");
       setTimeout(() => {
