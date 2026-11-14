@@ -69,6 +69,7 @@ from backend.utilities.cbom_sources import cdx_xml as CDX_XML
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
+from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import runs as RUNS
 from backend.utilities.cbom_sources import run_assets as RUN_ASSETS
 from backend.utilities.cbom_sources import schedules as SCHED
@@ -1490,8 +1491,18 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
         node = session.get(CbomScanNode, source.node_id) if source is not None and source.node_id else None
         if node is not None and node.team_id != team_id:
             node = None
-        return {"asset": POSTURE.asset_detail(row, source, job=job if job and job.team_id == team_id else None,
-                                              node=node)}
+        asset = POSTURE.asset_detail(row, source, job=job if job and job.team_id == team_id else None, node=node)
+        # the quantum risk grade, from the same context loader as the run's list and posture (CB-19)
+        grading = QGRADE.load_context(session, team_id=team_id, run_id=row.run_id, job_id=row.job_id)
+        graded = grading.grade_row(row, asset["finding_codes"])
+        return {"asset": {**asset, **graded.fields(), "q_explain": graded.explain}}
+
+
+@router.get(BASE + "/grade-model", dependencies=READ,
+            summary="The quantum risk grade model (qg-1): signed text, its sha256, grades and reason codes")
+async def grade_model(team_id: TeamId, Authorization: AuthHeader = None):
+    await authorize(team_id, Authorization)
+    return _ok(QGRADE.model_payload())
 
 
 @router.get(BASE + "/assets/{asset_id}", dependencies=READ,
