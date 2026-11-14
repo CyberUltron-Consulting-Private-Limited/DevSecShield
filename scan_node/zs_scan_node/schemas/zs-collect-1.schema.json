@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zeroshield.ai/schemas/zs-collect-1.schema.json",
+  "title": "zs-collect/1 document",
+  "description": "What zs-collect prints for one host: the scan node's collect document (status, error, result, assets, elapsed_s; see zs_scan_node/collect.py) inside the zs-collect/1 envelope. Each asset is the backend's AssetIn (backend/utilities/cbom_sources/schemas.py). The node and the cloud worker refuse a document whose run_nonce or collector_version does not match the job.",
+  "type": "object",
+  "required": ["format", "collector_version", "run_nonce", "target_label", "tier", "host", "started_at", "finished_at",
+               "status", "error", "result", "assets", "elapsed_s"],
+  "properties": {
+    "format": {"const": "zs-collect/1"},
+    "collector_version": {"type": "string", "maxLength": 32},
+    "run_nonce": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,128}$"},
+    "target_label": {"type": "string", "maxLength": 255},
+    "tier": {"enum": [1, 2]},
+    "host": {
+      "type": "object",
+      "required": ["hostname", "os_id", "machine_id_sha256"],
+      "properties": {
+        "hostname": {"type": "string", "maxLength": 255},
+        "os_id": {"type": ["string", "null"], "maxLength": 120},
+        "machine_id_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "started_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "finished_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "status": {"enum": ["success", "failure", "cancelled"]},
+    "error": {"type": ["string", "null"], "maxLength": 4000},
+    "refusal": {"type": "string", "maxLength": 32, "description": "Set when zs-collect refused to run (for example run_as)."},
+    "elapsed_s": {"type": "number", "minimum": 0},
+    "result": {
+      "type": "object",
+      "required": ["summary", "counts", "asset_count", "targets", "truncated", "assets_lost", "duration_s"],
+      "properties": {
+        "summary": {"type": "string", "maxLength": 500},
+        "counts": {
+          "type": "object",
+          "required": ["total", "ok", "failed", "skipped"],
+          "properties": {
+            "total": {"type": "integer", "minimum": 0},
+            "ok": {"type": "integer", "minimum": 0},
+            "failed": {"type": "integer", "minimum": 0},
+            "skipped": {"type": "integer", "minimum": 0}
+          }
+        },
+        "asset_count": {"type": "integer", "minimum": 0},
+        "targets": {
+          "type": "array",
+          "maxItems": 1001,
+          "items": {
+            "type": "object",
+            "required": ["target", "status"],
+            "properties": {
+              "target": {"type": "string", "maxLength": 255},
+              "status": {"type": "string", "maxLength": 32},
+              "error": {"type": ["string", "null"], "maxLength": 512},
+              "duration_ms": {"type": "integer", "minimum": 0},
+              "assets": {"type": "integer", "minimum": 0},
+              "counted": {"type": "boolean"}
+            }
+          }
+        },
+        "truncated": {"type": "boolean"},
+        "assets_lost": {"type": "integer", "minimum": 0},
+        "duration_s": {"type": "integer", "minimum": 0}
+      }
+    },
+    "assets": {
+      "type": "array",
+      "maxItems": 50000,
+      "items": {
+        "type": "object",
+        "required": ["type", "location"],
+        "properties": {
+          "type": {"type": "string", "maxLength": 32},
+          "target": {"type": ["string", "null"], "maxLength": 255},
+          "location": {"type": "string", "minLength": 1, "maxLength": 512},
+          "name": {"type": ["string", "null"], "maxLength": 255},
+          "algorithm": {"type": ["string", "null"], "maxLength": 64},
+          "key_size": {"type": ["integer", "null"], "minimum": 0, "maximum": 1000000},
+          "protocol": {"type": ["string", "null"], "maxLength": 32},
+          "facts": {"type": "object"}
+        }
+      }
+    }
+  }
+}
