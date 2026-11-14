@@ -327,13 +327,16 @@ def _reconcile(engine, team_id: int, user_id: int) -> dict:
         if not FLAGS.materialize_enabled():
             out = ReconcileResult(decisions_changed=EVAL.evaluate_team(session, team_id, now).changed)
             session.commit()
-            return {**out.public(), "materialize": False}
+            return {**out.public(), "materialize": False, "previous": None}
+        # the reconcile before this one (#318): when a save already applied the policies, this one changes nothing,
+        # and the answer says what that one did instead of only "0 sources added"
+        previous = dict(EVAL.state(session, team_id, now).last_reconcile or {}) or None
         out = reconcile(session, team_id, now, actor_id=user_id)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="fleet.reconcile",
               object_type="fleet_policy", object_id=None,
               changed_fields=[f"{k}:{v}" for k, v in out.public().items() if k != "problems" and v])
         session.commit()
-        return {**out.public(), "materialize": True}
+        return {**out.public(), "materialize": True, "previous": previous}
 
 
 @router.post(FLEET + "/reconcile", dependencies=WRITE, openapi_extra=permission("cbom.policies.write"),

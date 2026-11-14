@@ -15,14 +15,16 @@ export const cbomFleetKeys = {
   inventorySources: (teamId: number) => [...cbomSourcesKeys.all(teamId), "fleet", "inventory-sources"] as const,
   policies: (teamId: number) => [...cbomSourcesKeys.all(teamId), "fleet", "policies"] as const,
   credentials: (teamId: number) => [...cbomSourcesKeys.all(teamId), "fleet", "credentials"] as const,
+  transports: (teamId: number) => [...cbomSourcesKeys.all(teamId), "fleet", "transports"] as const,
 };
 
 /** What a write changed:
  * - "targets": the targets and their decisions (pages and the open detail);
  * - "sources": the inventory sources (counts, sync status);
  * - "policies": the policies and their matched / won counts;
- * - "credentials": the credentials. */
-export type FleetPart = "targets" | "sources" | "policies" | "credentials";
+ * - "credentials": the credentials;
+ * - "transports": the transports (AWX, Salt, SSM). */
+export type FleetPart = "targets" | "sources" | "policies" | "credentials" | "transports";
 
 export function refreshFleet(queryClient: QueryClient, teamId: number, parts: readonly FleetPart[]): Promise<void[]> {
   const keys: Record<FleetPart, readonly (readonly unknown[])[]> = {
@@ -30,6 +32,7 @@ export function refreshFleet(queryClient: QueryClient, teamId: number, parts: re
     sources: [cbomFleetKeys.inventorySources(teamId)],
     policies: [cbomFleetKeys.policies(teamId)],
     credentials: [cbomFleetKeys.credentials(teamId)],
+    transports: [cbomFleetKeys.transports(teamId)],
   };
   return Promise.all(parts.flatMap((p) => keys[p]).map((queryKey) => queryClient.invalidateQueries({ queryKey })));
 }

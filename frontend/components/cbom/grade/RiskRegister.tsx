@@ -24,7 +24,7 @@ import {
   type RegisterSummary,
 } from "./register";
 import { InfoTip } from "@/components/ui/info-tip";
-import { GRADE_KEYS, GRADE_TEXT, gradeChipClass, gradeText, humanize } from "./model";
+import { GRADE_TEXT, gradeChipClass, heatCellLabel, humanize } from "./model";
 
 const GRADE_OPTIONS = [...GRADE_TEXT.map((t) => ({ value: t.split(" ")[0], label: t })), { value: "none", label: "No grade" }];
 
@@ -138,10 +138,10 @@ export function RegisterHeatmap({ heatmap, onDrill }: {
               {heatmap.columns.map((c) => {
                 const cell = heatmapCell(heatmap, r.other ? null : r.family, c.other ? null : c.source_ref);
                 if (!cell) return <td key={c.source_ref ?? "other"} className="px-1 py-1" />;
-                const label = cell.worst ? gradeText(cell.worst) : "Q0 Unknown only";
+                const label = heatCellLabel(cell);
                 const body = (
-                  <span className={`inline-flex flex-col rounded border px-1.5 py-0.5 text-left ${cell.worst ? gradeChipClass(cell.worst) : gradeChipClass(GRADE_KEYS[0])}`}>
-                    <span className="font-medium">{label}</span>
+                  <span className={`inline-flex flex-col rounded border px-1.5 py-0.5 text-left ${gradeChipClass(label.grade)}`}>
+                    <span className="font-medium">{label.text}</span>
                     <span className="tabular-nums">{cellCountsText(cell.counts)}</span>
                   </span>
                 );

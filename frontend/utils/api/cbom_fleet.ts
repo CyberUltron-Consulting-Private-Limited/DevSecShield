@@ -73,7 +73,7 @@ export interface CbomFleetEvaluation {
   stale: boolean
   evaluation_requested: boolean
   reconcile_requested: boolean
-  last_reconcile: Partial<CbomReconcileResult> & { at?: string }
+  last_reconcile: CbomReconcileRecord
 }
 
 /** What a write answers about the decisions: evaluated in the request ("done"), or by the fleet worker ("queued"). */
@@ -224,9 +224,11 @@ export interface CbomPolicySchedule {
 
 export type CbomSelector = Record<string, unknown>
 
+export type CbomPolicyTransport = "ssh" | "awx" | "salt" | "ssm"
+
 export interface CbomPolicyAction {
   never_scan?: boolean
-  transport?: "ssh" | "awx" | "salt" | "ssm"
+  transport?: CbomPolicyTransport
   transport_id?: number | null
   credential_id?: number | null
   node_id?: number | null
@@ -306,8 +308,15 @@ export async function previewCbomPolicy(
   return response.data
 }
 
+/** A stored reconcile: its counts, when, and who ran it (the fleet worker after a write or its daily pass, or a
+ * person's Apply). */
+export type CbomReconcileRecord = Partial<Omit<CbomReconcileResult, "previous" | "materialize">> & { at?: string; by?: "automatic" | "user" }
+
 export interface CbomReconcileResult {
   materialize: boolean
+  /** the reconcile before this one (#318), null when there was none: when a save already applied the policies, this
+   * Apply changes nothing and the UI says what that one did */
+  previous?: CbomReconcileRecord | null
   sources_created: number
   sources_updated: number
   sources_removed: number
@@ -364,4 +373,70 @@ export async function updateCbomCredential(
 export async function deleteCbomCredential(teamId: number, credentialId: number): Promise<{ deleted: number }> {
   const response = await api.delete(`${base(teamId)}/credentials/${credentialId}`)
   return response.data
+}
+
+// ---------------------------------------------------------------------------- transports (F1.3, #318)
+// AWX/AAP (Ansible), Salt and AWS SSM: the collection runs through the customer's configuration management instead of
+// SSH. Secrets (AWX token; Salt username and password; SSM has none) are write-only: ``secrets_set`` names them.
+export type CbomTransportKind = "awx" | "salt" | "ssm"
+
+export interface CbomTransport {
+  id: number
+  kind: CbomTransportKind
+  name: string
+  enabled: boolean
+  config: Record<string, unknown>
+  secrets_set: string[]
+  row_version: number
+  last_validated_at: string | null
+  last_validation_status: "never" | "passed" | "failed" | string
+  last_validation_summary: string | null
+  /** the sources that use it (a transport in use cannot be deleted) */
+  used_by: { id: number; name: string }[]
+}
+
+export interface CbomTransportRelease {
+  version: string
+  fingerprint: string
+  sha256: { amd64: string | null; arm64: string | null }
+  verified_at: string | null
+}
+
+export async function listCbomTransports(teamId: number): Promise<{
+  transports: CbomTransport[]
+  release: CbomTransportRelease | null
+  release_key_fingerprint: string | null
+}> {
+  const response = await api.get(`${base(teamId)}/transports`)
+  return response.data
+}
+
+export async function createCbomTransport(
+  teamId: number,
+  body: { kind: CbomTransportKind; name: string; config: Record<string, unknown>; secrets: Record<string, string> },
+): Promise<{ transport: CbomTransport }> {
+  const response = await api.post(`${base(teamId)}/transports`, body)
+  return response.data
+}
+
+export async function deleteCbomTransport(teamId: number, transportId: number): Promise<{ deleted: number }> {
+  const response = await api.delete(`${base(teamId)}/transports/${transportId}`)
+  return response.data
+}
+
+/** SSM only: assume the run-command role with the team's external id and find the document in each region. AWX and
+ * Salt are reached from a scan node inside the customer's network, so they are tested through a source that uses them. */
+export async function validateCbomTransport(
+  teamId: number,
+  transportId: number,
+): Promise<{ transport: CbomTransport; status: string; summary: string }> {
+  const response = await api.post(`${base(teamId)}/transports/${transportId}/validate`)
+  return response.data
+}
+
+/** What to install on the customer's side (text or JSON): ansible-collection, salt-state, ssm-document, ssm-role-cfn,
+ * zs-collect-manifest, zs-collect-pubkey. */
+export async function getCbomTransportArtifact(teamId: number, name: string): Promise<string> {
+  const response = await api.get(`${base(teamId)}/transports/artifacts/${name}`, { responseType: "text", transformResponse: (d) => d })
+  return typeof response.data === "string" ? response.data : JSON.stringify(response.data, null, 2)
 }
