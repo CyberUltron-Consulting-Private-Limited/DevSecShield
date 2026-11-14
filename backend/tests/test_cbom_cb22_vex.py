@@ -128,7 +128,7 @@ def test_affects_cut_says_so_with_the_true_count():
 
 # ----------------------------------------------------------------------------- the Sources run export
 @pytest.fixture()
-def run_export(api, world):
+def run_export(api, world):  # noqa: F811
     engine, _ = world
     _src, run = _store(api, engine, ASSETS + PQ_ASSETS)
     r = api("GET", f"/1/cbom/sources/runs/{run['id']}/cbom")
@@ -199,7 +199,7 @@ def test_export_with_vex_is_valid_json_and_xml_and_every_reference_resolves(run_
     to_xml(doc, strict=True)  # every VEX key has a place in the XML
 
 
-def test_affects_over_the_cap_is_marked_with_the_true_count(api, world, monkeypatch):
+def test_affects_over_the_cap_is_marked_with_the_true_count(api, world, monkeypatch):  # noqa: F811
     """R2 vexcap (5,100 assets -> 5,000 in affects, truncated=false) at a cap of 2."""
     from backend.utilities.cbom_sources import inventory
 
@@ -241,7 +241,7 @@ def test_vexcap_at_the_real_size_lists_5000_and_counts_5100():
 
 
 @pytest.fixture()
-def drift_runs(api, world):
+def drift_runs(api, world):  # noqa: F811
     """Source A complete twice: run 1 has two weak TLS endpoints, run 2 the first one fixed and the second gone.
     Source B complete, then partial (a target unreachable): never compared, so nothing of it is resolved."""
     engine, _ = world
@@ -261,7 +261,7 @@ def drift_runs(api, world):
     return {"run1": run1, "run2": run2, "engine": engine}
 
 
-def test_drift_resolved_findings_are_resolved_and_point_at_assets_still_listed(api, drift_runs):
+def test_drift_resolved_findings_are_resolved_and_point_at_assets_still_listed(api, drift_runs):  # noqa: F811
     run1, run2 = drift_runs["run1"], drift_runs["run2"]
     doc = api("GET", f"/1/cbom/sources/runs/{run2['id']}/cbom").json()
     resolved = {_code(v): v for v in doc["vulnerabilities"] if v["analysis"]["state"] == "resolved"}
@@ -291,7 +291,7 @@ def _props_of(component):
     return {p["name"]: p["value"] for p in component.get("properties") or []}
 
 
-def test_the_export_is_still_written_one_component_at_a_time(api, world, monkeypatch):
+def test_the_export_is_still_written_one_component_at_a_time(api, world, monkeypatch):  # noqa: F811
     """#103: the VEX inputs (grades, drift) are read only after every component is written, and the output already
     holds the components when they are."""
     from backend.utilities.cbom_sources import inventory
@@ -318,7 +318,7 @@ def test_the_export_is_still_written_one_component_at_a_time(api, world, monkeyp
 
 # ----------------------------------------------------------------------------- code scans
 @pytest.fixture()
-def certin_db(world, monkeypatch):
+def certin_db(world, monkeypatch):  # noqa: F811
     from backend.routers import certin
 
     engine, ids = world
@@ -328,7 +328,7 @@ def certin_db(world, monkeypatch):
     return engine, ids
 
 
-def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db):
+def test_code_scan_vex_states_drift_resolved_and_schema(api, certin_db):  # noqa: F811
     engine, ids = certin_db
     meta = {"repo_url": "https://github.com/acme/vex", "branch": "main"}
     des = _row("3DES-CBC", "app.py", ["WEAK_ALGORITHM"], cves=["CVE-2016-2183"])
