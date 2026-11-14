@@ -33,7 +33,7 @@ from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
 from backend.utilities.cbom_sources import policy_scope as PS
-from backend.utilities.cbom_sources.planning import credits, node_status
+from backend.utilities.cbom_sources.planning import credits, node_status, team_range_cidrs
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
 
 LEASE = _dt.timedelta(minutes=15)
@@ -642,6 +642,14 @@ def claim_next(session: Session, node: CbomScanNode, settings: CbomCollectionSet
                     "attempt": job.attempts, "run_id": job.run_id},
             "scope": _scope_for(job, source, settings, now, live_ranges),
         }
+        if payload["scope"].get("ranges"):
+            # N3: each range says which of its addresses are the network/broadcast edges of the networks the team's
+            # ranges form together; the node skips exactly those (a node older than this ignores the key and applies
+            # its own prefix rule: up to two addresses per range then differ from the counts until it is updated)
+            skips = T.SkipMap(team_range_cidrs(session, node.team_id))  # once per claim, whatever the number of ranges
+            payload["scope"]["ranges"] = [  # copies: the job's stored params are never changed
+                {**item, "skip_addresses": T.range_skip_addresses(str(item["cidr"]), skips=skips)}
+                if isinstance(item, dict) and item.get("cidr") else item for item in payload["scope"]["ranges"]]
         if source is not None:
             payload["source"] = {
                 "id": source.id, "kind": source.kind, "name": source.name, "config": source.config or {},

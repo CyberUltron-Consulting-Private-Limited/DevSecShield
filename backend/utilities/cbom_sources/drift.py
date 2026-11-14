@@ -64,7 +64,7 @@ FINISHED = ("done", "partial", "failed", "cancelled")
 _IMPACT_RANK = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
 _FIELDS = ("algorithm", "key_size", "protocol", "impact", "quantum_vulnerable", "fingerprint", "not_after")
 EVENT_KINDS = ("opened", "resolved", "new_asset", "removed_asset", "cert_renewed", "cert_expiring",
-               "schedule_skipped", "q0_closed")
+               "schedule_skipped", "q0_closed", "agility_asset_moved", "agility_system_changed")
 
 
 @dataclass

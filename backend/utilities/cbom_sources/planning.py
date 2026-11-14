@@ -78,8 +78,54 @@ def node_status(node: CbomScanNode | None, now: _dt.datetime) -> str:
     return "offline"
 
 
-def source_targets(source: CbomCollectionSource, settings: CbomCollectionSettings) -> dict[str, Any]:
-    """Units the source covers after the team's never-scan list (and its own, for servers)."""
+def team_range_cidrs(session, team_id: int) -> list[str]:
+    """Every network range the team configured (enabled or not): together they are the networks the customer entered,
+    whose outer network/broadcast addresses the sweep leaves out (targets.boundary_skips, N3).  One query."""
+    from sqlmodel import select
+
+    rows = session.exec(select(CbomCollectionSource.config).where(
+        CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+    return [str((cfg or {}).get("cidr") or "") for cfg in rows if (cfg or {}).get("cidr")]
+
+
+@dataclass
+class RangeContext:
+    """What every network range of one request is counted with, built once (review of #273: per range it cost a
+    query and a pass over all of the team's ranges): the team's network/broadcast skip map and its parsed never-scan
+    list."""
+    skips: T.SkipMap
+    exclusions: T.ParsedTargets
+
+    @classmethod
+    def of_sources(cls, sources: list[CbomCollectionSource], settings: CbomCollectionSettings) -> RangeContext:
+        """From the team's sources already loaded (every source of the team, or at least every network range)."""
+        cidrs = [str((s.config or {}).get("cidr") or "") for s in sources
+                 if s.kind == "network_range" and (s.config or {}).get("cidr")]
+        return cls(T.SkipMap(cidrs), team_exclusions(settings))
+
+    @classmethod
+    def of_team(cls, session, team_id: int, settings: CbomCollectionSettings) -> RangeContext:
+        """With one query for the team's ranges."""
+        return cls(T.SkipMap(team_range_cidrs(session, team_id)), team_exclusions(settings))
+
+
+def _range_context(source: CbomCollectionSource, settings: CbomCollectionSettings,
+                   ctx: RangeContext | None) -> RangeContext:
+    """The caller's context, or (one source on its own: get, create, update) one built here with one query."""
+    if ctx is not None:
+        return ctx
+    from sqlalchemy.orm import object_session
+
+    session = object_session(source)
+    if session is None:
+        return RangeContext(T.SkipMap([str((source.config or {}).get("cidr") or "")]), team_exclusions(settings))
+    return RangeContext.of_team(session, source.team_id, settings)
+
+
+def source_targets(source: CbomCollectionSource, settings: CbomCollectionSettings,
+                   ranges: RangeContext | None = None) -> dict[str, Any]:
+    """Units the source covers after the team's never-scan list (and its own, for servers).  ``ranges``: the request's
+    ``RangeContext`` (pass it whenever more than one source is counted); without it a network range builds its own."""
     cfg = source.config or {}
     spec = KINDS.get(source.kind)
     group = spec.group if spec else "other"
@@ -96,7 +142,7 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
         try:
             parsed = T.parse_targets(cfg.get("targets") or [], allow_empty=True)
             own = T.parse_exclusions(cfg.get("exclusions") or [])
-            team = team_exclusions(settings)
+            team = ranges.exclusions if ranges is not None else team_exclusions(settings)
             excl = T.ParsedTargets(
                 intervals=T.merge(own.intervals + team.intervals),
                 hostnames=sorted(set(own.hostnames) | set(team.hostnames)),
@@ -107,9 +153,11 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
         return {"units": count, "unit": "targets"}
     if group == "network":
         try:
-            kind, interval, canonical = T.parse_line(cfg.get("cidr", ""))
-            scanned = T.scanned_interval(interval, canonical) if kind == "net" else None  # what the sweep visits
-            intervals = T.in_scope(T.ParsedTargets(intervals=[scanned]), team_exclusions(settings))[0] if scanned else []
+            # what the sweep visits: the range minus the outer network/broadcast edges of the networks the team's
+            # ranges form together (N3), then the never-scan list
+            ctx = _range_context(source, settings, ranges)
+            swept = T.swept_interval_parts(cfg.get("cidr", ""), skips=ctx.skips)
+            intervals = T.in_scope(T.ParsedTargets(intervals=swept), ctx.exclusions)[0] if swept else []
         except T.TargetError:
             intervals = []
         return {"units": T.size(intervals), "unit": "addresses", "blocks": T.count_blocks(intervals),
@@ -122,20 +170,21 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
 
 
 
-def network_sweep_totals(sources: list[CbomCollectionSource], settings: CbomCollectionSettings) -> dict[str, int]:
+def network_sweep_totals(sources: list[CbomCollectionSource], settings: CbomCollectionSettings,
+                         ranges: RangeContext | None = None) -> dict[str, int]:
     """What the team's network ranges will sweep, for "Before the first run" (N7): unique addresses after the never-scan
     list, over ENABLED ranges only.  An address in two overlapping ranges counts once (the per-range target_count
     counts it in each); a disabled range counts nothing (plan_run skips it).  Same intervals as plan_run's units."""
     merged: list[T.Interval] = []
     enabled = disabled = 0
-    for source in sources:
-        if source.kind != "network_range":
-            continue
+    in_team = [s for s in sources if s.kind == "network_range"]
+    ctx = ranges or RangeContext.of_sources(in_team, settings)
+    for source in in_team:
         if not source.enabled:
             disabled += 1
             continue
         enabled += 1
-        merged += list(source_targets(source, settings).get("intervals") or [])
+        merged += list(source_targets(source, settings, ctx).get("intervals") or [])
     return {"addresses": T.size(T.merge(merged)), "ranges_enabled": enabled, "ranges_disabled": disabled}
 
 @dataclass
@@ -224,6 +273,7 @@ def plan_run(
         ).all()
     }
     wanted = set(source_ids) if source_ids else None
+    range_ctx = RangeContext.of_sources(list(sources), settings)  # every source of the team: built once
     plan = Plan()
     listed_names = len(team_exclusions(settings).hostnames)
     counted_blocks: list[T.Interval] = []
@@ -238,7 +288,7 @@ def plan_run(
         if wanted is not None and source.id not in wanted:
             continue
         node = nodes.get(source.node_id) if source.node_id else None
-        info = source_targets(source, settings)
+        info = source_targets(source, settings, range_ctx)
         units = int(info["units"])
         if org_estimate_stale(source):
             log("aws org estimate stale: re-validate", team=team_id, source=source.id, accounts=units)

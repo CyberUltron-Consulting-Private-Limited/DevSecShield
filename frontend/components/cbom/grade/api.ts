@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import api from "@/utils/interceptors";
 
-import type { AgilityBaseline, AgilitySubjectsPage } from "./baseline";
+import type { AgilityBaseline, AgilityHistoryItem, AgilitySubjectsPage } from "./baseline";
 import type { AgilityModel, GradeModel } from "./model";
 
 export const gradeKeys = {
@@ -68,4 +68,10 @@ export async function getCbomAgilitySubjects(teamId: number, params: {
     },
   });
   return response.data as AgilitySubjectsPage;
+}
+
+/** GET /{team}/cbom/agility/history: the baseline written at each run, newest first. */
+export async function getCbomAgilityHistory(teamId: number, limit = 20): Promise<AgilityHistoryItem[]> {
+  const response = await api.get(`/${teamId}/cbom/agility/history`, { params: { limit } });
+  return ((response.data as { items?: AgilityHistoryItem[] }).items ?? []);
 }
