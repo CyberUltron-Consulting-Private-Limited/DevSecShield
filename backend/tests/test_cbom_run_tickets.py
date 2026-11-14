@@ -599,8 +599,8 @@ def test_migration_is_the_single_head():
     assert mod.revision == "cb38ticket001" and mod.down_revision == "cb20estate001"  # dev's head when merged
     revs = _revisions()
     parents = {p for d in revs.values() for p in ((d,) if isinstance(d, str) or d is None else d)}
-    heads = sorted(set(revs) - parents)
-    assert len(heads) == 1 and ("cb38ticket001" in heads or "cb38ticket001" in parents)  # one head; later ones build on it
+    # one head; later revisions (CB-23 cb23q0gap001) chain after this one
+    assert len(set(revs) - parents) == 1 and "cb38ticket001" in parents
 
 
 def _upgrade_downgrade(engine):

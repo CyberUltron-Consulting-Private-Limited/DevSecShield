@@ -72,6 +72,7 @@ import {
   type TableSortBy,
 } from "@/components/cbom/results/resultRows";
 import { resultsHref } from "@/components/cbom/results/resultsHref";
+import { Q0GapRegister } from "@/components/cbom/grade/Q0Gaps";
 import { isActiveStatus } from "@/components/cbom/results/statusBuckets";
 import { createOutageGate, listView } from "@/components/cbom/results/listErrors";
 import { cbomResultsListKey, cbomSourcesKeys } from "@/components/cbom/sources/keys";
@@ -831,7 +832,21 @@ export default function CBOMPage() {
               <TabsList className="mb-4 bg-transparent">
                 <TabsTrigger value="dashboard" className="cursor-pointer data-[state=active]:bg-blue-600 data-[state=active]:text-white ">Dashboard</TabsTrigger>
                 <TabsTrigger value="table" className="cursor-pointer data-[state=active]:bg-blue-600 data-[state=active]:text-white ">Table</TabsTrigger>
+                <TabsTrigger value="quantum-risk" data-testid="cbom-tab-quantum-risk" className="cursor-pointer data-[state=active]:bg-blue-600 data-[state=active]:text-white ">Quantum risk</TabsTrigger>
               </TabsList>
+
+              {/* ── Quantum risk Tab (CB-23): the register's Q0 gaps ── */}
+              <TabsContent value="quantum-risk">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Q0 gaps</CardTitle>
+                    <CardDescription>Q0 Unknown items of the quantum risk register, grouped by reason: evidence at E0, scope not read, assets the product could not grade. Closed gaps keep their cause.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {Number.isFinite(teamIdNumber) && <Q0GapRegister teamId={teamIdNumber} />}
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
               {/* ── Dashboard Tab ── */}
               <TabsContent value="dashboard">
