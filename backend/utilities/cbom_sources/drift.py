@@ -372,17 +372,25 @@ def _versions(run: CbomCollectionRun | None) -> dict[str, Any]:
             "engine_version": run.engine_version}
 
 
+def runs_rules_differ(a: CbomCollectionRun | None, b: CbomCollectionRun | None) -> bool:
+    """Whether the knowledge base or the classifier that judged the two runs differ from each other (unknown counts as
+    different). This is what a comparison reports as "rules changed"; two runs judged by the same older rules do not
+    differ, even though ``rules_differ`` re-judges them both."""
+    va, vb = _versions(a), _versions(b)
+    return any(va.get(k) is None or va.get(k) != vb.get(k) for k in ("kb_version", "classifier_version"))
+
+
 def rules_differ(a: CbomCollectionRun | None, b: CbomCollectionRun | None) -> bool:
     """Whether the two runs must be re-judged before they are compared: the knowledge base or the classifier that
-    judged them differ (unknown counts as different), or either one was judged by rules other than the current ones.
+    judged them differ (``runs_rules_differ``), or either one was judged by rules other than the current ones.
     The second case covers a run created before a deploy and ingested after it (its label is the old rules' while its
     assets were judged by the new ones), so both sides are always compared by the same, current, rules (ST-1)."""
     from backend.utilities.cbom_sources import crypto_kb
     from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
 
-    va, vb = _versions(a), _versions(b)
-    if any(va.get(k) is None or va.get(k) != vb.get(k) for k in ("kb_version", "classifier_version")):
+    if runs_rules_differ(a, b):
         return True
+    va, vb = _versions(a), _versions(b)
     current = {"kb_version": crypto_kb.version(), "classifier_version": CLASSIFIER_VERSION}
     return any(side.get(k) != current[k] for side in (va, vb) for k in current)
 
@@ -470,7 +478,9 @@ def run_diff(session: Session, run: CbomCollectionRun, base: CbomCollectionRun) 
         per_source.append(entry)
     out: dict[str, Any] = {"run_id": run.id, "against_run_id": base.id,
                            "versions": {"before": _versions(base), "after": _versions(run),
-                                        "rules_changed": reclassify, "reclassified": reclassify},
+                                        # the runs' own rules differ, and whether both were re-judged with the
+                                        # current rules (also when two runs share older rules: ST-1)
+                                        "rules_changed": runs_rules_differ(base, run), "reclassified": reclassify},
                            "sources": per_source}
     truncated = False
     for k, items in totals.items():
