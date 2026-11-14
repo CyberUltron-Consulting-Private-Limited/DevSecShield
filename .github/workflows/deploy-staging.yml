@@ -15,6 +15,11 @@
 # AI remediation (CB-38; deploy/staging/README.md "AI remediation"): every deploy sets CBOM_AI_PROVIDER (default bedrock),
 # CBOM_AI_BEDROCK_REGION (default ap-south-1) and CBOM_AI_AWS_CREDENTIALS (default env: the AWS_* of the host's .env)
 # from the environment's variables of those names; CBOM_AI_PROVIDER=off turns the assistant off.
+# The scan node from the public registry (deploy/staging/README.md, "Public registry"): the GHCR packages are public,
+# so a push deploy points the Add scan node wizard at ghcr.io/<owner>/devsecshield-scan-node:<version> and the chart
+# (docker pull / helm oci://, no login) by default; a manual run clears them (it may deploy any commit).
+#   var  CBOM_NODE_REGISTRY_PUBLIC   unset or 1: as above. 0: never offer a pull (clears them; set it if the packages
+#                                    are ever made private again).
 #
 # Build identity (CB-03): with expose_build (default on) the frontend names its commit in <meta name="zs-build">, so
 # the merge gate's G0 can compare it with the API's /health build on staging; the API names it there when the host's
@@ -198,7 +203,17 @@ jobs:
           STAGING_SET_CBOM_AI_PROVIDER: ${{ vars.CBOM_AI_PROVIDER || 'bedrock' }}
           STAGING_SET_CBOM_AI_BEDROCK_REGION: ${{ vars.CBOM_AI_BEDROCK_REGION || 'ap-south-1' }}
           STAGING_SET_CBOM_AI_AWS_CREDENTIALS: ${{ vars.CBOM_AI_AWS_CREDENTIALS || 'env' }}
+          NODE_REGISTRY_PUBLIC: ${{ vars.CBOM_NODE_REGISTRY_PUBLIC }}
+          EVENT: ${{ github.event_name }}
         run: |
+          # The scan node registry refs (staging.sh set_node_refs): only a push deploys a commit that publish-ghcr.yml
+          # released (devsecshield-scan-node:<version>); a manual run of any other commit gets none.
+          # The packages are public (owner, 14 Nov): on unless the staging environment says 0.
+          case "$NODE_REGISTRY_PUBLIC" in
+            1 | "") if [ "$EVENT" = push ]; then export CBOM_NODE_REGISTRY_PUBLIC=1; else export CBOM_NODE_REGISTRY_PUBLIC=0; fi ;;
+            0) export CBOM_NODE_REGISTRY_PUBLIC=0 ;;
+            *) echo "::error::vars.CBOM_NODE_REGISTRY_PUBLIC must be 0 or 1"; exit 1 ;;
+          esac
           export SSH_OPTS="-i $HOME/.ssh/staging_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
           scripts/deploy/staging.sh push "$STAGING_SSH_TARGET" "$STAGING_DIR"
 
