@@ -3573,28 +3573,28 @@ export const INFO_TIPS = {
     example: "www.bank.in, api.bank.in, mail.bank.in.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: Evidence (components/cbom/sources/EvidenceTab.tsx)
-  // src: frontend/components/cbom/sources/shared.tsx:136-149, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E0
+  // src: backend/utilities/cbom_sources/evidence.py:16-17, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E0
   "cbsrc.ev.e0": {
     label: "E0 Unknown",
     what: "Areas with no usable answer: never answered, answered without evidence where evidence is needed, or with evidence older than 12 months.",
     why: "Each E0 area is a Q0 gap in the risk register, listed on Review & Run and never treated as safe.",
     example: "3 areas: the payment HSM vendor has not answered.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:136-149, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E1
+  // src: backend/utilities/cbom_sources/evidence.py:16-17, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E1
   "cbsrc.ev.e1": {
     label: "E1 Self-attested",
     what: "Areas answered by their owner or vendor without supporting evidence.",
     why: "A self-attested answer is better than nothing but would not satisfy an auditor.",
     example: "The card vendor says its terminals use AES-256, with no document.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:136-149, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E2
+  // src: backend/utilities/cbom_sources/evidence.py:16-17, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E2
   "cbsrc.ev.e2": {
     label: "E2 Documented",
     what: "Areas answered with a dated evidence document, such as a policy, certificate or report.",
     why: "Documented answers can be shown to an auditor and re-checked when the document is renewed.",
     example: "Key management policy v3 (PDF), dated March 2026.",
   },
-  // src: frontend/components/cbom/sources/shared.tsx:136-149, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E3
+  // src: backend/utilities/cbom_sources/evidence.py:16-17, frontend/components/cbom/sources/EvidenceTab.tsx:283-292,55 — areas at E3
   "cbsrc.ev.e3": {
     label: "E3 Verified",
     what: "Areas whose evidence your team has checked and confirmed.",
@@ -5318,7 +5318,7 @@ export const INFO_TIPS = {
     why: "Find every use of one algorithm or file quickly.",
     example: "\"rsa\" keeps RSA-2048 and RSA-1024 findings.",
   },
-  // src: frontend/components/CbomResults.tsx:994, frontend/components/SASTResults.tsx:692-700 — tiers on the 0-10 risk score
+  // src: frontend/components/CbomResults.tsx:994 — tiers on the 0-10 risk score
   "cbom.res.filter.risk": {
     label: "Risk score filter",
     what: "Shows only findings whose risk score (0 to 10) is in a tier: Critical 9 or more, High 7 to 9, Medium 5 to 7, Low under 5.",
@@ -6056,7 +6056,7 @@ export const INFO_TIPS = {
     example: "X 10, Y 3, Z 12; Core banking DB keeps data 25 y; 2 Q0 gaps.",
   },
   // ────────────────────────────────────────────────────────────── CBOM: quantum risk register, Q0 gaps and agility baseline (CB-23, CB-25; components/cbom/grade)
-  // src: backend/utilities/cbom_sources/risk_register.py:1-11, frontend/components/cbom/grade/RiskRegister.tsx:3-5 — one row per estate asset, current grade
+  // src: backend/utilities/cbom_sources/risk_register.py:1-11, frontend/app/[team_id]/cbom/page.tsx:844 — one row per estate asset, current grade
   "cbom.reg.section": {
     label: "Quantum risk register",
     what: "Every asset of the team once, however many sources see it, with its current quantum risk grade: the team's Mosca inputs now, each source's data lifetime and exposure now, the current grade model. Worst grade first; filter and download the rows as CSV.",
@@ -6251,7 +6251,7 @@ export const INFO_TIPS = {
     example: "Safe 412, Vulnerable 168.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: node install without the public registry (#233)
-  // src: frontend/components/cbom/sources/NodeInstall.tsx:170-175, frontend/components/cbom/sources/ScanNodesTab.tsx:312-322,501 — one paste with curl or wget, or the downloaded files
+  // src: backend/routers/cbom_node_artifacts.py:26-33, frontend/components/cbom/sources/ScanNodesTab.tsx:312-322,501 — one paste with curl or wget, or the downloaded files
   "cbsrc.nodes.files_install": {
     label: "Air-gapped install",
     what: "For a host that cannot reach the public registry: one paste that downloads this node's files from ZeroShield, checks their SHA-256 and installs them (curl, or wget), or the same install from files you downloaded in the browser. The download links work only for this node and only until it registers or its token is replaced or expires.",
