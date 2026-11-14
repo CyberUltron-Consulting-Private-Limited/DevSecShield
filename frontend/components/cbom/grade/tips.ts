@@ -5,8 +5,9 @@
  * INFO_TIPS unchanged and the components switch to <InfoTip id="…" /> (follow-up recorded on issue #126).
  *
  * The six fix-class texts are the backend's own (`agility.CLASS_TEXT`, `agility.INFERRED_TEXT`):
- * gradeContract.test.ts checks them against contracts/cbom/grade_keys.json, which a backend test writes from
- * agility.py, so a reworded class in the backend fails CI until the tip says the same.
+ * gradeContract.test.ts checks them against contracts/cbom/grade_keys.json, which a backend test keeps equal to
+ * agility.py. A reworded class in the backend fails CI until the tip says the same: the backend job fails while the
+ * JSON is stale, and once it is rewritten the frontend job (which runs on `contracts/**`, ci.yml) fails on the tip.
  */
 export interface TipEntry {
   /** What the (i) button is about; the button is named "About <label>". */

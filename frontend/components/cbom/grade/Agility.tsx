@@ -9,6 +9,7 @@ import { useAgilityModel } from "./api";
 import {
   FIX_CLASSES,
   FIX_LABEL,
+  fixClassAvailable,
   fixClassChipClass,
   fixClassText,
   fixClassTitle,
@@ -38,8 +39,10 @@ export function FixClassChip({ item, assetId, testId }: { item: FixClassFields; 
   const text = fixClassText(item);
   const title = fixClassTitle(item);
   if (v == null || v === "" || v === "none") {
+    // "none": no finding code; "unavailable": the server sent no fix class
     return (
-      <span className="text-xs text-zinc-500" title={title} data-testid={hook} data-fix-class="none">
+      <span className="text-xs text-zinc-500 dark:text-zinc-400" title={title} data-testid={hook}
+            data-fix-class={fixClassAvailable(item) ? "none" : "unavailable"}>
         —<span className="sr-only"> {title}</span>
       </span>
     );
@@ -57,6 +60,27 @@ export function FixClassChip({ item, assetId, testId }: { item: FixClassFields; 
       {item.fix_class_confidence === "inferred" && <span className="font-normal opacity-80">· likely</span>}
     </span>
   );
+}
+
+/** An evidence area or vendor as an agility subject (GET …/sources/evidence, CB-24): the HSM firmware area
+ * (hardware-fixed) and the third-party area (vendor-fixed) once answered, each vendor (vendor-fixed); an unanswered one
+ * of those two areas is "not assessed"; the process areas carry no class and show nothing. */
+export function EvidenceFixClass({ item, testId }: {
+  item: { fix_class?: string | null; not_assessed?: boolean };
+  testId?: string;
+}) {
+  if (item.fix_class) {
+    return <span className="inline-flex"><FixClassChip item={{ fix_class: item.fix_class, fix_class_confidence: "observed" }} testId={testId} /></span>;
+  }
+  if (item.not_assessed) {
+    return (
+      <span className="text-xs text-zinc-500 dark:text-zinc-400" data-testid={testId} data-fix-class="not_assessed"
+            title="Fix class: answer this area to classify it">
+        Fix class: not assessed
+      </span>
+    );
+  }
+  return null;
 }
 
 /** Bar and the six counts (every value listed, 0 included), with the "all / excluding post-quantum" toggle. */
@@ -102,7 +126,7 @@ export function AgilityDistribution({ posture }: { posture: AgilityPosture }) {
             <span className={`inline-block h-2.5 w-2.5 rounded-sm ${s.bar}`} aria-hidden="true" />
             <span>{s.text}</span>
             <span className="font-semibold tabular-nums">{s.count}</span>
-            {d.total > 0 && <span className="text-zinc-500 tabular-nums">({s.pct}%)</span>}
+            {d.total > 0 && <span className="text-zinc-500 dark:text-zinc-400 tabular-nums">({s.pct}%)</span>}
           </li>
         ))}
       </ul>
@@ -132,10 +156,10 @@ export function AgilityPostureCard({ teamId, posture, model }: {
          data-agility-version={posture.agility_version}>
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium text-zinc-900 dark:text-white">How hard is this to fix?</p>
-        <span className="text-xs text-zinc-500">Crypto-agility: the hardest fix class of each asset</span>
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">Crypto-agility: the hardest fix class of each asset</span>
       </div>
       <AgilityDistribution posture={posture} />
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
         {FIX_CLASSES.map((c) => {
           const id = fixClassTipId(c);
           return id ? <span key={c} className="inline-flex flex-wrap items-center gap-1">{FIX_LABEL[c]} <Tip id={id} /></span> : null;
@@ -145,7 +169,7 @@ export function AgilityPostureCard({ teamId, posture, model }: {
       </div>
       {unknown.length > 0 && (
         <div data-testid="posture-fix-unknown-reasons">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Unknown: what was not read</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Unknown: what was not read</p>
           <ul className="space-y-0.5">
             {unknown.map(([code, n]) => (
               <li key={code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-fix-unknown-${code}`} data-count={n}>
@@ -166,7 +190,7 @@ export function AgilityPostureCard({ teamId, posture, model }: {
             <div className="mt-2 overflow-x-auto">
               <table className="w-full text-xs" data-testid="posture-fix-systems">
                 <thead>
-                  <tr className="text-left text-zinc-500">
+                  <tr className="text-left text-zinc-500 dark:text-zinc-400">
                     <th className="py-1 pr-3 font-normal">System</th>
                     <th className="py-1 pr-3 font-normal text-right">Assets</th>
                     <th className="py-1 pr-3 font-normal">Hardest</th>
@@ -178,7 +202,7 @@ export function AgilityPostureCard({ teamId, posture, model }: {
                   {systems.map((s) => (
                     <tr key={s.key} className="border-t border-zinc-100 dark:border-zinc-800" data-testid={`posture-fix-system-${s.key}`}>
                       <td className="py-1 pr-3 text-zinc-800 dark:text-zinc-200 break-all">
-                        {s.label} <span className="text-zinc-500">({s.kind === "application" ? "application" : "source"})</span>
+                        {s.label} <span className="text-zinc-500 dark:text-zinc-400">({s.kind === "application" ? "application" : "source"})</span>
                       </td>
                       <td className="py-1 pr-3 text-right tabular-nums">{s.assets}</td>
                       <td className="py-1 pr-3"><FixClassChip item={{ fix_class: s.hardest ?? "none" }} /></td>
@@ -189,7 +213,7 @@ export function AgilityPostureCard({ teamId, posture, model }: {
                 </tbody>
               </table>
               {posture.fix_class_systems_truncated && (
-                <p className="mt-1 text-xs text-zinc-500">The largest {systems.length} systems are listed.</p>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">The largest {systems.length} systems are listed.</p>
               )}
             </div>
           )}
@@ -219,7 +243,7 @@ export function AgilityDrawerSection({ teamId, agility, model }: {
         <FixClassChip item={asset} testId="asset-fix-chip" />
         {isFixValue(agility.fix_class) && fixClassTipId(agility.fix_class) && <Tip id={fixClassTipId(agility.fix_class)!} />}
         {agility.confidence && (
-          <span className="text-xs text-zinc-500">{agility.confidence === "inferred" ? "Likely (inferred)" : "Observed"}</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">{agility.confidence === "inferred" ? "Likely (inferred)" : "Observed"}</span>
         )}
       </div>
       {agility.fix_class === "unknown" && (
@@ -229,13 +253,13 @@ export function AgilityDrawerSection({ teamId, agility, model }: {
         </p>
       )}
       {agility.fix_class_excl_pq && agility.fix_class_excl_pq !== agility.fix_class && (
-        <p className="text-xs text-zinc-500" data-testid="asset-fix-excl-pq" data-fix-class={agility.fix_class_excl_pq}>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="asset-fix-excl-pq" data-fix-class={agility.fix_class_excl_pq}>
           Without the post-quantum migration codes: {agility.fix_class_excl_pq === "none"
             ? "nothing to change today" : fixClassText({ fix_class: agility.fix_class_excl_pq })}.
         </p>
       )}
       {agility.by_code.length === 0 ? (
-        <p className="text-xs text-zinc-500">No finding code: nothing to change today.</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">No finding code: nothing to change today.</p>
       ) : (
         <ul className="text-xs divide-y divide-zinc-100 dark:divide-zinc-800" data-testid="asset-fix-codes">
           {agility.by_code.map((p) => (
@@ -244,20 +268,20 @@ export function AgilityDrawerSection({ teamId, agility, model }: {
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="font-mono text-zinc-800 dark:text-zinc-200 break-all">{p.code}</span>
                 <FixClassChip item={{ fix_class: p.class, fix_class_floor: p.floor, fix_class_confidence: p.confidence }} />
-                <span className="font-mono text-zinc-500" title={rules.get(p.rule)}>rule {p.rule}</span>
+                <span className="font-mono text-zinc-500 dark:text-zinc-400" title={rules.get(p.rule)}>rule {p.rule}</span>
               </div>
               <p className="text-zinc-600 dark:text-zinc-400 break-words">{p.basis}</p>
-              {p.fact && <p className="text-zinc-500 break-words">Read: {p.fact}</p>}
+              {p.fact && <p className="text-zinc-500 dark:text-zinc-400 break-words">Read: {p.fact}</p>}
             </li>
           ))}
         </ul>
       )}
       {inferred && (
-        <p className="text-xs text-zinc-500 flex flex-wrap items-center gap-1">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 flex flex-wrap items-center gap-1">
           &quot;Likely&quot;: no fact the product read decides that class; it is the table&apos;s default. <Tip id="cbom.agility.inferred" />
         </p>
       )}
-      <p className="text-xs text-zinc-500 break-all">Model {agility.model} · {agility.model_version}</p>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all">Model {agility.model} · {agility.model_version}</p>
     </div>
   );
 }

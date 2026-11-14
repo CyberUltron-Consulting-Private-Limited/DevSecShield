@@ -15,11 +15,10 @@ export function Tip({ id }: { id: GradeTipId }) {
     <>
       <button
         type="button"
-        className="inline-flex items-center text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer align-middle"
+        className="inline-flex items-center text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer align-middle"
         aria-label={`About ${tip.label}`}
         aria-expanded={open}
         aria-controls={panelId}
-        title={tip.what}
         data-testid={`tip-${id}`}
         onClick={(e) => {
           e.stopPropagation();
@@ -36,7 +35,7 @@ export function Tip({ id }: { id: GradeTipId }) {
           data-testid={`tip-text-${id}`}
         >
           <span className="block">{tip.what}</span>
-          <span className="block mt-1 text-zinc-500">Example: {tip.example}</span>
+          <span className="block mt-1 text-zinc-500 dark:text-zinc-400">Example: {tip.example}</span>
         </span>
       )}
     </>

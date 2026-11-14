@@ -339,7 +339,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                   <TableHead>Where</TableHead>
                   <TableHead>Algorithm</TableHead>
                   <TableHead>Finding</TableHead>
-                  <TableHead>Quantum</TableHead>
+                  <TableHead>Quantum-vulnerable</TableHead>
                   <TableHead>Quantum risk</TableHead>
                   <TableHead>Fix class</TableHead>
                   <TableHead>Wave</TableHead>

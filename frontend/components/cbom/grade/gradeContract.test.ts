@@ -77,11 +77,26 @@ for (const [id, tip] of Object.entries(GRADE_TIPS)) {
   assert.match(tipsSource, new RegExp(`// src: [^\\n]+\\n\\s+"${id.replace(/\./g, "\\.")}"`), `${id}: no // src: line`);
 }
 
-// vocabulary (CB-18 / CB-19): no grade key printed alone in this module (the test files included)
+// vocabulary (CB-18 / CB-19): in this module (the test files included) every grade key is followed by its OWN risk
+// word ("Q1 Critical", never a key alone nor with another grade's word); "Q0 gap" is CB-18's other allowed form
+export function wrongGradeWords(src: string): string[] {
+  const out: string[] = [];
+  for (const [key, word] of Object.entries(GRADE_WORD)) {
+    const allowed = key === GRADE_KEYS[0] ? `(${word}|gaps?)` : word;
+    for (const m of src.matchAll(new RegExp(`\\b${key}\\b(?! ${allowed}\\b)`, "g"))) {
+      out.push(`${key} at ${m.index}: "${src.slice(m.index, (m.index ?? 0) + 14).replace(/\n/g, " ")}"`);
+    }
+  }
+  return out;
+}
+const [K0, K1, K2, K3, K4] = GRADE_KEYS;
+assert.deepEqual(wrongGradeWords(`${K1} ${GRADE_WORD[K2]}`), [`${K1} at 0: "${K1} ${GRADE_WORD[K2]}"`]);  // a wrong word
+assert.equal(wrongGradeWords(`${K4} ${GRADE_WORD[K1]}`).length, 1);
+assert.equal(wrongGradeWords(`${K3}.`).length, 1);  // a bare key
+assert.deepEqual(wrongGradeWords(`${K0} ${GRADE_WORD[K0]}, ${K0} gaps, ${K2} ${GRADE_WORD[K2]}`), []);
 for (const file of readdirSync(__dirname).filter((f) => /\.(ts|tsx)$/.test(f))) {
-  const src = readFileSync(path.join(__dirname, file), "utf8");
-  const bare = [...src.matchAll(/\bQ[0-4]\b(?! (Unknown|Critical|High|Medium|Low|gap))/g)].map((m) => m.index);
-  assert.deepEqual(bare, [], `${file}: a grade key without its risk word at ${bare.join(", ")}`);
+  const wrong = wrongGradeWords(readFileSync(path.join(__dirname, file), "utf8"));
+  assert.deepEqual(wrong, [], `${file}: a grade key without its own risk word: ${wrong.join("; ")}`);
 }
 
 // the model dialog: the served sha256 is the sha256 this browser code computes over the served text

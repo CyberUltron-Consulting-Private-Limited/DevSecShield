@@ -9,9 +9,14 @@ import { createHash } from "node:crypto";
 
 import {
   FIX_CLASSES,
+  FIX_STYLE,
   FIX_VALUES,
   GRADE_BUCKETS,
+  SHA_CHECK_TEXT,
   detailText,
+  fixClassAvailable,
+  gradeAvailable,
+  shaCheck,
   GRADE_KEYS,
   GRADE_TEXT,
   explainRows,
@@ -66,7 +71,11 @@ assert.equal(gradeTitle({ q_grade: G1, q_reason: "qv_exceeds_internet" }, served
 assert.equal(gradeTitle({ q_grade: G3, q_reason: "grover_weakened" }), "Q3 Medium: Grover weakened");
 assert.equal(gradeTitle({ q_grade: null, q_reason: "not_applicable" }), "No grade: no public-key cryptography");
 assert.equal(gradeTitle({ q_grade: null, q_reason: "attested_no_class" }), "No grade: Attested no class");
-assert.equal(gradeTitle({}), "No grade: no public-key cryptography");
+// a server that sends no grade fields (an older backend) is not told apart as "no public-key cryptography"
+assert.equal(gradeTitle({}), "Not graded: this server does not send a quantum risk grade");
+assert.equal(gradeTitle({ q_grade: null }), "No grade: no public-key cryptography");
+assert.equal(gradeAvailable({}), false);
+assert.equal(gradeAvailable({ q_grade: null, q_reason: "not_applicable" }), true);
 
 // ---- posture distribution: every bucket present (0 too), in order, totals equal the posture's assets
 const posture: QPosture = {
@@ -167,6 +176,19 @@ assert.match(fixClassTitle({ fix_class: "vendor-fixed", fix_class_confidence: "i
 assert.equal(fixClassTitle({ fix_class: "vendor-fixed", fix_class_confidence: "observed" }), "Vendor-fixed");
 assert.match(fixClassTitle({ fix_class: "unknown", fix_class_floor: "vendor-fixed" }), /at least vendor-fixed/);
 assert.match(fixClassTitle({ fix_class: "none" }), /nothing to change today/);
+assert.equal(fixClassTitle({}), "No fix class: this server does not send one");
+assert.equal(fixClassAvailable({}), false);
+assert.equal(fixClassAvailable({ fix_class: "none" }), true);
+// every value has a visible swatch on the bar's track (bg-zinc-100 / dark bg-zinc-800)
+for (const v of FIX_VALUES) assert.doesNotMatch(FIX_STYLE[v].bar, /(^|\s)bg-zinc-100(\s|$)|dark:bg-zinc-800(\s|$)/, v);
+
+// the model dialog's sha line: match, mismatch, a page not served over HTTPS (no Web Crypto), a browser without it
+assert.equal(shaCheck("ab", "ab", true), "match");
+assert.equal(shaCheck("ab", "cd", true), "mismatch");
+assert.equal(shaCheck(null, "cd", false), "insecure");
+assert.equal(shaCheck(null, "cd", true), "unavailable");
+assert.match(SHA_CHECK_TEXT.insecure, /not served over HTTPS/);
+assert.match(SHA_CHECK_TEXT.unavailable, /this browser cannot check it/);
 // palette: teal, blue, violet, slate, dashed grey; an unseen value gets the unknown style
 const fixColour = (v: string | null) => /\b(teal|blue|violet|slate|zinc)-/.exec(fixClassChipClass(v))?.[1];
 assert.deepEqual(FIX_CLASSES.map(fixColour), ["teal", "blue", "violet", "slate"]);

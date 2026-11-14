@@ -131,8 +131,14 @@ export function gradeChipClass(grade: string | null | undefined): string {
   return isGrade(grade) ? GRADE_STYLE[grade].chip : NONE_STYLE.chip;
 }
 
+/** Whether the server sent grade fields at all (an older backend sends neither key). */
+export function gradeAvailable(item: QGradeFields): boolean {
+  return item.q_grade !== undefined || item.q_reason !== undefined;
+}
+
 /** The chip's hover text: the reason (served text when the model is loaded, else the code) or why there is no grade. */
 export function gradeTitle(item: QGradeFields, reasons?: Map<string, string>): string {
+  if (!gradeAvailable(item)) return "Not graded: this server does not send a quantum risk grade";
   const reason = item.q_reason ? reasons?.get(item.q_reason) ?? humanize(item.q_reason) : null;
   if (item.q_grade == null || item.q_grade === "") {
     if (item.q_reason === "not_applicable" || !item.q_reason) return "No grade: no public-key cryptography";
@@ -256,6 +262,21 @@ export function explainRows(e: QExplain): { label: string; value: string; basis:
 }
 
 /** sha256 of a text as lower-case hex, with Web Crypto (browsers in a secure context, Node 20); null when unavailable. */
+export type ShaCheck = "checking" | "match" | "mismatch" | "insecure" | "unavailable";
+/** What the dialog says about the served sha: computed here (`sha`, null when Web Crypto is missing) against the
+ * served value; browsers offer Web Crypto only on secure pages (https:// or localhost). */
+export function shaCheck(sha: string | null, served: string, secureContext: boolean): ShaCheck {
+  if (sha == null) return secureContext ? "unavailable" : "insecure";
+  return sha === served ? "match" : "mismatch";
+}
+export const SHA_CHECK_TEXT: Record<ShaCheck, string> = {
+  checking: "",
+  match: "checked in this browser",
+  mismatch: "does not match the text shown",
+  insecure: "not checked: this page is not served over HTTPS (browsers offer Web Crypto only on secure pages)",
+  unavailable: "this browser cannot check it",
+};
+
 export async function sha256Hex(text: string): Promise<string | null> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) return null;
@@ -287,7 +308,7 @@ export const FIX_STYLE: Record<FixValue, { chip: string; bar: string }> = {
   "vendor-fixed": { chip: "border-violet-500/60 bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300", bar: "bg-violet-600" },
   "hardware-fixed": { chip: "border-slate-500/60 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300", bar: "bg-slate-600" },
   unknown: { chip: "border-dashed border-zinc-400 text-zinc-600 dark:text-zinc-400", bar: "bg-zinc-300 dark:bg-zinc-600" },
-  none: { chip: "border-transparent text-zinc-500", bar: "bg-zinc-100 dark:bg-zinc-800" },
+  none: { chip: "border-transparent text-zinc-500 dark:text-zinc-400", bar: "bg-zinc-200 dark:bg-zinc-700" },
 };
 
 export function isFixValue(value: unknown): value is FixValue {
@@ -364,7 +385,13 @@ export function fixClassChipClass(value: string | null | undefined): string {
   return isFixValue(value) ? FIX_STYLE[value].chip : FIX_STYLE.unknown.chip;
 }
 
+/** Whether the server sent a fix class at all (an older backend does not). */
+export function fixClassAvailable(f: FixClassFields): boolean {
+  return f.fix_class !== undefined;
+}
+
 export function fixClassTitle(f: FixClassFields): string {
+  if (!fixClassAvailable(f)) return "No fix class: this server does not send one";
   const v = f.fix_class;
   if (v == null || v === "" || v === "none") return "No finding code: nothing to change today";
   if (v === "unknown") return "Unknown: a fact that decides the class was not read" +

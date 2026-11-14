@@ -7,6 +7,8 @@
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -14,6 +16,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   AgilityDrawerSection,
   AgilityPostureCard,
+  EvidenceFixClass,
   FIX_VALUES,
   FixClassChip,
   GRADE_KEYS,
@@ -67,6 +70,11 @@ const none = render(h(QGradeChip, { item: { q_grade: null, q_reason: "not_applic
 assert.equal(attr(none, "run-asset-q-7", "data-q"), "none");
 assert.match(text(none), /^— No grade: no public-key cryptography$/);
 assert.match(none, /title="No grade: no public-key cryptography"/);
+// an older backend (no grade fields at all): a bare "—" that claims nothing about the asset
+const absent = render(h(QGradeChip, { item: {}, assetId: 8 }));
+assert.equal(attr(absent, "run-asset-q-8", "data-q"), "unavailable");
+assert.doesNotMatch(absent, /public-key/);
+assert.match(text(absent), /^— Not graded: this server does not send a quantum risk grade$/);
 // the served reason sentence is the chip's title
 const titled = render(h(QGradeChip, { item: { q_grade: G1, q_reason: "qv_exceeds_internet" },
   reasons: new Map([["qv_exceeds_internet", "Quantum-vulnerable, X + Y &gt; Z, internet"]]) }));
@@ -85,7 +93,9 @@ for (const v of FIX_VALUES) {
   }[v]);
 }
 assert.equal(text(render(h(FixClassChip, { item: { fix_class: "vendor-fixed", fix_class_confidence: "inferred" } }))), "Vendor-fixed· likely");
-assert.equal(attr(render(h(FixClassChip, { item: {}, assetId: 4 })), "run-asset-fixclass-4", "data-fix-class"), "none");
+const fxAbsent = render(h(FixClassChip, { item: {}, assetId: 4 }));
+assert.equal(attr(fxAbsent, "run-asset-fixclass-4", "data-fix-class"), "unavailable");
+assert.doesNotMatch(fxAbsent, /nothing to change/);
 assert.equal(text(render(h(FixClassChip, { item: { fix_class: "unknown" } }))), "Unknown");
 assert.equal(text(render(h(FixClassChip, { item: { fix_class: "firmware-fixed" } }))), "firmware-fixed (unrecognised class)");
 
@@ -233,5 +243,32 @@ assert.ok(text(plain).includes("No finding code: nothing to change today."));
 const exclNone = render(h(AgilityDrawerSection, { agility: { ...detail, fix_class: "vendor-fixed", floor: null, fix_class_excl_pq: "none" }, model: AG_MODEL }));
 assert.ok(text(exclNone).includes("Without the post-quantum migration codes: nothing to change today."));
 assert.equal(render(h(AgilityDrawerSection, { agility: undefined, model: AG_MODEL })), "");  // older backend
+
+// secondary text has a dark-theme variant (text-zinc-500 alone is 3.67:1 on zinc-900): no bare text-zinc-500 anywhere
+for (const html of [card, list, body, drawer, render(h(QGradeChip, { item: { q_grade: null } })), ag, dr, plain]) {
+  assert.doesNotMatch(html, /text-zinc-500(?![^"]*dark:text-zinc-400)/);
+}
+// the (i) button is visible enough (>= 3:1): zinc-500 / dark zinc-400, never zinc-400 on white
+const tipButton = /<button[^>]*aria-label="About Self-fixable share"[^>]*>/.exec(ag)?.[0] ?? "";
+assert.match(tipButton, /class="[^"]*text-zinc-500 dark:text-zinc-400/);
+assert.doesNotMatch(tipButton, /title=/);
+
+// evidence items (GET …/sources/evidence): answered HSM firmware / third-party area and vendors carry a class; an
+// unanswered one says "not assessed"; the process areas show nothing
+const ev = (item: { fix_class?: string | null; not_assessed?: boolean }) => render(h(EvidenceFixClass, { item, testId: "ev" }));
+assert.equal(attr(ev({ fix_class: "hardware-fixed", not_assessed: false }), "ev", "data-fix-class"), "hardware-fixed");
+assert.equal(text(ev({ fix_class: "vendor-fixed", not_assessed: false })), "Vendor-fixed");
+assert.equal(attr(ev({ fix_class: null, not_assessed: true }), "ev", "data-fix-class"), "not_assessed");
+assert.equal(text(ev({ fix_class: null, not_assessed: true })), "Fix class: not assessed");
+assert.equal(ev({ fix_class: null, not_assessed: false }), "");
+assert.equal(ev({}), "");
+
+// mounted where CB-24 PLAN §10 PR-1u says: run results (both columns), code-scan results, Evidence tab
+const src = (p: string) => readFileSync(path.join(__dirname, "..", "..", p), "utf8");
+assert.match(src("cbom/sources/RunResults.tsx"), /<QGradeChip item=\{asset as QGradeFields\} assetId=\{asset.id\} \/>/);
+assert.match(src("cbom/sources/RunResults.tsx"), /<FixClassChip item=\{asset as FixClassFields\} assetId=\{asset.id\} \/>/);
+assert.match(src("CbomResults.tsx"), /<FixClassChip item=\{finding as FixClassFields\} testId=\{`cbom-finding-fixclass-\$\{finding.id\}`\} \/>/);
+assert.match(src("cbom/sources/EvidenceTab.tsx"), /<EvidenceFixClass item=\{area as [^\n]*testId=\{`evidence-fixclass-\$\{area.area_key\}`\} \/>/);
+assert.match(src("cbom/sources/EvidenceTab.tsx"), /<EvidenceFixClass item=\{vendor as [^\n]*testId=\{`vendor-fixclass-\$\{vendor.id\}`\} \/>/);
 
 console.log("grade/render.test.ts: ok");

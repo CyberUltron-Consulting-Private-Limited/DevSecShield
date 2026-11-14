@@ -12,6 +12,7 @@ import { useGradeModel } from "./api";
 import {
   detailText,
   explainRows,
+  gradeAvailable,
   gradeChipClass,
   gradeText,
   gradeTitle,
@@ -21,8 +22,11 @@ import {
   q0Reasons,
   qDistribution,
   reasonTexts,
+  SHA_CHECK_TEXT,
   sha256Hex,
+  shaCheck,
   type GradeModel,
+  type ShaCheck,
   type Q0Item,
   type QExplain,
   type QGradeFields,
@@ -48,8 +52,10 @@ export function QGradeChip({ item, assetId, reasons, testId }: {
   const hook = testId ?? (assetId != null ? `run-asset-q-${assetId}` : undefined);
   const title = gradeTitle(item, reasons);
   if (!text) {
+    // "none": graded, no grade (e.g. no public-key cryptography); "unavailable": the server sent no grade fields
     return (
-      <span className="text-xs text-zinc-500" title={title} data-testid={hook} data-q="none" data-q-reason={item.q_reason ?? undefined}>
+      <span className="text-xs text-zinc-500 dark:text-zinc-400" title={title} data-testid={hook}
+            data-q={gradeAvailable(item) ? "none" : "unavailable"} data-q-reason={item.q_reason ?? undefined}>
         —<span className="sr-only"> {title}</span>
       </span>
     );
@@ -84,7 +90,7 @@ export function QDistributionBar({ posture }: { posture: QPosture }) {
             <span className={`inline-block h-2.5 w-2.5 rounded-sm ${s.bar}`} aria-hidden="true" />
             <span>{s.text}</span>
             <span className="font-semibold tabular-nums">{s.count}</span>
-            {total > 0 && <span className="text-zinc-500 tabular-nums">({s.pct}%)</span>}
+            {total > 0 && <span className="text-zinc-500 dark:text-zinc-400 tabular-nums">({s.pct}%)</span>}
           </li>
         ))}
       </ul>
@@ -110,7 +116,7 @@ export function Q0ItemList({ items, total, reasons, onOpenAsset, limit }: {
   const [all, setAll] = useState(false);
   const shown = limit && !all ? items.slice(0, limit) : items;
   const count = total ?? items.length;
-  if (items.length === 0) return <p className="text-xs text-zinc-500" data-testid="q0-items-empty">No Q0 Unknown items in this run.</p>;
+  if (items.length === 0) return <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="q0-items-empty">No Q0 Unknown items in this run.</p>;
   return (
     <div className="space-y-1" data-testid="q0-items" data-total={count}>
       <ul className="space-y-1">
@@ -124,8 +130,8 @@ export function Q0ItemList({ items, total, reasons, onOpenAsset, limit }: {
                 data-testid={`q0-item-${item.key}`} data-reason={item.reason} data-kind={item.kind}>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="font-medium text-zinc-900 dark:text-white">{reasons?.get(item.reason) ?? humanize(item.reason)}</span>
-                {item.source_name && <span className="text-zinc-500">{item.source_name}</span>}
-                {n && <span className="text-zinc-500 tabular-nums">· {n}</span>}
+                {item.source_name && <span className="text-zinc-500 dark:text-zinc-400">{item.source_name}</span>}
+                {n && <span className="text-zinc-500 dark:text-zinc-400 tabular-nums">· {n}</span>}
               </div>
               {line && (
                 item.asset_id != null && onOpenAsset ? (
@@ -137,9 +143,9 @@ export function Q0ItemList({ items, total, reasons, onOpenAsset, limit }: {
                   <p className="font-mono text-zinc-700 dark:text-zinc-300 break-all">{line}</p>
                 )
               )}
-              {detail && <p className="text-zinc-500 break-words">{detail}</p>}
+              {detail && <p className="text-zinc-500 dark:text-zinc-400 break-words">{detail}</p>}
               {addresses.length > 0 && (
-                <p className="text-zinc-500 font-mono break-all">
+                <p className="text-zinc-500 dark:text-zinc-400 font-mono break-all">
                   {addresses.slice(0, 5).join(", ")}{addresses.length > 5 ? ` and ${addresses.length - 5} more` : ""}
                 </p>
               )}
@@ -154,7 +160,7 @@ export function Q0ItemList({ items, total, reasons, onOpenAsset, limit }: {
         </button>
       )}
       {count > items.length && (
-        <p className="text-xs text-zinc-500" data-testid="q0-items-capped">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="q0-items-capped">
           Showing the first {items.length} of {count} items (missing inputs and unread sources first).
         </p>
       )}
@@ -164,12 +170,13 @@ export function Q0ItemList({ items, total, reasons, onOpenAsset, limit }: {
 
 /** The served model text, verbatim, with its sha256 as the API gave it and whether this browser computes the same. */
 export function QGradeModelBody({ model }: { model: GradeModel }) {
-  const [check, setCheck] = useState<"checking" | "match" | "mismatch" | "unavailable">("checking");
+  const [check, setCheck] = useState<ShaCheck>("checking");
   useEffect(() => {
     let live = true;
+    const secure = typeof window === "undefined" || window.isSecureContext !== false;
     sha256Hex(model.text).then(
-      (sha) => live && setCheck(sha == null ? "unavailable" : sha === model.text_sha256 ? "match" : "mismatch"),
-      () => live && setCheck("unavailable"),
+      (sha) => live && setCheck(shaCheck(sha, model.text_sha256, secure)),
+      () => live && setCheck(shaCheck(null, model.text_sha256, secure)),
     );
     return () => { live = false; };
   }, [model.text, model.text_sha256]);
@@ -177,14 +184,16 @@ export function QGradeModelBody({ model }: { model: GradeModel }) {
     <div className="space-y-2 min-w-0" data-testid="grade-model-body">
       <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded-md bg-zinc-50 dark:bg-zinc-900 p-3 text-xs text-zinc-800 dark:text-zinc-200"
            data-testid="grade-model-text">{model.text}</pre>
-      <p className="text-xs text-zinc-500 break-all">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all">
         Model {model.model} · version <span className="font-mono">{model.model_version}</span>
       </p>
-      <p className="text-xs text-zinc-500 break-all" data-testid="grade-model-sha" data-sha={model.text_sha256} data-check={check}>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all" data-testid="grade-model-sha" data-sha={model.text_sha256} data-check={check}>
         sha256 of this text: <span className="font-mono">{model.text_sha256}</span>
-        {check === "match" && <span className="text-green-700 dark:text-green-400"> · checked in this browser</span>}
-        {check === "mismatch" && <span className="text-red-600 dark:text-red-400"> · does not match the text shown</span>}
-        {check === "unavailable" && <span> · this browser cannot check it</span>}
+        {check !== "checking" && (
+          <span className={check === "match" ? "text-green-700 dark:text-green-400" : check === "mismatch" ? "text-red-600 dark:text-red-400" : ""}>
+            {" · "}{SHA_CHECK_TEXT[check]}
+          </span>
+        )}
       </p>
     </div>
   );
@@ -207,7 +216,7 @@ export function QGradeModelDialog({ teamId, open, onOpenChange, model }: {
         </DialogHeader>
         {m ? <QGradeModelBody model={m} />
           : query.isError ? <p className="text-sm text-red-600 dark:text-red-400" role="alert">Could not load the grade model.</p>
-            : <p className="text-sm text-zinc-500">Loading…</p>}
+            : <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>}
       </DialogContent>
     </Dialog>
   );
@@ -245,7 +254,7 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
       <QDistributionBar posture={posture} />
       {q0.length > 0 && (
         <div className="space-y-1" data-testid="posture-q0-reasons">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Q0 Unknown: why</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Q0 Unknown: why</p>
           <ul className="space-y-0.5">
             {q0.map((r) => (
               <li key={r.code} className="text-xs text-zinc-700 dark:text-zinc-300 flex gap-2" data-testid={`posture-q0-reason-${r.code}`}
@@ -256,7 +265,7 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
             ))}
           </ul>
           {counts && (
-            <p className="text-xs text-zinc-500" data-testid="posture-q0-counts">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400" data-testid="posture-q0-counts">
               {counts.assets} asset{counts.assets === 1 ? "" : "s"} graded Q0 Unknown; {counts.scope_items} unread scope
               item{counts.scope_items === 1 ? "" : "s"} ({counts.scope_rows} row{counts.scope_rows === 1 ? "" : "s"}). Counts are items: a
               missing Mosca setting is one item for every asset it leaves ungraded.
@@ -274,7 +283,7 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
           {showItems && <div className="mt-2"><Q0ItemList items={items} total={total} reasons={reasons} onOpenAsset={onOpenAsset} limit={25} /></div>}
         </div>
       )}
-      <p className="text-xs text-zinc-500 break-all" data-testid="posture-q-inputs">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all" data-testid="posture-q-inputs">
         Graded with model {posture.grade_model_version ?? posture.grade_model ?? "—"}
         {inputs ? ` · Mosca X ${inputs.mosca.x ?? "not set"}, Y ${inputs.mosca.y ?? "not set"}, Z ${inputs.mosca.z ?? "not set"}` : ""}
         {inputs?.source === "current" ? " (the team's settings now, not when the run started)" : ""}
@@ -302,7 +311,7 @@ export function QGradeDrawerSection({ teamId, asset, model }: {
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Quantum risk</p>
         <QGradeChip item={asset} reasons={reasons} testId="asset-q-chip" />
-        {!asset.q_grade && <span className="text-xs text-zinc-500">No grade</span>}
+        {!asset.q_grade && <span className="text-xs text-zinc-500 dark:text-zinc-400">No grade</span>}
       </div>
       {reason && (
         <p className="text-xs text-zinc-700 dark:text-zinc-300" data-testid="asset-q-reason">
@@ -313,11 +322,11 @@ export function QGradeDrawerSection({ teamId, asset, model }: {
         <dl className="grid grid-cols-1 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] gap-x-4 text-xs" data-testid="asset-q-inputs">
           {rows.map((r) => (
             <div key={r.label} className="contents">
-              <dt className="pt-1 sm:py-1 text-zinc-500 sm:border-t border-zinc-100 dark:border-zinc-800">{r.label}</dt>
+              <dt className="pt-1 sm:py-1 text-zinc-500 dark:text-zinc-400 sm:border-t border-zinc-100 dark:border-zinc-800">{r.label}</dt>
               <dd className="pb-1 sm:py-1 min-w-0 break-words border-b sm:border-b-0 sm:border-t border-zinc-100 dark:border-zinc-800"
                   data-testid={`asset-q-input-${r.label.split(":")[0].toLowerCase().replace(/[^a-z]+/g, "-")}`}>
                 <span className="text-zinc-800 dark:text-zinc-200">{r.value}</span>
-                {r.basis && <span className="text-zinc-500"> · {r.basis}</span>}
+                {r.basis && <span className="text-zinc-500 dark:text-zinc-400"> · {r.basis}</span>}
               </dd>
             </div>
           ))}

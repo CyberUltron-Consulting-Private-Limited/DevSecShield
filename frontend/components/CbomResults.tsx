@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { FixClassChip, type FixClassFields } from "@/components/cbom/grade";
 import {
   Select,
   SelectContent,
@@ -1589,6 +1590,7 @@ export default function CbomResults({
                       <TableHead className="min-w-[90px]">Impact</TableHead>
                       <TableHead className="min-w-[110px]">Strength</TableHead>
                       <TableHead className="min-w-[100px]">Quantum</TableHead>
+                      <TableHead className="min-w-[110px]">Fix class</TableHead>
                       <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
                       <TableHead className="min-w-[140px]">Location</TableHead>
                       <TableHead className="min-w-[100px]">Status</TableHead>
@@ -1598,7 +1600,7 @@ export default function CbomResults({
                   <TableBody>
                     {filteredFindings.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                        <TableCell colSpan={11} className="text-center py-8 text-zinc-500 dark:text-zinc-400">
                           {relatedFindingRefs.length > 0
                             ? "No findings match these related assets. Related refs may point at inventory-only components without a finding row — clear the related-asset filter to see all findings."
                             : "No findings match your filters."}
@@ -1648,6 +1650,9 @@ export default function CbomResults({
                             </TableCell>
                             <TableCell>
                               <QuantumBadge quantumSafe={finding.quantum_safe} strength={finding.crypto_strength} />
+                            </TableCell>
+                            <TableCell>
+                              <FixClassChip item={finding as FixClassFields} testId={`cbom-finding-fixclass-${finding.id}`} />
                             </TableCell>
                             <TableCell className="text-center">
                               <span
