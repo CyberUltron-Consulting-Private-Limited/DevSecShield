@@ -5,7 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Columns3 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,24 +23,32 @@ import {
   browserStorage,
   columnPrefsKey,
   defaultColumns,
-  loadColumns,
+  columnsForUser,
   MIN_VISIBLE_COLUMNS,
   saveColumns,
   toggleColumn,
   type ColumnDef,
 } from "./findingTable";
 
-/** The visible columns of one table for the signed-in user (the layout's cached "user-profile" query). */
+/**
+ * The visible columns of one table for the signed-in user (the layout's cached "user-profile" query). Until the
+ * profile has loaded, a change stays in memory (no shared device key); once it loads, that change is stored under the
+ * user's key, else the user's stored choice is read.
+ */
 export function useColumnPrefs<Id extends string>(table: "run" | "scan", defs: readonly ColumnDef<Id>[]) {
   const profile = useQuery({ queryKey: ["user-profile"], queryFn: getUserProfile, staleTime: 5 * 60_000, retry: 1 });
   const key = columnPrefsKey(table, profile.data?.email);
   const [visible, setVisible] = useState<Id[]>(() => defaultColumns(defs));
+  const pending = useRef<Id[] | null>(null);
   useEffect(() => {
-    setVisible(loadColumns(browserStorage(), key, defs));
+    if (!key) return;
+    setVisible(columnsForUser(browserStorage(), key, defs, pending.current));
+    pending.current = null;
   }, [key, defs]);
   const update = useCallback((next: Id[]) => {
     setVisible(next);
-    saveColumns(browserStorage(), key, next);
+    if (key) saveColumns(browserStorage(), key, next);
+    else pending.current = next;
   }, [key]);
   return {
     visible,
