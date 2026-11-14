@@ -554,8 +554,11 @@ try {
     const runId = state.runs?.[0];
     if (!runId) { s.check("run_exists", false, { expected: "a run", observed: null }); return; }
     const { page } = A;
-    // CB-38: the Results button opens /{team}/cbom/runs/{run}/results; the same URL also opens directly
+    // CB-38: the run's row in CBOM Scans -> Table, as the customer sees it (G11u list counts below)
+    const listRow = await cb05.readListRow(ctx, runId);
+    // the Results button opens /{team}/cbom/runs/{run}/results; so do the list's title link and the URL itself
     await cb05.openRunResults(ctx, s, runId, { via: "direct" });
+    await cb05.openRunResults(ctx, s, runId, { via: "list" });
     const resultsPath = await cb05.openRunResults(ctx, s, runId, { via: "review" });
     // every page of the API with the customer's own token
     // raw pages: an id the product serves twice stays twice (the judge fails duplicates, m1)
@@ -597,8 +600,18 @@ try {
     // G11u (Rule P): the page prints /posture's readiness, classes and Critical/High, and each row the item's grade
     // innerText keeps the line breaks between the card's values ("2 / 3" then "1 medium, 1 low"); textContent glues them
     const textOf = async (tid) => ((await page.getByTestId(tid).count()) ? ((await page.getByTestId(tid).first().innerText()) || "") : null);
+    const qCounts = (await page.getByTestId("posture-q-distribution").count())
+      ? await page.$$eval('[data-testid="posture-q-distribution"] [data-count]', (els) => Object.fromEntries(els.map((e) => [e.dataset.testid.replace(/^posture-q-/, ""), Number(e.dataset.count)])))
+      : null;
     cb05.g11uRuleP(s, "1", posture.body, { posture: await textOf("run-posture"), readiness: await textOf("posture-readiness"),
-      dashboard: await textOf("run-section-dashboard") }, rows, items);
+      dashboard: await textOf("run-section-dashboard"), qCounts }, rows, items);
+    // G11u, the list: Risks cell == runs_list_data row == the DB (non-coverage assets by impact; every asset counted)
+    const scans = await apiGet(A, `/${A.team}/cbom/scans`);
+    const listApi = (scans.body?.runs_list_data || []).find((r) => r.id === runId) || null;
+    writeJson(join(RUN, "api", "scans-list-run1.json"), { status: scans.status, runs_total: scans.body?.runs_total ?? null, row: listApi });
+    const listDb = { rows: db(`SELECT coalesce(impact, ''), coalesce(quantum_vulnerable::text, ''), count(*) FROM cbomcollectedasset WHERE team_id = ${Number(A.team)} AND run_id = ${Number(runId)} AND asset_type <> 'coverage' GROUP BY 1, 2`),
+      total: Number((db(`SELECT count(*) FROM cbomcollectedasset WHERE team_id = ${Number(A.team)} AND run_id = ${Number(runId)}`)[0] || [])[0]) };
+    cb05.g11uListRow(s, "1", `/${A.team}/cbom/runs/${runId}/results`, listRow, listApi, listDb);
     // per job: the results page's label = the DB (status, outcome) (G10's mapping, read where the customer sees it)
     const label = { ok: "All targets read", partial: "Partly read", failed: "Nothing read" };
     for (const j of state.jobs || []) {

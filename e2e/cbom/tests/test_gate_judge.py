@@ -1,6 +1,7 @@
 """The gate judges a correct CBOM PASS and every deliberately wrong one FAIL (the positive controls of the gate)."""
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 
@@ -219,32 +220,54 @@ def test_attribute_row_wrong_target_fails(tmp_path, empty_ledger):
     assert blocking["G11/join/run1/asset/101/target/ui"]["reason"] == "mismatch"
 
 
+def _nn(value, alt):
+    """JS ``value ?? alt``: only null/undefined fall through ("" and 0 are kept)."""
+    return alt if value is None else value
+
+
 def _attrs(api: dict) -> dict:
-    """The row #120's assetRowAttrs writes for an API item, as readRunRows reads it ("" for none)."""
+    """The row #120's assetRowAttrs (model.ts, head 3c6619d5) writes for an API item, as readRunRows reads it.
+    Transcribed operator for operator: ``??`` for every field but data-algorithm, which is ``algorithm || protocol || ""``."""
     qv = api.get("quantum_vulnerable")
-    return {"id": api["id"], "reader": "data-attributes", "impact": api.get("impact") or "", "type": api.get("type") or "",
-            "location": api.get("location") or "", "target": api.get("target") or "",
+    return {"id": api["id"], "reader": "data-attributes", "impact": _nn(api.get("impact"), ""), "type": _nn(api.get("type"), ""),
+            "location": _nn(api.get("location"), ""), "target": _nn(api.get("target"), ""),
             "algorithm": api.get("algorithm") or api.get("protocol") or "",
-            "key_size": "" if api.get("key_size") is None else str(api["key_size"]), "finding": api.get("finding") or "",
+            "key_size": "" if api.get("key_size") is None else str(api["key_size"]), "finding": _nn(api.get("finding"), ""),
             "quantum": "vulnerable" if qv is True else "safe" if qv is False else ""}
 
 
-@pytest.mark.parametrize("api", [
-    {"id": 1, "type": "certificate", "algorithm": "RSA", "key_size": 0, "protocol": None, "quantum_vulnerable": True,
-     "impact": "High", "location": "a:443", "target": "a", "finding": "f"},
-    {"id": 2, "type": "tls_endpoint", "algorithm": "", "key_size": None, "protocol": "TLSv1.3", "quantum_vulnerable": None,
-     "impact": None, "location": "", "target": None, "finding": None},
-    {"id": 3, "type": None, "algorithm": None, "key_size": 2048, "protocol": None, "quantum_vulnerable": False,
-     "impact": "Low", "location": "x", "target": "", "finding": ""},
-    {"id": 4, "type": "made_up_type", "algorithm": "ML-KEM", "key_size": None, "protocol": "TLS 1.3", "quantum_vulnerable": False,
-     "impact": "Medium", "location": "y", "target": "y", "finding": "z"},
-])
-def test_attribute_rendering_equals_ui_expected(api):
-    """Every UI field of an attribute row renders exactly as ui_expected renders the item (no false FAIL)."""
+# every API value class per field: null, "", 0, a known value, an unknown value, padding (attributes are never trimmed)
+_GRID = {
+    "asset_type": {"type": [None, "", "certificate", "coverage", "made_up_type"]},
+    "impact": {"impact": [None, "", "High", "none"]},
+    "location": {"location": [None, "", "10.0.0.1:443", " pad "]},
+    "target": {"target": [None, "", "10.9.9.9:443", " pad "]},
+    "algorithm_cell": {"algorithm": [None, "", "RSA"], "protocol": [None, "", "TLSv1.3"], "key_size": [None, 0, 2048]},
+    "finding": {"finding": [None, "", "Weak key"]},
+    "quantum_vulnerable": {"quantum_vulnerable": [None, True, False]},
+}
+
+
+def _grid_items():
+    for field, inputs in _GRID.items():
+        for combo in itertools.product(*inputs.values()):
+            yield field, {"id": 1, **dict(zip(inputs, combo))}
+
+
+@pytest.mark.parametrize("field, api", list(_grid_items()))
+def test_attribute_rendering_equals_ui_expected(field, api):
+    """Each UI field of an attribute row renders exactly as ui_expected renders the item, for every value class the
+    page can write (no false FAIL, e.g. key size 0 -> "RSA", a null or empty type -> None, "" algorithm -> protocol)."""
     from harness import fieldmap as F
     row = _attrs(api)
-    for field in F.ui_fields(row):
-        assert F.ui_observed(field, row) == F.ui_expected(field, api), field
+    assert field in F.ui_fields(row)
+    assert F.ui_observed(field, row) == F.ui_expected(field, api), (field, api, row)
+
+
+def test_attribute_values_are_not_trimmed():
+    """A page that pads (or trims) a value differs from the API string: the attribute is compared verbatim."""
+    from harness import fieldmap as F
+    assert F.ui_observed("location", {"reader": "data-attributes", "location": " a:443"}) != F.ui_expected("location", {"location": "a:443"})
 
 
 @pytest.mark.parametrize("token", ["true", "Vulnerable", "unknown"])

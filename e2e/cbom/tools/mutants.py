@@ -176,6 +176,10 @@ M = [  # (id, file, exact old text (must occur once), new text, what it breaks)
      "an unknown quantum token passes as no verdict"),
     ("F8", "harness/fieldmap.py", 'size not in (MISSING, None, "", "0")', 'size not in (MISSING, None, "")',
      "key size 0 rendered as a size"),
+    ("F9", "harness/fieldmap.py", "        return TYPE_LABELS.get(t, t) if t else None", "        return TYPE_LABELS.get(t, t)",
+     "an empty type expected as \"\" while the page's data-type=\"\" renders None"),
+    ("F10", "harness/fieldmap.py", "        return row.get(key, MISSING)\n", ("        value = row.get(key, MISSING)\n"
+     "        return value.strip() if isinstance(value, str) else value\n"), "attribute values trimmed before the comparison"),
     ("S1", "harness/standards.py", "    if flags == {True}:\n        return False", "    if flags == {True}:\n"
      "        return True", "all-PQ key exchange called vulnerable"),
     ("S2", "harness/standards.py", "    if flags == {False}:\n        return True", "    if flags == {False}:\n"

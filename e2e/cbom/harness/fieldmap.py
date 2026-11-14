@@ -527,7 +527,9 @@ def ui_fields(row: dict[str, Any]) -> tuple[str, ...]:
 
 def ui_expected(field: str, api: dict[str, Any]) -> Any:
     if field == "asset_type":
-        return TYPE_LABELS.get(api.get("type"), api.get("type"))
+        t = api.get("type")
+        # no type (null or ""): None; the page writes data-type="" for both, so both must render alike
+        return TYPE_LABELS.get(t, t) if t else None
     if field == "impact":
         return api.get("impact") or "Info"
     if field == "location":
@@ -564,8 +566,8 @@ _ATTR_QUANTUM = {"vulnerable": "Vulnerable", "safe": "Safe", "": "—"}
 
 def ui_from_attrs(field: str, row: dict[str, Any]) -> Any:
     def raw(key: str) -> Any:
-        value = row.get(key, MISSING)
-        return value.strip() if isinstance(value, str) else value
+        # attribute values are the API's strings verbatim (assetRowAttrs): never trimmed, so " x" != "x"
+        return row.get(key, MISSING)
     if field == "asset_type":
         t = raw("type")
         return t if t is MISSING else (TYPE_LABELS.get(t, t) if t else None)

@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { accepts, AWS_NOT_CONFIGURED_TEXT, g10Charge, g11uRuleP, g9Skipped, isResultsPage, openRunResults, RATES_C, readRunRows, RUNTIME_SKIPS,
-  VEX_FUTURE_RISK } from "./cb05.mjs";
+import { accepts, AWS_NOT_CONFIGURED_TEXT, g10Charge, g11uListRow, g11uRuleP, g9Skipped, isResultsPage, listDbCounts, openRunResults, parseRiskCell,
+  RATES_C, readListRow, readRunRows, RUNTIME_SKIPS, VEX_FUTURE_RISK } from "./cb05.mjs";
 import { plannedCharge } from "./rates.mjs";
 
 function lab(dir, lines) {
@@ -68,19 +68,29 @@ test("G10 (OA-10b): a never-scan address left out at planning owes nothing; a ch
 });
 
 // ------------------------------------------------------------------------------------------------ CB-38 results page
-/** A fake Playwright page: the Review & Run button navigates to the results page (as #117 does); the toggle exists
- * unless ``noToggle``; ``reviewTo`` overrides where the button lands. */
-function fakeResultsPage({ team = 9, runId = 55, noToggle = false, reviewTo } = {}) {
-  let url = "", pressed = "false";
-  const loc = (tid) => ({
+/** A fake Playwright page: the Review & Run button and the list row's title link navigate to the results page (as
+ * #117 does); the toggle exists unless ``noToggle``; ``reviewTo`` overrides where the button lands; ``noListRow``
+ * leaves the run out of CBOM Scans -> Table; ``listRisks`` is the row's Risks cell text. */
+function fakeResultsPage({ team = 9, runId = 55, noToggle = false, reviewTo, noListRow = false, listRisks = "2\n3\n1\n0\nQV:4" } = {}) {
+  let url = "", pressed = "false", tab = null;
+  const results = `http://ui/${team}/cbom/runs/${runId}/results`;
+  const onList = () => url === `http://ui/${team}/cbom` && tab === "Table";
+  const listRow = () => ({
+    waitFor: async () => {}, count: async () => (onList() && !noListRow ? 1 : 0),
+    getByRole: (role) => ({ first: () => ({ click: async () => { if (role === "link") url = results; },
+      getAttribute: async (a) => (role === "link" && a === "href" ? `/${team}/cbom/runs/${runId}/results` : null) }) }),
+    locator: (sel) => ({ nth: (i) => ({ innerText: async () => (sel === "td" && i === 4 ? listRisks : "") }) }),
+  });
+  const loc = (tid) => (tid === `cbom-result-run-${runId}` ? listRow() : {
     click: async () => {
-      if (tid.startsWith("review-run-details")) url = reviewTo ?? `http://ui/${team}/cbom/runs/${runId}/results`;
+      if (tid.startsWith("review-run-details")) url = reviewTo ?? results;
       if (tid === "run-results-view-all") pressed = "true";
     },
     waitFor: async () => {}, count: async () => (tid === "run-results-view-all" && noToggle ? 0 : 1),
     getAttribute: async () => pressed, isDisabled: async () => false,
   });
-  const page = { goto: async (u) => { url = u; pressed = "false"; }, getByTestId: loc, waitForURL: async () => {}, url: () => url,
+  const page = { goto: async (u) => { url = u; pressed = "false"; tab = null; }, getByTestId: loc, waitForURL: async () => {}, url: () => url,
+    getByRole: (role, { name } = {}) => ({ click: async () => { if (role === "tab") tab = name; } }),
     waitForLoadState: async () => {}, waitForTimeout: async () => {} };
   return { UI: "http://ui", A: { page, team } };
 }
@@ -142,8 +152,49 @@ test("readRunRows: on the results page a row without attributes is all missing, 
   assert.equal(old[0].impact, "High");
   assert.equal(old[0].reader, undefined);
   assert.equal(isResultsPage("/9/cbom/runs/55/results"), true);
+  assert.equal(isResultsPage("/9/cbom/runs/55/results/"), true, "a trailing slash is still the new page");
+  assert.equal(isResultsPage("/9/cbom/runs/55"), true);
   assert.equal(isResultsPage("/9/cbom/sources"), false);
   assert.equal(isResultsPage("/9/cbom/55/results"), false);
+});
+
+test("openRunResults from the CBOM Scans list: a third distinct pair of ids; no list row fails both, never throws", async () => {
+  const ctx = fakeResultsPage();
+  const s = stepStub();
+  for (const via of ["direct", "list", "review"]) assert.equal(await openRunResults(ctx, s, 55, { via }), "/9/cbom/runs/55/results");
+  const names = s.checks.map((c) => c.name);
+  assert.deepEqual(names, ["results_url_direct", "results_view_all_direct", "results_url_list", "results_view_all_list", "results_url_review", "results_view_all_review"]);
+  assert.equal(new Set(names).size, names.length);
+  assert.ok(s.checks.every((c) => c.ok));
+  const s2 = stepStub();
+  assert.equal(await openRunResults(fakeResultsPage({ noListRow: true }), s2, 55, { via: "list" }), null);
+  assert.deepEqual(s2.checks.map((c) => [c.name, c.ok, c.observed]), [["results_url_list", false, "no list row"], ["results_view_all_list", false, "no list row"]]);
+});
+
+test("G11u list: Risks cell == runs_list_data == DB, and the title links to the results page", async () => {
+  assert.deepEqual(parseRiskCell("2\n3\n1\n0\nQV:4"), { total_critical: 2, total_high: 3, total_medium: 1, total_low: 0, total_quantum_vulnerable: 4 });
+  assert.deepEqual(parseRiskCell("2\n3\n1\n0"), { total_critical: 2, total_high: 3, total_medium: 1, total_low: 0, total_quantum_vulnerable: 0 });
+  assert.equal(parseRiskCell("—"), null);
+  assert.equal(parseRiskCell("2 3 1"), null);
+  const dbRows = [["Critical", "true", "2"], ["High", "true", "2"], ["High", "false", "1"], ["Medium", "", "1"], ["", "", "3"], ["none", "false", "1"]];
+  const api = { id: 55, asset_count: 12, risk_data: { total_critical: 2, total_high: 3, total_medium: 1, total_low: 0, total_informational: 4, total_quantum_vulnerable: 4 } };
+  assert.deepEqual(listDbCounts(dbRows), api.risk_data);
+  const list = await readListRow(fakeResultsPage(), 55);
+  assert.deepEqual(list, { risks: "2\n3\n1\n0\nQV:4", href: "/9/cbom/runs/55/results" });
+  const want = "/9/cbom/runs/55/results";
+  const ok = stepStub();
+  g11uListRow(ok, "1", want, list, api, { rows: dbRows, total: 12 });
+  assert.deepEqual(ok.checks.map((c) => [c.name, c.ok]), [["g11u_list_row_run1", true], ["g11u_list_counts_ui_api_run1", true], ["g11u_list_counts_api_db_run1", true]]);
+  // the UI shows another count than the API; the API another than the DB; the asset total is off; the link goes elsewhere
+  const bad = stepStub();
+  g11uListRow(bad, "1", want, { risks: "2\n4\n1\n0\nQV:4", href: "/9/cbom/55" }, { ...api, asset_count: 11 }, { rows: dbRows, total: 12 });
+  assert.ok(bad.checks.every((c) => c.ok === false), JSON.stringify(bad.checks.map((c) => [c.name, c.ok])));
+  const recount = stepStub();
+  g11uListRow(recount, "1", want, list, api, { rows: dbRows.slice(1), total: 12 });
+  assert.equal(recount.checks.find((c) => c.name === "g11u_list_counts_api_db_run1").ok, false);
+  const missing = stepStub();
+  g11uListRow(missing, "1", want, await readListRow(fakeResultsPage({ noListRow: true }), 55), null, { rows: dbRows, total: 12 });
+  assert.ok(missing.checks.every((c) => c.ok === false));
 });
 
 const POSTURE = { posture: { pqc_readiness_pct: 28.6, pqc_classes: { "quantum-vulnerable": 5, hybrid: 0, "quantum-safe": 1, "grover-weakened": 1, "not-applicable": 2 },
@@ -157,19 +208,33 @@ test("G11u: the page's readiness, classes, Critical/High and row grades equal /p
   const rows = [{ id: 1, reader: "data-attributes", q_grade: "Q1" }, { id: 2, reader: "data-attributes" }];
   const items = [{ id: 1, q_grade: "Q1", fix_class: null }, { id: 2, q_grade: null }];
   g11uRuleP(s, "1", POSTURE, { posture: CARD, readiness: "PQC readiness\n28.6%", dashboard: "Crypto assets\n9\nQuantum ready\n28.6%\nAvg risk" }, rows, items);
-  assert.deepEqual(s.checks.map((c) => [c.name, c.ok]), [["g11u_posture_readiness_run1", true], ["g11u_dashboard_readiness_run1", true],
-    ["g11u_classes_run1", true], ["g11u_critical_high_run1", true], ["g11u_row_grades_run1", true]]);
+  assert.deepEqual(s.checks.map((c) => [c.name, c.ok ?? "not-run"]), [["g11u_posture_readiness_run1", true], ["g11u_dashboard_readiness_run1", true],
+    ["g11u_classes_run1", true], ["g11u_critical_high_run1", true], ["g11u_q_distribution_run1", "not-run"], ["g11u_row_grades_run1", true]]);
+});
+
+test("G11u Q distribution: every posture-q-<bucket> count == /posture q_grades; missing on the page or off by one fails", () => {
+  const graded = { posture: { ...POSTURE.posture, q_grades: { Q0: 1, Q1: 2, Q2: 0, Q3: 0, Q4: 0, none: 6 } } };
+  const run = (qCounts) => {
+    const s = stepStub();
+    g11uRuleP(s, "1", graded, { posture: CARD, readiness: "28.6%", dashboard: null, qCounts }, [], []);
+    return s.checks.find((c) => c.name === "g11u_q_distribution_run1");
+  };
+  assert.equal(run({ Q0: 1, Q1: 2, Q2: 0, Q3: 0, Q4: 0, none: 6 }).ok, true);
+  assert.equal(run({ Q0: 1, Q1: 3, Q2: 0, Q3: 0, Q4: 0, none: 5 }).ok, false, "a recount on the page");
+  assert.equal(run({ Q0: 1, Q1: 2, Q2: 0, Q3: 0, none: 6 }).ok, false, "a bucket missing from the page");
+  assert.equal(run({ Q0: 1, Q1: 2, Q2: 0, Q3: 0, Q4: 0, none: 6, Q5: 1 }).ok, false, "a bucket the posture does not have");
+  assert.equal(run(null).ok, false, "the posture has grades, the page shows none");
 });
 
 test("G11u fails on a recount (14.3 % where posture says 28.6 %), a wrong class or severity, and a wrong row grade", () => {
   const s = stepStub();
   g11uRuleP(s, "1", POSTURE, { posture: CARD.replace("Quantum-vulnerable 5", "Quantum-vulnerable 4").replace("2 / 3", "2 / 4"),
     readiness: "PQC readiness\n14.3%", dashboard: "Quantum ready\n14.3%" }, [{ id: 1, reader: "data-attributes", q_grade: "Q2" }], [{ id: 1, q_grade: "Q1" }]);
-  assert.ok(s.checks.every((c) => c.ok === false), JSON.stringify(s.checks.map((c) => [c.name, c.ok])));
+  assert.ok(s.checks.filter((c) => !c.notRun).every((c) => c.ok === false), JSON.stringify(s.checks.map((c) => [c.name, c.ok])));
   const s2 = stepStub();
   g11uRuleP(s2, "1", { pqc_readiness_pct: null, pqc_classes: {}, impacts: {} }, { posture: "", readiness: "PQC readiness\n—", dashboard: null }, [], []);
   assert.deepEqual(s2.checks.map((c) => [c.name, c.ok ?? "not-run"]), [["g11u_posture_readiness_run1", true], ["g11u_dashboard_readiness_run1", "not-run"],
-    ["g11u_classes_run1", false], ["g11u_critical_high_run1", false], ["g11u_row_grades_run1", false]]);
+    ["g11u_classes_run1", false], ["g11u_critical_high_run1", false], ["g11u_q_distribution_run1", "not-run"], ["g11u_row_grades_run1", false]]);
 });
 
 test("G11u reads Critical / High from line-separated text, not digits glued to the next line", () => {
