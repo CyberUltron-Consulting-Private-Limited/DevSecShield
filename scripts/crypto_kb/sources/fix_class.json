@@ -1041,6 +1041,30 @@
     "kb:findings.node.STORAGE_UNENCRYPTED.remediation"
    ]
   },
+  "TLS_ANON_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_ANON_CIPHER.remediation"
+   ]
+  },
+  "TLS_EXPORT_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_EXPORT_CIPHER.remediation"
+   ]
+  },
+  "TLS_NULL_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher setting of the TLS server (its cipher string or suite list)",
+   "sources": [
+    "kb:findings.node.TLS_NULL_CIPHER.remediation"
+   ]
+  },
   "TLS_POLICY_OVERRIDE": {
    "class": "configurable",
    "capability": false,
