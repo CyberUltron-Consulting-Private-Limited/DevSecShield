@@ -1043,12 +1043,14 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
                     parsed = T.parse_exclusions([item.cidr])
                 except T.TargetError as exc:
                     raise HTTPException(status_code=400, detail=f"network_exclusions: {exc}") from None
-                if parsed.hostnames:
-                    # Same rule and words as the UI (teamNeverScan.ts teamExclusionError). On the node a listed name
-                    # that does not resolve holds every target of the jobs that carry it; at team level that would be
-                    # every job of the team.
-                    raise HTTPException(status_code=422, detail="network_exclusions: "
-                                        + T.HOST_NAME_NOT_ALLOWED.format(entry=item.cidr.strip()))
+                # N2 (14 Nov 2026): a host name is stored as it is (normalized), next to the addresses and ranges, and
+                # every node job and heartbeat carries it: the node resolves it (the same resolver it scans with) and
+                # keeps every address it answers out of range sweeps, discovery and name targets.  Fail closed: while
+                # the name has no address on the node, the node scans nothing (it cannot tell which one is the host);
+                # the UI says so on the entry, and each job's result names the unresolved name.
+                if parsed.hostnames and T.ADDRESS_TYPO.fullmatch(parsed.hostnames[0]):
+                    raise HTTPException(status_code=400, detail=f"network_exclusions: {item.cidr.strip()} is not a valid "
+                                        "IP address or CIDR range (it reads as a mistyped address, not a host name)")
                 if not parsed.normalized:
                     continue
                 canonical = parsed.normalized[0]
@@ -1654,7 +1656,11 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
             now_grade = grading.with_inputs(current).grade_row(row, asset["finding_codes"], explain=False,
                                                                cls=asset["pqc_class"])
             q_now = {"q_grade": now_grade.q_grade, "q_label": now_grade.q_label, "q_reason": now_grade.q_reason}
-        return {"asset": {**asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}}
+        out = {**asset, **graded.fields(), "q_explain": graded.explain, "q_now": q_now}
+        # the code page's dialog fields, from the same function as the run's /assets items (CB-38 W2b): a dialog
+        # opened from top risks or a certificate shows the same OWASP / controls / fix as one opened from the table
+        RUN_ASSETS.add_code_page_fields(out)
+        return {"asset": out}
 
 
 @router.get(BASE + "/grade-model", dependencies=READ,

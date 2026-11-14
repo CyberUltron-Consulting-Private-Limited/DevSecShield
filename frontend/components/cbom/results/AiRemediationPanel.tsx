@@ -22,6 +22,7 @@ import {
 import {
   MAX_QUESTION, aiPanelVisible, answerBadge, canAsk, citationLabel, egressLines, egressNote, outcomeNote,
 } from "./aiPanelLogic";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export interface AiRemediationPanelProps {
   teamId: number;
@@ -68,6 +69,7 @@ export default function AiRemediationPanel({ teamId, subject }: AiRemediationPan
       <div className="flex flex-wrap items-center gap-2">
         <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
         <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">AI assistant</span>
+        <InfoTip id="cbom.ai.panel" />
         <span className="text-[11px] text-zinc-500" data-testid="cbom-ai-egress">{egressNote(status.data)}</span>
       </div>
       {egressLines(status.data).length > 1 && (
@@ -90,7 +92,7 @@ export default function AiRemediationPanel({ teamId, subject }: AiRemediationPan
             placeholder="For example: which of these steps applies to an nginx reverse proxy?"
             onChange={(e) => setQuestion(e.target.value)} data-testid="cbom-ai-question" />
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-zinc-500">{question.length}/{MAX_QUESTION}</span>
+            <span className="flex items-center gap-1 text-[10px] text-zinc-500">{question.length}/{MAX_QUESTION} <InfoTip id="cbom.ai.question" /></span>
             <Button size="sm" className="h-7 text-xs" disabled={ask.isPending || !canAsk("question", question)}
               onClick={() => run("question")} data-testid="cbom-ai-ask">Ask</Button>
           </div>

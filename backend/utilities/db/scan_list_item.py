@@ -394,9 +394,15 @@ def return_dast_list_item(scan : Scan) -> dict:
             elif vulnerability["impact"].lower() == "low":
                 total_low += 1
         
-        if "metadata" in scan.scan_data and scan.scan_data["metadata"] != {} and "urls_scanned" in scan.scan_data["metadata"]:
-            urls_scanned = len(scan.scan_data["metadata"]["urls_included"])
-            urls_not_scanned = len(scan.scan_data["metadata"]["urls_excluded"])
+        # The crawler records the URLs it scanned and the ones the include/exclude patterns dropped
+        # (RabbitMQ/dast_worker/helpers/crawler/crawler.py). There is no top-level "urls_scanned" key: testing for one
+        # left both columns at 0 for every scan.
+        crawl = scan.scan_data.get("metadata") or {}
+        if isinstance(crawl, dict):
+            if isinstance(crawl.get("urls_included"), list):
+                urls_scanned = len(crawl["urls_included"])
+            if isinstance(crawl.get("urls_excluded"), list):
+                urls_not_scanned = len(crawl["urls_excluded"])
 
     risk_data = {
         "total_critical": total_critical,

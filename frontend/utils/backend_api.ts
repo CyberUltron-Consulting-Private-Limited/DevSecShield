@@ -4261,7 +4261,7 @@ export type CbomSourceKind =
     | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
-export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
+export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error" | "skipped"
 export type CbomJobStatus = "pending" | "claimed" | "success" | "failure" | "cancelled" | "expired"
 export type CbomRunStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
 /** Evidence confidence (CB-18): E0 Unknown, E1 Self-attested, E2 Documented, E3 Verified. Not the quantum risk grade. */
@@ -4614,6 +4614,11 @@ export interface CbomRunPosture {
 
 export interface CbomAssetDetail {
     id: number
+    /** the code page's finding dialog fields, as on the run's /assets items (CB-38 W2b) */
+    bom_ref?: string
+    owasp_top_10?: Record<string, string>
+    compliance_controls?: Record<string, string>
+    suggested_fix?: string | null
     type: string
     name: string | null
     location: string
@@ -5264,6 +5269,14 @@ export interface CbomRunParity {
 export async function getCbomRunParity(team_id: number, run_id: number): Promise<CbomRunParity> {
     const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/parity`)
     return response.data as CbomRunParity
+}
+
+/** GET /{team}/cbom/sources/runs/{run}/assets/{asset}/remediation (W2b, PARITY.md S15): the code page's "Remediation,
+ * fix code and exploit demo" data for a run asset, from the same knowledge-base builder (404 on an older backend). */
+export async function getCbomRunAssetRemediation(team_id: number, run_id: number, asset_id: number): Promise<RemediationData> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets/${asset_id}/remediation`)
+    const body = response.data as RemediationData | { remediation: RemediationData }
+    return "remediation" in body && body.remediation && typeof body.remediation === "object" ? body.remediation : body as RemediationData
 }
 
 /** GET /{team}/cbom/sources/runs/{run}/results (W2). 404 from an older backend is the caller's to handle. */

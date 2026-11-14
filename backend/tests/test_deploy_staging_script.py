@@ -234,6 +234,13 @@ if argv[:1] == ["compose"]:
                 st["containers"][svc].update(state="exited", health="", exit=0)
         save({"cmd": "stop", "tag": tag, "services": opts})
         sys.exit(0)
+    if sub == "run" and "backend.utilities.cbom_sources.agility_store" in opts:  # the CB-25 agility heal one-shot
+        save({"cmd": "agility_heal", "tag": tag, "args": opts[opts.index("backend.utilities.cbom_sources.agility_store") + 1:]})
+        if st.get("fail_heal"):
+            print("agility heal: OperationalError", file=sys.stderr)
+            sys.exit(1)
+        print("team 1: 0 assets re-aggregated")
+        sys.exit(0)
     if sub == "run" and "backend.utilities.cbom_sources.estate" in opts:  # the CB-20 estate backfill one-shot
         save({"cmd": "estate_backfill", "tag": tag, "args": opts[opts.index("backend.utilities.cbom_sources.estate") + 1:]})
         if st.get("fail_backfill"):
@@ -689,6 +696,41 @@ def test_a_failed_estate_backfill_warns_and_keeps_the_deploy(tmp_path):
     rerun = ok(host.staging("estate-backfill"))
     assert [e["cmd"] for e in host.log_since(mark)].count("estate_backfill") == 1
     assert "estate backfill done" in rerun.stdout + rerun.stderr
+
+
+
+def test_every_deploy_heals_the_agility_store_after_the_estate_backfill(tmp_path):
+    """CB-25: missing or stale stored agility classes are computed after the deploy (else the first agility request
+    pays ~11 s at 50k), with the release's image, after the estate backfill that may add assets."""
+    host = Host(tmp_path, {"t1": ["r1"], "t2": ["r1"]})
+    ok(host.ship("t1"))
+    mark = len(host.state["log"])
+    proc = ok(host.ship("t2"))
+    steps = [(e["cmd"], e["tag"], e["args"]) for e in host.log_since(mark) if e["cmd"] in ("estate_backfill", "agility_heal")]
+    assert steps == [("estate_backfill", "t2", ["backfill"]), ("agility_heal", "t2", ["heal"])]
+    assert "agility heal done" in proc.stdout + proc.stderr
+
+
+def test_a_failed_agility_heal_warns_and_keeps_the_deploy(tmp_path):
+    host = Host(tmp_path, {"t1": ["r1"]})
+    host.update(fail_heal=True)
+    proc = ok(host.ship("t1"))
+    assert "WARNING: agility heal FAILED" in proc.stdout + proc.stderr
+    assert host.env_tag() == "t1" and "FAILED" not in host.history()[-1]
+    host.update(fail_heal=False)
+    mark = len(host.state["log"])
+    rerun = ok(host.staging("agility-heal"))
+    assert [e["cmd"] for e in host.log_since(mark)] == ["agility_heal"]
+    assert "agility heal done" in rerun.stdout + rerun.stderr
+
+
+def test_help_prints_the_whole_usage_header(tmp_path):
+    """--help prints every comment line of the header, up to the line before `set -euo pipefail`."""
+    host = Host(tmp_path, {"t1": ["r1"]})
+    out = ok(host.staging("--help")).stdout
+    lines = (ROOT / "scripts/deploy/staging.sh").read_text().splitlines()
+    last = lines.index("set -euo pipefail") - 1
+    assert lines[last].lstrip("#").strip() in out and "staging.sh agility-heal" in out
 
 
 # ------------------------------------------------------------------------------------------------ M1: deploy status
