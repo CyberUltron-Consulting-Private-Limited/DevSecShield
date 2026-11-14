@@ -46,10 +46,10 @@ from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext, LeaseLost, register
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Blocked, Unresolved, checked_ip, iter_line_ips, node_limiter
 
-TCP_PROTOCOLS = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
-                 "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
-TLS_LIKE = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "rdp",
-            "modbus-tls"}
+STARTTLS = {"starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "starttls-pop3",
+            "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server"}
+TCP_PROTOCOLS = {"tls", *STARTTLS, "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
+TLS_LIKE = {"tls", *STARTTLS, "rdp", "modbus-tls"}
 OT_PROTOCOLS = {"opcua", "modbus", "modbus-tls"}
 MAX_OPEN_ENDPOINTS = 5000
 CONNECT_TIMEOUT = 2.0  # the sweep's TCP connect: a silent (filtered or absent) address costs this per port
@@ -304,9 +304,14 @@ class NetworkScan:
             _ = started
 
     def _tls(self, ep: Endpoint, mode: str) -> tuple[str, str | None, int]:
+        names = [] if ep.protocol == "rdp" else self.sni_names_for(ep.ip)
+        # XMPP names its domain in the stream header before TLS: the endpoint's first SNI name, else its address
+        with T.starttls_name(names[0] if names and ep.protocol.startswith("starttls-xmpp") else None):
+            return self._tls_endpoint(ep, mode, names)
+
+    def _tls_endpoint(self, ep: Endpoint, mode: str, names: list[str]) -> tuple[str, str | None, int]:
         ctx = self.ctx
         limit = self.per_endpoint if mode != "fragile" else min(self.per_endpoint, 6)
-        names = [] if ep.protocol == "rdp" else self.sni_names_for(ep.ip)
         # SNI names other than the one the endpoint is read with get their own share of the endpoint's budget, so the
         # enumeration cannot starve them nor they the enumeration (the total stays the customer's cap)
         reserve = min(max(len(names) - 1, 0), limit // 4) if limit > 1 else 0

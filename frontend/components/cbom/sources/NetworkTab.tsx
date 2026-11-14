@@ -80,6 +80,11 @@ const PROTOCOLS: { value: string; label: string }[] = [
   { value: "starttls-ldap", label: "LDAP StartTLS" },
   { value: "starttls-smtp", label: "SMTP StartTLS" },
   { value: "starttls-imap", label: "IMAP StartTLS" },
+  { value: "starttls-pop3", label: "POP3 STLS" },
+  { value: "starttls-ftp", label: "FTP AUTH TLS" },
+  // XMPP needs the server's XMPP domain: the node uses the first SNI host name that resolves to the address
+  { value: "starttls-xmpp", label: "XMPP StartTLS (client, 5222)" },
+  { value: "starttls-xmpp-server", label: "XMPP StartTLS (server-to-server, 5269)" },
   { value: "starttls-postgres", label: "PostgreSQL TLS" },
   { value: "starttls-mysql", label: "MySQL TLS" },
   { value: "tds", label: "SQL Server (TDS)" },
