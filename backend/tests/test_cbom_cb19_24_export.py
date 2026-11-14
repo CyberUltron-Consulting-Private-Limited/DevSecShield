@@ -195,10 +195,8 @@ def test_metadata_equals_the_run_posture_api(seeded, api):
     assert meta["zs:grade_model_version"] == posture["grade_model_version"] == seeded["list"]["grade_model_version"]
     assert meta["zs:grade_model_sha256"] == model["text_sha256"] == hashlib.sha256(model["text"].encode()).hexdigest()
     inputs = json.loads(meta["zs:grade_inputs"])
-    with Session(seeded["engine"]) as s:  # source "current": when the team's settings (its Mosca) were last written
-        written = get_or_create_settings(s, 1).last_updated
-    assert inputs.pop("captured_at") == written.strftime("%Y-%m-%dT%H:%M:%SZ")
     assert inputs == posture["grade_inputs"] == seeded["list"]["grade_inputs"]
+    assert inputs["source"] == "current" and inputs["captured_at"] is None  # seeded without a Start snapshot
     assert json.loads(meta["zs:q_distribution"]) == posture["q_grades"]
     assert meta["zs:agility_model"] == "fx-1" and meta["zs:agility_version"] == posture["agility_version"]
     assert json.loads(meta["zs:fix_class_distribution"]) == posture["fix_classes"]
@@ -214,6 +212,33 @@ def test_metadata_equals_the_run_posture_api(seeded, api):
     for name, value in meta.items():  # compact JSON, as zs:coverage_gap writes it
         if value.startswith(("{", "[")):
             assert value == json.dumps(json.loads(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def test_a_run_with_a_start_snapshot_exports_the_snapshot_inputs(api, world):
+    """CB-19 PR-2: a run that snapshotted the grade inputs at Start is graded (and exported) with them, whatever the
+    team's Mosca is now: zs:grade_inputs says source "snapshot" with its captured_at, equal to the API."""
+    from backend.utilities.cbom_sources import qgrade as QG
+
+    engine = world[0]
+    w = _seed(engine)
+    with Session(engine) as s:
+        settings = get_or_create_settings(s, 1)
+        run = s.get(CbomCollectionRun, w["run"])
+        run.grade_inputs = QG.snapshot_inputs(s, 1, settings, dt.datetime(2026, 11, 14, 9, 0))
+        s.add(run)
+        settings.risk_model = {**GR.MOSCA, "threat_years": 40}  # changed after Start: the record keeps the snapshot
+        s.add(settings)
+        s.commit()
+    doc = _export(api, w["run"]).json()
+    inputs = json.loads(_one(doc["metadata"], "zs:grade_inputs"))
+    listed = api("GET", f"/1/cbom/sources/runs/{w['run']}/assets?page_size=200").json()
+    posture = api("GET", f"/1/cbom/sources/runs/{w['run']}/posture").json()["posture"]
+    assert inputs == listed["grade_inputs"] == posture["grade_inputs"]
+    assert inputs["source"] == "snapshot" and inputs["captured_at"] == "2026-11-14T09:00:00Z"
+    assert inputs["mosca"] == {"x": 10, "y": 5, "z": 12}
+    comp = _assets(doc)[w["S-mixed"]["assets"]["10.20.0.1:443"]]
+    assert _one(comp, "zs:q_grade") == "Q2"  # 10 + 5 > 12 (the snapshot), not 10 + 5 <= 40 (now)
+    assert json.loads(_one(doc["metadata"], "zs:q_distribution")) == posture["q_grades"]
 
 
 def test_mosca_unset_grades_quantum_vulnerable_assets_q0_and_says_so(api, world):

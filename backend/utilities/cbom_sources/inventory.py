@@ -15,8 +15,7 @@ from typing import Any, BinaryIO, Callable, Iterator
 from sqlalchemy import and_, func, or_
 from sqlmodel import Session, select
 
-from backend.new_models import (CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSettings,
-                                 CbomCollectionSource)
+from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
 from backend.utilities.build_info import build_sha, build_version
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import crypto_kb
@@ -622,7 +621,7 @@ class Assessment:
     component is shared by every asset with the same values (a few dozen lists for 50,000 assets), like provenance."""
 
     def __init__(self, session: Session, run: CbomCollectionRun) -> None:
-        self.grading = QG.load_context(session, team_id=run.team_id, run_id=run.id)  # the team's Mosca, as the list
+        self.grading = QG.load_context(session, team_id=run.team_id, run_id=run.id)  # as the list: snapshot or Mosca now
         self.agility = AGILITY.RunAgility(session, run.team_id, run.id, self.grading.sources)
         self.q_grades: dict[str, int] = {g: 0 for g in (*QG.GRADES, "none")}
         self._basis: dict[int, tuple[Any, str]] = {}  # id(by_code tuple) -> (the tuple, kept alive; its JSON)
@@ -649,22 +648,18 @@ class Assessment:
             ]
         return props
 
-    def metadata(self, session: Session, team_id: int) -> list[dict[str, str]]:
-        """The run-level values, equal to the run posture API's (``grade_*``, ``q_grades``, ``fix_classes*``,
-        ``fix_class_self_fixable_pct``, ``agility_version``) over the exported components.
-
-        ``zs:grade_inputs`` is the posture's ``grade_inputs`` plus ``captured_at``: with ``source`` "current" (the
-        team's Mosca as it is now; CB-19 PR-2 snapshots it per run) that is when the team's settings were last written
-        (null when the team has none), never the request time, so repeat downloads of a run stay byte-identical."""
+    def metadata(self) -> list[dict[str, str]]:
+        """The run-level values, equal to the run posture API's (``grade_inputs``, ``q_grades``, ``fix_classes*``,
+        ``fix_class_self_fixable_pct``, ``agility_version``) over the exported components. ``zs:grade_inputs`` is the
+        API's ``grade_inputs`` as is: the run's snapshot taken at Start (``source: snapshot``, its ``captured_at``), or
+        for a run from before the snapshot the team's Mosca now (``source: current``, ``captured_at`` null), never the
+        request time, so repeat downloads of a run stay byte-identical."""
         agility = self.agility.result()
         pct = agility["fix_class_self_fixable_pct"]
-        settings = session.exec(select(CbomCollectionSettings).where(CbomCollectionSettings.team_id == team_id)).first()
-        written = (settings.last_updated or settings.created_at) if settings is not None else None
-        inputs = {**self.grading.inputs(), "captured_at": iso_z(written) if written else None}
         return [
             {"name": "zs:grade_model", "value": QG.GRADE_MODEL},  # its version: zs:grade_model_version (_document)
             {"name": "zs:grade_model_sha256", "value": hashlib.sha256(QG.FORMULA_TEXT.encode("utf-8")).hexdigest()},
-            {"name": "zs:grade_inputs", "value": _compact(inputs)},
+            {"name": "zs:grade_inputs", "value": _compact(self.grading.inputs())},
             {"name": "zs:q_distribution", "value": _compact(self.q_grades)},
             {"name": "zs:agility_model", "value": AGILITY.MODEL},
             {"name": "zs:agility_version", "value": agility["agility_version"]},
@@ -945,7 +940,7 @@ def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
                 *([{"name": "zs:pqc_readiness_pct", "value": str(summary["pqc_readiness_pct"])}]
                   if summary["pqc_readiness_pct"] is not None else []),
                 {"name": "zs:pqc_readiness_status", "value": summary["readiness_basis"]["status"]},
-                *assessment.metadata(session, run.team_id),
+                *assessment.metadata(),
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
                 *coverage_gaps(coverage, names, job_names, provs),
                 *q0_gap_properties(run.grade_inputs, _run_scope_items(grading, coverage)),
