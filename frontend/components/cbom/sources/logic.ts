@@ -191,6 +191,9 @@ export interface NodeArtifacts {
   version: string | null
   image_ref: string | null
   pull_image_ref: string | null
+  /** the Helm chart in the same registry (CBOM_NODE_CHART_REF): oci://... and its version; only with pull_image_ref */
+  pull_chart_ref?: string | null
+  pull_chart_version?: string | null
   artifacts: NodeArtifact[]
 }
 
@@ -238,6 +241,37 @@ function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: 
   }
 }
 
+type NodeCommandOpts = { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean }
+
+/** `docker run` of one node (pullNever: the image was just loaded from the file, never one from a registry). */
+function dockerRunLines(opts: NodeCommandOpts, pullNever: boolean): string[] {
+  const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  const names = nodeInstallNames(opts.name)
+  return [
+    `docker run -d${pullNever ? " --pull never" : ""} --name ${names.container} --restart unless-stopped \\`,
+    `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
+    `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
+    ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
+    ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
+    `  -v ${names.volume}:/var/lib/zs-node \\`,
+    `  ${opts.image}`,
+  ]
+}
+
+/** `helm upgrade --install` of one node from <chart> (a downloaded .tgz or an oci:// reference with its --version). */
+function helmInstallLines(release: string, chart: string, repoArg: string, tag: string, opts: NodeCommandOpts): string[] {
+  const proxy = opts.proxyUrl ? opts.proxyUrl : ""
+  return [
+    `helm upgrade --install ${release} ${chart} \\`,
+    "  --namespace zs-cbom --create-namespace \\",
+    `  --set image.repository=${repoArg} --set image.tag=${shQuote(tag)} \\`,
+    `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+    ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
+    `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
+    ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
+  ]
+}
+
 export function installCommand(
   method: DeployMethod,
   opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string },
@@ -254,27 +288,12 @@ export function installCommand(
         `docker load -i ${archive}`,
         "# 2. Run the node (--pull never: the image just loaded, never one from a registry):",
       ]),
-      `docker run -d${opts.pull ? "" : " --pull never"} --name ${names.container} --restart unless-stopped \\`,
-      `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
-      `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
-      ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
-      ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
-      `  -v ${names.volume}:/var/lib/zs-node \\`,
-      `  ${opts.image}`,
+      ...dockerRunLines(opts, !opts.pull),
     ].join("\n")
   }
   if (method === "helm") {
     const src = helmSource(img)
-    return [
-      ...src.steps,
-      `helm upgrade --install ${names.release} ${src.chart} \\`,
-      "  --namespace zs-cbom --create-namespace \\",
-      `  --set image.repository=${src.repoArg} --set image.tag=${shQuote(src.tag)} \\`,
-      `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
-      ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
-      `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
-      ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
-    ].join("\n")
+    return [...src.steps, ...helmInstallLines(names.release, src.chart, src.repoArg, src.tag, opts)].join("\n")
   }
   if (method === "ami") {
     return [
@@ -295,6 +314,133 @@ export function installCommand(
     `zs.registration_token = ${opts.token}`,
     ...(proxy ? [`zs.https_proxy = ${proxy}`] : []),
   ].join("\n")
+}
+
+/** One file of a node's install links (POST /nodes, /registration-token, /reset: install_links; backend
+ * routers/cbom_node_artifacts.py install_links): a link that works only while the node's registration token does. */
+export interface InstallFile {
+  kind: NodeArtifact["kind"]
+  filename: string
+  size: number
+  sha256: string
+  /** a path on the API: /<team>/cbom/node-artifacts/<kind>?node_ticket=... */
+  url: string
+}
+export interface InstallLinks {
+  version: string | null
+  expires_at: string | null
+  files: InstallFile[]
+}
+
+export type Fetcher = "curl" | "wget"
+
+/** The proxy CA a TLS-inspecting proxy needs, as a file next to the command; curl/wget use it for these downloads
+ * from ZeroShield only (--cacert / --ca-certificate apply to that one command, nothing is installed system-wide). */
+export const DEFAULT_PROXY_CA_FILE = "zs-proxy-ca.pem"
+
+export interface FetchOpts {
+  apiUrl: string
+  proxyUrl?: string | null
+  /** set only when the proxy inspects TLS and its CA was given (the wizard's "trust its CA only for ZeroShield
+   * hostnames"): the CA file's name on the host */
+  caFile?: string | null
+  fetcher?: Fetcher
+  /** a plain-HTTP test-lab API (CB-08): curl may not be held to https */
+  insecureHttp?: boolean
+}
+
+/** Download one install file from ZeroShield and check it: `curl ... -o <file> && echo '<sha256>  <file>' | sha256sum -c -`
+ * (or wget). The proxy and CA settings of the wizard apply; the link goes to the ZeroShield API only. */
+export function fetchCommand(file: InstallFile, o: FetchOpts): string {
+  const url = shQuote(`${o.apiUrl.trim().replace(/\/+$/, "")}${file.url}`)
+  const proxy = o.proxyUrl?.trim() || ""
+  const parts = (o.fetcher ?? "curl") === "wget"
+    ? ["wget -q", ...(proxy ? ["-e use_proxy=yes", `-e https_proxy=${shQuote(proxy)}`] : []),
+      ...(o.caFile ? [`--ca-certificate=${shQuote(o.caFile)}`] : []), `-O ${file.filename}`, url]
+    : ["curl -fsSL", o.insecureHttp ? "--proto '=http,https'" : "--proto '=https'", ...(proxy ? [`--proxy ${shQuote(proxy)}`] : []),
+      ...(o.caFile ? [`--cacert ${shQuote(o.caFile)}`] : []), url, `-o ${file.filename}`]
+  return `${parts.join(" ")} && echo '${file.sha256}  ${file.filename}' | sha256sum -c -`
+}
+
+/** The one-paste install of a node on a terminal-only host: fetch its files from ZeroShield with its install links,
+ * check their SHA-256, then load and run (Docker), push and install (Helm), or unzip and build (OVA/AMI kits). Null
+ * when the server sent no links or not every file the method needs. */
+export function onePasteInstall(
+  method: DeployMethod,
+  links: InstallLinks | null | undefined,
+  opts: NodeCommandOpts & FetchOpts,
+): string | null {
+  const file = (kind: NodeArtifact["kind"]) => links?.files.find((f) => f.kind === kind) ?? null
+  const image = file("image")
+  if (!image) return null
+  const fetch = (f: InstallFile) => `${fetchCommand(f, opts)} && \\`
+  const tool = (opts.fetcher ?? "curl") === "wget" ? "wget" : "curl"
+  const ca = opts.caFile
+    ? [`# ${opts.caFile}: your proxy's CA certificate (the file you uploaded), in this directory; ${tool} trusts it for these downloads only`]
+    : []
+  if (method === "docker") {
+    return [
+      ...ca,
+      fetch(image),
+      `docker load -i ${image.filename} && \\`,
+      ...dockerRunLines(opts, true),
+    ].join("\n")
+  }
+  if (method === "helm") {
+    const chart = file("helm-chart")
+    if (!chart) return null
+    const [repo, tag] = splitImage(opts.image)
+    const base = repo.split("/").pop() || "cbom-scan-node"
+    return [
+      "REGISTRY=registry.example.internal/zeroshield   # change to the registry your cluster pulls from",
+      ...ca,
+      fetch(image),
+      fetch(chart),
+      `docker load -i ${image.filename} && \\`,
+      `docker tag ${opts.image} "$REGISTRY/${base}:${tag}" && \\`,
+      `docker push "$REGISTRY/${base}:${tag}" && \\`,
+      ...helmInstallLines(nodeInstallNames(opts.name).release, `./${chart.filename}`, `"$REGISTRY/${base}"`, tag, opts),
+    ].join("\n")
+  }
+  const kit = file(method === "ova" ? "ova-kit" : "ami-kit")
+  if (!kit) return null
+  const dir = kit.filename.replace(/\.zip$/, "")
+  const template = method === "ova" ? "ova.pkr.hcl" : "ami.pkr.hcl"
+  const build = method === "ova"
+    ? `packer build -var build_password="$(openssl rand -hex 16)" ${template}`
+    : `packer build -var region="\${AWS_REGION:-ap-south-1}" ${template}   # your region; AWS credentials from the environment`
+  return [
+    `# Build the ${method === "ova" ? "OVA" : "AMI"} once (needs ${tool}, unzip and Packer; the kit's README.md has the details):`,
+    ...ca,
+    fetch(kit),
+    fetch(image),
+    `unzip -q ${kit.filename} && mv ${image.filename} ${dir}/ && cd ${dir} && \\`,
+    `packer init ${template} && ${build}`,
+  ].join("\n")
+}
+
+/** The node from a registry customers can pull from (only when the server names one: CBOM_NODE_IMAGE_REF, set by the
+ * staging deploy only while the GHCR packages are public): `docker pull` + `docker run`, or Helm straight from the
+ * chart's oci:// reference. Null when the server names no such image (or, for Helm, no chart). */
+export function registryInstall(
+  method: DeployMethod,
+  data: NodeArtifacts | null | undefined,
+  opts: Omit<NodeCommandOpts, "image">,
+): string | null {
+  const image = data?.pull_image_ref?.trim()
+  if (!image) return null
+  if (method === "docker") {
+    return [`docker pull ${image} && \\`, ...dockerRunLines({ ...opts, image }, false)].join("\n")
+  }
+  if (method === "helm") {
+    const chart = data?.pull_chart_ref?.trim()
+    const version = data?.pull_chart_version?.trim()
+    if (!chart || !version) return null
+    const [repo, tag] = splitImage(image)
+    return helmInstallLines(nodeInstallNames(opts.name).release, `${chart} --version ${shQuote(version)}`, shQuote(repo), tag,
+      { ...opts, image }).join("\n")
+  }
+  return null
 }
 
 /** How far each way of running a node has been proven. Docker and the Helm chart (Deployment and the agent

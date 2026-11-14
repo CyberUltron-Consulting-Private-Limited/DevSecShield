@@ -93,11 +93,16 @@ async function main() {
   // the API: a link for a file the server holds, the server's 404 sentence for one it does not
   const requests: string[] = []
   let serverHasFiles = true
+  // what "Create node" answers and the node list then holds (1c: install links, the node's method and proxy)
+  let createdNode: Record<string, unknown> = NODE
+  let installLinks: unknown = undefined
   api.defaults.adapter = async (config: { url?: string; method?: string }) => {
     requests.push(`${config.method?.toUpperCase()} ${config.url}`)
     const ok = (data: unknown) => ({ data, status: 200, statusText: "OK", headers: {}, config })
-    if (config.method === "post" && config.url === "/1/cbom/sources/nodes") return ok({ node: NODE, registration_token: "zsr_TESTONLY" })
-    if (config.method === "get" && config.url === "/1/cbom/sources/nodes") return ok({ nodes: [NODE], server_time: new Date().toISOString() })
+    if (config.method === "post" && config.url === "/1/cbom/sources/nodes") {
+      return ok({ node: createdNode, registration_token: "zsr_TESTONLY", ...(installLinks === undefined ? {} : { install_links: installLinks }) })
+    }
+    if (config.method === "get" && config.url === "/1/cbom/sources/nodes") return ok({ nodes: [createdNode], server_time: new Date().toISOString() })
     const m = /^\/1\/cbom\/node-artifacts\/([a-z0-9-]+)\/link$/.exec(config.url ?? "")
     if (m && serverHasFiles) {
       return { data: { url: `/1/cbom/node-artifacts/${m[1]}?ticket=1.2.sig`, expires_in: 300 }, status: 200, statusText: "OK", headers: {}, config }
@@ -210,6 +215,118 @@ async function main() {
       assert.equal(pull, null, "no registry configured: no pull command")
     }
     for (const banned of BANNED) assert.ok(!banned.test(shown), `created node: ${banned}`)
+    t.root.unmount()
+  }
+
+  // 1c. terminal-only hosts: after "Create node" ONE paste per method that fetches the node's files with its install
+  // links (curl; wget below it), checks them and installs; the proxy and (TLS-inspecting proxy) CA apply to the
+  // download. No pull command unless the server names a public registry image; with one, docker pull / helm oci://.
+  const link = (kind: string, filename: string, sha256: string) => ({ kind, filename, size: 10, sha256, url: `/1/cbom/node-artifacts/${kind}?node_ticket=41.SIG` })
+  const FILES = {
+    image: link("image", "scan-node-1.0.0.tar.gz", SHA),
+    "helm-chart": link("helm-chart", "cbom-scan-node-1.0.0.tgz", SHA.replace(/3/g, "4")),
+    "ova-kit": link("ova-kit", "cbom-scan-node-ova-kit-1.0.0.zip", SHA.replace(/a/g, "b")),
+    "ami-kit": link("ami-kit", "cbom-scan-node-ami-kit-1.0.0.zip", SHA.replace(/c/g, "d")),
+  }
+  const GHCR = "ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:1.0.0"  // pinned to the release
+  const CHART = "oci://ghcr.io/cyberultron-consulting-private-limited/charts/cbom-scan-node"
+  const PUBLIC = { ...AVAILABLE, pull_image_ref: GHCR, pull_chart_ref: CHART, pull_chart_version: "1.0.0" }
+  const createWith = async (artifacts: unknown, card: string, method: string, kinds: (keyof typeof FILES)[], node: Record<string, unknown> = {}) => {
+    createdNode = { ...NODE, deployment: method, ...node }
+    installLinks = { version: "1.0.0", expires_at: "2026-11-15T10:00:00Z", files: kinds.map((k) => FILES[k]) }
+    const t = await mount(artifacts)
+    await click(button(t.host, /Add your first scan node/))
+    await choose(t.host, card)
+    const name = t.host.querySelector("#node-name") as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(name, "dc-1")
+      name.dispatchEvent(new dom.window.Event("input", { bubbles: true }))
+    })
+    await click(button(t.host, /Create node and show install command/))
+    const block = t.host.querySelector('[data-testid="node-one-paste"]')
+    assert.ok(block, `${card}: a one-paste block\n${wizardText(t.host)}`)
+    return { t, block: block!.textContent!.replace(/\s+/g, " "), wget: t.host.querySelector('[data-testid="node-one-paste-wget"]')!.textContent!.replace(/\s+/g, " "),
+      pull: t.host.querySelector('[data-testid="node-command-pull"]')?.textContent?.replace(/\s+/g, " ") ?? null }
+  }
+  const fetchOf = (kind: keyof typeof FILES) =>
+    `curl -fsSL --proto '=https' '${API}${FILES[kind].url}' -o ${FILES[kind].filename} && echo '${FILES[kind].sha256} ${FILES[kind].filename}' | sha256sum -c -`
+  {
+    const d = await createWith(AVAILABLE, "Docker container", "docker", ["image"])
+    assert.ok(d.block.includes(`${fetchOf("image")} && \\ docker load -i scan-node-1.0.0.tar.gz && \\ docker run -d --pull never --name zs-scan-node-dc-1`), d.block)
+    assert.ok(d.block.includes("-e ZS_REGISTRATION_TOKEN='zsr_TESTONLY'") && d.block.includes("localhost/zeroshield/cbom-scan-node:1.0.0"), d.block)
+    assert.ok(d.block.includes("stay in your shell history"), "the shell-history note")
+    assert.ok(d.wget.includes(`wget -q -O scan-node-1.0.0.tar.gz '${API}${FILES.image.url}'`), d.wget)
+    assert.equal(d.pull, null, "no public registry: no pull command")
+    assert.ok(!/docker pull|oci:\/\//.test(wizardText(d.t.host)), "no pull anywhere")
+    d.t.root.unmount()
+  }
+  {
+    // the node's proxy, and its proxy inspects TLS with a CA given: --proxy and --cacert on the download
+    const d = await createWith(AVAILABLE, "Docker container", "docker", ["image"],
+      { proxy_url: "http://proxy.bank.local:8080", proxy_tls_inspect: true, has_proxy_ca: true })
+    assert.ok(d.block.includes(`curl -fsSL --proto '=https' --proxy 'http://proxy.bank.local:8080' --cacert 'zs-proxy-ca.pem' '${API}/1/cbom/node-artifacts/image`), d.block)
+    assert.ok(d.block.includes("zs-proxy-ca.pem: your proxy's CA certificate"), d.block)
+    assert.ok(d.wget.includes("-e https_proxy='http://proxy.bank.local:8080' --ca-certificate='zs-proxy-ca.pem'"), d.wget)
+    d.t.root.unmount()
+    const noInspect = await createWith(AVAILABLE, "Docker container", "docker", ["image"],
+      { proxy_url: "http://proxy.bank.local:8080", proxy_tls_inspect: false, has_proxy_ca: true })
+    assert.ok(noInspect.block.includes("--proxy 'http://proxy.bank.local:8080'") && !noInspect.block.includes("--cacert"), noInspect.block)
+    noInspect.t.root.unmount()
+  }
+  {
+    const h = await createWith(AVAILABLE, "Helm chart", "helm", ["image", "helm-chart"])
+    for (const part of ["REGISTRY=registry.example.internal/zeroshield", fetchOf("image"), fetchOf("helm-chart"),
+      `docker tag localhost/zeroshield/cbom-scan-node:1.0.0 "$REGISTRY/cbom-scan-node:1.0.0"`, `docker push "$REGISTRY/cbom-scan-node:1.0.0"`,
+      "helm upgrade --install zs-scan-node-dc-1 ./cbom-scan-node-1.0.0.tgz"]) {
+      assert.ok(h.block.includes(part), `${part}\n---\n${h.block}`)
+    }
+    assert.equal(h.pull, null)
+    h.t.root.unmount()
+  }
+  for (const [card, method, kit] of [["OVA appliance", "ova", "ova-kit"], ["AWS AMI", "ami", "ami-kit"]] as const) {
+    const k = await createWith(AVAILABLE, card, method, [kit, "image"])
+    assert.ok(k.block.includes(fetchOf(kit)) && k.block.includes(fetchOf("image")), k.block)
+    assert.ok(k.block.includes(`unzip -q cbom-scan-node-${method}-kit-1.0.0.zip && mv scan-node-1.0.0.tar.gz cbom-scan-node-${method}-kit-1.0.0/`), k.block)
+    assert.ok(k.block.includes(`packer init ${method}.pkr.hcl && packer build`), k.block)
+    assert.ok(wizardText(k.t.host).includes(method === "ova" ? "zs.registration_token = zsr_TESTONLY" : "ZS_REGISTRATION_TOKEN=zsr_TESTONLY"),
+      "the vApp properties / user data are still shown")
+    k.t.root.unmount()
+  }
+  {
+    // a public registry (staging with CBOM_NODE_REGISTRY_PUBLIC=1): the one-paste download AND docker pull / helm oci://
+    const d = await createWith(PUBLIC, "Docker container", "docker", ["image"])
+    assert.ok(d.pull && d.pull.includes(`docker pull ${GHCR} && \\ docker run -d --name zs-scan-node-dc-1`), d.pull ?? "")
+    assert.ok(d.block.includes(fetchOf("image")), "the product download stays alongside")
+    // the registry command is the MAIN one (first); the files are the air-gapped alternative below it
+    const html = d.t.host.innerHTML
+    assert.ok(html.indexOf('data-testid="node-command-pull"') < html.indexOf('data-testid="node-air-gapped"'), "registry first")
+    const gapped = d.t.host.querySelector('[data-testid="node-air-gapped"]')!
+    assert.ok(gapped.querySelector('[data-testid="node-one-paste"]'), "the one-paste download is in the air-gapped section")
+    assert.ok(/Air-gapped host, or no access to ghcr\.io\?/.test(gapped.textContent!), gapped.textContent!)
+    assert.ok(d.t.host.querySelector('[data-testid="node-command-pull"]')!.textContent!.includes("public, no login needed"))
+    d.t.root.unmount()
+    const h = await createWith(PUBLIC, "Helm chart", "helm", ["image", "helm-chart"])
+    assert.ok(h.pull && h.pull.includes(`helm upgrade --install zs-scan-node-dc-1 ${CHART} --version '1.0.0'`), h.pull ?? "")
+    assert.ok(h.pull!.includes("--set image.repository='ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node' --set image.tag='1.0.0'"), h.pull!)
+    // the air-gapped alternative installs the downloaded chart with the image from the file, never the registry's
+    const gappedHelm = h.t.host.querySelector('[data-testid="node-air-gapped"]')!.textContent!.replace(/\s+/g, " ")
+    assert.ok(gappedHelm.includes("helm upgrade --install zs-scan-node-dc-1 ./cbom-scan-node-1.0.0.tgz") && !gappedHelm.includes("ghcr.io/"), gappedHelm)
+    h.t.root.unmount()
+  }
+  {
+    // an older server (no install_links in its answer): no one-paste block, the browser-download command as before
+    createdNode = NODE
+    installLinks = undefined
+    const t = await mount(AVAILABLE)
+    await click(button(t.host, /Add your first scan node/))
+    const name = t.host.querySelector("#node-name") as HTMLInputElement
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(name, "dc-1")
+      name.dispatchEvent(new dom.window.Event("input", { bubbles: true }))
+    })
+    await click(button(t.host, /Create node and show install command/))
+    assert.equal(t.host.querySelector('[data-testid="node-one-paste"]'), null)
+    assert.ok(wizardText(t.host).includes("sha256sum -c scan-node-1.0.0.tar.gz.sha256"))
     t.root.unmount()
   }
 

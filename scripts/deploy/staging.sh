@@ -53,7 +53,12 @@
 #      CBOM_NODE_VERSION (node-artifacts: the scan-node version; default scan_node/zs_scan_node/__init__.py VERSION),
 #      SCAN_NODE_IMAGE (node-artifacts: the name the node image file loads as; default localhost/zeroshield/cbom-scan-node),
 #      STAGING_SET_<KEY> for each of BACKEND_ENV_KEYS (push: set <KEY> in the host's backend.env; unset or empty:
-#      the host's value is left as it is).
+#      the host's value is left as it is),
+#      CBOM_NODE_REGISTRY_PUBLIC (push/deploy/rollback: 1 = the GHCR scan-node packages are public, so deploy writes
+#      CBOM_NODE_IMAGE_REF=<registry>/devsecshield-scan-node:<version> and CBOM_NODE_CHART_REF=
+#      oci://<registry>/charts/cbom-scan-node:<version> into .env and the wizard offers docker pull / helm oci://;
+#      0 = it clears both. Given once, it is kept in .env, so a rollback follows it; never given: .env's own values
+#      of the two refs are left alone), CBOM_NODE_REGISTRY (default ghcr.io/cyberultron-consulting-private-limited).
 set -euo pipefail
 export LC_ALL=C # df, awk and sort read the same everywhere (an ssh session may forward the caller's LC_*)
 
@@ -242,6 +247,15 @@ cmd_push() {
   # shellcheck disable=SC2206 # operator-supplied options, split on purpose
   [[ -n "${SSH_OPTS:-}" ]] && ssh_opts=(${SSH_OPTS})
   remote_env="DSS_IMAGE_PREFIX='$(prefix)' STAGING_DISK_FACTOR='${STAGING_DISK_FACTOR:-}'"
+  # the scan node registry switch (README "Public registry"): only a 0/1 and a checked registry ever reach the host
+  if [[ -n "${CBOM_NODE_REGISTRY_PUBLIC:-}" ]]; then
+    [[ "${CBOM_NODE_REGISTRY_PUBLIC}" =~ ^[01]$ ]] || die "CBOM_NODE_REGISTRY_PUBLIC must be 0 or 1"
+    remote_env+=" CBOM_NODE_REGISTRY_PUBLIC='${CBOM_NODE_REGISTRY_PUBLIC}'"
+  fi
+  if [[ -n "${CBOM_NODE_REGISTRY:-}" ]]; then
+    [[ "${CBOM_NODE_REGISTRY}" =~ ^[a-z0-9.-]+(:[0-9]{1,5})?(/[a-z0-9._-]+)+$ ]] || die "CBOM_NODE_REGISTRY is not <host>/<path>"
+    remote_env+=" CBOM_NODE_REGISTRY='${CBOM_NODE_REGISTRY}'"
+  fi
   remote_env+=" STAGING_DISK_RESERVE_MB='${STAGING_DISK_RESERVE_MB:-}'"
   log "copying the deploy bundle to ${target}:${dir}"
   # shellcheck disable=SC2029 # dir, tag and prefix are expanded here on purpose
@@ -328,6 +342,69 @@ cmd_backend_env() { # stdin: KEY=VALUE lines; sets exactly those keys in backend
 }
 
 # ------------------------------------------------------------------------------------------------ staging host
+set_env_line() { # <KEY> <value>: set one line of .env (added when missing); the value is checked by the caller
+  if grep -q "^$1=" "${ENV_FILE}"; then
+    sed -i -E "s|^$1=.*|$1=$2|" "${ENV_FILE}"
+  else
+    printf '%s=%s\n' "$1" "$2" >>"${ENV_FILE}"
+  fi
+}
+
+DEFAULT_NODE_REGISTRY=ghcr.io/cyberultron-consulting-private-limited
+
+anonymous_pull() { # <host>/<repository> <tag>: 0 when anyone can read the manifest (registry token API, no login)
+  local host=${1%%/*} repo=${1#*/} token
+  token="$(curl -fsS --max-time 10 "https://${host}/token?scope=repository:${repo}:pull" 2>/dev/null |
+    sed -n -E 's/.*"token":"([A-Za-z0-9._~+\/=-]+)".*/\1/p' || true)"
+  [[ -n "${token}" ]] || return 1
+  curl -fsS -o /dev/null --max-time 10 -H "Authorization: Bearer ${token}" \
+    -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json" \
+    "https://${host}/v2/${repo}/manifests/$2" 2>/dev/null
+}
+# CBOM_NODE_IMAGE_REF / CBOM_NODE_CHART_REF in .env for <tag> (docker-compose.yml passes them to the backend): the
+# scan node in the public registry, so the Add scan node wizard offers `docker pull` and `helm ... oci://` beside the
+# one-paste download. Only while CBOM_NODE_REGISTRY_PUBLIC=1 (the GHCR packages are PRIVATE until the owner changes
+# their visibility; README "Public registry"): a private package must never be offered, so 0 clears both.
+# publish-ghcr.yml releases devsecshield-scan-node:<version> and charts/cbom-scan-node:<version> (written once) on a
+# push to staging; <version> is the one in node-artifacts/<tag>/manifest.json (scan_node VERSION). Without one, the
+# commit's own immutable staging-<sha12> image (every push to staging has one).
+set_node_refs() { # <tag>
+  local tag=$1 public registry image="" chart="" version=""
+  if [[ -n "${CBOM_NODE_REGISTRY_PUBLIC:-}" ]]; then
+    public=0
+    if [[ "${CBOM_NODE_REGISTRY_PUBLIC}" == 1 ]]; then public=1; fi
+    set_env_line CBOM_NODE_REGISTRY_PUBLIC "${public}"
+  else
+    public="$(env_get CBOM_NODE_REGISTRY_PUBLIC)"
+    [[ -n "${public}" ]] || return 0 # never set: .env's own CBOM_NODE_IMAGE_REF (if any) is left as it is
+  fi
+  if [[ "${public}" == 1 ]]; then
+    registry="${CBOM_NODE_REGISTRY:-$(env_get CBOM_NODE_REGISTRY "${DEFAULT_NODE_REGISTRY}")}"
+    [[ "${registry}" =~ ^[a-z0-9.-]+(:[0-9]{1,5})?(/[a-z0-9._-]+)+$ ]] || die "CBOM_NODE_REGISTRY ${registry:0:80} is not <host>/<path> (lower case)"
+    version="$(sed -n -E 's/^[[:space:]]*"version": "([0-9][0-9A-Za-z.-]{0,18})".*$/\1/p' \
+      "${NODE_ARTIFACTS_DIR}/${tag}/manifest.json" 2>/dev/null | head -n 1 || true)"
+    if [[ -n "${version}" ]]; then
+      # the release the wizard pins: written once by publish-ghcr.yml (job release), never a moving tag
+      image="${registry}/devsecshield-scan-node:${version}"
+      # The chart is its own GHCR package, private when first pushed: offered only once anyone can pull it (else the
+      # wizard installs the downloaded chart with this image).
+      if anonymous_pull "${registry}/charts/cbom-scan-node" "${version}"; then
+        chart="oci://${registry}/charts/cbom-scan-node:${version}"
+      else
+        log "scan node chart ${registry}/charts/cbom-scan-node:${version} cannot be pulled without a login (not pushed yet, or the package is private): no helm oci:// offered"
+      fi
+    elif [[ "${tag}" =~ ^[0-9a-f]{12}$ ]]; then
+      image="${registry}/devsecshield-scan-node:staging-${tag}" # no downloads manifest: this commit's immutable tag
+      log "WARNING: no scan-node version for ${tag} (node-artifacts manifest.json): offering its staging-${tag} image, no chart"
+    else
+      log "WARNING: no scan-node version for ${tag} and it is not a 12-character commit: no registry pull offered"
+    fi
+  fi
+  set_env_line CBOM_NODE_IMAGE_REF "${image}"
+  set_env_line CBOM_NODE_CHART_REF "${chart}"
+  log "scan node registry refs: ${image:-none}${chart:+, ${chart}} (CBOM_NODE_REGISTRY_PUBLIC=${public})"
+}
+
 set_tag() { # <tag>: rewrite only the DSS_TAG line of .env
   if grep -q '^DSS_TAG=' "${ENV_FILE}"; then
     sed -i -E "s|^DSS_TAG=.*|DSS_TAG=$1|" "${ENV_FILE}"
@@ -954,6 +1031,7 @@ cmd_deploy() {
   [[ -z "${head}" ]] || printf '%s\n' "${head}" >"${RELEASES_DIR}/${tag}/alembic-head"
   record_services "${tag}"
   set_tag "${tag}"
+  set_node_refs "${tag}"
   if ! up; then
     [[ -n "${previous}" && "${previous}" != "${tag}" ]] && log "start failed; to go back: staging.sh rollback"
     printf '%s deploy %s previous %s alembic %s FAILED\n' "$(date -u +%FT%TZ)" "${tag}" "${previous:-none}" \
@@ -1041,6 +1119,7 @@ EOF
   fi
   mkdir -p "${NODE_ARTIFACTS_DIR}/${previous}" # kept with its images; never one Docker creates as root
   set_tag "${previous}"
+  set_node_refs "${previous}"
   if ! up; then
     printf '%s rollback %s previous %s alembic %s FAILED\n' "$(date -u +%FT%TZ)" "${previous}" "${current}" "${head}" \
       >>"${HISTORY_FILE}"

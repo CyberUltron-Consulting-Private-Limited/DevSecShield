@@ -84,8 +84,53 @@ preflight), so a rollback serves the downloads of the tag it went back to. A tag
 directory: the wizard then says each download is "not available on this server yet. Contact your administrator."
 
 **What the host must provide:** nothing new beyond disk space (the downloads count in the disk check) and `sha256sum`
-(coreutils). Optional, in `.env`: `CBOM_NODE_IMAGE_REF`, a tagged node image in a registry customers can pull from;
-only then does the wizard also show a `docker pull`-style command (unset by default: the image file only).
+(coreutils). `CBOM_NODE_IMAGE_REF` / `CBOM_NODE_CHART_REF` in `.env` (a registry customers can pull from) are set by
+the deploy: see "Public registry".
+
+### Terminal-only hosts: the one-paste install
+
+"Create node and show install command" (and New registration token, Reset) also returns `install_links`: one link per
+file the node's way of running needs (Docker: the image; Helm: the image and the chart; OVA/AMI: the kit and the
+image), each with its SHA-256. The wizard turns them into ONE copy-paste block per method that downloads with `curl`
+(or `wget`, shown below it), checks `sha256sum -c`, then `docker load` + `docker run --pull never`, or pushes the image
+to `$REGISTRY` and `helm upgrade --install` the downloaded chart, or unzips the kit and runs Packer. The proxy the
+wizard collected is passed to the download (`--proxy`), and its CA (`--cacert`, a file next to the command) only when
+the proxy inspects TLS: curl uses it for that download from ZeroShield only, nothing is installed system-wide.
+
+A link (`?node_ticket=<node>.<HMAC>`) is bound to the team, the node, the file kind and the node's current
+registration token: it works exactly as long as that token does and stops when the node registers, when the token is
+regenerated or the node reset, or after 24 h. It never contains the token (only an HMAC over its hash). Every use is an
+audit event (`node_artifact.download`, actor the node). Like the registration token, the links end up in the shell
+history of the host: start the command with a space (bash `HISTCONTROL=ignorespace`) or clear the history afterwards.
+
+## Public registry (GHCR)
+
+`publish-ghcr.yml` pushes the scan node to GitHub Container Registry on every push to dev/staging
+(`ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<branch>-<sha12>`), and on a push to
+**staging** it also releases (job `release`):
+
+* `devsecshield-scan-node:<version>`: **written once, never overwritten** (`<version>` = `scan_node/zs_scan_node/__init__.py`
+  `VERSION`; bump it to release a new node), and `:<major.minor>` and `:latest` pointing at that version;
+* the Helm chart as an OCI artifact, `ghcr.io/cyberultron-consulting-private-limited/charts/cbom-scan-node:<version>`
+  (written once; its default image is the GHCR image above).
+
+The staging deploy points the Add scan node wizard at them (`staging.sh` `set_node_refs`, `.env` ->
+`docker-compose.yml` -> the backend): `CBOM_NODE_IMAGE_REF=ghcr.io/.../devsecshield-scan-node:<version>` (the release,
+never a moving tag) and, only once anyone can pull it without a login (checked with GHCR's anonymous token API at
+deploy), `CBOM_NODE_CHART_REF=oci://ghcr.io/.../charts/cbom-scan-node:<version>`. The wizard's main command is then
+`docker pull ghcr.io/...:<version> && docker run ...` (Helm: `helm upgrade --install ... oci://... --version <version>`,
+or the downloaded chart with the GHCR image while the chart is not public); the downloads and the one-paste install
+stay below it as the air-gapped alternative.
+
+The switch is `CBOM_NODE_REGISTRY_PUBLIC` (a variable of the `staging` environment; deploy-staging.yml): unset or `1`
+(default, the image package is public) = on for push deploys; `0` = never offer a pull (clears both refs; set it if
+a package is ever made private again). A manual deploy run always clears them (it may deploy a commit with no release).
+
+**Owner step (one click per package, GitHub UI):** a package pushed by the workflow is private at first. The image
+package `devsecshield-scan-node` is public already (14 Nov). After the first push to staging with this release job,
+make the chart public too: GitHub -> the organisation -> **Packages** -> `charts/cbom-scan-node` -> **Package
+settings** -> **Danger Zone** -> **Change visibility** -> **Public** -> type the package name -> confirm. The next
+deploy then offers `helm ... oci://` (until then the wizard installs the downloaded chart with the GHCR image).
 
 ## Disk space
 
