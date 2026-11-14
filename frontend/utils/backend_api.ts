@@ -4041,7 +4041,14 @@ export interface CicdIntegration {
     created_at: string
     last_updated: string
     scan_type: "sast" | "dast" | "cbom" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    /** A label ("cicd12-…1a2b"), never the key: the key is shown once, at create or rotate (issue #99) */
     api_key: string
+    api_key_state?: "active" | "revoked"
+    api_key_hint?: string | null
+    api_key_issued_at?: string | null
+    api_key_issued_by?: string | null
+    /** The caller owns the integration or is a team admin: may rotate and revoke its key */
+    can_manage_api_key?: boolean
 }
 
 /** Vulns-over-time chart data: date string -> counts by severity (from get_cicd_list_dashboard_data) */
@@ -4068,13 +4075,44 @@ export interface CreateCicdIntegrationData {
     scan_type: "sast" | "dast" | "cbom"
 }
 
-const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData) => {
+/** Answer of create and rotate: the only place the plaintext key appears (show it once, never store it) */
+export interface CicdIssuedApiKey {
+    integration_id: number
+    api_key: string
+    warning?: string
+    api_key_state?: "active" | "revoked"
+    api_key_hint?: string
+}
+
+const createCicdIntegration = async (team_id: number, data: CreateCicdIntegrationData): Promise<CicdIssuedApiKey> => {
     try {
         const response = await api.post(`/${team_id}/cicd/integration`, data)
         toast.success("CI/CD integration created")
-        return response.data
+        return response.data as CicdIssuedApiKey
     } catch (error) {
         showErrorToast(error,"Error creating CI/CD integration")
+        throw error
+    }
+}
+
+/** Issue a new key (owner or team admin); the old key stops working at once */
+const rotateCicdApiKey = async (team_id: number, integration_id: number): Promise<CicdIssuedApiKey> => {
+    try {
+        const response = await api.post(`/${team_id}/cicd/integration/${integration_id}/api-key/rotate`)
+        return response.data as CicdIssuedApiKey
+    } catch (error) {
+        showErrorToast(error,"Error issuing a new CI/CD API key")
+        throw error
+    }
+}
+
+/** Revoke the key (owner or team admin): pipelines get 401 until a new key is issued */
+const revokeCicdApiKey = async (team_id: number, integration_id: number): Promise<{ integration_id: number; api_key_state: "revoked"; message: string }> => {
+    try {
+        const response = await api.delete(`/${team_id}/cicd/integration/${integration_id}/api-key`)
+        return response.data
+    } catch (error) {
+        showErrorToast(error,"Error revoking the CI/CD API key")
         throw error
     }
 }
@@ -4125,7 +4163,13 @@ export interface CicdIntegrationDashboard {
     created_at: string
     last_updated: string
     scan_type: "sast" | "dast" | "cbom" | "llm" | "mcp" | "iac" | "leakage" | "sbom_sca" | "agent_discovery"
+    /** A label, never the key (see CicdIntegration.api_key) */
     api_key: string
+    api_key_state?: "active" | "revoked"
+    api_key_hint?: string | null
+    api_key_issued_at?: string | null
+    api_key_issued_by?: string | null
+    can_manage_api_key?: boolean
     integration_active?: boolean
     integration_settings?: Record<string, { jira_project_id?: string | null; auto_create_tickets?: boolean | null } | null> | null
     scan_settings?: Record<string, { app_lang?: SastAppLang; exclude_path_arrays?: string[][] | null; scan_binaries?: boolean; include_vendored?: boolean } | null> | null
@@ -4198,6 +4242,8 @@ const renameCicdIntegration = async ({ team_id, integration_id, title }: { team_
 export { 
     getCicdIntegrations,
     createCicdIntegration,
+    rotateCicdApiKey,
+    revokeCicdApiKey,
     getCicdIntegrationDashboard,
     deleteCicdIntegration,
     updateCicdIntegration,
@@ -5206,6 +5252,80 @@ const downloadCbomRunCbom = async (team_id: number, run_id: number): Promise<voi
         showErrorToast(error, "Error downloading the CBOM")
         throw error
     }
+}
+
+// ---------- CB-38 PR-4: Jira tickets for Sources run findings (team Jira credentials, team-level project)
+
+/** A run asset as the Ticketing tab lists it: the asset list item plus its ticket (one per stable key, across runs). */
+export type CbomRunTicketAsset = CbomAsset & {
+    asset_key?: string
+    ticket_key?: string | null
+    ticket_url?: string | null
+}
+
+export interface CbomRunTicketAssetPage extends Omit<CbomAssetPage, "items"> {
+    items: CbomRunTicketAsset[]
+    /** The run's findings (judged today); with ``view=findings`` ``total`` is the same count. */
+    findings_total: number
+}
+
+/** The team's Jira for CBOM Sources: never a credential, only whether one is connected. */
+export interface CbomSourcesTicketing {
+    connected: boolean
+    jira_project_key: string | null
+    jira_issue_type: string
+    issue_type_default: string
+    is_admin: boolean
+    row_version: number
+}
+
+export interface CbomRunTicketRef {
+    asset_id: number
+    asset_key: string
+    ticket_key: string
+    ticket_url: string
+}
+
+export interface CbomRunTicketsResult {
+    created: CbomRunTicketRef[]
+    existing: CbomRunTicketRef[]
+    failed: { asset_id: number; asset_key?: string | null; error: string }[]
+    /** Clean inventory and coverage notes: not findings, never ticketed. */
+    skipped?: { asset_id: number; asset_key?: string | null; reason: string }[]
+    /** Not attempted: another request is creating the ticket, or the request's time budget ran out. Retry. */
+    deferred?: { asset_id: number; asset_key?: string | null; reason: string }[]
+}
+
+/** Findings of a run with their tickets (``view=findings``: not coverage rows, with an impact). */
+export const getCbomRunTicketAssets = async (team_id: number, run_id: number, page = 1, page_size = 100): Promise<CbomRunTicketAssetPage> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets`, { params: { view: "findings", page, page_size } })
+    return response.data as CbomRunTicketAssetPage
+}
+
+export const getCbomSourcesTicketing = async (team_id: number): Promise<CbomSourcesTicketing> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/ticketing`)
+    return (response.data as { ticketing: CbomSourcesTicketing }).ticketing
+}
+
+export const updateCbomSourcesTicketing = async (
+    team_id: number,
+    body: { jira_project_key: string | null; jira_issue_type: string | null; expected_version?: number },
+): Promise<CbomSourcesTicketing> => {
+    try {
+        const response = await api.put(`${cbomSourcesBase(team_id)}/ticketing`, body)
+        toast.success("Jira project saved")
+        return (response.data as { ticketing: CbomSourcesTicketing }).ticketing
+    } catch (error) {
+        showErrorToast(error, "Error saving the Jira project")
+        throw error
+    }
+}
+
+/** One Jira issue per selected finding; assets that already have one are reported in ``existing``. No toast: the
+ * Ticketing tab shows the outcome of every asset, including a batch that failed as a whole. */
+export const createCbomRunTickets = async (team_id: number, run_id: number, asset_ids: number[]): Promise<CbomRunTicketsResult> => {
+    const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/tickets`, { asset_ids, ticket_type: "jira" })
+    return response.data as CbomRunTicketsResult
 }
 
 const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {

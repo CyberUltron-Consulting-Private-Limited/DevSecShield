@@ -14,6 +14,7 @@ from backend.routers.cbom_deliverables import router as cbom_deliverables_router
 from backend.routers.cbom_sources import router as cbom_sources_router
 from backend.routers.cbom_ai import router as cbom_ai_router
 from backend.routers.cbom_ops import router as cbom_ops_router
+from backend.routers.cbom_run_tickets import router as cbom_run_tickets_router
 from backend.routers.cbom_estate import router as cbom_estate_router
 from backend.routers.cbom_node import router as cbom_node_router
 from backend.routers.cbom_node_pools import router as cbom_node_pools_router
@@ -147,6 +148,7 @@ app.include_router(cbom_deliverables_router)
 app.include_router(cbom_sources_router)
 app.include_router(cbom_ai_router)  # CB-38 PR-6: AI remediation (Bedrock or on-prem); off unless configured
 app.include_router(cbom_ops_router)
+app.include_router(cbom_run_tickets_router)
 app.include_router(cbom_estate_router)  # CB-20: the team's estate store
 app.include_router(cbom_node_router)
 app.include_router(cbom_node_pools_router)  # agent pool tokens for the Helm DaemonSet (WP8b)

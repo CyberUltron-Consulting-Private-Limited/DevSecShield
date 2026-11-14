@@ -10,11 +10,10 @@ import { apiBaseURL } from "@/utils/interceptors";
 import { CBOM_GATE_NOTE, bambooScript, isCbom } from "@/components/cicd/ciTemplates";
 
 interface BambooIntegrationGuideProps {
-  apiKey: string;
   scanType?: string;
 }
 
-export function BambooGuide({ apiKey, scanType = "sast" }: BambooIntegrationGuideProps) {
+export function BambooGuide({ scanType = "sast" }: BambooIntegrationGuideProps) {
   const [copied, setCopied] = useState(false);
   const kind = (scanType || "sast").toLowerCase();
   const label = kind.toUpperCase();
@@ -126,7 +125,7 @@ export function BambooGuide({ apiKey, scanType = "sast" }: BambooIntegrationGuid
                       Variable: <span className="text-blue-600 dark:text-blue-400">cicd_api_key</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 mt-1">
-                      Value: <span className="text-zinc-500">{apiKey.substring(0, 20)}...</span>
+                      Value: <span className="text-zinc-500">the API key DevSecShield showed once when this integration was created or its key was last rotated (rotate it on this page if you no longer have it)</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 mt-1">
                       Type: <span className="text-blue-600 dark:text-blue-400">Password</span> (to hide the value)
