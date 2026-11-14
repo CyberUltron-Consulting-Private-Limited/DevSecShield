@@ -6,8 +6,11 @@ The table, the counts on the run and the export are built from the same query ov
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
+import json
+import re
 import uuid
-from typing import Any
+from typing import Any, BinaryIO, Callable, Iterator
 
 from sqlalchemy import and_, func, or_
 from sqlmodel import Session, select
@@ -18,6 +21,11 @@ from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
 from backend.utilities.cbom_sources.common import iso_z
+# CB-06: per-component provenance, PQC class and algorithm families for the export
+from backend.utilities.cbom_sources import provenance as PROV
+from backend.utilities.cbom_sources.classify import family, quantum_vulnerable
+from backend.utilities.cbom_sources.posture import pqc_class
+from backend.utilities.cbom_sources import tls_suites
 
 EXPORT_CAP = 50_000
 # serialNumber = uuid5(this namespace, "<run id>:<KB version>"): the same run exported with the same knowledge base is
@@ -275,7 +283,265 @@ def vulnerabilities(rows: list[CbomCollectedAsset], views: dict[int, dict[str, A
     return out
 
 
-def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None) -> dict[str, Any]:
+# ----------------------------------------------------------------------------- what each component carries (CB-06)
+COVERAGE = "coverage"  # a coverage row says what was NOT read: a gap of the document, never a cryptographic asset
+COVERAGE_GAP_CAP = 5_000
+_LIST_CAP = 200
+_OID = re.compile(r"^[0-2](\.[0-9]{1,20}){1,40}$")
+# RFC 3339 date-time with upper-case T/Z (what both the JSON schema's date-time and the XSD's xs:dateTime accept)
+_DATE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,12})?(Z|[+-](\d{2}):(\d{2}))$")
+# facts CB-04 adds to the collectors' output (KF-9 extended), exported as zs:<name> whenever a collector wrote them
+_IDENTITY_FACTS = ("key_alg_oid", "sig_alg_oid", "parameter_set", "nist_category", "algorithm_unknown")
+
+
+def _text(value: Any, limit: int = 128) -> str | None:
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    text = (str(value).lower() if isinstance(value, bool) else str(value)).strip()[:limit]
+    return text or None
+
+
+def _first(facts: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        text = _text(facts.get(key))
+        if text:
+            return text
+    return None
+
+
+def _names(*values: Any) -> list[str]:
+    """Names from lists or comma-separated strings, in order, each once (at most ``_LIST_CAP``)."""
+    out: list[str] = []
+    for value in values:
+        items = value.split(",") if isinstance(value, str) else value if isinstance(value, (list, tuple)) else []
+        for item in items:
+            text = _text(item)
+            if text and text not in out and len(out) < _LIST_CAP:
+                out.append(text)
+    return out
+
+
+def _date_time(value: Any) -> str | None:
+    """A certificate date as an RFC 3339 date-time (CycloneDX ``notValidBefore/After``): kept as collected when it is
+    one; another readable time is written in UTC with Z (a time without an offset is UTC, as everywhere here);
+    anything else is left out, so one odd value from a collector never makes the whole document invalid."""
+    text = _text(value, 64)
+    if not text:
+        return None
+    text = text.upper()
+    match = _DATE_TIME.match(text)
+    if match:
+        try:
+            _dt.datetime.strptime(text[:19], "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+        if match.group(3) is not None:
+            hours, minutes = int(match.group(3)), int(match.group(4))
+            if hours > 14 or minutes > 59 or (hours == 14 and minutes):
+                return None  # xs:dateTime offsets stop at 14:00 (RFC 3339 allows +14:30, the XSD does not)
+        return text
+    try:
+        moment = _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return iso_z(moment)
+
+
+def _protocol_versions(row: CbomCollectedAsset, facts: dict[str, Any]) -> list[str]:
+    """The versions the server accepted, read as the classifier reads them (``classify._normalise``): its own list,
+    else the version probes that succeeded (``versions``: {"TLSv1.2": true, "TLSv1.1": null ...}; null = not read),
+    else the SSH banner (RFC 4253 4.2: "SSH-2.0-" and the compatibility "SSH-1.99-" are protocol 2), else the
+    negotiated version, else the stored protocol."""
+    listed = _names(facts.get("protocols") or facts.get("accepted_versions"))
+    if listed:
+        return listed
+    versions = facts.get("versions")
+    if isinstance(versions, dict):
+        return _names([name for name, offered in versions.items() if offered is True])
+    if isinstance(versions, (list, tuple)) and versions:
+        return _names(versions)
+    banner = str(facts.get("banner") or "")
+    if banner.startswith(("SSH-2.0-", "SSH-1.99-")):
+        return ["SSHv2"]
+    if banner.startswith("SSH-1."):
+        return ["SSHv1"]
+    return _names(facts.get("negotiated_version")) or _names(row.protocol)
+
+
+def _named(values: list[str]) -> list[str]:
+    """``values`` without the sentinels tools print for "none" (``<NULL>``, ``(NONE)`` ...)."""
+    return [v for v in values if not tls_suites.is_sentinel(v)]
+
+
+def _database_suites(facts: dict[str, Any]) -> list[Any]:
+    """Suites of the database collector's own connection and of the live connections it saw (PostgreSQL
+    ``pg_stat_ssl``: {"version", "cipher"}; MySQL status variables: {"Ssl_cipher"} / {"variable", "value"})."""
+    own = facts.get("own_connection")
+    out: list[Any] = []
+    if isinstance(own, dict):
+        out += [own.get("cipher"), own.get("Ssl_cipher")]
+    live = facts.get("live_connections")
+    for conn in live if isinstance(live, list) else []:
+        if isinstance(conn, dict):
+            out.append(conn.get("cipher"))
+            if conn.get("variable") == "Ssl_cipher":
+                out.append(conn.get("value"))
+    return out
+
+
+def _cipher_suites(facts: dict[str, Any], tls: bool) -> list[dict[str, Any]]:
+    """Every suite the collector saw the server accept: its own list (a list, or sshd's comma-separated string), else
+    the negotiated suite, the suites the weak-class probes found accepted (``weak_ciphers_accepted``) and the
+    database connections' suites. TLS suites are listed once each by their IANA name with their code
+    (``tls_suites``): one suite stored under its OpenSSL and its IANA name is one suite."""
+    names = _names(facts.get("ciphers"))
+    if not names:
+        weak = facts.get("weak_ciphers_accepted")
+        extra = [v for v in weak.values() if isinstance(v, (list, tuple))] if isinstance(weak, dict) else []
+        names = _names(facts.get("cipher") or facts.get("negotiated_cipher"), *extra, _database_suites(facts))
+    if not tls:
+        return [{"name": name} for name in names]
+    out: dict[str, dict[str, Any]] = {}
+    for name in _named(names):
+        iana, code = tls_suites.canonical(name)
+        if iana not in out:
+            out[iana] = {"name": iana, **({"identifiers": tls_suites.identifiers(code)} if code else {})}
+    return list(out.values())
+
+
+def _key_primitive(algorithm: str) -> str:
+    """CycloneDX primitive of a certificate's subject key algorithm, by family (unknown when the family does not say)."""
+    fam = family(algorithm)
+    if fam == "RSA":
+        return "pke"
+    if fam in ("EC", "ECDSA", "ED25519", "ED448", "EDDSA", "DSA", "SM2"):
+        return "signature"
+    if fam in ("X25519", "X448", "ECDH", "DH"):
+        return "key-agree"
+    return "unknown"
+
+
+def _algorithm(ref: str, name: str, primitive: str, *, oid: str | None = None, curve: str | None = None,
+               parameter: str | None = None) -> dict[str, Any]:
+    props = {k: v for k, v in {"primitive": primitive, "parameterSetIdentifier": parameter, "curve": curve,
+                               # 0: a quantum computer breaks it (CycloneDX allows the level only on algorithms)
+                               "nistQuantumSecurityLevel": 0 if quantum_vulnerable(name) is True else None,
+                               }.items() if v is not None}
+    crypto: dict[str, Any] = {"assetType": "algorithm", "algorithmProperties": props}
+    oid = oid or (name if _OID.match(name) else None)
+    if oid and _OID.match(oid):
+        crypto["oid"] = oid
+    return {"type": "cryptographic-asset", "bom-ref": ref, "name": name[:255], "cryptoProperties": crypto}
+
+
+class CertificateParts:
+    """One export's certificate parts: the signature algorithms, public keys and key algorithms its certificates
+    reference (CycloneDX 1.6 ``signatureAlgorithmRef`` / ``subjectPublicKeyRef`` / ``algorithmRef``), one component per
+    distinct content, shared by bom-ref by every certificate that has it. An estate's certificates share a handful of
+    (signature algorithm, key algorithm, size, curve) tuples, so 50,000 certificates need a few dozen parts, not
+    150,000 nested copies (review 5879114669: 2.2 GB to write such an export as XML).
+
+    The parts are top-level components after the assets, with bom-refs ``zs-signature-algorithm-<hash>``,
+    ``zs-public-key-<hash>`` and ``zs-public-key-algorithm-<hash>`` (a hash of the content: the same content has the
+    same ref in every export) and one property, ``zs:part_of`` = ``certificate``: they describe parts of
+    certificates, not assets of their own (no ``zs-asset-`` ref, no provenance, not in ``zs:asset_count``)."""
+
+    PART_OF = {"name": "zs:part_of", "value": "certificate"}
+
+    def __init__(self) -> None:
+        self._by_key: dict[tuple, str] = {}
+        self._refs: set[str] = set()
+        self._components: list[dict[str, Any]] = []
+
+    def ref(self, kind: str, key: tuple, build) -> str:
+        """The bom-ref of the ``kind`` part with content ``key``; ``build(ref)`` makes its component the first time."""
+        full = (kind, *key)
+        ref = self._by_key.get(full)
+        if ref is None:
+            digest = hashlib.sha256(json.dumps(full, default=str).encode()).hexdigest()[:16]
+            ref = f"zs-{kind}-{digest}"
+            while ref in self._refs:  # a 64-bit prefix collision: never in practice, still never a shared ref
+                ref += "x"
+            self._refs.add(ref)
+            self._by_key[full] = ref
+            component = build(ref)
+            component["properties"] = [self.PART_OF]
+            self._components.append(component)
+        return ref
+
+    def components(self) -> list[dict[str, Any]]:
+        return self._components
+
+
+def _certificate_parts(row: CbomCollectedAsset, facts: dict[str, Any], size: int | None, curve: str | None,
+                       signature: str | None, parts: CertificateParts) -> dict[str, Any]:
+    """The certificate's CycloneDX 1.6 references into the export's shared ``parts``: ``signatureAlgorithmRef`` ->
+    the signature algorithm; ``subjectPublicKeyRef`` -> the public key (size), whose ``algorithmRef`` -> the key
+    algorithm (curve, or the size as its parameter set)."""
+    refs: dict[str, Any] = {}
+    if signature and signature.lower() != "unknown":
+        sig_oid = _first(facts, "sig_alg_oid")
+        refs["signatureAlgorithmRef"] = parts.ref("signature-algorithm", (signature, sig_oid), lambda ref: _algorithm(
+            ref, signature, "signature", oid=sig_oid))
+    key_alg = _first(facts, "key_alg") or _text(row.algorithm)
+    key_alg = key_alg if key_alg and key_alg.lower() != "unknown" else None
+    if key_alg or size:
+        alg_ref = None
+        if key_alg:
+            key_oid, parameter = _first(facts, "key_alg_oid"), None if curve or not size else str(size)
+            alg_ref = parts.ref("public-key-algorithm", (key_alg, key_oid, curve, parameter), lambda ref: _algorithm(
+                ref, key_alg, _key_primitive(key_alg), oid=key_oid, curve=curve, parameter=parameter))
+        label = ("-".join(str(part) for part in (key_alg, curve or size) if part) or "public key")[:255]
+
+        def public_key(ref: str) -> dict[str, Any]:
+            material: dict[str, Any] = {"type": "public-key"}
+            if size:
+                material["size"] = size
+            if alg_ref:
+                material["algorithmRef"] = alg_ref
+            return {"type": "cryptographic-asset", "bom-ref": ref, "name": label, "cryptoProperties": {
+                "assetType": "related-crypto-material", "relatedCryptoMaterialProperties": material}}
+
+        refs["subjectPublicKeyRef"] = parts.ref("public-key", (label, size, alg_ref), public_key)
+    return refs
+
+
+def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: dict[str, Any], size: int | None,
+                       curve: str | None, signature: str | None, view: dict[str, Any]) -> list[dict[str, str]]:
+    """The values the asset table and the oracle compare that CycloneDX has no field for (or not on this asset type):
+    PQC class, key size, curve, signature algorithm, key-exchange groups, SSH algorithm lists, CB-04 identity facts."""
+    out: list[tuple[str, str | None]] = [
+        ("zs:pqc_class", pqc_class(row.asset_type, row.quantum_vulnerable, list(view["finding_codes"]), facts)),
+        ("zs:key_size", str(size) if size else None), ("zs:curve", curve), ("zs:signature_algorithm", signature),
+    ]
+    out += [(f"zs:{name}", _text(facts.get(name))) for name in _IDENTITY_FACTS]
+    proto = crypto.get("protocolProperties") or {}
+    if crypto.get("assetType") == "protocol" and proto.get("type") == "ssh":
+        out += [("zs:kex_algorithms", ",".join(_names(facts.get("kex"), facts.get("kexalgorithms"))) or None),
+                ("zs:host_key_algorithms", ",".join(_names(facts.get("host_key_algs"), facts.get("hostkey_algorithms"),
+                                                           facts.get("hostkeyalgorithms"))) or None),
+                ("zs:ciphers", ",".join(_names(facts.get("ciphers"), facts.get("ciphers_s2c"),
+                                               facts.get("ciphers_c2s"))) or None),
+                ("zs:macs", ",".join(_names(facts.get("macs"), facts.get("macs_s2c"), facts.get("macs_c2s"))) or None)]
+    elif crypto.get("assetType") == "protocol":
+        # every group the server was seen to offer or accept: its own lists, the negotiated one, the PQ probe's
+        # ("<NULL>" is what s_client prints when no handshake completed: not a group)
+        groups = sorted(set(_named(_names(*(facts.get(k) for k in ("groups", "supported_groups", "accepted_groups",
+                                                                   "pq_groups", "negotiated_group", "group",
+                                                                   "pq_group"))))))
+        negotiated = _named([v for v in (_text(facts.get("negotiated_group")), _text(facts.get("group"))) if v])
+        out += [("zs:groups", ",".join(groups) or None), ("zs:groups_negotiated", negotiated[0] if negotiated else None)]
+    return [{"name": name, "value": value} for name, value in out if value]
+
+
+def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str, Any] | None = None,
+               prov: PROV.JobProvenance | None = None, shared: dict[tuple, list] | None = None,
+               parts: CertificateParts | None = None) -> dict[str, Any]:
+    """One asset as a CycloneDX component. ``shared``: one export's cache of provenance property lists. Rows of one
+    job attempt stored in one batch have the same provenance, so their components share the same (read-only)
+    property objects: a 50k-asset export then holds a few hundred provenance lists instead of 50,000. ``parts``: the
+    export's certificate parts; a certificate references them, and the document lists ``parts.components()`` after
+    the assets."""
     facts = row.facts or {}
     view = view or shown(row)
     ref = f"zs-asset-{row.id}"
@@ -298,10 +564,21 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         if run["finding"]:
             props.append({"name": "zs:run_finding", "value": run["finding"]})
     name = row.name or row.algorithm or row.location
+    size = next((v for v in (row.key_size, facts.get("key_size"))
+                 if isinstance(v, int) and not isinstance(v, bool) and 0 < v < 1_000_000), None)
+    curve = _first(facts, "curve", "crv")
+    signature = _first(facts, "sig_alg", "signature_alg", "signature_algorithm")
+    key = (row.job_id, row.attempt, row.created_at)
+    provenance = shared.get(key) if shared is not None else None
+    if provenance is None:
+        provenance = [{"name": name, "value": value} for name, value in PROV.values(row, prov).items()]
+        if shared is not None:
+            shared[key] = provenance
     if row.cdx_type == "library":
         from backend.utilities.cbom_sources.sbom_link import ecosystem_of, library_purl
 
         package, version = str(facts.get("package") or name)[:255], str(facts.get("version") or "")
+        props += _detail_properties(row, facts, {}, size, curve, signature, view) + provenance
         out = {"type": "library", "bom-ref": ref, "name": package, "version": version,
                "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
         # an OS package the node read from a package database carries its own purl (pkg:deb/ubuntu/libssl3@...,
@@ -314,19 +591,20 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         return out
     crypto: dict[str, Any] = {"assetType": row.cdx_type if row.cdx_type in ("certificate", "protocol", "related-crypto-material") else "algorithm"}
     if crypto["assetType"] == "certificate":
+        refs = _certificate_parts(row, facts, size, curve, signature, parts if parts is not None else CertificateParts())
         crypto["certificateProperties"] = {
-            "subjectName": facts.get("subject"), "issuerName": facts.get("issuer"),
-            "notValidBefore": facts.get("not_before"), "notValidAfter": facts.get("not_after"),
-            "certificateFormat": "X.509", "certificateExtension": facts.get("format") or "pem",
+            "subjectName": _text(facts.get("subject"), 2048), "issuerName": _text(facts.get("issuer"), 2048),
+            "notValidBefore": _date_time(facts.get("not_before")), "notValidAfter": _date_time(facts.get("not_after")),
+            **refs, "certificateFormat": "X.509", "certificateExtension": _text(facts.get("format"), 32) or "pem",
         }
         crypto["certificateProperties"] = {k: v for k, v in crypto["certificateProperties"].items() if v}
     elif crypto["assetType"] == "protocol":
         proto = (row.protocol or ("ssh" if "ssh" in row.asset_type else "tls")).lower()
-        versions = facts.get("protocols") or ([row.protocol] if row.protocol else [])
+        versions = _protocol_versions(row, facts)
         crypto["protocolProperties"] = {
             "type": "ssh" if proto.startswith("ssh") else ("tls" if "tls" in proto or "ssl" in proto or proto == "tls" else "other"),
-            "version": ",".join(str(v) for v in versions)[:255] if versions else None,
-            "cipherSuites": [{"name": str(c)} for c in (facts.get("ciphers") or ([facts["cipher"]] if facts.get("cipher") else []))][:200],
+            "version": ",".join(versions)[:255] if versions else None,
+            "cipherSuites": _cipher_suites(facts, tls=not proto.startswith("ssh")),
         }
         crypto["protocolProperties"] = {k: v for k, v in crypto["protocolProperties"].items() if v}
     elif crypto["assetType"] == "related-crypto-material":
@@ -345,22 +623,57 @@ def _component(row: CbomCollectedAsset, source_name: str | None, view: dict[str,
         }.items() if v is not None and v != ""}
     if row.algorithm:
         props.append({"name": "zs:algorithm", "value": row.algorithm})
+    if row.protocol:  # the asset table's protocol column as stored (protocolProperties.type is CycloneDX's enum)
+        props.append({"name": "zs:protocol", "value": row.protocol})
+    props += _detail_properties(row, facts, crypto, size, curve, signature, view) + provenance
     return {"type": "cryptographic-asset", "bom-ref": ref, "name": str(name)[:255], "cryptoProperties": crypto,
             "evidence": {"occurrences": [{"location": row.location}]}, "properties": props}
 
 
-def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
+def coverage_gaps(rows: list[CbomCollectedAsset], names: dict[int, str], job_names: dict[int, Any],
+                  provs: dict[int, PROV.JobProvenance]) -> list[dict[str, str]]:
+    """The run's coverage rows as document gaps: ``zs:coverage_gap_count`` (all of them) and one ``zs:coverage_gap``
+    per row (at most ``COVERAGE_GAP_CAP``), whose value is compact JSON: ``ref`` (``zs-asset-<id>``, the id the asset
+    API lists the row under), source, target, location, check, status, detail, scope, incomplete, by_choice, finding,
+    and the row's provenance (``provenance.NAMES`` without the ``zs:`` prefix; job_id and attempt as numbers)."""
+    out = [{"name": "zs:coverage_gap_count", "value": str(len(rows))}] if rows else []
+    for row in rows[:COVERAGE_GAP_CAP]:
+        facts = row.facts if isinstance(row.facts, dict) else {}
+        gap: dict[str, Any] = {
+            "ref": f"zs-asset-{row.id}", "source": names.get(row.source_id or 0) or job_names.get(row.job_id) or "",
+            "target": row.target or "", "location": row.location, "check": _text(facts.get("check"), 255),
+            "status": _text(facts.get("status"), 64), "detail": _text(facts.get("detail"), 512),
+            "scope": _names(facts.get("scope"))[:20], "incomplete": facts.get("incomplete") is True,
+            "by_choice": facts.get("by_choice") is True, "finding": row.finding,
+        }
+        for key, value in PROV.values(row, provs.get(row.job_id)).items():
+            gap[key[3:]] = int(value) if key in ("zs:job_id", "zs:attempt") and value.isdigit() else value
+        out.append({"name": "zs:coverage_gap", "value": json.dumps(gap, sort_keys=True, separators=(",", ":"),
+                                                                     ensure_ascii=False)})
+    return out
+
+
+def _document(session: Session, run: CbomCollectionRun, now: _dt.datetime
+              ) -> tuple[dict[str, Any], Iterator[dict[str, Any]], Callable[[], list[dict[str, Any]]]]:
+    """The run's CycloneDX document in three parts, for writing it piece by piece: the head (every key before
+    ``components``), the components (made one at a time: the assets, one ``zs-asset-<id>`` component each, then the
+    certificate parts they reference) and the vulnerabilities (call it once the components are consumed)."""
     rows = session.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == run.team_id,
                                                          CbomCollectedAsset.run_id == run.id)
                         .order_by(CbomCollectedAsset.id).limit(EXPORT_CAP + 1)).all()
     truncated = len(rows) > EXPORT_CAP
     rows = rows[:EXPORT_CAP]
+    coverage = [row for row in rows if row.asset_type == COVERAGE]  # what was not read: gaps of the document
+    rows = [row for row in rows if row.asset_type != COVERAGE]  # the cryptographic assets: one component each
     today = now if now.tzinfo is None else now.astimezone(_dt.timezone.utc).replace(tzinfo=None)
     views = {row.id: shown(row, today) for row in rows}
     judged_on = next((v["as_of_run"]["judged_on"] for v in views.values() if v["as_of_run"]), None)
     jobs = session.exec(select(CbomCollectionJob).where(CbomCollectionJob.run_id == run.id)).all()
     names = _source_names(session, run.team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
+    provs = PROV.load(session, run.team_id, jobs)
+    shared: dict[tuple, list] = {}
+    parts = CertificateParts()
     gaps = []
     for job in jobs:
         info = _job_targets(job, names)
@@ -373,7 +686,7 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
     versions = [(name, value) for name, value in (("zs:run_kb_version", run.kb_version),
                                                    ("zs:classifier_version", run.classifier_version),
                                                    ("zs:engine_version", run.engine_version)) if value]
-    return {
+    head = {
         "bomFormat": "CycloneDX", "specVersion": "1.6", "serialNumber": export_serial(run.id or 0, kb_version, judged_on),
         "version": 1,
         "metadata": {
@@ -387,9 +700,40 @@ def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> di
                 *[{"name": name, "value": str(value)} for name, value in versions],
                 *([{"name": "zs:judged_on", "value": judged_on}] if judged_on else []),
                 *[{"name": "zs:gap", "value": gap[:255]} for gap in gaps[:500]],
+                *coverage_gaps(coverage, names, job_names, provs),
             ],
         },
-        "components": [_component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id])
-                       for row in rows],
-        "vulnerabilities": vulnerabilities(list(rows), views),
     }
+
+    def components() -> Iterator[dict[str, Any]]:
+        for row in rows:  # the assets, then the certificate parts they reference
+            yield _component(row, names.get(row.source_id or 0) or job_names.get(row.job_id), views[row.id],
+                             provs.get(row.job_id), shared, parts)
+        yield from parts.components()
+
+    return head, components(), lambda: vulnerabilities(list(rows), views)
+
+
+def cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime) -> dict[str, Any]:
+    """The run's CycloneDX 1.6 document as one dict (what ``write_cyclonedx`` writes, piece by piece)."""
+    head, components, vulns = _document(session, run, now)
+    return {**head, "components": list(components), "vulnerabilities": vulns()}
+
+
+def write_cyclonedx(session: Session, run: CbomCollectionRun, now: _dt.datetime, fmt: str, out: BinaryIO) -> None:
+    """Write the run's CycloneDX document to ``out`` as JSON or XML (``cdx_xml``), one component at a time: the same
+    document as ``cyclonedx``, but neither the whole dict, nor an XML tree, nor the encoded bytes is ever held in
+    memory at once (review 5879114669 major 2: a 50,000-component XML export peaked near 2.2 GB)."""
+    head, components, vulns = _document(session, run, now)
+    if fmt == "xml":
+        from backend.utilities.cbom_sources import cdx_xml
+
+        cdx_xml.write_xml(out, head, components, vulns)
+        return
+    def dumps(value: Any) -> bytes:  # what starlette's JSONResponse writes (the route's JSON before streaming)
+        return json.dumps(value, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":")).encode()
+
+    out.write(dumps(head)[:-1] + b',"components":[')
+    for index, component in enumerate(components):
+        out.write((b"," if index else b"") + dumps(component))
+    out.write(b'],"vulnerabilities":' + dumps(vulns()) + b"}")
