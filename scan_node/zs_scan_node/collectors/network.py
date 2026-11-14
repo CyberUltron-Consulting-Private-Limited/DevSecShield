@@ -1128,12 +1128,29 @@ def run_network(ctx: JobContext, scope: dict, discovery_only: bool = False) -> s
     return f"{open_endpoints} open endpoints"
 
 
+TEST_SAMPLES = 25  # addresses a range's connection test probes (N9: was the first 5)
+TEST_WORKERS = 5  # probed at once, so 25 silent addresses take about as long as 5 did
+
+
+def spread_sample(items: list, k: int) -> list:
+    """``k`` items evenly spaced over ``items`` (the first and the last included), in order; all of them when there
+    are ``k`` or fewer.  Deterministic, so a re-test probes the same addresses."""
+    n = len(items)
+    if n <= k:
+        return list(items)
+    if k <= 1:
+        return [items[n // 2]] if k == 1 else []
+    return [items[(i * (n - 1)) // (k - 1)] for i in range(k)]
+
+
 def test_range(ctx: JobContext, scope: dict) -> str:
-    """Connection test for a range: can the node route to a few addresses?  A refused port counts as reachable
-    (the host answered); only silence is 'unreachable'.  At most 5 addresses x 4 ports, no TLS handshakes."""
+    """Connection test for a range: can the node route to it?  ``TEST_SAMPLES`` addresses spread evenly over the
+    whole range (after the never-scan list), not its first few: a range's first addresses are often reserved or
+    unused, so a sample from the start says little about the rest (N9).  A refused port counts as reachable (the
+    host answered); only silence is 'unreachable'.  At most 4 ports per address, no TLS handshakes."""
     scan = NetworkScan(ctx, scope)
     ports = [p for p in _ports(scope) if p["protocol"] in TCP_PROTOCOLS][:4] or [{"port": 443, "protocol": "tls", "label": ""}]
-    picked = []
+    candidates = []
     held = None  # why an address was skipped, when it was a listed host name the node could not resolve
     for ip, _mode in _addresses(ctx, _scope_ranges(scope)):
         entry = ctx.never_scan.match_ip(ip)
@@ -1141,10 +1158,10 @@ def test_range(ctx: JobContext, scope: dict) -> str:
             if isinstance(entry, Unresolved):
                 held = entry
             continue
-        picked.append(ip)
-        if len(picked) >= 5:
-            break
-    for ip in picked:
+        candidates.append(ip)
+    picked = spread_sample(candidates, TEST_SAMPLES)
+
+    def probe(ip: str) -> tuple[bool, str, list[int]]:
         open_ports, answered, note = [], False, ""
         for p in ports:
             gate = scan._gate(ip)
@@ -1161,6 +1178,14 @@ def test_range(ctx: JobContext, scope: dict) -> str:
             except T.ProbeError as exc:
                 if exc.code == "refused":
                     answered = True
+        return answered, note, open_ports
+
+    if picked:
+        with cf.ThreadPoolExecutor(max_workers=min(TEST_WORKERS, len(picked)), thread_name_prefix="range-test") as pool:
+            results = list(pool.map(probe, picked))  # in address order
+    else:
+        results = []
+    for ip, (answered, note, open_ports) in zip(picked, results):
         ctx.samples.append({"target": ip, "status": "ready" if answered else "unreachable", "reachable": answered,
                             "login": None, "privilege": None,
                             "note": note or (f"open: {', '.join(map(str, open_ports))}" if open_ports else
@@ -1171,7 +1196,9 @@ def test_range(ctx: JobContext, scope: dict) -> str:
         ctx.samples.append({"target": "-", "status": "skipped_never_scan", "reachable": None, "login": None,
                             "privilege": None, "note": str(Blocked("every address", entry=held)) if held else
                             "every address is on the never-scan list"})
-    return f"{sum(1 for s in ctx.samples if s['status'] == 'ready')} of {len(picked)} sample addresses answered"
+    ready = sum(1 for s in ctx.samples if s["status"] == "ready")
+    return (f"{ready} of {len(picked)} sample addresses answered"
+            + (f" (spread across {len(candidates)} addresses)" if len(candidates) > len(picked) else ""))
 
 
 def is_ipv6_range(cidr: str) -> bool:

@@ -79,7 +79,8 @@ from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
                                                 validate_secret_value)
-from backend.utilities.cbom_sources.planning import RATES_C, credits, node_status, plan_run, source_targets
+from backend.utilities.cbom_sources.planning import RATES_C, credits, network_sweep_totals, node_status, plan_run, \
+    source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
     EstimateBody,
@@ -611,8 +612,13 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
         if group:
             rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
-        return {"server_time": iso_z(now),
-                "sources": [public_source(r, settings, nodes.get(r.node_id), now) for r in rows]}
+        out = {"server_time": iso_z(now),
+               "sources": [public_source(r, settings, nodes.get(r.node_id), now) for r in rows]}
+        if group in (None, "network") and kind in (None, "network_range"):
+            ranges = session.exec(select(CbomCollectionSource).where(
+                CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+            out["network_totals"] = network_sweep_totals(list(ranges), settings)  # N7: unique, enabled ranges only
+        return out
 
 
 @router.get(BASE + "/items", dependencies=READ, summary="List sources")

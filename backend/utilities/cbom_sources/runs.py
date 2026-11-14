@@ -21,8 +21,10 @@ from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
 from backend.utilities.cbom_sources.common import audit, engine_version
 from backend.utilities.cbom_sources.kinds import KINDS
-from backend.utilities.cbom_sources.planning import credits, plan_run
+from backend.utilities.cbom_sources.planning import NETWORK_STOPPED, credits, plan_run
 from backend.utilities.cbom_sources.schemas import RunCreate
+
+STOPPED_REFUSAL = "Scanning is stopped (Stop all). Resume scanning to start a run."
 
 
 def _existing(session: Session, team_id: int, client_request_id: str) -> CbomCollectionRun | None:
@@ -50,6 +52,12 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
     if not queued:
         if plan.items and all((i.reason or "").startswith("Already queued") for i in plan.items):
             raise HTTPException(status_code=409, detail="Every selected source is already queued in a run")
+        if any(i.reason == NETWORK_STOPPED for i in plan.items):
+            # say WHY (N12): "every selected source is skipped" alone hid that Stop all is on
+            others = [i for i in plan.items if i.reason != NETWORK_STOPPED and i.status == "skipped"]
+            raise HTTPException(status_code=400, detail=STOPPED_REFUSAL + (
+                f" {len(others)} other selected source{'s are' if len(others) != 1 else ' is'} skipped too "
+                "(see 'Will be skipped')." if others else ""))
         raise HTTPException(status_code=400, detail="Nothing to scan: every selected source is skipped (see 'Will be skipped')")
     if any(i.group == "network" for i in queued) and not body.soc_ack:
         raise HTTPException(status_code=400, detail="soc_ack: confirm that your SOC has agreed the network ranges and scan windows")

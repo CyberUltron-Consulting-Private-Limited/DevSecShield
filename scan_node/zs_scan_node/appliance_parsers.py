@@ -110,7 +110,10 @@ def parse_cisco_ios(outputs: dict[str, str]) -> list[Row]:
         m = re.search(rf"^ip ssh server algorithm {kw} (.+)$", base, re.M)
         if m:
             ssh[key] = m.group(1).split()
-    if versions or any(k in ssh for k in ("ciphers", "macs", "kex")):
+    dh_min = re.search(r"^ip ssh dh min size (\d+)", base, re.M)
+    if dh_min:  # the smallest group the SSH server accepts in diffie-hellman-group-exchange
+        ssh["dh_min_bits"] = int(dh_min.group(1))
+    if versions or any(k in ssh for k in ("ciphers", "macs", "kex", "dh_min_bits")):
         rows.append(("appliance_config", "ip ssh", "SSH server", None, None, ssh))
     # HTTPS management
     m = re.search(r"^ip http secure-ciphersuite (.+)$", base, re.M)
@@ -230,6 +233,9 @@ def parse_cisco_asa(outputs: dict[str, str]) -> list[Row]:
         dh = re.search(r"^ssl dh-group (\S+)", base, re.M)
         if dh:
             tls["dh_group"] = dh.group(1)
+            name = _group(dh.group(1))  # group2 -> MODP-1024 (the DHE group the ASA uses for TLS)
+            if name:
+                tls["dh_groups"] = [name]
         rows.append(("appliance_config", "ssl", "SSL/TLS (AnyConnect, ASDM)", None, None, tls))
     versions = [int(v) for v in re.findall(r"^ssh version (\d)\b", base, re.M)]
     kex = re.findall(r"^ssh key-exchange group (\S+)", base, re.M)
@@ -331,6 +337,8 @@ def parse_fortios(outputs: dict[str, str]) -> list[Row]:
             tls["min_version"] = FORTI_TLS.get(glob["ssl-min-proto-version"].lower(), glob["ssl-min-proto-version"])
         if glob.get("strong-crypto"):
             tls["strong_crypto"] = glob["strong-crypto"] == "enable"
+        if glob.get("dh-params", "").isdigit():  # bits of the DH group for admin HTTPS / SSH (set dh-params 1024)
+            tls["dh_bits"] = int(glob["dh-params"])
         rows.append(("appliance_config", "system global", "Administrative TLS", None, None, tls))
         if glob.get("admin-ssh-v1") == "enable":
             rows.append(("appliance_config", "system global ssh", "Administrative SSH", None, None,
@@ -445,6 +453,28 @@ def parse_panos(outputs: dict[str, str]) -> list[Row]:
 
 
 # ----------------------------------------------------------------------------- F5 BIG-IP (iControl REST)
+F5_PROTOCOL_KEYWORDS = (("SSLv3", "SSLv3"), ("TLSv1", "TLSv1.0"), ("TLSv1_1", "TLSv1.1"), ("TLSv1_2", "TLSv1.2"),
+                        ("TLSv1_3", "TLSv1.3"))
+F5_NO_OPTION = {"SSLv3": "no-sslv3", "TLSv1.0": "no-tlsv1", "TLSv1.1": "no-tlsv1.1", "TLSv1.2": "no-tlsv1.2",
+                "TLSv1.3": "no-tlsv1.3"}
+
+
+def _f5_protocols(tokens: list[str], options: list[str]) -> list[str]:
+    """Protocol versions a client-ssl cipher string configures.  A listed protocol keyword enables it (F5 cipher
+    rules: '!' removes, '-' deletes).  A string that starts with DEFAULT takes F5's DEFAULT cipher list, which holds
+    TLS 1.2 suites on every supported BIG-IP release (BIG-IP System: SSL Administration, the DEFAULT cipher string),
+    so TLS 1.2 is configured unless the string removes it or the profile sets 'no-tlsv1.2'.  Versions DEFAULT may also
+    hold (1.0 / 1.1) are not assumed: only what is configured is judged.  A 'no-...' option switches a version off
+    whatever the string says."""
+    removed = {t[1:] for t in tokens if t.startswith(("!", "-"))}
+    found = [v for tok, v in F5_PROTOCOL_KEYWORDS if tok in tokens and tok not in removed]
+    if tokens and tokens[0].upper() == "DEFAULT" and "TLSv1_2" not in removed and "TLSv1.2" not in found:
+        found.append("TLSv1.2")
+    off = {o.lower() for o in options}
+    order = [v for _tok, v in F5_PROTOCOL_KEYWORDS]
+    return sorted((v for v in found if F5_NO_OPTION[v] not in off), key=order.index)
+
+
 def parse_f5(outputs: dict[str, Any]) -> list[Row]:
     rows: list[Row] = []
     vendor = "f5_bigip"
@@ -457,9 +487,7 @@ def parse_f5(outputs: dict[str, Any]) -> list[Row]:
         options = [str(o) for o in p.get("options") or []] if isinstance(p.get("options"), list) else []
         tokens = [c for c in re.split(r"[:,\s]+", ciphers) if c]
         weak = [c for c in tokens if not c.startswith(("!", "-")) and WEAK_TLS_TOKENS.search(c)]
-        # an explicitly listed protocol keyword enables it (F5 cipher rules: '!' removes, '-' deletes)
-        protocols = [v for tok, v in (("SSLv3", "SSLv3"), ("TLSv1", "TLSv1.0"))
-                     if tok in tokens and f"!{tok}" not in tokens and f"-{tok}" not in tokens]
+        protocols = _f5_protocols(tokens, options)
         rows.append(("appliance_config", f"client-ssl {name}", name, None, None,
                      {"kind": "tls", "vendor": vendor, "section": f"client-ssl profile {name}", "ciphers": ciphers[:300],
                       "cipher_group": p.get("cipherGroup"), "options": options[:30], "weak_ciphers": weak[:10],

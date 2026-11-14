@@ -37,6 +37,7 @@ import AppliancesSection from "./AppliancesSection";
 import { cbomSourcesKeys } from "./keys";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
 import { exclusionSaveError, hostnameError, rangeError, storedExclusionIssue, teamExclusionError } from "./teamNeverScan";
+import { sampleDetail, sweepTotals, totalsLine } from "./networkEstimate";
 import {
   addressProgress,
   ago,
@@ -358,7 +359,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
   const errorFor = (key: string) => (showErrors ? plan.errors[key] ?? null : null);
   const unsaved = (section: string) => plan.changed.has(section) && <StatusBadge tone="amber">Not saved</StatusBadge>;
 
-  const addresses = ranges.reduce((sum, r) => sum + (r.target_count || 0), 0);
+  // N7: unique addresses over enabled ranges (the API's count), not the sum of every range's own count
+  const totals = sweepTotals(ranges, rangesQuery.data?.network_totals);
 
   const updateGrid = (update: (g: WindowGrid) => WindowGrid) =>
     setDraft((d) => ({ ...d, scan_window: update(d.scan_window ?? savedGrid) }));
@@ -509,10 +511,23 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                             const cidr = typeof r.config?.cidr === "string" ? r.config.cidr : r.name;
                             const testing = testMutation.isPending && testMutation.variables?.id === r.id;
                             return (
-                              <TableRow key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                              <TableRow
+                                key={r.id}
+                                className={cn("hover:bg-zinc-50 dark:hover:bg-zinc-800", !r.enabled && "opacity-60")}
+                                data-testid="network-range-row"
+                                data-disabled={r.enabled ? undefined : "true"}
+                              >
                                 <TableCell>
-                                  <span className="font-mono text-xs text-zinc-900 dark:text-white">{cidr}</span>
-                                  <span className="block text-xs text-zinc-500">{pluralize(r.target_count, "address", "addresses")}</span>
+                                  <span className={cn("font-mono text-xs", r.enabled ? "text-zinc-900 dark:text-white" : "text-zinc-500 line-through")}>{cidr}</span>
+                                  {!r.enabled && (
+                                    <span className="ml-2 align-middle">
+                                      <StatusBadge tone="zinc" title="Disabled ranges are not swept and not counted in Before the first run">Disabled</StatusBadge>
+                                    </span>
+                                  )}
+                                  <span className="block text-xs text-zinc-500">
+                                    {pluralize(r.target_count, "address", "addresses")}
+                                    {!r.enabled && " · not swept"}
+                                  </span>
                                 </TableCell>
                                 <TableCell className="max-w-[180px]">
                                   <Truncate className="text-zinc-700 dark:text-zinc-300" text={r.node_name ?? "No node"} />
@@ -906,7 +921,7 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
 
             <Section title="Before the first run" last>
               <p className="text-sm text-zinc-900 dark:text-white" data-testid="network-totals">
-                {pluralize(addresses, "address", "addresses")} after the never-scan list, {pluralize(settings.ports.length, "port")}.
+                {totalsLine(totals, settings.ports.length)}
               </p>
               <p className="text-xs text-zinc-500">
                 A discovery sweep asks each scan node that has ranges to find open ports first.
@@ -1036,7 +1051,15 @@ function RangeTestCell({ teamId, source, serverNow }: { teamId: number; source: 
       : null;
   return (
     <div className="space-y-1">
-      {pendingJobId && job.data ? <JobStatusBadge status={job.data.status} /> : <TestStatusBadge status={source.last_test_status} title={source.last_test_summary} />}
+      {pendingJobId && job.data ? (
+        <JobStatusBadge status={job.data.status} />
+      ) : (
+        <TestStatusBadge
+          status={source.last_test_status}
+          title={source.last_test_summary}
+          detail={sampleDetail(source.last_test_status, source.last_test_result)}
+        />
+      )}
       {detail && <span className="block text-xs text-zinc-500">{detail}</span>}
     </div>
   );

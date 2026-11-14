@@ -33,6 +33,8 @@ RATES_C["image"] = 100
 # CT discovery: each domain searched is charged like one server target (0.2 credits; owner question CT-2).
 RATES_C["ct_domain"] = 20
 
+NETWORK_STOPPED = "Network scanning is stopped"  # a plan item's reason while Stop all is on (runs.py)
+
 
 def credits(centi: int) -> float:
     return round(centi / 100, 2)
@@ -91,6 +93,23 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
         return {"units": int(members) if isinstance(members, int) and members > 0 else 1, "unit": "accounts"}
     return {"units": 1, "unit": {"kubernetes": "clusters", "databases": "databases", "cloud": "accounts"}.get(group, "sources")}
 
+
+
+def network_sweep_totals(sources: list[CbomCollectionSource], settings: CbomCollectionSettings) -> dict[str, int]:
+    """What the team's network ranges will sweep, for "Before the first run" (N7): unique addresses after the never-scan
+    list, over ENABLED ranges only.  An address in two overlapping ranges counts once (the per-range target_count
+    counts it in each); a disabled range counts nothing (plan_run skips it).  Same intervals as plan_run's units."""
+    merged: list[T.Interval] = []
+    enabled = disabled = 0
+    for source in sources:
+        if source.kind != "network_range":
+            continue
+        if not source.enabled:
+            disabled += 1
+            continue
+        enabled += 1
+        merged = T.merge(merged + list(source_targets(source, settings).get("intervals") or []))
+    return {"addresses": T.size(merged), "ranges_enabled": enabled, "ranges_disabled": disabled}
 
 @dataclass
 class PlanItem:
@@ -223,7 +242,7 @@ def plan_run(
         elif units <= 0:
             item.reason = "0 targets left after the never-scan list"
         elif group == "network" and source.kind != "appliance" and settings.stop_all_network:  # a config read, not a sweep
-            item.reason = "Network scanning is stopped"
+            item.reason = NETWORK_STOPPED
         elif source.id in active:
             item.reason = f"Already queued in run #{active[source.id]}"
         else:
