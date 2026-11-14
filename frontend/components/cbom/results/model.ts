@@ -425,7 +425,8 @@ export function assetRowAttrs(item: CbomRunAssetItem, wave?: Parameters<typeof f
     "data-type": item.type ?? "",
     "data-location": item.location ?? "",
     "data-target": item.target ?? "",
-    "data-algorithm": item.algorithm ?? item.protocol ?? "",
+    // `||` like the gate's judge (fieldmap.ui_expected: algorithm or protocol): an empty algorithm falls to the protocol
+    "data-algorithm": item.algorithm || item.protocol || "",
     "data-key-size": item.key_size != null ? String(item.key_size) : "",
     "data-finding": item.finding ?? "",
     "data-quantum": item.quantum_vulnerable === true ? "vulnerable" : item.quantum_vulnerable === false ? "safe" : "",

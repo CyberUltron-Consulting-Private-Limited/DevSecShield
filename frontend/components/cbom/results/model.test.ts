@@ -186,6 +186,7 @@ const graded = { ...item, q_grade: "Q1", fix_class: "configurable" } as CbomRunA
 assert.equal(assetRowAttrs(graded)["data-q-grade"], "Q1");
 assert.equal(assetRowAttrs(graded)["data-fix-class"], "configurable");
 assert.equal(assetRowAttrs({ ...item, key_size: 2048 } as CbomRunAssetItem)["data-key-size"], "2048", "the gate renders algorithm + key size");
+assert.equal(assetRowAttrs({ ...item, algorithm: "", protocol: "TLSv1.3" } as CbomRunAssetItem)["data-algorithm"], "TLSv1.3", "an empty algorithm falls to the protocol");
 assert.deepEqual(optionalColumns([item]), { qGrade: false, fixClass: false });
 assert.deepEqual(optionalColumns([item, graded]), { qGrade: true, fixClass: true });
 
