@@ -2312,7 +2312,7 @@ FROZEN_FIELDS = {
         "description primitive key_size curve mode protocol_version material_kind parameter_set "
         "not_valid_after security_strength_bits risk_score quantum_vulnerable quantum_safe hybrid "
         "nist_quantum_security_level pqc_migration_target pqc_migration_roadmap tier current "
-        "first_seen last_seen scan_count scan_ids latest_scan_id broken_today"
+        "first_seen last_seen scan_count scan_ids latest_scan_id broken_today collector_codes"
     ),
     "CertAgg": (
         "key identity_strong name file_names subject_cn issuer_cn not_before not_after "

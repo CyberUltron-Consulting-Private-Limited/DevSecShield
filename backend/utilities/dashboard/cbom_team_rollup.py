@@ -326,6 +326,10 @@ class AssetAgg:
     latest_scan_id: int | None = None
     # the results table's "Broken today" (cbom_metrics.code_row_broken_today): not quantum-vulnerable, not ready
     broken_today: bool = False
+    # CBOM Sources rows only: every code the collector's classification gave, including the informational ones
+    # (QUANTUM_VULNERABLE on a host key) that ``finding_codes`` leaves out (collections_view.node_row). The run API
+    # maps all of them to compliance clauses, so the deliverables' clause counts read them too.
+    collector_codes: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1097,6 +1101,7 @@ def _asset_from_row(row: Mapping[str, Any], facts: ScanFacts) -> AssetAgg:
         location=location,
         impact=INFO if severity is None else severity.capitalize(),
         finding_codes=_codes_of(row.get("finding_codes")),
+        collector_codes=_codes_of(row.get("collector_codes")),
         bom_ref=bom_ref,
         description=_text(row.get("description")) or "",
         primitive=primitive,
