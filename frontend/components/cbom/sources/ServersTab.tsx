@@ -37,7 +37,6 @@ import {
   getCbomSourcesSettings,
   getCbomTemplate,
   listCbomScanNodes,
-  listCbomSources,
   testCbomSource,
   updateCbomSource,
   type CbomJob,
@@ -56,6 +55,8 @@ import { useFleetStatus } from "./fleet/useFleetStatus";
 import { sshCaListEnabled } from "./fleet/fleetLogic";
 import { principalOk } from "./fleet/sshCaLogic";
 import { MetadataFields, metadataConfig, metadataFrom, type SourceMetadata } from "./SourceMetadata";
+import { LoadMoreFooter, SourceFilterBar, usePagedSources } from "./SourceTableControls";
+import { EMPTY_FILTERS, filtersActive, type SourceFilters } from "./sourceQuery";
 import {
   ago,
   blankSecretError,
@@ -358,6 +359,16 @@ function whereChanged(form: FormState, source: CbomSource | null): boolean {
   );
 }
 
+// The kinds the Servers table lists (the servers group without host agents, which the Scan nodes tab lists).
+export const SERVER_TABLE_KINDS = [
+  { value: "linux_servers", label: "Linux servers" },
+  { value: "windows_servers", label: "Windows servers" },
+  { value: "active_directory", label: "Active Directory" },
+  { value: "awx_hosts", label: "Hosts through AWX/AAP" },
+  { value: "salt_hosts", label: "Hosts through Salt" },
+  { value: "ssm_hosts", label: "Hosts through AWS SSM" },
+];
+
 // ---------------------------------------------------------------------------- tab
 export default function ServersTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
   const queryClient = useQueryClient();
@@ -374,14 +385,12 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
     retry: 1,
     refetchInterval: 30000,
   });
-  const sourcesQuery = useQuery({
-    queryKey: cbomSourcesKeys.sources(teamId, "servers"),
-    queryFn: () => listCbomSources(teamId, "servers"),
-    enabled: Number.isFinite(teamId),
-    retry: 1,
-    // Faster while a connection test is waiting, so the badge and samples update on their own.
-    refetchInterval: (query) => (query.state.data?.sources.some((s) => s.last_test_status === "pending") ? 6000 : 30000),
-  });
+  // #225: searched, filtered and paged on the server (host agents are listed on the Scan nodes tab, not here).
+  // Faster while a connection test is waiting, so the badge and samples update on their own.
+  const [filters, setFilters] = useState<SourceFilters>(EMPTY_FILTERS);
+  const paged = usePagedSources(teamId, "servers", SERVER_TABLE_KINDS.map((k) => k.value), filters,
+                                (rows) => (rows.some((s) => s.last_test_status === "pending") ? 6000 : 30000));
+  const sourcesQuery = paged.query;
   const settingsQuery = useQuery({
     queryKey: cbomSourcesKeys.settings(teamId),
     queryFn: () => getCbomSourcesSettings(teamId),
@@ -389,9 +398,8 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
     retry: 1,
   });
   const nodes = useMemo(() => nodesQuery.data?.nodes ?? [], [nodesQuery.data]);
-  // host agents (agent-mode nodes, one source each) are listed on the Scan nodes tab, not here
-  const sources = useMemo(() => (sourcesQuery.data?.sources ?? []).filter((s) => s.kind !== "host_agent"), [sourcesQuery.data]);
-  const serverNow = sourcesQuery.data?.server_time;
+  const sources = paged.sources;
+  const serverNow = paged.serverTime;
   const jobQuery = usePolledJob(teamId, testView?.jobId ?? null);
   const testedSource = testView ? sources.find((s) => s.id === testView.sourceId) ?? null : null;
 
@@ -515,9 +523,14 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
 
         infoId="cbsrc.servers.list"
         title="Configured server sources"
-        description={sources.length ? `${pluralize(sources.length, "source")}, ${pluralize(sources.reduce((sum, s) => sum + s.target_count, 0), "target")} after exclusions` : "Server sources you add appear here."}
+        description={paged.total ? `${pluralize(paged.total, "source")}${filtersActive(filters) ? " match" : ""}; targets are counted after exclusions` : "Server sources you add appear here."}
       >
-        {sources.length === 0 ? (
+        {(sources.length > 0 || filtersActive(filters)) && (
+          <SourceFilterBar teamId={teamId} filters={filters} onChange={setFilters} kinds={SERVER_TABLE_KINDS} idPrefix="servers" />
+        )}
+        {sources.length === 0 && filtersActive(filters) ? (
+          <EmptyState title="No server source matches" body="Change the search or clear the filters." />
+        ) : sources.length === 0 ? (
           <EmptyState
             title="No servers added yet"
             body="Add Linux servers, Windows servers or Active Directory with the form above. Each source is one list of targets reached through one scan node."
@@ -655,6 +668,10 @@ export default function ServersTab({ teamId, onNavigate }: { teamId: number; onN
             </div>
             <ScrollBar orientation="horizontal" />
           </ScrollArea>
+        )}
+        {sources.length > 0 && (
+          <LoadMoreFooter shown={sources.length} total={paged.total} filters={filters} hasMore={!!sourcesQuery.hasNextPage}
+                          loading={sourcesQuery.isFetchingNextPage} onMore={() => sourcesQuery.fetchNextPage()} idPrefix="servers" />
         )}
       </SectionCard>
 

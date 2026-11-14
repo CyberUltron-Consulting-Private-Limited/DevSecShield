@@ -4360,6 +4360,7 @@ export interface CbomSource {
     name: string
     node_id: number | null
     node_name: string | null
+    node_segment?: string | null  // #225: the segment of the source's scan node
     node_status: CbomNodeStatus | "missing" | null
     enabled: boolean
     config: Record<string, any>
@@ -4861,6 +4862,13 @@ const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promis
     network_totals?: { addresses: number; ranges_enabled: number; ranges_disabled: number }
 }> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
+    return response.data
+}
+
+/** #225: one page of sources, searched and filtered on the server (keyset paging: pass the previous next_after). */
+const listCbomSourcesPage = async (team_id: number, params: Record<string, string | number>):
+    Promise<{ sources: CbomSource[]; server_time: string; total: number; next_after: number | null; limit: number }> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params })
     return response.data
 }
 
@@ -5540,6 +5548,7 @@ export {
     getCbomNodeArtifacts,
     getCbomNodeArtifactLink,
     listCbomSources,
+    listCbomSourcesPage,
     getCbomSource,
     getCbomJob,
     getCbomSourcesSettings,
