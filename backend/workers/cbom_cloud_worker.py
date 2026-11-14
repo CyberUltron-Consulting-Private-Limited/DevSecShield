@@ -300,6 +300,10 @@ def main() -> None:
     from backend.workers.integration_dispatcher import start_thread as start_dispatcher
 
     dispatcher_stop = start_dispatcher(engine)
+    # F1.2 fleet inventory: AWS inventory sources sync on their own thread (only while CBOM_FLEET_INVENTORY is on)
+    from backend.workers.cbom_inventory_sync import start_thread as start_inventory_sync
+
+    inventory_stop = start_inventory_sync(engine)
     last_reap = 0.0
     while not _stopping:
         if time.monotonic() - last_reap >= REAP_EVERY_S:
@@ -316,6 +320,8 @@ def main() -> None:
         scheduler_stop.set()
     if dispatcher_stop is not None:
         dispatcher_stop.set()
+    if inventory_stop is not None:
+        inventory_stop.set()
     log("cloud worker stopped", worker=worker)
 
 

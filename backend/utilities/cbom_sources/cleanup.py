@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from sqlalchemy import delete
+from backend.utilities.cbom_sources.fleet.models import FLEET_MODELS  # F1.2 fleet (inventory, policies, credentials)
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
 from backend.utilities.cbom_sources.sshca.models import (  # F1.4
@@ -37,6 +38,7 @@ from backend.utilities.cbom_sources.transports.models import CbomTransport  # F1
 _ORDER = (
     IntegrationDelivery,  # integrations (WP11): deliveries before their integration
     TeamIntegration,
+    *FLEET_MODELS,  # F1.2: targets, inventory sources, policies, credentials (no foreign keys to the rows below)
     CbomDriftEvent,
     CbomEstateObservation,  # CB-20 estate store
     CbomEstateAsset,

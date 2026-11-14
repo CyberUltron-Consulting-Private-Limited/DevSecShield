@@ -233,7 +233,8 @@ def test_migration_is_the_one_head():
             revisions.add(rev.group(1))
         if down:
             parents.add(down.group(1))
-    assert revisions - parents == {"cb18evconf001"}
+    # one head; later revisions (CB-19 cb19grade001) chain after this one
+    assert len(revisions - parents) == 1 and "cb18evconf001" in parents
 
 
 def _populate(conn):

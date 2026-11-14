@@ -1,5 +1,6 @@
 import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
+import type { NodeArtifacts } from "@/components/cbom/sources/logic"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
 
@@ -4325,6 +4326,8 @@ export interface CbomSource {
     row_version: number
     created_at: string | null
     last_updated: string | null
+    managed_by_policy_id?: number | null  // F1.2 fleet: a policy manages this source (edit the policy, not the source)
+    credential_id?: number | null
 }
 
 export interface CbomSourceWrite {
@@ -4535,6 +4538,8 @@ export interface CbomRunPosture {
     impacts: Record<CbomImpact, number>
     top_codes: { code: string; count: number; title: string }[]
     mosca: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number; verdict?: string; note?: string }
+    // CB-19 PR-2: the team's Mosca now, when it differs from what the run recorded at Start (null otherwise)
+    mosca_now?: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number } | null
     top_risks: { id: number; type: string; name: string; location: string; impact: CbomImpact; criticality: string; source_name: string | null; score: number; hndl: boolean; finding: string | null }[]
     compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[] }[]
     kb_version: string
@@ -4656,6 +4661,16 @@ export interface CbomRun {
     jobs?: CbomJob[]
     job_counts?: Partial<Record<CbomJobStatus, number>>
     asset_count?: number
+    // CB-19 PR-2: the grade model and inputs recorded at Start; inputs_changed when the team's Mosca differs now
+    grades?: {
+        model_version: string | null
+        inputs: Record<string, unknown> | null
+        inputs_digest: string | null
+        inputs_source: "snapshot" | "current"
+        inputs_changed: boolean | null
+        model_changed: boolean
+        mosca_now: { x: number | null; y: number | null; z: number | null } | null
+    }
 }
 
 export interface CbomEvidenceQuestion { id: string; prompt: string; type: "text" | "choice" }
@@ -4753,6 +4768,20 @@ const getCbomSourcesOverview = async (team_id: number): Promise<CbomSourcesOverv
 
 const listCbomScanNodes = async (team_id: number): Promise<{ nodes: CbomScanNode[]; server_time: string }> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/nodes`)
+    return response.data
+}
+
+/** The scan node downloads this server offers (image file, Helm chart, OVA/AMI build kits): backend
+ * routers/cbom_node_artifacts.py. Shape: components/cbom/sources/logic.ts NodeArtifacts. */
+const getCbomNodeArtifacts = async (team_id: number): Promise<NodeArtifacts> => {
+    const response = await api.get(`/${team_id}/cbom/node-artifacts`)
+    return response.data as NodeArtifacts
+}
+
+/** A short-lived download link for one scan node file (the browser then downloads it straight to disk); throws the
+ * server's 404 ("... is not available on this server yet. Contact your administrator.") for a file it does not hold. */
+const getCbomNodeArtifactLink = async (team_id: number, kind: string): Promise<{ url: string; expires_in: number }> => {
+    const response = await api.post(`/${team_id}/cbom/node-artifacts/${encodeURIComponent(kind)}/link`)
     return response.data
 }
 
@@ -5072,6 +5101,8 @@ const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: Cb
 export {
     getCbomSourcesOverview,
     listCbomScanNodes,
+    getCbomNodeArtifacts,
+    getCbomNodeArtifactLink,
     listCbomSources,
     getCbomSource,
     getCbomJob,
