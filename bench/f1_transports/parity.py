@@ -38,7 +38,7 @@ LAB_DOCKERFILE = ROOT / "scan_node" / "tests" / "fixtures" / "zs-collect" / "lab
 sys.path.insert(0, str(ROOT / "scan_node"))
 sys.path.insert(0, str(HERE))
 
-from normalize import diff, normalise  # noqa: E402
+from normalize import diff, normalise, pid_differences  # noqa: E402
 from zs_scan_node import commands as C  # noqa: E402
 
 IMAGE = "f1-3-lab-target:1"
@@ -219,9 +219,11 @@ def main() -> int:
             failures += bool(d) or not a["assets"]
             report["targets"].append({"container": name, "address": ip, "ssh_assets": len(a["assets"]),
                                       "zs_collect_assets": len(b["assets"]), "nonce_echoed": doc["run_nonce"] == nonce,
-                                      "zs_collect_seconds": round(secs, 1), "diff": d})
+                                      "zs_collect_seconds": round(secs, 1), "diff": d,
+                                      "pid_diff": pid_differences(ssh_doc, doc, ip)})
             print(f"{name} {ip}: ssh {len(a['assets'])} assets, zs-collect {len(b['assets'])}, "
-                  f"diff {'EMPTY' if not d else str(len(d)) + ' lines'}")
+                  f"diff {'EMPTY' if not d else str(len(d)) + ' lines'}, "
+                  f"pid differences {len(report['targets'][-1]['pid_diff'])}")
         report["zs_collect_wall_seconds"] = round(zs_wall, 1)
         if args.readonly_check:
             ro = readonly_copy(addrs[0][0])
