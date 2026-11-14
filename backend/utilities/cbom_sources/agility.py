@@ -549,10 +549,15 @@ def named_tls_vulns(row: dict[str, Any]) -> str | None:
 
 def code_row_fields(row: dict[str, Any]) -> dict[str, Any]:
     """fix_class, fix_class_floor and fix_class_confidence of a code-scan row (``cbom_rows.page_row``)."""
+    return list_fields(evaluate("code", row.get("asset_type"), row.get("finding_codes") or [], _code_facts(row),
+                                CODE_CONTEXT))
+
+
+def _code_facts(row: dict[str, Any]) -> dict[str, Any]:
     facts = {"artifact_kind": row.get("artifact_kind"), "file_kind": file_kind(row.get("location"))}
     if "KNOWN_TLS_VULNERABILITY" in (row.get("finding_codes") or []):
         facts["tls_vulns"] = named_tls_vulns(row)
-    return list_fields(evaluate("code", row.get("asset_type"), row.get("finding_codes") or [], facts, CODE_CONTEXT))
+    return facts
 
 
 def _counts(counter: Counter) -> dict[str, int]:
@@ -563,6 +568,29 @@ def self_fixable_pct(counts: dict[str, int]) -> float | None:
     """(configurable + code-fixed) over the assets with one of the four classes; None when there are none."""
     classified = sum(counts.get(c, 0) for c in CLASSES)
     return round(100.0 * sum(counts.get(c, 0) for c in SELF_FIXABLE) / classified, 1) if classified else None
+
+
+def system_of(job: Any, source: Any, ctx: dict[str, Any]) -> tuple[tuple[str, str], str]:
+    """((kind, key), label) of the system an asset belongs to (owner default, CB-24 §6.1): the job snapshot's
+    ``application`` (case-insensitive) when set, else the source itself (its uid, which survives a rename)."""
+    app = str(ctx.get("application") or "").strip()
+    if app:
+        return ("application", app.lower()), app
+    params = (getattr(job, "params", None) or {}) if job is not None else {}
+    uid = getattr(source, "source_uid", None) or params.get("source_uid") or getattr(source, "id", None) or "?"
+    name = getattr(source, "name", None) or params.get("source_name") or str(uid)
+    return ("source", str(uid)), str(name)
+
+
+def classify_node(asset_type: str | None, codes: Iterable[Any], facts: dict[str, Any] | None, ctx: dict[str, Any],
+                  location: str | None = None) -> tuple:
+    """(whole, by_code, class without the post-quantum codes, unknown reasons) of one node asset (memoised)."""
+    return _cached("node", asset_type, codes, facts, ctx, location)
+
+
+def classify_code_row(row: dict[str, Any]) -> tuple:
+    """The same for a code-scan row (``code_row_fields`` reads the same facts)."""
+    return _cached("code", row.get("asset_type"), row.get("finding_codes") or [], _code_facts(row), CODE_CONTEXT, None)
 
 
 class RunAgility:
@@ -588,13 +616,7 @@ class RunAgility:
         self.systems: dict[tuple[str, str], dict[str, Any]] = {}
 
     def _system(self, job: Any, source: Any, ctx: dict[str, Any]) -> tuple[tuple[str, str], str]:
-        app = str(ctx.get("application") or "").strip()
-        if app:
-            return ("application", app.lower()), app
-        params = (getattr(job, "params", None) or {}) if job is not None else {}
-        uid = getattr(source, "source_uid", None) or params.get("source_uid") or getattr(source, "id", None) or "?"
-        name = getattr(source, "name", None) or params.get("source_name") or str(uid)
-        return ("source", str(uid)), str(name)
+        return system_of(job, source, ctx)
 
     def add(self, row: Any, codes: list[str]) -> None:
         key = (row.job_id, row.source_id)
@@ -668,6 +690,7 @@ def model() -> dict[str, Any]:
             "rules": [dict(r) for r in RULES], "unknown_reasons": dict(UNKNOWN_REASONS)}
 
 
-__all__ = ["CLASSES", "MODEL", "PQ_CODES", "RunAgility", "VALUES", "annotate_assets", "asset_class", "code_class",
-           "code_row_fields", "detail", "evaluate", "evidence_area_fields", "evidence_vendor_fields", "model",
-           "node_context", "table", "version"]
+__all__ = ["CLASSES", "MODEL", "PQ_CODES", "RunAgility", "VALUES", "annotate_assets", "asset_class",
+           "classify_code_row", "classify_node", "code_class", "code_row_fields", "detail", "evaluate",
+           "evidence_area_fields", "evidence_vendor_fields", "model", "node_context", "self_fixable_pct", "system_of",
+           "table", "version"]
