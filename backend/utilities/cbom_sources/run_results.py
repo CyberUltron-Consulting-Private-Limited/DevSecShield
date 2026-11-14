@@ -33,7 +33,8 @@ that spans 00:00 UTC could judge posture and the inventory pass on adjacent days
 Caching (in-process, per worker: single flight holds within one process only; the stored ``cbomrunsummary`` of PLAN
 5.2 makes it cross-process later):
   * finished runs: keyed by (run id, ``run.last_updated``, UTC day, KB version) plus an inputs digest (asset count,
-    newest asset id, run status); one computation at a time per run;
+    newest asset id, run status, the team risk model, which posture's quantum risk grades read); one computation at
+    a time per run;
   * active runs (queued / running): one computation at a time per run as well, reused for ``LIVE_TTL_S`` seconds while
     the digest is unchanged. Above ``LIVE_MAX_ASSETS`` assets (PLAN 5.3) the request never waits: it gets the last
     computed summary (``stale: true``, its ``computed_at``) or ``state: "computing"`` while one background thread per
@@ -745,12 +746,14 @@ def _log_summary(**fields: Any) -> None:
         pass
 
 
-def _inputs(session: Session, team_id: int, run: CbomCollectionRun, judged_on: str,
-            kb_version: str) -> tuple[tuple[Any, ...], str, int]:
+def _inputs(session: Session, team_id: int, run: CbomCollectionRun, judged_on: str, kb_version: str,
+            risk_model: dict[str, Any] | None) -> tuple[tuple[Any, ...], str, int]:
     count, newest = session.exec(select(func.count(), func.max(CbomCollectedAsset.id)).where(
         CbomCollectedAsset.team_id == team_id, CbomCollectedAsset.run_id == run.id)).one()
     key = (int(run.id or 0), iso_z(run.last_updated), judged_on, kb_version)
-    material = {"key": list(key), "assets": int(count or 0), "newest": int(newest or 0), "status": run.status}
+    # the team risk model feeds posture's quantum risk grades (CB-19 q_grade in top_risks), so it is an input
+    material = {"key": list(key), "assets": int(count or 0), "newest": int(newest or 0), "status": run.status,
+                "risk_model": {k: (risk_model or {}).get(k) for k in sorted(risk_model or {})}}
     digest = hashlib.sha256(json.dumps(material, sort_keys=True, default=str).encode()).hexdigest()[:16]
     return key, digest, int(count or 0)
 
@@ -801,7 +804,7 @@ def run_results(session: Session, run: CbomCollectionRun, *, team_id: int, risk_
     now = now or utcnow()
     judged_on = now.date().isoformat()
     kb_version = crypto_kb.version()
-    key, digest, count = _inputs(session, team_id, run, judged_on, kb_version)
+    key, digest, count = _inputs(session, team_id, run, judged_on, kb_version, risk_model)
     rid = int(run.id or 0)
     active = run.status in ACTIVE_STATUSES
     state, stale = ("live" if active else "ready"), False

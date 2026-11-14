@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionRun, CbomCollectionSource
 from backend.utilities.build_info import build_sha, build_version
 from backend.utilities.cbom_sources import crypto_kb
+from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
 from backend.utilities.cbom_sources.common import iso_z
 # CB-06: per-component provenance, PQC class and algorithm families for the export
@@ -82,10 +83,12 @@ def _filtered(query, *, asset_type: str | None, impact: str | None, quantum: boo
 
 
 def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_names: dict[int, str] | None = None,
-                 view: dict[str, Any] | None = None) -> dict[str, Any]:
+                 view: dict[str, Any] | None = None, grade: dict[str, Any] | None = None) -> dict[str, Any]:
     """One asset as the list shows it: findings judged today (``classify.shown``); ``as_of_run`` holds the run's own
-    verdict when a date-based rule changed it since."""
+    verdict when a date-based rule changed it since; ``q_grade`` / ``q_label`` / ``q_reason`` / ``q_item_key`` the
+    quantum risk grade (``qgrade``; null when the asset has no grade)."""
     view = view or shown(row)
+    grade = grade or {}
     return {
         "id": row.id, "type": row.asset_type, "cdx_type": row.cdx_type, "job_id": row.job_id,
         "source_id": row.source_id,
@@ -94,6 +97,8 @@ def public_asset(row: CbomCollectedAsset, source_names: dict[int, str], job_name
         "key_size": row.key_size, "protocol": row.protocol, "quantum_vulnerable": row.quantum_vulnerable,
         "impact": view["impact"], "finding": view["finding"], "finding_codes": view["finding_codes"],
         "as_of_run": view["as_of_run"],
+        "q_grade": grade.get("q_grade"), "q_label": grade.get("q_label"), "q_reason": grade.get("q_reason"),
+        "q_item_key": grade.get("q_item_key"),
         "facts": row.facts or {},
     }
 
@@ -109,7 +114,7 @@ def _source_names(session: Session, team_id: int, jobs: list[CbomCollectionJob])
 def list_assets(session: Session, *, team_id: int, run_id: int | None = None, job_id: int | None = None,
                 asset_type: str | None = None, impact: str | None = None, quantum: bool | None = None,
                 text: str | None = None, source_id: int | None = None, page: int = 1, page_size: int = 50,
-                now: _dt.datetime | None = None) -> dict[str, Any]:
+                now: _dt.datetime | None = None, risk_model: dict[str, Any] | None = None) -> dict[str, Any]:
     now = now or _now()
     base = select(CbomCollectedAsset).where(CbomCollectedAsset.team_id == team_id)
     if run_id is not None:
@@ -152,9 +157,12 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
         (CbomCollectionJob.run_id == run_id) if run_id is not None else (CbomCollectionJob.id == job_id))).all()
     names = _source_names(session, team_id, list(jobs))
     job_names = {j.id: names.get(j.source_id or 0) or (j.params or {}).get("source_name") for j in jobs}
+    grading = QG.load_context(session, team_id=team_id, run_id=run_id, job_id=job_id, risk_model=risk_model)
+    grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False).fields() for r in rows}
     return {
         "total": total, "all_total": all_total, "page": page, "page_size": page_size,
-        "items": [public_asset(r, names, job_names, views[r.id]) for r in rows],
+        "items": [public_asset(r, names, job_names, views[r.id], grades[r.id]) for r in rows],
+        "grade_model_version": QG.GRADE_MODEL_VERSION, "grade_inputs": grading.inputs(),
         "facets": {"type": by_type, "impact": by_impact, "quantum_vulnerable": quantum_count},
         "targets": [_job_targets(job, names) for job in jobs],
     }
