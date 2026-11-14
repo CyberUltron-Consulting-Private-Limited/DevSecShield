@@ -1,6 +1,9 @@
 """A deployment without CBOM_AWS_PRINCIPAL_ARN cannot collect AWS: its CloudFormation template could only trust the
 placeholder account 000000000000 (only a YAML comment said so). The backend now says whether AWS collection is
-configured; the template download and Validate refuse with one sentence the form also shows (round 5, G3 item 6)."""
+configured; the template download and Validate refuse with one sentence the form also shows (round 5, G3 item 6).
+
+#223: "contact your administrator" was a dead end for a SaaS customer (there is none): the sentence now says AWS
+collection isn't enabled on this deployment and names ZeroShield support."""
 import os
 import sys
 
@@ -12,13 +15,15 @@ from backend.tests.test_cbom_sources_api import api, world  # noqa: E402,F401
 from backend.utilities.cbom_sources import aws_validate  # noqa: E402
 from backend.utilities.cbom_sources.templates import AWS_NOT_CONFIGURED, aws_collection_configured  # noqa: E402
 
-MSG = "This ZeroShield deployment is not set up for AWS collection; contact your administrator"
+MSG = ("AWS collection isn't enabled on this ZeroShield deployment. "
+       "Contact ZeroShield support at support@zeroshield.ai to have it turned on.")
 ARN = "arn:aws:iam::123456789012:role/zeroshield-cbom"
 
 
 def test_unconfigured_deployment_says_so_everywhere(api, world, monkeypatch):
     monkeypatch.delenv("CBOM_AWS_PRINCIPAL_ARN", raising=False)
     assert AWS_NOT_CONFIGURED == MSG and aws_collection_configured() is False
+    assert "administrator" not in AWS_NOT_CONFIGURED.lower()
     settings = api("GET", "/1/cbom/sources/settings").json()["settings"]
     assert settings["aws_collection_configured"] is False
     assert api("GET", "/1/cbom/sources/overview").json()["settings"]["aws_collection_configured"] is False

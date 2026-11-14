@@ -241,7 +241,8 @@ class Agent:
                 known = self.__dict__.setdefault("job_window_ends", {})
                 for key, value in list(ends.items())[:1000]:
                     moment = _parse_iso(value)
-                    if moment is not None and str(key).isdigit():
+                    # only jobs this node still runs: a job that ended before the answer arrived leaves nothing behind
+                    if moment is not None and str(key).isdigit() and int(key) in getattr(self, "running", {}):
                         known[int(key)] = moment
             if sent >= self.stop_sent:
                 self.stop_sent = sent
@@ -498,6 +499,8 @@ class Agent:
     def _done(self, running: Running) -> None:
         with self.lock:
             self.running.pop(running.job_id, None)
+            # a window end that arrived after the watcher's last tick is dropped with its job (review of #250)
+            getattr(self, "job_window_ends", {}).pop(running.job_id, None)
         close = getattr(running.ctx.never_scan, "close", None)
         if close is not None:
             close()  # the resolver stops looking up names no running job lists

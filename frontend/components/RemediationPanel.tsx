@@ -48,6 +48,9 @@ interface RemediationPanelProps {
   /** CBOM Sources run asset (CB-38): load from GET /runs/{runId}/assets/{assetId}/remediation instead of the scan route.
    * The panel then hides itself when the server has no such route (older backend). */
   runAsset?: { runId: number; assetId: number } | null;
+  /** CBOM: false where the dialog already shows the knowledge-base details (the run dialog's AssetDetailPanel), so
+   * "Standards and regulations" is not shown twice (#266). */
+  standardsTab?: boolean;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -142,7 +145,7 @@ function CodeWithLines({ code, start, highlight, tone }: { code: string; start?:
  * rebuild; a stored result is shown first only when it already has the current shape (engine stamp), and a failed
  * rebuild is reported even when an older result is on screen. Views without a scan (the CI page) show what they
  * were given. */
-function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line, runAsset }: RemediationPanelProps) {
+function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line, runAsset, standardsTab = true }: RemediationPanelProps) {
   const stored = existingRemediation?.source === "knowledge_base" && existingRemediation.status === "completed"
     && !!existingRemediation.engine;
   const canLoad = runAsset ? runAsset.runId > 0 && runAsset.assetId > 0 : Number.isInteger(scanId) && scanId > 0 && !!findingId;
@@ -187,7 +190,7 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
   });
   const aiFixNote = outcomeNote(aiFix);
   const aiDiff = aiFix?.status === "ok" ? aiFix.fix?.diff ?? "" : "";
-  const defaultTab = fix?.available || aiAvailable ? "fix" : demo ? "exploit" : "details";
+  const defaultTab = fix?.available || aiAvailable ? "fix" : demo ? "exploit" : standardsTab ? "details" : "fix";
   // an older backend has no run-asset route: say nothing rather than an error (the dialog keeps its KB details);
   // after every hook, so the hook count never changes between renders (rules of hooks)
   if (runAsset && load.isError && remediationRouteMissing(load.error) && !data) return null;
@@ -221,11 +224,13 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
       )}
       {data && (
         <Tabs defaultValue={defaultTab} key={defaultTab} className="w-full">
-          <TabsList className="w-full grid grid-cols-4">
+          <TabsList className={`w-full grid ${standardsTab ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger value="fix" className="text-xs gap-1" data-testid="cbom-tab-fix"><Shield className="h-3 w-3" />Fix code</TabsTrigger>
             <TabsTrigger value="diff" className="text-xs gap-1" data-testid="cbom-tab-diff" disabled={!data.diff && !aiDiff}>Diff</TabsTrigger>
             <TabsTrigger value="exploit" className="text-xs gap-1" data-testid="cbom-tab-exploit" disabled={!demo}><Zap className="h-3 w-3" />Exploit demo</TabsTrigger>
-            <TabsTrigger value="details" className="text-xs gap-1" data-testid="cbom-tab-details">Standards</TabsTrigger>
+            {standardsTab && (
+              <TabsTrigger value="details" className="text-xs gap-1" data-testid="cbom-tab-details">Standards</TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="fix" className="mt-3 space-y-3" data-testid="cbom-fix">
@@ -272,7 +277,7 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
             {!fix?.available && (
               <p className="text-xs text-zinc-500">
                 {runAsset
-                  ? "No automatic code change for this asset (a setting, certificate or key, not source code): follow the fix steps and verify commands under Standards."
+                  ? `No automatic code change for this asset (a setting, certificate or key, not source code): follow the fix steps and verify commands ${standardsTab ? "under Standards" : "in the details above"}.`
                   : "No automatic code change for this finding: follow the steps under Standards."}
               </p>
             )}
@@ -396,9 +401,11 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
             )}
           </TabsContent>
 
-          <TabsContent value="details" className="mt-3">
-            <KbFindingDetails details={data.details ?? []} />
-          </TabsContent>
+          {standardsTab && (
+            <TabsContent value="details" className="mt-3">
+              <KbFindingDetails details={data.details ?? []} />
+            </TabsContent>
+          )}
         </Tabs>
       )}
     </div>
