@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import api from "@/utils/interceptors";
 
+import type { AgilityBaseline, AgilitySubjectsPage } from "./baseline";
 import type { AgilityModel, GradeModel } from "./model";
 
 export const gradeKeys = {
@@ -45,4 +46,26 @@ export function useAgilityModel(teamId: number | undefined, enabled = true) {
     staleTime: MODEL_STALE_MS,
     retry: 1,
   });
+}
+
+/** GET /{team}/cbom/agility: the team's crypto-agility baseline (CB-25), one page of the systems table. */
+export async function getCbomAgilityBaseline(teamId: number, after: string | null = null, limit = 50): Promise<AgilityBaseline> {
+  const response = await api.get(`/${teamId}/cbom/agility`, { params: { limit, ...(after ? { after } : {}) } });
+  return response.data as AgilityBaseline;
+}
+
+/** GET /{team}/cbom/agility/subjects: the assets of one fix class and/or one system, one page. */
+export async function getCbomAgilitySubjects(teamId: number, params: {
+  fixClass?: string | null; system?: string | null; view?: "all" | "excl_pq"; after?: string | null; limit?: number;
+}): Promise<AgilitySubjectsPage> {
+  const response = await api.get(`/${teamId}/cbom/agility/subjects`, {
+    params: {
+      limit: params.limit ?? 50,
+      view: params.view ?? "all",
+      ...(params.fixClass ? { fix_class: params.fixClass } : {}),
+      ...(params.system ? { system: params.system } : {}),
+      ...(params.after ? { after: params.after } : {}),
+    },
+  });
+  return response.data as AgilitySubjectsPage;
 }

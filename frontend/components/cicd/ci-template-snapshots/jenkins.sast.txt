@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        CICD_API_KEY = '<your DevSecShield CI/CD API key>'
+        CICD_API_KEY = credentials('CICD_API_KEY')
         SCAN_API_URL = 'https://api.example.test/cicd/sast/scan'
     }
 

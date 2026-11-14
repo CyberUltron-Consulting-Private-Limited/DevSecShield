@@ -518,6 +518,10 @@ class CbomCollectionSettings(SQLModel, table=True):
     # Refuse scan nodes that do not sign their requests (enrolled before signing existed, or an old node version).
     require_signed_nodes: bool = Field(default=False)
     risk_model: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
+    # CB-38 PR-4: Jira project (key such as "SEC", or a numeric project id) and issue type for CBOM Sources tickets;
+    # the credentials stay in the team's integration settings (the code lane's)
+    jira_project_key: str | None = Field(default=None, max_length=32)
+    jira_issue_type: str | None = Field(default=None, max_length=64)
     stop_all_changed_by: int | None = Field(default=None)
     stop_all_changed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_by_user_id: int | None = Field(default=None)
@@ -654,10 +658,107 @@ class CbomRemediationAssignment(SQLModel, table=True):
     target_date: str | None = Field(default=None, max_length=10)  # YYYY-MM-DD
     status: str = Field(default="open", max_length=16)  # open | in_progress | done | accepted_risk
     note: str | None = Field(default=None, max_length=500)
+    # CB-38 PR-4: the Jira issue of this asset (one per stable key, across runs) and when the status last became done
+    ticket_key: str | None = Field(default=None, max_length=64)
+    ticket_url: str | None = Field(default=None, max_length=512)
+    # the claim of the request creating the issue (taken and committed before the Jira call; run_tickets)
+    ticket_state: str | None = Field(default=None, max_length=16)  # claimed | created
+    ticket_claim: str | None = Field(default=None, max_length=32)
+    ticket_claimed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    done_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_by_user_id: int | None = Field(default=None)
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+
+
+# ========================================= estate store (CB-20) =========================================
+class CbomEstateSource(SQLModel, table=True):
+    """Per team and source (``source_ref`` = the source uid): the newest collect job the estate store has written.
+    A PRESENT observation of the source was read in this job (its row: ``(latest_job_id, latest_attempt,
+    observation.row_key)``), so present observations are not rewritten every run (CB-20 scale budget)."""
+    __tablename__ = "cbomestatesource"
+    __table_args__ = (UniqueConstraint("team_id", "source_ref", name="uq_cbomestatesource_team_source"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    source_ref: str = Field(max_length=255)
+    source_id: int | None = Field(default=None)
+    source_name: str | None = Field(default=None, max_length=255)
+    source_kind: str | None = Field(default=None, max_length=32)
+    latest_job_id: int = Field()
+    latest_attempt: int = Field(default=1)
+    latest_run_id: int | None = Field(default=None)
+    latest_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    latest_status: str = Field(max_length=16)  # the job's status: success | failed | cancelled ...
+    latest_comparable: bool = Field(default=False)  # drift.job_comparable: a complete collection
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+class CbomEstateTeam(SQLModel, table=True):
+    """Per team: whether the estate store missed a run's write (it failed and was rolled back to its savepoint while
+    drift committed). ``stale`` stays set until ``estate.backfill`` has replayed the team's runs."""
+    __tablename__ = "cbomestateteam"
+    __table_args__ = (UniqueConstraint("team_id", name="uq_cbomestateteam_team"),)
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    stale: bool = Field(default=False)
+    stale_run_id: int | None = Field(default=None)  # the first run whose write was missed
+    stale_reason: str | None = Field(default=None, max_length=300)
+    stale_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    repaired_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+class CbomEstateAsset(SQLModel, table=True):
+    """One asset of a team's estate, keyed by its cross-source asset key (CB-21; ``obs:<observation key>`` when the
+    asset has no cross-source identity or its correlation is missing). Written by ``estate.record_run`` inside the
+    drift compare-and-set, only when something about it changed; never graded here (CB-19/CB-23 read its latest
+    stored row through ``estate.latest_rows``)."""
+    __tablename__ = "cbomestateasset"
+    __table_args__ = (UniqueConstraint("team_id", "asset_key", name="uq_cbomestateasset_team_key"),
+                      _SaIndex("ix_cbomestateasset_team_type_key", "team_id", "asset_type", "asset_key"),
+                      _SaIndex("ix_cbomestateasset_team_presence_key", "team_id", "presence", "asset_key"),
+                      _SaIndex("ix_cbomestateasset_team_updated", "team_id", "updated_run_id"))
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    asset_key: str = Field(max_length=64)
+    key_kind: str = Field(max_length=16)  # cross | source | not_correlated
+    key_basis: str | None = Field(default=None, max_length=16)  # certificate | endpoint | cloud (cross keys)
+    asset_type: str = Field(max_length=32)
+    label: str | None = Field(default=None, max_length=255)
+    presence: str = Field(default="present", max_length=16)  # present | not_read | removed
+    presence_reason: str | None = Field(default=None, max_length=300)
+    first_seen_run_id: int | None = Field(default=None)
+    first_seen_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    updated_run_id: int = Field(default=0)  # the run whose write last changed the row
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+
+
+class CbomEstateObservation(SQLModel, table=True):
+    """One estate asset as one source last read it. ``seen_*``: the job that last read it, for an observation that
+    is not present any more (a present one was read in the source's latest job, ``CbomEstateSource``)."""
+    __tablename__ = "cbomestateobservation"
+    __table_args__ = (UniqueConstraint("team_id", "asset_key", "source_ref", name="uq_cbomestateobs_team_key_source"),
+                      _SaIndex("ix_cbomestateobs_team_source", "team_id", "source_ref"))
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id")
+    asset_key: str = Field(max_length=64)
+    source_ref: str = Field(max_length=255)
+    observation_key: str = Field(max_length=40)  # identity.stable_key: what drift compares within the source
+    row_key: str = Field(max_length=64)  # cbomcollectedasset.asset_key of the observed row (unique per job attempt)
+    asset_type: str = Field(max_length=32)
+    target: str | None = Field(default=None, max_length=255)
+    location: str | None = Field(default=None, max_length=512)
+    occurrences: int = Field(default=1)  # rows of the job with this asset key (one certificate in many chains)
+    presence: str = Field(default="present", max_length=16)  # present | not_read | removed
+    presence_reason: str | None = Field(default=None, max_length=300)
+    seen_job_id: int = Field()
+    seen_attempt: int = Field(default=1)
+    seen_run_id: int | None = Field(default=None)
+    seen_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
+    first_seen_run_id: int | None = Field(default=None)
+    state_run_id: int = Field(default=0)  # the run whose write last changed the row
+    updated_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
 
 
 # ========================================= integrations (WP11) =========================================

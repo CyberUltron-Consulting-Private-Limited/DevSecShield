@@ -22,6 +22,10 @@ def get_user_integration_team_from_api_key(api_key: str) -> tuple[int, int, int,
     Supports both legacy plaintext keys and new hashed keys.
     """
     try:
+        if not api_key or api_key.startswith("revoked:"):
+            # a revoked integration stores "revoked:<random>" (utilities/cicd/api_keys.py); the legacy plaintext
+            # lookup below must never match it
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
         engine = get_db()
         api_key_hash = hash_api_key(api_key)
         
@@ -136,7 +140,8 @@ def get_user_and_integration_id(api_key_header: str = Security(api_key_header)):
         if not user_id or not integration_id or not team_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
         
-        console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with API key ******{api_key[-6:]}", style="bold yellow")
+        # no part of the key in the log (the UI shows at most its last 4 characters)
+        console.print(f"User ID: {user_id}, Integration ID: {integration_id} has accessed the API with its CI/CD API key", style="bold yellow")
         return {
             "user_id": user_id,
             "integration_id": integration_id,

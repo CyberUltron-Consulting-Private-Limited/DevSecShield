@@ -83,7 +83,7 @@ export function NodeDownloads({
                   <Button
                     variant={kind === downloadKinds(method)[0] ? "default" : "outline"}
                     size="sm"
-                    className="cursor-pointer"
+                    className="cursor-pointer h-auto max-w-full whitespace-normal break-words text-left"
                     disabled={!ok || link.isPending}
                     title={a?.sha256 ? `SHA-256 ${a.sha256}` : undefined}
                     onClick={() => link.mutate(kind)}
