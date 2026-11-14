@@ -702,7 +702,9 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     elif asset_type in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca"):
         _cert_rules(out, facts, algorithm, key_size, now)
         identity = cert_identity_input(algorithm, facts)
-        if asset_type == "certificate" and facts.get("source") == "aws" and facts.get("status") in _ACM_NEVER_ISSUED:
+        status = facts.get("status")
+        if asset_type == "certificate" and facts.get("source") == "aws" and isinstance(status, str) and \
+                status in _ACM_NEVER_ISSUED:  # a malformed status (a list, a dict) is unread, never a TypeError
             qv = None  # an ACM request that was never issued holds no certificate and no key
         else:
             qv = quantum_vulnerable(identity)
