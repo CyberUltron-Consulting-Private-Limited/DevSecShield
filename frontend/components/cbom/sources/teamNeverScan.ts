@@ -113,9 +113,10 @@ export function exclusionSaveError(error: unknown): string | null {
 }
 
 /**
- * What the node sweeps for a range (N3, 14 Nov 2026; scan_node netutil.HOST_ONLY_MAX_PREFIX, backend
- * targets.scanned_interval): a /24 or larger leaves out its own network and broadcast address, a /25 or smaller is
- * scanned whole, so a /24 split into two /25s still scans .127 and .128.
+ * What the node sweeps for a range (N3, 14 Nov 2026, and the review of #250; scan_node netutil.boundary_skips, backend
+ * targets.boundary_skips): network and broadcast addresses are skipped only at the outer edges of the network your
+ * ranges form together, so a /23 entered as two /24s still scans x.x.0.255 and x.x.1.0, and a subnet entered on its
+ * own skips its own network and broadcast addresses.
  */
 export const RANGE_HINT =
-  "A /16 or smaller, one IP, or a-b. A /24 or larger skips its network and broadcast addresses; a /25 or smaller (half of a split /24, say) is scanned whole.";
+  "A /16 or smaller, one IP, or a-b. Network and broadcast addresses are skipped only at the edges of the network your ranges form together: a /24 split into two /25s still scans .127 and .128; a subnet on its own skips its own.";

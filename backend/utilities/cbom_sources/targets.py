@@ -245,30 +245,71 @@ def parse_targets(
                 parsed.hostnames.append(value_)
         else:
             parsed.raw_size += value_[2] - value_[1] + 1
-            scanned = scanned_interval(value_, canonical)
-            if scanned is not None:
-                raw.append(scanned)
+            raw.append(value_)
     if parsed.raw_size > max_addresses:
         raise TargetError(f"{parsed.raw_size:,} addresses; the limit is {max_addresses:,} per source")
-    parsed.intervals = merge(raw)
+    # what the scan node scans: every address, minus the network/broadcast edges of the block the lines form
+    parsed.intervals = subtract(merge(raw), [(4, a, a) for a in boundary_skips(parsed.normalized)])
     return parsed
 
 
-# An IPv4 CIDR of this prefix or larger (/24 ... /16) leaves out its own network and broadcast address; a smaller one
-# (/25 to /32) is scanned whole: it is most often a slice of a larger network (a /24 split into two /25s), whose first
-# and last addresses are real hosts (N3, 14 Nov 2026).  Same constant as the node (netutil.HOST_ONLY_MAX_PREFIX).
-HOST_ONLY_MAX_PREFIX = 24
+# Network and broadcast addresses (N3, 14 Nov 2026; review of #250): an IPv4 CIDR line of /30 or larger leaves out its
+# network or broadcast address only where that address is an OUTER EDGE of the contiguous block the configured lines
+# form together, i.e. of the network the customer actually entered.  A /23 split into two /24s keeps x.x.0.255 and
+# x.x.1.0; a /24 split into two /25s keeps .127 and .128; a real /29 on its own still skips its own network and
+# broadcast.  An address written out (alone or in an a-b range) is always scanned.  For a network range the lines are
+# all of the team's range records (enabled or not): the backend sends each range its ``skip_addresses`` (jobs.claim),
+# so the node and the counts here agree by construction; a server source's lines are its own target list, which the
+# node sees whole and applies the same rule to (scan_node netutil.boundary_skips; agreement test in
+# test_never_scan_node_agreement.py).
 
 
-def scanned_interval(interval: Interval, canonical: str) -> Interval | None:
-    """The addresses the scan node scans for one target line (netutil.iter_line_ips): every address of a range, an
-    IPv6 network or an IPv4 /25 or smaller, but only the host addresses of an IPv4 /24 or larger (not its network and
-    broadcast addresses).  ``canonical`` is the stored form the node receives (a mapped network is stored as IPv4)."""
-    version, start, end = interval
-    if version == 4 and "/" in canonical and end - start + 1 >= 2 ** (32 - HOST_ONLY_MAX_PREFIX):
-        return (version, start + 1, end - 1)
-    return interval
+def boundary_skips(lines: list[str]) -> set[int]:
+    """IPv4 addresses (as ints) the scan node leaves out of ``lines`` as network/broadcast addresses (rule above)."""
+    every: list[Interval] = []
+    nets: list[tuple[int, int]] = []
+    written: list[Interval] = []
+    for line in lines:
+        try:
+            kind, value, canonical = parse_line(line)
+        except TargetError:
+            continue
+        if kind != "net" or value[0] != 4:
+            continue
+        every.append(value)
+        if "/" in canonical:
+            if value[2] - value[1] + 1 >= 4:  # a /31 and a /32 have no network or broadcast address
+                nets.append((value[1], value[2]))
+        else:
+            written.append(value)
+    blocks = merge(every)
+    starts, ends = {b[1] for b in blocks}, {b[2] for b in blocks}
+    skip = {first for first, _last in nets if first in starts} | {last for _first, last in nets if last in ends}
+    return {a for a in skip if not any(v[1] <= a <= v[2] for v in written)}
 
+
+def range_skip_addresses(cidr: str, configured: list[str]) -> list[str]:
+    """The addresses of network range ``cidr`` the node leaves out, given every range the team configured (``cidr``
+    included): sent to the node in the range's scope as ``skip_addresses``."""
+    try:
+        kind, value, _canonical = parse_line(cidr)
+    except TargetError:
+        return []
+    if kind != "net" or value[0] != 4:
+        return []
+    skips = boundary_skips(list(dict.fromkeys([cidr, *configured])))
+    return [str(ipaddress.IPv4Address(a)) for a in sorted(skips) if value[1] <= a <= value[2]]
+
+
+def swept_interval_parts(cidr: str, configured: list[str]) -> list[Interval]:
+    """What the node sweeps for network range ``cidr`` (before the never-scan list): its addresses minus its
+    ``range_skip_addresses``."""
+    kind, value, _canonical = parse_line(cidr)
+    if kind != "net":
+        return []
+    skips = [(4, a, a) for a in boundary_skips(list(dict.fromkeys([cidr, *configured]))) if value[1] <= a <= value[2]] \
+        if value[0] == 4 else []
+    return subtract([value], skips)
 
 def _removed(exclusions: ParsedTargets | None) -> list[Interval]:
     """What the node refuses: the list, the loopback when a name that is loopback by definition is listed, the NAT64

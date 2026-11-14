@@ -78,8 +78,29 @@ def node_status(node: CbomScanNode | None, now: _dt.datetime) -> str:
     return "offline"
 
 
-def source_targets(source: CbomCollectionSource, settings: CbomCollectionSettings) -> dict[str, Any]:
-    """Units the source covers after the team's never-scan list (and its own, for servers)."""
+def team_range_cidrs(session, team_id: int) -> list[str]:
+    """Every network range the team configured (enabled or not): together they are the networks the customer entered,
+    whose outer network/broadcast addresses the sweep leaves out (targets.boundary_skips, N3)."""
+    from sqlmodel import select
+
+    rows = session.exec(select(CbomCollectionSource.config).where(
+        CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+    return [str((cfg or {}).get("cidr") or "") for cfg in rows if (cfg or {}).get("cidr")]
+
+
+def _ranges_of(source: CbomCollectionSource, team_cidrs: list[str] | None) -> list[str]:
+    if team_cidrs is not None:
+        return team_cidrs
+    from sqlalchemy.orm import object_session
+
+    session = object_session(source)
+    return team_range_cidrs(session, source.team_id) if session is not None else []
+
+
+def source_targets(source: CbomCollectionSource, settings: CbomCollectionSettings,
+                   team_cidrs: list[str] | None = None) -> dict[str, Any]:
+    """Units the source covers after the team's never-scan list (and its own, for servers).  ``team_cidrs``: every
+    network range of the team (``team_range_cidrs``), when the caller has them; otherwise they are read here."""
     cfg = source.config or {}
     spec = KINDS.get(source.kind)
     group = spec.group if spec else "other"
@@ -107,9 +128,10 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
         return {"units": count, "unit": "targets"}
     if group == "network":
         try:
-            kind, interval, canonical = T.parse_line(cfg.get("cidr", ""))
-            scanned = T.scanned_interval(interval, canonical) if kind == "net" else None  # what the sweep visits
-            intervals = T.in_scope(T.ParsedTargets(intervals=[scanned]), team_exclusions(settings))[0] if scanned else []
+            # what the sweep visits: the range minus the outer network/broadcast edges of the networks the team's
+            # ranges form together (N3), then the never-scan list
+            swept = T.swept_interval_parts(cfg.get("cidr", ""), _ranges_of(source, team_cidrs))
+            intervals = T.in_scope(T.ParsedTargets(intervals=swept), team_exclusions(settings))[0] if swept else []
         except T.TargetError:
             intervals = []
         return {"units": T.size(intervals), "unit": "addresses", "blocks": T.count_blocks(intervals),
@@ -128,14 +150,14 @@ def network_sweep_totals(sources: list[CbomCollectionSource], settings: CbomColl
     counts it in each); a disabled range counts nothing (plan_run skips it).  Same intervals as plan_run's units."""
     merged: list[T.Interval] = []
     enabled = disabled = 0
-    for source in sources:
-        if source.kind != "network_range":
-            continue
+    ranges = [s for s in sources if s.kind == "network_range"]
+    cidrs = [str((s.config or {}).get("cidr") or "") for s in ranges if (s.config or {}).get("cidr")]
+    for source in ranges:
         if not source.enabled:
             disabled += 1
             continue
         enabled += 1
-        merged += list(source_targets(source, settings).get("intervals") or [])
+        merged += list(source_targets(source, settings, cidrs).get("intervals") or [])
     return {"addresses": T.size(T.merge(merged)), "ranges_enabled": enabled, "ranges_disabled": disabled}
 
 @dataclass
@@ -221,6 +243,8 @@ def plan_run(
         ).all()
     }
     wanted = set(source_ids) if source_ids else None
+    range_cidrs = [str((s.config or {}).get("cidr") or "") for s in sources
+                   if s.kind == "network_range" and (s.config or {}).get("cidr")]
     plan = Plan()
     counted_blocks: list[T.Interval] = []
     for source in sources:
@@ -234,7 +258,7 @@ def plan_run(
         if wanted is not None and source.id not in wanted:
             continue
         node = nodes.get(source.node_id) if source.node_id else None
-        info = source_targets(source, settings)
+        info = source_targets(source, settings, range_cidrs)
         units = int(info["units"])
         if org_estimate_stale(source):
             log("aws org estimate stale: re-validate", team=team_id, source=source.id, accounts=units)
