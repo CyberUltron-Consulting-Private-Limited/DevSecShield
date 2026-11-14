@@ -28,9 +28,7 @@ Exit status: 0 success, 1 the collection failed (the document says why), 2 refus
 from __future__ import annotations
 
 import argparse
-import base64
 import datetime as _dt
-import gzip
 import hashlib
 import json
 import os
@@ -50,19 +48,17 @@ from typing import Any
 
 from zs_scan_node import VERSION
 from zs_scan_node import commands as C
+# the document format, its validation and the chunked output live in transports/zsdoc.py (stdlib only), which the
+# backend carries a byte-identical copy of; they are re-exported here for the CLI and older imports
+from zs_scan_node.transports.zsdoc import (  # noqa: F401
+    CHUNK_PREFIX, DEFAULT_CHUNK_BYTES, FORMAT, MAX_ASSETS, MAX_CHUNK_BYTES, NONCE_RE, STATUSES, ChunkError,
+    encode_chunks, reassemble, validate_document)
 
-FORMAT = "zs-collect/1"
-NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 TMP_DIR_NAME_RE = re.compile(r"zs-collect\.[A-Za-z0-9_.-]+")  # mktemp -d .../zs-collect.XXXXXXXX (the wrapper)
 OUTPUT_CAP = 4 * 1024 * 1024  # the same caps as the SSH Session (linux_ssh.OUTPUT_CAP, 64 KB of stderr)
 STDERR_CAP = 65536
 CMD_TIMEOUT = 60
-MAX_CHUNK_BYTES = 512 * 1024
-DEFAULT_CHUNK_BYTES = 384 * 1024  # base64 + the line header stay well under AWX's event size
-CHUNK_PREFIX = "ZSC1"
 SAFE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
-STATUSES = ("success", "failure", "cancelled")
-MAX_ASSETS = 50_000  # backend jobs.MAX_ASSETS_PER_ATTEMPT
 
 
 class NotAllowed(Exception):
@@ -75,10 +71,6 @@ class Refused(Exception):
     def __init__(self, code: str, detail: str) -> None:
         super().__init__(detail)
         self.code = code
-
-
-class ChunkError(Exception):
-    """Chunked output that is incomplete, out of place or altered."""
 
 
 # ----------------------------------------------------------------------------- allow-list
@@ -147,8 +139,9 @@ class LocalSession:
         self.user = user
         self.env = {"PATH": SAFE_PATH, "LC_ALL": "C", "HOME": tmp_dir, "TMPDIR": tmp_dir, "USER": user,
                     "LOGNAME": user, "SHELL": "/bin/sh"}
-        # this process (and the PyInstaller bootloader that started it) map libcrypto: never report them
-        self.exclude_pids = {os.getpid()}
+        # this process, the PyInstaller bootloader that started it and the tool's own processes that launched it map
+        # libcrypto: never report them (see transient_ancestors)
+        self.exclude_pids = {os.getpid()} | set(transient_ancestors())
         if getattr(sys, "frozen", False):
             self.exclude_pids.add(os.getppid())
         self.lines: list[str] = []
@@ -208,6 +201,56 @@ class LocalSession:
 
     def close(self) -> None:
         pass
+
+
+RUN_WINDOW_S = 120  # how long before zs-collect a transport's own process for this run may have started
+
+
+def _stat(pid: int, proc: str = "/proc") -> tuple[int, int, str] | None:
+    """(parent pid, start time in clock ticks since boot, command name) from ``/proc/<pid>/stat`` (fields 4, 22, 2)."""
+    try:
+        with open(f"{proc}/{pid}/stat", encoding="ascii", errors="replace") as f:
+            text = f.read()
+        comm = text[text.index("(") + 1:text.rindex(")")]
+        fields = text[text.rindex(")") + 2:].split()  # after "pid (comm) ": state is field 3
+        return int(fields[1]), int(fields[19]), comm
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def transient_ancestors(pid: int | None = None, proc: str = "/proc", limit: int = 64,
+                        window_s: float = RUN_WINDOW_S) -> list[int]:
+    """The processes that launched zs-collect for this run: its ancestors (from its parent, or from ``pid``) that
+    started at most ``window_s`` before zs-collect itself (or before ``pid``).  They are the transport's own
+    short-lived processes (the SSH session Ansible or salt-ssh opened, salt-call, a salt-minion job, sudo, the
+    launcher's shell), which the SSH path never sees on the host.  A parent never starts after its child, so the walk
+    stops at the first older ancestor: a service (sshd, the salt-minion and its long-lived workers, the SSM agent),
+    wherever it sits in the tree, and everything above it, is kept.
+
+    The window alone would also take a service (re)started less than ``window_s`` before the run (an agent that just
+    updated itself, a host that just booted).  So the walk also stops, keeping it, at a direct child of PID 1 that is
+    not a copy of PID 1 itself: what the service manager started is a service by construction.  A child of PID 1
+    with PID 1's own command name is PID 1 forking per connection or per job (sshd or a salt-minion running as a
+    container's PID 1) and is part of the run.  PID 1 is never excluded, and an ancestor whose stat cannot be read
+    ends the walk (it is kept).  A transport slower than the window to start zs-collect leaves its oldest process in."""
+    out: list[int] = []
+    anchor = _stat(os.getpid() if pid is None else pid, proc)
+    if anchor is None:
+        return out
+    since = anchor[1] - window_s * (os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100)
+    init = _stat(1, proc)
+    current = os.getppid() if pid is None else pid
+    for _ in range(limit):
+        if current is None or current <= 1:
+            break
+        info = _stat(current, proc)
+        if info is None or info[1] < since:
+            break
+        if info[0] == 1 and (init is None or info[2] != init[2]):
+            break  # started by the service manager (PID 1): a service, however young
+        out.append(current)
+        current = info[0]
+    return out
 
 
 # ----------------------------------------------------------------------------- privileges
@@ -346,112 +389,6 @@ def refusal_document(nonce: str, label: str, tier: int, code: str, detail: str) 
                                                           "duration_ms": 0, "assets": 0, "counted": True}],
                            "truncated": False, "assets_lost": 0, "duration_s": 0},
                 "assets": [], "elapsed_s": 0})
-    return doc
-
-
-# ----------------------------------------------------------------------------- validation (node, cloud worker)
-_ASSET_LIMITS = {"type": 32, "target": 255, "location": 512, "name": 255, "algorithm": 64, "protocol": 32}
-
-
-def validate_document(doc: Any, nonce: str, version: str | None = None) -> str | None:
-    """None when ``doc`` is a zs-collect/1 document for this job (its nonce, and its version when given), else the
-    reason it is refused.  Mirrors schemas/zs-collect-1.schema.json and the backend's AssetIn limits."""
-    if not isinstance(doc, dict):
-        return "not a JSON object"
-    if doc.get("format") != FORMAT:
-        return f"format is not {FORMAT}"
-    if doc.get("run_nonce") != nonce:
-        return "run nonce does not match this job"
-    if version is not None and doc.get("collector_version") != version:
-        return f"collector version {str(doc.get('collector_version'))[:20]} is not the expected {version}"
-    for name in ("target_label", "started_at", "finished_at"):
-        if not isinstance(doc.get(name), str):
-            return f"{name} missing"
-    if doc.get("tier") not in (1, 2):
-        return "tier must be 1 or 2"
-    if not isinstance(doc.get("host"), dict):
-        return "host missing"
-    if doc.get("status") not in STATUSES:
-        return "status is not success, failure or cancelled"
-    if doc.get("error") is not None and not isinstance(doc.get("error"), str):
-        return "error must be text"
-    result = doc.get("result")
-    if not isinstance(result, dict) or not isinstance(result.get("counts"), dict) \
-            or not isinstance(result.get("targets"), list):
-        return "result missing"
-    assets = doc.get("assets")
-    if not isinstance(assets, list) or len(assets) > MAX_ASSETS:
-        return "assets missing or more than 50,000"
-    for i, a in enumerate(assets):
-        if not isinstance(a, dict):
-            return f"asset {i} is not an object"
-        if not isinstance(a.get("location"), str) or not a["location"]:
-            return f"asset {i} has no location"
-        for key, limit in _ASSET_LIMITS.items():
-            value = a.get(key)
-            if key == "type" and not isinstance(value, str):
-                return f"asset {i} has no type"
-            if value is not None and (not isinstance(value, str) or len(value) > limit):
-                return f"asset {i}: {key} longer than {limit}"
-        ks = a.get("key_size")
-        if ks is not None and (not isinstance(ks, int) or isinstance(ks, bool) or not 0 <= ks <= 1_000_000):
-            return f"asset {i}: key_size out of range"
-        facts = a.get("facts", {})
-        if not isinstance(facts, dict) or len(json.dumps(facts, default=str)) > 16 * 1024:
-            return f"asset {i}: facts missing or larger than 16 KB"
-    return None
-
-
-# ----------------------------------------------------------------------------- chunked output
-def encode_chunks(doc: dict, nonce: str, chunk_bytes: int = DEFAULT_CHUNK_BYTES) -> list[str]:
-    """``ZSC1 <nonce> <i>/<n> <sha256 of the gzip> <base64 slice>`` lines, each at most ``chunk_bytes`` long."""
-    if not 1024 <= chunk_bytes <= MAX_CHUNK_BYTES:
-        raise ValueError(f"chunk size must be 1024..{MAX_CHUNK_BYTES} bytes")
-    blob = gzip.compress(json.dumps(doc, separators=(",", ":"), default=str).encode(), mtime=0)
-    digest = hashlib.sha256(blob).hexdigest()
-    data = base64.b64encode(blob).decode()
-    header = len(f"{CHUNK_PREFIX} {nonce} 999999/999999 {digest} ")
-    room = chunk_bytes - header
-    pieces = [data[i:i + room] for i in range(0, len(data), room)] or [""]
-    n = len(pieces)
-    return [f"{CHUNK_PREFIX} {nonce} {i + 1}/{n} {digest} {piece}" for i, piece in enumerate(pieces)]
-
-
-def reassemble(lines: list[str], nonce: str) -> dict:
-    """The document from its chunk lines (any order).  Raises ChunkError if one is missing, foreign or altered."""
-    parts: dict[int, str] = {}
-    total, digest = None, None
-    for raw in lines:
-        fields = str(raw).strip().split(" ")
-        if len(fields) != 5 or fields[0] != CHUNK_PREFIX:
-            raise ChunkError("not a zs-collect chunk")
-        _p, n_nonce, pos, n_digest, data = fields
-        if n_nonce != nonce:
-            raise ChunkError("chunk from another run (nonce)")
-        try:
-            i, n = (int(x) for x in pos.split("/", 1))
-        except ValueError:
-            raise ChunkError("bad chunk position") from None
-        if not 1 <= i <= n or (total is not None and n != total) or (digest is not None and n_digest != digest):
-            raise ChunkError("chunks of different documents")
-        total, digest = n, n_digest
-        if i in parts and parts[i] != data:
-            raise ChunkError(f"chunk {i} arrived twice with different data")
-        parts[i] = data
-    if total is None or len(parts) != total:
-        raise ChunkError(f"{len(parts)} of {total or '?'} chunks")
-    try:
-        blob = base64.b64decode("".join(parts[i] for i in range(1, total + 1)), validate=True)
-    except ValueError:
-        raise ChunkError("chunk data is not base64") from None
-    if hashlib.sha256(blob).hexdigest() != digest:
-        raise ChunkError("checksum mismatch")
-    try:
-        doc = json.loads(gzip.decompress(blob))
-    except (OSError, ValueError, EOFError):
-        raise ChunkError("chunk data does not decompress to JSON") from None
-    if not isinstance(doc, dict):
-        raise ChunkError("not a document")
     return doc
 
 
