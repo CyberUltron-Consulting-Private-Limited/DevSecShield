@@ -387,6 +387,23 @@ def test_trace_zip_is_redacted_and_scanned(tmp_path):
         assert jwt not in zf.read("trace.network").decode() and zf.read("shot.png") == b"\x89PNG"
 
 
+def test_zip_members_in_scan_only_evidence_are_scanned(tmp_path):
+    """M10 (#102 review 5880079554): exports/ and db/ are never rewritten (their bytes are evidence), but a zip there
+    is still read member by member: a token left inside one fails G17. Kinds and paths only, never values."""
+    import zipfile
+    run = FakeRun(tmp_path).write()
+    jwt = "eyJ" + "a" * 20 + ".eyJ" + "b" * 20 + "." + "c" * 24
+    for sub in ("exports", "db"):
+        with zipfile.ZipFile(run / sub / "evidence.zip", "w") as zf:
+            zf.writestr("body.json", json.dumps({"note": jwt}))
+            zf.writestr("clean.txt", "nothing here")
+    before = {sub: (run / sub / "evidence.zip").read_bytes() for sub in ("exports", "db")}
+    problems = gate.redact_run(run, [])
+    assert sorted(problems) == ["db/evidence.zip!body.json: jwt", "exports/evidence.zip!body.json: jwt"]
+    assert all(jwt not in p for p in problems)
+    assert {sub: (run / sub / "evidence.zip").read_bytes() for sub in ("exports", "db")} == before  # not rewritten
+
+
 def test_export_serial_number_and_run_verdict_are_judged(tmp_path):
     """m2 / O-10: the export names its run (urn:uuid serial), and a re-judged row keeps the DB's run verdict."""
     fr = FakeRun(tmp_path)

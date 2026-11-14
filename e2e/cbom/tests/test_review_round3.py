@@ -284,6 +284,7 @@ def _db_created(fr: FakeRun, value: str) -> None:
     ("2026-11-12 08:49:00", False),   # N9: ten minutes before Start
     ("2026-11-12 09:02:30", True),    # G10 end 09:00:30 + 120 s
     ("2026-11-12 09:10:30", False),   # R1: after G10 end + slack
+    ("2026-11-12 09:03:00", False),   # M08 (#102 review 5880079554): after G10 end + slack, before G12 end + slack
 ])
 def test_db_rows_window_bounds(tmp_path, created, ok):
     fr = FakeRun(tmp_path)

@@ -19,6 +19,8 @@ harness/                   the judge: per-row join keyed by asset id (UI DOM, AP
 known-fail.yaml            the strict ledger: every failing check is fixed or listed with an issue and owner
 harness/negative.py        negative controls: 47 deliberately wrong CBOMs made from a real run's evidence; each must FAIL
                            through the check it is aimed at (INTENDED), never an incidental one
+harness/riskfields.py      the run API's quantum risk grade (CB-19 qg-1, #114) and fix class (CB-24, #113) on every item,
+                           by the specs' rule tables; their values against the oracle once the lab states them
 harness/identity.py        stable identities of checks across runs (asset ids -> type@location, lab dates relative to
                            the oracle's generated_at, digests -> <hex:N>): what ledger rows pin
 tools/mutants.py           one-line mutants of the judge; each must be killed by tests/
@@ -64,7 +66,10 @@ CI (ci-gate, backend job) runs `tests/` only: the judge's unit suite, the golden
 sanitised snapshot of a real Tier-L run under `tests/golden/`, re-judged with every wrong CBOM), the O-1 import lint and
 the repository ledger's schema. CI never sees a live run: it cannot tell whether `known-fail.yaml`'s pinned identities
 are still true on dev. Only `run-gate.sh` on the local stack (Tier L: the dss-staging stack, Docker, the CB-02 lab,
-Chromium) can, so **a ledger edit needs a live run in the same PR**.
+Chromium) can, so **a ledger edit needs a live run in the same PR**. One exception: a judge change that reads the
+same evidence differently (a new check, a reader for a new export field) re-pins the rows on the run the ledger is
+already pinned to (the golden run), flips no row, and names the product PR that will flip the new rows; those rows stay
+KNOWN-FAIL until a live run on a dev with that product PR re-pins them.
 
 How a PR proves the gate (DA §4.6): run `run-gate.sh <head>` on the PR head rebased on dev, under `stack.lock`; no new
 failure (nothing blocking, every ledger row `holds` or `not-run-ok`); post the bundle sha256

@@ -14,6 +14,7 @@
 
 # ---------------------------------------------------------------------------- build identity (CB-03, PR #72)
 - row: PRE-build-identity
+  # owner's fix merged on dev in #72 (fb17c74): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G0, G12]
   match: {check: [build_health, build_header, build_frontend_meta, build_node_label, engine_version_eq_build]}
   issue: "#73"
@@ -29,6 +30,7 @@
 
 # ---------------------------------------------------------------------------- product rows (DA §4.4 + gate runs)
 - row: KF-4
+  # owner's fix merged on dev in #110 (0d33012): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, target_id: z09, field: [present, protocol_versions, cipher_suites, cipher_suites/complete,
           groups, groups/complete, groups/must_report, algorithm, quantum_vulnerable]}
@@ -41,12 +43,13 @@
     - {"id": "G11/oracle/run1/z09/tls/algorithm", "expected": "one of TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (derived: negotiated suite is accepted)", "observed": null}
     - {"id": "G11/oracle/run1/z09/tls/cipher_suites", "expected": "non-empty subset of ['TLS_AES_128_GCM_SHA256', 'TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256', 'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256']", "observed": []}
     - {"id": "G11/oracle/run1/z09/tls/cipher_suites/complete", "expected": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"], "observed": []}
-    - {"id": "G11/oracle/run1/z09/tls/groups", "expected": "non-empty subset of ['secp256r1', 'x25519']", "observed": ["<NULL>"]}
-    - {"id": "G11/oracle/run1/z09/tls/groups/complete", "expected": ["secp256r1", "x25519"], "observed": ["<NULL>"]}
+    - {"id": "G11/oracle/run1/z09/tls/groups", "expected": "non-empty subset of ['secp256r1', 'x25519']", "observed": []}
+    - {"id": "G11/oracle/run1/z09/tls/groups/complete", "expected": ["secp256r1", "x25519"], "observed": []}
     - {"id": "G11/oracle/run1/z09/tls/groups/must_report", "expected": "one per class: classical", "observed": {"missing": ["classical"]}}
     - {"id": "G11/oracle/run1/z09/tls/protocol_versions", "expected": ["TLSv1.2", "TLSv1.3"], "observed": null}
     - {"id": "G11/oracle/run1/z09/tls/quantum_vulnerable", "expected": true, "observed": null}
 - row: KF-5
+  # owner's fix merged on dev in #110 (0d33012): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, target_id: control, field: extra, reason: extra}
   issue: "#73"
@@ -55,6 +58,7 @@
   expect:
     - {"id": "G11/oracle/run1/control/extra/tls_endpoint@10.231.0.34:443", "expected": "no asset beyond the oracle (closed world)", "observed": "tls_endpoint at 10.231.0.34:443"}
 - row: KF-6
+  # owner's fix merged on dev in #111 (7d036da): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, target_id: sshd-pq, field: [host_keys, algorithm], reason: wrong-value}
   issue: "#73"
@@ -64,6 +68,7 @@
     - {"id": "G11/oracle/run1/sshd-pq/ssh/algorithm", "expected": "one of ssh-ed25519 (derived: a host key the server holds)", "observed": null}
     - {"id": "G11/oracle/run1/sshd-pq/ssh/host_keys", "expected": [{"bits": 256, "fingerprint_sha256": "<ssh-fp>", "type": "ssh-ed25519"}], "observed": {"error": "IncompatiblePeer"}}
 - row: KF-17
+  # owner's fix merged on dev in #111 (7d036da): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, target_id: sshd-legacy, field: host_keys, reason: wrong-value}
   issue: "#73"
@@ -73,6 +78,7 @@
   expect:
     - {"id": "G11/oracle/run1/sshd-legacy/ssh/host_keys", "expected": [{"bits": 1024, "fingerprint_sha256": "<ssh-fp>", "type": "ssh-rsa"}, {"bits": 256, "fingerprint_sha256": "<ssh-fp>", "type": "ssh-ed25519"}], "observed": {"bits": 256, "fingerprint_sha256": "<hex:64>", "key_type": "ssh-ed25519"}}
 - row: KF-18
+  # owner's fix merged on dev in #110 (0d33012): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, field: [cipher_suites/complete, groups/complete], reason: sample-not-enumeration}
   issue: "#100"
@@ -86,6 +92,7 @@
     - {"id": "G11/oracle/run1/z04/tls/cipher_suites/complete", "expected": ["TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"], "observed": ["TLS_AES_128_GCM_SHA256"]}
     - {"id": "G11/oracle/run1/z04/tls/groups/complete", "expected": ["secp256r1", "x25519"], "observed": ["x25519"]}
 - row: KF-18-must-report
+  # owner's fix merged on dev in #110 (0d33012): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: oracle, target_id: z02, field: cipher_suites/must_report, reason: must-report-missing}
   issue: "#100"
@@ -95,6 +102,7 @@
   expect:
     - {"id": "G11/oracle/run1/z02/tls/cipher_suites/must_report", "expected": "lab must_report", "observed": {"missing": ["TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA", "TLS_RSA_WITH_AES_256_CBC_SHA"]}}
 - row: KF-4-5-derived
+  # owner's fix merged on dev in #110 (0d33012): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: derived, field: [closed_world_type, closed_world_quantum]}
   issue: "#73"
@@ -104,12 +112,14 @@
     - {"id": "G11/derived/run1/oracle/by_type", "expected": {"certificate": 12, "ssh_endpoint": 2, "tls_endpoint": 7}, "observed": {"certificate": 10, "ssh_endpoint": 2, "tls_endpoint": 8}}
     - {"id": "G11/derived/run1/oracle/quantum", "expected": 17, "observed": 14}
 - row: KF-9
+  # owner's fix merged on dev in #103 (518868d): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: join, view: export, reason: export-missing,
-          field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id]}
+          field: [key_size, curve, signature_algorithm, groups, pqc_class, provenance, job_id, protocol]}
   issue: "#73"
   owner: CB-06
-  why: "the run export lacks key size, curve, signature algorithm, groups, pqc_class and provenance (R4 p1)"
+  why: "the run export lacks key size, curve, signature algorithm, groups, pqc_class, provenance and zs:protocol
+    (R4 p1; CB-06 v2 §4)"
   expect:
     - {"id": "G11/join/run1/asset/certificate@10.231.0.17:443#chain[0]/curve/export", "expected": "secp256r1", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/certificate@10.231.0.17:443#chain[0]/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
@@ -179,43 +189,52 @@
     - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.23:22/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.23:22/key_size/export", "expected": 256, "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.23:22/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.23:22/protocol/export", "expected": "ssh", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.23:22/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
     - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.24:22/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.24:22/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.24:22/protocol/export", "expected": "ssh", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/ssh_endpoint@10.231.0.24:22/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.17:443/groups/export", "expected": ["X25519"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.17:443/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.17:443/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.17:443/protocol/export", "expected": "TLSv1.3", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.17:443/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.18:443/groups/export", "expected": ["prime256v1"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.18:443/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.18:443/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.18:443/protocol/export", "expected": "TLSv1.2", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.18:443/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.19:443/groups/export", "expected": ["X25519"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.19:443/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.19:443/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.19:443/protocol/export", "expected": "TLSv1.3", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.19:443/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.20:443/groups/export", "expected": ["X25519MLKEM768"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.20:443/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.20:443/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.20:443/protocol/export", "expected": "TLSv1.3", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.20:443/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.21:443/groups/export", "expected": ["X25519MLKEM768"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.21:443/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.21:443/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.21:443/protocol/export", "expected": "TLSv1.3", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.21:443/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
-    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.22:443/groups/export", "expected": ["<NULL>"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.22:443/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.22:443/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.22:443/protocol/export", "expected": "tls", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.22:443/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.26:443/groups/export", "expected": ["prime256v1"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.26:443/job_id/export", "expected": "job:range-10.231.0.16-28", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.26:443/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.26:443/protocol/export", "expected": "TLSv1.0", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.26:443/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
-    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.34:443/groups/export", "expected": ["<NULL>"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.34:443/job_id/export", "expected": "job:range-10.231.0.32-30", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.34:443/pqc_class/export", "expected": "zs:pqc_class present", "observed": "<absent>"}
+    - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.34:443/protocol/export", "expected": "tls", "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.34:443/provenance/export", "expected": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"], "observed": {"absent": ["zs:collector", "zs:node_id", "zs:node_build", "zs:job_id", "zs:attempt", "zs:method", "zs:collected_at", "zs:signed"]}}
 - row: KF-15
+  # owner's fix merged on dev in #103 (518868d): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: join, view: export, field: cipher_suites, reason: export-missing}
   issue: "#89"
@@ -230,6 +249,7 @@
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.21:443/cipher_suites/export", "expected": ["TLS_AES_256_GCM_SHA384"], "observed": "<absent>"}
     - {"id": "G11/join/run1/asset/tls_endpoint@10.231.0.26:443/cipher_suites/export", "expected": ["ECDHE-RSA-AES128-SHA", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_RSA_WITH_AES_128_CBC_SHA"], "observed": "<absent>"}
 - row: KF-16
+  # owner's fix merged on dev in #103 (518868d): stays KNOWN-FAIL until a live gate run on that dev re-pins it
   gate: [G11]
   match: {kind: join, view: export, field: protocol_versions, reason: mismatch}
   issue: "#89"
@@ -380,7 +400,75 @@
   why: "no 'unknown' PQC class (shown as not applicable) and no Q-grade; the posture oracle (OA-10a) is not written"
   expect:
     - {"id": "G11/derived/run1/posture", "verdict": "NOT-RUN"}
+- row: KF-19-api
+  # #114 (aa97b75, CB-19 PR-1) added the grade to the run API on dev: flips with a live gate run on that dev
+  gate: [G11]
+  match: {kind: api, check: qgrade}
+  issue: "#114"
+  owner: CB-19
+  why: "the run API items carry no quantum risk grade (q_grade / q_label / q_reason, CB-19 qg-1)"
+  expect:
+    - {"id": "G11/qgrade/run1/asset/434", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/435", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/436", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/437", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/438", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/439", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/440", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/441", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/442", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/443", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/444", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/445", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/446", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/447", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/448", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/449", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/450", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/451", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/452", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/453", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/454", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/455", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/456", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/457", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+    - {"id": "G11/qgrade/run1/asset/458", "expected": "CB-19 qg-1 grade/label/reason", "observed": {"problems": ["absent"], "values": {"q_grade": "<absent>", "q_label": "<absent>", "q_reason": "<absent>"}}}
+- row: KF-24-api
+  # #113 (3e1c594, CB-24 PR-1) added the fix class to the run API on dev: flips with a live gate run on that dev
+  gate: [G11]
+  match: {kind: api, check: fixclass}
+  issue: "#113"
+  owner: CB-24
+  why: "the run API items carry no crypto-agility fix class (fix_class / fix_class_floor / fix_class_confidence)"
+  expect:
+    - {"id": "G11/fixclass/run1/asset/434", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/435", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/436", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/437", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/438", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/439", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/440", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/441", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/442", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/443", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/444", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/445", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/446", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/447", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/448", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/449", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/450", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/451", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/452", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/453", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/454", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/455", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/456", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/457", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
+    - {"id": "G11/fixclass/run1/asset/458", "expected": "CB-24 fix class rules", "observed": {"problems": ["absent"], "values": {"fix_class": "<absent>", "fix_class_confidence": "<absent>", "fix_class_floor": "<absent>"}}}
 - row: KF-11
+  # CB-22 PR #134 (open): VEX state follows the finding; the G12 check (CB-05) must read each entry's
+  # zs:vex_basis, never expect 'exploitable' for CVE matches / version inferences. Stays NOT-RUN until then.
   gate: [G12]
   match: {check: vex_states}
   not_run_ok: "VEX states are judged once CB-05 adds the G12 VEX check"

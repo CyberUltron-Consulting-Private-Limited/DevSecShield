@@ -31,7 +31,7 @@ ASSETS: list[dict[str, Any]] = [
      "facts": {"key_alg": "EC", "curve": "secp256r1", "sig_alg": "ecdsa-with-SHA256", "subject": "CN=z01.lab",
                "issuer": "CN=cbom-e2e lab CA", "not_before": "2026-11-12T08:00:00Z",
                "not_after": "2027-11-12T08:00:00Z", "serial": "1a"},
-     "pqc": "vulnerable",
+     "pqc": "vulnerable", "q": ("Q1", "Critical", "qv_exceeds_internet"), "fix": ("vendor-fixed", None, "inferred"),
      "oracle": {"target": "z01", "expect": {"algorithm": "EC", "key_size": 256, "curve": "P-256",
                                             "signature_algorithm": "ecdsa-with-SHA256", "subject": "CN=z01.lab",
                                             "not_after": "2027-11-12T08:00:00Z", "quantum_vulnerable": True,
@@ -43,7 +43,7 @@ ASSETS: list[dict[str, Any]] = [
      "qv": True, "impact": "Low", "codes": ["NO_PQ_KEX"], "finding": "No post-quantum key exchange",
      "facts": {"protocols": ["TLSv1.3"], "negotiated_version": "TLSv1.3", "negotiated_group": "x25519",
                "groups": ["x25519", "secp256r1"], "ciphers": ["TLS_AES_256_GCM_SHA384"]},
-     "pqc": "vulnerable",
+     "pqc": "vulnerable", "q": ("Q2", "High", "qv_exceeds"), "fix": ("configurable", None, "observed"),
      "oracle": {"target": "z01", "expect": {"protocol_versions": ["TLSv1.3"], "groups": ["X25519", "P-256"],
                                             "cipher_suites": ["TLS_AES_256_GCM_SHA384"], "quantum_vulnerable": True},
                 "codes_include": ["NO_PQ_KEX"], "codes_exclude": ["PROTO_TLS10"], "impact_min": "Low"}},
@@ -53,7 +53,7 @@ ASSETS: list[dict[str, Any]] = [
      "facts": {"key_alg": "RSA", "sig_alg": "sha256WithRSAEncryption", "subject": "CN=z02.lab",
                "issuer": "CN=z02.lab", "not_before": "2026-11-12T08:00:00Z", "not_after": "2027-11-12T08:00:00Z",
                "serial": "2b"},
-     "pqc": "vulnerable",
+     "pqc": "vulnerable", "q": ("Q2", "High", "qv_exceeds"), "fix": ("vendor-fixed", None, "inferred"),
      "oracle": {"target": "z02", "expect": {"algorithm": "RSA", "key_size": 3072,
                                             "signature_algorithm": "sha256WithRSAEncryption",
                                             "quantum_vulnerable": True},
@@ -76,7 +76,10 @@ class FakeRun:
                 "source_name": "S-zoo", "target": a["target"], "location": a["location"], "name": a["name"],
                 "algorithm": a["algorithm"], "key_size": a["key_size"], "protocol": a["protocol"],
                 "quantum_vulnerable": a["qv"], "impact": a["impact"], "finding": a["finding"],
-                "finding_codes": list(a["codes"]), "as_of_run": None, "facts": dict(a["facts"])}
+                "finding_codes": list(a["codes"]), "as_of_run": None, "facts": dict(a["facts"]),
+                # the run API's view fields since #114 (CB-19 qg-1) and #113 (CB-24)
+                "q_grade": a["q"][0], "q_label": a["q"][1], "q_reason": a["q"][2], "q_item_key": None,
+                "fix_class": a["fix"][0], "fix_class_floor": a["fix"][1], "fix_class_confidence": a["fix"][2]}
 
     def db_row(self, a: dict[str, Any]) -> dict[str, Any]:
         return {"id": a["id"], "team_id": self.team, "run_id": self.run_id, "job_id": 900, "source_id": 31,
@@ -109,6 +112,8 @@ class FakeRun:
                 "type": "tls", "version": ",".join(f["protocols"]),
                 "cipherSuites": [{"name": c} for c in f["ciphers"]]}}
         if not self.legacy_export:
+            if a["protocol"]:  # CB-06 v2 §4: the stored protocol column
+                props.append({"name": "zs:protocol", "value": a["protocol"]})
             if a["key_size"]:
                 props.append({"name": "zs:key_size", "value": str(a["key_size"])})
             if f.get("curve"):

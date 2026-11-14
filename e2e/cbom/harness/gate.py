@@ -10,7 +10,8 @@ Run from ``e2e/cbom`` (``cd e2e/cbom && python3 -m harness.gate ...``) or with `
 
 What ``judge`` reads (all optional; a missing input becomes NOT-RUN checks, which the ledger must list):
   steps/<G>/step.json   checks the flow and the runner recorded (G0..G10, G12..G14, G17)
-  api/ db/ exports/ ui/ the four views (G11 join), oracle/ lab/ (G11 oracle and derived), logs/ har/ (G16),
+  api/ db/ exports/ ui/ the four views (G11 join; the API's Q-grade and fix class, riskfields.py), oracle/ lab/
+                        (G11 oracle and derived), logs/ har/ (G16),
   oracle/canaries.json (G15), lab/listeners/*.jsonl + flow-state.json (G10 never-scan, re-derived from the sealed logs)
 
 The report and MANIFEST record which ledger judged the run (path + sha256): a PASS proves nothing unless the ledger
@@ -24,7 +25,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import SCHEMA_REPORT, canary, derived, identity, join, ledger, logs, manifest, neverscan, oracle, redact, timing
+from . import (SCHEMA_REPORT, canary, derived, identity, join, ledger, logs, manifest, neverscan, oracle, redact,
+               riskfields, timing)
 from .checks import Check, Checks
 from .rundir import iso, read_json, run_steps, utc_now, write_json, write_text
 
@@ -95,6 +97,7 @@ def judge(run: Path, ledger_path: Path = DEFAULT_LEDGER, pinning: bool = False) 
         oracle.match(run, k, checks, views["api"], views["export"], scope, pairs)
         details[f"derived-run{k}"] = derived.judge(run, k, checks, pairs, scope)
         details[f"timing-run{k}"] = timing.judge(run, k, checks)
+        details[f"riskfields-run{k}"] = riskfields.judge(k, checks, views["api"])
     details["neverscan"] = neverscan.judge(run, checks)
     canary.judge(run, checks)
     man = read_json(run / manifest.MANIFEST, {}) or {}

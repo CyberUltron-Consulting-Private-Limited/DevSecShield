@@ -98,7 +98,7 @@ def test_differ_fails_rsa3072_against_export_without_key_size(tmp_path, empty_le
 
 
 KF9_MATCH = {"kind": "join", "view": "export", "reason": "export-missing",
-             "field": ["key_size", "curve", "signature_algorithm", "groups", "pqc_class", "provenance", "job_id"]}
+             "field": ["key_size", "curve", "signature_algorithm", "groups", "pqc_class", "provenance", "job_id", "protocol"]}
 
 
 def test_legacy_export_is_known_fail_under_kf9(tmp_path):
@@ -110,7 +110,7 @@ def test_legacy_export_is_known_fail_under_kf9(tmp_path):
     passed, blocking, report = judge(fr.dir, ledger)
     assert passed, sorted(blocking)
     rows = {r["row"]: r for r in report["ledger"]}
-    assert rows["KF-9"]["status"] == "holds" and rows["KF-9"]["failing"] == 15
+    assert rows["KF-9"]["status"] == "holds" and rows["KF-9"]["failing"] == 16  # 15 + zs:protocol (CB-06 v2 §4)
     pins = yaml.safe_load(ledger.read_text(encoding="utf-8"))[0]["expect"]
     # identities, not a count: the asset id is replaced by type@location, values are kept
     assert {"id": "G11/join/run1/asset/certificate@10.231.0.17:443/key_size/export", "verdict": "FAIL", "expected": 256,
@@ -143,7 +143,7 @@ def test_a_ledger_row_whose_identities_move_fails_the_gate(tmp_path, change):
     row = {x["row"]: x for x in report["ledger"]}["KF-9"]
     assert not passed and row["status"] == "moved", row
     if change == "swap":
-        assert row["failing"] == 15 and row["unexpected"] and row["missing"]
+        assert row["failing"] == 16 and row["unexpected"] and row["missing"]
 
 
 def test_oracle_changed_after_start_fails(tmp_path, empty_ledger):

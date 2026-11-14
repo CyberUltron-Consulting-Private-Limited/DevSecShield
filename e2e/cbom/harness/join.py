@@ -155,10 +155,7 @@ def join(run: Path, k: str, checks: Checks) -> list[dict[str, Any]]:
                     if view == "export" and not _is_empty(a):
                         checks.fail(cid, GATE, "join", "export-missing", subject, expected=a, observed="<absent>")
                     continue
-                if field == "protocol" and view == "export":
-                    a_cmp, o_cmp = F.protocol_family(a), (None if _is_empty(o) else str(o))
-                else:
-                    a_cmp, o_cmp = F.view_eq(field, a), F.view_eq(field, o)
+                a_cmp, o_cmp = F.view_eq(field, a), F.view_eq(field, o)
                 checks.verdict(cid, GATE, "join", a_cmp == o_cmp, "mismatch", subject, expected=a, observed=o)
         comp = (views["export"] or {}).get(aid)
         if comp is not None and "zs_coverage_gap" not in comp:
