@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy import func, update
+from sqlalchemy import String, cast, func, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -46,6 +46,7 @@ from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
@@ -85,8 +86,8 @@ from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
                                                 validate_secret_value)
-from backend.utilities.cbom_sources.planning import RATES_C, credits, network_sweep_totals, node_status, plan_run, \
-    source_targets
+from backend.utilities.cbom_sources.planning import RATES_C, RangeContext, credits, network_sweep_totals, node_status, \
+    plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
     EstimateBody,
@@ -123,7 +124,7 @@ WRITE = [Depends(write_limiter)]
 BASE = "/{team_id}/cbom/sources"
 REGISTRATION_TTL = _dt.timedelta(hours=24)
 MAX_NODES = 50
-MAX_SOURCES = 500
+# the team's source cap: utilities/cbom_sources/source_cap.py (CBOM_MAX_SOURCES, per-team CBOM_MAX_SOURCES_TEAMS; #224)
 MAX_VENDORS = 100
 
 warn_if_key_is_weak()
@@ -164,12 +165,14 @@ def _team_node(session: Session, team_id: int, node_id: int | None) -> CbomScanN
 
 def _node_counts(session: Session, team_id: int, settings: CbomCollectionSettings) -> dict[int, dict[str, int]]:
     counts: dict[int, dict[str, int]] = {}
-    for source in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all():
+    sources = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()
+    ctx = RangeContext.of_sources(list(sources), settings)  # once for every range (review of #273)
+    for source in sources:
         if source.node_id is None:
             continue
         c = counts.setdefault(source.node_id, {"targets": 0, "sources": 0})
         c["sources"] += 1
-        info = source_targets(source, settings)
+        info = source_targets(source, settings, ctx)
         if KINDS.get(source.kind) and KINDS[source.kind].group in ("servers", "network"):
             c["targets"] += int(info["units"])
         else:
@@ -186,6 +189,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
         nodes = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()
         statuses = [node_status(n, now) for n in nodes]
         sources = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()
+        ctx = RangeContext.of_sources(list(sources), settings)  # once for every range (review of #273)
         groups: dict[str, dict[str, Any]] = {}
         for source in sources:
             spec = KINDS.get(source.kind)
@@ -193,7 +197,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                 continue
             g = groups.setdefault(spec.group, {"sources": 0, "units": 0, "by_kind": {}, "failed_tests": 0})
             g["sources"] += 1
-            g["units"] += int(source_targets(source, settings)["units"])
+            g["units"] += int(source_targets(source, settings, ctx)["units"])
             g["by_kind"][source.kind] = g["by_kind"].get(source.kind, 0) + 1
             if source.last_test_status == "failed":
                 g["failed_tests"] += 1
@@ -234,6 +238,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                          "by_confidence": state["by_confidence"], "vendors": len(state["vendors"]),
                          "q0_gap_count": state["q0_gap_count"]},
             "code": {"cbom_scans": int(code_scans or 0)},
+            "limits": {"sources": SOURCE_CAP.usage(session, team_id)},
             "settings": {k: v for k, v in public_settings(settings, now).items()
                          if k in ("stop_all_network", "next_window_start", "in_window_now", "window_timezone",
                                   "aws_external_id", "aws_collection_configured", "ct_discovery_enabled")} | {
@@ -547,10 +552,9 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
     cfg = _validate_config(body.kind, body.config)
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
-        total = session.exec(select(func.count()).select_from(CbomCollectionSource)
-                             .where(CbomCollectionSource.team_id == team_id)).one()
-        if total >= MAX_SOURCES:
-            raise HTTPException(status_code=400, detail=f"A team can have at most {MAX_SOURCES} sources")
+        cap = SOURCE_CAP.usage(session, team_id)
+        if cap["remaining"] < 1:
+            raise HTTPException(status_code=400, detail=SOURCE_CAP.refusal(cap))
         needs_node = spec.needs_node(cfg)
         if needs_node and body.node_id is None:
             raise HTTPException(status_code=400, detail="node_id: choose the scan node that reaches these targets")
@@ -610,34 +614,98 @@ async def create_source(team_id: TeamId, body: SourceCreate, Authorization: Auth
     return _ok(result, 201)
 
 
-def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> dict:
+# #225: server-side search, filters and keyset paging for the source tables
+SOURCE_STATUSES = ("enabled", "disabled", "never", "pending", "passed", "partial", "failed", "error", "not_available")
+MAX_PAGE = 500
+
+
+def _like(text: str) -> str:
+    """A LIKE pattern that matches ``text`` literally (``%`` and ``_`` are not wildcards), lower-cased."""
+    return "%" + text.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _source_filters(query, team_id: int, kind: str | None, group: str | None, q: str | None, segment: str | None,
+                    status: str | None, node_id: int | None):
+    query = query.where(CbomCollectionSource.team_id == team_id)
+    if kind:  # one kind, or several separated by commas (the Servers tab: every server kind but host agents)
+        query = query.where(CbomCollectionSource.kind.in_(kind.split(",")))  # type: ignore[attr-defined]
+    if group:
+        query = query.where(CbomCollectionSource.kind.in_(  # type: ignore[attr-defined]
+            [k for k, spec in KINDS.items() if spec.group == group] or ["-"]))
+    if node_id is not None:
+        query = query.where(CbomCollectionSource.node_id == node_id)
+    if segment:
+        in_segment = select(CbomScanNode.id).where(CbomScanNode.team_id == team_id,
+                                                   func.lower(CbomScanNode.segment) == segment.strip().lower())
+        query = query.where(CbomCollectionSource.node_id.in_(in_segment))  # type: ignore[union-attr]
+    if status in ("enabled", "disabled"):
+        query = query.where(CbomCollectionSource.enabled == (status == "enabled"))
+    elif status:
+        query = query.where(CbomCollectionSource.last_test_status == status)
+    if q and q.strip():
+        pattern = _like(q.strip())
+        # the name, or anything in the config: targets, host, API URL, owner, application ... (never a secret: secrets
+        # are encrypted in their own column)
+        query = query.where(or_(CbomCollectionSource.name_lower.like(pattern, escape="\\"),  # type: ignore[union-attr]
+                                func.lower(cast(CbomCollectionSource.config, String)).like(pattern, escape="\\")))
+    return query
+
+
+def _list_sources(engine, team_id: int, kind: str | None, group: str | None, q: str | None = None,
+                  segment: str | None = None, status: str | None = None, node_id: int | None = None,
+                  limit: int | None = None, after: int | None = None) -> dict:
     now = utcnow()
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
-        query = select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)
-        if kind:
-            query = query.where(CbomCollectionSource.kind == kind)
-        rows = session.exec(query.order_by(CbomCollectionSource.id)).all()
-        if group:
-            rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
-        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+        query = _source_filters(select(CbomCollectionSource), team_id, kind, group, q, segment, status, node_id)
+        page: dict[str, Any] = {}
+        if limit is not None:  # keyset paging on the id: stable while sources are added or deleted
+            total = session.exec(_source_filters(select(func.count()).select_from(CbomCollectionSource), team_id, kind,
+                                                 group, q, segment, status, node_id)).one()
+            if after is not None:
+                query = query.where(CbomCollectionSource.id > after)  # type: ignore[operator]
+            rows = list(session.exec(query.order_by(CbomCollectionSource.id).limit(limit + 1)).all())
+            more = len(rows) > limit
+            rows = rows[:limit]
+            page = {"total": int(total or 0), "next_after": rows[-1].id if more and rows else None, "limit": limit}
+        else:
+            rows = list(session.exec(query.order_by(CbomCollectionSource.id)).all())
+        node_ids = {r.node_id for r in rows if r.node_id}
+        nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(
+            CbomScanNode.team_id == team_id, CbomScanNode.id.in_(node_ids or [-1]))).all()}  # type: ignore[union-attr]
         collects = last_collects(session, team_id, [r.id for r in rows])
+        # the team's network ranges, once: every range of the list is counted with the same skip map and never-scan
+        # list (one query, one pass over the ranges, whatever the number of ranges; review of #273)
+        ranges = session.exec(select(CbomCollectionSource).where(
+            CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+        ctx = RangeContext.of_sources(list(ranges), settings)
         out = {"server_time": iso_z(now),
-               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows]}
+               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id), ctx) for r in rows],
+               **page, "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
         if group in (None, "network") and kind in (None, "network_range"):
-            ranges = session.exec(select(CbomCollectionSource).where(
-                CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
-            out["network_totals"] = network_sweep_totals(list(ranges), settings)  # N7: unique, enabled ranges only
+            out["network_totals"] = network_sweep_totals(list(ranges), settings, ctx)  # N7: unique, enabled ranges
         return out
 
 
-@router.get(BASE + "/items", dependencies=READ, summary="List sources")
-async def list_sources(team_id: TeamId, kind: str | None = Query(default=None, max_length=32),
-                       group: str | None = Query(default=None, max_length=32), Authorization: AuthHeader = None):
+@router.get(BASE + "/items", dependencies=READ,
+            summary="List sources: optional search (q), filters (kind, group, segment, status, node_id) and keyset "
+                    "paging (limit, after = the previous page's next_after)")
+async def list_sources(team_id: TeamId, kind: str | None = Query(default=None, max_length=256),
+                       group: str | None = Query(default=None, max_length=32),
+                       q: str | None = Query(default=None, max_length=128),
+                       segment: str | None = Query(default=None, max_length=64),
+                       status: str | None = Query(default=None, max_length=16),
+                       node_id: int | None = Query(default=None, ge=1, le=2_147_483_647),
+                       limit: int | None = Query(default=None, ge=1, le=MAX_PAGE),
+                       after: int | None = Query(default=None, ge=0, le=2_147_483_647),
+                       Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    if kind is not None and kind not in KINDS:
+    if kind is not None and (not kind or any(k not in KINDS for k in kind.split(","))):
         raise HTTPException(status_code=400, detail="kind: unknown source kind")
-    return _ok(await _run("list sources", team_id, _list_sources, engine, team_id, kind, group))
+    if status is not None and status not in SOURCE_STATUSES:
+        raise HTTPException(status_code=400, detail="status: one of " + ", ".join(SOURCE_STATUSES))
+    return _ok(await _run("list sources", team_id, _list_sources, engine, team_id, kind, group, q, segment, status,
+                          node_id, limit, after))
 
 
 def _get_source(engine, team_id: int, source_id: int) -> dict:
@@ -966,7 +1034,7 @@ def _count_targets(body: dict) -> dict:
     except T.TargetError as exc:
         return {"valid": False, "error": str(exc), "count": None}
     return {"valid": True, "error": None, "count": T.count_in_scope(parsed, excl), "lines": len(parsed.normalized),
-            "samples": T.sample_targets(parsed, excl, 5)}
+            "samples": T.sample_targets(parsed, excl, 5), "notes": parsed.notes + excl.notes}
 
 
 @router.post(BASE + "/targets/count", dependencies=READ, summary="Count targets after exclusions (no side effects)")
@@ -1467,11 +1535,13 @@ async def get_run(team_id: TeamId, run_id: ObjectId, Authorization: AuthHeader =
 
 
 def _run_assets(engine, team_id: int, run_id: int, params: dict) -> dict:
-    view, status = params.pop("view", "all"), params.pop("status", None)
+    view, status, codes = params.pop("view", "all"), params.pop("status", None), params.pop("codes", None)
+    asset_ids = params.pop("asset_ids", None)
     with Session(engine) as session:
         run = _get_owned(session, CbomCollectionRun, run_id, team_id, "Run")
         # CB-38: the inventory page plus the unified results table's fields (view, status, key, wave, risk score)
-        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status)
+        out = RUN_ASSETS.list_run_assets(session, team_id=team_id, run=run, params=params, view=view, status=status,
+                                         codes=codes, asset_ids=asset_ids)
         RUN_TICKETS.add_ticket_fields(session, team_id, run, out["items"])  # CB-38 PR-4: ticket_key, ticket_url
         out["run"] = public_run(run)
         return out
@@ -1495,9 +1565,16 @@ async def run_assets(team_id: TeamId, run_id: ObjectId,
                      page: int = Query(default=1, ge=1, le=10_000), page_size: int = Query(default=50, ge=1, le=200),
                      view: str = Query(default="all", pattern="^(all|findings)$"),
                      status: str | None = Query(default=None, pattern="^(not_started|in_progress|fixed|ignored)$"),
+                     code: str | None = Query(default=None, max_length=3_300),
+                     asset_id: str | None = Query(default=None, max_length=5_500),
                      Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
-    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status}
+    try:  # #270: the compliance mapping's "N assets" (a clause's finding codes, a requirement's assets)
+        codes, asset_ids = RUN_ASSETS.parse_codes(code), RUN_ASSETS.parse_ids(asset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    params = {**_asset_params(type, impact, quantum, q, source_id, page, page_size), "view": view, "status": status,
+              "codes": codes, "asset_ids": asset_ids}
     return _ok(await _run("run assets", team_id, _run_assets, engine, team_id, run_id, params))
 
 

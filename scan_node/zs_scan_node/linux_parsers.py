@@ -357,6 +357,15 @@ def _openssl_date(text: str) -> str | None:
     return f"{m.group(6)}-{_MONTHS[m.group(1)]:02d}-{int(m.group(2)):02d}T{m.group(3)}:{m.group(4)}:{m.group(5)}Z"
 
 
+def _java_date(text: str) -> str | None:
+    """keytool's ``Date.toString()`` (``Mon Jan 01 00:00:00 UTC 2024``) as ISO UTC.  The JVM prints the server's own
+    time zone: UTC/GMT are exact; any other zone name is read as UTC (off by hours at most, never by days)."""
+    m = re.match(r"\s*[A-Z][a-z]{2}\s+([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+\S+\s+(\d{4})", text)
+    if not m or m.group(1) not in _MONTHS:
+        return None
+    return f"{m.group(6)}-{_MONTHS[m.group(1)]:02d}-{int(m.group(2)):02d}T{m.group(3)}:{m.group(4)}:{m.group(5)}Z"
+
+
 def keytool_list(text: str) -> dict[str, Any]:
     out: dict[str, Any] = {}
     m = re.search(r"Keystore type:\s*(\S+)", text)
@@ -382,12 +391,27 @@ def keytool_list(text: str) -> dict[str, Any]:
             m = re.search(r"Subject Public Key Algorithm:\s*(.+)", block)
             if m:
                 e["key_alg"] = printable(m.group(1).strip(), 60)
-        m = re.search(r"Valid from:.*until:\s*(.+)", block)
+        m = re.search(r"Valid from:\s*(.+?)\s+until:\s*(.+)", block)
         if m:
-            e["not_after_text"] = printable(m.group(1).strip(), 60)
+            e["not_after_text"] = printable(m.group(2).strip(), 60)
+            for key, stamp in (("not_before", m.group(1)), ("not_after", m.group(2))):
+                moment = _java_date(stamp)
+                if moment:
+                    e[key] = moment
         m = re.search(r"Owner:\s*(.+)", block)
         if m:
             e["subject"] = printable(m.group(1).strip(), 300)
+        m = re.search(r"Issuer:\s*(.+)", block)
+        if m:
+            e["issuer"] = printable(m.group(1).strip(), 300)
+        if e.get("subject") and e.get("issuer"):
+            e["self_signed"] = e["subject"] == e["issuer"]
+        m = re.search(r"Serial number:\s*([0-9a-fA-F]+)", block)
+        if m:
+            e["serial"] = m.group(1).lower()[:80]
+        m = re.search(r"SHA256:\s*([0-9A-Fa-f:]+)", block)
+        if m:
+            e["fingerprint_sha256"] = m.group(1).replace(":", "").lower()[:64]
         entries.append(e)
     out["entry_list"] = entries[:200]
     if "integrity of the information stored in your keystore" in text:

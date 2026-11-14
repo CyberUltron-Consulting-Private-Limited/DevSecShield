@@ -44,6 +44,7 @@ from backend.new_models import (
     CbomScanNode,
 )
 from backend.utilities.cbom_sources import identity as ID
+from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources import posture as P
 from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION, aws_pq_policy, quantum_vulnerable, ssh_names
 
@@ -722,21 +723,25 @@ def run_grades(run: CbomCollectionRun, risk_model: dict[str, Any] | None) -> dic
 # ----------------------------------------------------------------------------- unread scope of a run
 _UNREAD_JOB = {"failure": "collection failure", "expired": "collection expired", "cancelled": "collection cancelled",
                "pending": "collection not finished", "claimed": "collection not finished"}
-_BY_CHOICE_SKIPS = ("Disabled", "0 targets left after the never-scan list")
+_BY_CHOICE_SKIPS = ("Disabled",)
+_BY_POLICY_SKIPS = ("0 targets left after the never-scan list",)
+# CB-11: a never-scan exclusion keeps the signed reason code (rule 1, "excluded_by_choice"; OA-10a) and says what it
+# is: ``policy`` true and ``label`` "excluded by policy", never a coverage gap
+_POLICY = {"policy": True, "label": PS.LABEL}
 # "not_supported" on a target means "not read" (a zstd image layer, Oracle NNE, TDS 8.0 strict, a protocol this node
 # version cannot speak ...) unless it says the target has nothing there (cx2 HF-4: not-read by default)
 _TARGET_ABSENT = (re.compile(r"\bno Active Directory Certificate Services CA is configured\b", re.I),)
 
 
 def target_kind(target: dict[str, Any]) -> str:
-    """One row of a job's ``result.targets``: ``read`` (ok / partial), ``by_choice`` (never-scan list), ``summary``
+    """One row of a job's ``result.targets``: ``read`` (ok / partial), ``by_policy`` (never-scan list), ``summary``
     (the node's "+N more" row, whose error is JSON {status: count}), ``not_present`` (a cloud region or project with
     every service not enabled, a server with no AD CS CA) or ``gap`` (every other status, "not_supported" included)."""
     status = str(target.get("status") or "")
     if status in ("", "ok", "partial"):
         return "read"
-    if status == "skipped_never_scan":
-        return "by_choice"
+    if status == PS.STATUS:
+        return "by_policy"
     if status == "summary":
         return "summary"
     if status == "not_supported":
@@ -827,15 +832,22 @@ def scope_items(ctx: GradeContext, coverage: list[tuple[CbomCollectedAsset, RowG
                 continue
             if kind == "summary":  # targets past the node's 1,000 rows: counted under their own statuses
                 for sub, n in sorted(_summary_counts(t).items()):
+                    if target_kind({"status": sub}) == "by_policy":  # CB-11: counted, as excluded (dev dropped it)
+                        items.add(f"coverage:{info.source_uid}:*:excluded", "excluded_by_choice", source=info,
+                                  target="*", check=None, status=sub, detail=f"{PS.REASON}: {n} more", count=n,
+                                  **_POLICY)
+                        continue
                     if target_kind({"status": sub}) != "gap":
                         continue
                     item = items.add(f"coverage:{info.source_uid}:*:{sub}", "coverage_gap", source=info, target="*",
                                      check=None, status=sub, detail=f"targets not read: {sub}", count=n, refs=[])
                     item.setdefault("addresses", [])
                 continue
-            if kind == "by_choice":
-                items.add(f"coverage:{info.source_uid}:{target}:by_choice", "excluded_by_choice", source=info,
-                          target=target, check=None, status=status, detail="on the never-scan list")
+            if kind == "by_policy":
+                items.add(f"coverage:{info.source_uid}:{target}:excluded", "excluded_by_choice", source=info,
+                          target=target, check=None, status=status,
+                          detail=f"{PS.REASON}" + (f" ({str(t.get('error'))[:200]})" if t.get("error") else ""),
+                          **_POLICY)
             elif info.network:
                 item = items.add(f"coverage:{info.source_uid}:*:{status}", "coverage_gap", source=info, target="*",
                                  check=None, status=status, detail=f"addresses not read: {status}", refs=[])
@@ -857,8 +869,11 @@ def scope_items(ctx: GradeContext, coverage: list[tuple[CbomCollectedAsset, RowG
         info = _JobInfo(None, None, None, _source_ref(source, sid), sid,
                         entry.get("name") or (source.name if source else None), False)
         reason = str(entry.get("reason") or "skipped")
-        items.add(f"source:{info.source_uid}", "excluded_by_choice" if reason in _BY_CHOICE_SKIPS else "source_not_read",
-                  source=info, detail=f"skipped by the planner: {reason}"[:300])
+        by_policy = reason in _BY_POLICY_SKIPS
+        items.add(f"source:{info.source_uid}",
+                  "excluded_by_choice" if reason in _BY_CHOICE_SKIPS or by_policy else "source_not_read", source=info,
+                  detail=(f"{PS.REASON}: {reason}" if by_policy else f"skipped by the planner: {reason}")[:300],
+                  **(_POLICY if by_policy else {}))
     if run is not None and run.created_at is not None:
         from backend.utilities.cbom_sources.kinds import KINDS
 

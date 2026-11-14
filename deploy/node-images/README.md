@@ -61,6 +61,14 @@ first boot; values with spaces, quotes or newlines are refused. The build user's
 image is sealed. Hyper-V does not read OVAs: convert the disk (`qemu-img convert -O vhdx`) and write
 `/etc/zs-node/env` with cloud-init (NoCloud) or by hand.
 
+## A private CA or an mTLS gateway in front of ZeroShield (AMI and OVA)
+
+Put the files in `/etc/zs-node/trust/` on the VM (`ca.pem`; `client.crt` and `client.key`, the key owned by uid 10001
+and mode 0400) and add the matching lines to `/etc/zs-node/env` (`ZS_CA_FILE=/etc/zs-node/trust/ca.pem`,
+`ZS_CLIENT_CERT=/etc/zs-node/trust/client.crt`, `ZS_CLIENT_KEY=/etc/zs-node/trust/client.key`). `zs-node-run`
+mounts `/etc/zs-node/trust` read-only when it exists. On the AMI the CA may come in the user data; the key never
+should (anyone on the instance can read user data). The wizard shows these lines when you tick its trust options.
+
 ## What was tested
 
 `scan_node/tests/test_wp8b_node_images.py` runs `zs-ovf-env` against a recorded OVF environment and `zs-node-run`
