@@ -314,8 +314,8 @@ the full list is `backend/.env.example`.
 
 ## AWS collection on staging (lab mode)
 
-Without `CBOM_AWS_PRINCIPAL_ARN` the AWS form says "This ZeroShield deployment is not set up for AWS collection; contact
-your administrator". Staging's only AWS account is the sandbox **935951870001**, which is also the account of the
+Without `CBOM_AWS_PRINCIPAL_ARN` the AWS form says "AWS collection isn't enabled on this ZeroShield deployment.
+Contact ZeroShield support at support@zeroshield.ai to have it turned on." (and the AWS Private CA card says "Not available"). Staging's only AWS account is the sandbox **935951870001**, which is also the account of the
 collector identity, and a customer role in the deployment's own account is refused ("This role is in ZeroShield's own
 AWS account") unless **lab mode** is on. Lab mode (`CBOM_AWS_LAB_SAME_ACCOUNT=1`, `backend/utilities/cbom_sources/lab_mode.py`)
 accepts such a role for a single-account source, on a deployment whose `DSS_ENV` names a test deployment
@@ -450,6 +450,33 @@ Then add the source with role ARN `arn:aws:iam::935951870001:role/ZeroShieldCBOM
 
 Then add the source with role ARN `arn:aws:iam::935951870001:role/DevSecShieldScannerReadOnlyRole` and validate.
 Every check must pass before a run collects; the run shows the lab-mode banner.
+
+## Fleet onboarding on staging
+
+Fleet onboarding (Sources › Fleet: inventory, policies and the managed sources they create, transports such as
+Ansible, Salt and SSM, SSH CA trust) is behind five flags, each off by default in the code
+(`backend/utilities/cbom_sources/fleet/flags.py`, `transports/flags.py`, `sshca/flags.py`). Staging turns all five on
+(#227) so the features can be QA'd end to end; **production and every other deployment keep them off** (the code's
+default; `deploy/local/.env.example` leaves them empty).
+
+| Flag | On staging | What it turns on |
+|---|---|---|
+| `CBOM_FLEET_INVENTORY` | `1` | Fleet inventory (hosts imported or synced from AWS inventory sources); the inventory sync threads |
+| `CBOM_FLEET_POLICIES` | `1` | Fleet policies, fleet credentials and reconcile; the evaluation thread |
+| `CBOM_FLEET_MATERIALIZE` | `1` | Policies may write the managed sources, batches and schedules (off: they evaluate and preview only) |
+| `CBOM_FLEET_TRANSPORTS` | `1` | Transports (Ansible, Salt, SSM, ...) and the fleet source kinds that use them |
+| `CBOM_SSH_CA` | `1` | The SSH certificate authority: trust a CA on servers instead of installing a node key on each |
+
+Where: `docker-compose.yml` (`x-fleet-flags`) sets them for `backend` (the routes) and `cbom-cloud-worker` (the fleet
+threads, started while inventory or policies is on), as `${CBOM_FLEET_INVENTORY:-1}` and so on: on unless
+`deploy/staging/.env` says otherwise. To turn one off on the host, put e.g. `CBOM_SSH_CA=0` in `deploy/staging/.env`
+and run `docker compose up -d backend cbom-cloud-worker` (or deploy). A value in `backend.env` is ignored: the compose
+file's `environment:` wins over env files. The flags ship with the deploy bundle (`staging.sh push`), so no host step is
+needed to turn them on.
+
+Check: as a team member, `GET /1/cbom/sources/fleet/status` (with the team's id) answers
+`{"inventory": true, "policies": true, "transports": true, "ssh_ca": true}` and the Sources page shows the Fleet tab;
+`docker exec dss-staging-backend-1 env | grep -E 'CBOM_(FLEET|SSH_CA)'` lists the five with `1`.
 
 ## Build identity
 

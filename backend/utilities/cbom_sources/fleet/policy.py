@@ -395,7 +395,7 @@ class _NeverScan:
             starts, ends = self.by_version.setdefault(version, ([], []))
             starts.append(start)
             ends.append(end)
-        self.hosts = set(parsed.hostnames)
+        self.hosts = T.never_scan_names(parsed.hostnames)
 
     def listed(self, addresses: Sequence[str], hostname: str | None) -> str | None:
         if not self.by_version and not self.hosts:
@@ -411,7 +411,7 @@ class _NeverScan:
             i = bisect.bisect_right(starts, int(address)) - 1
             if i >= 0 and ends[i] >= int(address):
                 return str(address)
-        if hostname and hostname.lower().rstrip(".") in self.hosts:
+        if hostname and T.host_listed(hostname, self.hosts):
             return hostname
         return None
 

@@ -130,6 +130,19 @@ async def register_summary(team_id: TeamId, Authorization: AuthHeader = None):
     return JSONResponse(await _call("summary", team_id, _summary, engine, team_id), headers=PRIVATE)
 
 
+def _heatmap(engine, team_id: int) -> dict[str, Any]:
+    with Session(engine) as session:
+        return RISK.heatmap(session, team_id)
+
+
+@router.get("/{team_id}/cbom/register/heatmap", dependencies=READ,
+            summary="Algorithm family x source: grade counts and worst known grade per cell (drill down with the "
+                    "list's family and source filters)")
+async def register_heatmap(team_id: TeamId, Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    return JSONResponse(await _call("heatmap", team_id, _heatmap, engine, team_id), headers=PRIVATE)
+
+
 def _item(engine, team_id: int, key: str) -> dict[str, Any]:
     with Session(engine) as session:
         out = RISK.get_item(session, team_id, key)

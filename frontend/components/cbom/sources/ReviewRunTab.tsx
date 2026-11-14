@@ -33,6 +33,7 @@ import { CriticalityCard } from "./RunPosture";
 import SchedulesCard from "./SchedulesCard";
 import { startRefusal } from "./startRefusal";
 import { SourceMetadataCard } from "./SourceMetadata";
+import { SourceBrowser } from "./SourceTableControls";
 import { credits, formatDateTime, mixedGroupScope, newRequestId, pluralize, windowLine, windowStartNotice } from "./logic";
 import {
   Checkbox2,
@@ -349,6 +350,7 @@ export default function ReviewRunTab({ teamId, onNavigate }: { teamId: number; o
       </SectionCard>
 
       <CriticalityCard teamId={teamId} />
+      <SourceBrowser teamId={teamId} />
       <SourceMetadataCard teamId={teamId} />
       <GradeInputsCard teamId={teamId} isAdmin={!!overview.viewer?.is_admin} />
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, ExternalLink } from "lucide-react";
-import type { KbFindingDetail } from "@/utils/backend_api";
+import type { KbComplianceRef, KbFindingDetail } from "@/utils/backend_api";
 
 function CopyCommand({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -47,7 +47,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 /** Everything the knowledge base knows about one finding code: what it is, how it is attacked, mappings, the fix
  * and read-only proof commands. Used for code-scan findings and scan-node assets alike. */
-export function KbFindingCard({ d, showRemediation = true }: { d: KbFindingDetail; showRemediation?: boolean }) {
+export function KbFindingCard({ d, showRemediation = true, showStandards = true }: { d: KbFindingDetail; showRemediation?: boolean; showStandards?: boolean }) {
   return (
     <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3 space-y-3" data-testid={`kb-${d.code}`}>
       <div className="flex flex-wrap items-center gap-2">
@@ -124,35 +124,60 @@ export function KbFindingCard({ d, showRemediation = true }: { d: KbFindingDetai
           ))}
         </Section>
       )}
-      {(d.compliance.length > 0 || d.standards.length > 0) && (
-        <Section title="Standards and regulations">
-          {d.standards.length > 0 && <p className="text-xs text-zinc-600 dark:text-zinc-400">{d.standards.join(" · ")}</p>}
-          <ul className="space-y-1">
-            {d.compliance.map((r, i) => (
-              <li key={i} className="text-xs text-zinc-700 dark:text-zinc-300">
-                <a href={r.source} target="_blank" rel="noreferrer noopener" className="font-semibold text-blue-600 dark:text-blue-400">
-                  {r.framework}: {r.id}
-                </a>
-                <span className="block text-zinc-600 dark:text-zinc-400 line-clamp-3">{r.text}</span>
-                {r.note && <span className="block text-zinc-500 italic">{r.note}</span>}
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
+      {showStandards && <StandardsSection standards={d.standards} compliance={d.compliance} />}
     </div>
   );
+}
+
+function StandardsSection({ standards, compliance }: { standards: string[]; compliance: KbComplianceRef[] }) {
+  if (compliance.length === 0 && standards.length === 0) return null;
+  return (
+    <Section title="Standards and regulations">
+      {standards.length > 0 && <p className="text-xs text-zinc-600 dark:text-zinc-400">{standards.join(" · ")}</p>}
+      <ul className="space-y-1">
+        {compliance.map((r, i) => (
+          <li key={i} className="text-xs text-zinc-700 dark:text-zinc-300">
+            <a href={r.source} target="_blank" rel="noreferrer noopener" className="font-semibold text-blue-600 dark:text-blue-400">
+              {r.framework}: {r.id}
+            </a>
+            <span className="block text-zinc-600 dark:text-zinc-400 line-clamp-3">{r.text}</span>
+            {r.note && <span className="block text-zinc-500 italic">{r.note}</span>}
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+/** The standards and clauses of every finding code of an asset, each once, in first-seen order (#266: two codes
+ * citing the same RBI clause printed it twice, in two "Standards and regulations" blocks). */
+export function mergeStandards(details: Pick<KbFindingDetail, "standards" | "compliance">[]): { standards: string[]; compliance: KbComplianceRef[] } {
+  const standards = [...new Set(details.flatMap((d) => d.standards ?? []))];
+  const seen = new Set<string>();
+  const compliance = details.flatMap((d) => d.compliance ?? []).filter((r) => {
+    const key = `${r.framework}\u0000${r.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { standards, compliance };
 }
 
 export default function KbFindingDetails({ details, showRemediation = true }: { details: KbFindingDetail[]; showRemediation?: boolean }) {
   if (!details.length) {
     return <p className="text-xs text-zinc-500">No weakness is flagged on this asset.</p>;
   }
+  const merged = mergeStandards(details);
   return (
     <div className="space-y-3">
       {details.map((d) => (
-        <KbFindingCard key={d.code} d={d} showRemediation={showRemediation} />
+        <KbFindingCard key={d.code} d={d} showRemediation={showRemediation} showStandards={false} />
       ))}
+      {(merged.standards.length > 0 || merged.compliance.length > 0) && (
+        <div className="rounded-md border border-zinc-200 dark:border-zinc-700 p-3" data-testid="kb-standards">
+          <StandardsSection standards={merged.standards} compliance={merged.compliance} />
+        </div>
+      )}
     </div>
   );
 }

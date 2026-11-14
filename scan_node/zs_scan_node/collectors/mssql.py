@@ -27,7 +27,7 @@ from typing import Any
 
 from zs_scan_node import drivergate, netutil
 from zs_scan_node import tlsprobe as T
-from zs_scan_node.certparse import cert_facts, load_certs
+from zs_scan_node.certparse import cert_facts, chain_links, load_certs
 from zs_scan_node.jobctx import JobContext, register_asset_types
 from zs_scan_node.netutil import Blocked, Target, checked_target, is_ip
 
@@ -485,12 +485,13 @@ def collect_target(ctx: JobContext, target: Target, port: int, config: dict, pas
         code = "refused" if isinstance(exc, ConnectionRefusedError) else (
             "timeout" if isinstance(exc, socket.timeout) else "unreachable")
         return code, exc.__class__.__name__, 0
-    for i, der in enumerate((facts.pop("_certs", None) or [])[:5]):
-        for cert in load_certs(der):
-            f = cert_facts(cert, "tls")
-            ctx.emit("certificate", target.label, f"{loc}#chain[{i}]", name=f.get("subject", ""), algorithm=f.get("key_alg"),
-                     key_size=f.get("key_size"), facts={**f, "chain_index": i, "role": "mssql"})
-            n += 1
+    served = [(i, cert_facts(cert, "tls")) for i, der in enumerate((facts.pop("_certs", None) or [])[:5])
+              for cert in load_certs(der)]
+    chain_links([f for _i, f in served])  # CB-17
+    for i, f in served:
+        ctx.emit("certificate", target.label, f"{loc}#chain[{i}]", name=f.get("subject", ""), algorithm=f.get("key_alg"),
+                 key_size=f.get("key_size"), facts={**f, "chain_index": i, "role": "mssql"})
+        n += 1
     ctx.emit("tls_endpoint", target.label, loc, name=f"mssql {target.ip}:{port}", algorithm=facts.get("negotiated_cipher"),
              protocol=facts.get("negotiated_version") or "mssql", facts=facts)
     n += 1

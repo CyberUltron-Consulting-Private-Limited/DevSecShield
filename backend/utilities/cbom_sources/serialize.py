@@ -20,7 +20,7 @@ from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, are
 from backend.utilities.cbom_sources.jobs import job_waiting_reason, run_credit_summary
 from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.node_release import node_update, parse_reported, server_label, server_release
-from backend.utilities.cbom_sources.planning import node_status, source_targets
+from backend.utilities.cbom_sources.planning import RangeContext, node_status, source_targets
 from backend.utilities.cbom_sources.settings import next_window_start
 
 
@@ -118,9 +118,11 @@ def last_collects(session: Any, team_id: int, source_ids: list[int]) -> dict[int
 
 
 def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings, node: CbomScanNode | None,
-                  now: _dt.datetime, last_collect: dict[str, Any] | None = None) -> dict[str, Any]:
+                  now: _dt.datetime, last_collect: dict[str, Any] | None = None,
+                  ranges: RangeContext | None = None) -> dict[str, Any]:
+    """``ranges``: the request's planning.RangeContext when it lists several sources (built once per request)."""
     spec = KINDS.get(source.kind)
-    info = source_targets(source, settings)
+    info = source_targets(source, settings, ranges)
     config = dict(source.config or {})
     return {
         "id": source.id,
@@ -132,6 +134,7 @@ def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings
         "name": source.name,
         "node_id": source.node_id,
         "node_name": node.name if node else None,
+        "node_segment": (node.segment or None) if node else None,  # #225: the segment filter of the source tables
         "node_status": node_status(node, now) if source.node_id else None,
         "enabled": source.enabled,
         "config": config,

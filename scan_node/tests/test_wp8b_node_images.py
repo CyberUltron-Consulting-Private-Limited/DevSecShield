@@ -107,3 +107,36 @@ def test_packer_templates_reference_files_that_exist():
     assert "files/zs-ovf-env" in ova and "scripts/make-ova.sh" in ova and (IMAGES / "scripts" / "make-ova.sh").exists()
     unit = (IMAGES / "files" / "zs-scan-node.service").read_text()
     assert "ConditionPathExists=/etc/zs-node/env" in unit and "ExecStart=/usr/local/sbin/zs-node-run" in unit
+
+
+# ----------------------------------------------------------------------------- CB-15: trust for the ZeroShield API
+def test_node_run_mounts_the_trust_directory_read_only_when_it_exists(tmp_path):
+    env = "ZS_API_URL=https://api.example\nZS_REGISTRATION_TOKEN=zsr_x\nZS_CA_FILE=/etc/zs-node/trust/ca.pem\n"
+    trust = tmp_path / "trust"
+    os.environ["ZS_NODE_TRUST_DIR"] = str(trust)
+    try:
+        run, argv = _node_run(tmp_path, env)  # no directory: nothing mounted
+        assert run.returncode == 0, run.stderr and not any(a.endswith(":/etc/zs-node/trust:ro") for a in argv)
+        trust.mkdir()
+        run, argv = _node_run(tmp_path, env)
+        assert run.returncode == 0, run.stderr
+        assert f"{trust}:/etc/zs-node/trust:ro" in argv and argv[-1].startswith("localhost/")
+    finally:
+        os.environ.pop("ZS_NODE_TRUST_DIR", None)
+
+
+def test_the_chart_mounts_the_trust_secrets_where_the_env_points():
+    chart = REPO / "deploy" / "helm" / "cbom-scan-node"
+    helpers = (chart / "templates" / "_helpers.tpl").read_text()
+    values = (chart / "values.yaml").read_text()
+    assert "trust:\n  " in values and 'caSecret: ""' in values and 'clientSecret: ""' in values
+    # the env names the files where the volumes put them
+    assert "/etc/zs-node/trust/ca/ca.pem" in helpers and "mountPath: /etc/zs-node/trust/ca" in helpers
+    assert "/etc/zs-node/trust/client/tls.crt" in helpers and "/etc/zs-node/trust/client/tls.key" in helpers
+    assert "mountPath: /etc/zs-node/trust/client" in helpers and "readOnly: true" in helpers
+    assert "path: ca.pem" in helpers and "path: tls.crt" in helpers and "path: tls.key" in helpers
+    assert "defaultMode: 0440" in helpers  # the key: never world-readable
+    for workload in ("deployment.yaml", "daemonset.yaml"):
+        text = (chart / "templates" / workload).read_text()
+        assert 'include "cbom-scan-node.trustMounts"' in text and 'include "cbom-scan-node.trustVolumes"' in text
+        assert 'include "cbom-scan-node.commonEnv"' in text  # the ZS_CA_FILE / ZS_CLIENT_* env comes with it

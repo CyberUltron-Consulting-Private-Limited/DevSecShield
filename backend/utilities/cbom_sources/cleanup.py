@@ -35,8 +35,10 @@ from backend.new_models import (
     TeamIntegration,
 )
 from backend.utilities.cbom_sources.transports.models import CbomTransport  # F1.3
+from backend.utilities.cbom_sources.api_keys import CbomApiKey  # #226
 
 _ORDER = (
+    CbomApiKey,  # #226 API keys (nothing points at them)
     IntegrationDelivery,  # integrations (WP11): deliveries before their integration
     TeamIntegration,
     *FLEET_MODELS,  # F1.2: targets, inventory sources, policies, credentials (no foreign keys to the rows below)

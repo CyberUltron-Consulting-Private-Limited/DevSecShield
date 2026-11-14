@@ -32,6 +32,7 @@ TARGET_STATUSES = frozenset({
     "identity_unverified", "kex_unsupported",
     "sudoers_missing", "sudo_denied", "rbac_denied", "winrm_denied", "tls_unavailable", "not_supported", "error",
     "skipped_never_scan", "skipped_window", "skipped_stop", "skipped_deadline", "skipped_cancelled",
+    "skipped_credential_refused",
 })
 FAILED = frozenset({"unreachable", "refused", "timeout", "no_route", "auth_failed", "mfa_required", "host_key_changed",
                     "identity_unverified", "kex_unsupported",
@@ -44,6 +45,79 @@ MAX_BATCH_BYTES = 768 * 1024  # the server refuses asset bodies over 1 MB
 # A long job (a network range) posts what it has at least this often, so the job's asset count in ZeroShield grows
 # while it runs (the customer's progress) instead of staying at 0 until the end.
 FLUSH_INTERVAL_S = 15.0
+
+
+# CB-10 lockout guard: after this many refused logins in a row with one credential, the job stops using it.
+AUTH_FAILURE_LIMIT = 3
+CREDENTIAL_REFUSED = "skipped_credential_refused"
+# The credential was accepted (what failed came after the login): the account is not being locked.
+LOGIN_ACCEPTED = frozenset({"ok", "sudoers_missing", "sudo_denied", "winrm_denied", "rbac_denied"})
+
+
+class CredentialBreaker:
+    """Keeps one job's credential from locking out the customer's account (CB-10).
+
+    Directory accounts (AD, LDAP, a database's own users) count failed logins across every host that checks them, so
+    a wrong password tried on 500 hosts locks the account long before the job ends.  Every login with the job's
+    credential goes through ``acquire`` / ``release``:
+
+    * After ``limit`` refused logins (``auth_failed``) in a row the breaker trips: every later ``acquire`` answers
+      ``skipped_credential_refused`` and nothing else is tried.
+    * Until the credential has been accepted once, at most ``limit`` minus the refusals so far are in flight, so
+      parallel threads cannot fire more than ``limit`` attempts before the first answers come back.  Once it has
+      been accepted, logins run at the job's full parallelism.
+    * Other failures (unreachable, timeout, an error after connecting) neither count nor reset the streak.
+    """
+
+    def __init__(self, limit: int = AUTH_FAILURE_LIMIT) -> None:
+        self.limit = max(1, int(limit))
+        self._cond = threading.Condition()
+        self.streak = 0  # refused logins in a row
+        self.failures = 0  # refused logins in this job
+        self.accepted = False  # the credential worked at least once in this job
+        self.tripped = False
+        self.skipped = 0
+        self._in_flight = 0
+
+    def acquire(self, should_stop: Callable[[], str | None]) -> str | None:
+        """Before a login: None to go ahead (then ``release`` with the target's status), else the status to record
+        for the target (``skipped_credential_refused``, or the job's stop status while waiting)."""
+        with self._cond:
+            while True:
+                if self.tripped:
+                    self.skipped += 1
+                    return CREDENTIAL_REFUSED
+                if self.accepted or self.streak + self._in_flight < self.limit:
+                    self._in_flight += 1
+                    return None
+                stop = should_stop()
+                if stop:
+                    return stop
+                self._cond.wait(0.1)
+
+    def release(self, status: str) -> None:
+        with self._cond:
+            self._in_flight = max(0, self._in_flight - 1)
+            if status == "auth_failed":
+                self.streak += 1
+                self.failures += 1
+                if self.streak >= self.limit:
+                    self.tripped = True
+            elif status in LOGIN_ACCEPTED:
+                self.streak = 0
+                self.accepted = True
+            self._cond.notify_all()
+
+    def reason(self) -> str:
+        return (f"not tried: {self.limit} logins in a row were refused with this credential, so the scan node stopped "
+                "using it to avoid locking the account; check the credential and edit the source")
+
+    def refused(self) -> dict | None:
+        """For the job result: the breaker tripped, or every login tried was refused (a one-target source: one
+        refusal).  The server pauses the source's runs and schedules until its credential is edited."""
+        if self.tripped or (self.failures and not self.accepted and self.streak == self.failures):
+            return {"failures": self.failures, "skipped": self.skipped, "limit": self.limit}
+        return None
 
 
 class LeaseLost(Exception):
@@ -158,6 +232,8 @@ class JobContext:
     _progress_refused: bool = False
     # F1.4: () -> {"certificate", "expires_in_s", ...}, a fresh SSH CA certificate for this job (agent.start_job)
     cert_refresher: Callable[[], dict] | None = None
+    # CB-10: the lockout guard for this job's credential (collectors that log in with a password call login_gate)
+    breaker: CredentialBreaker = field(default_factory=CredentialBreaker)
 
     # ------------------------------------------------------------------ progress
     def set_progress_total(self, total: int) -> None:
@@ -204,6 +280,18 @@ class JobContext:
         if time.monotonic() >= self.deadline:
             return self.deadline_reason
         return None
+
+    def login_gate(self) -> str | None:
+        """Before logging in to a target with the job's credential: None to go ahead (then call ``login_done`` with
+        the target's status, always), else the status to record for the target instead (``credential_skip_note``
+        says why)."""
+        return self.breaker.acquire(self.should_stop)
+
+    def login_done(self, status: str) -> None:
+        self.breaker.release(status)
+
+    def credential_skip_note(self, status: str) -> str | None:
+        return self.breaker.reason() if status == CREDENTIAL_REFUSED else None
 
     def log(self, msg: str, **fields) -> None:
         log(msg, self.scrubber, job=self.job_id, run=self.run_id, attempt=self.attempt, **fields)
@@ -359,6 +447,9 @@ class JobContext:
             out["never_scan_unresolved"] = held[:100]
         if window:
             out["stopped"] = "window_closed"
+        refused = self.breaker.refused()
+        if refused:
+            out["credential_refused"] = refused
         if self.kind == "test_connection":
             out["samples"] = self.scrubber.obj(self.samples)
         return out

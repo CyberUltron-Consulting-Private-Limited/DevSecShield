@@ -89,6 +89,23 @@ Both are ready while the node's heartbeat loop turns (the image health check: `$
 | `agent.statePath` | `/var/lib/zs-node-agent/<namespace>.<release>` | set it to keep the path of an earlier install |
 | `agent.hostPID`, `agent.runAsRoot`, `agent.sysPtrace` | `false`, `false`, `false` | `sysPtrace` needs the other two |
 | `allowInsecureHttp` | `false` | lab only: an `http://` apiUrl |
+| `trust.caSecret` | | a Secret with `ca.pem`: a private CA for the ZeroShield API (`ZS_CA_FILE`) |
+| `trust.clientSecret` | | a `kubernetes.io/tls` Secret: the node's client certificate when the API requires mTLS (`ZS_CLIENT_CERT` / `ZS_CLIENT_KEY`) |
+
+### A private CA or an mTLS gateway in front of ZeroShield
+
+Only for an on-prem ZeroShield or a gateway with its own CA or client-certificate check. Create the Secrets in the
+release namespace from files on your machine (they never leave the cluster), then name them; the "Add scan node"
+wizard writes these lines when you tick its trust options:
+
+```sh
+kubectl -n zs-cbom create secret generic zs-node-ca --from-file=ca.pem=/path/to/zeroshield-ca.pem
+kubectl -n zs-cbom create secret tls zs-node-client --cert=/path/to/node.crt --key=/path/to/node.key
+helm upgrade --install ... --set trust.caSecret=zs-node-ca --set trust.clientSecret=zs-node-client
+```
+
+The files are mounted read-only under `/etc/zs-node/trust`; the key is readable by the node's group only. The CA
+replaces the default trust for the ZeroShield API only: your targets are checked as before.
 
 ## Proof
 

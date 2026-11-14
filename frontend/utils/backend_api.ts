@@ -1,6 +1,7 @@
 import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
 import type { InstallLinks, NodeArtifacts } from "@/components/cbom/sources/logic"
+import type { CbomSourceUsage } from "@/components/cbom/sources/sourceLimit"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
 
@@ -2603,6 +2604,7 @@ const reinitializeCBOMScanWithPayload = async (
  */
 export const CBOM_DELIVERABLES = [
   { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
+  { slug: "quantum-risk-register", number: 2, title: "Quantum Risk Register" },
   { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
   { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
   { slug: "network-tls-protocol-assessment", number: 6, title: "Network, TLS & Crypto Protocol Assessment" },
@@ -4372,6 +4374,7 @@ export interface CbomSource {
     name: string
     node_id: number | null
     node_name: string | null
+    node_segment?: string | null  // #225: the segment of the source's scan node
     node_status: CbomNodeStatus | "missing" | null
     enabled: boolean
     config: Record<string, any>
@@ -4616,7 +4619,7 @@ export interface CbomRunPosture {
     // CB-19 PR-2: the team's Mosca now, when it differs from what the run recorded at Start (null otherwise)
     mosca_now?: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number } | null
     top_risks: { id: number; type: string; name: string; location: string; impact: CbomImpact; criticality: string; source_name: string | null; score: number; hndl: boolean; finding: string | null }[]
-    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[] }[]
+    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[]; assets?: number }[]
     kb_version: string
     pqc_context: {
         mosca?: { inequality: string; definitions: Record<string, string>; source: string; paper: string }
@@ -4708,6 +4711,7 @@ export interface CbomSourcesOverview {
     plan: CbomEstimate
     evidence: { areas: number; answered: number; by_confidence: Record<CbomConfidence, number>; vendors: number; q0_gap_count?: number }
     code: { cbom_scans: number }
+    limits?: { sources: CbomSourceUsage }  // #224: usage against the team's source cap
     settings: {
         stop_all_network: boolean
         next_window_start: string | null
@@ -4825,6 +4829,7 @@ export interface CbomTargetCount {
     count: number | null
     lines?: number
     samples?: string[]
+    notes?: string[] // CB-09: names IDNA 2003 software reads as another host (faß.lab -> fass.lab), shown before saving
 }
 
 export interface CbomAuditEvent {
@@ -4872,6 +4877,13 @@ const listCbomSources = async (team_id: number, group?: CbomSourceGroup): Promis
     network_totals?: { addresses: number; ranges_enabled: number; ranges_disabled: number }
 }> => {
     const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params: group ? { group } : {} })
+    return response.data
+}
+
+/** #225: one page of sources, searched and filtered on the server (keyset paging: pass the previous next_after). */
+const listCbomSourcesPage = async (team_id: number, params: Record<string, string | number>):
+    Promise<{ sources: CbomSource[]; server_time: string; total: number; next_after: number | null; limit: number }> => {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/items`, { params })
     return response.data
 }
 
@@ -5194,6 +5206,10 @@ export interface CbomRunAssetFilters extends CbomAssetFilters {
     view?: CbomRunAssetView
     status?: CbomFindingStatus
     source_id?: number
+    /** #270: comma-separated finding codes (a compliance clause's assets) */
+    code?: string
+    /** #270: comma-separated asset ids, at most 500 (a compliance requirement's refs) */
+    asset_id?: string
 }
 
 /** Wave status names of PUT /cbom/remediation (same values as utils/api/cbom_ops CbomWaveStatus). */
@@ -5224,9 +5240,14 @@ export interface CbomRunProvenance {
     credits: number | null
 }
 
+/** A finding code behind a clause: its knowledge-base title and remediation summary (#270). */
+export interface CbomClauseFinding { code: string; title: string; fix: string | null }
+
 export interface CbomRunComplianceFramework {
     framework: string
-    clauses: { clause: string; title: string; assets: number; codes: string[] }[]
+    clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[] }[]
+    /** distinct assets behind any clause (#270; the clause counts overlap); null when it cannot be known */
+    assets?: number | null
 }
 
 /** The run's dashboard: the code page's CbomScanDashboardData; `metrics_available: false` until assignments carry done_at. */
@@ -5551,6 +5572,7 @@ export {
     getCbomNodeArtifacts,
     getCbomNodeArtifactLink,
     listCbomSources,
+    listCbomSourcesPage,
     getCbomSource,
     getCbomJob,
     getCbomSourcesSettings,

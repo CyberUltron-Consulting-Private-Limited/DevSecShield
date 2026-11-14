@@ -32,7 +32,7 @@ from sqlmodel import Session, select  # noqa: E402
 from test_cbom_aws_collect import EXTERNAL_ID, ROLE, _Session, aws  # noqa: E402,F401
 from test_cbom_azure_gcp_collect import _azure, _azure_routes, _gcp, _gcp_routes  # noqa: E402
 from test_cbom_sources_api import api, enroll_node, linux_body, world  # noqa: E402,F401
-from test_cbom_wp10_outputs import GONE, OPENSSL, WEAK_TLS, _claim, _FakeMongo, _row, _run  # noqa: E402
+from test_cbom_wp10_outputs import OPENSSL, UNKNOWN_KEY, WEAK_TLS, _claim, _FakeMongo, _row, _run  # noqa: E402
 
 from backend.new_models import CbomDriftEvent, Scan  # noqa: E402
 from backend.utilities.cbom_sources import aws_collect, azure_collect, gcp_collect  # noqa: E402
@@ -160,7 +160,7 @@ def test_organization_member_listing_failure_is_a_failed_target_not_a_note(aws, 
     monkeypatch.setattr(aws_collect, "_boto", lambda **kw: (_Session(False), None))
     monkeypatch.setattr(aws_collect, "_region_services",
                         lambda acct, region, label, emit, cfg, **_k: [("kms", "ok", None)])
-    monkeypatch.setattr(aws_collect, "_global_services", lambda acct, label, emit: [("iam", "ok", None)])
+    monkeypatch.setattr(aws_collect, "_global_services", lambda acct, label, emit, **_k: [("iam", "ok", None)])
     found: list[dict] = []
     result = aws_collect.collect_aws(1, {"role_arn": ROLE, "regions": ["us-east-1"], "scope": "organization"},
                                      EXTERNAL_ID, found.append, lambda: None)
@@ -275,7 +275,9 @@ def test_drift_events_and_diff_never_read_a_gap_as_a_removal(api, world, gap, hi
     hdr = {"X-ZS-Node-Token": token}
     api("POST", "/1/cbom/sources/items", json=linux_body("src-a", node_id=node_id, targets=["10.20.0.1"], window="any"))
     _run(api, "c1-run-0001")
-    _send(api, hdr, _claim(api, hdr), [WEAK_TLS, GONE, OPENSSL], {"total": 1, "ok": 1, "failed": 0, "skipped": 0})
+    # a host key with no finding (a type algid does not know): its removal is a change of the estate only, never a
+    # resolved finding (GONE is a DSA key since #126, with findings that a removal would resolve)
+    _send(api, hdr, _claim(api, hdr), [WEAK_TLS, UNKNOWN_KEY, OPENSSL], {"total": 1, "ok": 1, "failed": 0, "skipped": 0})
     run2 = _run(api, "c1-run-0002")
     row = {"type": "coverage", "target": "10.20.0.1", "location": "10.20.0.1#gap", **gap}
     # the second run read the target with a gap (reported as a cloud collector does: one partial target)
@@ -283,8 +285,8 @@ def test_drift_events_and_diff_never_read_a_gap_as_a_removal(api, world, gap, hi
     d = api("GET", f"/1/cbom/sources/runs/{run2['id']}/diff").json()
     assert d["sources"][0]["status"] == "compared"
     removed = [x["label"].split(" · ")[0] for x in d["removed"]]
-    assert removed == ([] if hidden else ["DSA host key"])
-    assert [x["label"].split(" · ")[0] for x in d["not_read"]] == (["DSA host key"] if hidden else [])
+    assert removed == ([] if hidden else ["Vendor host key"])
+    assert [x["label"].split(" · ")[0] for x in d["not_read"]] == (["Vendor host key"] if hidden else [])
     changes = api("GET", f"/1/cbom/sources/runs/{run2['id']}/changes").json()
     kinds = {e["kind"] for e in changes["events"]}
     assert ("removed_asset" in kinds) is (not hidden) and "resolved" not in kinds  # WEAK_TLS is unchanged
