@@ -23,7 +23,7 @@
 // AssetDetailPanel, so any page that already mounts those two gets them with no change.
 export { GradeInputsBanner, QDistributionBar, QDistributionCard, QGradeChip, QGradeDrawerSection, QGradeModelBody, QGradeModelDialog, Q0ItemList } from "./QGrade";
 export { AgilityDistribution, AgilityDrawerSection, AgilityPostureCard, EvidenceFixClass, FixClassChip } from "./Agility";
-export { AgilityBaselineSection, AgilityBaselineView, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";
+export { AgilityBaselineSection, AgilityBaselineView, AgilityHistoryTable, AgilitySubjectsTable, AgilitySystemsTable, type DrillDown } from "./AgilityBaseline";
 export * from "./baseline";
 //   team page            -> <Q0GapRegister teamId={t} />  (Quantum risk -> Q0 gaps, CB-23; fetches GET /{team}/cbom/register/q0)
 //                           hooks q0-gap-<id> (data-reason, data-status), q0-gap-group-<reason> (data-count)
@@ -35,6 +35,6 @@ export * from "./q0gaps";
 export { RegisterHeatmap, RegisterSummaryCard, RegisterTable, RiskRegister } from "./RiskRegister";
 export * from "./register";
 export { GRADE_TIPS, fixClassTipId, type GradeTipId, type TipEntry } from "./tips";
-export { gradeKeys, getCbomAgilityBaseline, getCbomAgilityModel, getCbomAgilitySubjects, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
+export { gradeKeys, getCbomAgilityBaseline, getCbomAgilityHistory, getCbomAgilityModel, getCbomAgilitySubjects, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
 export * from "./model";
 export * from "./inputs";

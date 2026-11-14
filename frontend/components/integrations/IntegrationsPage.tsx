@@ -67,6 +67,8 @@ const EVENT_LABEL: Record<IntegrationEventKind, string> = {
   schedule_skipped: "Scheduled run skipped",
   scan_finished: "Run or code scan finished",
   q0_closed: "Quantum risk Q0 gap closed",
+  agility_asset_moved: "Crypto-agility: an asset's fix class changed",
+  agility_system_changed: "Crypto-agility: a system's fix-class mix changed",
 };
 
 const CA_FIELD: FieldDef = {

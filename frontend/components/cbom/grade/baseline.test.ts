@@ -11,6 +11,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import {
   AgilityBaselineView,
+  AgilityHistoryTable,
+  historyDeltas,
+  type AgilityHistoryItem,
   AgilitySubjectsTable,
   FIX_VALUES,
   baselinePosture,
@@ -95,5 +98,18 @@ const empty: AgilityBaseline = { ...BASE, assets: 0, counts: zero, counts_excl_p
 const e = render(h(AgilityBaselineView, { baseline: empty, systems: [], model: MODEL }));
 assert.ok(e.includes('data-testid="agility-baseline-empty"') && !e.includes('data-testid="posture-fix"'));
 assert.equal(dedupeText(empty), null);
+
+// ---- history by run (CB-25): newest first, change of the self-fixable share only within one model version
+const HIST: AgilityHistoryItem[] = [
+  { run_id: 9, at: "2026-11-14T12:00:00Z", agility_version: "fx-1+b", assets: 6, counts: BASE.counts, self_fixable_pct: 40, systems: 2 },
+  { run_id: 8, at: "2026-11-13T12:00:00Z", agility_version: "fx-1+b", assets: 5, counts: { ...zero, configurable: 1, "vendor-fixed": 3 }, self_fixable_pct: 25, systems: 2 },
+  { run_id: 7, at: "2026-11-12T12:00:00Z", agility_version: "fx-1+a", assets: 5, counts: { ...zero, configurable: 5 }, self_fixable_pct: 100, systems: 1 },
+];
+assert.deepEqual(historyDeltas(HIST), [15, null, null]);
+const hist = render(h(AgilityHistoryTable, { items: HIST }));
+assert.equal(attr(hist, "agility-history-9", "data-delta"), "15");
+assert.equal(attr(hist, "agility-history-8", "data-delta"), "", "another model version: not compared");
+assert.equal(attr(hist, "agility-history-7", "data-pct"), "100");
+assert.ok(render(h(AgilityHistoryTable, { items: [] })).includes('data-testid="agility-history-empty"'));
 
 console.log("baseline.test.ts: ok");
