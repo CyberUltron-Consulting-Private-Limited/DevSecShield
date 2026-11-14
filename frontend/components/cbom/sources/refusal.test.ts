@@ -39,8 +39,11 @@ for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".tsx"))) {
 const app = path.join(dir, "../../../app/[team_id]")
 for (const type of ["sast", "iac", "sbom_sca", "cbom", "ai_bom", "llm", "mcp"]) {
   const page = fs.readFileSync(path.join(app, type, "page.tsx"), "utf8")
-  assert.ok(page.includes('aria-label={`Actions for ${conversation.title || `scan #${conversation.id}`}`}><MoreVertical'),
-    `${type}: the row menu trigger has an accessible name`)
+  // CBOM lists code scans and Sources runs in one table (CB-38): its rows are `row`, named per kind
+  const named = type === "cbom"
+    ? 'aria-label={`Actions for ${row.title || (isRun ? `Sources run #${row.id}` : `scan #${row.id}`)}`}><MoreVertical'
+    : 'aria-label={`Actions for ${conversation.title || `scan #${conversation.id}`}`}><MoreVertical'
+  assert.ok(page.includes(named), `${type}: the row menu trigger has an accessible name`)
   assert.ok(!page.includes('className="h-8 w-8 cursor-pointer"><MoreVertical'), `${type}: no unnamed trigger left`)
 }
 
