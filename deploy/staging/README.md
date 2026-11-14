@@ -225,8 +225,8 @@ the full list is `backend/.env.example`.
 
 ## AWS collection on staging (lab mode)
 
-Without `CBOM_AWS_PRINCIPAL_ARN` the AWS form says "This ZeroShield deployment is not set up for AWS collection; contact
-your administrator". Staging's only AWS account is the sandbox **935951870001**, which is also the account of the
+Without `CBOM_AWS_PRINCIPAL_ARN` the AWS form says "AWS collection isn't enabled on this ZeroShield deployment.
+Contact ZeroShield support at support@zeroshield.ai to have it turned on." (and the AWS Private CA card says "Not available"). Staging's only AWS account is the sandbox **935951870001**, which is also the account of the
 collector identity, and a customer role in the deployment's own account is refused ("This role is in ZeroShield's own
 AWS account") unless **lab mode** is on. Lab mode (`CBOM_AWS_LAB_SAME_ACCOUNT=1`, `backend/utilities/cbom_sources/lab_mode.py`)
 accepts such a role for a single-account source, on a deployment whose `DSS_ENV` names a test deployment

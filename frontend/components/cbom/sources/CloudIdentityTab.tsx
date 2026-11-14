@@ -35,6 +35,7 @@ import {
   type CbomTestResponse,
 } from "@/utils/backend_api";
 
+import { AWS_NOT_CONFIGURED, AWS_SUPPORT_EMAIL, awsPrivateCaStatus, worstAwsPrivateCaStatus } from "./awsPrivateCaStatus";
 import { caCardStatus, worstCardStatus, type CaCardStatus } from "./caCardStatus";
 import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
@@ -347,8 +348,21 @@ function useInvalidate(teamId: number) {
 
 // ---------------------------------------------------------------------------- tab
 /** The backend's sentence (templates.AWS_NOT_CONFIGURED): the template could only trust a placeholder account. */
-export const AWS_NOT_CONFIGURED =
-  "This ZeroShield deployment is not set up for AWS collection; contact your administrator";
+export { AWS_NOT_CONFIGURED };
+
+/** AWS_NOT_CONFIGURED with the support address as a link (#223: a SaaS customer has no administrator to ask). */
+function AwsNotEnabled() {
+  const [before, after] = AWS_NOT_CONFIGURED.split(AWS_SUPPORT_EMAIL);
+  return (
+    <>
+      {before}
+      <a href={`mailto:${AWS_SUPPORT_EMAIL}`} className="font-medium underline underline-offset-2">
+        {AWS_SUPPORT_EMAIL}
+      </a>
+      {after}
+    </>
+  );
+}
 
 export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: number; onNavigate: (tab: string) => void }) {
   const invalidate = useInvalidate(teamId);
@@ -498,8 +512,12 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
 
   const formKey = `${form.provider}-${form.source?.id ?? "new"}-${form.nonce}`;
   // AWS on a deployment without AWS collection: no form, so the side panel must not ask for one (lab UI r1)
-  const awsOff = form.provider === "aws" && settings.aws_collection_configured === false;
+  const awsUnavailable = settings.aws_collection_configured === false;
+  const awsOff = form.provider === "aws" && awsUnavailable;
   const provider = PROVIDERS.find((p) => p.value === form.provider) ?? PROVIDERS[0];
+  // #223 (a): an AWS Private CA has the status of the AWS account that reads it, never a bare "Connected"
+  const awsCaStatus = (s: CbomSource) =>
+    awsPrivateCaStatus(awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id")) ?? null, settings.aws_collection_configured);
 
   return (
     <div className="space-y-6">
@@ -508,7 +526,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           id="cbom-cloud-connect"
           className="xl:col-span-2"
           title="Connect a cloud account"
-          description={provider.description}
+          description={awsOff ? "AWS collection isn't enabled on this deployment" : provider.description}
           actions={
             <div role="group" aria-label="Cloud provider" className="inline-flex flex-wrap gap-1 rounded-lg bg-zinc-100 dark:bg-zinc-800/60 p-1">
               {PROVIDERS.map((p) => {
@@ -535,7 +553,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
           {awsOff && (
             <p role="alert" data-testid="aws-not-configured"
               className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20 p-3 text-sm text-amber-900 dark:text-amber-200">
-              {AWS_NOT_CONFIGURED}
+              <AwsNotEnabled />
             </p>
           )}
           {form.provider === "aws" && !awsOff && settings.aws_lab_same_account === true && (
@@ -569,7 +587,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
             shownValidation
               ? `${shownValidation.name}${shownValidation.at ? ` · last run ${formatDateTime(shownValidation.at)}` : ""}`
               : awsOff
-                ? "AWS collection is not set up on this deployment"
+                ? "AWS collection isn't enabled on this deployment"
                 : form.provider === "aws"
                   ? "Results appear after Validate connection"
                   : "Results appear after Save and validate"
@@ -583,7 +601,11 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
         title="Connected cloud accounts"
         description={`${pluralize(cloudSources.length, "account")} · Accounts that pass validation are scanned read-only from ZeroShield's cloud (4 credits per account per run).`}
       >
-        {cloudSources.length === 0 ? (
+        {cloudSources.length === 0 && awsUnavailable ? (
+          <div data-testid="cloud-accounts-aws-off">
+            <EmptyState title="No cloud accounts yet" body={<AwsNotEnabled />} />
+          </div>
+        ) : cloudSources.length === 0 ? (
           <EmptyState
             title="No cloud accounts yet"
             body="Connect an AWS account: ZeroShield assumes a read-only role in it with your external ID, so no keys are exchanged."
@@ -702,6 +724,7 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                     label={row.label}
                     detail={row.detail}
                     sources={rowSources}
+                    unavailable={row.key === "aws_private_ca" && awsUnavailable ? AWS_NOT_CONFIGURED : undefined}
                     canTest={onNode}
                     testing={testMutation.isPending ? testMutation.variables?.id ?? null : null}
                     onConnect={() => setCaDialog({ row, source: null, nonce: Date.now() })}
@@ -712,7 +735,9 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                     headerStatus={
                       onNode ? (
                         <CaStatusBadge status={worstCardStatus(rowSources.map((s) => caCardStatus(s)))} />
-                      ) : row.key === "aws_private_ca" ? undefined : (
+                      ) : row.key === "aws_private_ca" ? (
+                        <CaStatusBadge status={worstAwsPrivateCaStatus(rowSources.map(awsCaStatus))} />
+                      ) : (
                         <StatusBadge tone="zinc">Not collected</StatusBadge>
                       )
                     }
@@ -723,6 +748,12 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <span className="text-xs text-zinc-500">
                           through {awsSources.find((a) => a.id === cfgNumber(s, "aws_source_id"))?.name ?? "an AWS account that was removed"}
                           {planReason(s.id) ? ` · ${planReason(s.id)}` : ""}
+                          {awsCaStatus(s).detail && (
+                            <span className="block break-words" data-testid="cloud-ca-aws-status-detail">
+                              {rowSources.length > 1 ? `${awsCaStatus(s).label} · ` : ""}
+                              {awsCaStatus(s).detail}
+                            </span>
+                          )}
                         </span>
                       ) : (
                         <span className="text-xs text-zinc-500">
@@ -934,7 +965,7 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
     return (
       <div data-testid="cloud-validation" aria-live="polite" className="space-y-3">
         <p className="text-sm text-zinc-600 dark:text-zinc-400" data-testid="cloud-validation-aws-off">
-          Nothing to validate. {AWS_NOT_CONFIGURED}.
+          Nothing to validate. <AwsNotEnabled />
         </p>
       </div>
     );
@@ -2036,6 +2067,7 @@ function ConnectorRow({
   onDelete,
   renderDetail,
   headerStatus,
+  unavailable,
 }: {
   testId: string;
   label: string;
@@ -2051,6 +2083,8 @@ function ConnectorRow({
   renderDetail: (s: CbomSource) => ReactNode;
   /** replaces "Connected" (a CA a scan node reads shows its one derived status; a CA nothing reads says so) */
   headerStatus?: ReactNode;
+  /** why nothing can be connected here on this deployment (#223: AWS Private CA without AWS collection) */
+  unavailable?: string;
 }) {
   const connected = sources.length > 0;
   return (
@@ -2094,7 +2128,7 @@ function ConnectorRow({
                       <DropdownMenuSeparator />
                     </Fragment>
                   ))}
-                  <DropdownMenuItem className="cursor-pointer" onSelect={onConnect}>
+                  <DropdownMenuItem className="cursor-pointer" disabled={!!unavailable} onSelect={onConnect}>
                     <Plus className="h-4 w-4" />
                     Connect another
                   </DropdownMenuItem>
@@ -2102,12 +2136,18 @@ function ConnectorRow({
               </DropdownMenu>
             </>
           ) : (
-            <Button variant="outline" size="sm" className="cursor-pointer" onClick={onConnect} data-testid={`${testId}-connect`}>
+            <Button variant="outline" size="sm" className="cursor-pointer" disabled={!!unavailable} title={unavailable}
+              onClick={onConnect} data-testid={`${testId}-connect`}>
               Connect
             </Button>
           )}
         </div>
       </div>
+      {unavailable && (
+        <p className="mt-2 text-xs text-zinc-500 break-words" data-testid={`${testId}-unavailable`}>
+          {unavailable}
+        </p>
+      )}
       {connected && (
         <ul className="mt-2 space-y-2">
           {sources.map((s) => (
@@ -2124,7 +2164,7 @@ function ConnectorRow({
   );
 }
 
-function CaStatusBadge({ status }: { status: CaCardStatus }) {
+function CaStatusBadge({ status }: { status: Pick<CaCardStatus, "tone" | "label" | "detail"> & { kind: string } }) {
   return (
     <StatusBadge tone={status.tone} title={status.detail ?? undefined}>
       {status.kind === "testing" && <Loader2 className="animate-spin" />}
