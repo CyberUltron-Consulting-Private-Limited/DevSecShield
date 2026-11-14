@@ -637,6 +637,10 @@ class CbomRemediationAssignment(SQLModel, table=True):
     # CB-38 PR-4: the Jira issue of this asset (one per stable key, across runs) and when the status last became done
     ticket_key: str | None = Field(default=None, max_length=64)
     ticket_url: str | None = Field(default=None, max_length=512)
+    # the claim of the request creating the issue (taken and committed before the Jira call; run_tickets)
+    ticket_state: str | None = Field(default=None, max_length=16)  # pending | created
+    ticket_claim: str | None = Field(default=None, max_length=32)
+    ticket_claimed_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     done_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     updated_by_user_id: int | None = Field(default=None)
     row_version: int = Field(default=1)

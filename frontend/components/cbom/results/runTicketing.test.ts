@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 
 import type { CbomRunTicketAsset, CbomSourcesTicketing } from "@/utils/backend_api";
 import {
+  batchFailure,
   batches,
+  errorMessage,
   hasTicket,
   isTicketable,
   MAX_TICKETS_PER_REQUEST,
@@ -89,5 +91,26 @@ assert.equal(safeTicketUrl("https://bank.atlassian.net/browse/SEC-1"), "https://
 assert.equal(safeTicketUrl("javascript:alert(1)"), null);
 assert.equal(safeTicketUrl("not a url"), null);
 assert.equal(safeTicketUrl(null), null);
+
+// skipped (not a finding) and deferred (retry) buckets
+const withBuckets = mergeResults([
+  { created: [], existing: [], failed: [], skipped: [{ asset_id: 1, reason: "Not a finding" }] },
+  { created: [], existing: [], failed: [], deferred: [{ asset_id: 4, reason: "Not attempted (time limit); try again." }] },
+]);
+assert.equal(resultSummary(withBuckets), "1 to retry, 1 not a finding");
+assert.deepEqual(outcomes(withBuckets, [clean, weak]).map((r) => [r.asset_id, r.state, r.error]),
+  [[4, "deferred", "Not attempted (time limit); try again."], [1, "skipped", "Not a finding"]]);
+
+// a batch that failed as a whole keeps the earlier batches' results and reports every asset of its own
+const apiError = { response: { data: { detail: "No Jira project is set for CBOM Sources." } }, message: "Request failed with status code 400" };
+assert.equal(errorMessage(apiError), "No Jira project is set for CBOM Sources.");
+assert.equal(errorMessage(new Error("Network Error")), "Network Error");
+assert.equal(errorMessage(null), "The request failed");
+const kept = mergeResults([
+  { created: [{ asset_id: 4, asset_key: "k4", ticket_key: "SEC-1", ticket_url: "https://bank.atlassian.net/browse/SEC-1" }], existing: [], failed: [] },
+  batchFailure([2, 5], new Error("timeout of 0ms exceeded")),
+]);
+assert.equal(resultSummary(kept), "1 Jira issue created, 2 failed");
+assert.deepEqual(kept.failed, [{ asset_id: 2, error: "timeout of 0ms exceeded" }, { asset_id: 5, error: "timeout of 0ms exceeded" }]);
 
 console.log("runTicketing: all assertions passed");

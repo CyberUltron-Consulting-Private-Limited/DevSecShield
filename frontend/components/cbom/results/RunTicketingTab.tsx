@@ -31,6 +31,7 @@ import {
 } from "@/utils/backend_api";
 
 import {
+  batchFailure,
   batches,
   hasTicket,
   isTicketable,
@@ -46,8 +47,12 @@ import {
 
 const PAGE_SIZE = 100;
 const IMPACT_TONE: Record<CbomImpact, Tone> = { Critical: "red", High: "red", Medium: "amber", Low: "blue" };
-const OUTCOME_TONE: Record<TicketOutcome["state"], Tone> = { created: "green", existing: "blue", failed: "red" };
-const OUTCOME_LABEL: Record<TicketOutcome["state"], string> = { created: "Created", existing: "Already had one", failed: "Failed" };
+const OUTCOME_TONE: Record<TicketOutcome["state"], Tone> = {
+  created: "green", existing: "blue", failed: "red", deferred: "amber", skipped: "zinc",
+};
+const OUTCOME_LABEL: Record<TicketOutcome["state"], string> = {
+  created: "Created", existing: "Already had one", failed: "Failed", deferred: "Retry", skipped: "Not a finding",
+};
 
 const ticketingKey = (teamId: number) => [...cbomSourcesKeys.all(teamId), "ticketing"] as const;
 
@@ -135,9 +140,17 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
   const canCreate = state === "ready";
 
   const create = useMutation({
+    // every batch is reported: a batch that fails as a whole (network, 504, a project cleared meanwhile) lists its
+    // assets as failed and never hides what the earlier batches created
     mutationFn: async (ids: number[]): Promise<CbomRunTicketsResult> => {
       const results: CbomRunTicketsResult[] = [];
-      for (const batch of batches(ids)) results.push(await createCbomRunTickets(teamId, runId, batch));
+      for (const batch of batches(ids)) {
+        try {
+          results.push(await createCbomRunTickets(teamId, runId, batch));
+        } catch (error) {
+          results.push(batchFailure(batch, error));
+        }
+      }
       return mergeResults(results);
     },
     onSuccess: (result) => {
@@ -146,8 +159,8 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
       const message = resultSummary(result);
       if (result.failed.length) toast.error(message);
       else toast.success(message);
-      void queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.run(teamId, runId) });
     },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: cbomSourcesKeys.run(teamId, runId) }),
   });
 
   const toggle = (id: number) => setSelected((cur) => {
@@ -162,7 +175,10 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
   if (assetsQuery.isError) return <ErrorBlock error={assetsQuery.error} onRetry={() => void assetsQuery.refetch()} />;
   const ticketing = ticketingQuery.data!;
   const data = assetsQuery.data!;
-  const total = data.findings_total ?? data.total;
+  // findings_total comes with the findings view; an older API counts every asset, and the label says so
+  const countsFindings = typeof data.findings_total === "number";
+  const total = countsFindings ? data.findings_total! : data.total;
+  const noun = countsFindings ? (total === 1 ? "finding" : "findings") : (total === 1 ? "asset" : "assets");
   const pages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
 
   return (
@@ -203,7 +219,7 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-zinc-600 dark:text-zinc-400" data-testid="run-ticketing-count">
-          {total} {total === 1 ? "finding" : "findings"} in this run. Select findings without a ticket, then create Jira tickets.
+          {total} {noun} in this run. Select findings without a ticket, then create Jira tickets.
         </p>
         <Button
           type="button"

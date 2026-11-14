@@ -7,8 +7,11 @@ runs when ``CBOM_TEST_PG_URL`` is set, as in CI.
 """
 from __future__ import annotations
 
+import contextlib
+import datetime as dt
 import importlib.util
 import os
+import json
 import sys
 import threading
 import time
@@ -42,12 +45,17 @@ CLEAN_TLS = {"type": "tls_endpoint", "target": "10.20.0.1", "location": "10.20.0
 
 
 class FakeJira:
-    """Stands in for ``create_issue_in_project``: numbered keys, optional failure for one summary substring, optional
-    delay (so two concurrent requests overlap inside the Jira call)."""
+    """Stands in for the Jira client: ``create_issue_in_project`` (numbered keys, the issue's labels kept for
+    ``find_issue_by_label``), with an optional failure for one summary substring, an optional delay (so concurrent
+    requests overlap inside the Jira call) and ``timeout_after_create`` (Jira creates the issue, the call times out)."""
 
     def __init__(self):
         self.calls: list[dict] = []
+        self.searches: list[str] = []
+        self.issues: list[dict] = []
         self.fail_on: str | None = None
+        self.raise_other: BaseException | None = None
+        self.timeout_after_create = False
         self.delay = 0.0
         self.lock = threading.Lock()
 
@@ -56,15 +64,27 @@ class FakeJira:
             self.calls.append(kw)
             n = len(self.calls)
         time.sleep(self.delay)
+        if self.raise_other is not None:
+            raise self.raise_other
         if self.fail_on and self.fail_on in kw["summary"]:
-            raise Exception("Failed to create issue in Jira: {\"errors\":{\"issuetype\":\"invalid\"}}")
+            raise RT.JIRA.JiraError("http_4xx", "Jira answered HTTP 400: issuetype: invalid")
+        with self.lock:
+            self.issues.append({"key": f"SEC-{n}", "labels": list(kw.get("labels") or [])})
+        if self.timeout_after_create:
+            raise RT.JIRA.JiraError("timeout", "Jira request timed out. Please try again.")
         return {"id": str(10000 + n), "key": f"SEC-{n}"}
+
+    def find(self, jira_url, jira_token, label, jira_email=None):
+        self.searches.append(label)
+        hits = [i["key"] for i in self.issues if label in i["labels"]]
+        return hits[-1] if hits else None
 
 
 @pytest.fixture()
 def jira(monkeypatch):
     fake = FakeJira()
     monkeypatch.setattr(RT.JIRA, "create_issue_in_project", fake)
+    monkeypatch.setattr(RT.JIRA, "find_issue_by_label", fake.find)
     return fake
 
 
@@ -125,6 +145,7 @@ def test_run_tickets_idempotent(api, runs, jira):
     assert first.status_code == 200, first.text
     body = first.json()
     assert [c["asset_id"] for c in body["created"]] == [tls, cert] and body["existing"] == [] and body["failed"] == []
+    assert body["skipped"] == [] and body["deferred"] == []
     assert {c["ticket_key"] for c in body["created"]} == {"SEC-1", "SEC-2"}
     assert body["created"][0]["ticket_url"] == "https://bank.atlassian.net/browse/SEC-1"
     assert len(body["created"][0]["asset_key"]) == 40
@@ -137,6 +158,10 @@ def test_run_tickets_idempotent(api, runs, jira):
     assert [e["ticket_key"] for e in later["existing"]] == ["SEC-1", "SEC-2"]
     assert [c["ticket_key"] for c in later["created"]] == ["SEC-3"]
     assert len(jira.calls) == 3  # one Jira issue per stable key, never one per run
+    # every issue carries the asset's label (what a retry after a timeout searches for)
+    assert [c["labels"] for c in jira.calls] == [[f"zs-asset-{k}"] for k in
+                                                 [body["created"][0]["asset_key"], body["created"][1]["asset_key"],
+                                                  later["created"][0]["asset_key"]]]
     with Session(runs["engine"]) as s:
         rows = s.exec(select(CbomRemediationAssignment)).all()
         assert sorted(r.ticket_key for r in rows) == ["SEC-1", "SEC-2", "SEC-3"]
@@ -169,19 +194,22 @@ def test_one_failed_issue_never_loses_the_others(api, runs, jira):
     body = r.json()
     assert [c["asset_id"] for c in body["created"]] == [tls, cert]
     assert [f["asset_id"] for f in body["failed"]] == [lib] and "issuetype" in body["failed"][0]["error"]
-    with Session(runs["engine"]) as s:  # the failed asset got no assignment row and no key
-        keys = {r.ticket_key for r in s.exec(select(CbomRemediationAssignment)).all()}
-    assert keys == {"SEC-1", "SEC-3"}
+    with Session(runs["engine"]) as s:  # the refused asset has no key, and its claim was released (4xx: none created)
+        rows = {r.ticket_key: r for r in s.exec(select(CbomRemediationAssignment)).all()}
+    assert set(rows) == {"SEC-1", "SEC-3", None}
+    assert rows[None].ticket_state is None and rows[None].ticket_claim is None and rows[None].status == "open"
     jira.fail_on = None
     retry = api("POST", f"/1/cbom/sources/runs/{runs['run1']['id']}/tickets", json={"asset_ids": [tls, lib, cert]}).json()
     assert [c["asset_id"] for c in retry["created"]] == [lib] and len(retry["existing"]) == 2
+    assert jira.searches == []  # a released claim is retried at once, with no search
 
 
 def test_clean_inventory_is_not_ticketed(api, runs, jira):
     _set_project(api)
     clean, tls = _ids(runs, "run1", CLEAN, TLS)
     body = api("POST", f"/1/cbom/sources/runs/{runs['run1']['id']}/tickets", json={"asset_ids": [clean, tls]}).json()
-    assert [f["asset_id"] for f in body["failed"]] == [clean] and "Not a finding" in body["failed"][0]["error"]
+    assert body["failed"] == []
+    assert [f["asset_id"] for f in body["skipped"]] == [clean] and "Not a finding" in body["skipped"][0]["reason"]
     assert [c["asset_id"] for c in body["created"]] == [tls] and len(jira.calls) == 1
 
 
@@ -211,6 +239,12 @@ def test_input_validation(api, runs, jira):
     assert api("POST", url, json={"asset_ids": [1], "ticket_type": "servicenow"}).status_code == 400
     assert api("POST", url, json={"asset_ids": [0]}).status_code == 400
     assert api("POST", url, json={"asset_ids": [1], "extra": 1}).status_code == 400
+    assert "asset_ids: not" not in api("POST", url, json={"asset_ids": [0]}).json()["detail"]  # no repeated name
+    tls, cert = _ids(runs, "run1", TLS, CERT)
+    # duplicates are dropped before the 50-asset cap: 51 ids, 2 different
+    _set_project(api)
+    dup = api("POST", url, json={"asset_ids": [tls] * 50 + [cert]})
+    assert dup.status_code == 200 and len(dup.json()["created"]) == 2, dup.text
 
 
 def test_honest_errors_when_jira_or_the_project_is_missing(api, runs, jira):
@@ -295,10 +329,160 @@ def test_concurrent_requests_open_one_issue(api, runs, jira, planned):
         _plan_first(api, runs["run1"]["id"], tls)
     jira.delay = 0.5
     results = _race(runs["engine"], runs["run1"]["id"], tls)
-    assert sorted((len(r["created"]), len(r["existing"])) for r in results) == [(0, 1), (1, 0)]
+    # the second request finds a live claim: it waits on nothing and reports the asset as deferred
+    assert sorted((len(r["created"]), len(r["deferred"])) for r in results) == [(0, 1), (1, 0)]
     assert len(jira.calls) == 1
     with Session(runs["engine"]) as s:
-        assert [r.ticket_key for r in s.exec(select(CbomRemediationAssignment)).all()] == ["SEC-1"]
+        rows = s.exec(select(CbomRemediationAssignment)).all()
+    assert [r.ticket_key for r in rows] == ["SEC-1"] and rows[0].ticket_state == "created"
+    assert rows[0].row_version == 3  # plan or insert (v1), claim (v2), store (v3)
+    again = RT.create_tickets(runs["engine"], 1, 1, runs["run1"]["id"], RT.TicketBody(asset_ids=[tls]))
+    assert [e["ticket_key"] for e in again["existing"]] == ["SEC-1"]
+
+
+def _status_put_during_a_slow_ticket(api, engine, world_runs, jira):
+    """No transaction is held across the Jira call: a status PUT on an asset with no assignment yet, sent while its
+    ticket is being created, answers at once with 200 and keeps the user's status; the ticket is stored too."""
+    _set_project(api)
+    run1 = world_runs["run1"]["id"]
+    tls, = _ids(world_runs, "run1", TLS)
+    key = next(i["asset_key"] for i in api("GET", f"/1/cbom/sources/runs/{run1}/remediation").json()["items"]
+               if i["asset_id"] == tls)
+    jira.delay = 1.5
+    worker = threading.Thread(target=RT.create_tickets, args=(engine, 1, 1, run1, RT.TicketBody(asset_ids=[tls])))
+    worker.start()
+    time.sleep(0.4)  # the claim is committed and the fake Jira call is running
+    t0 = time.monotonic()
+    put = api("PUT", "/1/cbom/remediation", json={"run_id": run1, "items": [{"asset_key": key, "status": "in_progress"}]})
+    waited = time.monotonic() - t0
+    worker.join()
+    assert put.status_code == 200, put.text
+    assert waited < 1.0, waited  # did not wait for the Jira call
+    with Session(engine) as s:
+        row = s.exec(select(CbomRemediationAssignment).where(CbomRemediationAssignment.asset_key == key)).one()
+    assert (row.status, row.ticket_key, row.ticket_state) == ("in_progress", "SEC-1", "created")
+    assert row.row_version == 4  # insert, claim, the user's PUT, store: no write lost or re-used a version
+
+
+def test_status_put_during_a_slow_ticket(api, runs, jira):
+    _status_put_during_a_slow_ticket(api, runs["engine"], runs, jira)
+
+
+def test_timeout_then_retry_opens_one_issue(api, runs, jira, monkeypatch):
+    """Jira creates the issue but the call times out: the claim stays pending (a retry at once is deferred, not a
+    second create); once the claim is stale, the retry searches by the asset's label and stores the issue it finds."""
+    _set_project(api)
+    run1 = runs["run1"]["id"]
+    tls, = _ids(runs, "run1", TLS)
+    jira.timeout_after_create = True
+    first = RT.create_tickets(runs["engine"], 1, 1, run1, RT.TicketBody(asset_ids=[tls]))
+    assert [f["error"] for f in first["failed"]] == ["Jira request timed out. Please try again."]
+    with Session(runs["engine"]) as s:
+        row = s.exec(select(CbomRemediationAssignment)).one()
+    assert (row.ticket_key, row.ticket_state) == (None, "pending") and row.ticket_claim
+    jira.timeout_after_create = False
+    soon = RT.create_tickets(runs["engine"], 1, 1, run1, RT.TicketBody(asset_ids=[tls]))
+    assert [d["reason"] for d in soon["deferred"]] == [RT.IN_PROGRESS] and len(jira.calls) == 1
+    with Session(runs["engine"]) as s:  # the claim ages past its TTL (a restart, or a request that never came back)
+        row = s.exec(select(CbomRemediationAssignment)).one()
+        row.ticket_claimed_at = row.ticket_claimed_at - RT.CLAIM_TTL - dt.timedelta(seconds=1)
+        s.add(row)
+        s.commit()
+    later = RT.create_tickets(runs["engine"], 1, 1, run1, RT.TicketBody(asset_ids=[tls]))
+    assert [(e["asset_id"], e["ticket_key"]) for e in later["existing"]] == [(tls, "SEC-1")] and later["created"] == []
+    assert len(jira.calls) == 1 and jira.searches == [f"zs-asset-{later['existing'][0]['asset_key']}"]
+    with Session(runs["engine"]) as s:
+        row = s.exec(select(CbomRemediationAssignment)).one()
+    assert (row.ticket_key, row.ticket_state, row.ticket_claim) == ("SEC-1", "created", None)
+
+
+def test_only_jira_messages_reach_the_user(api, runs, jira, capsys):
+    _set_project(api)
+    tls, = _ids(runs, "run1", TLS)
+    jira.raise_other = RuntimeError("[SQL: UPDATE cbomremediationassignment SET ...] internal detail")
+    body = api("POST", f"/1/cbom/sources/runs/{runs['run1']['id']}/tickets", json={"asset_ids": [tls]}).json()
+    assert [f["error"] for f in body["failed"]] == [RT.GENERIC_ERROR]
+    out = capsys.readouterr().out
+    assert "error=RuntimeError" in out and "internal detail" not in out
+    with Session(runs["engine"]) as s:  # not a Jira timeout: the claim is released for an immediate retry
+        assert s.exec(select(CbomRemediationAssignment)).one().ticket_state is None
+
+
+def test_time_budget_defers_the_rest(api, runs, jira):
+    _set_project(api)
+    tls, cert, lib = _ids(runs, "run1", TLS, CERT, LIB)
+    jira.delay = 0.3
+    out = RT.create_tickets(runs["engine"], 1, 1, runs["run1"]["id"], RT.TicketBody(asset_ids=[tls, cert, lib]),
+                            budget_s=0.2)
+    assert [c["asset_id"] for c in out["created"]] == [tls]
+    assert [(d["asset_id"], d["reason"]) for d in out["deferred"]] == [(cert, RT.OUT_OF_TIME), (lib, RT.OUT_OF_TIME)]
+    assert len(jira.calls) == 1
+    with Session(runs["engine"]) as s:  # deferred assets were never claimed
+        assert {r.ticket_state for r in s.exec(select(CbomRemediationAssignment)).all()} == {"created"}
+
+
+def _response(status: int, body: str, content_type: str = "application/json"):
+    import requests
+
+    r = requests.Response()
+    r.status_code, r._content, r.headers["Content-Type"] = status, body.encode(), content_type
+    return r
+
+
+def test_jira_client_errors_are_clean_and_bodies_are_not_printed(monkeypatch, capsys):
+    from backend.utilities.integrations import jira as J
+
+    monkeypatch.setattr(J, "validate_jira_url", lambda url: True)
+    answers = iter([
+        _response(502, "<html><body>Bad gateway SECRET-HTML</body></html>", "text/html"),
+        _response(400, '{"errorMessages":["Project is archived"],"errors":{"issuetype":"invalid"}}'),
+        _response(201, '{"id":"10001","key":"SEC-7","self":"https://bank.atlassian.net/rest/api/3/issue/10001"}'),
+    ])
+    sent: list[dict] = []
+
+    def fake_request(method, url, **kw):
+        sent.append(json.loads(kw["data"]))
+        return next(answers)
+
+    monkeypatch.setattr(J.requests, "request", fake_request)
+    args = dict(jira_url="https://bank.atlassian.net", jira_token="t", project_id="", summary="s", description="d",
+                project_key="SEC", labels=["zs-asset-ab"])
+    with pytest.raises(J.JiraError) as html:
+        J.create_issue_in_project(**args)
+    assert (html.value.kind, str(html.value)) == ("http_5xx", "Jira answered HTTP 502")
+    with pytest.raises(J.JiraError) as refused:
+        J.create_issue_in_project(**args)
+    assert refused.value.kind == "http_4xx"
+    assert str(refused.value) == "Jira answered HTTP 400: Project is archived; issuetype: invalid"
+    assert J.create_issue_in_project(**args)["key"] == "SEC-7"
+    assert sent[0]["fields"]["labels"] == ["zs-asset-ab"] and sent[0]["fields"]["project"] == {"key": "SEC"}
+    out = capsys.readouterr()
+    assert "SECRET-HTML" not in out.out + out.err and '"self"' not in out.out + out.err  # no response body printed
+    # the code lane's payload is unchanged: project by id, no labels
+    monkeypatch.setattr(J.requests, "request", lambda method, url, **kw: sent.append(json.loads(kw["data"]))
+                        or _response(201, '{"key":"OPS-1"}'))
+    J.create_issue_in_project(jira_url="https://bank.atlassian.net", jira_token="t", project_id="10000", summary="s",
+                              description="d")
+    assert sent[-1]["fields"]["project"] == {"id": "10000"} and "labels" not in sent[-1]["fields"]
+
+
+def test_find_issue_by_label_uses_jql_and_falls_back(monkeypatch):
+    from backend.utilities.integrations import jira as J
+
+    monkeypatch.setattr(J, "validate_jira_url", lambda url: True)
+    calls: list[tuple[str, dict]] = []
+    answers = iter([_response(410, "{}"), _response(200, '{"issues":[{"key":"SEC-4"}]}')])
+
+    def fake_request(method, url, **kw):
+        calls.append((url, json.loads(kw["data"])))
+        return next(answers)
+
+    monkeypatch.setattr(J.requests, "request", fake_request)
+    assert J.find_issue_by_label("https://bank.atlassian.net", "t", "zs-asset-ab") == "SEC-4"
+    assert [u.rsplit("/rest", 1)[1] for u, _ in calls] == ["/api/3/search/jql", "/api/3/search"]
+    assert calls[0][1]["jql"] == 'labels = "zs-asset-ab" ORDER BY created DESC'
+    with pytest.raises(ValueError):
+        J.find_issue_by_label("https://bank.atlassian.net", "t", 'x" OR project = "Y')
 
 
 # ------------------------------------------------------------------------------------------- team setting (admin)
@@ -318,6 +502,9 @@ def test_project_setting_is_admin_only_and_versioned(api, runs):
         "jira_project_key"] == "10042"
     for bad in ("se c", "1SEC", "S", "x" * 33, "SEC;DROP"):
         assert api("PUT", "/1/cbom/sources/ticketing", json={"jira_project_key": bad}).status_code == 400, bad
+    before = api("GET", "/1/cbom/sources/ticketing").json()["ticketing"]["row_version"]
+    noop = api("PUT", "/1/cbom/sources/ticketing", json={})
+    assert noop.status_code == 200 and noop.json()["ticketing"]["row_version"] == before  # nothing saved, no bump
     cleared = api("PUT", "/1/cbom/sources/ticketing", json={"jira_project_key": ""}).json()["ticketing"]
     assert cleared["jira_project_key"] is None and cleared["jira_issue_type"] == "Story"  # untouched field kept
     assert api("GET", "/1/cbom/sources/ticketing", "carol").status_code == 403
@@ -423,11 +610,12 @@ def _upgrade_downgrade(engine):
         conn.execute(sa.text("DROP TABLE IF EXISTS cbomremediationassignment"))
         conn.execute(sa.text("DROP TABLE IF EXISTS cbomcollectionsettings"))
         conn.execute(sa.text("CREATE TABLE cbomremediationassignment (id integer PRIMARY KEY, team_id integer NOT NULL, "
-                             "asset_key varchar(64) NOT NULL, status varchar(16) NOT NULL, "
+                             "asset_key varchar(64) NOT NULL, status varchar(16) NOT NULL, last_updated timestamp, "
                              "CONSTRAINT uq_cbomremediation_team_asset UNIQUE (team_id, asset_key))"))
         conn.execute(sa.text("CREATE TABLE cbomcollectionsettings (id integer PRIMARY KEY, team_id integer NOT NULL, "
                              "aws_external_id varchar(40) NOT NULL)"))
-        conn.execute(sa.text("INSERT INTO cbomremediationassignment VALUES (1, 1, 'k1', 'done')"))
+        conn.execute(sa.text("INSERT INTO cbomremediationassignment VALUES (1, 1, 'k1', 'done', '2026-10-01 08:30:00')"))
+        conn.execute(sa.text("INSERT INTO cbomremediationassignment VALUES (3, 1, 'k3', 'open', '2026-10-02 08:30:00')"))
         conn.execute(sa.text("INSERT INTO cbomcollectionsettings VALUES (1, 1, 'zs-ext')"))
 
     def columns(table):
@@ -436,21 +624,25 @@ def _upgrade_downgrade(engine):
     try:
         with engine.begin() as conn, Operations.context(MigrationContext.configure(conn)):
             _migration().upgrade()
-        assert {"ticket_key", "ticket_url", "done_at"} <= columns("cbomremediationassignment")
+        assert {"ticket_key", "ticket_url", "done_at", "ticket_state", "ticket_claim", "ticket_claimed_at"} \
+            <= columns("cbomremediationassignment")
         assert {"jira_project_key", "jira_issue_type"} <= columns("cbomcollectionsettings")
         with engine.begin() as conn:
-            row = conn.execute(sa.text("SELECT asset_key, status, ticket_key, done_at FROM cbomremediationassignment"))
-            assert row.one() == ("k1", "done", None, None)  # existing rows kept, new columns empty
+            rows = conn.execute(sa.text("SELECT asset_key, status, ticket_key, ticket_state, done_at "
+                                        "FROM cbomremediationassignment ORDER BY id")).all()
+            # existing rows kept; a row already done gets done_at = last_updated (remediation metrics), others none
+            assert [tuple(r[:4]) for r in rows] == [("k1", "done", None, None), ("k3", "open", None, None)]
+            assert str(rows[0][4]).startswith("2026-10-01 08:30:00") and rows[1][4] is None
             conn.execute(sa.text("UPDATE cbomremediationassignment SET ticket_key = 'SEC-1'"))
             conn.execute(sa.text("UPDATE cbomcollectionsettings SET jira_project_key = 'SEC'"))
         with engine.begin() as conn, Operations.context(MigrationContext.configure(conn)):
             _migration().downgrade()
-        assert columns("cbomremediationassignment") == {"id", "team_id", "asset_key", "status"}
+        assert columns("cbomremediationassignment") == {"id", "team_id", "asset_key", "status", "last_updated"}
         assert columns("cbomcollectionsettings") == {"id", "team_id", "aws_external_id"}
         with engine.begin() as conn:
-            assert conn.execute(sa.text("SELECT asset_key FROM cbomremediationassignment")).scalar() == "k1"
+            assert conn.execute(sa.text("SELECT asset_key FROM cbomremediationassignment WHERE id = 1")).scalar() == "k1"
             with pytest.raises(sa.exc.IntegrityError):  # the unique key survived the SQLite table copy
-                conn.execute(sa.text("INSERT INTO cbomremediationassignment VALUES (2, 1, 'k1', 'open')"))
+                conn.execute(sa.text("INSERT INTO cbomremediationassignment VALUES (2, 1, 'k1', 'open', NULL)"))
     finally:
         with engine.begin() as conn:
             conn.execute(sa.text("DROP TABLE IF EXISTS cbomremediationassignment"))
@@ -480,11 +672,9 @@ def test_migration_up_and_down_on_postgresql():
 
 
 @pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
-@pytest.mark.parametrize("planned", [False, True], ids=["no-assignment-yet", "assignment-exists"])
-def test_concurrent_requests_open_one_issue_on_postgresql(monkeypatch, jira, planned):
-    """The assignment row is write-locked while its issue is created: two overlapping requests on PostgreSQL (READ
-    COMMITTED; the second waits on the unique key of a new row, or on the row lock of an existing one) open one
-    issue."""
+@contextlib.contextmanager
+def _pg_world(monkeypatch):
+    """The SQLite harness on PostgreSQL, in a schema of its own: yields (engine, api, runs)."""
     from fastapi.testclient import TestClient
     from sqlmodel import SQLModel
 
@@ -527,17 +717,31 @@ def test_concurrent_requests_open_one_issue_on_postgresql(monkeypatch, jira, pla
                 headers["Authorization"] = f"Bearer {token}"
             return client.request(method, url, headers=headers, **kwargs)
 
-        world_runs = _make_runs(call, engine)
+        yield engine, call, _make_runs(call, engine)
+    finally:
+        engine.dispose()
+        with admin.begin() as conn:
+            conn.execute(sa.text("DROP SCHEMA IF EXISTS cb38race CASCADE"))
+        admin.dispose()
+
+
+@pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
+@pytest.mark.parametrize("planned", [False, True], ids=["no-assignment-yet", "assignment-exists"])
+def test_concurrent_requests_open_one_issue_on_postgresql(monkeypatch, jira, planned):
+    """Two overlapping requests on PostgreSQL (READ COMMITTED) open one issue: the second finds the first one's
+    committed claim and reports the asset as deferred."""
+    with _pg_world(monkeypatch) as (engine, call, world_runs):
         assert _set_project(call).status_code == 200
         tls, = _ids(world_runs, "run1", TLS)
         if planned:
             _plan_first(call, world_runs["run1"]["id"], tls)
         jira.delay = 0.5
         results = _race(engine, world_runs["run1"]["id"], tls)
-        assert sorted((len(r["created"]), len(r["existing"])) for r in results) == [(0, 1), (1, 0)]
+        assert sorted((len(r["created"]), len(r["deferred"])) for r in results) == [(0, 1), (1, 0)]
         assert len(jira.calls) == 1
-    finally:
-        engine.dispose()
-        with admin.begin() as conn:
-            conn.execute(sa.text("DROP SCHEMA IF EXISTS cb38race CASCADE"))
-        admin.dispose()
+
+
+@pytest.mark.skipif(not PG, reason="set CBOM_TEST_PG_URL to run against PostgreSQL")
+def test_status_put_during_a_slow_ticket_on_postgresql(monkeypatch, jira):
+    with _pg_world(monkeypatch) as (engine, call, world_runs):
+        _status_put_during_a_slow_ticket(call, engine, world_runs, jira)

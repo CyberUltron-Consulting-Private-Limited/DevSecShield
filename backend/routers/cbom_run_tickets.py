@@ -73,6 +73,9 @@ def _put_ticketing(engine, team_id: int, user_id: int, body: TICKETS.JiraSetting
         settings = get_or_create_settings(session, team_id)
         check_version(settings, body.expected_version)
         changed = sorted(f for f in ("jira_project_key", "jira_issue_type") if f in body.model_fields_set)
+        is_team = session.get(Team, team_id)
+        if not changed:  # nothing to save: no version bump, no audit row
+            return {"ticketing": TICKETS.public_jira_settings(settings, is_team, is_admin=True)}
         for field in changed:
             setattr(settings, field, getattr(body, field))
         settings.updated_by_user_id, settings.last_updated = user_id, utcnow()

@@ -4997,6 +4997,10 @@ export interface CbomRunTicketsResult {
     created: CbomRunTicketRef[]
     existing: CbomRunTicketRef[]
     failed: { asset_id: number; asset_key?: string | null; error: string }[]
+    /** Clean inventory and coverage notes: not findings, never ticketed. */
+    skipped?: { asset_id: number; asset_key?: string | null; reason: string }[]
+    /** Not attempted: another request is creating the ticket, or the request's time budget ran out. Retry. */
+    deferred?: { asset_id: number; asset_key?: string | null; reason: string }[]
 }
 
 /** Findings of a run with their tickets (``view=findings`` is ignored by an older API, which lists every asset). */
@@ -5024,15 +5028,11 @@ export const updateCbomSourcesTicketing = async (
     }
 }
 
-/** One Jira issue per selected finding; assets that already have one are reported in ``existing``. */
+/** One Jira issue per selected finding; assets that already have one are reported in ``existing``. No toast: the
+ * Ticketing tab shows the outcome of every asset, including a batch that failed as a whole. */
 export const createCbomRunTickets = async (team_id: number, run_id: number, asset_ids: number[]): Promise<CbomRunTicketsResult> => {
-    try {
-        const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/tickets`, { asset_ids, ticket_type: "jira" })
-        return response.data as CbomRunTicketsResult
-    } catch (error) {
-        showErrorToast(error, "Error creating Jira tickets")
-        throw error
-    }
+    const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/tickets`, { asset_ids, ticket_type: "jira" })
+    return response.data as CbomRunTicketsResult
 }
 
 const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {

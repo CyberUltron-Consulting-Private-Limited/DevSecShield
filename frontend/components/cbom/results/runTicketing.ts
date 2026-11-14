@@ -54,24 +54,42 @@ export function batches<T>(values: T[], size = MAX_TICKETS_PER_REQUEST): T[][] {
   return out;
 }
 
-export function mergeResults(results: CbomRunTicketsResult[]): CbomRunTicketsResult {
+export function mergeResults(results: CbomRunTicketsResult[]): Required<CbomRunTicketsResult> {
   return {
     created: results.flatMap((r) => r.created),
     existing: results.flatMap((r) => r.existing),
     failed: results.flatMap((r) => r.failed),
+    skipped: results.flatMap((r) => r.skipped ?? []),
+    deferred: results.flatMap((r) => r.deferred ?? []),
   };
 }
+
+/** The API's reason for a refused request (its ``detail``), else the error's message. */
+export function errorMessage(error: unknown): string {
+  const detail = (error as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  const message = (error as { message?: unknown } | null)?.message;
+  return typeof message === "string" && message.trim() ? message : "The request failed";
+}
+
+/** A batch whose request failed as a whole: every asset in it is reported, so earlier batches' results are kept. */
+export function batchFailure(ids: number[], error: unknown): CbomRunTicketsResult {
+  const reason = errorMessage(error);
+  return { created: [], existing: [], failed: ids.map((asset_id) => ({ asset_id, error: reason })) };
+}
+
+export type TicketState = "created" | "existing" | "failed" | "deferred" | "skipped";
 
 export type TicketOutcome = {
   asset_id: number;
   label: string;
-  state: "created" | "existing" | "failed";
+  state: TicketState;
   ticket_key: string | null;
   ticket_url: string | null;
   error: string | null;
 };
 
-/** One line per asset sent, in the order the API answered (created, then existing, then failed). */
+/** One line per asset sent: created, existing, failed, deferred (retry), skipped (not a finding). */
 export function outcomes(result: CbomRunTicketsResult, items: CbomRunTicketAsset[]): TicketOutcome[] {
   const byId = new Map(items.map((a) => [a.id, a]));
   const label = (id: number) => {
@@ -80,13 +98,17 @@ export function outcomes(result: CbomRunTicketsResult, items: CbomRunTicketAsset
     const what = a.algorithm ?? a.name ?? a.type;
     return `${what} · ${a.location}`;
   };
+  const ticket = (state: "created" | "existing") => (r: CbomRunTicketsResult["created"][number]): TicketOutcome =>
+    ({ asset_id: r.asset_id, label: label(r.asset_id), state, ticket_key: r.ticket_key, ticket_url: r.ticket_url, error: null });
+  const note = (state: TicketState, text: (r: { error?: string; reason?: string }) => string) =>
+    (r: { asset_id: number; error?: string; reason?: string }): TicketOutcome =>
+      ({ asset_id: r.asset_id, label: label(r.asset_id), state, ticket_key: null, ticket_url: null, error: text(r) });
   return [
-    ...result.created.map((r) => ({ asset_id: r.asset_id, label: label(r.asset_id), state: "created" as const,
-      ticket_key: r.ticket_key, ticket_url: r.ticket_url, error: null })),
-    ...result.existing.map((r) => ({ asset_id: r.asset_id, label: label(r.asset_id), state: "existing" as const,
-      ticket_key: r.ticket_key, ticket_url: r.ticket_url, error: null })),
-    ...result.failed.map((r) => ({ asset_id: r.asset_id, label: label(r.asset_id), state: "failed" as const,
-      ticket_key: null, ticket_url: null, error: r.error })),
+    ...result.created.map(ticket("created")),
+    ...result.existing.map(ticket("existing")),
+    ...result.failed.map(note("failed", (r) => r.error ?? "")),
+    ...(result.deferred ?? []).map(note("deferred", (r) => r.reason ?? "")),
+    ...(result.skipped ?? []).map(note("skipped", (r) => r.reason ?? "")),
   ];
 }
 
@@ -95,6 +117,8 @@ export function resultSummary(result: CbomRunTicketsResult): string {
   if (result.created.length) parts.push(`${result.created.length} Jira ${result.created.length === 1 ? "issue" : "issues"} created`);
   if (result.existing.length) parts.push(`${result.existing.length} already had one`);
   if (result.failed.length) parts.push(`${result.failed.length} failed`);
+  if (result.deferred?.length) parts.push(`${result.deferred.length} to retry`);
+  if (result.skipped?.length) parts.push(`${result.skipped.length} not a finding`);
   return parts.join(", ") || "Nothing to create";
 }
 
