@@ -4565,7 +4565,7 @@ export const INFO_TIPS = {
     why: "Resolve them in the CMDB or by hand so the right owner gets the findings.",
     example: "10.20.5.17: owner Payments in one source, Cards in another.",
   },
-  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:83, backend/utilities/integrations/cmdb.py:337-351 — new sources past the team's source cap
+  // src: frontend/components/cbom/sources/CmdbImportDialog.tsx:83, backend/utilities/integrations/cmdb.py:654-670 — new sources past the team's source cap
   "cbsrc.cmdb.over_limit": {
     label: "Over the source limit",
     what: "New sources this import would create beyond the team's source limit. They are listed here and are not created when you apply; the rest of the import still goes ahead.",
@@ -4606,13 +4606,6 @@ export const INFO_TIPS = {
     what: "The scan node for rows with no segment or scan_node column. A row's segment picks the scan node of that segment instead.",
     why: "A node that cannot reach them makes every new source fail its test.",
     example: "node-dc1.",
-  },
-  // src: backend/utilities/integrations/cmdb.py:654-670, backend/utilities/cbom_sources/source_cap.py:91-96 — #224: new sources past the team's cap
-  "cbsrc.cmdb.over_limit": {
-    label: "Over the source limit",
-    what: "New sources this import would make past the team's source limit (CBOM_MAX_SOURCES, or the team's own override). They are listed with the reason and are not created; the others are.",
-    why: "The preview shows the real result, so Apply never surprises you with a refusal.",
-    example: "145 of 500 new sources are over the limit (355 of 500 used).",
   },
   // src: backend/utilities/integrations/cmdb.py:378-400, backend/routers/integrations.py:114 — #225: one choice per shared segment
   "cbsrc.cmdb.segment_node": {

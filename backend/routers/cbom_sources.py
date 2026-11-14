@@ -920,13 +920,25 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         cfg = dict(source.config or {})
         version, external_id = J.connection_version(source), settings.aws_external_id
+        previous = dict(source.last_test_result or {})
     result = validate_aws_role(team_id, cfg.get("role_arn", ""), external_id, cfg.get("regions") or [], cfg.get("scope", "account"),
                                lambda_cmk=bool(cfg.get("decrypt_lambda_cmk")), read_glue=bool(cfg.get("read_glue")))
     now = utcnow()
     passed = sum(1 for c in result["checks"] if c["status"] == "pass")
+    stored = {k: v for k, v in result.items() if k in ("checks", "member_accounts", "status")}
+    if isinstance(result.get("member_accounts"), int):  # F1: what each run of this organisation is charged, and its change
+        from backend.utilities.cbom_sources.planning import org_estimate
+
+        before = previous.get("estimate") or ({"accounts": previous["member_accounts"]}
+                                              if isinstance(previous.get("member_accounts"), int) else None)
+        stored["estimate"] = org_estimate(result["member_accounts"], before, now)
+        if (stored["estimate"].get("changed_at") or "") == now.replace(microsecond=0).isoformat() + "Z":
+            log("aws org estimate changed", team=team_id, source=source_id, accounts=result["member_accounts"],
+                previous=stored["estimate"]["changed_from"]["accounts"], by=user_id)
+    elif isinstance(previous.get("estimate"), dict):  # a failed validation keeps the last estimate and its change
+        stored["estimate"] = previous["estimate"]
     _save_live_test(engine, team_id, user_id, source_id, version, "source.validate", now, result["status"],
-                    f"{passed} of {len(result['checks'])} checks passed",
-                    {k: v for k, v in result.items() if k in ("checks", "member_accounts", "status")})
+                    f"{passed} of {len(result['checks'])} checks passed", stored)
     lab = result.get("lab_mode")
     if lab:  # lab mode (lab_mode.py): every use is audited and logged
         with Session(engine) as session:
@@ -935,7 +947,8 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
             session.commit()
     log("aws validated", team=team_id, source=source_id, status=result["status"], by=user_id, lab_mode=lab)
     return {"status": result["status"], "checks": result["checks"], "member_accounts": result.get("member_accounts"),
-            "validated_at": iso_z(now), **({"lab_mode": lab} if lab else {})}
+            "validated_at": iso_z(now), **({"lab_mode": lab} if lab else {}),
+            **({"estimate": stored["estimate"]} if "estimate" in stored else {})}
 
 
 def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
