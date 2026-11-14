@@ -1,0 +1,18 @@
+{
+  "client-ssl": {"kind": "tm:ltm:profile:client-ssl:client-sslcollectionstate",
+                 "items": [
+                   {"name": "default-no-rc4", "fullPath": "/Common/default-no-rc4", "ciphers": "DEFAULT:!RC4",
+                    "cipherGroup": "none", "options": ["dont-insert-empty-fragments"]},
+                   {"name": "default-plus-tlsv1", "fullPath": "/Common/default-plus-tlsv1",
+                    "ciphers": "DEFAULT:!RC4:TLSv1", "cipherGroup": "none", "options": ["dont-insert-empty-fragments"]},
+                   {"name": "default-no-12", "fullPath": "/Common/default-no-12", "ciphers": "DEFAULT:!TLSv1_2:TLSv1",
+                    "cipherGroup": "none", "options": []},
+                   {"name": "default-option-off", "fullPath": "/Common/default-option-off", "ciphers": "DEFAULT:TLSv1",
+                    "cipherGroup": "none", "options": ["no-tlsv1.2", "no-tlsv1.3"]},
+                   {"name": "tlsv1-only", "fullPath": "/Common/tlsv1-only", "ciphers": "AES128-SHA:TLSv1",
+                    "cipherGroup": "none", "options": []},
+                   {"name": "default-tlsv1-off", "fullPath": "/Common/default-tlsv1-off", "ciphers": "DEFAULT:TLSv1",
+                    "cipherGroup": "none", "options": ["no-tlsv1"]}
+                 ]},
+  "crypto-key": {"items": []}
+}
