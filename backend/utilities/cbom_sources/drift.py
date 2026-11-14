@@ -196,7 +196,10 @@ class Gap:
             return False
         if self.types and view.asset_type not in self.types:
             return False
-        return not self.prefixes or any(location.startswith(p) for p in self.prefixes)
+        # a prefix that starts with "#" names a part of the location anywhere in it (no location starts with "#"):
+        # a job-wide gap scoped ["#sni="] covers every certificate read with an SNI name, on any endpoint
+        return not self.prefixes or any(p in location if p.startswith("#") else location.startswith(p)
+                                        for p in self.prefixes)
 
 
 NOT_GAPS = ("not_supported", "not_installed")  # what a target does not have, not what was missed
