@@ -5058,6 +5058,13 @@ export const INFO_TIPS = {
     why: "Tells events from different ZeroShield teams or deployments apart.",
     example: "zeroshield-prod.",
   },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:119 — HEC data channel (#126)
+  "int.hec.channel": {
+    label: "Data channel GUID",
+    what: "Optional: a GUID sent as X-Splunk-Request-Channel with every request.",
+    why: "A HEC token with indexer acknowledgement on refuses requests without a channel (\"Data channel is missing\").",
+    example: "0aeeac95-ac74-4aa9-b30d-6c4c0ac581ba.",
+  },
   // src: frontend/components/integrations/IntegrationsPage.tsx:100 — https
   "int.webhook.url": {
     label: "Receiver URL",
