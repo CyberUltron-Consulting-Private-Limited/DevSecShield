@@ -14,7 +14,8 @@ backend test fails when the copies differ. algid_tables.py is written by
 scripts/algid/build_algid.py from the captured registries in scripts/algid/sources:
 change a source and regenerate, never edit a table by hand. This file is hand-written:
 edit the backend copy only, then run ``build_algid.py --sync``. Stdlib only. The tables
-are read-only and nothing is memoised, so a lookup never changes module state.
+are read-only. ``resolve`` keeps one bounded LRU memo of str lookups (CB-04 ST-9),
+cleared when a table it reads is rebound, so it never answers from an older table.
 
 ``status`` follows one rule for every registry row (curated.json "status_rule"): a
 published RFC is ``standard``; an RFC-to-be (``RFC-ietf-*``) or an Internet-Draft is
@@ -25,6 +26,7 @@ given for ``standard`` (CB-16).
 
 from __future__ import annotations
 
+import functools
 import re
 import unicodedata
 from collections.abc import Mapping
@@ -262,6 +264,17 @@ def resolve(value: object, namespace: str | None = None) -> Identity | None:
         return None
     if not isinstance(value, str):
         return None
+    if len(value) > _MEMO_MAX_TEXT:
+        return _resolve_text(value, namespace)
+    global _memo_tables
+    tables = _lookup_tables()
+    if tables != _memo_tables:  # a table was rebound in this process
+        _resolve_memo.cache_clear()
+        _memo_tables = tables
+    return _resolve_memo(value, namespace)
+
+
+def _resolve_text(value: str, namespace: str | None) -> Identity | None:
     text = value.strip()
     if text.casefold() in _SENTINELS:
         return None
@@ -270,6 +283,24 @@ def resolve(value: object, namespace: str | None = None) -> Identity | None:
     if namespace is not None:
         return _strict(text, namespace)
     return _named(text) or _marker(text) or _fallback(text)
+
+
+# The memo (CB-04 ST-9): an LRU of at most 4,096 str lookups, never an unbounded dict
+# (identifiers come from scan nodes), and none for text longer than 256 characters.
+# An Identity is immutable, so one cached answer can be shared. Every table a str
+# lookup reads is compared by identity on each call; when one was rebound (a test, a
+# reload) the memo is cleared first, so it never serves an older table's answer.
+_MEMO_MAX_TEXT = 256
+_resolve_memo = functools.lru_cache(maxsize=4096)(_resolve_text)
+
+
+def _lookup_tables() -> tuple[object, ...]:
+    return (
+        _ALGS, _OIDS, _ALIASES, _REVERSE_OID, _OID_PREFIXES, _PQ_MARKERS,
+        _PRE_STANDARD_MARKERS, _CLASSICAL_MARKERS, _KEM_MARKERS, _TOKEN_MARKERS,
+        _STATEFUL, _QV_FAMILIES, _SENTINELS, _NOT_DSA, _OPENSSL_TEXT, _SSH_KEX,
+        _IKE_KE, _IKE_KE_NAMES, _TLS_GROUPS, _TLS_SIGSCHEMES,
+    )
 
 
 def _named(text: str) -> Identity | None:
@@ -455,6 +486,12 @@ def hint(value: object) -> str | None:
     return None
 
 
+def is_sentinel(value: object) -> bool:
+    """True for the placeholder texts tools print where there is no algorithm
+    ("<NULL>", "(NONE)", "Unknown OID", "none", ""): absent, not unknown."""
+    return isinstance(value, str) and value.strip().casefold() in _SENTINELS
+
+
 def family_label(value: object) -> str | None:
     found = resolve(value)
     return found.family_label if found else None
@@ -616,3 +653,6 @@ def tbs_spki_alg(tbs_der: bytes) -> tuple[str, str | None] | None:
         return None
     _tag, begin, _body, end = kids[5]
     return spki_alg(data[begin:end])
+
+
+_memo_tables: tuple[object, ...] = _lookup_tables()
