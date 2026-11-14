@@ -79,6 +79,13 @@ async function main() {
     });
     await settle();
   };
+  // a Tab press, then the focus it moves: what a keyboard user does (a programmatic focus has no Tab before it)
+  const tabTo = async (el: HTMLElement) => {
+    await act(async () => {
+      doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+      el.focus();
+    });
+  };
   const key = async (k: string) => {
     await act(async () => {
       doc.activeElement?.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
@@ -95,8 +102,20 @@ async function main() {
   assert.equal(isOpen(), false, "closed at first");
   assert.equal(t.getAttribute("aria-describedby"), null, "no description while closed");
 
-  // keyboard: focus opens, Escape closes, focus stays on the button
-  await act(async () => t.focus());
+  // a programmatic focus (a dialog focusing its first button when it opens) does not open the tip, so the dialog's
+  // first Esc closes the dialog, not a tip nobody asked for
+  await act(async () => {
+    doc.dispatchEvent(new dom.window.PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
+    t.focus();
+  });
+  await settle();
+  assert.equal(doc.activeElement, t);
+  assert.equal(isOpen(), false, "a programmatic focus does not open the tip");
+  await act(async () => t.blur());
+  await settle();
+
+  // keyboard: focus reached with Tab opens, Escape closes, focus stays on the button
+  await tabTo(t);
   await settle();
   assert.equal(doc.activeElement, t, "the (i) button takes keyboard focus");
   assert.equal(isOpen(), true, "keyboard focus opens the tip");
@@ -143,7 +162,7 @@ async function main() {
   assert.ok(described!.textContent!.includes(`Why it matters: ${tip.why}`), "every tip has its why line");
   const withWhy = doc.querySelector('[data-infotip="cbsrc.meta.lifetime"]') as HTMLButtonElement;
   const whyTip = INFO_TIPS["cbsrc.meta.lifetime"];
-  await act(async () => withWhy.focus());
+  await tabTo(withWhy);
   await settle();
   const whyText = doc.getElementById(withWhy.getAttribute("aria-describedby") ?? "")?.textContent ?? "";
   assert.ok(whyText.includes(whyTip.what) && whyText.includes(`Why it matters: ${whyTip.why}`) && whyText.includes(whyTip.example), "what, why and example are shown");
