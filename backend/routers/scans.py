@@ -115,9 +115,12 @@ async def list_scans(
                      "endpoints_probed": c.endpoints_probed}
                     for c in sources.collections
                 ]  # deprecated (CB-38): runs_list_data lists every run
-                from backend.utilities.cbom_sources.run_list import list_runs_for_scan_list
+                from fastapi.concurrency import run_in_threadpool
 
-                body.update(list_runs_for_scan_list(session, team_id, before_id=runs_before))
+                from backend.utilities.cbom_sources.run_list import runs_for_scan_list
+
+                # its own session in a worker thread: the runs build never blocks the event loop
+                body.update(await run_in_threadpool(runs_for_scan_list, engine, team_id, runs_before))
             return body
 
     except HTTPException as e:

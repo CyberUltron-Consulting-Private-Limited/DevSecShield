@@ -5,8 +5,10 @@ Additive over ``inventory.list_assets`` (its items, totals, facets and targets a
 * ``view=all`` (default: today's list) or ``view=findings`` (assets that are not ``coverage`` rows and have an impact,
   judged today exactly as the list shows the impact); ``status=not_started|in_progress|fixed|ignored`` keeps the
   assets whose remediation assignment is in that bucket (``contracts/cbom/status_buckets.json``; no assignment is
-  ``not_started``; ``coverage`` rows are never plannable, so a status filter leaves them out).
-* every item gains ``asset_key`` (the stable key ``waves.node_items`` gives the asset; null for a ``coverage`` row),
+  ``not_started``; ``coverage`` rows are never plannable: their ``status`` is null and a status filter leaves them
+  out).
+* every item gains ``asset_key`` (the stable key ``waves.node_items`` gives the asset; null for a ``coverage`` row,
+  whose ``risk_score`` is 0 as it is never a finding),
   ``status`` / ``assignment_status``, ``wave`` (the asset's ``node_items`` entry, computed for the page's assets only),
   ``risk_score`` (0-10, ``bom_risk_score.cbom_finding_risk_score`` over ``collections_view.node_row``), the code-lane
   names from ``node_row`` (``algorithm_name``, ``algorithm_type``, ``crypto_strength``, ``quantum_safe``,
@@ -18,6 +20,7 @@ Fields other features add to the items (``q_grade``, ``q_label``, ``fix_class`` 
 from __future__ import annotations
 
 import datetime as _dt
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -29,7 +32,7 @@ from backend.utilities.cbom_sources import identity as ID
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import waves as WAVES
 from backend.utilities.cbom_sources.collections_view import Collection, node_row
-from backend.utilities.cbom_sources.run_list import finding_status
+from backend.utilities.cbom_sources.run_list import finding_status, log_line
 
 VIEWS = ("all", "findings")
 FINDING_STATUSES = ("not_started", "in_progress", "fixed", "ignored")
@@ -106,9 +109,13 @@ def run_asset_keys(session: Session, team_id: int, run: CbomCollectionRun) -> di
 
 
 def _status_clause(session: Session, team_id: int, run: CbomCollectionRun, status: str):
+    started = time.perf_counter()
     keys = run_asset_keys(session, team_id, run)
     found = WAVES._assignments(session, team_id, keys.values())
     bucket = {aid: finding_status(found[key].status if key in found else None) for aid, key in keys.items()}
+    # the cost of this path grows with the run (PR-2's stored keys replace it): one line per request
+    log_line(f"cbom run assets status_filter team={team_id} run={run.id} status={status} keys={len(keys)} "
+             f"planned={len(found)} ms={int((time.perf_counter() - started) * 1000)}")
     if status == "not_started":  # the common case: exclude the (few) planned assets instead of listing every id
         others = [aid for aid, value in bucket.items() if value != "not_started"]
         clause = CbomCollectedAsset.asset_type != COVERAGE
@@ -170,9 +177,10 @@ def enrich_items(session: Session, team_id: int, run: CbomCollectionRun, items: 
         wave = waves.get(int(item["id"]))
         assignment = (wave or {}).get("assignment") or None
         raw_status = assignment.get("status") if isinstance(assignment, dict) else None
+        coverage = item.get("type") == COVERAGE  # "could not read X": never planned, never a finding
         item["asset_key"] = wave["asset_key"] if wave else None
         item["assignment_status"] = raw_status
-        item["status"] = finding_status(raw_status)
+        item["status"] = None if coverage else finding_status(raw_status)
         item["wave"] = wave
         item["type_label"] = type_label(item.get("type"))
         collection = collections.get(int(row.job_id)) if row is not None and row.job_id is not None else None
@@ -184,7 +192,7 @@ def enrich_items(session: Session, team_id: int, run: CbomCollectionRun, items: 
         # judged today, exactly as the item shows it (impact, finding sentence, codes)
         code_row = node_row(row, collection, {"impact": item.get("impact"), "finding": item.get("finding"),
                                               "finding_codes": item.get("finding_codes") or []})
-        item["risk_score"] = cbom_finding_risk_score(code_row)
+        item["risk_score"] = 0.0 if coverage else cbom_finding_risk_score(code_row)
         for key in ("algorithm_name", "algorithm_type", "crypto_strength", "quantum_safe", "description"):
             item[key] = code_row.get(key)
 

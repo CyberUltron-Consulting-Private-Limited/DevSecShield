@@ -42,7 +42,8 @@ JOB_DONE = frozenset({"success", "failure", "cancelled", "expired"})  # jobs.TER
 _IMPACTS = {"Critical": "total_critical", "High": "total_high", "Medium": "total_medium", "Low": "total_low"}
 
 # Run status -> the unified status the results table shows (contracts/cbom/status_buckets.json "run_to_unified",
-# checked by tests/test_cb38_status_buckets_contract.py; the browser reads the same file).
+# checked by test_status_buckets_file_matches_backend in tests/test_cb38_runs_in_results_api.py; the browser reads
+# the same file).
 RUN_TO_UNIFIED = {"queued": "pending", "running": "started", "done": "success", "partial": "partial",
                   "failed": "failure", "cancelled": "cancelled"}
 # Remediation assignment status -> finding status ("assignment_to_finding"): collections_view's one table.
@@ -193,7 +194,8 @@ def _owners(session: Session, user_ids: Iterable[int]) -> dict[int, tuple[str | 
     ids = sorted({int(i) for i in user_ids if i is not None})
     if not ids:
         return {}
-    return {uid: (email, f"{first} {last}") for uid, email, first, last in session.exec(
+    # a missing part is left out ("alice", never "alice None"); None when the user has neither
+    return {uid: (email, " ".join(p for p in (first, last) if p) or None) for uid, email, first, last in session.exec(
         select(User.id, User.email, User.first_name, User.last_name).where(User.id.in_(ids))).all()}  # type: ignore[union-attr]
 
 
@@ -264,20 +266,27 @@ def list_runs_for_scan_list(session: Session, team_id: int, *, before_id: int | 
         return {**list_run_rows(session, team_id, before_id=before_id), "runs_list_error": False}
     except Exception as exc:  # noqa: BLE001 - the scan list must survive a runs failure
         session.rollback()
-        try:
-            console.print(f"{utc_timestamp()} cbom runs list failed team={team_id} error={type(exc).__name__}",
-                          markup=False, highlight=False, soft_wrap=True)
-        except Exception:
-            pass
+        log_line(f"cbom runs list failed team={team_id} error={type(exc).__name__}")
         return {"runs_list_data": [], "runs_total": 0, "runs_list_error": True}
+
+
+def runs_for_scan_list(engine: Any, team_id: int, before_id: int | None = None) -> dict[str, Any]:
+    """``list_runs_for_scan_list`` in its own session: the async scan-list handler runs it in a worker thread
+    (``run_in_threadpool``), so building the runs never blocks the event loop."""
+    with Session(engine) as session:
+        return list_runs_for_scan_list(session, team_id, before_id=before_id)
 
 
 def _log_line(team_id: int, runs: int, ms: int) -> None:
     """``cbom runs list team=<t> runs=<n> ms=<ms>``: one line per list build (compare UI, API and logs)."""
+    log_line(f"cbom runs list team={team_id} runs={runs} ms={ms}")
+
+
+def log_line(text: str) -> None:
+    """One greppable line, prefixed with the ISO UTC time (logging must never fail a request)."""
     try:
-        console.print(f"{utc_timestamp()} cbom runs list team={team_id} runs={runs} ms={ms}", markup=False,
-                      highlight=False, soft_wrap=True)
-    except Exception:  # logging must never fail a request
+        console.print(f"{utc_timestamp()} {text}", markup=False, highlight=False, soft_wrap=True)
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -286,5 +295,5 @@ def clear_cache() -> None:
 
 
 __all__ = ["ASSIGNMENT_TO_FINDING", "COUNTS_BASIS", "LIST_LIMIT", "RUN_TO_UNIFIED", "clear_cache", "finding_status",
-           "grouped_counts", "list_run_rows", "list_runs_for_scan_list", "run_row", "unified_run_status"]
+           "grouped_counts", "list_run_rows", "list_runs_for_scan_list", "log_line", "runs_for_scan_list", "run_row", "unified_run_status"]
 

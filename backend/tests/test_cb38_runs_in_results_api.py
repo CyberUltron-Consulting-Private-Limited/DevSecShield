@@ -102,6 +102,21 @@ def seed_run(engine, team_id: int, owner_id: int, *, status: str = "done", rows=
         return int(run.id)
 
 
+def _users(engine) -> tuple[int, int]:
+    """Two owners with incomplete names: "dave" (no last name) and one with neither name."""
+    from backend.new_models import User
+
+    with Session(engine) as s:
+        dave = User(email="dave@t1.test", password="x", first_name="dave", last_name=None, profile_photo=None,
+                    default_team_id=1)
+        nameless = User(email="nameless@t1.test", password="x", first_name=None, last_name=None, profile_photo=None,
+                        default_team_id=1)
+        s.add(dave)
+        s.add(nameless)
+        s.commit()
+        return int(dave.id), int(nameless.id)
+
+
 @pytest.fixture(autouse=True)
 def _fresh_runs_cache():
     try:
@@ -144,14 +159,24 @@ def test_b1_scan_list_includes_runs(api, world, no_mongo, api_run):
                       extra_jobs=("pending",))
     queued = seed_run(engine, 1, alice, status="queued", source_name="srv-q", rows=[], job_status="pending")
     failed = seed_run(engine, 1, alice, status="failed", source_name="srv-fail", rows=[], job_status="failure")
+    dave, nameless = _users(engine)
+    by_dave = seed_run(engine, 1, dave, status="done", source_name="srv-dave", rows=[])
+    by_nameless = seed_run(engine, 1, nameless, status="done", source_name="srv-anon", rows=[])
 
     body = _listing(api)
     assert [s["id"] for s in body["scans_list_data"]] == [77]  # the code scans are listed exactly as before
     assert "sources_runs" in body  # deprecated, kept one release
     rows = body["runs_list_data"]
-    assert body["runs_total"] == 6 and body["runs_list_error"] is False
-    assert [r["id"] for r in rows] == sorted([api_run, partial, cancelled, active, queued, failed], reverse=True)
+    assert body["runs_total"] == 8 and body["runs_list_error"] is False
+    assert [r["id"] for r in rows] == sorted([api_run, partial, cancelled, active, queued, failed, by_dave,
+                                              by_nameless], reverse=True)
     by_id = {r["id"]: r for r in rows}
+    # an owner without a last name is "dave", not "dave None"; without any name, null (the browser shows the email)
+    assert by_id[by_dave]["owner_user_full_name"] == "dave" and by_id[by_dave]["owner_user_email"] == "dave@t1.test"
+    assert by_id[by_nameless]["owner_user_full_name"] is None
+    assert by_id[by_nameless]["owner_user_email"] == "nameless@t1.test"
+    for run_id in (by_dave, by_nameless):
+        del by_id[run_id]
     assert {r["kind"] for r in rows} == {"run"}
     assert {i: by_id[i]["scan_status"] for i in by_id} == {
         api_run: "success", partial: "partial", cancelled: "cancelled", active: "started", queued: "pending",
@@ -394,19 +419,25 @@ def test_run_assets_new_item_fields(api, world, api_run):
         assets = {a.id: a for a in s.exec(select(CbomCollectedAsset).where(CbomCollectedAsset.run_id == seeded)).all()}
     for aid, item in items.items():
         a = assets[aid]
-        if a.asset_type == "coverage":
-            assert item["asset_key"] is None and item["wave"] is None and item["type_label"] == "Not collected"
-        else:
-            assert item["wave"] == waves[aid] and item["asset_key"] == waves[aid]["asset_key"]
-        assert item["status"] == "not_started" and item["assignment_status"] is None
         coll = CV.Collection(run_id=seeded, job_id=a.job_id, source_ref="r", source_name="n", source_kind="",
                              observed_at=dt.datetime.now(dt.timezone.utc))
         row = CV.node_row(a, coll, {"impact": item["impact"], "finding": item["finding"],
                                     "finding_codes": item["finding_codes"]})
-        assert item["risk_score"] == cbom_finding_risk_score(row)
-        assert 0.0 <= item["risk_score"] <= 10.0 and (item["risk_score"] > 0) == bool(item["impact"])
+        assert item["assignment_status"] is None
+        if a.asset_type == "coverage":  # never planned, never a finding (even the one stored with an impact)
+            assert item["asset_key"] is None and item["wave"] is None and item["type_label"] == "Not collected"
+            assert item["status"] is None and item["risk_score"] == 0.0
+        else:
+            assert item["wave"] == waves[aid] and item["asset_key"] == waves[aid]["asset_key"]
+            assert item["status"] == "not_started"
+            assert item["risk_score"] == cbom_finding_risk_score(row)
+            assert 0.0 <= item["risk_score"] <= 10.0 and (item["risk_score"] > 0) == bool(item["impact"])
         for key in ("algorithm_name", "algorithm_type", "crypto_strength", "quantum_safe", "description"):
             assert item[key] == row[key], key
+    # the status labels and the status filter agree: every item labelled not_started, and only those
+    labelled = {i["id"] for i in items.values() if i["status"] == "not_started"}
+    assert {i["id"] for i in _assets(api, seeded, status="not_started", page_size=200)["items"]} == labelled
+    assert len(labelled) == 7 and sum(1 for i in items.values() if i["status"] is None) == 2
     host_keys = [i for i in items.values() if i["type"] == "ssh_host_key"]
     assert {i["type_label"] for i in host_keys} == {"SSH host key"}
     crit = next(i for i in items.values() if i["impact"] == "Critical")
@@ -523,3 +554,40 @@ def test_b7_library_status_called_once_per_package(api, world, monkeypatch):
     first = crypto_kb.library_status("openssl", "3.0.2")
     first["cves"].append("CVE-0000-0000")
     assert "CVE-0000-0000" not in crypto_kb.library_status("openssl", "3.0.2")["cves"]
+
+
+# ----------------------------------------------------------------------------------------------- owner names, code scans
+def test_code_scan_rows_owner_name_has_no_none(api, world, no_mongo):
+    from types import SimpleNamespace
+
+    from backend.new_models import Scan
+    from backend.utilities.db.scan_list_item import owner_full_name
+
+    assert owner_full_name(SimpleNamespace(first_name="alice", last_name="t")) == "alice t"
+    assert owner_full_name(SimpleNamespace(first_name="dave", last_name=None)) == "dave"
+    assert owner_full_name(SimpleNamespace(first_name=None, last_name="t")) == "t"
+    assert owner_full_name(SimpleNamespace(first_name=None, last_name=None)) is None
+    assert owner_full_name(SimpleNamespace(first_name="", last_name="")) is None
+    engine, _ids = world
+    dave, nameless = _users(engine)
+    with Session(engine) as s:
+        s.add(Scan(id=90, team_id=1, owner_user_id=dave, scan_type="cbom", title="by dave", scan_status="NOT_STARTED"))
+        s.add(Scan(id=91, team_id=1, owner_user_id=nameless, scan_type="cbom", title="anon", scan_status="NOT_STARTED"))
+        s.commit()
+    rows = {r["id"]: r for r in _listing(api)["scans_list_data"]}
+    assert rows[77]["owner_user_full_name"] == "alice t"
+    assert rows[90]["owner_user_full_name"] == "dave"
+    assert rows[91]["owner_user_full_name"] is None and rows[91]["owner_user_email"] == "nameless@t1.test"
+
+
+def test_status_filter_logs_its_cost(api, world, capsys):
+    engine, ids = world
+    run_id = seed_run(engine, 1, ids["alice"])
+    capsys.readouterr()
+    _assets(api, run_id, status="fixed")
+    out = capsys.readouterr().out
+    lines = [line for line in out.splitlines()
+             if f"cbom run assets status_filter team=1 run={run_id} status=fixed keys=7 planned=0 ms=" in line]
+    assert len(lines) == 1, out
+    _assets(api, run_id)  # no status filter: no line
+    assert "status_filter" not in capsys.readouterr().out
