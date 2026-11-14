@@ -28,7 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, RefreshCcw, Loader2, MoreVertical, Pencil, Trash2, Copy, Check, Search, X, TrendingUp } from "lucide-react";
+import { Plus, RefreshCcw, Loader2, MoreVertical, Pencil, Trash2, Search, X, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CicdIntegration, getCicdIntegrations, createCicdIntegration, CreateCicdIntegrationData, deleteCicdIntegration, renameCicdIntegration } from "@/utils/backend_api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +44,8 @@ import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate, formatDateOnlyIst, formatMediumDateIst } from "@/utils/datetime";
 import { toast } from "@/utils/toast";
 import { useRouter, useParams } from "next/navigation";
+import ApiKeyRevealDialog from "@/components/cicd/ApiKeyRevealDialog";
+import { hasIssuedKey, keyStateLabel } from "@/components/cicd/apiKey";
 
 const vulnsOverTimeChartConfig = {
   date: { label: "Date" },
@@ -63,7 +65,8 @@ export default function CicdPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedIntegration, setSelectedIntegration] = useState<CicdIntegration | null>(null);
   const [newName, setNewName] = useState("");
-  const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
+  // issue #99: the one-time key of the integration just created; shown in ApiKeyRevealDialog, never stored
+  const [issued, setIssued] = useState<{ integrationId: number; apiKey: string; scanType: string } | null>(null);
   const [formTitle, setFormTitle] = useState("");
   const [formScanType, setFormScanType] = useState<"sast" | "dast" | "cbom" | "">("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -104,13 +107,18 @@ export default function CicdPage() {
 
   const createCicdIntegrationMutation = useMutation({
     mutationFn: (data: CreateCicdIntegrationData) => createCicdIntegration(Number(team_id), data),
-    onSuccess: (data: { integration_id: number }) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['cicd-integrations', team_id] });
       setCreateDialogOpen(false);
       setFormTitle("");
       setFormScanType("");
-      toast.success('CI/CD integration created');
-      router.push(`/${team_id}/ci_cd/${data.integration_id}`);
+      // (createCicdIntegration already toasts "CI/CD integration created")
+      // Show the key once before leaving this page (the create answer is the only place it exists)
+      if (hasIssuedKey(data)) {
+        setIssued({ integrationId: data.integration_id, apiKey: data.api_key, scanType: variables.scan_type });
+      } else {
+        router.push(`/${team_id}/ci_cd/${data.integration_id}`);
+      }
     },
     onError: (error) => {
       showErrorToast(error);
@@ -168,29 +176,6 @@ export default function CicdPage() {
     }
   };
 
-
-  const redactApiKey = (apiKey: string) => {
-    if (apiKey.length <= 8) {
-      return "•".repeat(apiKey.length);
-    }
-    // Show first 4 and last 4 characters, redact the middle
-    const start = apiKey.substring(0, 4);
-    const end = apiKey.substring(apiKey.length - 4);
-    return `${start}${"*******"}${end}`;
-  };
-
-  const copyApiKey = async (apiKey: string, integrationId: number) => {
-    try {
-      await navigator.clipboard.writeText(apiKey);
-      setCopiedKeyId(integrationId);
-      toast.success("API key copied to clipboard");
-      setTimeout(() => {
-        setCopiedKeyId(null);
-      }, 2000);
-    } catch (error) {
-      toast.error("Failed to copy API key");
-    }
-  };
 
   const hasActiveFilters = searchQuery !== "" || createdAtSort !== "none";
   const filteredIntegrations = integrations
@@ -340,24 +325,12 @@ export default function CicdPage() {
                         {formatDate(integration.last_updated)}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <code className="text-sm bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded font-mono">
-                            {redactApiKey(integration.api_key)}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 cursor-pointer"
-                            onClick={() => copyApiKey(integration.api_key, integration.id)}
-                            title="Copy API key"
-                          >
-                            {copiedKeyId === integration.id ? (
-                              <Check className="h-4 w-4 text-green-600" />
-                            ) : (
-                              <Copy className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
+                        <span
+                          className={`text-sm ${integration.api_key_state === "revoked" ? "text-red-700 dark:text-red-300" : "text-zinc-700 dark:text-zinc-300"}`}
+                          title="The key is shown once, when it is issued. Open the integration to rotate or revoke it."
+                        >
+                          {keyStateLabel(integration)}
+                        </span>
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -470,6 +443,17 @@ export default function CicdPage() {
           )}
         </div>
       </div>
+
+      <ApiKeyRevealDialog
+        apiKey={issued?.apiKey ?? null}
+        scanType={issued?.scanType ?? "sast"}
+        title="Integration created: save your API key"
+        onDone={() => {
+          const id = issued?.integrationId;
+          setIssued(null);
+          if (id) router.push(`/${team_id}/ci_cd/${id}`);
+        }}
+      />
 
       {/* Create Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

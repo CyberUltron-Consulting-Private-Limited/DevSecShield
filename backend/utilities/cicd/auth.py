@@ -22,6 +22,10 @@ def get_user_integration_team_from_api_key(api_key: str) -> tuple[int, int, int,
     Supports both legacy plaintext keys and new hashed keys.
     """
     try:
+        if not api_key or api_key.startswith("revoked:"):
+            # a revoked integration stores "revoked:<random>" (utilities/cicd/api_keys.py); the legacy plaintext
+            # lookup below must never match it
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid CI/CD API key")
         engine = get_db()
         api_key_hash = hash_api_key(api_key)
         

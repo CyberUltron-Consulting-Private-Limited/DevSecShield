@@ -10,39 +10,23 @@ import { apiBaseURL } from "@/utils/interceptors";
 import { CBOM_GATE_NOTE, isCbom, jenkinsfile } from "@/components/cicd/ciTemplates";
 
 interface JenkinsIntegrationGuideProps {
-  apiKey: string;
   teamId: number;
   scanType?: string;
 }
 
-// Masks an API key for display (first 4 and last 4 characters)
-const maskApiKey = (key: string) => {
-  if (key.length <= 8) {
-    return "•".repeat(key.length);
-  }
-  const start = key.substring(0, 4);
-  const end = key.substring(key.length - 4);
-  return `${start}${"•".repeat(12)}${end}`;
-};
-
-export function JenkinsGuide({ apiKey, scanType = "sast" }: JenkinsIntegrationGuideProps) {
+export function JenkinsGuide({ scanType = "sast" }: JenkinsIntegrationGuideProps) {
   const [copied, setCopied] = useState(false);
   const kind = (scanType || "sast").toLowerCase();
   const label = kind.toUpperCase();
   const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
 
-  // The Jenkinsfile (components/cicd/ciTemplates.ts): the copied file carries the key, the displayed one a masked
-  // key. A CBOM Jenkinsfile ends with the policy gate stage.
-  const jenkinsfileContent = useMemo(() => jenkinsfile({ kind, endpoint, apiKey }), [apiKey, endpoint, kind]);
-  const displayedJenkinsfileContent = useMemo(
-    () => jenkinsfile({ kind, endpoint, apiKey: maskApiKey(apiKey) }),
-    [apiKey, endpoint, kind],
-  );
+  // The Jenkinsfile (components/cicd/ciTemplates.ts) reads the key from the Jenkins credential CICD_API_KEY; it never
+  // contains the key. A CBOM Jenkinsfile ends with the policy gate stage.
+  const jenkinsfileContent = useMemo(() => jenkinsfile({ kind, endpoint }), [endpoint, kind]);
 
   const copyToClipboard = async () => {
     try {
-      // Copy the full content with unmasked API key
-      await navigator.clipboard.writeText(jenkinsfileContent);
+            await navigator.clipboard.writeText(jenkinsfileContent);
       setCopied(true);
       toast.success("Jenkinsfile content copied to clipboard!");
       setTimeout(() => {
@@ -81,7 +65,7 @@ export function JenkinsGuide({ apiKey, scanType = "sast" }: JenkinsIntegrationGu
               Paste the copied Jenkinsfile content into this file.
             </li>
             <li>
-              Note: The API key is included in the Jenkinsfile. For enhanced security, you can use Jenkins credentials instead:
+              Add the CI/CD API key as a Jenkins credential (the Jenkinsfile reads it with <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">credentials(&apos;CICD_API_KEY&apos;)</code>):
               <ol className="list-decimal list-inside ml-4 mt-2 space-y-2 text-xs">
                 <li>
                   In your Jenkins dashboard, go to <strong>Manage Jenkins</strong> → <strong>Credentials</strong>
@@ -99,18 +83,10 @@ export function JenkinsGuide({ apiKey, scanType = "sast" }: JenkinsIntegrationGu
                   Enter <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">CICD_API_KEY</code> as the ID
                 </li>
                 <li>
-                  Paste your API key in the <strong>Secret</strong> field: <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">{apiKey.substring(0, 20)}...</code>
+                  Paste in the <strong>Secret</strong> field the API key DevSecShield showed once when this integration was created or its key was last rotated (rotate it on this page if you no longer have it)
                 </li>
                 <li>
                   Click <strong>OK</strong> to save
-                </li>
-                <li>
-                  Update the Jenkinsfile environment section to use credentials:
-                  <div className="mt-2 p-2 bg-zinc-50 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
-                    <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 break-all">
-                      <code className="text-xs">CICD_API_KEY = credentials('CICD_API_KEY')</code>
-                    </p>
-                  </div>
                 </li>
               </ol>
             </li>
@@ -179,7 +155,7 @@ export function JenkinsGuide({ apiKey, scanType = "sast" }: JenkinsIntegrationGu
         <CardContent>
           <ScrollArea className="h-[500px] w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-4">
             <pre className="text-xs font-mono text-zinc-900 dark:text-zinc-100 whitespace-pre-wrap">
-              {displayedJenkinsfileContent}
+              {jenkinsfileContent}
             </pre>
           </ScrollArea>
         </CardContent>

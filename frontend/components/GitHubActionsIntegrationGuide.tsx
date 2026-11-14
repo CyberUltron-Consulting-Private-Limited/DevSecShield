@@ -12,11 +12,10 @@ import { apiBaseURL } from "@/utils/interceptors";
 import { CBOM_GATE_NOTE, githubActionsWorkflow, isCbom } from "@/components/cicd/ciTemplates";
 
 interface GitHubActionsIntegrationGuideProps {
-  apiKey: string;
   scanType?: string;
 }
 
-export function GitHubActionsGuide({ apiKey, scanType = "sast" }: GitHubActionsIntegrationGuideProps) {
+export function GitHubActionsGuide({ scanType = "sast" }: GitHubActionsIntegrationGuideProps) {
   const kind = (scanType || "sast").toLowerCase();
   const label = kind.toUpperCase();
   const endpoint = `${apiBaseURL}/cicd/${kind}/scan`;
@@ -115,7 +114,7 @@ export function GitHubActionsGuide({ apiKey, scanType = "sast" }: GitHubActionsI
                       Name: <span className="text-blue-600 dark:text-blue-400">CICD_API_KEY</span>
                     </p>
                     <p className="text-xs font-mono text-zinc-900 dark:text-zinc-100 break-all mt-1">
-                      Secret: <span className="text-zinc-500">{apiKey.substring(0, 20)}...</span>
+                      Secret: <span className="text-zinc-500">the API key DevSecShield showed once when this integration was created or its key was last rotated (rotate it on this page if you no longer have it)</span>
                     </p>
                   </div>
                 </li>
