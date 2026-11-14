@@ -2,9 +2,11 @@
 # the settings EC2 user data writes to /etc/zs-node/env (the "Add scan node" wizard shows that cloud-config).
 #
 #   packer init ami.pkr.hcl
-#   packer build -var region=ap-south-1 -var node_image=registry.zeroshield.ai/cbom/scan-node:1.0 ami.pkr.hcl
+#   packer build -var region=ap-south-1 -var node_image_archive=scan-node-1.0.0.tar.gz ami.pkr.hcl
 #
-# Build it yourself: ZeroShield does not publish this AMI yet (see README.md).
+# The image comes from the file (Add scan node > Download scan node image, or scripts/release/scan_node_image.sh):
+# the build instance loads it with `docker load` and pulls nothing. Customers get this template as the "AMI build
+# kit" download (scripts/release/node_artifacts.py), its defaults set to the server's node version (README.md).
 
 packer {
   required_version = ">= 1.10.0"
@@ -26,10 +28,16 @@ variable "instance_type" {
   default = "t3.small"
 }
 
+variable "node_image_archive" {
+  type        = string
+  default     = "scan-node-1.0.0.tar.gz"
+  description = "The scan-node image file (docker save archive), copied to the build instance and loaded there."
+}
+
 variable "node_image" {
   type        = string
-  default     = "registry.zeroshield.ai/cbom/scan-node:1.0"
-  description = "Scan-node image the AMI runs (pulled by the build instance)."
+  default     = "localhost/zeroshield/cbom-scan-node:1.0.0"
+  description = "The image name the archive loads as (docker load); the AMI runs it."
 }
 
 variable "subnet_id" {
@@ -90,9 +98,14 @@ build {
     destination = "/tmp/"
   }
 
+  provisioner "file" {
+    source      = var.node_image_archive
+    destination = "/tmp/zs-node-image.tar.gz"
+  }
+
   provisioner "shell" {
     execute_command  = "sudo -E sh '{{ .Path }}'"
-    environment_vars = ["NODE_IMAGE=${var.node_image}"]
+    environment_vars = ["NODE_IMAGE=${var.node_image}", "NODE_IMAGE_ARCHIVE=/tmp/zs-node-image.tar.gz"]
     script           = "scripts/install.sh"
   }
 }
