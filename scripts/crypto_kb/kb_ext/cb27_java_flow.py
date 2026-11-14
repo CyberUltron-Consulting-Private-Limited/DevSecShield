@@ -43,8 +43,9 @@ entry(
     category="code",
     default_impact="Medium",
     description=(
-        "A constant iteration count below 1,000 reaches a password-based key derivation (PBEKeySpec, "
-        "PBEParameterSpec). NIST SP 800-132 sets 1,000 as the minimum; current guidance is far higher."
+        "A constant iteration count below the minimum for the API reaches a password-based key derivation: below "
+        "1,000 for Java's PBEKeySpec / PBEParameterSpec (NIST SP 800-132), below 100,000 for .NET's "
+        "Rfc2898DeriveBytes, whose constructors without a count use 1,000 (Microsoft rule CA5387)."
     ),
     attack=(
         "Each password guess costs the attacker only as many hash computations as the iteration count, so an "
@@ -54,6 +55,7 @@ entry(
     owasp=["crypto"],
     cves=[],
     standards=["NIST SP 800-132 (section 5.2: at least 1,000 iterations)",
+               "Microsoft code analysis rule CA5387 (Rfc2898DeriveBytes: at least 100,000 iterations)",
                "OWASP Password Storage Cheat Sheet (PBKDF2-HMAC-SHA256: 600,000 iterations)"],
     compliance=["key_mgmt"],
     remediation={
@@ -62,9 +64,12 @@ entry(
         "steps": [
             {"platform": "Java", "how": "SecretKeyFactory.getInstance(\"PBKDF2WithHmacSHA256\") with "
              "new PBEKeySpec(password, salt, 600000, 256)"},
+            {"platform": ".NET", "how": "Rfc2898DeriveBytes.Pbkdf2(password, salt, 600000, "
+             "HashAlgorithmName.SHA256, 32)"},
         ],
     },
     verify=[{"label": "Show the call", "command": "sed -n '{line}p' '{path}'"}],
     references=["https://csrc.nist.gov/pubs/sp/800/132/final",
-                "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html"],
+                "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html",
+                "https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca5387"],
 )

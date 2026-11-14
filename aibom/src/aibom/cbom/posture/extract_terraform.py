@@ -172,6 +172,7 @@ _BASIS_ATTRS: dict[str, tuple[str, ...]] = {
         "min_tls_version",
         "profile",
         "site_config.minimum_tls_version",
+        "minimum_tls_version",
     ),
 }
 
@@ -416,6 +417,8 @@ def _apply_tls_policy(
         return _gcp_ssl_policy(fact, body)
     if native in _AZURE_WEB:
         return _azure_tls(fact, body)
+    if native in _AZURE_MIN_TLS:
+        return _azure_min_tls(fact, body, _AZURE_MIN_TLS[native])
     if native == "aws_lb_listener":
         return _listener_policy(fact, body)
     attr = _TLS_ATTR.get(native)
@@ -425,6 +428,29 @@ def _apply_tls_policy(
     if not isinstance(value, Resolved) or not isinstance(value.value, str):
         return fact
     return _named_policy(fact, value.value)
+
+
+# CB-28: Azure resources whose own attribute sets the minimum TLS version (an absent
+# attribute is the provider's default, TLS 1.2, and is not reported). Storage spells
+# it TLS1_0; SQL and Redis spell it 1.0.
+_AZURE_MIN_TLS = {
+    "azurerm_storage_account": "min_tls_version",
+    "azurerm_mssql_server": "minimum_tls_version",
+    "azurerm_redis_cache": "minimum_tls_version",
+}
+_AZURE_TLS_NAMES = {
+    "TLS1_0": "TLSv1.0", "TLS1_1": "TLSv1.1", "TLS1_2": "TLSv1.2", "TLS1_3": "TLSv1.3",
+    **_AZURE_TLS,
+}
+
+
+def _azure_min_tls(fact: EncryptionFact, body: Body, attr: str) -> EncryptionFact:
+    raw = _literal(body, attr)
+    floor = _AZURE_TLS_NAMES.get(raw or "")
+    if floor is None:
+        return fact
+    notes = (BasisEntry("policy", raw), BasisEntry("protocol_min", floor))
+    return replace(fact, basis=fact.basis + notes)
 
 
 def _listener_policy(fact: EncryptionFact, body: Body) -> EncryptionFact:

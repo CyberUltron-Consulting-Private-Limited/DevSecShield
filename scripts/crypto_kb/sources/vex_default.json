@@ -316,6 +316,15 @@
     "DEVILS-ADVOCATE.md OA-10c (VEX default)",
     "CycloneDX 1.6.2 impactAnalysisState"
    ]
+  },
+  "WEAK_RSA_EXPONENT": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_RSA_EXPONENT.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
   }
  },
  "cves": {
