@@ -19,7 +19,7 @@
 #                                        CBOM_NODE_ARTIFACT_DIR), refuse a tag whose
 #                                        migrations do not contain the database's revision, keep the tag's deploy files
 #                                        and Alembic head in deploy/staging/releases/<tag>/, switch DSS_TAG, compose up,
-#                                        checks; then keep the images of this tag, the previous one and the last that
+#                                        checks, the CBOM estate-store backfill (idempotent); then keep the images of this tag, the previous one and the last that
 #                                        passed its checks, and this tag's archive only
 #   staging.sh disk-check <tag> [--archive-bytes N] [--need-bytes N] [--node-artifacts-bytes N]
 #                                        enough free disk to copy and load <tag>'s archive? If not, remove this
@@ -29,6 +29,7 @@
 #   staging.sh disk-plan <tag> [--archive-bytes N] [--need-bytes N] [--node-artifacts-bytes N]
 #                                        what disk-check and the deploy's retention would remove; removes nothing
 #   staging.sh check                     every service runs DSS_TAG's images and is up; health and hydration via nginx
+#   staging.sh estate-backfill           write every recorded run into the CBOM estate store (idempotent; deploy runs it)
 #   staging.sh backend-env               read KEY=VALUE lines on stdin and set exactly those keys in backend.env (only
 #                                        the BACKEND_ENV_KEYS below; empty values are skipped; never prints a value).
 #                                        `push` runs it just before `deploy` when STAGING_SET_<KEY> is set (CI: the
@@ -1041,10 +1042,27 @@ cmd_deploy() {
   printf '%s deploy %s previous %s alembic %s\n' "$(date -u +%FT%TZ)" "${tag}" "${previous:-none}" "${head:-unknown}" \
     >>"${HISTORY_FILE}"
   cmd_check
+  estate_backfill
   last="$(last_passed "${tag}")"
   record_passed "${tag}"
   retain "${tag}" "${previous}" "${last}"
   log "deployed ${tag}; previous tag ${previous:-none} is kept for rollback"
+}
+
+# CB-20's estate store is written when a run's drift is recorded, so runs from before the store existed (and any run
+# whose write failed, which marks the team's store stale) are only in it after `estate backfill`. It is idempotent (a
+# source whose job is already written is skipped), so every deploy runs it once the new release is up and checked,
+# with the release's own image (the migrate one-shot: backend env, no ports). A failure does not undo the deploy: the
+# release is running and the dashboards fall back to the per-run view; it is reported loudly and the next deploy (or
+# `staging.sh estate-backfill`) runs it again.
+estate_backfill() {
+  log "estate backfill (CB-20): python -m backend.utilities.cbom_sources.estate backfill"
+  if compose run --rm --no-deps -T --entrypoint /backend/.venv/bin/python migrate \
+    -m backend.utilities.cbom_sources.estate backfill; then
+    log "estate backfill done"
+  else
+    log "WARNING: estate backfill FAILED (output above); the release is running; run staging.sh estate-backfill again"
+  fi
 }
 
 # The database is at a revision the target's migrations do not contain (a later release migrated it). Step it down
@@ -1229,12 +1247,13 @@ main() {
     release) cmd_build && cmd_save && cmd_push "$@" ;;
     deploy) cmd_deploy "$@" ;;
     check) cmd_check ;;
+    estate-backfill) estate_backfill ;;
     rollback) cmd_rollback "$@" ;;
     disk-check) cmd_disk check "$@" ;;
     disk-plan) cmd_disk plan "$@" ;;
     node-artifacts) cmd_node_artifacts ;;
     backend-env) cmd_backend_env ;;
-    -h | --help | help | "") sed -n '2,56p' "${BASH_SOURCE[0]}" ;;
+    -h | --help | help | "") sed -n '2,57p' "${BASH_SOURCE[0]}" ;;
     *) die "unknown command ${cmd} (see --help)" ;;
   esac
 }

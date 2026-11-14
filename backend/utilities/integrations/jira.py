@@ -1,6 +1,6 @@
 from atlassian import Jira
 from rich.console import Console
-from requests.exceptions import HTTPError, Timeout, RequestException
+from requests.exceptions import ConnectTimeout, HTTPError, Timeout, RequestException
 import requests
 from requests.auth import HTTPBasicAuth
 import json
@@ -141,6 +141,40 @@ def list_projects(jira_url: str, jira_token: str, jira_email: str = "support@zer
         raise
 
 
+class JiraError(Exception):
+    """A Jira call that did not give an issue. ``kind`` says what happened, for logs and for the caller's decision
+    whether the issue may exist anyway: ``timeout`` (read timeout: Jira may have created it) and ``http_5xx`` (a proxy or
+    Jira error after the request was sent) are uncertain; ``unreachable`` (no connection) and ``http_4xx`` (refused)
+    mean nothing was created. The message is safe to show: Jira's own error messages, never a response body or a
+    credential."""
+
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
+
+
+def _jira_messages(response) -> str:
+    """Jira's ``errorMessages`` / ``errors`` when the body is JSON; nothing for an HTML error page."""
+    try:
+        data = response.json()
+    except ValueError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    parts = [str(m) for m in data.get("errorMessages") or [] if m]
+    errors = data.get("errors")
+    if isinstance(errors, dict):
+        parts += [f"{k}: {v}" for k, v in errors.items()]
+    return "; ".join(parts)[:300]
+
+
+def _http_error(response) -> JiraError:
+    code = response.status_code
+    detail = _jira_messages(response)
+    kind = "http_5xx" if code >= 500 else "http_4xx"
+    return JiraError(kind, f"Jira answered HTTP {code}" + (f": {detail}" if detail else ""))
+
+
 def create_issue_in_project(
     jira_url: str,
     jira_token: str,
@@ -149,13 +183,16 @@ def create_issue_in_project(
     description: str,
     jira_email: str = "support@zeroshield.ai",
     issue_type: str = "Task",
+    project_key: str | None = None,
+    labels: list[str] | None = None,
 ):
     """
-    Create an issue in the specified Jira project (by project ID).
+    Create an issue in the specified Jira project (by project ID, or by project key when ``project_key`` is given).
+    Raises ``JiraError`` when Jira does not answer with an issue; response bodies are never printed.
     """
     # SECURITY: Validate Jira URL to prevent SSRF
     validate_jira_url(jira_url)
-    
+
     url = f"{jira_url}/rest/api/3/issue"
 
     auth = HTTPBasicAuth(jira_email, jira_token)
@@ -165,25 +202,26 @@ def create_issue_in_project(
     "Content-Type": "application/json"
     }
 
-    payload = json.dumps({
-        "fields": {
-            "project": {"id": project_id},
-            "issuetype": {"name": issue_type},
-            "summary": summary,
-            "description": {
-                "content": [
-                    {
-                        "content": [
-                            {"text": description, "type": "text"}
-                        ],
-                        "type": "paragraph"
-                    }
-                ],
-                "type": "doc",
-                "version": 1
-            }
+    fields = {
+        "project": {"key": project_key} if project_key else {"id": project_id},
+        "issuetype": {"name": issue_type},
+        "summary": summary,
+        "description": {
+            "content": [
+                {
+                    "content": [
+                        {"text": description, "type": "text"}
+                    ],
+                    "type": "paragraph"
+                }
+            ],
+            "type": "doc",
+            "version": 1
         }
-    })
+    }
+    if labels:
+        fields["labels"] = list(labels)
+    payload = json.dumps({"fields": fields})
 
     try:
         response = requests.request(
@@ -194,19 +232,60 @@ def create_issue_in_project(
             auth=auth,
             timeout=REQUEST_TIMEOUT  # SECURITY: Request timeout
         )
-        
-        print(json.dumps(json.loads(response.text), sort_keys=True, indent=4, separators=(",", ": ")))
-
-        if response.status_code not in [200, 201]:
-            raise Exception(f"Failed to create issue in Jira: {response.text}")
-            
-        return response.json()
+    except ConnectTimeout:
+        console.print("[ERROR] Jira connection timed out", style="bold red")
+        raise JiraError("unreachable", "Jira could not be reached. Please try again.")
     except Timeout:
-        console.print(f"[ERROR] Jira request timed out for URL: {jira_url}", style="bold red")
-        raise Exception("Jira request timed out. Please try again.")
+        console.print("[ERROR] Jira request timed out", style="bold red")
+        raise JiraError("timeout", "Jira request timed out. Please try again.")
     except RequestException as e:
-        console.print(f"[ERROR] Jira request failed: {e}", style="bold red")
-        raise
+        console.print(f"[ERROR] Jira request failed: {type(e).__name__}", style="bold red")
+        raise JiraError("unreachable", "Jira could not be reached. Please try again.")
+
+    if response.status_code not in (200, 201):
+        raise _http_error(response)
+    try:
+        created = response.json()
+    except ValueError:
+        raise JiraError("http_5xx", f"Jira answered HTTP {response.status_code} without an issue")
+    return created
+
+
+def find_issue_by_label(
+    jira_url: str,
+    jira_token: str,
+    label: str,
+    jira_email: str = "support@zeroshield.ai",
+) -> str | None:
+    """Key of the newest issue carrying ``label`` (None when there is none). Jira Cloud's ``/search/jql``, falling
+    back to ``/search`` for Jira versions without it. Raises ``JiraError`` like ``create_issue_in_project``."""
+    validate_jira_url(jira_url)
+    if not label or any(ch in label for ch in ' "\\'):
+        raise ValueError("label: no spaces, quotes or backslashes")
+    auth = HTTPBasicAuth(jira_email, jira_token)
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    body = json.dumps({"jql": f'labels = "{label}" ORDER BY created DESC', "fields": ["key"], "maxResults": 1})
+    response = None
+    for path in ("/rest/api/3/search/jql", "/rest/api/3/search"):
+        try:
+            response = requests.request("POST", f"{jira_url.rstrip('/')}{path}", data=body, headers=headers,
+                                        auth=auth, timeout=REQUEST_TIMEOUT)
+        except ConnectTimeout:
+            raise JiraError("unreachable", "Jira could not be reached. Please try again.")
+        except Timeout:
+            raise JiraError("timeout", "Jira request timed out. Please try again.")
+        except RequestException:
+            raise JiraError("unreachable", "Jira could not be reached. Please try again.")
+        if response.status_code not in (404, 405, 410):
+            break
+    if response is None or response.status_code != 200:
+        raise _http_error(response)
+    try:
+        issues = (response.json() or {}).get("issues") or []
+    except ValueError:
+        raise JiraError("http_5xx", "Jira answered HTTP 200 without a search result")
+    key = issues[0].get("key") if issues and isinstance(issues[0], dict) else None
+    return str(key) if key else None
 
 
 def list_issue_transitions(
