@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectionJob, CbomCollectionSettings, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.agents import kind_problem
+from backend.utilities.cbom_sources.common import log
 from backend.utilities.cbom_sources.kinds import KINDS
 from backend.utilities.cbom_sources.settings import team_exclusions
 
@@ -34,6 +35,31 @@ RATES_C["image"] = 100
 RATES_C["ct_domain"] = 20
 
 NETWORK_STOPPED = "Network scanning is stopped"  # a plan item's reason while Stop all is on (runs.py)
+
+
+def org_estimate(accounts: int, previous: dict[str, Any] | None, now: _dt.datetime) -> dict[str, Any]:
+    """What one run of an AWS organisation source is charged, recorded on the source at each validation, with the last
+    change ("changed from 200 accounts on <date>"), so a new count is visible before the next scheduled run charges it.
+    Before F1 the count stopped at 200 accounts; the first validation after it may raise the charge."""
+    rate = RATES_C["cloud_account"]
+    out: dict[str, Any] = {"accounts": accounts, "credits_per_account": credits(rate),
+                           "credits_per_run": credits(rate * max(accounts, 1))}
+    before = previous.get("accounts") if isinstance(previous, dict) else None
+    if isinstance(before, int) and before != accounts:
+        out["changed_from"] = {"accounts": before, "credits_per_run": credits(rate * max(before, 1))}
+        out["changed_at"] = now.replace(microsecond=0).isoformat() + "Z"
+    elif isinstance(previous, dict) and previous.get("changed_from"):
+        out["changed_from"], out["changed_at"] = previous["changed_from"], previous.get("changed_at")
+    return out
+
+
+def org_estimate_stale(source: CbomCollectionSource) -> bool:
+    """An AWS organisation validated before F1: its count stopped at 200 and no estimate was recorded, so its charge
+    per run is not yet the count F1 reads (the Cloud & Identity row asks for a re-validation)."""
+    result = source.last_test_result or {}
+    members = result.get("member_accounts")
+    return (source.kind == "aws_account" and (source.config or {}).get("scope") == "organization"
+            and isinstance(members, int) and members <= 200 and not result.get("estimate"))
 
 
 def credits(centi: int) -> float:
@@ -90,6 +116,7 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
                 "intervals": intervals}
     if group == "cloud" and source.kind == "aws_account" and cfg.get("scope") == "organization":
         members = (source.last_test_result or {}).get("member_accounts")
+        # every member account counted at the last validation is read and charged (owner decision, F1)
         return {"units": int(members) if isinstance(members, int) and members > 0 else 1, "unit": "accounts"}
     return {"units": 1, "unit": {"kubernetes": "clusters", "databases": "databases", "cloud": "accounts"}.get(group, "sources")}
 
@@ -209,6 +236,8 @@ def plan_run(
         node = nodes.get(source.node_id) if source.node_id else None
         info = source_targets(source, settings)
         units = int(info["units"])
+        if org_estimate_stale(source):
+            log("aws org estimate stale: re-validate", team=team_id, source=source.id, accounts=units)
         item = PlanItem(source.id, source.name, source.kind, group, source.node_id, node.name if node else None,
                         units, info["unit"], 0, "skipped")
         try:

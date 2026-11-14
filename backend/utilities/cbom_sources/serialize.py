@@ -131,6 +131,14 @@ def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings
     }
 
 
+def _slice_progress(job: CbomCollectionJob) -> dict[str, Any] | None:
+    """A fanned-out AWS collection while it runs: slices (account x region) done of total (``cbom_sources.slices``)."""
+    slices = (job.result or {}).get("slices") if job.status == "claimed" and job.kind == "collect" else None
+    if isinstance(slices, dict) and isinstance(slices.get("total"), int) and slices["total"] > 0:
+        return {"done": int(slices.get("done") or 0), "total": slices["total"], "unit": "account-regions"}
+    return None
+
+
 def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: CbomCollectionSettings,
                now: _dt.datetime, source: CbomCollectionSource | None = None) -> dict[str, Any]:
     params = dict(job.params or {})
@@ -156,12 +164,12 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
         # a network range while it runs ("N of M addresses"); null for older nodes, other jobs and ended jobs
         "progress": ({"done": progress["done"], "total": progress["total"]}
                      if job.status == "claimed" and isinstance(progress, dict) and progress.get("attempt") == job.attempts
-                     else None),
+                     else _slice_progress(job)),
         "error": job.error,
         "outcome": job.outcome,
         "asset_count": job.asset_count,
         "cancel_requested": job.cancel_requested_at is not None,
-        "runner": "node" if job.node_id else ("cloud" if job.kind == "collect" else "node"),
+        "runner": "node" if job.node_id else ("cloud" if job.kind in ("collect", "slice") else "node"),
         "samples": params.get("samples") or [],
         "server_time": iso_z(now),
     }
