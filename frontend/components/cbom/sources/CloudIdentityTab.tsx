@@ -32,6 +32,7 @@ import {
   type CbomSource,
   type CbomSourcesSettings,
   type CbomSourceSaveResponse,
+  type CbomOrgEstimate,
   type CbomTestResponse,
 } from "@/utils/backend_api";
 
@@ -40,7 +41,7 @@ import { cbomSourcesKeys } from "./keys";
 import { keepLiveValidation } from "./liveValidation";
 import { SourceMetadataDialog } from "./SourceMetadata";
 import { LabModeBanner } from "./LabModeBanner";
-import { ctProviderSentence, ctRunCredits, formatDateTime, pluralize, readTextFile, splitLines } from "./logic";
+import { ctProviderSentence, ctRunCredits, formatDateTime, orgEstimateLines, orgEstimateStale, pluralize, readTextFile, splitLines } from "./logic";
 import {
   ChoiceCards,
   CodeSnippet,
@@ -308,6 +309,7 @@ interface ValidationView {
   status: string;
   checks: CbomAwsCheck[];
   memberAccounts: number | null;
+  estimate: CbomOrgEstimate | null;
   at: string | null;
 }
 
@@ -322,6 +324,7 @@ function viewFromTest(source: CbomSource, test: CbomTestResponse): ValidationVie
     status: test.status,
     checks: test.checks ?? [],
     memberAccounts: typeof test.member_accounts === "number" ? test.member_accounts : null,
+    estimate: test.estimate ?? null,
     at: test.validated_at ?? null,
   };
 }
@@ -336,6 +339,7 @@ function viewFromSource(source: CbomSource | null | undefined): ValidationView |
     status: source.last_test_status,
     checks,
     memberAccounts: typeof members === "number" ? members : null,
+    estimate: source.last_test_result.estimate ?? null,
     at: source.last_test_at,
   };
 }
@@ -649,6 +653,11 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                           {!busy && s.kind !== "aws_account" && s.last_test_status !== "passed" && s.last_test_status !== "failed" && (
                             <span className="mt-1 block max-w-[220px] text-xs text-zinc-500" data-testid={`cloud-account-not-connected-${s.id}`}>
                               {CLOUD_NOT_CONNECTED[PROVIDER_OF_KIND[s.kind] === "gcp" ? "gcp" : "azure"]}
+                            </span>
+                          )}
+                          {!busy && orgEstimateStale(s) && (
+                            <span className="mt-1 block max-w-[220px] text-xs text-amber-700 dark:text-amber-300" data-testid={`aws-org-estimate-stale-${s.id}`}>
+                              Re-validate to update the charge estimate: every member account is now read and charged
                             </span>
                           )}
                         </TableCell>
@@ -978,6 +987,21 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
                 <StatusBadge tone="blue">Found</StatusBadge>
               </span>
               <span className="text-sm text-zinc-900 dark:text-white">{pluralize(view.memberAccounts, "member account")}</span>
+            </li>
+          )}
+          {orgEstimateLines(view.estimate) && (
+            <li className="flex items-start gap-2 py-2.5" data-testid="aws-org-estimate">
+              <span className="w-16 shrink-0">
+                <StatusBadge tone={view.estimate?.changed_from ? "amber" : "blue"}>Charge</StatusBadge>
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm text-zinc-900 dark:text-white">{orgEstimateLines(view.estimate)?.estimate}</span>
+                {orgEstimateLines(view.estimate)?.change && (
+                  <span className="block text-xs text-amber-700 dark:text-amber-300">
+                    {orgEstimateLines(view.estimate)?.change}. Every member account is read and charged; scheduled runs use this estimate.
+                  </span>
+                )}
+              </span>
             </li>
           )}
         </ul>
