@@ -110,6 +110,7 @@ def public_source(source: CbomCollectionSource, settings: CbomCollectionSettings
         "name": source.name,
         "node_id": source.node_id,
         "node_name": node.name if node else None,
+        "node_segment": (node.segment or None) if node else None,  # #225: the segment filter of the source tables
         "node_status": node_status(node, now) if source.node_id else None,
         "enabled": source.enabled,
         "config": config,

@@ -39,7 +39,7 @@ assert.match(template, /const hasTicketingTab = run \? RUN_TICKETING_TAB_AVAILAB
 assert.match(template, /activeTab === "ticketing" && hasTicketingTab && run \? \(\n\s*<RunTicketingTab teamId=\{run\.teamId\} runId=\{run\.runId\} \/>/);
 // the run sections sit in the template's Results tab, in the code page's order
 const order = ["<RunMetaCards", "<RunPostureCard", "<CbomCryptoCharts", "<RunInsights", "<RunCertificatesSection", "<RunChangesSection",
-  "<RunWavesSection", "<RbiCsfRollup", "<CertInLanePosture", "<RunComplianceSection", "<RunDashboardSection", "<RunFindingsTable", "<RunTopRisks"];
+  "<RunWavesSection", "<RbiCsfRollup", "<CertInLanePosture", "<ComplianceMappingSection", "<RunDashboardSection", "<RunFindingsTable", "<RunTopRisks"];
 const at = order.map((tag) => template.indexOf(tag));
 assert.ok(at.every((i, n) => i > 0 && (n === 0 || i > at[n - 1])), `sections in order: ${JSON.stringify(order.map((t, n) => [t, at[n]]))}`);
 assert.ok(template.indexOf('activeTab === "ticketing" && hasTicketingTab && run') < at[0], "after the tabs");

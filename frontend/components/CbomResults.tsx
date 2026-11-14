@@ -80,7 +80,9 @@ import { type CertInRollupData } from "@/components/certin/certinShared";
 import { InfoTip } from "@/components/ui/info-tip";
 import { CompareDialog, RunInsights } from "@/components/cbom/sources/ChangesPanel";
 import { RunPostureCard } from "@/components/cbom/sources/RunPosture";
-import { applyPostureToDistributions, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
+import { applyPostureToDistributions, complianceRows, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
+import { ComplianceMappingSection } from "@/components/cbom/results/ComplianceSummary";
+import { buildComplianceSummary, runDrillFilters, type DrillTarget } from "@/components/cbom/results/complianceSummary";
 import { RunFindingDialog } from "@/components/cbom/results/RunFindingDialog";
 import { RunFindingsTable } from "@/components/cbom/results/RunFindingsTable";
 import { ColumnChooser, useColumnPrefs } from "@/components/cbom/results/ColumnChooser";
@@ -88,7 +90,6 @@ import { FINDING_DIALOG_BODY, FINDING_DIALOG_CONTENT, FINDING_DIALOG_FULLSCREEN_
 import {
   RunCertificatesSection,
   RunChangesSection,
-  RunComplianceSection,
   RunCoverageSection,
   RunDashboardSection,
   RunHeaderActions,
@@ -100,6 +101,7 @@ import {
 } from "@/components/cbom/results/RunSections";
 import RunTicketingTab from "@/components/cbom/results/RunTicketingTab";
 import type { ResultsSource } from "@/components/cbom/results/source";
+import { advisoryLine, readAdvisoryData, staleNote } from "@/components/cbom/advisoryData";
 
 interface CbomResultsProps {
   data: unknown;
@@ -500,6 +502,8 @@ export default function CbomResults({
   const importReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_input ?? null) as CbomImportReport | null;
   // A code scan's coverage: archives, images, binaries and firmware it skipped or only counted (null when none)
   const coverageReport = ((scanMetadata as Record<string, unknown> | null)?.cbom_coverage ?? null) as CbomCoverageReport | null;
+  // CB-29: the crypto-library advisory data the code scan matched (offline OSV snapshot version and date)
+  const advisoryData = run ? null : readAdvisoryData(data, scanMetadata);
   const informationalRows = dashboard?.card_data?.total_informational ?? 0;
   // Every crypto asset (findings + clean inventory) for the readiness gauge, as the PDF and the scan list count them
   const allRows = useMemo(() => inventoryRows(data, findingsList ?? []), [data, findingsList]);
@@ -551,6 +555,38 @@ export default function CbomResults({
     const c = (fromData ?? fromMeta) as CbomCompliance | undefined;
     return c && typeof c === "object" ? c : null;
   }, [data, scanMetadata]);
+
+  // Compliance mapping (#270): one view over the tri-state checks (code scans and runs) and, for a run, the knowledge
+  // base clauses its findings touch; every asset count drills into the findings table.
+  const complianceMapping = useMemo(() => {
+    const kb = run ? complianceRows(run.results, run.posture) : { rows: [], basis: "none" as const };
+    return {
+      basis: kb.basis,
+      frameworks: buildComplianceSummary({
+        engine: cryptoCompliance,
+        mapping: kb.rows,
+        findings: run ? null : findingsList ?? [],
+        refAliases: relatedRefAliases,
+        titles: Object.fromEntries((run?.posture?.top_codes ?? []).map((c) => [c.code, c.title])),
+      }),
+    };
+  }, [run, cryptoCompliance, findingsList, relatedRefAliases]);
+
+  const handleComplianceDrill = (target: DrillTarget) => {
+    if (run) {
+      const { patch, truncated } = runDrillFilters(target);
+      run.onFilters(patch);
+      if (truncated) toast.warning("The findings table shows the first assets of this requirement only (one request carries up to 500)");
+      requestAnimationFrame(() => document.getElementById("bom-findings")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } else if (target.kind === "refs") {
+      handleViewRelatedFindings(target.refs);
+    } else {
+      // a code scan's findings carry their finding codes: the same filter, in the browser like its other filters
+      const refs = (findingsList ?? []).filter((f) => (f.finding_codes ?? []).some((c) => target.codes.includes(c))).map((f) => f.bom_ref || f.id);
+      if (refs.length) handleViewRelatedFindings(refs);
+      else toast.info("No finding of this scan carries these finding codes");
+    }
+  };
 
   const showTabs = team_id && scan_id != null;
   const hasTicketingTab = run ? RUN_TICKETING_TAB_AVAILABLE : showTabs && onIntegrationSettingsUpdated != null;
@@ -747,6 +783,14 @@ export default function CbomResults({
         </Card>
       )}
 
+      {advisoryData && (
+        <p className={`mb-6 text-xs ${advisoryData.stale ? "text-amber-800 dark:text-amber-300" : "text-zinc-500 dark:text-zinc-400"}`}
+           data-testid="cbom-advisory-data" data-stale={advisoryData.stale ? "true" : "false"}
+           role={advisoryData.stale ? "status" : undefined}>
+          {advisoryLine(advisoryData)}{staleNote(advisoryData) ? ` ${staleNote(advisoryData)}` : ""}
+        </p>
+      )}
+
       {run && run.run && <RunCoverageSection run={run.run} targets={run.page?.targets ?? null} provenance={run.results?.provenance} />}
 
       {hasTicketingTab && (
@@ -909,7 +953,11 @@ export default function CbomResults({
             refAliases={relatedRefAliases}
           />
 
-          {run && <RunComplianceSection view={run.plan.compliance} results={run.results} posture={run.posture} />}
+          {(!run || run.plan.compliance.show) && (
+            <ComplianceMappingSection frameworks={complianceMapping.frameworks} onDrill={handleComplianceDrill} scope={run ? "run" : "scan"}
+                                      note={run?.plan.compliance.note ?? null}
+                                      footnote={complianceMapping.basis === "posture" ? "From the run posture (this server does not send the run results summary yet)." : null} />
+          )}
 
           {/* Dashboard */}
           {run && (

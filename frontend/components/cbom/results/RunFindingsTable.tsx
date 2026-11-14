@@ -281,7 +281,8 @@ export function RunFindingsTable({
             <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => {
               if (typing.current) clearTimeout(typing.current);
               setSearch("");
-              onFilters({ type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined, page: 1 });
+              onFilters({ type: undefined, impact: undefined, quantum: undefined, q: undefined, source_id: undefined, status: undefined,
+                          codes: undefined, asset_ids: undefined, drill_label: undefined, page: 1 });
             }}>
               Clear filters
             </Button>
@@ -290,6 +291,16 @@ export function RunFindingsTable({
             <ColumnChooser defs={offered} visible={columns.visible} onToggle={columns.toggle} onReset={columns.reset} testId="run-results-columns" />
           </div>
         </div>
+        {(filters.codes?.length || filters.asset_ids?.length) ? (
+          // #270: the compliance mapping's "N assets" drill-down
+          <p className="text-sm text-zinc-600 dark:text-zinc-400 flex flex-wrap items-center gap-2" data-testid="run-results-drill">
+            <StatusBadge tone="blue">Compliance: {filters.drill_label ?? "selected clause"}</StatusBadge>
+            <button type="button" className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer" data-testid="run-results-drill-clear"
+                    onClick={() => onFilters({ codes: undefined, asset_ids: undefined, drill_label: undefined, page: 1 })}>
+              Show every asset
+            </button>
+          </p>
+        ) : null}
 
         <FindingSelectionMenu
           selectedCount={selection.size}
