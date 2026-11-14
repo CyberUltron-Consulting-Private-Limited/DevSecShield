@@ -1024,6 +1024,11 @@
     ],
     "default_impact": "Medium",
     "description": "Configuration enables encryption at rest with a weak setting (for example a legacy cipher or a provider-managed default where a customer key is required).",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -1072,6 +1077,11 @@
     ],
     "default_impact": "Medium",
     "description": "A certificate shipped with the code expires soon.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "misconfig"
     ],
@@ -1136,6 +1146,11 @@
     ],
     "default_impact": "Low",
     "description": "The certificate is signed by its own key rather than a CA the clients trust.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -1211,6 +1226,11 @@
     ],
     "default_impact": "High",
     "description": "The code implements its own cipher or hash construction (XOR loops, hand-rolled S-boxes, toy Feistel networks).",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -1259,6 +1279,11 @@
     ],
     "default_impact": "Medium",
     "description": "An imported TLS scan result reports that the endpoint does not protect against protocol downgrade (TLS_FALLBACK_SCSV).",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -1346,6 +1371,11 @@
     ],
     "default_impact": "Medium",
     "description": "A Dockerfile builds on a Linux distribution release whose free security updates have ended, so the OpenSSL, GnuTLS and other crypto libraries in the image no longer receive fixes (unless a paid extended support subscription is applied inside the image).",
+    "fix_class": {
+     "basis": "dependency / base image bump in the team's own build (firmware blob -> hardware-fixed, rule CL-2)",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "components"
     ],
@@ -1402,6 +1432,11 @@
     ],
     "default_impact": "Medium",
     "description": "A container image, firmware image or binary ships (or links against) a crypto library release line its upstream project no longer maintains, for example OpenSSL 1.0.2 or 1.1.x, so vulnerabilities published after the end-of-life date are not fixed upstream.",
+    "fix_class": {
+     "basis": "dependency / base image bump in the team's own build (firmware blob -> hardware-fixed, rule CL-2)",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "components"
     ],
@@ -1464,6 +1499,11 @@
     ],
     "default_impact": "High",
     "description": "A certificate shipped with the code has expired.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -1540,6 +1580,11 @@
     ],
     "default_impact": "Critical",
     "description": "A cryptographic key is embedded as a literal in the source code.",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -1598,6 +1643,11 @@
     ],
     "default_impact": "Low",
     "description": "An Azure Key Vault or Managed HSM declared in infrastructure code has purge protection disabled or omitted.",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -1665,6 +1715,11 @@
     ],
     "default_impact": "High",
     "description": "A KMS key policy grants access to a wildcard principal without a restricting condition.",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "access",
      "crypto"
@@ -1723,6 +1778,11 @@
     ],
     "default_impact": "Medium",
     "description": "Infrastructure code declares a customer-managed symmetric KMS key without automatic rotation (enable_key_rotation missing or false).",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -1839,6 +1899,11 @@
     ],
     "default_impact": "High",
     "description": "An imported TLS scanner result (testssl.sh, sslyze or similar) reports a named TLS vulnerability on the endpoint.",
+    "fix_class": {
+     "basis": "patch the TLS library or appliance (KB summary)",
+     "capability": false,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "crypto",
      "components"
@@ -1918,6 +1983,11 @@
     ],
     "default_impact": "Low",
     "description": "A crypto library shipped in a container image, a firmware image or a binary (an OS package such as libssl1.1, or the OpenSSL version text compiled into a library) has a version inside the affected range the CVE records publish. Distributions back-port fixes without changing the upstream version, so the hit is a triage item until the package's changelog shows whether each fix is in.",
+    "fix_class": {
+     "basis": "dependency / base image bump in the team's own build (firmware blob -> hardware-fixed, rule CL-2)",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "components"
     ],
@@ -1988,6 +2058,11 @@
     ],
     "default_impact": "Medium",
     "description": "A server or service configuration declares a listener without TLS (for example `listen 80` without a redirect, or a plaintext broker port).",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -2055,6 +2130,11 @@
     ],
     "default_impact": "Low",
     "description": "Infrastructure code declares no encryption key for this data store, so it is encrypted at rest by the provider's default (for example SSE-S3 on an S3 bucket) with a key the provider owns and manages. The data is encrypted, but the organisation does not hold the key: it cannot set the key policy, rotate or revoke the key, or see each use of it.",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -2130,6 +2210,11 @@
     ],
     "default_impact": "Low",
     "description": "The asset relies on RSA, elliptic-curve or Diffie-Hellman cryptography, which Shor's algorithm breaks on a large quantum computer.",
+    "fix_class": {
+     "basis": "the algorithm is chosen in the team's own code (an API call row); certificate, protocol and key-material rows are vendor-fixed, inferred (rule CL-1)",
+     "capability": true,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2194,6 +2279,11 @@
     ],
     "default_impact": "Critical",
     "description": "The same IV/nonce protects more than one encryption under the same key.",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2242,6 +2332,11 @@
     ],
     "default_impact": "Low",
     "description": "A leaf certificate (CA:FALSE) is self-signed.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -2313,6 +2408,11 @@
     ],
     "default_impact": "High",
     "description": "A constant or predictable IV or nonce reaches a cipher.",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2362,6 +2462,11 @@
     ],
     "default_impact": "High",
     "description": "A client turns off certificate or host-name verification (for example verify=False, InsecureSkipVerify, rejectUnauthorized: false, sslmode=require without a CA).",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "auth",
      "crypto"
@@ -2437,6 +2542,11 @@
     ],
     "default_impact": "High",
     "description": "Infrastructure or service configuration declares a data store (volume, bucket, database, cache, queue) without encryption at rest.",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2502,6 +2612,11 @@
     ],
     "default_impact": "High",
     "description": "Configuration declares a connection or listener without TLS (for example a database URL with sslmode=disable, a plaintext broker listener or an HTTP-only load balancer).",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2579,6 +2694,11 @@
     ],
     "default_impact": "High",
     "description": "A manifest or lockfile pins a crypto library version with a published advisory.",
+    "fix_class": {
+     "basis": "dependency / base image bump in the team's own build (firmware blob -> hardware-fixed, rule CL-2)",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "components"
     ],
@@ -2651,6 +2771,11 @@
     ],
     "default_impact": "High",
     "description": "The code uses a broken or deprecated algorithm (for example MD5, SHA-1, DES, 3DES, RC4, Blowfish).",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2788,6 +2913,11 @@
     ],
     "default_impact": "High",
     "description": "A certificate's public key is below 2048-bit RSA / 224-bit EC.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2862,6 +2992,11 @@
     ],
     "default_impact": "High",
     "description": "A certificate in the code base is signed with MD5 or SHA-1.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2923,6 +3058,11 @@
     ],
     "default_impact": "High",
     "description": "A block cipher is used in ECB mode (often implicitly, e.g. Java's Cipher.getInstance(\"AES\")).",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -2991,6 +3131,11 @@
     ],
     "default_impact": "High",
     "description": "Configuration allows RC4, 3DES, NULL, anonymous or EXPORT suites, or legacy SSH/IKE algorithms.",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -3071,6 +3216,11 @@
     ],
     "default_impact": "High",
     "description": "The code generates or uses a key below the minimum size (RSA/DSA/DH < 2048, EC < 224, symmetric < 128).",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -3119,6 +3269,11 @@
     ],
     "default_impact": "High",
     "description": "RSA encryption uses PKCS#1 v1.5 or no padding.",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -3189,6 +3344,11 @@
     ],
     "default_impact": "High",
     "description": "The code or configuration allows SSLv3, TLS 1.0/1.1, SSH-1 or IKEv1.",
+    "fix_class": {
+     "basis": "a configuration / IaC value in the repository",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -3286,6 +3446,11 @@
     ],
     "default_impact": "High",
     "description": "A key, IV, nonce or salt comes from a general-purpose PRNG (Math.random, random.random, java.util.Random, rand()).",
+    "fix_class": {
+     "basis": "the team's own source code changes, then a rebuild and release",
+     "capability": false,
+     "class": "code-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -3338,6 +3503,11 @@
     ],
     "default_impact": "Medium",
     "description": "A Vault PKI role has allow_any_name; or an AD CS template lets the enrollee supply the subject (ENROLLEE_SUPPLIES_SUBJECT) of a certificate that can sign in (client authentication, any purpose or no EKU) and principals other than administrators may enroll (High when every domain user or computer may; Medium when named groups may, or when enrollment rights were not read); or the CA takes subject alternative names from request attributes for every template (EDITF_ATTRIBUTESUBJECTALTNAME2, ESC6). Since KB5014754 the CA writes the requester's SID into its certificates and domain controllers refuse a certificate whose SID is not the account it names, so ESC6 is High only when the CA leaves that extension out (DisableExtensionList, ESC16) or that was not read. Templates only administrators may enroll in (SubCA by default) are not reported.",
+    "fix_class": {
+     "basis": "CA role / template / registry setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "access",
      "auth"
@@ -3426,6 +3596,11 @@
     ],
     "default_impact": "High",
     "description": "A certificate template, Vault PKI role or EJBCA profile accepts RSA keys under 2048 bits or EC keys under 224 bits.",
+    "fix_class": {
+     "basis": "CA role / template / registry setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -3484,6 +3659,11 @@
     ],
     "default_impact": "Low",
     "description": "An internal CA template or role issues TLS server certificates valid for more than 825 days. The CA/Browser Forum's 398 days applies to publicly trusted certificates only; for internal CAs the limit used is 825 days, because Apple platforms (iOS 13 / macOS 10.15 and later) refuse TLS server certificates valid for longer even when they chain to an enterprise root. Templates that issue CA certificates (SubCA, CA, CrossCA) are not judged.",
+    "fix_class": {
+     "basis": "CA role / template / registry setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -3542,6 +3722,11 @@
     ],
     "default_impact": "High",
     "description": "Everyone, Authenticated Users, Domain Users, Domain Computers or another principal every account is in holds full control, write, write-owner or write-permission rights on an AD CS certificate template (read from the template's security on the CA server).",
+    "fix_class": {
+     "basis": "CA role / template / registry setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "access",
      "misconfig"
@@ -3612,6 +3797,11 @@
     ],
     "default_impact": "High",
     "description": "An internal CA (AD CS, EJBCA, Vault) or one of its templates signs certificates and CRLs with SHA-1 or MD5.",
+    "fix_class": {
+     "basis": "CA role / template / registry setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -3675,6 +3865,11 @@
     ],
     "default_impact": "Low",
     "description": "AEAD suites are offered, but CBC suites are still accepted for older clients.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -3750,6 +3945,11 @@
     ],
     "default_impact": "Medium",
     "description": "Every suite the endpoint offers uses CBC mode with HMAC (MAC-then-encrypt).",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -3824,6 +4024,11 @@
     ],
     "default_impact": "High",
     "description": "The certificate's validity period has ended.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -3903,6 +4108,11 @@
     ],
     "default_impact": "Medium",
     "description": "The certificate expires soon.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "misconfig"
     ],
@@ -3971,6 +4181,11 @@
     ],
     "default_impact": "Low",
     "description": "A self-signed CA root or identity-provider signing certificate signs itself with SHA-1. Clients never check a self-signature: they trust the certificate itself (trust store or federation metadata), so this is not a forgery risk. Certificates it issues, or assertions it signs, are checked separately.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -4031,6 +4246,11 @@
     ],
     "default_impact": "Low",
     "description": "The certificate is signed by its own key rather than a CA the clients trust.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -4105,6 +4325,11 @@
     ],
     "default_impact": "Low",
     "description": "The certificate exists in a store or CA inventory but is not deployed anywhere (orphaned).",
+    "fix_class": {
+     "basis": "delete or revoke the unused certificate",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -4160,6 +4385,11 @@
     ],
     "default_impact": "High",
     "description": "Oracle users still have the 10G password verifier, a DES-based, case-insensitive hash.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -4221,6 +4451,11 @@
     ],
     "default_impact": "High",
     "description": "An HBA rule uses the 'password' method, which sends the password unhashed.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -4293,6 +4528,11 @@
     ],
     "default_impact": "High",
     "description": "The Oracle Database release is older than 12.1; every such release is past Oracle's extended support and receives no security fixes.",
+    "fix_class": {
+     "basis": "only a newer release from the database vendor fixes it",
+     "capability": false,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "components"
     ],
@@ -4342,6 +4582,11 @@
     ],
     "default_impact": "Medium",
     "description": "The listener insists on Oracle Native Network Encryption (SQLNET.ENCRYPTION_SERVER = REQUIRED) for TCP connections. NNE negotiates keys without verifying a server certificate; Oracle recommends TLS.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -4404,6 +4649,11 @@
     ],
     "default_impact": "Medium",
     "description": "Logins store their password with a SHA-1 based hash: SQL Server logins whose hash is still version 1 (from before SQL Server 2012), or Oracle users with the 11G verifier.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -4472,6 +4722,11 @@
     ],
     "default_impact": "Low",
     "description": "Enabled SQL Server logins have CHECK_POLICY = OFF: Windows password complexity and lockout do not apply to them.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "auth"
     ],
@@ -4521,6 +4776,11 @@
     ],
     "default_impact": "Medium",
     "description": "RDS for PostgreSQL rds.accepted_password_auth_method is md5+scram, so roles whose password is stored as an MD5 hash can still log in with the md5 method instead of SCRAM-SHA-256.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -4588,6 +4848,11 @@
     ],
     "default_impact": "Medium",
     "description": "password_encryption is md5, so every new or changed password is stored as an MD5 hash.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -4648,6 +4913,11 @@
     ],
     "default_impact": "Medium",
     "description": "Accounts authenticate with mysql_native_password, a SHA-1 based plugin deprecated in MySQL 8.0 and disabled by default in 8.4.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -4705,6 +4975,11 @@
     ],
     "default_impact": "High",
     "description": "The server allows unauthenticated access.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "auth",
      "misconfig"
@@ -4762,6 +5037,11 @@
     ],
     "default_impact": "Low",
     "description": "No InnoDB tables are encrypted and no keyring component is loaded.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -4818,6 +5098,11 @@
     ],
     "default_impact": "High",
     "description": "The database accepts only plaintext connections.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -4882,6 +5167,11 @@
     ],
     "default_impact": "Critical",
     "description": "Accounts use the pre-4.1 password hash, which is trivially broken.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -4940,6 +5230,11 @@
     ],
     "default_impact": "High",
     "description": "Login roles hold a stored password that is neither an MD5 nor a SCRAM-SHA-256 hash: a password kept unhashed (PostgreSQL before 10 allowed it, and an upgrade can carry it over).",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -5015,6 +5310,11 @@
     ],
     "default_impact": "Low",
     "description": "A SQL Server database or an Oracle tablespace is not protected by Transparent Data Encryption. Only database-level encryption is visible from inside the database: the volume or managed service (BitLocker, LUKS, RDS storage encryption) may still encrypt the data files, so check that before treating the data as unencrypted at rest.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -5086,6 +5386,11 @@
     ],
     "default_impact": "Medium",
     "description": "The database's TLS mode allows plaintext or skips client checks.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -5161,6 +5466,11 @@
     ],
     "default_impact": "Medium",
     "description": "TLS is offered but not required.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -5236,6 +5546,11 @@
     ],
     "default_impact": "Critical",
     "description": "An HBA rule (PostgreSQL trust) admits matching clients with no authentication.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "auth",
      "misconfig"
@@ -5299,6 +5614,11 @@
     ],
     "default_impact": "Medium",
     "description": "Authentication rules or stored hashes use MD5, which PostgreSQL has deprecated in favour of SCRAM-SHA-256.",
+    "fix_class": {
+     "basis": "database parameter, HBA rule, account or password reset",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -5360,6 +5680,11 @@
     ],
     "default_impact": "High",
     "description": "The server's Diffie-Hellman group is smaller than 2048 bits.",
+    "fix_class": {
+     "basis": "cipher / group setting (ECDHE or ffdhe2048+)",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -5437,6 +5762,11 @@
     ],
     "default_impact": "Medium",
     "description": "The dm-crypt volume uses a CBC mode cipher instead of XTS.",
+    "fix_class": {
+     "basis": "re-encrypt / convert / resume with the OS's own tooling",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -5486,6 +5816,11 @@
     ],
     "default_impact": "Medium",
     "description": "The volume is encrypted but BitLocker protection is off (suspended), so the volume key is stored unprotected on the disk.",
+    "fix_class": {
+     "basis": "re-encrypt / convert / resume with the OS's own tooling",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -5542,6 +5877,11 @@
     ],
     "default_impact": "Medium",
     "description": "The block device holds a filesystem with no encryption layer.",
+    "fix_class": {
+     "basis": "re-encrypt / convert / resume with the OS's own tooling",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -5599,6 +5939,11 @@
     ],
     "default_impact": "Low",
     "description": "The volume uses AES-128 in XTS mode (a 256-bit XTS key).",
+    "fix_class": {
+     "basis": "re-encrypt / convert / resume with the OS's own tooling",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -5650,6 +5995,11 @@
     ],
     "default_impact": "Medium",
     "description": "SchUseStrongCrypto is 0 for .NET Framework 4.x on this Windows host, so .NET applications that do not pick their own protocol may still offer SSL 3.0 and TLS 1.0 and accept RC4 suites.",
+    "fix_class": {
+     "basis": "host setting, unit file or script option",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -5720,6 +6070,11 @@
     ],
     "default_impact": "Medium",
     "description": "The endpoint can be pushed to an older protocol version than the client and server both support.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -5812,6 +6167,11 @@
     ],
     "default_impact": "High",
     "description": "The key or certificate uses DSA, which FIPS 186-5 no longer approves for generating signatures.",
+    "fix_class": {
+     "basis": "re-key with a classical key size the deployed stack already supports, re-issue",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -5878,6 +6238,11 @@
     ],
     "default_impact": "Medium",
     "description": "New EBS volumes in this region are not encrypted unless someone asks.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -5945,6 +6310,11 @@
     ],
     "default_impact": "High",
     "description": "The elliptic-curve key uses a curve smaller than 224 bits.",
+    "fix_class": {
+     "basis": "re-key with a classical key size the deployed stack already supports, re-issue",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -6014,6 +6384,11 @@
     ],
     "default_impact": "Medium",
     "description": "The AWS Glue Data Catalog in this region has CatalogEncryptionMode DISABLED, so its metadata (databases, table definitions, and connection definitions with their properties) is not encrypted with a KMS key you control.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -6089,6 +6464,11 @@
     ],
     "default_impact": "Medium",
     "description": "The Glue JDBC connection has JDBC_ENFORCE_SSL unset or false and its URL does not require TLS, so Glue jobs may connect to the database without TLS and without checking the server's certificate.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -6162,6 +6542,11 @@
     ],
     "default_impact": "High",
     "description": "A Glue connection keeps its database password in the connection itself (no Secrets Manager SECRET_ID) and the password was not encrypted: connection password encryption was off when the connection was created or last updated, so GetConnection returns it in clear text.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -6241,6 +6626,11 @@
     ],
     "default_impact": "Medium",
     "description": "The gateway accepted an IKEv1 (ISAKMP) Main Mode proposal. RFC 9395 deprecates IKEv1: it has no post-quantum option, weaker DoS protection and a history of PSK and fragmentation attacks.",
+    "fix_class": {
+     "basis": "IKE / IPsec proposal on the gateway",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -6326,6 +6716,11 @@
     ],
     "default_impact": "High",
     "description": "The gateway answered an IKEv1 Aggressive Mode request. With a pre-shared key, the answer carries a hash keyed with the PSK that anyone can request without authenticating.",
+    "fix_class": {
+     "basis": "IKE / IPsec proposal on the gateway",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -6420,6 +6815,11 @@
     ],
     "default_impact": "Low",
     "description": "The gateway negotiates IKE with classical Diffie-Hellman only: it did not accept an ML-KEM additional key exchange (RFC 9370), or it speaks only IKEv1, which has none.",
+    "fix_class": {
+     "basis": "a post-quantum key exchange in IKEv2 needs a gateway release that implements RFC 9370 additional key exchanges and the algorithm (strongSwan 6 per the KB step); appliances need firmware (R-HW)",
+     "capability": true,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -6479,6 +6879,11 @@
     ],
     "default_impact": "High",
     "description": "The IKE gateway accepts MODP groups below 2048 bits (groups 1, 2, 5), the RFC 5114 groups 22-24 or the 192-bit ECP group 25 for the IKE key exchange.",
+    "fix_class": {
+     "basis": "IKE / IPsec proposal on the gateway",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -6575,6 +6980,11 @@
     ],
     "default_impact": "High",
     "description": "The IKE gateway accepts DES, 3DES or Blowfish to protect its IKE SA. These 64-bit block ciphers are deprecated for IKE (RFC 8247: DES MUST NOT, 3DES SHOULD NOT; RFC 9395 deprecates Blowfish).",
+    "fix_class": {
+     "basis": "IKE / IPsec proposal on the gateway",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -6665,6 +7075,11 @@
     ],
     "default_impact": "Medium",
     "description": "The IKE gateway accepts HMAC-MD5 or HMAC-SHA-1 as the IKE integrity algorithm or PRF (or MD5/SHA-1 as the IKEv1 hash). RFC 8247 makes HMAC-MD5 MUST NOT (reported Medium) and keeps HMAC-SHA-1 as MUST-, still required for interoperability but expected to be downgraded, so HMAC-SHA-1 alone is reported Low: HMAC does not depend on SHA-1's collision resistance.",
+    "fix_class": {
+     "basis": "IKE / IPsec proposal on the gateway",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -6760,6 +7175,11 @@
     ],
     "default_impact": "Medium",
     "description": "An appliance's IPsec (ESP) proposal or crypto profile lists DES, 3DES, NULL encryption, MD5 or SHA-1 integrity, or a weak PFS group for the child SAs that carry the traffic. RFC 8221 makes HMAC-MD5 MUST NOT and keeps HMAC-SHA-1-96 as MUST- (allowed, expected to be phased out), so a proposal whose only weakness is HMAC-SHA-1 is reported Low.",
+    "fix_class": {
+     "basis": "IKE / IPsec proposal on the gateway",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -6843,6 +7263,11 @@
     ],
     "default_impact": "Low",
     "description": "A Java KeyStore in the legacy JKS format, whose integrity protection is weak.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -6895,6 +7320,11 @@
     ],
     "default_impact": "High",
     "description": "The key manager lists the key in the KMIP Compromised state: someone recorded that its value may be known to others, and it still exists.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -6946,6 +7376,11 @@
     ],
     "default_impact": "Medium",
     "description": "A private or secret key has CKA_EXTRACTABLE (or KMIP Extractable) set, so it can be wrapped and taken out of the HSM or key manager.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -7001,6 +7436,11 @@
     ],
     "default_impact": "High",
     "description": "A PEM private key is stored in plain text in a ConfigMap, which is not meant for secrets.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "access"
@@ -7076,6 +7516,11 @@
     ],
     "default_impact": "Medium",
     "description": "A PEM private key is embedded in a document, script or configuration file.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -7134,6 +7579,11 @@
     ],
     "default_impact": "Low",
     "description": "A Vault transit key has auto_rotate_period 0, so new key versions are made only by hand.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -7185,6 +7635,11 @@
     ],
     "default_impact": "High",
     "description": "A private or secret key can leave its key manager unprotected: an HSM object with CKA_SENSITIVE false, or a Vault transit key that is exportable or allows a plaintext backup.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -7260,6 +7715,11 @@
     ],
     "default_impact": "Medium",
     "description": "An unencrypted private key file is readable by the scanner's unprivileged account.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "access"
@@ -7332,6 +7792,11 @@
     ],
     "default_impact": "High",
     "description": "A stored key (in an HSM, a KMIP server, Vault or a database) is a DES, Triple DES, RC4, RC2, Blowfish, IDEA or CAST5 key, or data is encrypted with one.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -7402,6 +7867,11 @@
     ],
     "default_impact": "High",
     "description": "An unencrypted private key file is readable by every local account.",
+    "fix_class": {
+     "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "access"
@@ -7481,6 +7951,11 @@
     ],
     "default_impact": "Medium",
     "description": "A customer-managed symmetric KMS key has automatic rotation disabled.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -7529,6 +8004,11 @@
     ],
     "default_impact": "Low",
     "description": "The KMS key is scheduled for deletion.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -7575,6 +8055,11 @@
     ],
     "default_impact": "Medium",
     "description": "The Azure Key Vault has soft delete but not purge protection, so a soft-deleted key can be purged before its retention period ends.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -7632,6 +8117,11 @@
     ],
     "default_impact": "Low",
     "description": "The Azure Key Vault allows public network access and its firewall default action is Allow.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "misconfig"
     ],
@@ -7688,6 +8178,11 @@
     ],
     "default_impact": "High",
     "description": "The Azure Key Vault has soft delete disabled, so a deleted key, secret or certificate is removed immediately.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -7745,6 +8240,11 @@
     ],
     "default_impact": "Medium",
     "description": "A running process has an old crypto library mapped that was deleted or replaced by a package upgrade.",
+    "fix_class": {
+     "basis": "restart the process",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "components"
     ],
@@ -7797,6 +8297,11 @@
     ],
     "default_impact": "High",
     "description": "The crypto library version is past its upstream end of support, so new vulnerabilities are not fixed upstream.",
+    "fix_class": {
+     "basis": "a supported release line comes only from the OS / library vendor",
+     "capability": false,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "components"
     ],
@@ -7854,6 +8359,11 @@
     ],
     "default_impact": "Low",
     "description": "The installed version of this crypto library falls inside the affected version range NVD publishes for one or more CVEs.",
+    "fix_class": {
+     "basis": "the fix is the vendor's security update (back-port)",
+     "capability": false,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "components"
     ],
@@ -7913,6 +8423,11 @@
     ],
     "default_impact": "Low",
     "description": "The binary carries its own copy of a crypto library.",
+    "fix_class": {
+     "basis": "only whoever builds the binary can relink it; on a host that is the software's vendor",
+     "capability": false,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "components"
     ],
@@ -7956,6 +8471,11 @@
     ],
     "default_impact": "Medium",
     "description": "A Linkerd Server accepts clients without a mesh TLS identity: its accessPolicy is all- or cluster-unauthenticated, or a ServerAuthorization / AuthorizationPolicy grants unauthenticated or network-only access.",
+    "fix_class": {
+     "basis": "mesh resource setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "auth",
      "misconfig"
@@ -8032,6 +8552,11 @@
     ],
     "default_impact": "Low",
     "description": "The volume uses the LUKS1 format (PBKDF2 key slots).",
+    "fix_class": {
+     "basis": "re-encrypt / convert / resume with the OS's own tooling",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -8078,6 +8603,11 @@
     ],
     "default_impact": "High",
     "description": "An Istio DestinationRule sets trafficPolicy.tls.mode DISABLE (for the host, a port or a subset), so sidecars send plaintext to that destination instead of using mesh mTLS (High). For a host outside the cluster (a DNS name that is not a Kubernetes service, such as a managed database endpoint) the sidecar does not originate TLS by default either and the application usually does its own TLS, which passes through unchanged, so that case is Low: verify the application connects with TLS.",
+    "fix_class": {
+     "basis": "mesh resource setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -8145,6 +8675,11 @@
     ],
     "default_impact": "High",
     "description": "A PeerAuthentication policy turns mutual TLS off.",
+    "fix_class": {
+     "basis": "mesh resource setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -8212,6 +8747,11 @@
     ],
     "default_impact": "Medium",
     "description": "mTLS is PERMISSIVE, so plaintext is still accepted.",
+    "fix_class": {
+     "basis": "mesh resource setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -8273,6 +8813,11 @@
     ],
     "default_impact": "Critical",
     "description": "The configured minimum protocol version still allows a deprecated version. The endpoint still negotiates SSL 2.0, which has been prohibited since 2011 (RFC 6176).",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -8379,6 +8924,11 @@
     ],
     "default_impact": "Critical",
     "description": "The configured minimum protocol version still allows a deprecated version. The endpoint still negotiates SSL 3.0, deprecated by RFC 7568 because of the POODLE padding-oracle attack.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -8485,6 +9035,11 @@
     ],
     "default_impact": "High",
     "description": "The configured minimum protocol version still allows a deprecated version. The endpoint accepts TLS 1.0, which RFC 8996 deprecated in 2021. It relies on SHA-1/MD5 in the handshake and CBC constructions with known attacks.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -8594,6 +9149,11 @@
     ],
     "default_impact": "High",
     "description": "The configured minimum protocol version still allows a deprecated version. The endpoint accepts TLS 1.1, deprecated by RFC 8996 together with TLS 1.0.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -8703,6 +9263,11 @@
     ],
     "default_impact": "High",
     "description": "The Modbus/TCP port (502) accepts connections. Modbus/TCP has no encryption and no authentication; the secure variant is Modbus/TCP Security over TLS on port 802.",
+    "fix_class": {
+     "basis": "Modbus/TCP has no cryptography; Modbus/TCP Security needs device support",
+     "capability": true,
+     "class": "hardware-fixed"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -8772,6 +9337,11 @@
     ],
     "default_impact": "Medium",
     "description": "The server does not reject a fallback handshake that carries TLS_FALLBACK_SCSV.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -8859,6 +9429,11 @@
     ],
     "default_impact": "Low",
     "description": "The endpoint negotiates classical ECDHE/DHE only; no hybrid ML-KEM group (such as X25519MLKEM768) is offered.",
+    "fix_class": {
+     "basis": "hybrid post-quantum groups need a TLS library that implements them (KB step: OpenSSL 3.5+); the library version is not visible from the network (inferred)",
+     "capability": true,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -8923,6 +9498,11 @@
     ],
     "default_impact": "High",
     "description": "The service accepts plaintext connections only, so credentials and data cross the network unencrypted.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -9009,6 +9589,11 @@
     ],
     "default_impact": "High",
     "description": "The endpoint only speaks deprecated protocol versions, so every connection uses broken or weak cryptography.",
+    "fix_class": {
+     "basis": "a stack without TLS 1.2 is upgraded by its vendor (KB: 'Upgrade the TLS stack (or the appliance firmware)')",
+     "capability": true,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -9113,6 +9698,11 @@
     ],
     "default_impact": "Medium",
     "description": "An OPC UA endpoint lists an Anonymous user token policy: a session can be activated without any user identity.",
+    "fix_class": {
+     "basis": "OPC UA server endpoint / token policy",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "auth",
      "misconfig"
@@ -9181,6 +9771,11 @@
     ],
     "default_impact": "Medium",
     "description": "The OPC UA server offers Basic128Rsa15 or Basic256, deprecated in OPC UA 1.04 because they rely on SHA-1 signatures and (Basic128Rsa15) RSA PKCS#1 v1.5 key transport.",
+    "fix_class": {
+     "basis": "OPC UA server endpoint / token policy",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -9248,6 +9843,11 @@
     ],
     "default_impact": "High",
     "description": "The OPC UA server offers an endpoint with SecurityPolicy None (MessageSecurityMode None): messages are neither signed nor encrypted.",
+    "fix_class": {
+     "basis": "OPC UA server endpoint / token policy",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -9332,6 +9932,11 @@
     ],
     "default_impact": "High",
     "description": "An endpoint without message encryption offers a UserName token whose security policy is None, so the password is sent unencrypted.",
+    "fix_class": {
+     "basis": "OPC UA server endpoint / token policy",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "auth"
@@ -9409,6 +10014,11 @@
     ],
     "default_impact": "Medium",
     "description": "An `openssl enc` call without -pbkdf2 derives the key with EVP_BytesToKey (a single MD5 or SHA-256 round, plus -md md5 here), so the passphrase can be brute-forced at billions of guesses per second, and without -pbkdf2 the ciphertext also carries no authentication.",
+    "fix_class": {
+     "basis": "host setting, unit file or script option",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -9468,6 +10078,11 @@
     ],
     "default_impact": "Medium",
     "description": "The host also serves the same application over plaintext HTTP.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -9535,6 +10150,11 @@
     ],
     "default_impact": "High",
     "description": "The host-wide crypto policy (RHEL, Fedora, Amazon Linux) is set to LEGACY, which re-enables TLS 1.0/1.1, SHA-1 and small keys for every service.",
+    "fix_class": {
+     "basis": "host setting, unit file or script option",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -9603,6 +10223,11 @@
     ],
     "default_impact": "Critical",
     "description": "The endpoint still negotiates SSL 2.0, which has been prohibited since 2011 (RFC 6176).",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -9709,6 +10334,11 @@
     ],
     "default_impact": "Critical",
     "description": "The endpoint still negotiates SSL 3.0, deprecated by RFC 7568 because of the POODLE padding-oracle attack.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -9815,6 +10445,11 @@
     ],
     "default_impact": "High",
     "description": "The endpoint accepts TLS 1.0, which RFC 8996 deprecated in 2021. It relies on SHA-1/MD5 in the handshake and CBC constructions with known attacks.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -9924,6 +10559,11 @@
     ],
     "default_impact": "High",
     "description": "The endpoint accepts TLS 1.1, deprecated by RFC 8996 together with TLS 1.0.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -10031,6 +10671,11 @@
     ],
     "default_impact": "Low",
     "description": "The asset relies on RSA, elliptic-curve or Diffie-Hellman cryptography, which Shor's algorithm breaks on a large quantum computer.",
+    "fix_class": {
+     "basis": "a post-quantum replacement needs the platform (CA, clients, library, HSM, cloud service) to implement post-quantum signatures and key exchange; per-type context rules in agility.py (R-HW, R-HW-UNREAD, R-TYPE) decide where a fact is read",
+     "capability": true,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10090,6 +10735,11 @@
     ],
     "default_impact": "Medium",
     "description": "Remote Desktop accepts connections without Network Level Authentication (UserAuthentication = 0).",
+    "fix_class": {
+     "basis": "Group Policy / registry",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "auth",
      "misconfig"
@@ -10157,6 +10807,11 @@
     ],
     "default_impact": "High",
     "description": "Remote Desktop is configured with SecurityLayer 0 (RDP Security), so sessions are not protected by TLS and the server is not authenticated by a certificate.",
+    "fix_class": {
+     "basis": "Group Policy / registry",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -10227,6 +10882,11 @@
     ],
     "default_impact": "Critical",
     "description": "The RSA key is smaller than 1024 bits.",
+    "fix_class": {
+     "basis": "re-key with a classical key size the deployed stack already supports, re-issue",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10296,6 +10956,11 @@
     ],
     "default_impact": "High",
     "description": "The RSA key is smaller than 2048 bits (below 112-bit security).",
+    "fix_class": {
+     "basis": "re-key with a classical key size the deployed stack already supports, re-issue",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10365,6 +11030,11 @@
     ],
     "default_impact": "Low",
     "description": "The identity provider's SAML metadata document carries no signature.",
+    "fix_class": {
+     "basis": "IdP metadata signing setting",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "integrity"
     ],
@@ -10417,6 +11087,11 @@
     ],
     "default_impact": "High",
     "description": "An encryption key, private key or passphrase is written in clear text in a service definition (systemd Environment=), a cron job or a script, or in cloud configuration (a Lambda environment variable, an ECS task definition environment entry, EC2 user data), where anyone who can read the file or the configuration (often every local user, or any principal with read-only Describe/List access) or its backups can copy it.",
+    "fix_class": {
+     "basis": "host setting, unit file or script option",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -10527,6 +11202,11 @@
     ],
     "default_impact": "Low",
     "description": "A Secrets Manager secret has no rotation configured.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10574,6 +11254,11 @@
     ],
     "default_impact": "High",
     "description": "An SSM Parameter Store entry whose name marks it as a key, password, token or certificate key is a plain String, not a SecureString: its value is stored and returned unencrypted.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -10650,6 +11335,11 @@
     ],
     "default_impact": "Critical",
     "description": "The certificate's signature uses MD5 (or MD2), for which practical collision attacks exist.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10721,6 +11411,11 @@
     ],
     "default_impact": "High",
     "description": "The certificate's signature uses SHA-1, which is no longer acceptable for digital signatures.",
+    "fix_class": {
+     "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10791,6 +11486,11 @@
     ],
     "default_impact": "Medium",
     "description": "The SSH server offers *-cbc ciphers.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10856,6 +11556,11 @@
     ],
     "default_impact": "High",
     "description": "The SSH server offers diffie-hellman-group1-sha1 (1024-bit MODP group, SHA-1).",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10919,6 +11624,11 @@
     ],
     "default_impact": "Medium",
     "description": "The SSH server offers diffie-hellman-group14-sha1 or group-exchange-sha1.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -10982,6 +11692,11 @@
     ],
     "default_impact": "High",
     "description": "The SSH server offers ssh-dss host keys (1024-bit DSA). OpenSSH removed DSA support.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -11043,6 +11758,11 @@
     ],
     "default_impact": "Low",
     "description": "The SSH server offers HMAC-SHA1. HMAC-SHA1 is not broken, but SHA-1 is being retired and better options exist.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -11104,6 +11824,11 @@
     ],
     "default_impact": "Low",
     "description": "The SSH server offers only classical key exchange (curve25519, ECDH, DH).",
+    "fix_class": {
+     "basis": "OpenSSH 9.0 and later offer a post-quantum hybrid key exchange (KB step): configurable on such a server (R-STACK), else a vendor upgrade",
+     "capability": true,
+     "class": "vendor-fixed"
+    },
     "owasp": [
      "crypto"
     ],
@@ -11171,6 +11896,11 @@
     ],
     "default_impact": "Medium",
     "description": "The SSH server offers the ssh-rsa signature scheme, which signs with SHA-1. OpenSSH disabled it by default in 8.8.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -11234,6 +11964,11 @@
     ],
     "default_impact": "Low",
     "description": "The SSH server offers umac-64 MACs, whose 64-bit tags are short for long-lived sessions.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -11294,6 +12029,11 @@
     ],
     "default_impact": "High",
     "description": "The appliance configuration allows SSH protocol 1 (for example 'ip ssh version 1' or 'ssh version 1'), a design that has been broken for two decades.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -11367,6 +12107,11 @@
     ],
     "default_impact": "High",
     "description": "The SSH server offers arcfour, 3DES, Blowfish or CAST128.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -11441,6 +12186,11 @@
     ],
     "default_impact": "Medium",
     "description": "The SSH server offers hmac-md5 or truncated (-96) MACs.",
+    "fix_class": {
+     "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -11504,6 +12254,11 @@
     ],
     "default_impact": "Medium",
     "description": "The endpoint accepts TLS_RSA_* suites, where the session key is encrypted with the server's long-term RSA key.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -11580,6 +12335,11 @@
     ],
     "default_impact": "Medium",
     "description": "The bucket policy does not deny requests made without TLS (aws:SecureTransport).",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -11637,6 +12397,11 @@
     ],
     "default_impact": "High",
     "description": "The storage resource has no default encryption.",
+    "fix_class": {
+     "basis": "cloud control-plane setting the account owner changes",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto"
     ],
@@ -11692,6 +12457,11 @@
     ],
     "default_impact": "High",
     "description": "A per-service OpenSSL configuration (OPENSSL_CONF with SECLEVEL=0 or MinProtocol below TLS 1.2) or a Java security override (empty jdk.tls.disabledAlgorithms) re-enables protocols and algorithms the system policy forbids, for that service only, where a host-level check does not see it.",
+    "fix_class": {
+     "basis": "host setting, unit file or script option",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -11793,6 +12563,11 @@
     ],
     "default_impact": "High",
     "description": "The endpoint accepts cipher suites that use RC4, single or triple DES, NULL encryption, anonymous key exchange or EXPORT-grade keys.",
+    "fix_class": {
+     "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+     "capability": false,
+     "class": "configurable"
+    },
     "owasp": [
      "crypto",
      "misconfig"
@@ -11871,7 +12646,7 @@
    }
   }
  },
- "kb_version": "2026.11.10.1",
+ "kb_version": "2026.11.14.1",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",

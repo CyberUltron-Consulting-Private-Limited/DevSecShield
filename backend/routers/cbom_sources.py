@@ -39,6 +39,7 @@ from backend.new_models import (
     Scan,
     Team,
 )
+from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
@@ -1452,6 +1453,13 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
 async def asset_detail(team_id: TeamId, asset_id: ObjectId, Authorization: AuthHeader = None):
     engine, _user = await authorize(team_id, Authorization)
     return _ok(await _run("asset detail", team_id, _asset_detail, engine, team_id, asset_id))
+
+
+@router.get(BASE + "/agility-model", dependencies=READ,
+            summary="Crypto-agility fix classes, their order and text, and the rules that decide them (CB-24)")
+async def agility_model(team_id: TeamId, Authorization: AuthHeader = None):
+    await authorize(team_id, Authorization)
+    return _ok(AGILITY.model())
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:

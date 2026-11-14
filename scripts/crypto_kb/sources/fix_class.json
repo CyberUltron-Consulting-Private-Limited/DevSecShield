@@ -1,0 +1,1251 @@
+{
+ "_about": "Crypto-agility fix class per KB finding code (CB-24, model fx-1). Hand-written and reviewed: one row per code with the class, whether it is a capability code (the class depends on what the platform implements, so context rules in backend/utilities/cbom_sources/agility.py may change it), the justification (basis) and its sources. build_kb.py copies class, capability and basis into each KB entry as fix_class and fails on a missing or extra row.",
+ "node": {
+  "CA_ALLOWS_ANY_NAME": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "CA role / template / registry setting",
+   "sources": [
+    "kb:findings.node.CA_ALLOWS_ANY_NAME.remediation"
+   ]
+  },
+  "CA_ALLOWS_WEAK_KEY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "CA role / template / registry setting",
+   "sources": [
+    "kb:findings.node.CA_ALLOWS_WEAK_KEY.remediation"
+   ]
+  },
+  "CA_LONG_VALIDITY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "CA role / template / registry setting",
+   "sources": [
+    "kb:findings.node.CA_LONG_VALIDITY.remediation"
+   ]
+  },
+  "CA_TEMPLATE_WRITABLE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "CA role / template / registry setting",
+   "sources": [
+    "kb:findings.node.CA_TEMPLATE_WRITABLE.remediation"
+   ]
+  },
+  "CA_WEAK_SIGNING": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "CA role / template / registry setting",
+   "sources": [
+    "kb:findings.node.CA_WEAK_SIGNING.remediation"
+   ]
+  },
+  "CBC_ACCEPTED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.CBC_ACCEPTED.remediation"
+   ]
+  },
+  "CBC_ONLY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.CBC_ONLY.remediation"
+   ]
+  },
+  "CERT_EXPIRED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+   "sources": [
+    "kb:findings.node.CERT_EXPIRED.remediation"
+   ]
+  },
+  "CERT_EXPIRES_30D": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+   "sources": [
+    "kb:findings.node.CERT_EXPIRES_30D.remediation"
+   ]
+  },
+  "CERT_SELF_SHA1": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+   "sources": [
+    "kb:findings.node.CERT_SELF_SHA1.remediation"
+   ]
+  },
+  "CERT_SELF_SIGNED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+   "sources": [
+    "kb:findings.node.CERT_SELF_SIGNED.remediation"
+   ]
+  },
+  "CERT_UNUSED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "delete or revoke the unused certificate",
+   "sources": [
+    "kb:findings.node.CERT_UNUSED.remediation"
+   ]
+  },
+  "DB_10G_VERIFIER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_10G_VERIFIER.remediation"
+   ]
+  },
+  "DB_CLEARTEXT_PW": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_CLEARTEXT_PW.remediation"
+   ]
+  },
+  "DB_EOL_VERSION": {
+   "class": "vendor-fixed",
+   "capability": false,
+   "basis": "only a newer release from the database vendor fixes it",
+   "sources": [
+    "kb:findings.node.DB_EOL_VERSION.remediation"
+   ]
+  },
+  "DB_LEGACY_NNE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_LEGACY_NNE.remediation"
+   ]
+  },
+  "DB_LEGACY_PW_HASH": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_LEGACY_PW_HASH.remediation"
+   ]
+  },
+  "DB_LOGIN_NO_POLICY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_LOGIN_NO_POLICY.remediation"
+   ]
+  },
+  "DB_MD5_ACCEPTED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_MD5_ACCEPTED.remediation"
+   ]
+  },
+  "DB_MD5_DEFAULT": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_MD5_DEFAULT.remediation"
+   ]
+  },
+  "DB_NATIVE_PW": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_NATIVE_PW.remediation"
+   ]
+  },
+  "DB_NO_AUTH": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_NO_AUTH.remediation"
+   ]
+  },
+  "DB_NO_TDE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_NO_TDE.remediation"
+   ]
+  },
+  "DB_NO_TLS": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_NO_TLS.remediation"
+   ]
+  },
+  "DB_OLD_PASSWORD": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_OLD_PASSWORD.remediation"
+   ]
+  },
+  "DB_PLAINTEXT_PW": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_PLAINTEXT_PW.remediation"
+   ]
+  },
+  "DB_TDE_OFF": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_TDE_OFF.remediation"
+   ]
+  },
+  "DB_TLS_MODE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_TLS_MODE.remediation"
+   ]
+  },
+  "DB_TLS_OPTIONAL": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_TLS_OPTIONAL.remediation"
+   ]
+  },
+  "DB_TRUST": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_TRUST.remediation"
+   ]
+  },
+  "DB_WEAK_HASH": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "database parameter, HBA rule, account or password reset",
+   "sources": [
+    "kb:findings.node.DB_WEAK_HASH.remediation"
+   ]
+  },
+  "DH_LT_2048": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cipher / group setting (ECDHE or ffdhe2048+)",
+   "sources": [
+    "kb:findings.node.DH_LT_2048.remediation"
+   ]
+  },
+  "DISK_CBC": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-encrypt / convert / resume with the OS's own tooling",
+   "sources": [
+    "kb:findings.node.DISK_CBC.remediation"
+   ]
+  },
+  "DISK_PROTECTION_OFF": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-encrypt / convert / resume with the OS's own tooling",
+   "sources": [
+    "kb:findings.node.DISK_PROTECTION_OFF.remediation"
+   ]
+  },
+  "DISK_UNENCRYPTED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-encrypt / convert / resume with the OS's own tooling",
+   "sources": [
+    "kb:findings.node.DISK_UNENCRYPTED.remediation"
+   ]
+  },
+  "DISK_XTS_128": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-encrypt / convert / resume with the OS's own tooling",
+   "sources": [
+    "kb:findings.node.DISK_XTS_128.remediation"
+   ]
+  },
+  "DOTNET_WEAK_TLS": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "host setting, unit file or script option",
+   "sources": [
+    "kb:findings.node.DOTNET_WEAK_TLS.remediation"
+   ]
+  },
+  "DOWNGRADE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.DOWNGRADE.remediation"
+   ]
+  },
+  "DSA": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-key with a classical key size the deployed stack already supports, re-issue",
+   "sources": [
+    "kb:findings.node.DSA.remediation"
+   ]
+  },
+  "EBS_DEFAULT_OFF": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.EBS_DEFAULT_OFF.remediation"
+   ]
+  },
+  "EC_LT_224": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-key with a classical key size the deployed stack already supports, re-issue",
+   "sources": [
+    "kb:findings.node.EC_LT_224.remediation"
+   ]
+  },
+  "GLUE_CATALOG_UNENCRYPTED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.GLUE_CATALOG_UNENCRYPTED.remediation"
+   ]
+  },
+  "GLUE_JDBC_NO_TLS": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.GLUE_JDBC_NO_TLS.remediation"
+   ]
+  },
+  "GLUE_PLAINTEXT_PASSWORD": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.GLUE_PLAINTEXT_PASSWORD.remediation"
+   ]
+  },
+  "IKEV1_ENABLED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "IKE / IPsec proposal on the gateway",
+   "sources": [
+    "kb:findings.node.IKEV1_ENABLED.remediation"
+   ]
+  },
+  "IKE_AGGRESSIVE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "IKE / IPsec proposal on the gateway",
+   "sources": [
+    "kb:findings.node.IKE_AGGRESSIVE.remediation"
+   ]
+  },
+  "IKE_NO_PQ": {
+   "class": "vendor-fixed",
+   "capability": true,
+   "basis": "a post-quantum key exchange in IKEv2 needs a gateway release that implements RFC 9370 additional key exchanges and the algorithm (strongSwan 6 per the KB step); appliances need firmware (R-HW)",
+   "sources": [
+    "kb:findings.node.IKE_NO_PQ.remediation"
+   ]
+  },
+  "IKE_WEAK_DH": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "IKE / IPsec proposal on the gateway",
+   "sources": [
+    "kb:findings.node.IKE_WEAK_DH.remediation"
+   ]
+  },
+  "IKE_WEAK_ENCR": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "IKE / IPsec proposal on the gateway",
+   "sources": [
+    "kb:findings.node.IKE_WEAK_ENCR.remediation"
+   ]
+  },
+  "IKE_WEAK_INTEG": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "IKE / IPsec proposal on the gateway",
+   "sources": [
+    "kb:findings.node.IKE_WEAK_INTEG.remediation"
+   ]
+  },
+  "IPSEC_WEAK_TRANSFORM": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "IKE / IPsec proposal on the gateway",
+   "sources": [
+    "kb:findings.node.IPSEC_WEAK_TRANSFORM.remediation"
+   ]
+  },
+  "KEYSTORE_JKS": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEYSTORE_JKS.remediation"
+   ]
+  },
+  "KEY_COMPROMISED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_COMPROMISED.remediation"
+   ]
+  },
+  "KEY_EXTRACTABLE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_EXTRACTABLE.remediation"
+   ]
+  },
+  "KEY_IN_CONFIGMAP": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_IN_CONFIGMAP.remediation"
+   ]
+  },
+  "KEY_IN_DOCUMENT": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_IN_DOCUMENT.remediation"
+   ]
+  },
+  "KEY_NO_ROTATION": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_NO_ROTATION.remediation"
+   ]
+  },
+  "KEY_PLAINTEXT_EXPORT": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_PLAINTEXT_EXPORT.remediation"
+   ]
+  },
+  "KEY_READABLE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_READABLE.remediation"
+   ]
+  },
+  "KEY_WEAK_SYMMETRIC": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_WEAK_SYMMETRIC.remediation"
+   ]
+  },
+  "KEY_WORLD_READABLE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-create / re-wrap / re-permission the key with the store already in use",
+   "sources": [
+    "kb:findings.node.KEY_WORLD_READABLE.remediation"
+   ]
+  },
+  "KMS_NO_ROTATION": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.KMS_NO_ROTATION.remediation"
+   ]
+  },
+  "KMS_PENDING_DELETION": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.KMS_PENDING_DELETION.remediation"
+   ]
+  },
+  "KV_NO_PURGE_PROTECTION": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.KV_NO_PURGE_PROTECTION.remediation"
+   ]
+  },
+  "KV_PUBLIC_NETWORK": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.KV_PUBLIC_NETWORK.remediation"
+   ]
+  },
+  "KV_SOFT_DELETE_OFF": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.KV_SOFT_DELETE_OFF.remediation"
+   ]
+  },
+  "LIB_DELETED_IN_USE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "restart the process",
+   "sources": [
+    "kb:findings.node.LIB_DELETED_IN_USE.remediation"
+   ]
+  },
+  "LIB_EOL": {
+   "class": "vendor-fixed",
+   "capability": false,
+   "basis": "a supported release line comes only from the OS / library vendor",
+   "sources": [
+    "kb:findings.node.LIB_EOL.remediation"
+   ]
+  },
+  "LIB_KNOWN_CVE": {
+   "class": "vendor-fixed",
+   "capability": false,
+   "basis": "the fix is the vendor's security update (back-port)",
+   "sources": [
+    "kb:findings.node.LIB_KNOWN_CVE.remediation"
+   ]
+  },
+  "LIB_STATIC": {
+   "class": "vendor-fixed",
+   "capability": false,
+   "basis": "only whoever builds the binary can relink it; on a host that is the software's vendor",
+   "sources": [
+    "kb:findings.node.LIB_STATIC.remediation"
+   ]
+  },
+  "LINKERD_UNAUTHENTICATED_SERVER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "mesh resource setting",
+   "sources": [
+    "kb:findings.node.LINKERD_UNAUTHENTICATED_SERVER.remediation"
+   ]
+  },
+  "LUKS1": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-encrypt / convert / resume with the OS's own tooling",
+   "sources": [
+    "kb:findings.node.LUKS1.remediation"
+   ]
+  },
+  "MESH_DR_TLS_DISABLED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "mesh resource setting",
+   "sources": [
+    "kb:findings.node.MESH_DR_TLS_DISABLED.remediation"
+   ]
+  },
+  "MESH_MTLS_OFF": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "mesh resource setting",
+   "sources": [
+    "kb:findings.node.MESH_MTLS_OFF.remediation"
+   ]
+  },
+  "MESH_MTLS_PERMISSIVE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "mesh resource setting",
+   "sources": [
+    "kb:findings.node.MESH_MTLS_PERMISSIVE.remediation"
+   ]
+  },
+  "MIN_SSLv2": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.MIN_SSLv2.remediation"
+   ]
+  },
+  "MIN_SSLv3": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.MIN_SSLv3.remediation"
+   ]
+  },
+  "MIN_TLS10": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.MIN_TLS10.remediation"
+   ]
+  },
+  "MIN_TLS11": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.MIN_TLS11.remediation"
+   ]
+  },
+  "MODBUS_PLAINTEXT": {
+   "class": "hardware-fixed",
+   "capability": true,
+   "basis": "Modbus/TCP has no cryptography; Modbus/TCP Security needs device support",
+   "sources": [
+    "kb:findings.node.MODBUS_PLAINTEXT.remediation"
+   ]
+  },
+  "NO_FALLBACK_SCSV": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.NO_FALLBACK_SCSV.remediation"
+   ]
+  },
+  "NO_PQ_KEX": {
+   "class": "vendor-fixed",
+   "capability": true,
+   "basis": "hybrid post-quantum groups need a TLS library that implements them (KB step: OpenSSL 3.5+); the library version is not visible from the network (inferred)",
+   "sources": [
+    "kb:findings.node.NO_PQ_KEX.remediation",
+    "kb:findings.node.NO_PQ_KEX.remediation.steps (OpenSSL 3.5+ for X25519MLKEM768)"
+   ]
+  },
+  "NO_TLS": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.NO_TLS.remediation"
+   ]
+  },
+  "NO_TLS12": {
+   "class": "vendor-fixed",
+   "capability": true,
+   "basis": "a stack without TLS 1.2 is upgraded by its vendor (KB: 'Upgrade the TLS stack (or the appliance firmware)')",
+   "sources": [
+    "kb:findings.node.NO_TLS12.remediation"
+   ]
+  },
+  "OPCUA_ANON": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "OPC UA server endpoint / token policy",
+   "sources": [
+    "kb:findings.node.OPCUA_ANON.remediation"
+   ]
+  },
+  "OPCUA_DEPRECATED_POLICY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "OPC UA server endpoint / token policy",
+   "sources": [
+    "kb:findings.node.OPCUA_DEPRECATED_POLICY.remediation"
+   ]
+  },
+  "OPCUA_NONE_POLICY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "OPC UA server endpoint / token policy",
+   "sources": [
+    "kb:findings.node.OPCUA_NONE_POLICY.remediation"
+   ]
+  },
+  "OPCUA_USERNAME_PLAINTEXT": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "OPC UA server endpoint / token policy",
+   "sources": [
+    "kb:findings.node.OPCUA_USERNAME_PLAINTEXT.remediation"
+   ]
+  },
+  "OPENSSL_ENC_WEAK_KDF": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "host setting, unit file or script option",
+   "sources": [
+    "kb:findings.node.OPENSSL_ENC_WEAK_KDF.remediation"
+   ]
+  },
+  "PLAINTEXT_LISTENER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.PLAINTEXT_LISTENER.remediation"
+   ]
+  },
+  "POLICY_LEGACY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "host setting, unit file or script option",
+   "sources": [
+    "kb:findings.node.POLICY_LEGACY.remediation"
+   ]
+  },
+  "PROTO_SSLv2": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.PROTO_SSLv2.remediation"
+   ]
+  },
+  "PROTO_SSLv3": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.PROTO_SSLv3.remediation"
+   ]
+  },
+  "PROTO_TLS10": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.PROTO_TLS10.remediation"
+   ]
+  },
+  "PROTO_TLS11": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.PROTO_TLS11.remediation"
+   ]
+  },
+  "QUANTUM_VULNERABLE": {
+   "class": "vendor-fixed",
+   "capability": true,
+   "basis": "a post-quantum replacement needs the platform (CA, clients, library, HSM, cloud service) to implement post-quantum signatures and key exchange; per-type context rules in agility.py (R-HW, R-HW-UNREAD, R-TYPE) decide where a fact is read",
+   "sources": [
+    "kb:findings.node.QUANTUM_VULNERABLE.remediation",
+    "https://www.openssh.org/pq.html (checked 2026-11-14: sntrup761x25519-sha512 is the default key exchange since OpenSSH 9.0; mlkem768x25519-sha256 was added in 9.9 and is the default since 10.0)",
+    "https://aws.amazon.com/about-aws/whats-new/2025/06/aws-kms-post-quantum-ml-dsa-digital-signatures (checked 2026-11-14: AWS KMS supports ML-DSA keys, announced 2025-06-13; rule R-TYPE for AWS kms_key)"
+   ]
+  },
+  "RDP_NO_NLA": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "Group Policy / registry",
+   "sources": [
+    "kb:findings.node.RDP_NO_NLA.remediation"
+   ]
+  },
+  "RDP_NO_TLS": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "Group Policy / registry",
+   "sources": [
+    "kb:findings.node.RDP_NO_TLS.remediation"
+   ]
+  },
+  "RSA_LT_1024": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-key with a classical key size the deployed stack already supports, re-issue",
+   "sources": [
+    "kb:findings.node.RSA_LT_1024.remediation"
+   ]
+  },
+  "RSA_LT_2048": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-key with a classical key size the deployed stack already supports, re-issue",
+   "sources": [
+    "kb:findings.node.RSA_LT_2048.remediation"
+   ]
+  },
+  "SAML_METADATA_UNSIGNED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "IdP metadata signing setting",
+   "sources": [
+    "kb:findings.node.SAML_METADATA_UNSIGNED.remediation"
+   ]
+  },
+  "SECRET_IN_CONFIG": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "host setting, unit file or script option",
+   "sources": [
+    "kb:findings.node.SECRET_IN_CONFIG.remediation"
+   ]
+  },
+  "SECRET_NO_ROTATION": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.SECRET_NO_ROTATION.remediation"
+   ]
+  },
+  "SECRET_PLAINTEXT_PARAM": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.SECRET_PLAINTEXT_PARAM.remediation"
+   ]
+  },
+  "SIG_MD5": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+   "sources": [
+    "kb:findings.node.SIG_MD5.remediation"
+   ]
+  },
+  "SIG_SHA1": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use",
+   "sources": [
+    "kb:findings.node.SIG_SHA1.remediation"
+   ]
+  },
+  "SSH_CBC_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_CBC_CIPHER.remediation"
+   ]
+  },
+  "SSH_DH_GROUP1": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_DH_GROUP1.remediation"
+   ]
+  },
+  "SSH_DH_SHA1": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_DH_SHA1.remediation"
+   ]
+  },
+  "SSH_DSS": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_DSS.remediation"
+   ]
+  },
+  "SSH_HMAC_SHA1": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_HMAC_SHA1.remediation"
+   ]
+  },
+  "SSH_NO_PQ_KEX": {
+   "class": "vendor-fixed",
+   "capability": true,
+   "basis": "OpenSSH 9.0 and later offer a post-quantum hybrid key exchange (KB step): configurable on such a server (R-STACK), else a vendor upgrade",
+   "sources": [
+    "kb:findings.node.SSH_NO_PQ_KEX.remediation",
+    "https://www.openssh.org/pq.html (checked 2026-11-14: sntrup761x25519-sha512 is the default key exchange since OpenSSH 9.0; mlkem768x25519-sha256 was added in 9.9 and is the default since 10.0)"
+   ]
+  },
+  "SSH_RSA_SHA1": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_RSA_SHA1.remediation"
+   ]
+  },
+  "SSH_UMAC64": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_UMAC64.remediation"
+   ]
+  },
+  "SSH_V1_ENABLED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_V1_ENABLED.remediation"
+   ]
+  },
+  "SSH_WEAK_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_WEAK_CIPHER.remediation"
+   ]
+  },
+  "SSH_WEAK_MAC": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "sshd_config / crypto policy / appliance 'ip ssh version 2'",
+   "sources": [
+    "kb:findings.node.SSH_WEAK_MAC.remediation"
+   ]
+  },
+  "STATIC_RSA_KEX": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.STATIC_RSA_KEX.remediation"
+   ]
+  },
+  "STORAGE_NO_TLS_ONLY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.STORAGE_NO_TLS_ONLY.remediation"
+   ]
+  },
+  "STORAGE_UNENCRYPTED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "cloud control-plane setting the account owner changes",
+   "sources": [
+    "kb:findings.node.STORAGE_UNENCRYPTED.remediation"
+   ]
+  },
+  "TLS_POLICY_OVERRIDE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "host setting, unit file or script option",
+   "sources": [
+    "kb:findings.node.TLS_POLICY_OVERRIDE.remediation"
+   ]
+  },
+  "WEAK_CIPHER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "protocol / cipher setting of the TLS server, SCHANNEL registry or java.security",
+   "sources": [
+    "kb:findings.node.WEAK_CIPHER.remediation"
+   ]
+  }
+ },
+ "code": {
+  "AT_REST_ENCRYPTION_WEAK": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.AT_REST_ENCRYPTION_WEAK.remediation"
+   ]
+  },
+  "CERT_NEAR_EXPIRY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+   "sources": [
+    "kb:findings.code.CERT_NEAR_EXPIRY.remediation"
+   ]
+  },
+  "CERT_SELF_SIGNED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+   "sources": [
+    "kb:findings.code.CERT_SELF_SIGNED.remediation"
+   ]
+  },
+  "CUSTOM_CRYPTO": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.CUSTOM_CRYPTO.remediation"
+   ]
+  },
+  "DOWNGRADE_PROTECTION_MISSING": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.DOWNGRADE_PROTECTION_MISSING.remediation"
+   ]
+  },
+  "EOL_BASE_IMAGE": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "dependency / base image bump in the team's own build (firmware blob -> hardware-fixed, rule CL-2)",
+   "sources": [
+    "kb:findings.code.EOL_BASE_IMAGE.remediation"
+   ]
+  },
+  "EOL_CRYPTO_LIBRARY": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "dependency / base image bump in the team's own build (firmware blob -> hardware-fixed, rule CL-2)",
+   "sources": [
+    "kb:findings.code.EOL_CRYPTO_LIBRARY.remediation"
+   ]
+  },
+  "EXPIRED_CERTIFICATE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+   "sources": [
+    "kb:findings.code.EXPIRED_CERTIFICATE.remediation"
+   ]
+  },
+  "HARDCODED_KEY": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.HARDCODED_KEY.remediation"
+   ]
+  },
+  "KMS_KEY_DELETION_UNPROTECTED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.KMS_KEY_DELETION_UNPROTECTED.remediation"
+   ]
+  },
+  "KMS_KEY_POLICY_PUBLIC": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.KMS_KEY_POLICY_PUBLIC.remediation"
+   ]
+  },
+  "KMS_KEY_ROTATION_DISABLED": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.KMS_KEY_ROTATION_DISABLED.remediation"
+   ]
+  },
+  "KNOWN_TLS_VULNERABILITY": {
+   "class": "vendor-fixed",
+   "capability": false,
+   "basis": "patch the TLS library or appliance (KB summary)",
+   "sources": [
+    "kb:findings.code.KNOWN_TLS_VULNERABILITY.remediation"
+   ]
+  },
+  "LIBRARY_CVE_RANGE": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "dependency / base image bump in the team's own build (firmware blob -> hardware-fixed, rule CL-2)",
+   "sources": [
+    "kb:findings.code.LIBRARY_CVE_RANGE.remediation"
+   ]
+  },
+  "PLAINTEXT_LISTENER": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.PLAINTEXT_LISTENER.remediation"
+   ]
+  },
+  "PROVIDER_MANAGED_KEY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.PROVIDER_MANAGED_KEY.remediation"
+   ]
+  },
+  "QUANTUM_VULNERABLE": {
+   "class": "code-fixed",
+   "capability": true,
+   "basis": "the algorithm is chosen in the team's own code (an API call row); certificate, protocol and key-material rows are vendor-fixed, inferred (rule CL-1)",
+   "sources": [
+    "kb:findings.code.QUANTUM_VULNERABLE.remediation"
+   ]
+  },
+  "REUSED_NONCE": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.REUSED_NONCE.remediation"
+   ]
+  },
+  "SELF_SIGNED_LEAF": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+   "sources": [
+    "kb:findings.code.SELF_SIGNED_LEAF.remediation"
+   ]
+  },
+  "STATIC_IV": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.STATIC_IV.remediation"
+   ]
+  },
+  "TLS_VERIFICATION_DISABLED": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.TLS_VERIFICATION_DISABLED.remediation"
+   ]
+  },
+  "UNENCRYPTED_AT_REST": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.UNENCRYPTED_AT_REST.remediation"
+   ]
+  },
+  "UNENCRYPTED_IN_TRANSIT": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.UNENCRYPTED_IN_TRANSIT.remediation"
+   ]
+  },
+  "VULNERABLE_CRYPTO_LIBRARY": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "dependency / base image bump in the team's own build (firmware blob -> hardware-fixed, rule CL-2)",
+   "sources": [
+    "kb:findings.code.VULNERABLE_CRYPTO_LIBRARY.remediation"
+   ]
+  },
+  "WEAK_ALGORITHM": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_ALGORITHM.remediation"
+   ]
+  },
+  "WEAK_CERTIFICATE_KEY": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+   "sources": [
+    "kb:findings.code.WEAK_CERTIFICATE_KEY.remediation"
+   ]
+  },
+  "WEAK_CERTIFICATE_SIGNATURE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "re-issue or renew the certificate with the CA and deployment already in use (certificate file in the repository)",
+   "sources": [
+    "kb:findings.code.WEAK_CERTIFICATE_SIGNATURE.remediation"
+   ]
+  },
+  "WEAK_CIPHER_MODE": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_CIPHER_MODE.remediation"
+   ]
+  },
+  "WEAK_CIPHER_SUITE": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.WEAK_CIPHER_SUITE.remediation"
+   ]
+  },
+  "WEAK_KEY_SIZE": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_KEY_SIZE.remediation"
+   ]
+  },
+  "WEAK_PADDING": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_PADDING.remediation"
+   ]
+  },
+  "WEAK_PROTOCOL": {
+   "class": "configurable",
+   "capability": false,
+   "basis": "a configuration / IaC value in the repository",
+   "sources": [
+    "kb:findings.code.WEAK_PROTOCOL.remediation"
+   ]
+  },
+  "WEAK_RNG": {
+   "class": "code-fixed",
+   "capability": false,
+   "basis": "the team's own source code changes, then a rebuild and release",
+   "sources": [
+    "kb:findings.code.WEAK_RNG.remediation"
+   ]
+  }
+ }
+}

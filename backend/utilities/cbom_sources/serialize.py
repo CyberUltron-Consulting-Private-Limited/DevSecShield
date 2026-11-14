@@ -13,6 +13,7 @@ from backend.new_models import (
     CbomEvidenceVendor,
     CbomScanNode,
 )
+from backend.utilities.cbom_sources.agility import evidence_area_fields, evidence_vendor_fields
 from backend.utilities.cbom_sources.common import iso_z
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, effective_confidence, vendor_status
 from backend.utilities.cbom_sources.jobs import job_waiting_reason, run_credit_summary
@@ -227,6 +228,7 @@ def public_area(row: CbomEvidenceArea, today: _dt.date, vendor_levels: list[str]
         "overdue": overdue,
         "row_version": row.row_version,
         "last_updated": iso_z(row.last_updated),
+        **evidence_area_fields(row.area_key, row.answers),  # CB-24: fix class of the evidence item
     }
 
 
@@ -245,4 +247,5 @@ def public_vendor(row: CbomEvidenceVendor, now: _dt.datetime) -> dict[str, Any]:
         "evidence_url": row.evidence_url,
         "row_version": row.row_version,
         "created_at": iso_z(row.created_at),
+        **evidence_vendor_fields(),  # CB-24: a third-party vendor is vendor-fixed
     }
