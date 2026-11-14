@@ -65,7 +65,7 @@ export function RunFindingDialog({ teamId, runId, subject, jobs, waveOf, onClose
     retry: 1,
     staleTime: 60_000,
   });
-  const chips = findingChips(item, detailQ.data?.details);
+  const chips = findingChips(item, detailQ.data?.details, detailQ.data);
   const status = item && item.type !== "coverage" ? findingStatusOf(item, item.wave ?? waveOf?.(item)) : null;
   return (
     <Dialog open={!!subject} onOpenChange={(open) => !open && onClose()}>
