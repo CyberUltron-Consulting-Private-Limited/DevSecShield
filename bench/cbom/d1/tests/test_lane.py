@@ -315,10 +315,11 @@ def test_score_is_deterministic(tmp_path):
 
 
 def test_an_unmapped_product_code_stops_the_lane(tmp_path):
-    work = mini_work(tmp_path, extra_cab_rows=[row("G.java", 3, ["STATIC_SALT"], "salt")])
+    # (STATIC_SALT was the example until CB-27 gave it a codemap row)
+    work = mini_work(tmp_path, extra_cab_rows=[row("G.java", 3, ["NOT_A_MAPPED_CODE"], "salt")])
     fpath = tmp_path / "floors.json"
     fpath.write_text(json.dumps(floors_doc([])))
-    with pytest.raises(LaneError, match="not in codemap.json.*STATIC_SALT"):
+    with pytest.raises(LaneError, match="not in codemap.json.*NOT_A_MAPPED_CODE"):
         cli.score(work, fpath, D1 / "codemap.json", "x")
 
 

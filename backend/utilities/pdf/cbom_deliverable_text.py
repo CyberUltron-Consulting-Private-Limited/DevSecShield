@@ -261,6 +261,8 @@ FINDING_LABELS = {
     "STATIC_IV": "Static or predictable IV",
     "REUSED_NONCE": "Reused nonce",
     "HARDCODED_KEY": "Hard-coded key material",
+    "STATIC_SALT": "Constant salt for password-based key derivation",
+    "WEAK_KDF_ITERATIONS": "Too few key-derivation iterations",
     "WEAK_PADDING": "Weak RSA encryption padding",
     "WEAK_CERTIFICATE_SIGNATURE": "Certificate signed with a weak hash",
     "WEAK_CERTIFICATE_KEY": "Certificate with an undersized key",
@@ -324,6 +326,18 @@ FINDING_ACTIONS = {
     "HARDCODED_KEY": (
         "Remove keys from source code, load them from a key-management service or secret "
         "store, and rotate any key that was committed."
+    ),
+    # Source: CWE-760, one-way hash with a predictable salt: https://cwe.mitre.org/data/definitions/760.html
+    # Source: SP 800-132, a random salt of at least 128 bits per password: https://csrc.nist.gov/pubs/sp/800/132/final
+    "STATIC_SALT": (
+        "Generate a random salt of at least 16 bytes for each password and store it with the "
+        "derived value; never fix the salt in the code."
+    ),
+    # Source: CWE-916, password hash with insufficient computational effort: https://cwe.mitre.org/data/definitions/916.html
+    # Source: SP 800-132, at least 1,000 iterations: https://csrc.nist.gov/pubs/sp/800/132/final
+    "WEAK_KDF_ITERATIONS": (
+        "Raise the iteration count well above the 1,000 minimum (for example 600,000 for "
+        "PBKDF2-HMAC-SHA256) or use a memory-hard function such as Argon2id or scrypt."
     ),
     # Source: RFC 8017, RSAES-OAEP required for new applications, v1.5 for compatibility only: https://www.rfc-editor.org/rfc/rfc8017
     # Source: CWE-780, RSA without OAEP: https://cwe.mitre.org/data/definitions/780.html
