@@ -17,7 +17,9 @@ import { downloadCbomRunCbom, verifyCbomRunSignature, type CbomCertRef, type Cbo
 import { downloadCbomRunBom, EXPOSURE_LABEL, type CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
-import { RunChanges } from "@/components/cbom/sources/ChangesPanel";
+import { DiffView, RunChanges } from "@/components/cbom/sources/ChangesPanel";
+import { cbomOpsKeys, getCbomRunDiff } from "@/utils/api/cbom_ops";
+import { useQuery } from "@tanstack/react-query";
 import { TERMINAL_RUN } from "@/components/cbom/sources/keys";
 import { credits, formatDateTime, formatDay, pluralize } from "@/components/cbom/sources/logic";
 import { TargetsBlock } from "@/components/cbom/sources/RunResults";
@@ -365,8 +367,36 @@ export function RunChangesSection({ teamId, run, canCompare, onCompare }: { team
                       Compare with another run…
                     </button>
                   ) : undefined}>
+      <RunDiffBlock teamId={teamId} runId={run.id} />
       <RunChanges teamId={teamId} runId={run.id} finished={TERMINAL_RUN.has(run.status)} />
     </SectionShell>
+  );
+}
+
+/** The code page's CodeChanges block for a run: the same collapsible DiffView (resolved / opened / added / removed /
+ * changed, readiness delta, rule changes, not read), over GET /runs/{id}/diff against the previous complete run. The
+ * run's drift events (opened, resolved, renewed, expiring ...) are listed below it from /changes, which the run page
+ * has always used and which W2b's /diff ``events`` duplicate. */
+export function RunDiffBlock({ teamId, runId }: { teamId: number; runId: number }) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({ queryKey: cbomOpsKeys.diff(teamId, runId, undefined), queryFn: () => getCbomRunDiff(teamId, runId), enabled: open, retry: 1 });
+  return (
+    <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4" data-testid="run-diff"
+             onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-sm font-medium text-zinc-900 dark:text-white">
+        Changes since the previous complete run of these sources
+      </summary>
+      <div className="mt-3">
+        {!open ? null : q.isLoading ? <p className="text-xs text-zinc-500">Loading…</p> : q.isError || !q.data ? (
+          <p className="text-xs text-zinc-500">The comparison could not be loaded.</p>
+        ) : (
+          <>
+            {q.data.against_run_id && <p className="text-xs text-zinc-500 mb-2">Compared with run #{q.data.against_run_id}.</p>}
+            <DiffView diff={q.data} />
+          </>
+        )}
+      </div>
+    </details>
   );
 }
 
