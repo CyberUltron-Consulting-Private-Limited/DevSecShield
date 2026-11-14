@@ -25,7 +25,8 @@ from backend.utilities.cbom_sources.classify import DATED_TYPES, classify, shown
 from backend.utilities.cbom_sources.common import iso_z
 # CB-06: per-component provenance, PQC class and algorithm families for the export
 from backend.utilities.cbom_sources import provenance as PROV
-from backend.utilities.cbom_sources.classify import family, quantum_vulnerable
+from backend.utilities.cbom_sources.classify import family, quantum_vulnerable, standards_of
+from backend.utilities.cbom_sources import standards as STD
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import tls_suites
 from backend.utilities.cbom_sources import vex_semantics as VEX
@@ -714,12 +715,15 @@ def _detail_properties(row: CbomCollectedAsset, facts: dict[str, Any], crypto: d
     """The values the asset table and the oracle compare that CycloneDX has no field for (or not on this asset type):
     PQC class and why (``posture.classify_pqc``), then the quantum risk grade and fix class (``assessed``:
     ``Assessment.add``'s list), key size, curve, signature algorithm, key-exchange groups, SSH algorithm lists, CB-04
-    identity facts."""
+    identity facts, the standards statuses (CB-16)."""
     out: list[tuple[str, str | None]] = [
         ("zs:pqc_class", pqc[0]), ("zs:pqc_class_basis", pqc[1]),
         ("zs:key_size", str(size) if size else None), ("zs:curve", curve), ("zs:signature_algorithm", signature),
     ]
     out += [(f"zs:{name}", _text(facts.get(name))) for name in _IDENTITY_FACTS]
+    # CB-16: FIPS 203/204/205, CNSA 2.0 and SP 800-131A status of the asset, as the asset drawer shows them
+    out += [(f"zs:standard:{r['id']}", STD.export_value(r))
+            for r in STD.rows(standards_of(row.asset_type, row.algorithm, row.key_size, facts))]
     proto = crypto.get("protocolProperties") or {}
     if crypto.get("assetType") == "protocol" and proto.get("type") == "ssh":
         out += [("zs:kex_algorithms", ",".join(_names(facts.get("kex"), facts.get("kexalgorithms"))) or None),

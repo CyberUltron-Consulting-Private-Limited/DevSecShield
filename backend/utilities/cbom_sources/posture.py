@@ -28,6 +28,7 @@ from sqlmodel import Session, select
 from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource, CbomScanNode
 from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import algid, crypto_kb
+from backend.utilities.cbom_sources import standards as STD
 from backend.utilities.cbom_sources.cbom_metrics import quantum_readiness_pct
 from backend.utilities.cbom_sources.classify import (
     KEX_PRIMITIVES,
@@ -624,6 +625,8 @@ def asset_detail(row: CbomCollectedAsset, source: CbomCollectionSource | None, *
         "exposure_basis": exposure_basis,
         "exposure_factor": EXPOSURE_FACTOR[exposure],
         "agility": AGILITY.detail(row.asset_type, codes, facts, AGILITY.node_context(job, source), row.location),
+        # CB-16: which standards the asset meets or fails (FIPS 203/204/205, CNSA 2.0, SP 800-131A), with reasons
+        "standards": STD.rows(verdict.get("standards")),
         "facts": facts,
         "details": [{**d, "impact": verdict["impacts"].get(d["code"]) or d["impact"]}
                     for d in crypto_kb.render("node", ordered, context=ctx, evidence=view["finding"] or "", texts=texts,

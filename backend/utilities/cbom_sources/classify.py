@@ -12,7 +12,7 @@ import re
 import threading
 from typing import Any
 
-from backend.utilities.cbom_sources import algid, crypto_kb
+from backend.utilities.cbom_sources import algid, crypto_kb, standards as _standards
 from backend.utilities.cbom_sources.common import log
 
 IMPACTS = ("Critical", "High", "Medium", "Low")
@@ -1045,7 +1045,53 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     if qv and not any("NO_PQ" in code for code in out.codes) and asset_type != "coverage":  # NO_PQ_KEX, SSH_/IKE_NO_PQ
         out.add("QUANTUM_VULNERABLE", None, "Uses public-key cryptography that a quantum computer can break")
     return {"impact": out.impact, "quantum_vulnerable": qv, "finding_codes": out.codes, "finding": out.finding(),
-            "cdx_type": CDX_TYPE.get(asset_type, "other"), "texts": out.by_code, "impacts": out.impacts}
+            "cdx_type": CDX_TYPE.get(asset_type, "other"), "texts": out.by_code, "impacts": out.impacts,
+            "standards": standards_of(asset_type, algorithm, key_size, facts)}
+
+
+# ----------------------------------------------------------------------------- standards status (CB-16)
+_STD_CERT_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate"})
+_STD_KEY_TYPES = frozenset({"private_key", "public_key", "ssh_host_key", "signing_key", "keystore"})
+_STD_TLS_TYPES = frozenset({"tls_endpoint", "database_tls", "load_balancer_tls", "cdn_tls", "api_tls",
+                            "k8s_ingress_tls"})
+
+
+def standards_parts(asset_type: str, algorithm: Any, key_size: Any, facts: dict[str, Any]) -> list[tuple[str, Any, Any]]:
+    """The parts of an asset the standards are judged on (``standards.grade``): a certificate's key and signature
+    hash, a key's algorithm and size, a TLS endpoint's cipher and key-exchange groups. Other assets have none."""
+    facts = facts if isinstance(facts, dict) else {}
+    leaf = facts.get("leaf") if isinstance(facts.get("leaf"), dict) else {}
+    size = key_size or facts.get("key_size")
+    if asset_type in _STD_CERT_TYPES:
+        if facts.get("trust_store"):
+            return []  # a CA bundle summary row
+        return [("key", cert_identity_input(algorithm, facts), size), ("signature", facts.get("sig_alg"), None)]
+    if asset_type in _STD_KEY_TYPES:
+        return [("key", algorithm or facts.get("key_alg"), size), ("signature", facts.get("signature_alg"), None)]
+    if asset_type == "kms_key":
+        spec = facts.get("key_spec")
+        if spec == "SYMMETRIC_DEFAULT":
+            return [("cipher", "AES-256-GCM", 256)]
+        return [("key", algorithm or spec, size)]
+    if asset_type in _STD_TLS_TYPES:
+        groups = [facts.get("negotiated_group") or facts.get("group")] + [facts.get("pq_group")]
+        parts: list[tuple[str, Any, Any]] = [("cipher", facts.get("negotiated_cipher") or facts.get("cipher")
+                                              or algorithm, None)]
+        parts += [("group", g, None) for g in groups if isinstance(g, str) and g and g != "<NULL>"]
+        if leaf:
+            parts.append(("key", leaf.get("key_alg"), leaf.get("key_size")))
+        return parts
+    return []
+
+
+def standards_of(asset_type: str, algorithm: Any, key_size: Any, facts: dict[str, Any] | None
+                 ) -> dict[str, dict[str, Any]] | None:
+    """FIPS 203/204/205, CNSA 2.0 and SP 800-131A statuses of one asset (``standards.grade``), or None when the asset
+    names no algorithm (a coverage row, a database setting, ...)."""
+    try:
+        return _standards.grade(standards_parts(asset_type, algorithm, key_size, fact_obj(facts)))
+    except Exception:  # standards never cost an asset its verdict
+        return None
 
 
 # Import extension modules last (they call register()).
@@ -1059,8 +1105,8 @@ for _m in sorted(m.name for m in _pkgutil.iter_modules(_classify_ext.__path__)):
 
 
 def _rules_files() -> list[str]:
-    """Every file whose content decides a verdict: this module, each classify_ext module, and every ``algid*.py``
-    beside algid (the resolver and the generated tables it reads, algid_tables.py). Matching by name rather than
+    """Every file whose content decides a verdict: this module, each classify_ext module, standards.py (CB-16), and
+    every ``algid*.py`` beside algid (the resolver and the generated tables it reads, algid_tables.py). Matching by name rather than
     listing the tables file means a later split of the tables cannot fall out of the digest; a test fails if algid
     ever imports a sibling module outside the pattern."""
     import os
@@ -1071,6 +1117,7 @@ def _rules_files() -> list[str]:
     here = os.path.dirname(algid.__file__)
     paths += [os.path.join(here, name) for name in sorted(os.listdir(here))
               if name.startswith("algid") and name.endswith(".py")]
+    paths.append(_standards.__file__)  # CB-16: the standards statuses are part of every verdict
     return paths
 
 
