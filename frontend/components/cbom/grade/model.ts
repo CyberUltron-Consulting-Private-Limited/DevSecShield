@@ -159,6 +159,37 @@ export function humanize(code: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : code;
 }
 
+/** Q0 gap group headings (reason codes of GET /cbom/register/q0); an unknown code is humanized. */
+const Q0_REASON_HEADING: Record<string, string> = {
+  evidence_e0: "Evidence at E0",
+  mosca_missing: "Mosca inputs missing",
+  unknown_verdict: "PQC class unknown",
+  coverage_gap: "Scope not read",
+};
+
+export function q0ReasonHeading(code: string): string {
+  return Q0_REASON_HEADING[code] ?? humanize(code);
+}
+
+/** A Q0 gap's item as words: the Mosca inputs gap (one item for every asset it leaves ungraded) has the raw key
+ * "inputs:mosca" as its server title; every other gap keeps the server's title. */
+export function q0GapTitle(gap: { item_kind: string; item_key: string; title: string; detail?: Record<string, unknown> | null }): string {
+  if (gap.item_kind === "inputs" && gap.item_key === "inputs:mosca") {
+    const n = Number(gap.detail?.count);
+    return Number.isFinite(n) && n > 0
+      ? `Mosca X, Y or Z not set (${n} quantum-vulnerable asset${n === 1 ? "" : "s"} left ungraded)`
+      : "Mosca X, Y or Z not set";
+  }
+  return gap.title;
+}
+
+/** A system's chip in the agility baseline: the API's hardest of the four classes; with none of them, Unknown when
+ * some asset could not be classed, else None ("nothing to change today"). */
+export function systemHardestClass(s: { hardest?: string | null; counts?: Record<string, number> | null }): string {
+  if (s.hardest) return s.hardest;
+  return (Number(s.counts?.unknown) || 0) > 0 ? "unknown" : "none";
+}
+
 /** reason code -> served sentence. */
 export function reasonTexts(model: GradeModel | null | undefined): Map<string, string> {
   return new Map((model?.reasons ?? []).map((r) => [r.code, r.text]));
