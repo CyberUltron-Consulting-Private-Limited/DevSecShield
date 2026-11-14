@@ -293,7 +293,7 @@ export function RunPostureCard({ teamId, runId, active, onOpenAsset }: {
   );
 }
 
-export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId: number }) {
+export function AssetDetailPanel({ teamId, assetId, mergedStandards = false }: { teamId: number; assetId: number; mergedStandards?: boolean }) {
   const query = useQuery({
     queryKey: cbomSourcesKeys.asset(teamId, assetId),
     queryFn: async () => (await getCbomAssetDetail(teamId, assetId)) as unknown as CbomAssetDetailWithExposure,
@@ -364,7 +364,7 @@ export function AssetDetailPanel({ teamId, assetId }: { teamId: number; assetId:
         </div>
       )}
       {(a.type === "crypto_library" || a.type === "process_library") && <SbomLinks teamId={teamId} assetId={a.id} />}
-      <KbFindingDetails details={a.details} />
+      <KbFindingDetails details={a.details} mergedStandards={mergedStandards} />
     </div>
   );
 }
