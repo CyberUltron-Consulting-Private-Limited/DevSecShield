@@ -1,0 +1,13 @@
+{
+ "access-control-allow-origin": "*",
+ "cache-control": "private, no-store, max-age=0, must-revalidate",
+ "connection": "close",
+ "content-length": "253",
+ "content-type": "application/json",
+ "date": "Thu, 12 Nov 2026 17:59:10 GMT",
+ "retry-after": "348",
+ "server": "sslmatehttpd",
+ "x-content-type-options": "nosniff",
+ "x-ratelimit-limit": "10",
+ "x-ratelimit-remaining": "0"
+}
