@@ -1,7 +1,7 @@
 """CB-38 PR-4: Jira tickets for CBOM Sources run findings, and remediation metrics
 
 Revision ID: cb38ticket001
-Revises: r6f14sshca002
+Revises: r6f12pol001
 Create Date: 2026-11-14 12:00:00.000000
 
 * ``cbomremediationassignment.ticket_key`` / ``ticket_url``: the Jira issue opened for this asset. The assignment is
@@ -29,7 +29,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'cb38ticket001'
-down_revision: Union[str, Sequence[str], None] = 'r6f14sshca002'
+down_revision: Union[str, Sequence[str], None] = 'r6f12pol001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
