@@ -1,0 +1,3 @@
+id,team_id,kind,name,node_id,enabled,config,secret_encrypted,secret_fields,last_test_status,row_version
+69,52,network_range,range-10.231.0.16-28,35,t,"{""business_criticality"": null, ""exposure"": null, ""owner"": null, ""application"": null, ""data_classification"": null, ""data_lifetime_years"": null, ""environment"": null, ""cidr"": ""10.231.0.16/28"", ""mode"": ""full""}",,[],never,1
+70,52,network_range,range-10.231.0.32-30,35,t,"{""business_criticality"": null, ""exposure"": null, ""owner"": null, ""application"": null, ""data_classification"": null, ""data_lifetime_years"": null, ""environment"": null, ""cidr"": ""10.231.0.32/30"", ""mode"": ""full""}",,[],never,1

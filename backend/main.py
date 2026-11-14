@@ -12,6 +12,7 @@ from backend.routers.scans import router as scans_router
 from backend.routers.certin import router as certin_router
 from backend.routers.cbom_deliverables import router as cbom_deliverables_router
 from backend.routers.cbom_sources import router as cbom_sources_router
+from backend.routers.cbom_ai import router as cbom_ai_router
 from backend.routers.cbom_ops import router as cbom_ops_router
 from backend.routers.cbom_node import router as cbom_node_router
 from backend.routers.cbom_node_pools import router as cbom_node_pools_router
@@ -142,6 +143,7 @@ app.include_router(certin_router)
 app.include_router(cbom_deliverables_router)
 # CBOM Sources: team UI routes, the scan-node API and public vendor questionnaire links.
 app.include_router(cbom_sources_router)
+app.include_router(cbom_ai_router)  # CB-38 PR-6: AI remediation (Bedrock or on-prem); off unless configured
 app.include_router(cbom_ops_router)
 app.include_router(cbom_node_router)
 app.include_router(cbom_node_pools_router)  # agent pool tokens for the Helm DaemonSet (WP8b)

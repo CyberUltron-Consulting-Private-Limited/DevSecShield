@@ -1,0 +1,84 @@
+{
+  "checks": [
+    {
+      "expected": "no token, password or registration token left",
+      "gate": "G17",
+      "id": "G17/no_residual_secrets",
+      "kind": "bundle",
+      "observed": [],
+      "reason": "",
+      "subject": {
+        "check": "no_residual_secrets"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": [
+        "sha",
+        "images",
+        "playwright",
+        "teams",
+        "started",
+        "runs",
+        "jobs",
+        "assets",
+        "serialNumbers",
+        "node_image",
+        "lab",
+        "harness"
+      ],
+      "gate": "G17",
+      "id": "G17/manifest_complete",
+      "kind": "bundle",
+      "observed": "complete",
+      "reason": "",
+      "subject": {
+        "check": "manifest_complete"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "MANIFEST.oracle.sha256",
+      "gate": "G17",
+      "id": "G17/oracle_hash_in_manifest",
+      "kind": "bundle",
+      "observed": "29572bdd189b5e8840bae777f78a3844555c625134b37dffd305b3ed34fceb88",
+      "reason": "",
+      "subject": {
+        "check": "oracle_hash_in_manifest"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "<= 45 min",
+      "gate": "G17",
+      "id": "G17/runtime_le_budget",
+      "kind": "bundle",
+      "observed": "2.9 min",
+      "reason": "",
+      "subject": {
+        "check": "runtime_le_budget"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "expected": "both customers signed out through the UI",
+      "gate": "G17",
+      "id": "G17/customers_logged_out",
+      "kind": "bundle",
+      "observed": {
+        "A": true,
+        "B": true
+      },
+      "reason": "",
+      "subject": {
+        "check": "customers_logged_out"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:24:37Z",
+  "gate": "G17",
+  "started": "2026-11-12T15:21:44Z",
+  "status": "ran"
+}
