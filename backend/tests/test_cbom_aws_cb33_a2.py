@@ -273,6 +273,7 @@ def test_hf1_a_region_that_is_not_enabled_keeps_the_job_comparable_and_drift_res
 
     def job(rotation_on: bool):
         services, found, rows = kms_run(Plan().keys(1).describe(1, meta(1)).rotation(1, rotation(rotation_on)))
+        rows = [r for r in rows if r[1] != "denied"]  # services the harness did not record (as kms_run drops their rows)
         off_rows, off_found = regional(_Acct({}, default="OptInRequired"), "me-south-1", keep_denied=True)
         targets = [aws_collect._region_target(LABEL, REGION, rows, sum(1 for a in found if a["type"] == "coverage"
                                                                          and not a["facts"].get("by_choice")), 5),
@@ -405,7 +406,7 @@ def test_b11_every_cloudfront_policy_is_hybrid_post_quantum_viewer_to_edge(minim
     verdict = classify("cdn_tls", None, None, "TLS", facts, NOW)
     assert verdict["quantum_vulnerable"] is False and "NO_PQ_KEX" not in verdict["finding_codes"]
     if minimum in ("SSLv3", "TLSv1", "TLSv1_2016"):
-        assert {"MIN_TLS10", "MIN_SSLV3"} & set(verdict["finding_codes"]), verdict  # old minimums keep their finding
+        assert {"MIN_TLS10", "MIN_SSLv3"} & set(verdict["finding_codes"]), verdict  # old minimums keep their finding
 
 
 # ============================================================================ T19b no code vanishes
