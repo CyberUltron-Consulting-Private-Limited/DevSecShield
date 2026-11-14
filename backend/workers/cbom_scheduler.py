@@ -29,6 +29,12 @@ def tick(engine, now=None) -> dict[str, Any]:
     fired = fire_due(engine, now)
     drift = record_pending_drift(engine, now)
     out: dict[str, Any] = {"fired": fired, "drift_runs": drift}
+    try:  # CB-23: the register's daily re-judge (day 366 evidence; deleted sources), at most hourly per process
+        from backend.utilities.cbom_sources.q0register import tick_due
+
+        out["q0_register"] = tick_due(engine, now)
+    except Exception as exc:
+        log("q0 register tick FAILED", ref=new_ref(), error=type(exc).__name__)
     try:  # F1.4: the SSH CA audit is kept 13 months (at most hourly; a failure never stops schedules)
         from backend.utilities.cbom_sources.sshca.retention import purge_due
 

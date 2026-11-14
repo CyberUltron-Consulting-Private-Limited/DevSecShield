@@ -72,6 +72,7 @@ from backend.utilities.cbom_sources import cdx_xml as CDX_XML
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
+from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
@@ -763,6 +764,8 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
         _remove_source(session, source, team_id, user_id, now)
+        session.flush()
+        Q0REG.close_removed_sources_safely(session, team_id, now)  # CB-23: its open Q0 items close as "removed"
         session.commit()
         log("source deleted", team=team_id, source=source_id, by=user_id)
         return {"deleted": source_id}
@@ -1060,6 +1063,8 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             moved = SCHED.reschedule_team(session, team_id, row.window_timezone, now) if zone_changed else 0
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="settings.update",
                   object_type="settings", object_id=row.id, changed_fields=changes.keys())
+            if "risk_model" in changes:  # CB-23: Mosca set -> the register's inputs item closes (cause inputs)
+                Q0REG.close_mosca(session, team_id, row.risk_model, now)
             session.commit()
             session.refresh(row)
             log("settings updated", team=team_id, by=user_id, fields=len(changes), schedules_moved=moved or None)
@@ -1221,6 +1226,7 @@ def _update_area(engine, team_id: int, user_id: int, area_key: str, body: AreaUp
             session.add(row)
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="evidence.update",
                   object_type="evidence", object_id=row.id, changed_fields=changes.keys())
+            Q0REG.sync_evidence_safely(session, team_id, now)  # CB-23: gaps open / close with the write
             session.commit()
             session.refresh(row)
         vendors = session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)).all()
@@ -1251,6 +1257,7 @@ def _create_vendor(engine, team_id: int, user_id: int, body: VendorCreate) -> di
         session.flush()
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="vendor.create",
               object_type="vendor", object_id=row.id)
+        Q0REG.sync_evidence_safely(session, team_id, now)
         session.commit()
         session.refresh(row)
         log("vendor created", team=team_id, vendor=row.id, by=user_id)
@@ -1279,6 +1286,7 @@ def _update_vendor(engine, team_id: int, user_id: int, vendor_id: int, body: Ven
             session.add(row)
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="vendor.update",
                   object_type="vendor", object_id=row.id, changed_fields=changes.keys())
+            Q0REG.sync_evidence_safely(session, team_id, now)
             session.commit()
             session.refresh(row)
         out = public_vendor(row, now)
@@ -1300,6 +1308,8 @@ def _delete_vendor(engine, team_id: int, user_id: int, vendor_id: int) -> dict:
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="vendor.delete",
               object_type="vendor", object_id=row.id)
         session.delete(row)
+        session.flush()
+        Q0REG.sync_evidence_safely(session, team_id, utcnow())  # its open gap closes as "removed"
         session.commit()
         log("vendor deleted", team=team_id, vendor=vendor_id, by=user_id)
         return {"deleted": vendor_id}
@@ -1326,6 +1336,7 @@ def _vendor_link(engine, team_id: int, user_id: int, vendor_id: int) -> dict:
         session.add(row)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="vendor.link",
               object_type="vendor", object_id=row.id)
+        Q0REG.sync_evidence_safely(session, team_id, now)
         session.commit()
         session.refresh(row)
         log("vendor link created", team=team_id, vendor=row.id, by=user_id, refresh=bool(row.answered_at))
