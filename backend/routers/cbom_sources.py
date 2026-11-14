@@ -75,6 +75,7 @@ from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
 from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
+from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
 from backend.utilities.cbom_sources import runs as RUNS
@@ -98,6 +99,7 @@ from backend.utilities.cbom_sources.schemas import (
     VendorUpdate,
 )
 from backend.utilities.cbom_sources.serialize import (
+    last_collects,
     public_area,
     public_job,
     public_node,
@@ -617,8 +619,9 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
         if group:
             rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
+        collects = last_collects(session, team_id, [r.id for r in rows])
         return {"server_time": iso_z(now),
-                "sources": [public_source(r, settings, nodes.get(r.node_id), now) for r in rows]}
+                "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows]}
 
 
 @router.get(BASE + "/items", dependencies=READ, summary="List sources")
@@ -636,7 +639,8 @@ def _get_source(engine, team_id: int, source_id: int) -> dict:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         settings = get_or_create_settings(session, team_id)
         node = session.get(CbomScanNode, source.node_id) if source.node_id else None
-        return {"source": public_source(source, settings, node, now), "server_time": iso_z(now)}
+        collect = last_collects(session, team_id, [source.id]).get(source.id)
+        return {"source": public_source(source, settings, node, now, collect), "server_time": iso_z(now)}
 
 
 @router.get(BASE + "/items/{source_id}", dependencies=READ, summary="Get a source")
@@ -867,7 +871,7 @@ def _test_aws(engine, team_id: int, user_id: int, source_id: int) -> dict:
 
 def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
     """Read the IdP's public metadata now (no job): it is what collection will read."""
-    from backend.utilities.cbom_sources.idp_collect import collect_idp
+    from backend.utilities.cbom_sources.idp_collect import collect_idp, idp_test_verdict
 
     with Session(engine) as session:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
@@ -875,10 +879,8 @@ def _test_idp(engine, team_id: int, user_id: int, source_id: int) -> dict:
         cfg, version, name = dict(source.config or {}), J.connection_version(source), source.name
     out = collect_idp(cfg, name)
     keys = sum(1 for a in out["assets"] if a["type"] == "signing_key")
-    ok = out["counts"]["ok"]
-    status = "passed" if ok == out["counts"]["total"] and ok else ("partial" if ok else "failed")
-    summary = (f"Read {ok} of {out['counts']['total']} metadata documents; {keys} signing key(s) found"
-               if ok else "Could not read the metadata: " + "; ".join(t["error"] or "" for t in out["targets"])[:400])
+    # an unreadable certificate is never "passed, 0 keys": the verdict names the parser's error (C10b)
+    status, summary = idp_test_verdict(out)
     now = utcnow()
     _save_live_test(engine, team_id, user_id, source_id, version, "source.test", now, status, summary,
                     {"targets": out["targets"], "signing_keys": keys})
@@ -1493,7 +1495,8 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
             with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
                 out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
                 try:
-                    INV.write_cyclonedx(session, run, utcnow(), fmt, out)
+                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8)
+                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, out)
                     out.seek(0)
                 except BaseException:
                     out.close()
@@ -1523,7 +1526,7 @@ async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(defaul
     out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
     length = out.seek(0, 2)
     out.seek(0)
-    # A run's CBOM is not signed (only code-scan BOMs are, certin.py), so the XML response states no signature scope
+    # The JSON is signed on request (GET .../runs/{id}/signature, CB-38 PR-8); the XML is not covered
     media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
     return StreamingResponse(_chunks(out), media_type=media, headers={
         **PRIVATE, "Content-Length": str(length),
