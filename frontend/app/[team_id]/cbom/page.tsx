@@ -49,7 +49,22 @@ import { toast } from "sonner";
 import { showErrorToast } from "@/utils/error-handler";
 import { formatDateIst as formatDate } from "@/utils/datetime";
 import { readinessText, readinessTone, type ReadinessTone } from "@/utils/cbomReadiness";
-import { groupSourcesRuns, hasCbomResults, originLabel, sourcesRunsHref } from "@/components/cbom/resultOrigin";
+import { originLabel, sourcesRunsHref } from "@/components/cbom/resultOrigin";
+import {
+  filterAndSortRows,
+  displayRiskScore,
+  mergeResultRows,
+  runProgress,
+  runsLoadedNote,
+  type ResultRow,
+  type RiskCounts,
+  type RiskScoreFilter,
+  type RunResultRow,
+  type TableSortBy,
+} from "@/components/cbom/results/resultRows";
+import { resultsHref } from "@/components/cbom/results/resultsHref";
+import { isActiveStatus } from "@/components/cbom/results/statusBuckets";
+import { cbomResultsListKey } from "@/components/cbom/sources/keys";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -81,18 +96,7 @@ import {
   YAxis,
 } from "recharts";
 
-type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "not_started" | "cancelled";
-
-/** Risk score tiers for filtering: Critical ≥9, High 7–9, Medium 5–7, Low <5 */
-type RiskScoreFilter = "all" | "critical" | "high" | "medium" | "low";
-type TableSortBy =
-  | "none"
-  | "created_asc"
-  | "created_desc"
-  | "risk_desc"
-  | "risk_asc"
-  | "credits_desc"
-  | "credits_asc";
+type ScanStatus = "pending" | "started" | "retry" | "failure" | "success" | "partial" | "not_started" | "cancelled";
 
 const RISK_SCORE_LABELS: Record<RiskScoreFilter, string> = {
   all: "Risk score",
@@ -112,27 +116,73 @@ const SORT_BY_LABELS: Record<TableSortBy, string> = {
   credits_asc: "Credits (low first)",
 };
 
-function getDisplayRiskScore(c: CBOMConversation): number | null {
-  if (c.average_risk_score == null) return null;
-  return Math.round(Math.min(10, Math.max(0, c.average_risk_score)) * 10) / 10;
-}
-
-function matchesRiskScoreFilter(score: number | null, filter: RiskScoreFilter): boolean {
-  if (filter === "all") return true;
-  if (score == null) return false;
-  if (filter === "critical") return score >= 9;
-  if (filter === "high") return score >= 7 && score < 9;
-  if (filter === "medium") return score >= 5 && score < 7;
-  if (filter === "low") return score < 5;
-  return true;
-}
-
 /** CBOM `info` is typed string | null; safely extract a numeric progress percent if present. */
 function getScanProgress(info: CBOMConversation["info"]): number | null {
   if (info != null && typeof info === "object" && typeof (info as { current?: number }).current === "number") {
     return (info as { current?: number }).current ?? null;
   }
   return null;
+}
+
+const STATUS_BADGES: Record<ScanStatus, { variant: "outline" | "secondary" | "destructive" | "default"; className: string; label: string }> = {
+  not_started: { variant: "outline", className: "text-zinc-500 dark:text-zinc-500", label: "Not Started" },
+  pending: { variant: "outline", className: "text-zinc-600 dark:text-zinc-400", label: "Pending" },
+  started: { variant: "secondary", className: "bg-blue-500 hover:bg-blue-600 text-white", label: "Started" },
+  retry: { variant: "secondary", className: "bg-yellow-500 hover:bg-yellow-600 text-white", label: "Retry" },
+  failure: { variant: "destructive", className: "", label: "Failure" },
+  success: { variant: "default", className: "bg-green-500 hover:bg-green-600 text-white", label: "Success" },
+  // a Sources run that finished with some jobs failed: its results exist and open like a success
+  partial: { variant: "outline", className: "border-amber-500/60 bg-amber-500/15 text-amber-700 dark:text-amber-300", label: "Partial" },
+  cancelled: { variant: "outline", className: "text-amber-600 dark:text-amber-400", label: "Cancelled" },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const config = STATUS_BADGES[status as ScanStatus];
+  if (!config) return <Badge variant="outline" className="text-zinc-600 dark:text-zinc-400">{status || "—"}</Badge>;
+  return <Badge variant={config.variant} className={config.className} data-status={status}>{config.label}</Badge>;
+}
+
+function RiskDots({ risk, title }: { risk: RiskCounts; title?: string }) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap" title={title}>
+      {[
+        { label: "Critical", n: risk.total_critical, dot: "bg-red-500" },
+        { label: "High", n: risk.total_high, dot: "bg-orange-500" },
+        { label: "Medium", n: risk.total_medium, dot: "bg-amber-500" },
+        { label: "Low", n: risk.total_low, dot: "bg-blue-500" },
+      ].map(({ label, n, dot }) => (
+        <span key={label} className="flex items-center gap-1.5 shrink-0" title={title ? `${label} (${title.toLowerCase()})` : label}>
+          <span className={`h-2 w-2 rounded-full shrink-0 ${dot}`} aria-hidden />
+          <span className="tabular-nums">{typeof n === "number" ? n : 0}</span>
+        </span>
+      ))}
+      {risk.total_quantum_vulnerable != null && risk.total_quantum_vulnerable > 0 && (
+        <Badge variant="outline" className="border-red-500/50 text-red-600 dark:text-red-400 text-[10px] py-0 shrink-0" title="Quantum Vulnerable">QV:{risk.total_quantum_vulnerable}</Badge>
+      )}
+    </div>
+  );
+}
+
+function OwnerCell({ name, email }: { name: string | null; email: string | null }) {
+  if (!((name != null && name !== "") || email)) return <>—</>;
+  const initials = name
+    ? name.trim().split(/\s+/).map((p) => p.charAt(0)).slice(0, 2).join("").toUpperCase() || (email?.[0] ?? "?").toUpperCase()
+    : (email?.[0] ?? "?").toUpperCase();
+  return (
+    <div className="flex items-center gap-2">
+      <Avatar className="h-8 w-8 shrink-0">
+        <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">{initials}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0">
+        {name != null && name !== "" && (
+          <span className="block truncate max-w-[160px]" title={email ?? ""}>{name}</span>
+        )}
+        {email != null && email !== "" && (
+          <span className="block text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[160px]">{email}</span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /** Mirrors the server's Content-Disposition name: cbom-<slug>-team<id>-<YYYYMMDD>.pdf (UTC date). */
@@ -511,7 +561,7 @@ export default function CBOMPage() {
   const router = useRouter();
   const params = useParams();
   const team_id = params?.team_id as string;
-  const [conversations, setConversations] = useState<CBOMConversation[]>([]);
+  const teamIdNumber = parseInt(team_id);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -526,31 +576,32 @@ export default function CBOMPage() {
   const [sortBy, setSortBy] = useState<TableSortBy>("none");
   const queryClient = useQueryClient();
 
+  // CB-38: one list for code scans and CBOM Sources runs. The key carries the numeric team id, so another team's
+  // rows never render while the new team's list loads, and Sources run mutations refresh it (sources/keys.ts).
+  const listKey = cbomResultsListKey(teamIdNumber);
   const query = useQuery({
-    queryKey: ["cbom-conversations", team_id],
-    queryFn: () => getCBOMScans(parseInt(team_id)),
-    enabled: !!team_id,
+    queryKey: listKey,
+    queryFn: () => getCBOMScans(teamIdNumber),
+    enabled: Number.isFinite(teamIdNumber),
+    // a queued or running Sources run shows live progress (jobs done / total)
+    refetchInterval: (q) => (q.state.data?.runs_list_data?.some((r) => isActiveStatus(r.scan_status)) ? 10000 : false),
   });
 
-  // Clear mirrored list immediately on team change so the previous team's scans
-  // don't render during the window before the new team's query resolves.
   useEffect(() => {
-    setConversations([]);
-  }, [team_id]);
-
-  useEffect(() => {
-    if (query.data) {
-      setConversations(query.data.scans_list_data ?? []);
-    }
     if (query.error) {
       showErrorToast(query.error, "Error fetching CBOM scans");
     }
-  }, [query.data, query.error]);
+  }, [query.error]);
+
+  const allRows = useMemo(
+    () => mergeResultRows(query.data?.scans_list_data, query.data?.runs_list_data, query.data?.sources_runs),
+    [query.data],
+  );
 
   const deleteCBOMScanMutation = useMutation({
     mutationFn: ({ team_id, scan_id }: { team_id: number; scan_id: number }) => deleteCBOMScan(team_id, scan_id),
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["cbom-conversations", variables.team_id.toString()] });
+      queryClient.invalidateQueries({ queryKey: cbomResultsListKey(variables.team_id) });
       toast.success("CBOM scan deleted successfully");
     },
     onError: (error) => { showErrorToast(error); },
@@ -559,7 +610,7 @@ export default function CBOMPage() {
   const renameCBOMScanMutation = useMutation({
     mutationFn: renameCBOMScan,
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["cbom-conversations", variables.team_id.toString()] });
+      queryClient.invalidateQueries({ queryKey: cbomResultsListKey(variables.team_id) });
       toast.success("CBOM scan renamed successfully");
     },
     onError: (error) => { showErrorToast(error); },
@@ -570,7 +621,7 @@ export default function CBOMPage() {
   const createCBOMScanMutation = useMutation({
     mutationFn: ({ team_id, title }: { team_id: number; title: string }) => createCBOMScan(team_id, title),
     onSuccess: (scan_id, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["cbom-conversations", variables.team_id.toString()] });
+      queryClient.invalidateQueries({ queryKey: cbomResultsListKey(variables.team_id) });
       setCreateDialogOpen(false);
       setNewScanTitle("");
       router.push(`/${variables.team_id}/cbom/${scan_id}`);
@@ -613,21 +664,6 @@ export default function CBOMPage() {
     (Array.isArray(manifestItems) ? manifestItems : []).map((d) => [d.slug, d] as const),
   );
 
-  const getStatusBadge = (status: ScanStatus) => {
-    const variants = {
-      not_started: { variant: "outline" as const, className: "text-zinc-500 dark:text-zinc-500" },
-      pending: { variant: "outline" as const, className: "text-zinc-600 dark:text-zinc-400" },
-      started: { variant: "secondary" as const, className: "bg-blue-500 hover:bg-blue-600 text-white" },
-      retry: { variant: "secondary" as const, className: "bg-yellow-500 hover:bg-yellow-600 text-white" },
-      failure: { variant: "destructive" as const, className: "" },
-      success: { variant: "default" as const, className: "bg-green-500 hover:bg-green-600 text-white" },
-      cancelled: { variant: "outline" as const, className: "text-amber-600 dark:text-amber-400" },
-    };
-    const config = variants[status];
-    const labels = { not_started: "Not Started", pending: "Pending", started: "Started", retry: "Retry", failure: "Failure", success: "Success", cancelled: "Cancelled" };
-    return <Badge variant={config.variant} className={config.className}>{labels[status]}</Badge>;
-  };
-
   const handleRename = (conversation: CBOMConversation) => { setSelectedConversation(conversation); setNewName(conversation.title); setRenameDialogOpen(true); };
   const handleDelete = (conversation: CBOMConversation) => { setSelectedConversation(conversation); setDeleteDialogOpen(true); };
 
@@ -658,27 +694,11 @@ export default function CBOMPage() {
     riskScoreFilter !== "all" ||
     sortBy !== "none";
 
-  const filteredConversations = conversations
-    .filter((c) => {
-      if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      if (statusFilter !== "all" && c.scan_status !== statusFilter) return false;
-      const score = getDisplayRiskScore(c);
-      if (!matchesRiskScoreFilter(score, riskScoreFilter)) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortBy === "created_asc") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (sortBy === "created_desc") return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      const scoreA = getDisplayRiskScore(a) ?? -1;
-      const scoreB = getDisplayRiskScore(b) ?? -1;
-      if (sortBy === "risk_desc") return scoreB - scoreA;
-      if (sortBy === "risk_asc") return scoreA - scoreB;
-      const credA = a.estimated_credits != null ? Number(a.estimated_credits) : -1;
-      const credB = b.estimated_credits != null ? Number(b.estimated_credits) : -1;
-      if (sortBy === "credits_desc") return credB - credA;
-      if (sortBy === "credits_asc") return credA - credB;
-      return 0;
-    });
+  const filteredRows = useMemo(
+    () => filterAndSortRows(allRows, { search: searchQuery, status: statusFilter, risk: riskScoreFilter, sort: sortBy }),
+    [allRows, searchQuery, statusFilter, riskScoreFilter, sortBy],
+  );
+  const runsNote = runsLoadedNote(query.data?.runs_list_data?.length ?? 0, query.data?.runs_total);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -688,16 +708,16 @@ export default function CBOMPage() {
   };
 
   const dashboardData = query.data?.dashboard_data;
-  const sourcesRuns = query.data?.sources_runs ?? [];
-  const sourcesRunRows = groupSourcesRuns(sourcesRuns);
+
+  const openRow = (row: ResultRow) => router.push(resultsHref(team_id, row));
 
   return (
     <div className="flex h-screen bg-white dark:bg-zinc-900">
-      <div className="flex-1 p-8 overflow-auto">
-        <div className="max-w-7xl mx-auto">
+      <div className="flex-1 min-w-0 p-4 sm:p-8 overflow-y-auto overflow-x-hidden">
+        <div className="max-w-7xl mx-auto min-w-0">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+            <div className="min-w-0">
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">CBOM Scans</h1>
               <p className="text-zinc-600 dark:text-zinc-400">Cryptography Bill of Materials — analyze cryptographic assets across your codebase and the systems your CBOM Sources collect.</p>
             </div>
@@ -740,7 +760,7 @@ export default function CBOMPage() {
                   })}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: ["cbom-conversations", team_id] })}>
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => queryClient.invalidateQueries({ queryKey: listKey })}>
                 <RefreshCcw className="h-4 w-4 mr-2" />Refresh
               </Button>
             </div>
@@ -774,53 +794,12 @@ export default function CBOMPage() {
 
               {/* ── Table Tab ── */}
               <TabsContent value="table">
-                {/* CBOM Sources results: each source's latest completed collection, counted on the dashboard too */}
-                {sourcesRunRows.length > 0 && (
-                  <div className="mb-6" data-testid="cbom-sources-runs">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">CBOM Sources runs</h3>
-                      <Link href={sourcesRunsHref(team_id)} className="text-sm text-blue-600 hover:underline cursor-pointer">Open CBOM Sources</Link>
-                    </div>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">The latest completed collection of each source. Its assets are counted on the Dashboard next to the code scans.</p>
-                    <ScrollArea className="w-full border rounded-lg">
-                      <div className="min-w-max">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Run</TableHead>
-                              <TableHead>Sources</TableHead>
-                              <TableHead>Finished</TableHead>
-                              <TableHead>Assets</TableHead>
-                              <TableHead>Endpoints probed</TableHead>
-                              <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {sourcesRunRows.map((run) => (
-                              <TableRow key={run.run_id} data-testid={`cbom-sources-run-${run.run_id}`}>
-                                <TableCell className="font-medium">Sources run #{run.run_id}</TableCell>
-                                <TableCell className="text-sm text-zinc-600 dark:text-zinc-400 max-w-[320px] whitespace-normal">{run.sources.join(", ")}</TableCell>
-                                <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{formatDate(run.finished_at)}</TableCell>
-                                <TableCell className="text-sm">{run.asset_count}</TableCell>
-                                <TableCell className="text-sm">{run.endpoints_probed}</TableCell>
-                                <TableCell className="text-right">
-                                  <Link href={sourcesRunsHref(team_id)} className="text-sm text-blue-600 hover:underline cursor-pointer">View results</Link>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                      <ScrollBar orientation="horizontal" />
-                    </ScrollArea>
-                  </div>
-                )}
                 {/* Filter bar */}
-                {conversations.length > 0 && (
+                {allRows.length > 0 && (
                   <div className="flex flex-wrap items-center gap-3 mb-4">
-                    <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <div className="relative flex-1 min-w-[180px] max-w-sm">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                      <Input placeholder="Search by title..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
+                      <Input placeholder="Search title, repo, branch or source..." aria-label="Search scans and runs" data-testid="cbom-results-search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 h-9 cursor-text" />
                     </div>
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
                       <SelectTrigger className="h-9 min-w-[150px] cursor-pointer"><SelectValue placeholder="Scan status" /></SelectTrigger>
@@ -831,6 +810,7 @@ export default function CBOMPage() {
                         <SelectItem value="started">Started</SelectItem>
                         <SelectItem value="retry">Retry</SelectItem>
                         <SelectItem value="success">Success</SelectItem>
+                        <SelectItem value="partial">Partial</SelectItem>
                         <SelectItem value="failure">Failure</SelectItem>
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
@@ -941,36 +921,38 @@ export default function CBOMPage() {
                   </div>
                 )}
 
-                {/* Table content */}
-                {conversations.length === 0 ? (
-                  <div className="text-center py-12">
-                    <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-                      {hasCbomResults(conversations, sourcesRuns)
-                        ? "No code scans yet. The results above come from CBOM Sources runs; create a CBOM scan to add your code."
-                        : "No scans yet. Create your first CBOM scan or start a CBOM Sources run to get started."}
-                    </p>
-                    <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
-                      <Plus className="h-4 w-4 mr-2" />Create New Scan
-                    </Button>
+                {/* Table content: code scans and CBOM Sources runs in one table (CB-38) */}
+                {allRows.length === 0 ? (
+                  <div className="text-center py-12" data-testid="cbom-results-empty">
+                    <p className="text-zinc-900 dark:text-white font-medium mb-1">No scans or runs yet</p>
+                    <p className="text-zinc-600 dark:text-zinc-400 mb-4">Create a CBOM scan for your code, or start a CBOM Sources run to collect the cryptography of your systems.</p>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <Button className="bg-blue-600 hover:bg-blue-700 text-white cursor-pointer" onClick={() => setCreateDialogOpen(true)}>
+                        <Plus className="h-4 w-4 mr-2" />Create New Scan
+                      </Button>
+                      <Button asChild variant="outline" className="cursor-pointer">
+                        <Link href={sourcesRunsHref(team_id)}><Network className="h-4 w-4 mr-2" />Open CBOM Sources</Link>
+                      </Button>
+                    </div>
                   </div>
-                ) : filteredConversations.length === 0 ? (
+                ) : filteredRows.length === 0 ? (
                   <div className="text-center py-12">
-                    <p className="text-zinc-600 dark:text-zinc-400 mb-4">No scans match your filters.</p>
+                    <p className="text-zinc-600 dark:text-zinc-400 mb-4">No scans or runs match your filters.</p>
                     <Button variant="outline" className="cursor-pointer" onClick={clearFilters}><X className="h-4 w-4 mr-2" />Clear filters</Button>
                   </div>
                 ) : (
-                  <ScrollArea className="w-full border rounded-lg">
+                  <ScrollArea className="w-full max-w-full border rounded-lg" data-testid="cbom-results-table">
                     <div className="min-w-max">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="w-[160px] min-w-[120px]">Title</TableHead>
+                            <TableHead className="w-[200px] min-w-[140px]">Title</TableHead>
                             <TableHead>Created at</TableHead>
                             <TableHead>Last updated</TableHead>
                             <TableHead>Scan status</TableHead>
                             <TableHead className="w-[200px]">Risks</TableHead>
                             <TableHead className="w-[90px]">Risk score</TableHead>
-                            <TableHead className="w-[160px]">Repo / Source</TableHead>
+                            <TableHead className="w-[180px]">Repo / Source</TableHead>
                             <TableHead className="w-[100px]">Branch</TableHead>
                             <TableHead className="w-[90px]">Credits</TableHead>
                             <TableHead>Owner</TableHead>
@@ -978,78 +960,88 @@ export default function CBOMPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredConversations.map((conversation) => {
-                            const progress = getScanProgress(conversation.info);
+                          {filteredRows.map((row) => {
+                            const href = resultsHref(team_id, row);
+                            const score = displayRiskScore(row);
+                            const isRun = row.kind === "run";
+                            const run = isRun ? (row as RunResultRow) : null;
+                            const conversation = row.kind === "scan" ? row.scan : null;
+                            const scanPct = conversation ? getScanProgress(conversation.info) : null;
+                            const live = run && isActiveStatus(run.scan_status) ? runProgress(run) : null;
                             return (
                             <TableRow
-                              key={conversation.id}
+                              key={row.key}
+                              data-testid={`cbom-result-${row.key}`}
+                              data-kind={row.kind}
                               className="hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
                               onClick={(e) => {
                                 const target = e.target as HTMLElement;
-                                if (target.closest("button") || target.closest("[role='menuitem']")) return;
-                                const dest = (conversation.scan_status?.toLowerCase() ?? "") === "success"
-                                  ? `/${team_id}/cbom/${conversation.id}/results`
-                                  : `/${team_id}/cbom/${conversation.id}`;
-                                router.push(dest);
+                                if (target.closest("button") || target.closest("a") || target.closest("[role='menuitem']")) return;
+                                openRow(row);
                               }}
                             >
-                              <TableCell className="font-medium max-w-[160px] min-w-[120px]">
+                              <TableCell className="font-medium max-w-[200px] min-w-[140px]">
                                 <Link
-                                  href={(conversation.scan_status?.toLowerCase() ?? "") === "success" ? `/${team_id}/cbom/${conversation.id}/results` : `/${team_id}/cbom/${conversation.id}`}
+                                  href={href}
                                   className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer truncate block"
-                                  title={conversation.title}
+                                  title={row.title}
                                 >
-                                  {conversation.title}
+                                  {row.title}
                                 </Link>
+                                {run && (
+                                  <Badge variant="outline" className="mt-1 text-[10px] py-0 border-violet-500/50 text-violet-600 dark:text-violet-400" data-testid={`cbom-result-run-badge-${run.id}`}>
+                                    Sources run
+                                  </Badge>
+                                )}
                               </TableCell>
-                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.created_at)}</TableCell>
-                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{formatDate(conversation.last_updated)}</TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{row.created_at ? formatDate(row.created_at) : "—"}</TableCell>
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">{row.last_updated ? formatDate(row.last_updated) : "—"}</TableCell>
                               <TableCell className="text-sm">
                                 <div className="flex flex-col gap-1.5">
-                                  {getStatusBadge(conversation.scan_status as ScanStatus)}
-                                  {progress != null && conversation.scan_status !== "success" && conversation.scan_status !== "failure" && (
+                                  <StatusBadge status={row.scan_status} />
+                                  {conversation && scanPct != null && row.scan_status !== "success" && row.scan_status !== "failure" && (
                                     <div className="flex items-center gap-2">
-                                      <Progress value={progress} className="h-1.5 flex-1" />
-                                      <span className="text-xs text-zinc-500 tabular-nums">{progress}%</span>
+                                      <Progress value={scanPct} className="h-1.5 flex-1" />
+                                      <span className="text-xs text-zinc-500 tabular-nums">{scanPct}%</span>
+                                    </div>
+                                  )}
+                                  {live && (
+                                    <div className="flex items-center gap-2" data-testid={`cbom-result-run-progress-${row.id}`}>
+                                      <Progress value={live.pct} className="h-1.5 flex-1 min-w-[48px]" />
+                                      <span className="text-xs text-zinc-500 tabular-nums">{live.done}/{live.total} jobs</span>
                                     </div>
                                   )}
                                 </div>
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
-                                {conversation.risk_data ? (
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {[
-                                      { label: "Critical", n: conversation.risk_data.total_critical, dot: "bg-red-500" },
-                                      { label: "High", n: conversation.risk_data.total_high, dot: "bg-orange-500" },
-                                      { label: "Medium", n: conversation.risk_data.total_medium, dot: "bg-amber-500" },
-                                      { label: "Low", n: conversation.risk_data.total_low, dot: "bg-blue-500" },
-                                    ].map(({ label, n, dot }) => (
-                                      <span key={label} className="flex items-center gap-1.5 shrink-0" title={label}>
-                                        <span className={`h-2 w-2 rounded-full shrink-0 ${dot}`} aria-hidden />
-                                        <span className="tabular-nums">{typeof n === "number" ? n : 0}</span>
-                                      </span>
-                                    ))}
-                                    {conversation.risk_data.total_quantum_vulnerable != null && conversation.risk_data.total_quantum_vulnerable > 0 && (
-                                      <Badge variant="outline" className="border-red-500/50 text-red-600 dark:text-red-400 text-[10px] py-0 shrink-0" title="Quantum Vulnerable">QV:{conversation.risk_data.total_quantum_vulnerable}</Badge>
-                                    )}
-                                  </div>
-                                ) : "—"}
+                                {row.risk_data ? (
+                                  <RiskDots risk={row.risk_data} title={isRun ? "As collected" : undefined} />
+                                ) : (
+                                  <span title={run?.limited ? "Open the run's results for its findings" : undefined}>—</span>
+                                )}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {getDisplayRiskScore(conversation) != null ? getDisplayRiskScore(conversation) : "—"}
+                                {score != null ? score : "—"}
                               </TableCell>
-                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[160px]" title={conversation.repo_url ?? undefined}>
-                                {conversation.zip_file_used ? (
+                              <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm max-w-[180px]" title={run ? run.sources.map((s) => s.name).join(", ") : (conversation?.repo_url ?? undefined)}>
+                                {run ? (
+                                  run.sources.length > 0 ? (
+                                    <span className="flex items-center gap-1.5 truncate">
+                                      <Network className="h-3.5 w-3.5 shrink-0 text-violet-500" aria-hidden />
+                                      <span className="truncate">{run.sources.map((s) => s.name).join(", ")}</span>
+                                    </span>
+                                  ) : "—"
+                                ) : conversation?.zip_file_used ? (
                                   <span className="flex items-center gap-1.5 truncate">
                                     <FileArchive className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
                                     <span className="truncate">Zip file</span>
                                   </span>
-                                ) : conversation.cbom_file_used ? (
+                                ) : conversation?.cbom_file_used ? (
                                   <span className="flex items-center gap-1.5 truncate">
                                     <Lock className="h-3.5 w-3.5 shrink-0 text-violet-500" aria-hidden />
                                     <span className="truncate">CBOM file</span>
                                   </span>
-                                ) : conversation.repo_url ? (
+                                ) : conversation?.repo_url ? (
                                   <span className="flex items-center gap-1.5 truncate">
                                     <GitBranch className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
                                     <span className="truncate">{conversation.repo_url.split("/").pop() ?? conversation.repo_url}</span>
@@ -1057,58 +1049,51 @@ export default function CBOMPage() {
                                 ) : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm">
-                                {conversation.branch != null && conversation.branch !== "" ? (
+                                {row.branch != null && row.branch !== "" ? (
                                   <span className="flex items-center gap-1.5 truncate">
                                     <GitBranch className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden />
-                                    <span className="truncate">{conversation.branch}</span>
+                                    <span className="truncate">{row.branch}</span>
                                   </span>
                                 ) : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400 text-sm tabular-nums">
-                                {conversation.estimated_credits != null ? conversation.estimated_credits : "—"}
+                                {row.estimated_credits != null ? row.estimated_credits : "—"}
                               </TableCell>
                               <TableCell className="text-zinc-600 dark:text-zinc-400">
-                                {(conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "") || conversation.owner_user_email ? (
-                                  <div className="flex items-center gap-2">
-                                    <Avatar className="h-8 w-8 shrink-0">
-                                      <AvatarFallback className="bg-blue-600 text-white text-xs font-medium">
-                                        {conversation.owner_user_full_name
-                                          ? conversation.owner_user_full_name.trim().split(/\s+/).map((p) => p.charAt(0)).slice(0, 2).join("").toUpperCase() || (conversation.owner_user_email?.[0] ?? "?").toUpperCase()
-                                          : (conversation.owner_user_email?.[0] ?? "?").toUpperCase()}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div className="min-w-0">
-                                      {conversation.owner_user_full_name != null && conversation.owner_user_full_name !== "" && (
-                                        <span className="block truncate max-w-[160px]" title={conversation.owner_user_email ?? ""}>{conversation.owner_user_full_name}</span>
-                                      )}
-                                      {conversation.owner_user_email != null && conversation.owner_user_email !== "" && (
-                                        <span className="block text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[160px]">{conversation.owner_user_email}</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : ("—")}
+                                <OwnerCell name={row.owner_user_full_name} email={row.owner_user_email} />
                               </TableCell>
                               <TableCell className="text-right">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" aria-label={`Actions for ${conversation.title || `scan #${conversation.id}`}`}><MoreVertical className="h-4 w-4" /></Button>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" aria-label={`Actions for ${row.title || (isRun ? `Sources run #${row.id}` : `scan #${row.id}`)}`}><MoreVertical className="h-4 w-4" /></Button>
                                   </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    {(conversation.scan_status?.toLowerCase() ?? "") === "success" && (
-                                      <DropdownMenuItem className="cursor-pointer" onClick={() => router.push(`/${team_id}/cbom/${conversation.id}/results?origin=list`)}>
-                                        <Eye className="h-4 w-4 mr-2" />View Results
+                                  {run ? (
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem className="cursor-pointer" data-testid={`cbom-result-run-view-${run.id}`} onClick={() => openRow(run)}>
+                                        <Eye className="h-4 w-4 mr-2" />View results
                                       </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuItem className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
-                                      <Eye className="h-4 w-4 mr-2" />View metadata
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
-                                      <Pencil className="h-4 w-4 mr-2" />Rename scan
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
-                                      <Trash2 className="h-4 w-4 mr-2" />Delete scan
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
+                                      <DropdownMenuItem className="cursor-pointer" data-testid={`cbom-result-run-sources-${run.id}`} onClick={() => router.push(sourcesRunsHref(team_id))}>
+                                        <Network className="h-4 w-4 mr-2" />Open in CBOM Sources
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  ) : conversation ? (
+                                    <DropdownMenuContent align="end">
+                                      {row.scan_status === "success" && (
+                                        <DropdownMenuItem className="cursor-pointer" onClick={() => router.push(`/${team_id}/cbom/${conversation.id}/results?origin=list`)}>
+                                          <Eye className="h-4 w-4 mr-2" />View Results
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuItem className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setMetadataScan(conversation); setMetadataDialogOpen(true); }}>
+                                        <Eye className="h-4 w-4 mr-2" />View metadata
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleRename(conversation)}>
+                                        <Pencil className="h-4 w-4 mr-2" />Rename scan
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleDelete(conversation)} variant="destructive">
+                                        <Trash2 className="h-4 w-4 mr-2" />Delete scan
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  ) : null}
                                 </DropdownMenu>
                               </TableCell>
                             </TableRow>
@@ -1119,6 +1104,11 @@ export default function CBOMPage() {
                     </div>
                     <ScrollBar orientation="horizontal" />
                   </ScrollArea>
+                )}
+                {runsNote && allRows.length > 0 && (
+                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400" data-testid="cbom-results-runs-note">
+                    {runsNote}. Older runs are listed in <Link href={sourcesRunsHref(team_id)} className="text-blue-600 hover:underline">CBOM Sources</Link>.
+                  </p>
                 )}
               </TabsContent>
             </Tabs>

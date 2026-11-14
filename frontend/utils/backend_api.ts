@@ -2378,6 +2378,48 @@ export interface CBOMListResponse {
   dashboard_data: CBOMDashboardData
   /** each CBOM Sources source's latest completed collection (one entry per source) */
   sources_runs?: CbomSourcesRun[]
+  /** CB-38: the team's newest CBOM Sources runs (at most 200, newest first), one row per run; absent on older backends */
+  runs_list_data?: RunListRow[]
+  /** CB-38: how many runs the team has in total (more than runs_list_data.length when older runs were not loaded) */
+  runs_total?: number
+}
+
+/** CB-38: one CBOM Sources run as a row of the CBOM Scans table (GET /{team_id}/cbom/scans `runs_list_data`). */
+export interface RunListRow {
+  kind: "run"
+  id: number
+  /** "Sources run #<id> · <source names joined ', '>" */
+  title: string
+  created_at: string
+  last_updated: string | null
+  finished_at: string | null
+  /** the run status mapped to the scan statuses (contracts/cbom/status_buckets.json `run_to_unified`) */
+  scan_status: "not_started" | "pending" | "started" | "success" | "partial" | "failure" | "cancelled"
+  run_status: "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
+  risk_data: {
+    total_critical: number
+    total_high: number
+    total_medium: number
+    total_low: number
+    total_informational: number
+    total_quantum_vulnerable: number
+  } | null
+  average_risk_score: number | null
+  sources: { id: number; name: string; kind: string }[]
+  repo_url: null
+  branch: null
+  /** credits charged for the run */
+  estimated_credits: number | null
+  credits_refunded: number | null
+  owner_user_email: string | null
+  owner_user_full_name: string | null
+  asset_count: number
+  endpoints_probed: number
+  jobs_total: number
+  jobs_done: number
+  linked_scan_id: number | null
+  /** the severity counts are those judged when the run collected the assets */
+  counts_basis: "as_collected"
 }
 
 export interface CBOMConversationResponse {
