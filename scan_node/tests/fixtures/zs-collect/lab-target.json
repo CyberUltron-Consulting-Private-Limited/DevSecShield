@@ -1,0 +1,609 @@
+{
+ "assets": [
+  {
+   "algorithm": null,
+   "facts": {
+    "name": "libk5crypto3",
+    "source": "package",
+    "version": "1.21.3-5+deb13u1"
+   },
+   "key_size": null,
+   "location": "package:libk5crypto3",
+   "name": "libk5crypto3",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "crypto_library"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "name": "libnettle8t64",
+    "source": "package",
+    "version": "3.10.1-1"
+   },
+   "key_size": null,
+   "location": "package:libnettle8t64",
+   "name": "libnettle8t64",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "crypto_library"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "name": "libssl3t64",
+    "source": "package",
+    "version": "3.5.7-1~deb13u3"
+   },
+   "key_size": null,
+   "location": "package:libssl3t64",
+   "name": "libssl3t64",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "crypto_library"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "name": "openssh-client",
+    "source": "package",
+    "version": "1:10.0p1-7+deb13u4"
+   },
+   "key_size": null,
+   "location": "package:openssh-client",
+   "name": "openssh-client",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "crypto_library"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "name": "openssh-server",
+    "source": "package",
+    "version": "1:10.0p1-7+deb13u4"
+   },
+   "key_size": null,
+   "location": "package:openssh-server",
+   "name": "openssh-server",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "crypto_library"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "name": "openssl",
+    "source": "package",
+    "version": "3.5.7-1~deb13u3"
+   },
+   "key_size": null,
+   "location": "package:openssl",
+   "name": "openssl",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "crypto_library"
+  },
+  {
+   "algorithm": "RSA",
+   "facts": {
+    "bits": 3072,
+    "comment": "root@lab-00",
+    "fingerprint": "SHA256:Kvz/96P3V6g9lCSOGVj8kRYV1jfNI31MfPL3ZnlQCcM",
+    "type": "RSA"
+   },
+   "key_size": 3072,
+   "location": "/etc/ssh/ssh_host_rsa_key.pub",
+   "name": "RSA host key",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "ssh_host_key"
+  },
+  {
+   "algorithm": "ECDSA",
+   "facts": {
+    "bits": 256,
+    "comment": "root@lab-00",
+    "fingerprint": "SHA256:KhmHNFdRKh1WuWiuKjlIu3uFVo7TfK14xa0ScmbrMcQ",
+    "type": "ECDSA"
+   },
+   "key_size": 256,
+   "location": "/etc/ssh/ssh_host_ecdsa_key.pub",
+   "name": "ECDSA host key",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "ssh_host_key"
+  },
+  {
+   "algorithm": "ED25519",
+   "facts": {
+    "bits": 256,
+    "comment": "root@lab-00",
+    "fingerprint": "SHA256:4GrJ+SPZwRaVxLw6OOPUCtwDW41jP+TF24utun505Rs",
+    "type": "ED25519"
+   },
+   "key_size": 256,
+   "location": "/etc/ssh/ssh_host_ed25519_key.pub",
+   "name": "ED25519 host key",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "ssh_host_key"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "check": "disk_encryption",
+    "detail": "sudo: /sbin/dmsetup: command not found",
+    "status": "not_installed"
+   },
+   "key_size": null,
+   "location": "172.22.0.2#disk_encryption",
+   "name": "disk_encryption",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "coverage"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "casignaturealgorithms": [
+     "ssh-ed25519",
+     "ecdsa-sha2-nistp256",
+     "ecdsa-sha2-nistp384",
+     "ecdsa-sha2-nistp521",
+     "sk-ssh-ed25519@openssh.com",
+     "sk-ecdsa-sha2-nistp256@openssh.com",
+     "rsa-sha2-512",
+     "rsa-sha2-256"
+    ],
+    "ciphers": [
+     "chacha20-poly1305@openssh.com",
+     "aes128-gcm@openssh.com",
+     "aes256-gcm@openssh.com",
+     "aes128-ctr",
+     "aes192-ctr",
+     "aes256-ctr"
+    ],
+    "effective": true,
+    "fingerprinthash": "SHA256",
+    "gssapiauthentication": "no",
+    "hostbasedacceptedalgorithms": [
+     "ssh-ed25519-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp256-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp384-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp521-cert-v01@openssh.com",
+     "sk-ssh-ed25519-cert-v01@openssh.com",
+     "sk-ecdsa-sha2-nistp256-cert-v01@openssh.com",
+     "rsa-sha2-512-cert-v01@openssh.com",
+     "rsa-sha2-256-cert-v01@openssh.com",
+     "ssh-ed25519",
+     "ecdsa-sha2-nistp256",
+     "ecdsa-sha2-nistp384",
+     "ecdsa-sha2-nistp521",
+     "sk-ssh-ed25519@openssh.com",
+     "sk-ecdsa-sha2-nistp256@openssh.com",
+     "rsa-sha2-512",
+     "rsa-sha2-256"
+    ],
+    "hostkey": [
+     "/etc/ssh/ssh_host_rsa_key",
+     "/etc/ssh/ssh_host_ecdsa_key",
+     "/etc/ssh/ssh_host_ed25519_key"
+    ],
+    "hostkeyalgorithms": [
+     "ssh-ed25519-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp256-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp384-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp521-cert-v01@openssh.com",
+     "sk-ssh-ed25519-cert-v01@openssh.com",
+     "sk-ecdsa-sha2-nistp256-cert-v01@openssh.com",
+     "rsa-sha2-512-cert-v01@openssh.com",
+     "rsa-sha2-256-cert-v01@openssh.com",
+     "ssh-ed25519",
+     "ecdsa-sha2-nistp256",
+     "ecdsa-sha2-nistp384",
+     "ecdsa-sha2-nistp521",
+     "sk-ssh-ed25519@openssh.com",
+     "sk-ecdsa-sha2-nistp256@openssh.com",
+     "rsa-sha2-512",
+     "rsa-sha2-256"
+    ],
+    "kbdinteractiveauthentication": "no",
+    "kexalgorithms": [
+     "mlkem768x25519-sha256",
+     "sntrup761x25519-sha512",
+     "sntrup761x25519-sha512@openssh.com",
+     "curve25519-sha256",
+     "curve25519-sha256@libssh.org",
+     "ecdh-sha2-nistp256",
+     "ecdh-sha2-nistp384",
+     "ecdh-sha2-nistp521"
+    ],
+    "macs": [
+     "umac-64-etm@openssh.com",
+     "umac-128-etm@openssh.com",
+     "hmac-sha2-256-etm@openssh.com",
+     "hmac-sha2-512-etm@openssh.com",
+     "hmac-sha1-etm@openssh.com",
+     "umac-64@openssh.com",
+     "umac-128@openssh.com",
+     "hmac-sha2-256",
+     "hmac-sha2-512",
+     "hmac-sha1"
+    ],
+    "passwordauthentication": "yes",
+    "permitrootlogin": "without-password",
+    "port": "22",
+    "pubkeyacceptedalgorithms": [
+     "ssh-ed25519-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp256-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp384-cert-v01@openssh.com",
+     "ecdsa-sha2-nistp521-cert-v01@openssh.com",
+     "sk-ssh-ed25519-cert-v01@openssh.com",
+     "sk-ecdsa-sha2-nistp256-cert-v01@openssh.com",
+     "rsa-sha2-512-cert-v01@openssh.com",
+     "rsa-sha2-256-cert-v01@openssh.com",
+     "ssh-ed25519",
+     "ecdsa-sha2-nistp256",
+     "ecdsa-sha2-nistp384",
+     "ecdsa-sha2-nistp521",
+     "sk-ssh-ed25519@openssh.com",
+     "sk-ecdsa-sha2-nistp256@openssh.com",
+     "rsa-sha2-512",
+     "rsa-sha2-256"
+    ],
+    "pubkeyauthentication": "yes",
+    "requiredrsasize": "1024",
+    "usepam": "yes"
+   },
+   "key_size": null,
+   "location": "sshd -T",
+   "name": "sshd effective configuration",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "ssh_server_config"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "deleted": false,
+    "exe": "/usr/sbin/sshd",
+    "lib": "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+    "pids": [
+     1
+    ],
+    "ports": [
+     22
+    ],
+    "process": "sshd"
+   },
+   "key_size": null,
+   "location": "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+   "name": "sshd",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "process_library"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "block_devices": [
+     {
+      "fstype": "",
+      "mountpoint": "",
+      "name": "zram0",
+      "type": "disk"
+     },
+     {
+      "fstype": "/etc/resolv.conf",
+      "mountpoint": "",
+      "name": "vda",
+      "type": "disk"
+     },
+     {
+      "fstype": "",
+      "mountpoint": "",
+      "name": "vdb",
+      "type": "disk"
+     },
+     {
+      "fstype": "",
+      "mountpoint": "",
+      "name": "vdc",
+      "type": "disk"
+     },
+     {
+      "fstype": "",
+      "mountpoint": "",
+      "name": "vdd",
+      "type": "disk"
+     },
+     {
+      "fstype": "",
+      "mountpoint": "",
+      "name": "vde",
+      "type": "disk"
+     },
+     {
+      "fstype": "",
+      "mountpoint": "",
+      "name": "vdf",
+      "type": "disk"
+     }
+    ],
+    "crypto_policy": null,
+    "fips_enabled": null,
+    "host_key": {
+     "bits": 256,
+     "fingerprint": "SHA256:4GrJ+SPZwRaVxLw6OOPUCtwDW41jP+TF24utun505Rs",
+     "key_type": "ssh-ed25519"
+    },
+    "kernel": "6.18.44-fc-v378",
+    "listening": [
+     {
+      "address": "127.0.0.11",
+      "port": 36857,
+      "process": null
+     },
+     {
+      "address": "0.0.0.0",
+      "port": 22,
+      "process": "sshd"
+     }
+    ],
+    "openssl": {
+     "implementation": "OpenSSL",
+     "openssldir": "/usr/lib/ssl",
+     "version": "3.5.7"
+    },
+    "os": {
+     "id": "debian",
+     "name": "Debian GNU/Linux",
+     "pretty_name": "Debian GNU/Linux 13 (trixie)",
+     "version_id": "13"
+    },
+    "tier": 2
+   },
+   "key_size": null,
+   "location": "os",
+   "name": "Debian GNU/Linux 13 (trixie)",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "os_crypto_policy"
+  },
+  {
+   "algorithm": "aes-128-cbc",
+   "facts": {
+    "cipher": "aes-128-cbc",
+    "command": "openssl enc",
+    "decrypt": false,
+    "file": "/etc/cron.d/backup",
+    "hardcoded_passphrase": true,
+    "kind": "openssl_cli",
+    "line": 1,
+    "md": "md5",
+    "pbkdf2": false,
+    "salt": true
+   },
+   "key_size": null,
+   "location": "/etc/cron.d/backup:1",
+   "name": "openssl enc",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "crypto_config"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "ciphers": "HIGH:!aNULL",
+    "kind": "nginx",
+    "lines": [
+     3,
+     4
+    ],
+    "path": "/etc/nginx/sites-enabled/default",
+    "protocols": [
+     "TLSv1",
+     "TLSv1.2"
+    ],
+    "protocols_line": 3,
+    "protocols_raw": "TLSv1 TLSv1.2",
+    "server": "nginx"
+   },
+   "key_size": null,
+   "location": "/etc/nginx/sites-enabled/default",
+   "name": "default",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "crypto_config"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "format": "openssh",
+    "parsed": false,
+    "path": "/etc/ssh/ssh_host_ed25519_key",
+    "readable": false
+   },
+   "key_size": null,
+   "location": "/etc/ssh/ssh_host_ed25519_key",
+   "name": "ssh_host_ed25519_key",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "private_key"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "format": "openssh",
+    "parsed": false,
+    "path": "/etc/ssh/ssh_host_ecdsa_key",
+    "readable": false
+   },
+   "key_size": null,
+   "location": "/etc/ssh/ssh_host_ecdsa_key",
+   "name": "ssh_host_ecdsa_key",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "private_key"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "format": "openssh",
+    "parsed": false,
+    "path": "/etc/ssh/ssh_host_rsa_key",
+    "readable": false
+   },
+   "key_size": null,
+   "location": "/etc/ssh/ssh_host_rsa_key",
+   "name": "ssh_host_rsa_key",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "private_key"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "path": "/etc/ssl/private/lab.key",
+    "readable": false
+   },
+   "key_size": null,
+   "location": "/etc/ssl/private/lab.key",
+   "name": "lab.key",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "private_key"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "path": "/srv/app/legacy.key",
+    "readable": false
+   },
+   "key_size": null,
+   "location": "/srv/app/legacy.key",
+   "name": "legacy.key",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "private_key"
+  },
+  {
+   "algorithm": "RSA",
+   "facts": {
+    "index": 0,
+    "is_ca": true,
+    "issuer": "CN=lab.example",
+    "key_alg": "RSA",
+    "key_size": 2048,
+    "not_after": "2026-12-11T11:42:33Z",
+    "not_before": "2026-11-11T11:42:33Z",
+    "path": "/srv/app/server.pem",
+    "self_signed": true,
+    "serial": "457aaafcd7d2c8c7a83bdcb62a0e64cc26a252bb",
+    "sig_alg": "sha256WithRSAEncryption",
+    "source": "file",
+    "subject": "CN=lab.example"
+   },
+   "key_size": 2048,
+   "location": "/srv/app/server.pem",
+   "name": "CN=lab.example",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "certificate"
+  },
+  {
+   "algorithm": "RSA",
+   "facts": {
+    "index": 0,
+    "is_ca": true,
+    "issuer": "CN=legacy.example",
+    "key_alg": "RSA",
+    "key_size": 1024,
+    "not_after": "2027-12-16T11:42:33Z",
+    "not_before": "2026-11-11T11:42:33Z",
+    "path": "/srv/app/legacy.pem",
+    "self_signed": true,
+    "serial": "32002f911fce984e89482330d1b062089143eedb",
+    "sig_alg": "sha1WithRSAEncryption",
+    "source": "file",
+    "subject": "CN=legacy.example"
+   },
+   "key_size": 1024,
+   "location": "/srv/app/legacy.pem",
+   "name": "CN=legacy.example",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "certificate"
+  },
+  {
+   "algorithm": "ED25519",
+   "facts": {
+    "authorized_key": true,
+    "bits": 256,
+    "comment": "zs-node-parity",
+    "fingerprint": "SHA256:iLaYGA4q+FVsZMQnlzc0tcK9xVbON49y3AwlJrn1Qfw",
+    "path": "/home/zs-cbom/.ssh/authorized_keys",
+    "type": "ED25519"
+   },
+   "key_size": 256,
+   "location": "/home/zs-cbom/.ssh/authorized_keys",
+   "name": "zs-node-parity",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "public_key"
+  },
+  {
+   "algorithm": null,
+   "facts": {
+    "parsed": false,
+    "path": "/home/deploy/.ssh/authorized_keys",
+    "readable": false
+   },
+   "key_size": null,
+   "location": "/home/deploy/.ssh/authorized_keys",
+   "name": "authorized_keys",
+   "protocol": null,
+   "target": "172.22.0.2",
+   "type": "public_key"
+  }
+ ],
+ "collector_version": "1.0.0",
+ "elapsed_s": 1.94,
+ "error": null,
+ "finished_at": "2026-11-11T11:49:38Z",
+ "format": "zs-collect/1",
+ "host": {
+  "hostname": "lab-00",
+  "machine_id_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "os_id": "debian"
+ },
+ "result": {
+  "asset_count": 24,
+  "assets_lost": 0,
+  "counts": {
+   "failed": 0,
+   "ok": 1,
+   "skipped": 0,
+   "total": 1
+  },
+  "duration_s": 1,
+  "summary": "1 of 1 targets collected, 0 failed, 0 skipped; 24 assets",
+  "targets": [
+   {
+    "assets": 26,
+    "counted": true,
+    "duration_ms": 1936,
+    "error": null,
+    "status": "ok",
+    "target": "172.22.0.2"
+   }
+  ],
+  "truncated": false
+ },
+ "run_nonce": "parity-0123456789abcdef",
+ "started_at": "2026-11-11T11:49:36Z",
+ "status": "success",
+ "target_label": "172.22.0.2",
+ "tier": 2
+}
