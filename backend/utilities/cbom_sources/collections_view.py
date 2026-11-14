@@ -34,6 +34,7 @@ Nothing here writes: drift, run history and remediation assignments are untouche
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
@@ -47,6 +48,7 @@ _KEY_TYPES = frozenset({"ssh_host_key", "ssh_user_key", "private_key", "public_k
 _CDX_ASSET_TYPES = frozenset({"algorithm", "certificate", "protocol", "related-crypto-material"})
 # codes that are not a weakness of the algorithm itself (a quantum verdict, coverage, a calendar date)
 _NOT_WEAK = frozenset({"QUANTUM_VULNERABLE", "NO_PQ_KEX"})
+_CN = re.compile(r"(?:^|[,/])\s*CN\s*=\s*([^,/]+)", re.IGNORECASE)
 # network-probe evidence: assets a scan node read by connecting to an endpoint (TLS handshakes, SSH banners)
 NETWORK_TYPES = frozenset({"tls_endpoint", "ssh_endpoint"})
 
@@ -95,6 +97,28 @@ def _aware(moment: Any) -> _dt.datetime:
     if not isinstance(moment, _dt.datetime):
         return _dt.datetime(1970, 1, 1, tzinfo=UTC)
     return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+def _cn(name: Any) -> str:
+    text = " ".join(str(name or "").split())
+    match = _CN.search(text)
+    return (match.group(1) if match else text).strip().casefold()
+
+
+def _stamp(value: Any) -> str:
+    """ISO date-time to the second, no zone suffix ("2026-12-11T04:44:49"); "" when missing."""
+    text = str(value or "").strip().replace(" ", "T")
+    return text[:19] if len(text) >= 19 else text
+
+
+def cert_identity(subject: Any, issuer: Any, not_before: Any, not_after: Any) -> str | None:
+    """LEGACY (pre CB-21) DN identity: subject CN, issuer CN, notBefore, notAfter; None without a subject or notAfter.
+    The team view no longer uses it (``asset_keys``); kept unchanged for ``run_results`` (CB-38), whose per-run
+    managed/chain certificate matching can move to ``asset_keys.asset_key`` (ACM "Amazon" vs node DN) later."""
+    subject_cn, after = _cn(subject), _stamp(not_after)
+    if not subject_cn or not after:
+        return None
+    return "cert|" + "|".join((subject_cn, _cn(issuer), _stamp(not_before), after))
 
 
 def origin_label(origin: Mapping[str, Any] | None) -> str:
@@ -383,5 +407,5 @@ def resolve(code_observations: Iterable[tuple[int, _dt.datetime, str]], rows: It
 
 
 __all__ = ["Collection", "link_certificates", "NETWORK_TYPES", "REMEDIATION_BUCKET", "ORIGIN_CODE", "ORIGIN_SOURCES", "Resolution", "SourcesResult",
-           "SourcesRow", "code_cert_identities", "code_row_identity", "latest_jobs",
+           "SourcesRow", "cert_identity", "code_cert_identities", "code_row_identity", "latest_jobs",
            "load_sources_result", "node_row", "origin_label", "resolve"]
