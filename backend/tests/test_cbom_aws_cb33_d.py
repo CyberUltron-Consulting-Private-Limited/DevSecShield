@@ -133,6 +133,9 @@ def test_the_upgrade_resolves_nothing_and_an_acme_certificate_appears_as_new():
     before, after = stored(certs(False, False)), stored(certs(True, True))
     d = D.compare(D.node_views(before, "src", reclassify=False), D.node_views(after, "src", reclassify=False),
                   D.job_gaps(after))
-    assert d["resolved"] == [] and d["opened"] == [] and d["removed"] == []
+    assert d["resolved"] == [] and d["removed"] == [] and d["collector_changes"] == []
     assert [x["location"] for x in d["added"]] == [f"{ACM_PREFIX}c1"]
+    # the ACME certificate's own findings come with it (new_asset); no finding of a known certificate opens
+    assert {(x["location"], x.get("new_asset")) for x in d["opened"]} <= {(f"{ACM_PREFIX}c1", True)}
+    assert "CERT_UNUSED" not in {x["code"] for x in d["opened"]}
     assert all(a.target == LABEL for a in after)
