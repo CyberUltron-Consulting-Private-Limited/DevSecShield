@@ -445,6 +445,9 @@ class JobContext:
         }
         if held:
             out["never_scan_unresolved"] = held[:100]
+        # whether any address was checked against the listed host names: only then does a missing
+        # never_scan_unresolved mean "they resolved" (a job that checked no address says nothing; #298 review)
+        out["never_scan_checked"] = bool(getattr(self.never_scan, "names_checked", False))
         if window:
             out["stopped"] = "window_closed"
         refused = self.breaker.refused()

@@ -123,11 +123,11 @@ export const RANGE_HINT =
 
 /**
  * What a held never-scan host name means for one scan node (Minor 2 of the #250 review): the node could not resolve
- * the name in its latest job, so it cannot tell which address is that host and scans nothing for this team until the
- * name resolves there or is removed from the list. ``since`` is already formatted for the reader.
+ * the name in its latest job that checked an address, so it cannot tell which address is that host and scans no
+ * address for this team until the name resolves there or is removed from the list. ``since`` is already formatted.
  */
 export function heldNote(nodeName: string, since: string): string {
-  return `${nodeName} cannot resolve this name (since ${since}), so it scans nothing for this team: every job of the team on ${nodeName} holds all its targets until the name resolves there or is removed from this list.`;
+  return `${nodeName} cannot resolve this name (since ${since}), so it scans no network address for this team: every job of the team on ${nodeName} that connects to an address (servers, appliances, databases, registries, range sweeps) holds all its targets until the name resolves there or is removed from this list. Jobs that reach no address, such as a PKCS#11 token on the node, still run.`;
 }
 
 /** The held entries for one stored entry (same name, case and a trailing dot aside). */

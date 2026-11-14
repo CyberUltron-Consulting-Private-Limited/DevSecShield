@@ -328,7 +328,22 @@ def open_session(ctx: JobContext, target: Target, config: dict, creds: dict) -> 
     except OSError as exc:
         code = "no_route" if getattr(exc, "errno", None) in (101, 113) else "unreachable"
         raise TargetFail(code, exc.__class__.__name__) from None
-    transport = paramiko.Transport(sock)
+    transport = None
+    try:
+        transport = paramiko.Transport(sock)
+        return _login(ctx, target, config, creds, transport, port, user, policy, host_port)
+    except BaseException:
+        # any failure after connecting (a refusal, a pin file or key error) closes the connection: a Transport that
+        # never started does not close its socket itself
+        if transport is not None:
+            transport.close()
+        sock.close()
+        raise
+
+
+def _login(ctx: JobContext, target: Target, config: dict, creds: dict, transport: paramiko.Transport, port: int,
+           user: str, policy: str, host_port: str) -> Session:
+    """Handshake, host key check and login on a connected ``transport`` (open_session closes it on any raise)."""
     transport.banner_timeout = 15
     transport.auth_timeout = 20
     _accept_rfc8731_curve25519(transport)
@@ -941,7 +956,8 @@ def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         except Exception as exc:  # noqa: BLE001 - an SSH (or any) error on one server fails its sample, never the job
             ctx.log("test target error", target=target.label, error=exc.__class__.__name__, level="warn")
             reachable, note = target_error(exc)
-            sample.update(status="error", reachable=reachable, note=ctx.scrubber.text(note))
+            # after a login the server was reached, whatever broke later (a socket error mid-session included)
+            sample.update(status="error", reachable=True if sample["login"] else reachable, note=ctx.scrubber.text(note))
         ctx.samples.append(sample)
     ready = sum(1 for s in ctx.samples if s["status"] == "ready")
     return f"{ready} of {len(ctx.samples)} samples ready"
@@ -957,17 +973,19 @@ def _test_target(ctx: JobContext, target: Target, config: dict, creds: dict, tie
     if skip:
         sample.update(status=skip, reachable=None, note=ctx.credential_skip_note(skip) or skip)
         return
+    status = "error"  # an unexpected error still gives the login back to the credential breaker
     try:
         sess = open_session(ctx, target, config, creds)
+        status = "ok"
     except TargetFail as fail:
-        if guarded:
-            ctx.login_done(fail.status)
+        status = fail.status
         sample["reachable"] = None if fail.status.startswith("skipped_") else \
             fail.status not in ("unreachable", "refused", "timeout", "no_route")
         sample.update(status=fail.status, note=fail.error)
         return
-    if guarded:
-        ctx.login_done("ok")
+    finally:
+        if guarded:
+            ctx.login_done(status)
     sample.update(reachable=True, login=True)
     missing = ""
     try:

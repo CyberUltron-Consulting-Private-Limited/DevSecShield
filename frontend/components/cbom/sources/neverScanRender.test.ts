@@ -168,7 +168,7 @@ async function main() {
   assert.ok(held[0].closest('[data-testid="network-exclusion-hostname"]')!.textContent!.includes(words.storedExclusionIssue("printer.corp.invalid")!))
   assert.ok(held[0].textContent!.includes("Held on dc-mumbai-01"), held[0].textContent ?? "")
   assert.ok(held[0].textContent!.includes("dc-mumbai-01 cannot resolve this name (since "), held[0].textContent ?? "")
-  assert.ok(held[0].textContent!.includes("every job of the team on dc-mumbai-01 holds all its targets"), held[0].textContent ?? "")
+  assert.ok(held[0].textContent!.includes("every job of the team on dc-mumbai-01 that connects to an address"), held[0].textContent ?? "")
   // static notes are not live errors: nothing announces itself as an alert when the tab opens
   assert.equal(tab.host.querySelectorAll('[role="alert"]').length, 0, "no role=alert before the customer acts")
   // the Remove button of a marked entry points to its note; the others point nowhere

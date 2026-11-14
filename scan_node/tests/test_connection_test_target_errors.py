@@ -129,3 +129,78 @@ def test_a_collection_still_reports_an_unexpected_error_as_the_jobs_error(monkey
     ctx.kind = "collect"
     with pytest.raises(RuntimeError):
         C.run_job(ctx, {"kind": "collect"}, {}, {"kind": "database", "config": {"host": "db"}, "secrets": {}})
+
+
+# --------------------------------------------------------------------------- #298 review
+def test_an_unexpected_ssh_error_gives_the_login_back_to_the_credential_breaker(monkeypatch):
+    """CB-10 + #298: with a password every login holds a breaker slot until login_done; an unexpected error from
+    open_session must release it too, or after three such servers the fourth waits for a slot that never frees."""
+    released = []
+    monkeypatch.setattr(L, "open_session",
+                        lambda *a, **k: (_ for _ in ()).throw(paramiko.SSHException("Error reading SSH protocol banner")))
+    ctx = _ctx()
+    ctx.deadline = time.monotonic() + 3  # a leaked slot makes the later targets wait until here
+    real = ctx.login_done
+    monkeypatch.setattr(ctx, "login_done", lambda status: (released.append(status), real(status)))
+    targets = [f"192.0.2.{i}" for i in range(1, 6)]
+    L.test(ctx, PASSWORD, {"password": "pw"}, {"targets": targets})
+    assert [s["status"] for s in ctx.samples] == ["error"] * 5
+    assert released == ["error"] * 5 and ctx.breaker._in_flight == 0
+
+
+def test_a_socket_error_after_login_keeps_the_server_reachable(monkeypatch):
+    monkeypatch.setattr(L, "open_session", lambda *a, **k: _Session())
+    monkeypatch.setattr(L, "run_tier2", lambda sess, name: (_ for _ in ()).throw(ConnectionResetError(104, "reset")))
+    ctx = _ctx()
+    L.test(ctx, {**PASSWORD, "tier": 2}, {"password": "pw"}, {"targets": ["192.0.2.1"]})
+    (sample,) = ctx.samples
+    assert sample["status"] == "error" and sample["login"] is True and sample["reachable"] is True
+
+
+def test_open_session_closes_the_connection_when_anything_after_connect_raises(monkeypatch, tmp_path):
+    import socket
+
+    from zs_scan_node import netutil
+
+    mine, theirs = socket.socketpair()
+    monkeypatch.setattr(netutil, "connect", lambda *a, **k: mine)
+    monkeypatch.setattr(L, "load_pins", lambda state_dir: (_ for _ in ()).throw(OSError("pin file unreadable")))
+    ctx = _ctx()
+    ctx.state_dir = str(tmp_path)
+    (target,), _skipped = netutil.expand_targets(["192.0.2.1"], NeverScan([]))
+    with pytest.raises(OSError):
+        L.open_session(ctx, target, {"host_key_policy": "tofu"}, {"key": object()})
+    assert mine.fileno() == -1  # closed, not leaked to the next target
+    theirs.close()
+
+
+def test_a_multi_target_test_that_crashes_after_a_ready_sample_cannot_pass(monkeypatch):
+    """#298 review: the fallback used to add nothing when targets[0] already had a (ready) sample, so a fleet or
+    network test that raised half way read as "passed"."""
+    from zs_scan_node.collectors import fleet as F
+
+    def half_way(ctx, config, secrets, scope):
+        ctx.samples.append({"target": "web-1", "status": "ready", "reachable": True, "login": True,
+                            "privilege": None, "note": "ok"})
+        raise RuntimeError("transport bug")
+
+    monkeypatch.setattr(F, "test", half_way)
+    ctx = _ctx()
+    status, error, summary = C.run_job(ctx, {"kind": "test_connection"}, {"targets": ["web-1", "web-2"]},
+                                       {"kind": "awx_hosts", "config": {}, "secrets": {}})
+    assert (status, error) == ("success", None) and summary == "1 of 2 samples ready"
+    stopped = ctx.samples[-1]
+    assert stopped["target"] == "web-1 (test stopped)" and stopped["status"] == "error"
+    assert "RuntimeError: transport bug" in stopped["note"] and "test stopped here" in stopped["note"]
+    assert "other targets are tested" not in stopped["note"]
+
+
+def test_a_network_test_that_crashes_on_its_first_target_still_fails_it(monkeypatch):
+    from zs_scan_node.collectors import network as N
+
+    monkeypatch.setattr(N, "test_range", lambda ctx, scope: (_ for _ in ()).throw(OSError("bad socket")))
+    ctx = _ctx()
+    C.run_job(ctx, {"kind": "test_connection"}, {"targets": ["10.0.0.0/30"]},
+              {"kind": "network_range", "config": {}, "secrets": {}})
+    (sample,) = ctx.samples
+    assert sample["target"] == "10.0.0.0/30" and sample["status"] == "error" and sample["reachable"] is False
