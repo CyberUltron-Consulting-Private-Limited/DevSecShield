@@ -181,6 +181,7 @@ jobs:
             fi
           fi
           if [ "$mode" = diff ]; then
+            git worktree prune # a self-hosted runner keeps .git; a previous job's worktree is gone with its RUNNER_TEMP
             git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" >/dev/null
             echo "BASE_DIR=$RUNNER_TEMP/base" >> "$GITHUB_ENV"
             # Renamed files: their base findings are compared under the new name (findings.py).

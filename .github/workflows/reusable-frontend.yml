@@ -118,7 +118,9 @@ jobs:
           auth=$(printf 'x-access-token:%s' "$FETCH_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
           # Also the files the PR adds or modifies, and its renames, for the comparison.
+          # (prune: a self-hosted runner keeps .git, and a previous job's worktree in its old RUNNER_TEMP is gone)
           if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch -q --no-tags --depth=1 origin "$BASE_SHA" \
+             && git worktree prune \
              && git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA" > /dev/null \
              && git -c core.quotePath=false diff --no-ext-diff -M --name-only --diff-filter=AMR "$BASE_SHA" HEAD > "$RUNNER_TEMP/changed.txt" \
              && git -c core.quotePath=false diff --no-ext-diff -M --name-status --diff-filter=R "$BASE_SHA" HEAD > "$RUNNER_TEMP/renames.tsv" \
