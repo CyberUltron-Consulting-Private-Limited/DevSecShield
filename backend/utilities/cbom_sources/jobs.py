@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import and_, case, delete, func, or_, update
+from sqlalchemy.orm import aliased
 from sqlmodel import Session, select
 
 from backend.new_models import (
@@ -32,6 +33,7 @@ from backend.utilities.cbom_sources.node_facts import normalise_tls
 from backend.utilities.cbom_sources.common import audit, clean_text, log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
 from backend.utilities.cbom_sources.kinds import KINDS, METADATA_FIELDS
+from backend.utilities.cbom_sources import ops_metrics as OPS
 from backend.utilities.cbom_sources import policy_scope as PS
 from backend.utilities.cbom_sources.planning import credits, node_status, team_range_cidrs
 from backend.utilities.cbom_sources.settings import get_or_create_settings, team_exclusions, window_allows, window_end
@@ -266,6 +268,7 @@ def reap(session: Session, now: _dt.datetime, *, team_id: int | None = None, nod
                 _test_result_from_job(session, job, now)
                 audit(session, team_id=job.team_id, actor_type="system", actor_id=None, action=f"job.lease_expired.{target}",
                       object_type="job", object_id=job.id)
+                OPS.bump(session, OPS.LEASE_EXPIRED[target], now=now)  # cbom_job_lease_expiries_total (CB-31)
                 log("job lease expired", team=job.team_id, job=job.id, node=job.node_id, status=target,
                     attempt=job.attempts, refunded_c=refunded)
                 moved += 1
@@ -885,6 +888,12 @@ def _owned_job(session: Session, node: CbomScanNode | None, job_id: int, team_id
     return job
 
 
+def _count_field(result: dict[str, Any], name: str) -> int | None:
+    """A non-negative integer the node reported, else None (absent, a bool, a string: not trusted as a count)."""
+    value = result.get(name)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored: int,
              read: int | None = None) -> tuple[str, dict[str, Any]]:
     """ok / partial / failed from the node's own target counts and what the server actually stored.  A ``partial``
@@ -909,7 +918,18 @@ def _outcome(job: CbomCollectionJob, status: str, result: dict[str, Any], stored
         extra["excluded_by_policy"] = excluded
         skipped -= excluded
     reported = result.get("asset_count")
-    if job.kind == "collect" and isinstance(reported, int) and reported != stored:
+    sent = _count_field(result, "sent")
+    if job.kind == "collect" and sent is not None:
+        # CB-31 (R4 OBS-5): a node that reports what it sent.  Every asset it sent is stored, a duplicate of one
+        # already stored (a retried batch), or lost on the way (``assets_lost``, also the Truncated badge); anything
+        # else, assets the server refused among them, is a mismatch the badge must show.
+        duplicate = _count_field(result, "duplicate") or 0
+        lost = _count_field(result, "assets_lost") or 0
+        expected = sent - duplicate - lost
+        if expected != stored:
+            extra["asset_mismatch"] = {"reported": expected, "stored": stored, "sent": sent, "duplicate": duplicate,
+                                       "rejected": _count_field(result, "rejected") or 0, "lost": lost}
+    elif job.kind == "collect" and isinstance(reported, int) and reported != stored:  # an older node
         extra["asset_mismatch"] = {"reported": reported, "stored": stored}
     if not counts:
         return ("partial" if extra or result.get("truncated") else "ok"), extra
@@ -1068,6 +1088,7 @@ def add_assets(
     known += [s for s in (known_secrets or []) if isinstance(s, str)]
     rows, rejected, in_batch_dups = asset_rows(job, assets, known, now)
     inserted, existing, dropped, cap_reached = store_rows(session, job, job, lease_id, rows)
+    OPS.bump(session, OPS.INGEST_REJECTED, rejected, now)  # cbom_ingest_rejected_assets_total (CB-31)
     total = int(session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
         CbomCollectedAsset.job_id == job.id, CbomCollectedAsset.attempt == job.attempts)).one())
     duplicate = in_batch_dups + existing
@@ -1240,25 +1261,29 @@ def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_ca
     whose oldest pending job is oldest).  While more than one team has pending work, a team already running
     ``team_cap`` jobs is passed over, so a team with one job is served by the next free worker however many slices
     another team has queued; a team that is alone in the queue may use the whole pool.  On PostgreSQL the team's rows
-    are taken ``FOR UPDATE SKIP LOCKED`` and, while the cap applies, under a per-team transaction advisory lock taken
-    with ``pg_try_advisory_xact_lock`` (a team another claimer is busy with is skipped, never waited for: no lock
-    cycle between claimers).  The guarded ``status = 'pending'`` UPDATE re-checks the cap, which keeps SQLite (tests)
-    exact too.  The caller commits."""
+    are taken ``FOR UPDATE SKIP LOCKED`` under a per-team transaction advisory lock taken with
+    ``pg_try_advisory_xact_lock`` (a team another claimer is busy with is skipped, never waited for: no lock cycle
+    between claimers).
+
+    Whether the cap applies is decided again inside the claiming UPDATE, never only from the queue read above: the
+    guarded ``status = 'pending'`` UPDATE claims only while the team is under the cap OR no other team has pending
+    work at that moment.  The queue read is an unlocked snapshot: another team's work can appear between it and the
+    UPDATE (its collection fanned out into slices just then), and a claim decided "alone" from that snapshot took the
+    team past its cap while the other team waited (the flaky test_the_team_cap_holds_while_another_team_is_waiting).
+    On SQLite the UPDATE holds the write lock, so the guard is exact; on PostgreSQL the advisory lock serialises the
+    team's claims and the guard reads the queue at the UPDATE's own snapshot.  The caller commits."""
     pg = session.get_bind().dialect.name == "postgresql"
     running = _cloud_running(session)
     waiting = session.exec(
         select(CbomCollectionJob.team_id, func.min(CbomCollectionJob.id))
         .where(*_cloud_queue(), CbomCollectionJob.status == "pending").group_by(CbomCollectionJob.team_id)).all()
-    cap = (team_cap or team_max_concurrency()) if len(waiting) > 1 else None
+    cap = team_cap or team_max_concurrency()
+    contended = len(waiting) > 1
     for team_id, _oldest in sorted(waiting, key=lambda row: (running.get(int(row[0]), 0), row[1])):
-        if cap is not None:
-            if running.get(int(team_id), 0) >= cap:
-                continue
-            if pg:
-                if not session.exec(select(func.pg_try_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id)))).one():
-                    continue  # another claimer is taking this team's place now
-                if _cloud_running(session, int(team_id)).get(int(team_id), 0) >= cap:
-                    continue
+        if contended and running.get(int(team_id), 0) >= cap:
+            continue  # the snapshot already says no; the UPDATE's guard decides every other case
+        if pg and not session.exec(select(func.pg_try_advisory_xact_lock(_CLAIM_LOCK_NS, int(team_id)))).one():
+            continue  # another claimer is taking this team's place now
         payload = _claim_for_team(session, now, worker, int(team_id), pg, cap)
         if payload is not None:
             return payload
@@ -1266,7 +1291,7 @@ def claim_cloud_job(session: Session, now: _dt.datetime, worker: str, *, team_ca
 
 
 def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: int, pg: bool,
-                    cap: int | None) -> dict | None:
+                    cap: int) -> dict | None:
     query = (
         select(CbomCollectionJob)
         .where(*_cloud_queue(), CbomCollectionJob.team_id == team_id, CbomCollectionJob.status == "pending")
@@ -1304,12 +1329,15 @@ def _claim_for_team(session: Session, now: _dt.datetime, worker: str, team_id: i
                           object_type="job", object_id=job.id, changed_fields=["stale_source"])
             continue
         lease_id = secrets.token_hex(12)
-        # the team's cap, checked again inside the claiming UPDATE (on SQLite the UPDATE holds the write lock, so this
-        # is exact; on PostgreSQL the advisory lock above serialises the team's claims)
-        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending"]
-        if cap is not None:
-            guard.append(select(func.count()).select_from(CbomCollectionJob)
-                         .where(CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery() < cap)
+        # the team's cap, decided inside the claiming UPDATE: under the cap, or no other team waiting right now (on
+        # SQLite the UPDATE holds the write lock, so this is exact; on PostgreSQL the advisory lock above serialises
+        # the team's claims). Never from the queue snapshot alone (see claim_cloud_job).
+        other = aliased(CbomCollectionJob)
+        others_waiting = (select(other.id).where(other.node_id.is_(None), other.kind.in_(CLOUD_KINDS),  # type: ignore[union-attr,attr-defined]
+                                                  other.status == "pending", other.team_id != team_id).exists())
+        under_cap = select(func.count()).select_from(CbomCollectionJob).where(
+            CbomCollectionJob.team_id == team_id, *_running_cond()).scalar_subquery() < cap
+        guard = [CbomCollectionJob.id == job.id, CbomCollectionJob.status == "pending", or_(under_cap, ~others_waiting)]
         changed = session.exec(
             update(CbomCollectionJob)
             .where(*guard)

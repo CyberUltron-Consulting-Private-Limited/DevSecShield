@@ -101,6 +101,7 @@ from backend.utilities.cbom_sources.schemas import (
     VendorCreate,
     VendorUpdate,
 )
+from backend.utilities.cbom_sources.node_release import server_release
 from backend.utilities.cbom_sources.serialize import (
     last_collects,
     public_area,
@@ -262,9 +263,10 @@ def _list_nodes(engine, team_id: int) -> dict:
         settings = get_or_create_settings(session, team_id)
         counts = _node_counts(session, team_id, settings)
         rows = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id).order_by(CbomScanNode.id)).all()
+        server = server_release()  # the shipped node build, read once per list (not per node)
         return {"server_time": iso_z(now), "nodes": [
             public_node(n, now, assigned_targets=counts.get(n.id, {}).get("targets", 0),
-                        sources=counts.get(n.id, {}).get("sources", 0)) for n in rows]}
+                        sources=counts.get(n.id, {}).get("sources", 0), server=server) for n in rows]}
 
 
 @router.get(BASE + "/nodes", dependencies=READ, summary="List scan nodes")
@@ -1737,6 +1739,13 @@ def _asset_detail(engine, team_id: int, asset_id: int) -> dict:
         # the code page's dialog fields, from the same function as the run's /assets items (CB-38 W2b): a dialog
         # opened from top risks or a certificate shows the same OWASP / controls / fix as one opened from the table
         RUN_ASSETS.add_code_page_fields(out)
+        # engine step 3: the estate asset this row is, its owners / applications / data classification and the code
+        # and SBOM components that use it (None until the estate store has written the row's run)
+        from backend.utilities.cbom_sources import estate_links as LINKS
+
+        key = LINKS.estate_key_of_row(session, team_id, row)
+        out["correlation"] = ({"estate_key": key, **LINKS.correlation(session, team_id, [key])[key]}
+                              if key else None)
         return {"asset": out}
 
 

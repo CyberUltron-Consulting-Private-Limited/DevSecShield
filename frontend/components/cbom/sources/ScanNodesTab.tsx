@@ -39,6 +39,7 @@ import {
   nodeImages,
   nodeInstallNames,
   offersRegistrationToken,
+  pluralize,
   readTextFile,
   registrationOutcome,
   registryInstall,
@@ -49,6 +50,7 @@ import {
   type InstallLinks,
   type NodeTrust,
 } from "./logic";
+import { NODE_UPDATE_STEPS, nodeUpdateBadge, nodesNeedingUpdate } from "./nodeUpdate";
 import { revealById } from "./reveal";
 import {
   Checkbox2,
@@ -275,6 +277,8 @@ export default function ScanNodesTab({
 
   const online = nodes.filter((n) => n.status === "online").length;
   const offline = nodes.filter((n) => n.status === "offline").length;
+  const stale = nodesNeedingUpdate(nodes);
+  const serverBuild = nodes.find((n) => n.update?.server_build)?.update?.server_build ?? null;
   const assigned = nodes.reduce((sum, n) => sum + (n.assigned_targets || 0), 0);
 
   if (nodesQuery.isLoading) return <LoadingBlock />;
@@ -350,6 +354,16 @@ export default function ScanNodesTab({
             </button>
           </div>
         )}
+        {stale > 0 && (
+          <div
+            role="status"
+            className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+            data-testid="nodes-update-available"
+          >
+            {pluralize(stale, "scan node")} {stale === 1 ? "is" : "are"} not running this server&apos;s node build
+            {serverBuild ? ` ${serverBuild}` : ""}, so fixes made on the node since then are not in {stale === 1 ? "its" : "their"} results. {NODE_UPDATE_STEPS}
+          </div>
+        )}
         {nodes.length === 0 ? (
           <EmptyState
             title="No scan nodes yet"
@@ -402,7 +416,9 @@ export default function ScanNodesTab({
                           )}
                         </span>
                       </TableCell>
-                      <TableCell className="text-zinc-600 dark:text-zinc-400">{node.node_version ?? "—"}</TableCell>
+                      <TableCell className="text-zinc-600 dark:text-zinc-400">
+                        <NodeVersion node={node} />
+                      </TableCell>
                       <TableCell>{node.enrolled_at ? <SigningBadge node={node} /> : <span className="text-zinc-500">—</span>}</TableCell>
                       <TableCell className="text-zinc-600 dark:text-zinc-400">{ago(node.last_heartbeat_at, serverNow)}</TableCell>
                       <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{node.assigned_targets.toLocaleString()}</TableCell>
@@ -816,6 +832,9 @@ function NodeDialog({
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <Detail label="Host name" value={node.hostname} />
               <Detail label="Version" value={node.node_version} />
+              {nodeUpdateBadge(node.update) && (
+                <Detail label="Update" value={`${nodeUpdateBadge(node.update)!.message}${node.update?.state === "update_available" ? ` ${NODE_UPDATE_STEPS}` : ""}`} wide />
+              )}
               <Detail label="Source IPs (tell your SOC)" value={node.source_ips.join(", ") || null} />
               <Detail label="Registered" value={node.enrolled_at ? ago(node.enrolled_at, serverNow) : "Not yet"} />
               <Detail label="Clock" value={node.clock_skew_s == null ? null : `${node.clock_skew_s > 0 ? "+" : ""}${node.clock_skew_s} s vs ZeroShield`} />
@@ -976,5 +995,21 @@ function Detail({ label, value, wide }: { label: string; value: string | null | 
       <dt className="text-zinc-500">{label}</dt>
       <dd className="text-zinc-900 dark:text-white break-words">{value || "—"}</dd>
     </div>
+  );
+}
+
+/** The reported version, and "Update available" when the node is not running this server's node build (B6-1). */
+function NodeVersion({ node }: { node: CbomScanNode }) {
+  const badge = nodeUpdateBadge(node.update);
+  return (
+    <span className="inline-flex flex-col items-start gap-1" data-testid={`node-version-${node.id}`}>
+      <span>{node.node_version ?? "—"}</span>
+      {badge && (
+        <StatusBadge tone={badge.tone} title={badge.message}>
+          {badge.label}
+        </StatusBadge>
+      )}
+      {badge && <span className="text-xs text-zinc-500">{badge.short}</span>}
+    </span>
   );
 }
