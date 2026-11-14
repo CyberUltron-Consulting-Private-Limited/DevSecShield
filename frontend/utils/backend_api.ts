@@ -1,6 +1,7 @@
 import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
 import type { InstallLinks, NodeArtifacts } from "@/components/cbom/sources/logic"
+import type { CbomSourceUsage } from "@/components/cbom/sources/sourceLimit"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
 
@@ -2603,6 +2604,7 @@ const reinitializeCBOMScanWithPayload = async (
  */
 export const CBOM_DELIVERABLES = [
   { slug: "scope-baseline-register", number: 1, title: "Scope Baseline & Asset Population Register" },
+  { slug: "quantum-risk-register", number: 2, title: "Quantum Risk Register" },
   { slug: "methodology-evidence-plan", number: 3, title: "Cryptographic Discovery Methodology & Evidence Plan" },
   { slug: "infrastructure-cloud-encryption-posture", number: 5, title: "Infrastructure & Cloud Encryption Posture" },
   { slug: "network-tls-protocol-assessment", number: 6, title: "Network, TLS & Crypto Protocol Assessment" },
@@ -4261,7 +4263,7 @@ export type CbomSourceKind =
     | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
-export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
+export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error" | "skipped"
 export type CbomJobStatus = "pending" | "claimed" | "success" | "failure" | "cancelled" | "expired"
 export type CbomRunStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
 /** Evidence confidence (CB-18): E0 Unknown, E1 Self-attested, E2 Documented, E3 Verified. Not the quantum risk grade. */
@@ -4614,6 +4616,11 @@ export interface CbomRunPosture {
 
 export interface CbomAssetDetail {
     id: number
+    /** the code page's finding dialog fields, as on the run's /assets items (CB-38 W2b) */
+    bom_ref?: string
+    owasp_top_10?: Record<string, string>
+    compliance_controls?: Record<string, string>
+    suggested_fix?: string | null
     type: string
     name: string | null
     location: string
@@ -4689,6 +4696,7 @@ export interface CbomSourcesOverview {
     plan: CbomEstimate
     evidence: { areas: number; answered: number; by_confidence: Record<CbomConfidence, number>; vendors: number; q0_gap_count?: number }
     code: { cbom_scans: number }
+    limits?: { sources: CbomSourceUsage }  // #224: usage against the team's source cap
     settings: {
         stop_all_network: boolean
         next_window_start: string | null
@@ -5263,6 +5271,14 @@ export interface CbomRunParity {
 export async function getCbomRunParity(team_id: number, run_id: number): Promise<CbomRunParity> {
     const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/parity`)
     return response.data as CbomRunParity
+}
+
+/** GET /{team}/cbom/sources/runs/{run}/assets/{asset}/remediation (W2b, PARITY.md S15): the code page's "Remediation,
+ * fix code and exploit demo" data for a run asset, from the same knowledge-base builder (404 on an older backend). */
+export async function getCbomRunAssetRemediation(team_id: number, run_id: number, asset_id: number): Promise<RemediationData> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/assets/${asset_id}/remediation`)
+    const body = response.data as RemediationData | { remediation: RemediationData }
+    return "remediation" in body && body.remediation && typeof body.remediation === "object" ? body.remediation : body as RemediationData
 }
 
 /** GET /{team}/cbom/sources/runs/{run}/results (W2). 404 from an older backend is the caller's to handle. */

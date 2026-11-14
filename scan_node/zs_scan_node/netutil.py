@@ -23,6 +23,7 @@
 """
 from __future__ import annotations
 
+import collections
 import heapq
 import ipaddress
 import socket
@@ -745,16 +746,70 @@ def requests_adapter(host: str, ip: str, never: NeverScan):
     return _Pinned()
 
 
-def iter_line_ips(line: str) -> Iterator[str] | None:
-    """Addresses of an IP / CIDR / range line, or None if the line is a hostname."""
+# Network and broadcast addresses (N3, 14 Nov 2026; review of #250): an IPv4 CIDR line of /30 or larger leaves out its
+# network or broadcast address only where that address is an OUTER EDGE of the contiguous block the configured lines
+# form together (the network the customer entered).  A /23 split into two /24s keeps x.x.0.255 and x.x.1.0, a /24
+# split into two /25s keeps .127 and .128, and a real /29 on its own still skips its network and broadcast.  An address
+# written out (alone or in an a-b range) is always scanned; IPv6 is always scanned whole.  A network range's job says
+# which of its addresses to skip (``skip_addresses``, computed by ZeroShield over every range of the team, which this
+# node cannot see); a server source's target list is applied here as one block (``boundary_skips``).  Same rule as
+# the backend's counts (targets.boundary_skips).
+
+
+def _v4_interval(line: str) -> tuple[int, int, bool] | None:
+    """(first, last, is_cidr) of an IPv4 address, CIDR or a-b line, or None."""
+    text = line.strip()
+    try:
+        if "/" in text:
+            net = ipaddress.ip_network(text, strict=False)
+            return (int(net.network_address), int(net.broadcast_address), True) if net.version == 4 else None
+        if "-" in text:
+            left, right = (x.strip() for x in text.split("-", 1))
+            a, b = ipaddress.ip_address(left), ipaddress.ip_address(right)
+            return (int(a), int(b), False) if a.version == b.version == 4 and int(b) >= int(a) else None
+        addr = ipaddress.ip_address(text)
+        return (int(addr), int(addr), False) if addr.version == 4 else None
+    except ValueError:
+        return None
+
+
+def boundary_skips(lines: list[str]) -> set[str]:
+    """IPv4 addresses (text) left out of ``lines`` as network/broadcast addresses (rule above)."""
+    every, nets, written = [], [], []
+    for line in lines:
+        iv = _v4_interval(str(line))
+        if iv is None:
+            continue
+        every.append(iv[:2])
+        if iv[2]:
+            if iv[1] - iv[0] + 1 >= 4:  # a /31 and a /32 have no network or broadcast address
+                nets.append(iv[:2])
+        else:
+            written.append(iv[:2])
+    blocks: list[list[int]] = []
+    for first, last in sorted(every):
+        if blocks and first <= blocks[-1][1] + 1:
+            blocks[-1][1] = max(blocks[-1][1], last)
+        else:
+            blocks.append([first, last])
+    starts, ends = {b[0] for b in blocks}, {b[1] for b in blocks}
+    skip = {f for f, _l in nets if f in starts} | {l for _f, l in nets if l in ends}
+    return {str(ipaddress.IPv4Address(a)) for a in skip if not any(w[0] <= a <= w[1] for w in written)}
+
+
+def iter_line_ips(line: str, skip: set[str] | frozenset[str] | None = None) -> Iterator[str] | None:
+    """Addresses of an IP / CIDR / range line, or None if the line is a hostname.  ``skip``: the addresses a CIDR line
+    leaves out as network/broadcast (``boundary_skips`` of the lines it was configured with); None: the line alone."""
     text = line.strip()
     try:
         if "/" in text:
             net = ipaddress.ip_network(text, strict=False)
             if net.num_addresses == 1:
                 return iter([ip_text(net.network_address)])
-            hosts = net.hosts() if net.version == 4 and net.prefixlen <= 30 else iter(net)
-            return (ip_text(a) for a in hosts)
+            if net.version != 4:
+                return (ip_text(a) for a in net)
+            left_out = boundary_skips([text]) if skip is None else skip
+            return (t for t in (ip_text(a) for a in net) if t not in left_out)
         if "-" in text:
             left, right = text.split("-", 1)
             try:
@@ -777,8 +832,9 @@ def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED
     seen: set[str] = set()
     targets: list[Target] = []
     skipped: list[str] = []
+    edges = boundary_skips(lines)  # the list is one configuration: network/broadcast only at its outer edges (N3)
     for line in lines:
-        ips = iter_line_ips(line)
+        ips = iter_line_ips(line, edges)
         if ips is None:
             name = line.strip().lower().rstrip(".")
             try:
@@ -814,39 +870,55 @@ def expand_targets(lines: list[str], never: NeverScan, limit: int = MAX_EXPANDED
 
 
 class RateLimiter:
-    """Global connections-per-second token bucket plus a per-address concurrency cap."""
+    """Global connections-per-second cap plus a per-address concurrency cap.
+
+    N8 (14 Nov 2026): the old token bucket held ``rate`` tokens, so a full bucket plus a second's refill let up to twice
+    the rate start within one second (30 measured at 20/s).  Now connections are spaced ``1/rate`` apart (no burst),
+    and the start times of the last ``floor(rate)`` connections are kept: a connection may start only once the oldest
+    of them is a full second old, so no one-second window ever holds more than the configured rate."""
 
     def __init__(self, per_second: float = 20, per_server: int = 2) -> None:
-        self.rate = max(float(per_second or 1), 0.1)
-        self.capacity = max(1.0, self.rate)
-        self.tokens = self.capacity
-        self.last = time.monotonic()
         self.lock = threading.Lock()
+        self._starts: collections.deque[float] = collections.deque()
+        self._next = 0.0  # monotonic time of the next free slot
+        self._set_rate(per_second)
         self.per_server = max(int(per_server or 1), 1)
         # weak: a semaphore lives only while a connection holds it, so a /16 sweep does not grow this forever
         self._sems: weakref.WeakValueDictionary[str, threading.BoundedSemaphore] = weakref.WeakValueDictionary()
         self._sem_lock = threading.Lock()
         self.connections = 0
 
+    def _set_rate(self, per_second: float) -> None:  # with the lock held (or from __init__)
+        self.rate = max(float(per_second or 1), 0.1)
+        self.interval = 1.0 / self.rate
+        self.window_cap = max(1, int(self.rate))  # starts allowed in any one second
+
     def configure(self, per_second: float, per_server: int) -> None:
         with self.lock:
-            self.rate = max(float(per_second or 1), 0.1)
-            self.capacity = max(1.0, self.rate)
-            self.tokens = min(self.tokens, self.capacity)
+            self._set_rate(per_second)
         with self._sem_lock:
             self.per_server = max(int(per_server or 1), 1)
+
+    def _wait(self, now: float) -> float:
+        """Seconds until a connection may start (0: now).  With the lock held."""
+        while self._starts and now - self._starts[0] >= 1.0:
+            self._starts.popleft()
+        wait = max(self._next - now, 0.0)
+        if len(self._starts) >= self.window_cap:
+            wait = max(wait, self._starts[len(self._starts) - self.window_cap] + 1.0 - now)
+        return wait
 
     def acquire(self, stop: threading.Event | None = None, deadline: float | None = None) -> bool:
         while True:
             with self.lock:
                 now = time.monotonic()
-                self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
-                self.last = now
-                if self.tokens >= 1:
-                    self.tokens -= 1
+                wait = self._wait(now)
+                if wait <= 0:
+                    self._starts.append(now)
+                    # at most one slot is saved up (a late wake-up catches up once), never a burst
+                    self._next = max(self._next, now - self.interval) + self.interval
                     self.connections += 1
                     return True
-                wait = (1 - self.tokens) / self.rate
             if stop is not None and stop.is_set():
                 return False
             if deadline is not None and time.monotonic() + wait > deadline:

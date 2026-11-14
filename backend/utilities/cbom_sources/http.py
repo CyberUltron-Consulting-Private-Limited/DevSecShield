@@ -23,6 +23,7 @@ from starlette.responses import JSONResponse, Response
 from backend.get_db import get_db
 from backend.new_models import CbomScanNode, TeamMembership
 from backend.utilities.auth.auth_utils import get_user_from_header_or_raise_exception
+from backend.utilities.cbom_sources import api_keys as API_KEYS
 from backend.utilities.cbom_sources.common import log, new_ref, sha256_hex
 from backend.utilities.ratelimit import Key, RateLimiter, ip_key, user_key
 from backend.utilities.team import check_if_user_is_in_team
@@ -68,10 +69,13 @@ class CbomRoute(APIRoute):
         handler = super().get_route_handler()
 
         async def route(request: Request) -> Response:
+            context = API_KEYS.enter_request(request)  # which route an API key is being used on (api_keys.py)
             try:
                 return await handler(request)
             except RequestValidationError as exc:
                 return JSONResponse({"detail": format_errors(list(exc.errors()))}, status_code=400, headers=PRIVATE)
+            finally:
+                API_KEYS.leave_request(context)
 
         return route
 
@@ -115,8 +119,16 @@ vendor_limiter = RateLimiter("cbom_sources.vendor", times=20, seconds=60, key_fu
 
 
 async def authorize(team_id: int, authorization: str | None):
-    """Bearer token -> user -> team membership (existing 403 for non-members).  Returns (engine, user)."""
+    """Bearer token -> user -> team membership (existing 403 for non-members).  Returns (engine, user).
+
+    A ``zsk_`` API key is accepted instead of a session only on the routes ``api_keys.ROUTE_SCOPES`` lists, for the
+    key's own team and scope; it then acts as the admin who created it (issue #226)."""
     engine = get_db()
+    parts = (authorization or "").split(" ")
+    if len(parts) == 2 and parts[0].lower() == "bearer" and API_KEYS.looks_like_key(parts[1]):
+        user, key_id = await run_in_threadpool(API_KEYS.authenticate, engine, team_id, parts[1])
+        API_KEYS.mark_active(key_id)
+        return engine, user
     user = await get_user_from_header_or_raise_exception(engine, authorization)
     await run_in_threadpool(check_if_user_is_in_team, user.id, team_id, engine)
     return engine, user

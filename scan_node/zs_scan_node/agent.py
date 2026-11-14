@@ -101,6 +101,8 @@ class Agent:
                        deployment_id=self.state.deployment_id, on_deployment=self._adopt_deployment,
                        stop=self.shutdown)
         self.team_never: list[str] | None = None  # latest team never-scan list from the heartbeat
+        # N4: job id -> wall-clock end of its scan window (epoch seconds), from the heartbeat; applied by _watch
+        self.job_window_ends: dict[int, float] = {}
         self.stop_network = threading.Event()
         # When the requests behind the cached stop flag and never-scan list were sent (monotonic).  A claim is
         # answered from the server's current settings, so heartbeat answers to requests sent before it are older.
@@ -234,6 +236,14 @@ class Agent:
             if sent >= self.never_sent and isinstance(data.get("never_scan"), list):
                 self.never_sent = sent
                 self.team_never = [str(x) for x in data["never_scan"]][:10000]
+            ends = data.get("window_ends")
+            if isinstance(ends, dict):
+                known = self.__dict__.setdefault("job_window_ends", {})
+                for key, value in list(ends.items())[:1000]:
+                    moment = _parse_iso(value)
+                    # only jobs this node still runs: a job that ended before the answer arrived leaves nothing behind
+                    if moment is not None and str(key).isdigit() and int(key) in getattr(self, "running", {}):
+                        known[int(key)] = moment
             if sent >= self.stop_sent:
                 self.stop_sent = sent
                 if data.get("stop_all_network"):
@@ -255,6 +265,12 @@ class Agent:
 
     def heartbeat_loop(self) -> None:
         while not self.shutdown.is_set():
+            if not self.state.node_token:
+                # revoked (on_unauthorized cleared it): nothing to heartbeat with until the claim loop enrolls the
+                # node again; a token-less heartbeat only earns node_token_missing and a misleading "proxy" error
+                self.mark_alive()
+                self.shutdown.wait(5)
+                continue
             try:
                 self.heartbeat_once()
             except Unauthorized:
@@ -433,6 +449,17 @@ class Agent:
         finally:
             self._done(running)
 
+    def apply_windows(self, running: Running) -> None:
+        """Move a running job's deadline to its scan window's end when ZeroShield reports an earlier one (the window
+        was closed or shortened while the job ran): it then stops at its next connection, keeping what it read."""
+        ends = getattr(self, "job_window_ends", None)  # an Agent built without it (tests) has nothing to apply
+        if not ends:
+            return
+        with self.lock:
+            end = ends.pop(running.job_id, None)
+        if end is not None and running.ctx.window_closes(end):
+            running.ctx.log("scan window closed; stopping at the next connection", level="warn")
+
     def _watch(self, running: Running) -> None:
         """Propagate the node-wide never-scan list and stop-all flag into a running job, and end a job whose
         collector is stuck on a target that stopped answering, so it cannot hold a job slot forever."""
@@ -440,6 +467,7 @@ class Agent:
         while running.job_id in self.running and not self.shutdown.is_set():
             if running.network and self.stop_network.is_set():
                 ctx.stop_network.set()
+            Agent.apply_windows(self, running)  # unbound: the watcher also runs on stand-ins in the tests
             team = self.team_never
             if team is not None and team != running.applied_team:
                 # at once: update() does no DNS (the node-wide resolver looks names up on its own threads)
@@ -471,6 +499,8 @@ class Agent:
     def _done(self, running: Running) -> None:
         with self.lock:
             self.running.pop(running.job_id, None)
+            # a window end that arrived after the watcher's last tick is dropped with its job (review of #250)
+            getattr(self, "job_window_ends", {}).pop(running.job_id, None)
         close = getattr(running.ctx.never_scan, "close", None)
         if close is not None:
             close()  # the resolver stops looking up names no running job lists
@@ -502,6 +532,19 @@ SHUTDOWN_REASON = "scan node shutting down"
 
 def _now_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_iso(value) -> float | None:
+    """Epoch seconds of an ISO 8601 UTC time ("...Z"), or None."""
+    if not value:
+        return None
+    try:
+        moment = _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=_dt.timezone.utc)
+    return moment.timestamp()
 
 
 def _deadline(scope: dict, lease_seconds: int) -> tuple[float, str]:

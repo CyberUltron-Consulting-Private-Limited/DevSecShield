@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { generateFindingRemediation, type RemediationData } from "@/utils/backend_api";
+import { generateFindingRemediation, getCbomRunAssetRemediation, type RemediationData } from "@/utils/backend_api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,6 +30,12 @@ interface RemediationPanelProps {
   /** CBOM: first line number of the stored code window and the reported line (for line numbers). */
   snippetStart?: number | null;
   line?: number | null;
+  /** CBOM Sources run asset (CB-38): load from GET /runs/{runId}/assets/{assetId}/remediation instead of the scan route.
+   * The panel then hides itself when the server has no such route (older backend). */
+  runAsset?: { runId: number; assetId: number } | null;
+  /** CBOM: false where the dialog already shows the knowledge-base details (the run dialog's AssetDetailPanel), so
+   * "Standards and regulations" is not shown twice (#266). */
+  standardsTab?: boolean;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -124,28 +130,34 @@ function CodeWithLines({ code, start, highlight, tone }: { code: string; start?:
  * rebuild; a stored result is shown first only when it already has the current shape (engine stamp), and a failed
  * rebuild is reported even when an older result is on screen. Views without a scan (the CI page) show what they
  * were given. */
-function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line }: RemediationPanelProps) {
+function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line, runAsset, standardsTab = true }: RemediationPanelProps) {
   const stored = existingRemediation?.source === "knowledge_base" && existingRemediation.status === "completed"
     && !!existingRemediation.engine;
-  const canLoad = Number.isInteger(scanId) && scanId > 0 && !!findingId;
+  const canLoad = runAsset ? runAsset.runId > 0 && runAsset.assetId > 0 : Number.isInteger(scanId) && scanId > 0 && !!findingId;
   const [data, setData] = useState<RemediationData | null>(stored ? existingRemediation! : null);
   const load = useMutation({
     mutationFn: () =>
-      generateFindingRemediation({ team_id: parseInt(teamId, 10), type: "cbom", scan_id: scanId, finding_id: findingId }),
+      runAsset
+        ? getCbomRunAssetRemediation(parseInt(teamId, 10), runAsset.runId, runAsset.assetId)
+        : generateFindingRemediation({ team_id: parseInt(teamId, 10), type: "cbom", scan_id: scanId, finding_id: findingId }),
     onSuccess: (d) => setData(d),
-    onError: (err) => showErrorToast(err, "Could not load the remediation"),
+    onError: (err) => {
+      if (!(runAsset && remediationRouteMissing(err))) showErrorToast(err, "Could not load the remediation");
+    },
   });
   useEffect(() => {
     if (canLoad) load.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [findingId, scanId]);
+  }, [findingId, scanId, runAsset?.runId, runAsset?.assetId]);
   useEffect(() => {
     if (!canLoad && existingRemediation?.source === "knowledge_base") setData(existingRemediation);
   }, [canLoad, existingRemediation]);
 
+  // an older backend has no run-asset route: say nothing rather than an error (the dialog keeps its KB details)
+  if (runAsset && load.isError && remediationRouteMissing(load.error) && !data) return null;
   const fix = data?.code_fix;
   const demo = data?.exploit_demo;
-  const defaultTab = fix?.available ? "fix" : demo ? "exploit" : "details";
+  const defaultTab = fix?.available ? "fix" : demo ? "exploit" : standardsTab ? "details" : "fix";
   return (
     <div className="space-y-3 pt-2" data-testid="cbom-kb-panel">
       <div className="flex items-center gap-2">
@@ -172,11 +184,13 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
       )}
       {data && (
         <Tabs defaultValue={defaultTab} key={defaultTab} className="w-full">
-          <TabsList className="w-full grid grid-cols-4">
+          <TabsList className={`w-full grid ${standardsTab ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger value="fix" className="text-xs gap-1" data-testid="cbom-tab-fix"><Shield className="h-3 w-3" />Fix code</TabsTrigger>
             <TabsTrigger value="diff" className="text-xs gap-1" data-testid="cbom-tab-diff" disabled={!data.diff}>Diff</TabsTrigger>
             <TabsTrigger value="exploit" className="text-xs gap-1" data-testid="cbom-tab-exploit" disabled={!demo}><Zap className="h-3 w-3" />Exploit demo</TabsTrigger>
-            <TabsTrigger value="details" className="text-xs gap-1" data-testid="cbom-tab-details">Standards</TabsTrigger>
+            {standardsTab && (
+              <TabsTrigger value="details" className="text-xs gap-1" data-testid="cbom-tab-details">Standards</TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="fix" className="mt-3 space-y-3" data-testid="cbom-fix">
@@ -221,7 +235,11 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
               </div>
             )}
             {!fix?.available && (
-              <p className="text-xs text-zinc-500">No automatic code change for this finding: follow the steps under Standards.</p>
+              <p className="text-xs text-zinc-500">
+                {runAsset
+                  ? `No automatic code change for this asset (a setting, certificate or key, not source code): follow the fix steps and verify commands ${standardsTab ? "under Standards" : "in the details above"}.`
+                  : "No automatic code change for this finding: follow the steps under Standards."}
+              </p>
             )}
             {(fix?.notes ?? []).length > 0 && (
               <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
@@ -280,13 +298,21 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
             )}
           </TabsContent>
 
-          <TabsContent value="details" className="mt-3">
-            <KbFindingDetails details={data.details ?? []} />
-          </TabsContent>
+          {standardsTab && (
+            <TabsContent value="details" className="mt-3">
+              <KbFindingDetails details={data.details ?? []} />
+            </TabsContent>
+          )}
         </Tabs>
       )}
     </div>
   );
+}
+
+/** 404 / 405 from the run-asset remediation route: the server predates it. */
+function remediationRouteMissing(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status;
+  return status === 404 || status === 405;
 }
 
 export default function RemediationPanel(props: RemediationPanelProps) {

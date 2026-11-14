@@ -92,13 +92,17 @@ class Budget:
         return True
 
 
-def _scope_ranges(scope: dict) -> list[tuple[str, str]]:
+def _scope_ranges(scope: dict) -> list[tuple[str, str, frozenset[str] | None]]:
+    """(cidr, mode, addresses to leave out as network/broadcast) per range.  ZeroShield sends ``skip_addresses`` per
+    range (computed over every range of the team, N3); a job from an older ZeroShield has none: the range alone."""
     out = []
     for item in scope.get("ranges") or []:
         if isinstance(item, dict) and item.get("cidr"):
-            out.append((str(item["cidr"]), str(item.get("mode") or "full")))
+            skip = item.get("skip_addresses")
+            out.append((str(item["cidr"]), str(item.get("mode") or "full"),
+                        frozenset(str(a) for a in skip) if isinstance(skip, list) else None))
         elif isinstance(item, str):
-            out.append((item, "full"))
+            out.append((item, "full", None))
     return out
 
 
@@ -157,6 +161,20 @@ def _sni_for(scope: dict, ip: str, cache: dict, never) -> list[str]:
         if ip in cache[name] and not never.blocks_host(name) and not any(never.blocks_ip(a) for a in cache[name]):
             out.append(name)
     return out
+
+
+def _refused_name(attempt: dict[str, str] | None) -> bool:
+    """A name the endpoint already refused: no TLS answer with it, or its hello got alert unrecognized_name."""
+    if not attempt:
+        return False
+    return attempt.get("result") == "not_tls" or "unrecognized_name" in str(attempt.get("detail") or "")
+
+
+def _attempt_list(names: list[str], attempts: dict[str, dict[str, str]]) -> list[dict[str, str]]:
+    """Every SNI name that resolves to the endpoint, in the team's order, with its result: "read" (a handshake with
+    it succeeded), "rejected" (the server refused it), "not_tls" (no TLS answer with it) or "not_tried" (handshake
+    budget, time cap or a stop)."""
+    return [{"name": n, **attempts.get(n, {"result": "not_tried"})} for n in names]
 
 
 def _tcp(ip: str, port: int, never, timeout: float) -> socket.socket:
@@ -228,7 +246,9 @@ class NetworkScan:
             return "skipped_never_scan"
         if not self.limiter.acquire(self.ctx.cancel, self.ctx.deadline):
             return self.ctx.should_stop(network=True) or self.ctx.deadline_reason
-        return None
+        # again after the wait for a slot: a stop, or a window closed (or shortened) while this thread waited in the
+        # limiter, must hold every waiting connection, not only the ones that had not reached the limiter yet (N4)
+        return self.ctx.should_stop(network=True)
 
     def tcp_open(self, ip: str, port: int) -> str:
         """'open' | 'closed' (refused: the host answered) | 'silent' (no answer: filtered or no host) | a skip
@@ -364,6 +384,9 @@ class NetworkScan:
         sni: str | None = None
         alerts: list[str] = []
         needs_name = False  # it answers a hello with a server name and closes/resets one without (Envoy, Istio)
+        # N1: every configured name that resolves to this address is tried before the endpoint is judged, and each
+        # name's result is kept on the endpoint (name -> "read" | "rejected" | "not_tls" | "not_tried")
+        attempts: dict[str, dict[str, str]] = {}
         if not fh.ok:
             # 1b. TLS at all?  Any TLS alert = it speaks TLS (it may want a server name); only a close or non-TLS
             # bytes, to a modern and to a legacy hello, mean "not TLS" (CB-04 EC-4: alert != closed).  A refused
@@ -372,12 +395,19 @@ class NetworkScan:
                 kind, seen, said = self._speaks_tls(ep, budget, None)
                 if kind in ("not_tls", "undecided") and names:
                     # an SNI-only listener with no default filter chain closes (or resets) a hello without a name:
-                    # the same hello with the first name decides
-                    named, seen_named, _said = self._speaks_tls(ep, budget, names[0], legacy=False)
-                    if named in ("hello", "alert"):
-                        kind, seen, needs_name = named, seen + seen_named, True
-                        if named == "hello":
-                            sni = names[0]  # it answered this name: every later probe carries it
+                    # the same hello with each name, in the team's order, until one gets a TLS answer
+                    for name in names:
+                        if budget.used >= budget.limit:  # never read "no budget" as a TLS answer
+                            break
+                        named, seen_named, said_named = self._speaks_tls(ep, budget, name, legacy=False)
+                        if named in ("hello", "alert"):
+                            kind, seen, needs_name = named, seen + seen_named, True
+                            if named == "hello":
+                                sni = name  # it answered this name: every later probe carries it
+                            else:
+                                attempts[name] = {"result": "rejected", "detail": f"alert {', '.join(seen_named)}"}
+                            break
+                        attempts[name] = {"result": "not_tls", "detail": said_named[:120]}
             except T.StarttlsUnavailable as exc:
                 return plaintext(exc)
             alerts += seen
@@ -385,15 +415,23 @@ class NetworkScan:
                 return "refused", f"no TLS answer: {said}"[:200], 0
             if kind == "not_tls":
                 return self._not_tls(ep, said)
-            if (kind == "alert" or needs_name) and names and T.have_openssl() and ep.protocol != "rdp":
-                # 1c. it rejects a client without a server name: read it with the names the team configured
-                for name in names[:3]:
-                    sfh = self.handshake(ep, budget, T.s_client, ep.ip, ep.port, ep.protocol, name, 15.0)
+            if (kind == "alert" or needs_name) and names and ep.protocol != "rdp":
+                # 1c. it rejects a client without a server name: read it with each name the team configured that
+                # resolves here (openssl s_client; Python ssl when the binary is missing), the first one it serves
+                full = T.s_client if T.have_openssl() else T.python_handshake
+                # the name that answered the bare hello first; a name already refused (no TLS answer with it, or
+                # alert unrecognized_name) is not handshaked again (review of #250: it spent the endpoint's budget)
+                order = ([sni] if sni else []) + [n for n in names if n != sni and not _refused_name(attempts.get(n))]
+                for name in order:
+                    sfh = self.handshake(ep, budget, full, ep.ip, ep.port, ep.protocol, name,
+                                         15.0 if full is T.s_client else 10.0)
                     if sfh == "budget":
                         break
                     if sfh.ok:
                         fh, sni = sfh, name
+                        attempts[name] = {"result": "read"}
                         break
+                    attempts[name] = {"result": "rejected", "detail": str(sfh.error or "handshake failed")[:120]}
         cipher_code = R.suite_code(fh.cipher)
         facts.update({"negotiated_version": fh.version,
                       "negotiated_cipher": R.suite_name(cipher_code) if cipher_code is not None else fh.cipher,
@@ -475,6 +513,8 @@ class NetworkScan:
         if not fh.ok and not supported:
             if alerts or sni_refused:
                 facts.update({"handshakes_used": budget.used, "handshake_budget": limit})
+                if names:
+                    facts["sni_attempts"] = _attempt_list(names, attempts)
                 return self._no_common_parameters(ep, facts, alerts, names, sni_refused, needs_name)
             status = "timeout" if fh.error == "timeout" else "error"
             return status, fh.error or "no TLS handshake", 0
@@ -590,6 +630,11 @@ class NetworkScan:
         facts["handshakes_used"] = budget.used
         facts["handshake_budget"] = limit
         facts["tls"] = True
+        # the other SNI names (their certificates, when they differ) before the facts are fitted: each name's result
+        # is part of the endpoint
+        variant_assets = self._sni_variants(ep, names, sni, chain, Budget(reserve) if reserve else budget, attempts)
+        if names:
+            facts["sni_attempts"] = _attempt_list(names, attempts)
         if unread:
             facts["checks_not_run"] = unread[:20]
             # listed, with some facts missing: a finding that vanishes from this endpoint is not proven fixed
@@ -606,7 +651,7 @@ class NetworkScan:
             ctx.emit("certificate", ep.ip, f"{ep.where}#chain[{i}]", name=c.get("subject", ""),
                      algorithm=c.get("key_alg"), key_size=c.get("key_size"), facts={**c, "chain_index": i, **extra})
             assets += 1
-        return "ok", None, assets + self._sni_variants(ep, names, sni, chain, Budget(reserve) if reserve else budget)
+        return "ok", None, assets + variant_assets
 
     def _not_tls(self, ep: Endpoint, said: str) -> tuple[str, str | None, int]:
         """It accepted TCP and answered TLS hellos with a close or non-TLS bytes: one ``not_tls`` row, no TLS asset."""
@@ -658,15 +703,18 @@ class NetworkScan:
         keeps its earlier findings from reading as fixed.  Never "ok"."""
         needs_name = "unrecognized_name" in alerts or closes_without_name
         seen = sorted(set(alerts))
+        tried = facts.get("sni_attempts") or [{"name": n, "result": "not_tried"} for n in names]
+        shown = "; ".join(f"{a['name']}: {a['result'].replace('_', ' ')}" for a in tried[:10])
+        shown += f"; and {len(tried) - 10} more" if len(tried) > 10 else ""
         if closes_without_name:
             why = ("the server closes every handshake without a server name (SNI) and answered none with the configured "
-                   f"SNI host names that resolve to this address ({', '.join(names[:3])})")
+                   f"SNI host names that resolve to this address ({shown})")
         elif needs_name and not names:
             why = ("the server answers only clients that send a server name (SNI; alert unrecognized_name): add the "
                    "host names it serves under Hostnames for SNI")
         elif needs_name:
             why = ("the server rejected the configured SNI host names that resolve to this address "
-                   f"({', '.join(names[:3])}) and every handshake without one (alert unrecognized_name)")
+                   f"({shown}) and every handshake without one (alert unrecognized_name)")
         else:
             why = (f"the server answered every handshake with a TLS alert ({', '.join(seen)}): it offers no protocol "
                    "version, cipher suite or group this scan node can negotiate")
@@ -682,22 +730,31 @@ class NetworkScan:
         self.own_rows.add(ep.where)
         return ("tls_unavailable" if needs_name else "not_supported"), why[:200], 1
 
-    def _sni_variants(self, ep: Endpoint, names: list[str], used: str | None, chain: list[dict], budget: Budget) -> int:
-        """One full handshake per further SNI name (its certificate, when it differs); names not tried get one row."""
+    def _sni_variants(self, ep: Endpoint, names: list[str], used: str | None, chain: list[dict], budget: Budget,
+                      attempts: dict[str, dict[str, str]] | None = None) -> int:
+        """One full handshake per further SNI name (its certificate, when it differs); names not tried get one row.
+        ``attempts`` receives each name's result ("read" or "rejected"; a name left out stays "not_tried")."""
         ctx = self.ctx
+        attempts = attempts if attempts is not None else {}
         assets, untried = 0, []
-        others = [n for n in names if n != used]
-        if not T.have_openssl() or ep.protocol == "rdp":
+        # a name already refused while the endpoint was being read is not sent again
+        others = [n for n in names if n != used and attempts.get(n, {}).get("result") != "rejected"
+                  and not _refused_name(attempts.get(n))]
+        if ep.protocol == "rdp":
             return 0
+        full = T.s_client if T.have_openssl() else T.python_handshake
         for i, name in enumerate(others):
             try:
-                sfh = self.handshake(ep, budget, T.s_client, ep.ip, ep.port, ep.protocol, name, 15.0)
+                sfh = self.handshake(ep, budget, full, ep.ip, ep.port, ep.protocol, name,
+                                     15.0 if full is T.s_client else 10.0)
             except _Skip:
                 untried = others[i:]
                 break
             if sfh == "budget":
                 untried = others[i:]
                 break
+            attempts[name] = ({"result": "read"} if sfh.ok else
+                              {"result": "rejected", "detail": str(sfh.error or "handshake failed")[:120]})
             for der in sfh.certs_der[:1]:
                 for cert in load_certs(der):
                     cf_ = cert_facts(cert, "tls")
@@ -933,10 +990,10 @@ class _Skip(Exception):
         self.status = status
 
 
-def _addresses(ctx: JobContext, ranges: list[tuple[str, str]]):
+def _addresses(ctx: JobContext, ranges: list[tuple[str, str, frozenset[str] | None]]):
     seen: set[str] = set()
-    for cidr, mode in ranges:
-        ips = iter_line_ips(cidr)
+    for cidr, mode, skip in ranges:
+        ips = iter_line_ips(cidr, skip)
         if ips is None:
             continue
         for ip in ips:

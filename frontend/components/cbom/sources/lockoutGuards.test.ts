@@ -15,5 +15,7 @@ assert.match(results, /TARGET_TONE[^;]*skipped_credential_refused: "amber"/)
 const hsm = readFileSync(join(__dirname, "ClustersDatabasesTab.tsx"), "utf8")
 assert.doesNotMatch(hsm, /Blank reads every initialised token/)
 assert.match(hsm, /a PIN is only ever tried on the token it belongs to/)
+const tips = readFileSync(join(__dirname, "..", "..", "..", "content", "infotips.ts"), "utf8")
+assert.doesNotMatch(tips, /Blank reads every initialised token/)
 
 console.log("lockout guard UI tests passed")

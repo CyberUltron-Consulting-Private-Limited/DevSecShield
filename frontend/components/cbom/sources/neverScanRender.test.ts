@@ -1,15 +1,15 @@
 /**
- * PR #32 re-review 5879769432: the team never-scan list and a server source's Never scan field, RENDERED (not read from
- * the source text). The real NetworkTab and ServersTab are mounted in jsdom (react-dom/client); the API is a fake axios
- * adapter on the app's own client (utils/interceptors), so every request the tab makes goes through the real code.
+ * The team never-scan list and a server source's Never scan field, RENDERED (not read from the source text). The real
+ * NetworkTab and ServersTab are mounted in jsdom (react-dom/client); the API is a fake axios adapter on the app's own
+ * client (utils/interceptors), so every request the tab makes goes through the real code.
  *
- * NetworkTab, a team list saved before the API refused host names (printer.corp.invalid, localhost):
- * - each stored host name gets a note in its own full-width row below the entry, and the loopback name's note says
- *   what the node does with it (only 127.0.0.0/8 and ::1, nothing held); addresses, ranges and zone ids get none;
+ * NetworkTab, a team list with host names (N2, 14 Nov 2026: the team list takes host names; the node resolves them):
+ * - each stored host name gets a note in its own full-width row below the entry saying what the node does with it
+ *   (the loopback name's note: only 127.0.0.0/8 and ::1, nothing held); addresses, ranges and zone ids get none;
  * - nothing on the page is role="alert" until the customer does something (the notes are static, not live errors);
  * - the Remove button of a marked entry is described by its note (aria-describedby);
- * - a typed host name is refused inline with the API's words; a save the API refuses puts the API's detail inline,
- *   with role="alert"; removing an entry clears that error.
+ * - a typed host name is added (with its note); a mistyped range that only reads as a name is refused inline; a save
+ *   the API refuses puts the API's detail inline, with role="alert"; removing the entry clears that error.
  * ServersTab: the hint under the source's Never scan field says what a loopback name does there.
  * jsdom comes with isomorphic-dompurify (a dependency of the app), react-dom with the app itself.
  * Run: npx --yes tsx components/cbom/sources/neverScanRender.test.ts
@@ -44,7 +44,7 @@ async function main() {
   const consoleLog = console.log // utils/interceptors prints the API base URL on import; the error toast logs each refusal
   console.log = (...args: unknown[]) => {
     if (String(args[0]).startsWith("api base url")) return
-    if (args[0] instanceof Error && args[0].message.endsWith("status code 422")) return // the refusals this test asks for
+    if (args[0] instanceof Error && args[0].message.endsWith("status code 400")) return // the refusals this test asks for
     consoleLog(...args)
   }
   g.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} }
@@ -96,9 +96,9 @@ async function main() {
     if (method === "PATCH" && url.endsWith("/settings")) {
       const body = JSON.parse(String(config.data)) as { network_exclusions?: { cidr: string }[] }
       patches.push(body)
-      // the API's rule (routers/cbom_sources.py): the first entry that reads as a host name is refused, as typed
-      const name = (body.network_exclusions ?? []).find((e) => words.readsAsHostName(e.cidr))
-      if (name) return reply(422, { detail: `network_exclusions: ${words.HOST_NAME_NOT_ALLOWED.replace("{entry}", () => name.cidr.trim())}` })
+      // the API's parser (targets.parse_exclusions) refuses an IPv6 entry the UI's light check lets through
+      const bad = (body.network_exclusions ?? []).find((e) => e.cidr.includes("::") && e.cidr.split("::").length > 2)
+      if (bad) return reply(400, { detail: `network_exclusions: Never-scan line 1: '${bad.cidr}' is not a valid IP address or CIDR range` })
       stored = (body.network_exclusions ?? stored) as typeof stored
       return reply(200, { settings: settings() })
     }
@@ -148,14 +148,14 @@ async function main() {
     assert.equal(note.tagName, "TR")
     assert.equal(note.querySelectorAll("td").length, 1)
     assert.equal(note.querySelector("td")!.getAttribute("colspan"), "3")
-    assert.ok(note.textContent!.includes("Host name: not allowed here"))
+    assert.ok(note.textContent!.includes("Host name: resolved on the scan node"))
   }
-  const [printerNote, loopbackNote] = notes().map((n) => n.textContent!.replace("Host name: not allowed here", ""))
+  const [printerNote, loopbackNote] = notes().map((n) => n.textContent!.replace("Host name: resolved on the scan node", ""))
   assert.equal(printerNote, words.storedExclusionIssue("printer.corp.invalid"))
-  assert.ok(printerNote.includes("holds every job of this team"), printerNote)
+  assert.ok(printerNote.includes("in range sweeps too") && printerNote.includes("every job of this team waits"), printerNote)
   assert.equal(loopbackNote, words.storedExclusionIssue("localhost"))
-  assert.ok(loopbackNote.includes("only keeps the loopback addresses (127.0.0.0/8 and ::1) out; nothing is held"), loopbackNote)
-  assert.ok(!loopbackNote.includes("holds every job"), "localhost does not hold the team's jobs on the node")
+  assert.ok(loopbackNote.includes("keeps only the loopback addresses (127.0.0.0/8 and ::1) out"), loopbackNote)
+  assert.ok(!loopbackNote.includes("every job of this team waits"), "localhost does not hold the team's jobs on the node")
   // static notes are not live errors: nothing announces itself as an alert when the tab opens
   assert.equal(tab.host.querySelectorAll('[role="alert"]').length, 0, "no role=alert before the customer acts")
   // the Remove button of a marked entry points to its note; the others point nowhere
@@ -168,35 +168,38 @@ async function main() {
     if (describedBy) assert.ok(tab.host.querySelector(`#${describedBy}`)!.textContent!.includes(issue!), entry.cidr)
   }
 
-  // ------------------------------------------------------------------ 2. a typed host name: refused inline, in the API's words
+  // ------------------------------------------------------------------ 2. a typed host name is added; a mistyped range is not
   const cidr = tab.host.querySelector('[data-testid="network-exclusion-cidr"]') as HTMLInputElement
-  await type(cidr, "Printer.Corp.")
-  await click(tab.host.querySelector('[data-testid="network-exclusion-add"]'), "Add")
   const alerts = () => [...tab.host.querySelectorAll('[role="alert"]')].map((a) => a.textContent)
-  assert.deepEqual(alerts(), [words.hostNameNotAllowed("Printer.Corp.")])
-  assert.equal(alerts()[0], "Printer.Corp. is not an address or range (it reads as a host name); the team never-scan list takes addresses and ranges only. List host names in a server source's own Never scan field")
+  await type(cidr, "10.0.0.0-24")
+  await click(tab.host.querySelector('[data-testid="network-exclusion-add"]'), "Add")
+  assert.deepEqual(alerts(), ["10.0.0.0-24 is not a valid address range"])
   assert.equal(rows().length, 6, "nothing was added")
+  await type(cidr, "shop.lab")
+  await click(tab.host.querySelector('[data-testid="network-exclusion-add"]'), "Add")
+  assert.deepEqual(alerts(), [], "a host name is accepted and clears the error")
+  assert.equal(rows().length, 8, "the name and its note were added")
+  assert.equal(notes().length, 3)
 
   // ------------------------------------------------------------------ 3. a save the API refuses: its detail goes inline
-  await type(cidr, "10.20.98.0/24")
+  await type(cidr, "fd00::1::2")
   await click(tab.host.querySelector('[data-testid="network-exclusion-add"]'), "Add")
-  assert.deepEqual(alerts(), [], "a valid entry clears the error")
+  assert.deepEqual(alerts(), [])
   await click(button(tab.host, /Save network scope/), "Save network scope")
   assert.equal(patches.length, 1, "the save was sent")
-  assert.deepEqual(alerts(), [words.hostNameNotAllowed("printer.corp.invalid")], "the API's 422, inline")
+  assert.deepEqual(alerts(), ["Never-scan line 1: 'fd00::1::2' is not a valid IP address or CIDR range"], "the API's 400, inline")
 
-  // ------------------------------------------------------------------ 4. removing the entry clears it; the next refusal is the next name
-  await click(tab.host.querySelector('button[aria-label="Remove printer.corp.invalid from never scan"]'), "Remove printer")
+  // ------------------------------------------------------------------ 4. removing the entry clears it; the save stores the names
+  await click(tab.host.querySelector('button[aria-label="Remove fd00::1::2 from never scan"]'), "Remove the bad entry")
   assert.deepEqual(alerts(), [], "Remove clears the inline error")
-  assert.equal(notes().length, 1, "only the localhost note is left")
-  await click(button(tab.host, /Save network scope/), "Save network scope")
-  assert.deepEqual(alerts(), [words.hostNameNotAllowed("localhost")])
-  await click(tab.host.querySelector('button[aria-label="Remove localhost from never scan"]'), "Remove localhost")
   await click(button(tab.host, /Save network scope/), "Save network scope")
   assert.deepEqual(alerts(), [])
-  assert.deepEqual(stored.map((e) => e.cidr), ["10.20.99.0/24", "fe80::1%br-ab12", "10.20.98.0/24"])
+  assert.deepEqual(stored.map((e) => e.cidr), ["10.20.99.0/24", "printer.corp.invalid", "localhost", "fe80::1%br-ab12", "shop.lab"])
   await settle()
-  assert.equal(notes().length, 0, "after the save: no marked entry")
+  assert.equal(notes().length, 3, "after the save: each stored name keeps its note")
+  // N8: the rate limit says it is a hard per-second cap, no bursts
+  const rateNote = tab.host.querySelector('[data-testid="network-rate-note"]')
+  assert.ok(rateNote && rateNote.textContent!.includes("never starts more than this many in any one second"), rateNote?.textContent ?? "")
   tab.root.unmount()
 
   // ------------------------------------------------------------------ 5. a server source's Never scan field explains loopback names

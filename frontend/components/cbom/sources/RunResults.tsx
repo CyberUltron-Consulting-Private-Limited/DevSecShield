@@ -34,6 +34,7 @@ import { RunInsights } from "./ChangesPanel";
 import { AssetDetailPanel, RunPostureCard } from "./RunPosture";
 import { BulkAssignBar, useRunRemediation, WaveBadge } from "./WavesControls";
 import { ErrorBlock, LoadingBlock, StatusBadge, Truncate, type Tone } from "./shared";
+import { InfoTip } from "@/components/ui/info-tip";
 
 export const ASSET_TYPE_LABEL: Record<string, string> = {
   certificate: "Certificate",
@@ -125,7 +126,7 @@ export function TargetsBlock({ jobs }: { jobs: CbomJobTargets[] }) {
   if (jobs.length === 0) return null;
   return (
     <div className="space-y-2" data-testid="run-results-targets">
-      <p className="text-sm font-medium text-zinc-900 dark:text-white">Targets</p>
+      <p className="text-sm font-medium text-zinc-900 dark:text-white">Targets <InfoTip id="cbom.run.targets" /></p>
       <ul className="space-y-2">
         {jobs.map((job) => {
           const problems = job.targets.filter((t) => t.status !== "ok");
@@ -322,6 +323,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
             ))}
           </SelectContent>
         </Select>
+        <InfoTip id="cbom.run.filter.type" className="self-center" />
         <Input
           className="w-full sm:w-[260px]"
           placeholder="Search location, algorithm or finding"
@@ -331,6 +333,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
           onKeyDown={(e) => e.key === "Enter" && set({ q: search.trim() || undefined })}
           onBlur={() => set({ q: search.trim() || undefined })}
         />
+        <InfoTip id="cbom.run.search" className="self-center" />
         {(filters.type || filters.impact || filters.quantum || filters.q) && (
           <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => { setSearch(""); setFilters({ page: 1, page_size: 50 }); }}>
             Clear filters
@@ -350,16 +353,16 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-6"><span className="sr-only">Expand</span></TableHead>
-                  <TableHead className="w-6"><span className="sr-only">Select for wave assignment</span></TableHead>
-                  <TableHead>Impact</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Where</TableHead>
-                  <TableHead>Algorithm</TableHead>
-                  <TableHead>Finding</TableHead>
-                  <TableHead>Quantum-vulnerable</TableHead>
-                  <TableHead>Quantum risk</TableHead>
-                  <TableHead>Fix class</TableHead>
-                  <TableHead>Wave</TableHead>
+                  <TableHead className="w-6"><span className="sr-only">Select for wave assignment</span><InfoTip id="cbom.run.col.select_wave" /></TableHead>
+                  <TableHead>Impact <InfoTip id="results.table.impact" /></TableHead>
+                  <TableHead>Type <InfoTip id="cbom.run.f.type" /></TableHead>
+                  <TableHead>Where <InfoTip id="cbom.run.col.where" /></TableHead>
+                  <TableHead>Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                  <TableHead>Finding <InfoTip id="cbom.run.col.finding" /></TableHead>
+                  <TableHead>Quantum-vulnerable <InfoTip id="cbom.run.col.qv" /></TableHead>
+                  <TableHead>Quantum risk <InfoTip id="cbom.run.col.qgrade" /></TableHead>
+                  <TableHead>Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>
+                  <TableHead>Wave <InfoTip id="cbom.run.col.wave" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -373,6 +376,7 @@ export default function RunResults({ teamId, runId, active }: { teamId: number; 
                       <TableCell>{expanded === asset.id ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {waves.byAsset.get(asset.id) && (
+                          /* infotip-shared: one row of the selection; the header tip of this column explains it */
                           <input
                             type="checkbox"
                             className="cursor-pointer"

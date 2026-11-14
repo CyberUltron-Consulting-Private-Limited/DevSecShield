@@ -3,11 +3,13 @@
 // S12: the run's one findings table, in the code page's look (CbomResults "Cryptographic findings"): select, Impact,
 // Algorithm, Type, Where, Finding, Strength, Quantum, Risk score, Source, Wave, Status, [Quantum risk], [Fix class],
 // Actions. Paged and filtered by the server (GET /runs/{id}/assets: view, type, impact, quantum, q, source_id, status);
-// the page never filters or counts rows itself. A row click expands it (as the run dialog did); "Details" opens S14.
+// the page never filters or counts rows itself. #267: a row click (or Enter / Space on a focused row) opens the finding
+// dialog (S14), the Actions column (Action + Details) is pinned right, and only the essential columns show by default
+// (the rest are in the Columns chooser, remembered per user).
 // Test ids kept for the gate: run-results, run-asset-<id> with data-* attributes, run-results-total ("N assets found"
 // in All assets), run-results-page, button "Next", run-results-empty.
 
-import { ChevronDown, ChevronRight, CheckCircle, Circle, Eye, EyeOff, Loader2, Pencil, Search, ShieldAlert } from "lucide-react";
+import { CheckCircle, Circle, Eye, EyeOff, Loader2, Pencil, Search, ShieldAlert } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +27,6 @@ import type { CbomFindingStatus, CbomImpact, CbomRunAssetItem, CbomRunAssetPage 
 import type { CbomRemediationItem } from "@/utils/api/cbom_ops";
 
 import { pluralize } from "@/components/cbom/sources/logic";
-import { AssetDetailPanel } from "@/components/cbom/sources/RunPosture";
 import { ASSET_TYPE_LABEL, factsRows } from "@/components/cbom/sources/RunResults";
 import { BulkAssignBar, WaveBadge } from "@/components/cbom/sources/WavesControls";
 import { ErrorBlock, LoadingBlock, StatusBadge, Truncate } from "@/components/cbom/sources/shared";
@@ -44,6 +45,9 @@ import {
   viewCounts,
   type RunTableFilters,
 } from "./model";
+import { InfoTip } from "@/components/ui/info-tip";
+import { ColumnChooser, useColumnPrefs } from "./ColumnChooser";
+import { rowOpenProps, RUN_TABLE_COLUMNS, STICKY_ACTIONS, type RunColumnId } from "./findingTable";
 
 const IMPACTS: CbomImpact[] = ["Critical", "High", "Medium", "Low"];
 const IMPACT_TONE = { Critical: "red", High: "red", Medium: "amber", Low: "blue" } as const;
@@ -126,7 +130,7 @@ export function RunFindingsTable({
   statusPending: boolean;
 }) {
   const [search, setSearch] = useState(filters.q ?? "");
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const columns = useColumnPrefs("run", RUN_TABLE_COLUMNS);
   const typing = useRef<ReturnType<typeof setTimeout> | null>(null);
   // the search applies as you type (debounced), like the code page's table; Enter applies at once
   const applySearch = (value: string, delay: number) => {
@@ -148,7 +152,9 @@ export function RunFindingsTable({
   const keyOf = (item: CbomRunAssetItem): string | null => item.asset_key ?? waveOf(item)?.asset_key ?? null;
   const selectable = items.filter((i) => !!keyOf(i));
   const allSelected = selectable.length > 0 && selectable.every((i) => selection.has(i.id));
-  const colSpan = 14 + (cols.qGrade ? 1 : 0) + (cols.fixClass ? 1 : 0);
+  // Quantum risk / Fix class are offered only once the server sends them (#113 / #114)
+  const offered = RUN_TABLE_COLUMNS.filter((c) => (c.id !== "qgrade" || cols.qGrade) && (c.id !== "fixclass" || cols.fixClass));
+  const show = (id: RunColumnId) => columns.isVisible(id) && offered.some((c) => c.id === id);
 
   const toggle = (item: CbomRunAssetItem) => {
     const key = keyOf(item);
@@ -162,7 +168,7 @@ export function RunFindingsTable({
   return (
     <Card id="bom-findings" data-testid="run-results" className="min-w-0">
       <CardHeader>
-        <CardTitle>Cryptographic findings</CardTitle>
+        <CardTitle>Cryptographic findings <InfoTip id="cbom.run.findings" /></CardTitle>
         <CardDescription>
           {effectiveView === "findings"
             ? "Assets of this run with a finding. Select rows to change their status or plan a remediation wave; click a row for its explanation."
@@ -181,6 +187,7 @@ export function RunFindingsTable({
               </button>
             ))}
           </div>
+          <InfoTip id="cbom.run.view" />
           {page && (
             <p className="text-sm font-medium text-zinc-900 dark:text-white" data-testid="run-results-total">
               {effectiveView === "all"
@@ -218,6 +225,7 @@ export function RunFindingsTable({
                    onChange={(e) => { setSearch(e.target.value); applySearch(e.target.value, SEARCH_DEBOUNCE_MS); }}
                    onKeyDown={(e) => e.key === "Enter" && applySearch(search, 0)} />
           </div>
+          <InfoTip id="cbom.run.search" className="-ml-1" />
           <Select value={filters.impact ?? "all"} onValueChange={(v) => onFilters({ impact: v === "all" ? undefined : (v as CbomImpact), page: 1 })}>
             <SelectTrigger className="h-9 min-w-[140px] cursor-pointer" aria-label="Impact" data-testid="run-results-impact"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -225,6 +233,7 @@ export function RunFindingsTable({
               {IMPACTS.map((i) => <SelectItem key={i} value={i}>{i}</SelectItem>)}
             </SelectContent>
           </Select>
+          <InfoTip id="cbom.run.filter.impact" className="-ml-1" />
           <Select value={filters.type ?? "all"} onValueChange={(v) => onFilters({ type: v === "all" ? undefined : v, page: 1 })}>
             <SelectTrigger className="h-9 min-w-[180px] cursor-pointer" aria-label="Type" data-testid="run-results-type"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -234,6 +243,7 @@ export function RunFindingsTable({
               ))}
             </SelectContent>
           </Select>
+          <InfoTip id="cbom.run.filter.type" className="-ml-1" />
           <Select value={filters.quantum ? "vulnerable" : "all"} onValueChange={(v) => onFilters({ quantum: v === "vulnerable" ? true : undefined, page: 1 })}>
             <SelectTrigger className="h-9 min-w-[150px] cursor-pointer" aria-label="Quantum" data-testid="run-results-quantum"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -241,24 +251,31 @@ export function RunFindingsTable({
               <SelectItem value="vulnerable">Quantum-vulnerable</SelectItem>
             </SelectContent>
           </Select>
+          <InfoTip id="cbom.run.filter.quantum" className="-ml-1" />
           {sources.some((s) => s.id != null) && (
-            <Select value={filters.source_id != null ? String(filters.source_id) : "all"}
-                    onValueChange={(v) => onFilters({ source_id: v === "all" ? undefined : Number(v), page: 1 })}>
-              <SelectTrigger className="h-9 min-w-[160px] cursor-pointer" aria-label="Source" data-testid="run-results-source"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All sources</SelectItem>
-                {sources.filter((s) => s.id != null).map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={filters.source_id != null ? String(filters.source_id) : "all"}
+                      onValueChange={(v) => onFilters({ source_id: v === "all" ? undefined : Number(v), page: 1 })}>
+                <SelectTrigger className="h-9 min-w-[160px] cursor-pointer" aria-label="Source" data-testid="run-results-source"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sources</SelectItem>
+                  {sources.filter((s) => s.id != null).map((s) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <InfoTip id="cbom.run.filter.source" className="-ml-1" />
+            </>
           )}
           {supportsView && (
-            <Select value={filters.status ?? "all"} onValueChange={(v) => onFilters({ status: v === "all" ? undefined : (v as CbomFindingStatus), page: 1 })}>
-              <SelectTrigger className="h-9 min-w-[140px] cursor-pointer" aria-label="Status" data-testid="run-results-status-filter"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                {FINDING_STATUSES.map((s) => <SelectItem key={s} value={s}>{FINDING_STATUS_LABEL[s]}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={filters.status ?? "all"} onValueChange={(v) => onFilters({ status: v === "all" ? undefined : (v as CbomFindingStatus), page: 1 })}>
+                <SelectTrigger className="h-9 min-w-[140px] cursor-pointer" aria-label="Status" data-testid="run-results-status-filter"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {FINDING_STATUSES.map((s) => <SelectItem key={s} value={s}>{FINDING_STATUS_LABEL[s]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <InfoTip id="cbom.run.filter.status" className="-ml-1" />
+            </>
           )}
           {hasActiveFilters(filters) && (
             <Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => {
@@ -269,6 +286,9 @@ export function RunFindingsTable({
               Clear filters
             </Button>
           )}
+          <div className="ml-auto">
+            <ColumnChooser defs={offered} visible={columns.visible} onToggle={columns.toggle} onReset={columns.reset} testId="run-results-columns" />
+          </div>
         </div>
 
         <FindingSelectionMenu
@@ -296,6 +316,8 @@ export function RunFindingsTable({
               <TableHeader>
                 <TableRow>
                   <TableHead className={`w-[48px] ${STICKY_SELECT}`}>
+                    {/* infotip-shared: the select column stays 48 px (the sticky name column sits at left-12); the
+                        Cryptographic findings title's tip explains selecting rows */}
                     <Checkbox checked={allSelected} aria-label="Select all rows" className="cursor-pointer" disabled={selectable.length === 0}
                               onCheckedChange={() => {
                                 const next = new Map(selection);
@@ -304,21 +326,20 @@ export function RunFindingsTable({
                                 onSelection(next);
                               }} />
                   </TableHead>
-                  <TableHead className="min-w-[90px]">Impact</TableHead>
-                  <TableHead className={`min-w-[160px] ${STICKY_NAME}`}>Algorithm</TableHead>
-                  <TableHead className="min-w-[120px]">Type</TableHead>
-                  <TableHead className="min-w-[200px]">Where</TableHead>
-                  <TableHead className="min-w-[220px]">Finding</TableHead>
-                  <TableHead className="min-w-[100px]">Strength</TableHead>
-                  <TableHead className="min-w-[100px]">Quantum</TableHead>
-                  <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                  <TableHead className="min-w-[120px]">Source</TableHead>
-                  <TableHead className="min-w-[110px]">Wave</TableHead>
-                  <TableHead className="min-w-[100px]">Status</TableHead>
-                  {cols.qGrade && <TableHead className="min-w-[100px]">Quantum risk</TableHead>}
-                  {cols.fixClass && <TableHead className="min-w-[110px]">Fix class</TableHead>}
-                  <TableHead className="min-w-[170px] text-right">Actions</TableHead>
-                  <TableHead className="w-8"><span className="sr-only">Expand</span></TableHead>
+                  {show("impact") && <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>}
+                  {show("algorithm") && <TableHead className={`min-w-[160px] ${STICKY_NAME}`}>Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>}
+                  {show("type") && <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>}
+                  {show("where") && <TableHead className="min-w-[200px]">Where <InfoTip id="cbom.run.col.where" /></TableHead>}
+                  {show("finding") && <TableHead className="min-w-[220px]">Finding <InfoTip id="cbom.run.col.finding" /></TableHead>}
+                  {show("strength") && <TableHead className="min-w-[100px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>}
+                  {show("quantum") && <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>}
+                  {show("risk") && <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.run.f.risk" /></TableHead>}
+                  {show("source") && <TableHead className="min-w-[120px]">Source <InfoTip id="cbom.run.col.source" /></TableHead>}
+                  {show("wave") && <TableHead className="min-w-[110px]">Wave <InfoTip id="cbom.run.col.wave" /></TableHead>}
+                  {show("status") && <TableHead className="min-w-[100px]">Status <InfoTip id="cbom.run.col.status" /></TableHead>}
+                  {show("qgrade") && <TableHead className="min-w-[100px]">Quantum risk <InfoTip id="cbom.run.col.qgrade" /></TableHead>}
+                  {show("fixclass") && <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>}
+                  <TableHead className={`min-w-[150px] text-right ${STICKY_ACTIONS}`}><span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -327,23 +348,25 @@ export function RunFindingsTable({
                   const status = findingStatusOf(item, wave);
                   const key = keyOf(item);
                   const coverage = item.type === "coverage";
-                  const open = expanded === item.id;
                   return (
-                    <Fragment key={item.id}>
-                      <TableRow data-testid={`run-asset-${item.id}`} {...assetRowAttrs(item, wave)}
-                                className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selection.has(item.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
-                                onClick={() => setExpanded(open ? null : item.id)}>
+                      <TableRow key={item.id} data-testid={`run-asset-${item.id}`} {...assetRowAttrs(item, wave)}
+                                {...rowOpenProps(() => onOpenDetails(item), `Open details of ${assetName(item)} at ${item.location}`)}
+                                className={`cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 focus-visible:outline-none focus-visible:bg-blue-50 dark:focus-visible:bg-blue-950/40 ${selection.has(item.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}>
                         <TableCell onClick={(e) => e.stopPropagation()} className={`w-[48px] ${STICKY_SELECT}`}>
+                          {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                           <Checkbox checked={selection.has(item.id)} disabled={!key} className="cursor-pointer"
                                     aria-label={`Select ${item.location}`} data-testid={`run-asset-select-${item.id}`}
                                     title={key ? undefined : "This row has no stable key to plan or track"}
                                     onCheckedChange={() => toggle(item)} />
                         </TableCell>
+                        {show("impact") && (
                         <TableCell>
                           {item.impact
                             ? <Badge variant="outline" className={getImpactBadgeClass(item.impact)}>{item.impact}</Badge>
                             : <span className="text-xs text-zinc-500">Info</span>}
                         </TableCell>
+                        )}
+                        {show("algorithm") && (
                         <TableCell className={`font-medium whitespace-nowrap ${STICKY_NAME}`}>
                           <button type="button" className="text-left text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline cursor-pointer font-medium max-w-[180px] truncate inline-block align-bottom"
                                   title={assetName(item)} onClick={(e) => { e.stopPropagation(); onOpenDetails(item); }}>
@@ -351,26 +374,34 @@ export function RunFindingsTable({
                           </button>
                           {item.key_size ? <span className="text-zinc-500 text-xs ml-1">{item.key_size}</span> : null}
                         </TableCell>
-                        <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{item.type_label ?? ASSET_TYPE_LABEL[item.type] ?? item.type}</TableCell>
+                        )}
+                        {show("type") && <TableCell className="text-sm text-zinc-600 dark:text-zinc-400">{item.type_label ?? ASSET_TYPE_LABEL[item.type] ?? item.type}</TableCell>}
+                        {show("where") && (
                         <TableCell className="max-w-[280px]">
                           <Truncate text={item.location} className="font-mono text-xs text-zinc-900 dark:text-white" />
                           {item.target && item.target !== item.location && <Truncate text={item.target} className="text-xs text-zinc-500" />}
                         </TableCell>
-                        <TableCell className="max-w-[320px]"><Truncate text={item.finding} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>
+                        )}
+                        {show("finding") && <TableCell className="max-w-[320px]"><Truncate text={item.finding} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>}
+                        {show("strength") && (
                         <TableCell>
                           {item.crypto_strength
                             ? <Badge variant="outline" className={getStrengthBadgeClass(item.crypto_strength)}>{item.crypto_strength}</Badge>
                             : <span className="text-xs text-zinc-500">—</span>}
                         </TableCell>
-                        <TableCell><QuantumCell item={item} /></TableCell>
+                        )}
+                        {show("quantum") && <TableCell><QuantumCell item={item} /></TableCell>}
+                        {show("risk") && (
                         <TableCell className="text-center">
                           <span className={`inline-flex items-center justify-center min-w-9 px-2 py-1 rounded-md text-xs font-semibold tabular-nums ${typeof item.risk_score === "number" ? getRiskScoreBoxClass(item.risk_score) : "text-zinc-500"}`}
                                 title="Risk score (0-10, the same score as code findings)">
                             {typeof item.risk_score === "number" ? item.risk_score.toFixed(1) : "—"}
                           </span>
                         </TableCell>
-                        <TableCell className="max-w-[160px]"><Truncate text={item.source_name} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>
-                        <TableCell><WaveBadge item={wave ?? undefined} /></TableCell>
+                        )}
+                        {show("source") && <TableCell className="max-w-[160px]"><Truncate text={item.source_name} className="text-sm text-zinc-600 dark:text-zinc-400" /></TableCell>}
+                        {show("wave") && <TableCell><WaveBadge item={wave ?? undefined} /></TableCell>}
+                        {show("status") && (
                         <TableCell>
                           {coverage ? (
                             <span className="text-xs text-zinc-500" title="A part the run could not read: nothing to plan or track">—</span>
@@ -380,15 +411,18 @@ export function RunFindingsTable({
                             </span>
                           )}
                         </TableCell>
-                        {cols.qGrade && (
+                        )}
+                        {show("qgrade") && (
                           <TableCell><QGradeChip item={item as QGradeFields} assetId={item.id} /></TableCell>
                         )}
-                        {cols.fixClass && (
+                        {show("fixclass") && (
                           <TableCell><FixClassChip item={item as FixClassFields} assetId={item.id} /></TableCell>
                         )}
-                        <TableCell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <TableCell className={`text-right whitespace-nowrap ${STICKY_ACTIONS}`} onClick={(e) => e.stopPropagation()}
+                                   data-testid={`run-asset-actions-${item.id}`}>
                           <div className="inline-flex items-center gap-1.5">
                             <DropdownMenu>
+                              {/* infotip-shared: explained by the (i) on the Actions column header */}
                               <DropdownMenuTrigger asChild>
                                 <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8" aria-label="Finding actions"
                                         disabled={!key} title={key ? undefined : "This row has no stable key to track a status"}
@@ -415,25 +449,7 @@ export function RunFindingsTable({
                             </Button>
                           </div>
                         </TableCell>
-                        <TableCell>{open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
                       </TableRow>
-                      {open && (
-                        <TableRow>
-                          <TableCell colSpan={colSpan} className="bg-zinc-50 dark:bg-zinc-800/50">
-                            <div className="max-w-[900px] space-y-2 whitespace-normal">
-                              {item.finding && <p className="text-sm text-zinc-900 dark:text-white">{item.finding}</p>}
-                              <AsOfRunNote item={item} />
-                              <p className="text-xs text-zinc-500">
-                                Source: {item.source_name ?? "—"}
-                                {item.finding_codes.length > 0 ? ` · ${item.finding_codes.join(", ")}` : ""}
-                              </p>
-                              <AssetDetailPanel teamId={teamId} assetId={item.id} />
-                              <CollectedFacts item={item} />
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </Fragment>
                   );
                 })}
               </TableBody>

@@ -4,7 +4,6 @@ from requests.exceptions import ConnectTimeout, HTTPError, Timeout, RequestExcep
 import requests
 from requests.auth import HTTPBasicAuth
 import json
-import ipaddress
 from urllib.parse import urlparse
 import socket
 console = Console()
@@ -44,35 +43,22 @@ def validate_jira_url(url: str) -> bool:
         raise ValueError("Cannot connect to localhost or loopback addresses")
     
     # Resolve hostname and check IP
-    # A self-hosted Jira (Server / Data Center) on the bank's own network is a private address: like every other
-    # integration destination it is allowed only when the operator lists it in INTEGRATION_ALLOWED_PRIVATE
-    # (outbound.check_address). Loopback, link-local (cloud metadata), CGNAT and reserved addresses stay refused.
+    # Every resolved address gets the same rule as every other integration destination (outbound.check_address):
+    # loopback, link-local, cloud metadata (169.254.169.254, Alibaba's 100.100.100.200), CGNAT 100.64/10, NAT64 and
+    # reserved addresses are never allowed; a private address (a self-hosted Jira Server / Data Center on the bank's
+    # network) only when the operator lists it in INTEGRATION_ALLOWED_PRIVATE; a public address passes. #126.
     from backend.utilities.integrations import outbound
 
     rules = outbound.allowlist()
     operator_allowed = False
     try:
-        # Get all IP addresses for the hostname
-        ip_addresses = socket.getaddrinfo(hostname, None)
-        for family, type, proto, canonname, sockaddr in ip_addresses:
+        for _family, _type, _proto, _canonname, sockaddr in socket.getaddrinfo(hostname, None):
             ip = sockaddr[0]
-            ip_obj = ipaddress.ip_address(ip)
-            if ip_obj.is_private and not outbound._never(ip) and outbound.check_address(hostname, ip, rules) is None:
-                operator_allowed = True
-                continue
-
-            # Block private, loopback, link-local, and reserved addresses
-            if ip_obj.is_private:
-                raise ValueError(f"Cannot connect to private IP address: {ip} (an operator can allow an on-premises "
-                                 f"Jira in {outbound.ENV_ALLOWED_PRIVATE})")
-            if ip_obj.is_loopback:
-                raise ValueError(f"Cannot connect to loopback address: {ip}")
-            if ip_obj.is_link_local:
-                raise ValueError(f"Cannot connect to link-local address: {ip}")
-            if ip_obj.is_reserved:
-                raise ValueError(f"Cannot connect to reserved address: {ip}")
-            if ip_obj.is_multicast:
-                raise ValueError(f"Cannot connect to multicast address: {ip}")
+            reason = outbound.check_address(hostname, ip, rules)
+            if reason:
+                raise ValueError(reason)
+            if not outbound.public_address(ip):
+                operator_allowed = True  # a private address the operator listed
     except socket.gaierror:
         raise ValueError(f"Could not resolve hostname: {hostname}")
     
