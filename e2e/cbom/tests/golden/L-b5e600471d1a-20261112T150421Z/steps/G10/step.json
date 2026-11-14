@@ -1,0 +1,118 @@
+{
+  "checks": [
+    {
+      "evidence": [],
+      "expected": "every job finished within 15 min",
+      "gate": "G10",
+      "id": "G10/run_finished_15min",
+      "kind": "flow",
+      "observed": [
+        "84:success/ok",
+        "85:success/partial"
+      ],
+      "reason": "",
+      "subject": {
+        "check": "run_finished_15min"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": null,
+      "gate": "G10",
+      "id": "G10/charge_after_runtime_skips",
+      "kind": "flow",
+      "observed": null,
+      "reason": "the final charge after runtime skips follows OA-10b; CB-05 adds the check (KF-8)",
+      "subject": {
+        "check": "charge_after_runtime_skips"
+      },
+      "verdict": "NOT-RUN"
+    },
+    {
+      "evidence": [
+        "lab/listeners/control.jsonl"
+      ],
+      "expected": ">= 1 connection from the node after Start (positive control)",
+      "gate": "G10",
+      "id": "G10/control_accepts_control",
+      "kind": "flow",
+      "observed": {
+        "all_lines": 7,
+        "from_node": 7
+      },
+      "reason": "",
+      "subject": {
+        "check": "control_accepts",
+        "listener": "control"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "lab/listeners/canary.jsonl"
+      ],
+      "expected": "0 connections from the node",
+      "gate": "G10",
+      "id": "G10/canary_accepts_canary",
+      "kind": "flow",
+      "observed": {
+        "all_lines": 0,
+        "from_node": 0
+      },
+      "reason": "",
+      "subject": {
+        "check": "canary_accepts",
+        "listener": "canary",
+        "never_scan_by": "address"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [
+        "lab/listeners/canary.jsonl"
+      ],
+      "expected": "exactly one line for one probe connection from the harness",
+      "gate": "G10",
+      "id": "G10/canary_log_path_probe_canary",
+      "kind": "flow",
+      "observed": {
+        "connected": true,
+        "file": true,
+        "lines": 1
+      },
+      "reason": "",
+      "subject": {
+        "check": "canary_log_path_probe",
+        "listener": "canary"
+      },
+      "verdict": "PASS"
+    },
+    {
+      "evidence": [],
+      "expected": {
+        "outcome": "partial",
+        "status": "skipped_never_scan"
+      },
+      "gate": "G10",
+      "id": "G10/r_canary_partial_never_scan_canary",
+      "kind": "flow",
+      "observed": {
+        "outcome": "partial",
+        "status": "skipped_never_scan"
+      },
+      "reason": "",
+      "subject": {
+        "check": "r_canary_partial_never_scan",
+        "listener": "canary"
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "ended": "2026-11-12T15:23:58Z",
+  "gate": "G10",
+  "note": "",
+  "seconds": 28.1,
+  "started": "2026-11-12T15:23:30Z",
+  "status": "ran"
+}

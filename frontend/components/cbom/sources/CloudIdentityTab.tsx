@@ -70,8 +70,18 @@ type MetadataProvider = "saml_metadata" | "oidc_discovery";
 
 const PROVIDERS: { value: Provider; label: string; description: string }[] = [
   { value: "aws", label: "AWS", description: "About five minutes; no keys are exchanged." },
-  { value: "azure", label: "Azure", description: "Key Vault metadata through an app registration (client secret or certificate)." },
-  { value: "gcp", label: "Google Cloud", description: "Cloud KMS, CA Service and Secret Manager metadata through a service account." },
+  {
+    value: "azure",
+    label: "Azure",
+    description:
+      "Key Vault keys, certificates and secrets (metadata), plus the TLS and encryption settings of storage accounts, App Service, Application Gateway, Front Door and Azure SQL, through a read-only app registration.",
+  },
+  {
+    value: "gcp",
+    label: "Google Cloud",
+    description:
+      "Cloud KMS keys and versions, CA Service, Secret Manager and Certificate Manager (metadata), plus load-balancer TLS policies and certificates and bucket encryption, through a read-only service account.",
+  },
 ];
 const PROVIDER_LABEL: Record<Provider, string> = { aws: "AWS", azure: "Azure", gcp: "Google Cloud" };
 const PROVIDER_OF_KIND: Record<string, Provider> = { aws_account: "aws", azure_subscription: "azure", gcp_project: "gcp" };
@@ -126,6 +136,7 @@ const CHECK_BADGE: Record<CbomAwsCheck["status"], [Tone, string]> = {
   fail: ["red", "Fail"],
   skipped: ["zinc", "Skipped"],
   error: ["amber", "Error"],
+  warning: ["amber", "Warning"], // a grant the reader script adds; the run reports the service as a coverage gap
 };
 
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
@@ -140,6 +151,41 @@ const DOMAIN_LABEL_RE = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
 const MAX_DOMAINS = 200;
 const CLOUDFORMATION_CONSOLE = "https://console.aws.amazon.com/cloudformation/home";
 const NOT_AVAILABLE = "Validation is not available yet; collection is not available yet.";
+// Same sentences as the backend's planning.CLOUD_NOT_CONNECTED (the run estimate's skip reason).
+const CLOUD_NOT_CONNECTED: Record<"azure" | "gcp", string> = {
+  azure: "Not available until the Azure tenant is connected: Save and validate must pass first",
+  gcp: "Not available until the Google Cloud project is connected: Save and validate must pass first",
+};
+// The exact read-only grants the reader scripts make (templates.AZURE_READER / GCP_READER); nothing else is needed.
+const AZURE_READ_ACTIONS = [
+  "Microsoft.Resources/subscriptions/read",
+  "Microsoft.KeyVault/vaults/read",
+  "Microsoft.Storage/storageAccounts/read",
+  "Microsoft.Web/sites/read",
+  "Microsoft.Web/sites/config/read",
+  "Microsoft.Web/certificates/read",
+  "Microsoft.Network/applicationGateways/read",
+  "Microsoft.Cdn/profiles/read",
+  "Microsoft.Cdn/profiles/customdomains/read",
+  "Microsoft.Sql/servers/read",
+];
+const AZURE_DATA_ACCESS = [
+  "Key Vault Reader (vaults with Azure RBAC): keys and certificates read, secrets readMetadata",
+  "Access policy (other vaults): keys get/list, certificates get/list, secrets list",
+];
+const GCP_READ_ROLES = ["roles/cloudkms.viewer", "roles/privateca.auditor", "roles/secretmanager.viewer", "roles/certificatemanager.viewer"];
+const GCP_READ_PERMISSIONS = [
+  "compute.sslPolicies.list",
+  "compute.regionSslPolicies.list",
+  "compute.sslCertificates.list",
+  "compute.regionSslCertificates.list",
+  "compute.targetHttpsProxies.list",
+  "compute.regionTargetHttpsProxies.list",
+  "compute.targetSslProxies.list",
+  "compute.forwardingRules.list",
+  "compute.globalForwardingRules.list",
+  "storage.buckets.list",
+];
 // idp_collect reads public OIDC / SAML metadata and sends no credential (backend/tests/test_cbom_cb08_promises.py)
 const IDP_HOW = "ZeroShield reads the signing keys from your identity provider's public metadata only; a secret is not used yet.";
 // Cloud, CLM and IdP secrets never go to a scan node, so the node wording of the default hint would be wrong here.
@@ -587,6 +633,11 @@ export default function CloudIdentityTab({ teamId, onNavigate }: { teamId: numbe
                         <TableCell className="text-zinc-600 dark:text-zinc-400">{s.last_test_at ? formatDateTime(s.last_test_at) : "Never"}</TableCell>
                         <TableCell>
                           {busy ? <TestStatusBadge status="pending" /> : <TestStatusBadge status={s.last_test_status} title={s.last_test_summary} />}
+                          {!busy && s.kind !== "aws_account" && s.last_test_status !== "passed" && s.last_test_status !== "failed" && (
+                            <span className="mt-1 block max-w-[220px] text-xs text-zinc-500" data-testid={`cloud-account-not-connected-${s.id}`}>
+                              {CLOUD_NOT_CONNECTED[PROVIDER_OF_KIND[s.kind] === "gcp" ? "gcp" : "azure"]}
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -896,6 +947,11 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
             : "Fill in the form, then choose Save and validate. ZeroShield signs in and lists what it would read; each check is listed here."}
         </p>
       )}
+      {!isAws && (!view || view.checks.some((c) => c.status === "fail" || c.status === "error")) && (
+        <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-not-connected">
+          {CLOUD_NOT_CONNECTED[provider as "azure" | "gcp"]}.
+        </p>
+      )}
       {view && (
         <ul className={cn("divide-y divide-zinc-200 dark:divide-zinc-800", pending && "opacity-50")}>
           {view.checks.map((check) => {
@@ -929,6 +985,12 @@ function ValidationPanel({ view, pending, provider, awsNotConfigured = false }: 
             ? "Every call lands in your Azure Activity Log and the vaults' diagnostic logs."
             : "Every call lands in your Cloud Audit Logs (Data Access logs, where enabled)."}
       </p>
+      {!isAws && view?.checks.some((c) => c.status === "warning") && (
+        <p className="text-xs text-amber-700 dark:text-amber-300" data-testid="cloud-validation-rerun-script">
+          Some services are not granted yet: re-run the reader script above to add them. Until then each run reads everything
+          else and lists those services as coverage gaps.
+        </p>
+      )}
     </div>
   );
 }
@@ -1363,8 +1425,9 @@ function AzureForm({
       <ReaderScript
         teamId={teamId}
         provider="azure"
-        text="Run this script in Azure Cloud Shell. It gives the app read-only access to Key Vault metadata: the built-in Key Vault Reader role (no decrypt, unwrap, sign or secret values), a small role that lists vaults, and list-only secret access on vaults that use access policies."
+        text="Run this script in Azure Cloud Shell. It gives the app read-only access: a custom role with read actions only (vault, storage, App Service, Application Gateway, Front Door and SQL settings), the built-in Key Vault Reader role (no decrypt, unwrap, sign or secret values), and list-only secret access on vaults that use access policies."
       />
+      <PermissionsHelp provider="azure" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Name" htmlFor="azure-name" required error={errors.name}>
           <Input id="azure-name" data-testid="cloud-azure-name" value={name} maxLength={64} placeholder="azure-prod" onChange={(e) => setName(e.target.value)} />
@@ -1528,8 +1591,9 @@ function GcpForm({
       <ReaderScript
         teamId={teamId}
         provider="gcp"
-        text="Run this script with gcloud. It grants the service account viewer roles only: Cloud KMS Viewer (no key use), CA Service Auditor and Secret Manager Viewer (metadata, never secret payloads)."
+        text="Run this script with gcloud. It grants the service account viewer roles only: Cloud KMS Viewer (no key use), CA Service Auditor, Secret Manager Viewer (metadata, never secret payloads) and Certificate Manager Viewer, plus a custom role with list permissions for load-balancer TLS and buckets."
       />
+      <PermissionsHelp provider="gcp" />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Name" htmlFor="gcp-name" required error={errors.name}>
           <Input id="gcp-name" data-testid="cloud-gcp-name" value={name} maxLength={64} placeholder="gcp-prod" onChange={(e) => setName(e.target.value)} />
@@ -1642,6 +1706,38 @@ function ReaderScript({ teamId, provider, text }: { teamId: number; provider: "a
           </div>
         ))}
     </div>
+  );
+}
+
+function PermissionsHelp({ provider }: { provider: "azure" | "gcp" }) {
+  const azure = provider === "azure";
+  return (
+    <details className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4 text-sm" data-testid={`cloud-${provider}-permissions`}>
+      <summary className="cursor-pointer font-medium text-zinc-900 dark:text-white">Exact permissions ZeroShield needs (read-only)</summary>
+      <div className="mt-3 space-y-3 text-zinc-600 dark:text-zinc-400">
+        <div>
+          <p className="text-xs font-medium text-zinc-500">{azure ? "Control-plane read actions (custom role, per subscription)" : "Predefined roles"}</p>
+          <ul className="mt-1 list-disc pl-5 font-mono text-xs">
+            {(azure ? AZURE_READ_ACTIONS : GCP_READ_ROLES).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-zinc-500">{azure ? "Key Vault data plane" : "Custom role, list permissions only"}</p>
+          <ul className={cn("mt-1 list-disc pl-5 text-xs", !azure && "font-mono")}>
+            {(azure ? AZURE_DATA_ACCESS : GCP_READ_PERMISSIONS).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-xs">
+          {azure
+            ? "Metadata only: never secret values, key material, app settings or connection strings (no getSecret, listKeys or config/list). A permission left out shows as a coverage row on the run, naming the action to grant."
+            : "Metadata only: never secret payloads or key use (no secretmanager.versions.access, no cloudkms useTo*). An API a project has not enabled, or a permission left out, shows as a coverage row on the run."}
+        </p>
+      </div>
+    </details>
   );
 }
 

@@ -1,0 +1,1581 @@
+{
+ "_about": "Reviewed VEX default per KB finding code (CB-22, rules cb22-1) and whether each CVE a finding code maps to is a flaw of the algorithm or protocol itself. Hand-written and reviewed: one row per code with its basis (observed -> exploitable; posture, quantum_only, inferred, static -> in_triage), the reason and its sources; one row per mapped CVE with inherent true/false. build_kb.py copies basis and reason into each KB entry as vex_default, and inherent into each CVE record as vex_inherent; it fails on a missing or extra row, an unknown basis, a quantum-only KB entry not marked quantum_only, or an observed basis in the code namespace.",
+ "code": {
+  "AT_REST_ENCRYPTION_WEAK": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.AT_REST_ENCRYPTION_WEAK.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_NEAR_EXPIRY": {
+   "basis": "posture",
+   "reason": "not expired yet: an operational deadline",
+   "sources": [
+    "kb:findings.code.CERT_NEAR_EXPIRY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_SELF_SIGNED": {
+   "basis": "posture",
+   "reason": "exploitable only where clients skip validation",
+   "sources": [
+    "kb:findings.code.CERT_SELF_SIGNED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CUSTOM_CRYPTO": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.CUSTOM_CRYPTO.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DOWNGRADE_PROTECTION_MISSING": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.DOWNGRADE_PROTECTION_MISSING.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "EOL_BASE_IMAGE": {
+   "basis": "inferred",
+   "reason": "judged from the image release and its end-of-life date",
+   "sources": [
+    "kb:findings.code.EOL_BASE_IMAGE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "EOL_CRYPTO_LIBRARY": {
+   "basis": "inferred",
+   "reason": "judged from the shipped version and its end-of-life date",
+   "sources": [
+    "kb:findings.code.EOL_CRYPTO_LIBRARY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "EXPIRED_CERTIFICATE": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.EXPIRED_CERTIFICATE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "HARDCODED_KEY": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.HARDCODED_KEY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KMS_KEY_DELETION_UNPROTECTED": {
+   "basis": "posture",
+   "reason": "recoverability setting: harm needs a compromised principal first",
+   "sources": [
+    "kb:findings.code.KMS_KEY_DELETION_UNPROTECTED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KMS_KEY_POLICY_PUBLIC": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.KMS_KEY_POLICY_PUBLIC.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KMS_KEY_ROTATION_DISABLED": {
+   "basis": "posture",
+   "reason": "rotation hygiene: limits blast radius after a leak",
+   "sources": [
+    "kb:findings.code.KMS_KEY_ROTATION_DISABLED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KNOWN_TLS_VULNERABILITY": {
+   "basis": "inferred",
+   "reason": "reported by name from configuration or a scanner report, not reproduced",
+   "sources": [
+    "kb:findings.code.KNOWN_TLS_VULNERABILITY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "LIBRARY_CVE_RANGE": {
+   "basis": "inferred",
+   "reason": "judged from a version range; back-ported fixes are not checked",
+   "sources": [
+    "kb:findings.code.LIBRARY_CVE_RANGE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "PLAINTEXT_LISTENER": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.PLAINTEXT_LISTENER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "PROVIDER_MANAGED_KEY": {
+   "basis": "posture",
+   "reason": "key-ownership choice; data stays encrypted and behind provider authorization",
+   "sources": [
+    "kb:findings.code.PROVIDER_MANAGED_KEY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "QUANTUM_VULNERABLE": {
+   "basis": "quantum_only",
+   "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)",
+   "sources": [
+    "kb:findings.code.QUANTUM_VULNERABLE.attack",
+    "kb:findings.code.QUANTUM_VULNERABLE.pqc",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "REUSED_NONCE": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.REUSED_NONCE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SELF_SIGNED_LEAF": {
+   "basis": "posture",
+   "reason": "exploitable only where clients skip validation",
+   "sources": [
+    "kb:findings.code.SELF_SIGNED_LEAF.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "STATIC_IV": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.STATIC_IV.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "TLS_VERIFICATION_DISABLED": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.TLS_VERIFICATION_DISABLED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "UNENCRYPTED_AT_REST": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.UNENCRYPTED_AT_REST.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "UNENCRYPTED_IN_TRANSIT": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.UNENCRYPTED_IN_TRANSIT.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "VULNERABLE_CRYPTO_LIBRARY": {
+   "basis": "inferred",
+   "reason": "judged from a library advisory and version, not from behaviour",
+   "sources": [
+    "kb:findings.code.VULNERABLE_CRYPTO_LIBRARY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_ALGORITHM": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_ALGORITHM.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_CERTIFICATE_KEY": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_CERTIFICATE_KEY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_CERTIFICATE_SIGNATURE": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_CERTIFICATE_SIGNATURE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_CIPHER_MODE": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_CIPHER_MODE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_CIPHER_SUITE": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_CIPHER_SUITE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_KEY_SIZE": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_KEY_SIZE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_PADDING": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_PADDING.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_PROTOCOL": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_PROTOCOL.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_RNG": {
+   "basis": "static",
+   "reason": "seen in source or configuration; that it protects something reachable is not proven by a code scan",
+   "sources": [
+    "kb:findings.code.WEAK_RNG.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  }
+ },
+ "cves": {
+  "CVE-2004-2761": {
+   "inherent": true,
+   "reason": "MD5 is not collision resistant: a flaw of the algorithm",
+   "sources": [
+    "kb:cves.CVE-2004-2761.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2004-2761"
+   ]
+  },
+  "CVE-2005-4900": {
+   "inherent": true,
+   "reason": "SHA-1 is not collision resistant: a flaw of the algorithm",
+   "sources": [
+    "kb:cves.CVE-2005-4900.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2005-4900"
+   ]
+  },
+  "CVE-2008-5161": {
+   "inherent": false,
+   "reason": "SSH CBC plaintext recovery in specific products and versions (Tectia, older OpenSSH), not CBC itself",
+   "sources": [
+    "kb:cves.CVE-2008-5161.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2008-5161"
+   ]
+  },
+  "CVE-2009-3555": {
+   "inherent": false,
+   "reason": "TLS renegotiation flaw fixed by the RFC 5746 extension in implementations",
+   "sources": [
+    "kb:cves.CVE-2009-3555.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2009-3555"
+   ]
+  },
+  "CVE-2011-3389": {
+   "inherent": false,
+   "reason": "BEAST: needs a client without the 1/n-1 split; mitigated client-side in current browsers",
+   "sources": [
+    "kb:cves.CVE-2011-3389.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2011-3389"
+   ]
+  },
+  "CVE-2012-4929": {
+   "inherent": false,
+   "reason": "CRIME: needs TLS compression enabled, not observed by the matching code",
+   "sources": [
+    "kb:cves.CVE-2012-4929.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2012-4929"
+   ]
+  },
+  "CVE-2013-0169": {
+   "inherent": false,
+   "reason": "Lucky Thirteen: an implementation timing side channel, fixed in libraries",
+   "sources": [
+    "kb:cves.CVE-2013-0169.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2013-0169"
+   ]
+  },
+  "CVE-2013-2566": {
+   "inherent": true,
+   "reason": "RC4 single-byte biases: a flaw of the cipher",
+   "sources": [
+    "kb:cves.CVE-2013-2566.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2013-2566"
+   ]
+  },
+  "CVE-2014-0160": {
+   "inherent": false,
+   "reason": "Heartbleed: an OpenSSL 1.0.1 implementation bug",
+   "sources": [
+    "kb:cves.CVE-2014-0160.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2014-0160"
+   ]
+  },
+  "CVE-2014-0224": {
+   "inherent": false,
+   "reason": "CCS injection: an OpenSSL implementation bug",
+   "sources": [
+    "kb:cves.CVE-2014-0224.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2014-0224"
+   ]
+  },
+  "CVE-2014-3566": {
+   "inherent": true,
+   "reason": "POODLE: a flaw of the SSL 3.0 protocol's CBC padding",
+   "sources": [
+    "kb:cves.CVE-2014-3566.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2014-3566"
+   ]
+  },
+  "CVE-2015-0204": {
+   "inherent": false,
+   "reason": "FREAK: an OpenSSL client implementation bug (plus export suites)",
+   "sources": [
+    "kb:cves.CVE-2015-0204.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2015-0204"
+   ]
+  },
+  "CVE-2015-2808": {
+   "inherent": true,
+   "reason": "RC4 key-scheduling weakness (Bar Mitzvah): a flaw of the cipher",
+   "sources": [
+    "kb:cves.CVE-2015-2808.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2015-2808"
+   ]
+  },
+  "CVE-2015-4000": {
+   "inherent": true,
+   "reason": "Logjam: a flaw of the TLS protocol with DHE_EXPORT and small DH groups",
+   "sources": [
+    "kb:cves.CVE-2015-4000.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2015-4000"
+   ]
+  },
+  "CVE-2016-0703": {
+   "inherent": false,
+   "reason": "an OpenSSL SSLv2 implementation bug",
+   "sources": [
+    "kb:cves.CVE-2016-0703.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2016-0703"
+   ]
+  },
+  "CVE-2016-0800": {
+   "inherent": true,
+   "reason": "DROWN: a flaw of the SSLv2 protocol (cross-protocol attack on the shared RSA key)",
+   "sources": [
+    "kb:cves.CVE-2016-0800.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2016-0800"
+   ]
+  },
+  "CVE-2016-2183": {
+   "inherent": true,
+   "reason": "SWEET32: the birthday bound of 64-bit block ciphers",
+   "sources": [
+    "kb:cves.CVE-2016-2183.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2016-2183"
+   ]
+  },
+  "CVE-2023-48795": {
+   "inherent": false,
+   "reason": "Terrapin: needs ChaCha20-Poly1305 or CBC with Encrypt-then-MAC and an unpatched peer",
+   "sources": [
+    "kb:cves.CVE-2023-48795.summary",
+    "https://nvd.nist.gov/vuln/detail/CVE-2023-48795"
+   ]
+  }
+ },
+ "node": {
+  "CA_ALLOWS_ANY_NAME": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.CA_ALLOWS_ANY_NAME.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CA_ALLOWS_WEAK_KEY": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.CA_ALLOWS_WEAK_KEY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CA_LONG_VALIDITY": {
+   "basis": "posture",
+   "reason": "lifetime policy: a leak stays usable longer; no attack on the CA or its certificates as they are",
+   "sources": [
+    "kb:findings.node.CA_LONG_VALIDITY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CA_TEMPLATE_WRITABLE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.CA_TEMPLATE_WRITABLE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CA_WEAK_SIGNING": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.CA_WEAK_SIGNING.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CBC_ACCEPTED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.CBC_ACCEPTED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CBC_ONLY": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.CBC_ONLY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_EXPIRED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.CERT_EXPIRED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_EXPIRES_30D": {
+   "basis": "posture",
+   "reason": "not expired yet: an operational deadline, no attack on the certificate today",
+   "sources": [
+    "kb:findings.node.CERT_EXPIRES_30D.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_REVOKED": {
+   "basis": "posture",
+   "reason": "revocation is usually the intended outcome; exposure only if a server still presents it, judged by the endpoint's own codes",
+   "sources": [
+    "kb:findings.node.CERT_REVOKED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_SELF_SHA1": {
+   "basis": "posture",
+   "reason": "informational: the SHA-1 self-signature of a trust anchor is never verified, so it gives no attack (the KB entry says so)",
+   "sources": [
+    "kb:findings.node.CERT_SELF_SHA1.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_SELF_SIGNED": {
+   "basis": "posture",
+   "reason": "exploitable only where clients skip validation, which the collector does not observe; pinned use is safe",
+   "sources": [
+    "kb:findings.node.CERT_SELF_SIGNED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_UNEXPECTED_CA": {
+   "basis": "posture",
+   "reason": "inventory/governance finding (shadow IT); the certificate itself has no weakness from this code",
+   "sources": [
+    "kb:findings.node.CERT_UNEXPECTED_CA.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_UNUSED": {
+   "basis": "posture",
+   "reason": "inventory finding: orphaned certificate; misuse needs its key to leak first",
+   "sources": [
+    "kb:findings.node.CERT_UNUSED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "CERT_WILDCARD_SPRAWL": {
+   "basis": "posture",
+   "reason": "key-distribution hygiene: misuse needs one holder's key to leak first",
+   "sources": [
+    "kb:findings.node.CERT_WILDCARD_SPRAWL.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_10G_VERIFIER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_10G_VERIFIER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_CLEARTEXT_PW": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_CLEARTEXT_PW.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_EOL_VERSION": {
+   "basis": "inferred",
+   "reason": "judged from the release and its end-of-support date, not from a flaw seen on the server",
+   "sources": [
+    "kb:findings.node.DB_EOL_VERSION.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_LEGACY_NNE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_LEGACY_NNE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_LEGACY_PW_HASH": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_LEGACY_PW_HASH.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_LOGIN_NO_POLICY": {
+   "basis": "posture",
+   "reason": "password-policy setting: whether any login actually has a weak password is not observed",
+   "sources": [
+    "kb:findings.node.DB_LOGIN_NO_POLICY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_MD5_ACCEPTED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_MD5_ACCEPTED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_MD5_DEFAULT": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_MD5_DEFAULT.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_NATIVE_PW": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_NATIVE_PW.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_NO_AUTH": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_NO_AUTH.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_NO_TDE": {
+   "basis": "posture",
+   "reason": "at-rest encryption may be provided by the volume or storage layer, which the database collector cannot see",
+   "sources": [
+    "kb:findings.node.DB_NO_TDE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_NO_TLS": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_NO_TLS.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_OLD_PASSWORD": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_OLD_PASSWORD.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_PLAINTEXT_PW": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_PLAINTEXT_PW.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_TDE_OFF": {
+   "basis": "posture",
+   "reason": "at-rest encryption may be provided by the volume or storage layer, which the database collector cannot see",
+   "sources": [
+    "kb:findings.node.DB_TDE_OFF.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_TLS_MODE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_TLS_MODE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_TLS_OPTIONAL": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_TLS_OPTIONAL.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_TRUST": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_TRUST.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DB_WEAK_HASH": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DB_WEAK_HASH.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DH_LT_2048": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DH_LT_2048.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DISK_CBC": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DISK_CBC.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DISK_PROTECTION_OFF": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DISK_PROTECTION_OFF.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DISK_UNENCRYPTED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DISK_UNENCRYPTED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DISK_XTS_128": {
+   "basis": "quantum_only",
+   "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)",
+   "sources": [
+    "kb:findings.node.DISK_XTS_128.attack",
+    "kb:findings.node.DISK_XTS_128.pqc",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DOTNET_WEAK_TLS": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DOTNET_WEAK_TLS.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DOWNGRADE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DOWNGRADE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "DSA": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.DSA.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "EBS_DEFAULT_OFF": {
+   "basis": "posture",
+   "reason": "account default for future volumes; existing volumes are judged by their own encryption",
+   "sources": [
+    "kb:findings.node.EBS_DEFAULT_OFF.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "EC_LT_224": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.EC_LT_224.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "GLUE_CATALOG_UNENCRYPTED": {
+   "basis": "posture",
+   "reason": "metadata stays behind Glue IAM authorization; missing KMS is defence in depth",
+   "sources": [
+    "kb:findings.node.GLUE_CATALOG_UNENCRYPTED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "GLUE_JDBC_NO_TLS": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.GLUE_JDBC_NO_TLS.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "GLUE_PLAINTEXT_PASSWORD": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.GLUE_PLAINTEXT_PASSWORD.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "IKEV1_ENABLED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.IKEV1_ENABLED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "IKE_AGGRESSIVE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.IKE_AGGRESSIVE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "IKE_NO_PQ": {
+   "basis": "quantum_only",
+   "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)",
+   "sources": [
+    "kb:findings.node.IKE_NO_PQ.attack",
+    "kb:findings.node.IKE_NO_PQ.pqc",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "IKE_WEAK_DH": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.IKE_WEAK_DH.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "IKE_WEAK_ENCR": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.IKE_WEAK_ENCR.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "IKE_WEAK_INTEG": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.IKE_WEAK_INTEG.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "IPSEC_WEAK_TRANSFORM": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.IPSEC_WEAK_TRANSFORM.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEYSTORE_JKS": {
+   "basis": "posture",
+   "reason": "format hygiene: brute force needs the keystore file to be stolen first and a weak password",
+   "sources": [
+    "kb:findings.node.KEYSTORE_JKS.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_COMPROMISED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KEY_COMPROMISED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_EXTRACTABLE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KEY_EXTRACTABLE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_IN_CONFIGMAP": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KEY_IN_CONFIGMAP.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_IN_DOCUMENT": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KEY_IN_DOCUMENT.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_NO_ROTATION": {
+   "basis": "posture",
+   "reason": "rotation hygiene: limits blast radius after a leak; no attack on the key as it is",
+   "sources": [
+    "kb:findings.node.KEY_NO_ROTATION.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_PLAINTEXT_EXPORT": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KEY_PLAINTEXT_EXPORT.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_READABLE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KEY_READABLE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_WEAK_SYMMETRIC": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KEY_WEAK_SYMMETRIC.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KEY_WORLD_READABLE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.KEY_WORLD_READABLE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KMS_NO_ROTATION": {
+   "basis": "posture",
+   "reason": "rotation hygiene: limits blast radius after a leak; no attack on the key as it is",
+   "sources": [
+    "kb:findings.node.KMS_NO_ROTATION.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KMS_PENDING_DELETION": {
+   "basis": "posture",
+   "reason": "availability/lifecycle: data loss risk on deletion, no confidentiality or integrity attack",
+   "sources": [
+    "kb:findings.node.KMS_PENDING_DELETION.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KV_NO_PURGE_PROTECTION": {
+   "basis": "posture",
+   "reason": "recoverability setting: harm needs a compromised or careless principal first",
+   "sources": [
+    "kb:findings.node.KV_NO_PURGE_PROTECTION.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KV_PUBLIC_NETWORK": {
+   "basis": "posture",
+   "reason": "network restriction is defence in depth: use still needs a valid token",
+   "sources": [
+    "kb:findings.node.KV_PUBLIC_NETWORK.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "KV_SOFT_DELETE_OFF": {
+   "basis": "posture",
+   "reason": "recoverability setting: harm needs a compromised or careless principal first",
+   "sources": [
+    "kb:findings.node.KV_SOFT_DELETE_OFF.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "LIB_DELETED_IN_USE": {
+   "basis": "inferred",
+   "reason": "the running process predates the installed patch; which flaws remain is inferred from versions",
+   "sources": [
+    "kb:findings.node.LIB_DELETED_IN_USE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "LIB_EOL": {
+   "basis": "inferred",
+   "reason": "judged from the version and the vendor's end-of-life date; distributions may back-port fixes",
+   "sources": [
+    "kb:findings.node.LIB_EOL.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "LIB_KNOWN_CVE": {
+   "basis": "inferred",
+   "reason": "judged from a version range; distributions back-port fixes without changing the upstream version",
+   "sources": [
+    "kb:findings.node.LIB_KNOWN_CVE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "LIB_STATIC": {
+   "basis": "posture",
+   "reason": "patch-management hygiene: whether the linked copy is vulnerable is judged by version codes",
+   "sources": [
+    "kb:findings.node.LIB_STATIC.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "LINKERD_UNAUTHENTICATED_SERVER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.LINKERD_UNAUTHENTICATED_SERVER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "LUKS1": {
+   "basis": "posture",
+   "reason": "KDF hygiene: brute force needs the disk and a weak passphrase",
+   "sources": [
+    "kb:findings.node.LUKS1.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "MESH_DR_TLS_DISABLED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.MESH_DR_TLS_DISABLED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "MESH_MTLS_OFF": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.MESH_MTLS_OFF.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "MESH_MTLS_PERMISSIVE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.MESH_MTLS_PERMISSIVE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "MIN_SSLv2": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.MIN_SSLv2.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "MIN_SSLv3": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.MIN_SSLv3.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "MIN_TLS10": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.MIN_TLS10.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "MIN_TLS11": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.MIN_TLS11.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "MODBUS_PLAINTEXT": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.MODBUS_PLAINTEXT.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "NO_FALLBACK_SCSV": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.NO_FALLBACK_SCSV.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "NO_PQ_KEX": {
+   "basis": "quantum_only",
+   "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)",
+   "sources": [
+    "kb:findings.node.NO_PQ_KEX.attack",
+    "kb:findings.node.NO_PQ_KEX.pqc",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "NO_TLS": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.NO_TLS.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "NO_TLS12": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.NO_TLS12.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "OPCUA_ANON": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.OPCUA_ANON.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "OPCUA_DEPRECATED_POLICY": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.OPCUA_DEPRECATED_POLICY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "OPCUA_NONE_POLICY": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.OPCUA_NONE_POLICY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "OPCUA_USERNAME_PLAINTEXT": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.OPCUA_USERNAME_PLAINTEXT.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "OPENSSL_ENC_WEAK_KDF": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.OPENSSL_ENC_WEAK_KDF.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "PLAINTEXT_LISTENER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.PLAINTEXT_LISTENER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "POLICY_LEGACY": {
+   "basis": "posture",
+   "reason": "host policy only: what each service actually accepts is observed and judged by that service's own codes",
+   "sources": [
+    "kb:findings.node.POLICY_LEGACY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "PROTO_SSLv2": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.PROTO_SSLv2.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "PROTO_SSLv3": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.PROTO_SSLv3.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "PROTO_TLS10": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.PROTO_TLS10.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "PROTO_TLS11": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.PROTO_TLS11.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "QUANTUM_VULNERABLE": {
+   "basis": "quantum_only",
+   "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)",
+   "sources": [
+    "kb:findings.node.QUANTUM_VULNERABLE.attack",
+    "kb:findings.node.QUANTUM_VULNERABLE.pqc",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "RDP_NO_NLA": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.RDP_NO_NLA.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "RDP_NO_TLS": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.RDP_NO_TLS.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "RSA_LT_1024": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.RSA_LT_1024.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "RSA_LT_2048": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.RSA_LT_2048.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SAML_METADATA_UNSIGNED": {
+   "basis": "posture",
+   "reason": "exploitable only if the metadata travels over an untrusted channel, which is not observed",
+   "sources": [
+    "kb:findings.node.SAML_METADATA_UNSIGNED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SECRET_IN_CONFIG": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SECRET_IN_CONFIG.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SECRET_NO_ROTATION": {
+   "basis": "posture",
+   "reason": "rotation hygiene: limits blast radius after a leak; no attack on the secret as it is",
+   "sources": [
+    "kb:findings.node.SECRET_NO_ROTATION.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SECRET_PLAINTEXT_PARAM": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SECRET_PLAINTEXT_PARAM.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SIG_MD5": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SIG_MD5.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SIG_SHA1": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SIG_SHA1.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_CBC_CIPHER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SSH_CBC_CIPHER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_DH_GROUP1": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SSH_DH_GROUP1.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_DH_SHA1": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SSH_DH_SHA1.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_DSS": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SSH_DSS.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_HMAC_SHA1": {
+   "basis": "posture",
+   "reason": "the KB entry states no practical attack today: a crypto-agility and compliance gap",
+   "sources": [
+    "kb:findings.node.SSH_HMAC_SHA1.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_NO_PQ_KEX": {
+   "basis": "quantum_only",
+   "reason": "no classical attack today; exposure arrives with a cryptographically relevant quantum computer (harvest now, decrypt later or future forgery)",
+   "sources": [
+    "kb:findings.node.SSH_NO_PQ_KEX.attack",
+    "kb:findings.node.SSH_NO_PQ_KEX.pqc",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_RSA_SHA1": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SSH_RSA_SHA1.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_UMAC64": {
+   "basis": "posture",
+   "reason": "forgery odds rise only over very long sessions; no practical attack demonstrated",
+   "sources": [
+    "kb:findings.node.SSH_UMAC64.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_V1_ENABLED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SSH_V1_ENABLED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_WEAK_CIPHER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SSH_WEAK_CIPHER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "SSH_WEAK_MAC": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.SSH_WEAK_MAC.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "STATIC_RSA_KEX": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.STATIC_RSA_KEX.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "STORAGE_NO_TLS_ONLY": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.STORAGE_NO_TLS_ONLY.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "STORAGE_UNENCRYPTED": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.STORAGE_UNENCRYPTED.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "TLS_POLICY_OVERRIDE": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.TLS_POLICY_OVERRIDE.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  },
+  "WEAK_CIPHER": {
+   "basis": "observed",
+   "reason": "the collector observed the weak setting on the asset and the KB's attack applies to it as observed",
+   "sources": [
+    "kb:findings.node.WEAK_CIPHER.attack",
+    "DEVILS-ADVOCATE.md OA-10c (VEX default)",
+    "CycloneDX 1.6.2 impactAnalysisState"
+   ]
+  }
+ }
+}
