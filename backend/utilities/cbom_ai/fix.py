@@ -11,8 +11,11 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
   ``\\uXXXX`` decoding). No grammar for the language, a grammar that does not load, a window or a rewrite that
   does not parse (an ERROR / MISSING node, also inside a fragment wrapper) withholds the fix. Comments, regex
   literals, raw / interpolated strings and templates are what the grammar says; interpolations are code. Node
-  types the rules do not follow (JSX, ``with``, C# preprocessor / ``unsafe`` / LINQ, Java string templates,
-  extern / native methods, escaped identifiers) withhold it;
+  types the rules do not follow (JSX, ``with``, C# preprocessor / ``unsafe`` / LINQ / switch-arm patterns, Java
+  string templates / switch patterns, Go channel sends, extern / native methods, escaped identifiers) withhold it,
+  and so does any node type without a decision in ``node_types.py`` (coverage guard over every grammar);
+* Python source encoding: no byte order mark, no added coding declaration, no declared encoding other than UTF-8,
+  added comments ASCII without escapes or UTF-7 shifts (what CPython decodes is what was checked);
 * Python is also checked on its ``ast``: any new reference to process / network / dynamic-code machinery
   (``os`` beyond ``_PY_OS_OK``, ``eval`` / ``exec`` / ``__import__`` / ``getattr`` / ``open`` ..., dunders,
   ``subprocess`` / ``socket`` / ``ctypes`` ...); every language: no new network / process name in the code
@@ -27,7 +30,10 @@ Checks on a code fix (any failure withholds the fix and returns the knowledge-ba
 * key material (``flow.Flow``): what the finding marks as key / IV / secret material, what allow-listed key /
   IV / random calls return and everything derived from it may reach only allow-listed crypto APIs - not a call
   outside the allow-list (also one the window already makes), an exception / assert message, ``throw``, or a
-  member of a module. Encrypting key material (or using a cipher that took it in) does not clean it;
+  member of a module. Encrypting key material (or using a cipher that took it in) does not clean it, nor does
+  hashing / MACing / encoding it as data (key-derived); a call that appends / writes into an argument carries it.
+  The nonce may reach a call the window already makes only framed with AEAD ciphertext; no key is built from the
+  nonce; a function does not start returning / yielding key material that came in;
 * calls of the window that are not on the allow-list stay where they are (same enclosing function / loop /
   branch), and what they are given (receiver, arguments, one hop through an options object) is not changed,
   except TLS options (checked below) and a new crypto result (``ct = AESGCM(k).encrypt(...)``);
@@ -46,8 +52,11 @@ from __future__ import annotations
 import ast
 import builtins
 import difflib
+import io
 import re
 import secrets
+import textwrap
+import tokenize
 import unicodedata
 from collections import Counter
 from typing import Any
@@ -695,6 +704,58 @@ _DOWNGRADE = re.compile(
 
 
 
+# PEP 263: a comment on line 1 or 2 that matches this names the source encoding (``# coding: utf-7``,
+# ``# vim: set fileencoding=unicode_escape``). CPython decodes the file with it before parsing, the validator reads the
+# text as it is stored: a cookie, a byte order mark or an escape / UTF-7 shift in a comment can hide code.
+_UTF7_SHIFT = re.compile(r"\+[A-Za-z0-9+/-]")
+
+
+def _py_comments(text: str) -> list[tuple[int, str]]:
+    """(0-based line, text) of every comment token of a Python source (it parsed, so it tokenizes)."""
+    out = []
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(textwrap.dedent(text) + "\n").readline):
+            if tok.type == tokenize.COMMENT:
+                out.append((tok.start[0] - 1, tok.string))
+    except (tokenize.TokenError, IndentationError, SyntaxError):  # fail closed: comments that cannot be read
+        out.append((-1, "\\ <the comments could not be read>"))
+    return out
+
+
+def _py_encoding_problems(before: list[str], after: list[str], start: int) -> list[str]:
+    """Why the rewritten Python window could decode differently from the text that was checked: a byte order mark,
+    an added coding declaration (anywhere), a declared encoding other than UTF-8 (a cookie the window shows, or one
+    a rewrite of line 1 / 2 would give), an added comment with a non-ASCII character, a backslash escape or a UTF-7
+    shift (``+AAo-``): those are code under ``utf-7`` / ``unicode_escape``, and lines 1 - 2 of the file may be
+    outside the window."""
+    out: list[str] = []
+    text = "\n".join(after)
+    if "\ufeff" in text or "\ufffe" in text:
+        out.append("byte order mark")
+    added = {j for tag, _i1, _i2, j1, j2 in difflib.SequenceMatcher(a=before, b=after, autojunk=False).get_opcodes()
+             if tag != "equal" for j in range(j1, j2)}
+    for j in sorted(added):
+        if re.search(r"coding[:=]", after[j]) and "#" in after[j]:
+            out.append(f"coding declaration on line {start + j}")
+    for j, comment in _py_comments(text):
+        if j not in added and j != -1:
+            continue
+        if any(ord(ch) > 127 for ch in comment) or "\\" in comment or _UTF7_SHIFT.search(comment):
+            out.append(f"comment on line {start + j} that decodes differently under another source encoding")
+    if start <= 2:  # the window holds line 1 / 2: the encoding the interpreter would use (line 1 above a window
+        # that starts on line 2 is taken to be a comment, the case where a cookie on line 2 counts)
+        for lines in (before, after):
+            src = ("#\n" if start == 2 else "") + "\n".join(lines) + "\n"
+            try:
+                enc, _ = tokenize.detect_encoding(io.BytesIO(src.encode("utf-8")).readline)
+            except SyntaxError as exc:
+                out.append(f"source encoding ({str(exc)[:40]})")
+                continue
+            if enc.lower().replace("_", "-") not in ("utf-8", "ascii"):
+                out.append(f"source encoding {enc}")
+    return sorted(set(out))
+
+
 def _tree_imports(root: Any, lang: str) -> list[str]:
     """Modules a tree imports: import / using / require nodes; a require / import() whose module is not a plain
     literal is reported as such."""
@@ -823,6 +884,12 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
         return _withheld(grounding, "it uses a construct the checks cannot follow (" + ", ".join(
             (forbidden + escaped)[:3]) + ")", checks)
 
+    if lang == "python":  # what CPython runs is the text decoded with the file's source encoding
+        enc = _py_encoding_problems(before, after, window["start"])
+        if not check("python source encoding unchanged (UTF-8)", not enc, ", ".join(enc[:3])):
+            return _withheld(grounding, "it could change how the file is decoded (" + ", ".join(enc[:2]) + ")",
+                             checks)
+
     py_before = py_after = None
     if lang == "python":
         got_before = SX.python_tree(original_text)
@@ -881,10 +948,22 @@ def validate(raw: str, grounding: Grounding, window: dict[str, Any] | None) -> d
 
     # key material may flow only into crypto APIs; calls outside the allow-list stay where they are, as they are
     flow_after, flow_before = FL.Flow(tree_after.root, scope_after), FL.Flow(tree_before.root, scope_before)
-    leaks = flow_after.leaks()
+    leaks = flow_after.leaks(flow_before)
     if not check("key material reaches only crypto APIs", not leaks, ", ".join(leaks[:3])):
         return _withheld(grounding, "it can pass key material to a call that is not a crypto API (" +
                          ", ".join(leaks[:3]) + ")", checks)
+    nonce_keys = sorted(set(flow_after.nonce_keys()) - set(flow_before.nonce_keys()))
+    if not check("no key made from the public nonce", not nonce_keys, ", ".join(nonce_keys[:3])):
+        return _withheld(grounding, "it builds a key from the nonce / IV, which is sent in clear (" +
+                         ", ".join(nonce_keys[:2]) + ")", checks)
+    # a function of the window that starts returning / yielding key material hands it to code outside the window
+    ret_before = FL.Flow(tree_before.root, scope_before, incoming=True).key_returns()
+    ret_after = FL.Flow(tree_after.root, scope_after, incoming=True).key_returns()
+    returned = sorted(t for fn, texts in ret_after.items()
+                      if not ret_before.get(fn) and not FL.secret_name(fn) for t in texts)
+    if not check("no key material returned or yielded", not returned, ", ".join(returned[:3])):
+        return _withheld(grounding, "it returns or yields key material to the caller (" + ", ".join(returned[:2]) +
+                         ")", checks)
     moved = FL.moved_sinks(flow_after, flow_before)
     if not check("calls outside the allow-list stay where they are", not moved, ", ".join(moved[:3])):
         return _withheld(grounding, "it moves or repeats a call that is not on the allow-list (" +

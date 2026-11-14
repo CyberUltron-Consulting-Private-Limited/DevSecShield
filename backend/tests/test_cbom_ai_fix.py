@@ -795,13 +795,14 @@ def test_round4_every_review_probe_has_its_outcome(row):
         assert out["fix"] is None and out["baseline"] is True
 
 
-def test_round4_the_probe_fixture_covers_all_six_files():
+def test_round4_the_probe_fixture_covers_all_seven_files():
     from collections import Counter
 
     files = Counter(r["id"].split(":")[0] for r in _PROBES_ALL)
     assert files == {"probe_fix": 23, "probe_fix2": 9, "probe_fix3": 29, "probe_fix4": 2, "probe_fix5": 28,
-                     "probe_fix6": 45}
-    assert sum(r["expect"] == "ok" for r in _PROBES_ALL) == 17  # the reviewers' own GOOD / control rows
+                     "probe_fix6": 45, "probe_fix7": 146}
+    assert len({r["id"] for r in _PROBES_ALL}) == len(_PROBES_ALL)
+    assert sum(r["expect"] == "ok" for r in _PROBES_ALL) == 75  # the reviewers' own GOOD / control rows
 
 
 _G4_JS = "const crypto = require('crypto');\nfunction enc(d, k) {\n  const c = crypto.createCipheriv('aes-128-ecb', k, null);\n  return c.update(d);\n}\n"
@@ -1030,3 +1031,298 @@ def test_round4_grammars_are_bundled_dependencies_and_load_offline():
         assert f'name = "{dist}"' in lock, dist
     for lang in SX.SUPPORTED:
         assert SX.grammar_loaded(lang), lang
+
+
+# ------------------------------------------------------------------------------------------------ round 5 of PR 249
+# Review 5907219703 (probes rev249/probe_fix7.py, all 146 calls are rows of the fixture above): B1 Python source
+# encodings, B2 calls that append / write into an argument, B3 key-derived values, B4 every body kind built + a
+# coverage guard over every node type of every bundled grammar, B5 identifier escape forms and generators; and the
+# good-fix pass rate (42 realistic fixes, 6 per language).
+_P7 = {r["id"]: r for r in _PROBES_ALL if r["id"].startswith("probe_fix7:")}
+
+
+def _row(row):
+    finding = {**FINDING, "snippet": row["window"], "snippet_start": row["start"], "language": row["lang"],
+               "line": row["line"], "location": f"x:{row['line']}", "finding_codes": row["codes"]}
+    return FIX.validate(_fix_answer(row["code"]), _grounding(finding), _window(finding))
+
+
+def test_round5_good_fix_pass_rate_is_42_of_42():
+    goods = [r for r in _P7.values() if r.get("good_fix")]  # the reviewer's good() rows: 6 per language
+    assert len(goods) == 42 and {r["lang"] for r in goods} == {"python", "javascript", "typescript", "java", "kotlin",
+                                                               "go", "csharp"}
+    passed = [r["id"] for r in goods if _row(r)["status"] == "ok"]
+    assert len(passed) == 42, sorted(set(r["id"] for r in goods) - set(passed))
+
+
+def _check(lang, window, line, code, codes=None, start=1):
+    finding = {**FINDING, "snippet": window, "snippet_start": start, "language": lang, "line": line,
+               "location": f"x:{line}", "finding_codes": codes or ["WEAK_CIPHER_MODE"]}
+    return FIX.validate(_fix_answer(code), _grounding(finding), _window(finding))
+
+
+_ECB1 = "from Crypto.Cipher import AES\nimport os\n\ndef encrypt(data, key):\n    return AES.new(key, AES.MODE_ECB).encrypt(data)\n"
+_GCM1 = _ECB1.replace("AES.MODE_ECB).encrypt(data)", "AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)")
+
+
+@pytest.mark.parametrize("name, code, window, start, reason", [
+    ("utf-7 cookie", "# -*- coding: utf-7 -*-\n" + _GCM1 + "# +AAo-os.system('id')\n", _ECB1, 1, "coding declaration"),
+    ("unicode_escape cookie", "# coding: unicode_escape\n" + _GCM1 + "# \\x0aos.system('id')\n", _ECB1, 1,
+     "coding declaration"),
+    ("cookie added below line 2", _GCM1.replace("import os\n", "import os\n# vim: set fileencoding=utf-7 :\n"), _ECB1,
+     1, "coding declaration"),
+    ("utf-7 shift in a comment, cookie outside the window", _GCM1.replace("    return", "    # +AAo-os.system('id')\n    return"),
+     _ECB1, 20, "decodes differently"),
+    ("escape in a comment", _GCM1.replace("    return", "    # \\x0aos.system('id')\n    return"), _ECB1, 20,
+     "decodes differently"),
+    ("non-ASCII in a comment", _GCM1.replace("    return", "    # caf\u00e9\n    return"), _ECB1, 20, "decodes differently"),
+    ("window keeps a latin-1 cookie", "# -*- coding: latin-1 -*-\n" + _GCM1, "# -*- coding: latin-1 -*-\n" + _ECB1, 1,
+     "source encoding iso-8859-1"),
+    ("cookie on line 2 of a window that starts on line 2", "# coding: utf-7\n" + _GCM1, "#\n" + _ECB1, 2,
+     "coding declaration"),
+])
+def test_round5_b1_python_source_encoding_tricks_are_withheld(name, code, window, start, reason):
+    out = _check("python", window, start + window[:window.index("    return")].count("\n"), code, start=start)
+    assert out["status"] == "withheld" and reason in out["withheld_reason"], (name, out["withheld_reason"])
+
+
+def test_round5_b1_plain_comments_and_a_kept_utf8_cookie_pass():
+    assert _check("python", _ECB1, 5, _GCM1.replace("    return", "    # GCM: fresh 96-bit nonce, never reused\n    return")
+                  )["status"] == "ok"
+    keep = "# -*- coding: utf-8 -*-\n"
+    assert _check("python", keep + _ECB1, 6, keep + _GCM1)["status"] == "ok"
+
+
+_R5_GO = ('import (\n\t"crypto/aes"\n\t"crypto/cipher"\n\t"crypto/hmac"\n\t"crypto/rand"\n\t"crypto/sha256"\n\t"io"\n'
+          '\t"net"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}')
+_R5_GOG = ('\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n'
+           '\tio.ReadFull(rand.Reader, n)\n')
+
+
+def _go5(x):
+    return _R5_GO.replace("\tb, _ := aes.NewCipher(k)\n\t_ = b\n", _R5_GOG + x)
+
+
+_R5_SOCK = ("import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n"
+            "    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)\n")
+_R5_G0 = "    nonce = os.urandom(12)\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n"
+
+
+def _py5(x):
+    return _R5_SOCK.replace("    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n", x)
+
+
+@pytest.mark.parametrize("name, lang, window, line, code", [
+    ("go h.Sum(k) appends to k", "go", _R5_GO, 13, _go5("\tdata = sha256.New().Sum(k)\n")),
+    ("go h.Write(k); h.Sum(nil)", "go", _R5_GO, 13, _go5("\th := sha256.New()\n\th.Write(k)\n\tdata = h.Sum(nil)\n")),
+    ("go copy(dst, k)", "go", _R5_GO, 13, _go5("\tdata = g.Seal(n, n, data, nil)\n\tcopy(data, k)\n")),
+    ("go append(ct, k...)", "go", _R5_GO, 13, _go5("\tdata = append(g.Seal(n, n, data, nil), k...)\n")),
+    ("go Seal(dst=k)", "go", _R5_GO, 13, _go5("\tdata = g.Seal(k, n, data, nil)\n")),
+    ("py bytearray += key", "python", _R5_SOCK, 5, _py5(_R5_G0 + "    ct = bytearray(ct)\n    ct += key\n")),
+    ("py ct + sha256(key)[:4]", "python", _R5_SOCK, 5,
+     _py5("    import hashlib\n" + _R5_G0 + "    ct = ct + hashlib.sha256(key).digest()[:4]\n")),
+    ("py sha256(key[:1]) (B3)", "python", _R5_SOCK, 5, _py5("    import hashlib\n    ct = hashlib.sha256(key[:1]).digest()\n")),
+    ("py h.update(key); h.digest()", "python", _R5_SOCK, 5,
+     _py5("    import hashlib\n" + _R5_G0 + "    h = hashlib.sha256()\n    h.update(key)\n    ct = ct + h.digest()\n")),
+    ("py base64(key)", "python", _R5_SOCK, 5, _py5("    import base64\n" + _R5_G0 + "    ct = ct + base64.b64encode(key)\n")),
+    ("py nonce = key[:12] framed", "python", _R5_SOCK, 5,
+     _py5("    nonce = key[:12]\n    ct = nonce + AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n")),
+    ("py iv + CBC (not an AEAD)", "python", _R5_SOCK, 5,
+     _py5("    nonce = os.urandom(12)\n    ct = nonce + AES.new(key, AES.MODE_CBC, iv=nonce).encrypt(data)\n")),
+])
+def test_round5_b2_b3_appends_writes_and_key_derived_values_are_withheld(name, lang, window, line, code):
+    out = _check(lang, window, line, code)
+    assert out["status"] == "withheld" and "key material" in out["withheld_reason"], (name, out["withheld_reason"])
+
+
+@pytest.mark.parametrize("name, lang, window, line, code", [
+    ("go AEAD nonce||ct", "go", _R5_GO, 13, _go5("\tdata = g.Seal(n, n, data, nil)\n")),
+    ("go encrypt-then-MAC tag", "go", _R5_GO, 13, _go5("\tm := hmac.New(sha256.New, k)\n\tm.Write(data)\n"
+                                                     "\tdata = append(g.Seal(n, n, data, nil), m.Sum(nil)...)\n")),
+    ("py nonce + ct, two assignments", "python", _R5_SOCK, 5, _py5(_R5_G0 + "    ct = nonce + ct\n")),
+    ("py HMAC tag (key in the key position)", "python", _R5_SOCK, 5,
+     _py5("    import hmac, hashlib\n" + _R5_G0 + "    ct = ct + hmac.new(key, ct, hashlib.sha256).digest()\n")),
+])
+def test_round5_b2_b3_macs_and_framed_nonces_still_pass(name, lang, window, line, code):
+    out = _check(lang, window, line, code)
+    assert out["status"] == "ok", (name, out.get("withheld_reason"))
+
+
+_R5_JV = ("import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n"
+          "    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n"
+          "    return null;\n  }\n}")
+
+
+def _jv5(tail):
+    return _R5_JV.replace("AES/ECB/PKCS5Padding", "AES/GCM/NoPadding").replace("    out.write(ct);", tail + "    out.write(ct);")
+
+
+_R5_CS = ("using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n"
+          "    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n"
+          "    return ct;\n  }\n}")
+
+
+def _cs5(extra=""):
+    return _R5_CS.replace("    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);",
+                          "    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; "
+                          "var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);" + extra)
+
+
+_R5_KT = ("import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n"
+          "    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}")
+
+
+def _kt5(extra):
+    return _R5_KT.replace("AES/ECB/PKCS5Padding", "AES/GCM/NoPadding").replace("    out.write(ct)", extra + "\n    out.write(ct)")
+
+
+_R5_JS = ("const crypto = require('crypto');\n\nfunction enc(sock, data, key) {\n"
+          "  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n"
+          "  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}")
+
+
+def _js5(extra):
+    return _R5_JS.replace("  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n"
+                          "  const ct = Buffer.concat([c.update(data), c.final()]);",
+                          "  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n"
+                          "  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);" + extra)
+
+
+@pytest.mark.parametrize("name, lang, window, line, code", [
+    ("java System.arraycopy(k -> ct)", "java", _R5_JV, 5, _jv5(
+        "    ct = java.util.Arrays.copyOf(ct, ct.length + k.length);\n"
+        "    System.arraycopy(k, 0, ct, ct.length - k.length, k.length);\n")),
+    ("java ByteBuffer.put(k)", "java", _R5_JV, 5, _jv5("    ct = java.nio.ByteBuffer.allocate(99).put(ct).put(k).array();\n")),
+    ("java instanceof pattern", "java", _R5_JV, 5, _jv5("    Object o = k;\n    if (o instanceof byte[] b) { ct = b; }\n")),
+    ("java unicode-escaped identifier", "java", _R5_JV, 5, _jv5("    byte[] \\u006b2 = k;\n    ct = k2;\n")),
+    ("java assert message", "java", _R5_JV, 5, _jv5("    assert d.length > 0 : new String(k);\n")),
+    ("java switch expression", "java", _R5_JV, 5, _jv5("    ct = switch (d.length) { case 0 -> k; default -> ct; };\n")),
+    ("java local interface static method", "java", _R5_JV, 5, _jv5(
+        "    interface Q { static void FF(java.io.OutputStream o, byte[] x) throws Exception { o.write(x); } }\n"
+        "    Q.FF(out, k);\n")),
+    ("java local class static field", "java", _R5_JV, 5, _jv5(
+        "    class Q { static String QQ = new String(k); }\n    if (d.length == 0) throw new IllegalStateException(Q.QQ);\n")),
+    ("java local interface constant", "java", _R5_JV, 5, _jv5(
+        "    interface Q { String QQ = new String(k); }\n    if (d.length == 0) throw new IllegalStateException(Q.QQ);\n")),
+    ("csharp Span.CopyTo", "csharp", _R5_CS, 5, _cs5("\n    k.AsSpan().CopyTo(ct);")),
+    ("csharp verbatim @k", "csharp", _R5_CS, 5, _cs5("\n    ct = @k;")),
+    ("csharp arrow local function", "csharp", _R5_CS, 5, _cs5("\n    byte[] G() => k;\n    ct = G();")),
+    ("csharp is pattern", "csharp", _R5_CS, 5, _cs5("\n    object o = k;\n    if (o is byte[] b) ct = b;")),
+    ("csharp tuple deconstruction", "csharp", _R5_CS, 5, _cs5("\n    var (x, y) = (k, d);\n    ct = x;")),
+    ("csharp switch arm pattern (not followed)", "csharp", _R5_CS, 5, _cs5("\n    ct = k switch { byte[] b => b };")),
+    ("csharp AEAD-encrypting the key into ct", "csharp", _R5_CS, 5, _cs5("\n    g.Encrypt(n, k, ct, tag);")),
+    ("kotlin backtick `k`", "kotlin", _R5_KT, 4, _kt5("    ct = `k`")),
+    ("kotlin backtick in an exception", "kotlin", _R5_KT, 4, _kt5("    if (d.size == 0) throw IllegalStateException(String(`k`))")),
+    ("kotlin k.let { it }", "kotlin", _R5_KT, 4, _kt5("    ct = k.let { it }")),
+    ("kotlin when (val y = k)", "kotlin", _R5_KT, 4, _kt5("    ct = when (val y = k) { else -> y }")),
+    ("kotlin expression-body local fun", "kotlin", _R5_KT, 4, _kt5("    fun g() = k\n    ct = g()")),
+    ("ts abstract class static block", "typescript", _R5_JS, 5, _js5(
+        "\n  abstract class Z { static { if (!data.length) throw new Error(key.toString('hex')); } }")),
+    ("ts abstract class static field", "typescript", _R5_JS, 5, _js5("\n  abstract class Z { static k = sock.end(key); }")),
+    ("ts enum computed member", "typescript", _R5_JS, 5, _js5("\n  enum E { A = sock.write(key) ? 1 : 0 }")),
+    ("ts namespace body", "typescript", _R5_JS, 5, _js5("\n  namespace NS { export const v = sock.write(key); }")),
+    ("js default parameter", "javascript", _R5_JS, 5, _js5("\n  function f(a = sock.write(key)) {}\n  f();")),
+    ("js class field read via the class", "javascript", _R5_JS, 5, _js5(
+        "\n  class Z { static k = key; }\n  if (!data) throw new Error(Z.k.toString('hex'));")),
+    ("js generator yield", "javascript", _R5_JS, 5, _js5("\n  function* g() { yield key; }\n  if (!data) throw new Error([...g()].join());")),
+    ("go channel send", "go", _R5_GO, 13, _go5("\tch := make(chan []byte, 1)\n\tch <- k\n\tdata = <-ch\n")),
+    ("go type switch alias", "go", _R5_GO, 13, _go5("\tdata = g.Seal(n, n, data, nil)\n\tswitch v := interface{}(k).(type) {\n"
+                                                  "\tcase []byte:\n\t\tdata = v\n\t}\n")),
+    ("py yield from key -> raise", "python", _R5_SOCK, 5, _py5(
+        "    nonce = os.urandom(12)\n    def g():\n        yield from key\n"
+        "    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    if not ct:\n        raise ValueError(bytes(g()))\n")),
+    ("py generator -> for -> sink", "python", _R5_SOCK, 5, _py5(_R5_G0 + "    def g():\n        yield key\n    for x in g():\n"
+                                                                "        ct = x\n")),
+])
+def test_round5_b2_b4_b5_every_body_kind_and_identifier_form_is_followed(name, lang, window, line, code):
+    out = _check(lang, window, line, code)
+    assert out["status"] == "withheld", (name, out.get("withheld_reason"))
+
+
+@pytest.mark.parametrize("name, window, code, reason", [
+    ("return key + ct", _ECB1, _ECB1.replace("    return AES.new(key, AES.MODE_ECB).encrypt(data)",
+     "    nonce = os.urandom(12)\n    return key + AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)"), "returns or yields"),
+    ("yield key", _ECB1, _ECB1.replace("    return AES.new(key, AES.MODE_ECB).encrypt(data)",
+     "    nonce = os.urandom(12)\n    yield key\n    return AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)"),
+     "returns or yields"),
+    ("return sha256(key)", _ECB1, _ECB1.replace("    return AES.new(key, AES.MODE_ECB).encrypt(data)",
+     "    import hashlib\n    return hashlib.sha256(key).digest()"), "returns or yields"),
+])
+def test_round5_b5_returning_or_yielding_key_material_is_withheld(name, window, code, reason):
+    out = _check("python", window, 5, code)
+    assert out["status"] == "withheld" and reason in out["withheld_reason"], (name, out.get("withheld_reason"))
+
+
+def test_round5_a_kdf_or_key_loader_may_return_its_key():
+    pw = "import hashlib\n\ndef hash_pw(pw, salt):\n    return hashlib.md5(pw + salt).digest()\n"
+    assert _check("python", pw, 4, pw.replace("hashlib.md5(pw + salt).digest()",
+                                             "hashlib.pbkdf2_hmac('sha256', pw, salt, 600000)"),
+                  ["WEAK_ALGORITHM"])["status"] == "ok"
+    loader = "def load_key():\n    return b'0123456789abcdef'\n"
+    assert _check("python", loader, 2, "import os\n\ndef load_key():\n    return bytes.fromhex(os.environ['APP_KEY'])\n",
+                  ["HARDCODED_KEY"])["status"] == "ok"
+
+
+def test_round5_a_key_made_from_the_public_nonce_is_withheld():
+    out = _check("javascript", _R5_JS, 5, _js5(
+        "\n  const w = crypto.createCipheriv('aes-256-gcm', Buffer.concat([iv, iv, iv.subarray(0, 8)]), iv);"
+        "\n  const ct2 = Buffer.concat([ct, w.update(key), w.final()]);"))
+    assert out["status"] == "withheld" and "nonce" in out["withheld_reason"]
+
+
+@pytest.mark.parametrize("lang, window, line, code", [
+    ("javascript", "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1.2', ciphers: 'ECDHE+AESGCM' });\n}",
+     4, "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1', ciphers: 'ECDHE+AESGCM' });\n}"),
+    ("javascript", "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443 });\n}",
+     4, "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, rejectUnauthorized: false });\n}"),
+    ("javascript", "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1' });\n}",
+     4, "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 444, minVersion: 'TLSv1.2' });\n}"),
+    ("javascript", "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1' });\n}",
+     4, "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1.2', ca: 'x' });\n}"),
+])
+def test_round5_inline_tls_option_edits_that_lower_security_or_change_anything_else_are_withheld(lang, window, line, code):
+    assert _check(lang, window, line, code, ["WEAK_PROTOCOL"])["status"] == "withheld"
+
+
+def test_round5_every_grammar_node_type_has_a_decision():
+    """The coverage guard: every named node type of every bundled grammar is handled, dropped (types,
+    annotations), built generically or forbidden - read from the grammars themselves."""
+    import importlib
+
+    import tree_sitter as ts
+
+    from backend.utilities.cbom_ai import syntax as SX
+
+    grammars = {"javascript": [("tree_sitter_javascript", "language")],
+                "typescript": [("tree_sitter_typescript", "language_typescript"),
+                               ("tree_sitter_typescript", "language_tsx")],
+                "java": [("tree_sitter_java", "language")], "kotlin": [("tree_sitter_kotlin", "language")],
+                "go": [("tree_sitter_go", "language")], "csharp": [("tree_sitter_c_sharp", "language")]}
+    total = 0
+    for lang, mods in grammars.items():
+        known = SX.known_types(lang)
+        for mod, fn in mods:
+            language = ts.Language(getattr(importlib.import_module(mod), fn)())
+            names = {language.node_kind_for_id(i) for i in range(language.node_kind_count)
+                     if language.node_kind_is_named(i) and language.node_kind_is_visible(i)}
+            missing = sorted(names - known)
+            assert not missing, (lang, mod, fn, missing)
+            total += len(names)
+    assert total > 900
+
+
+def test_round5_a_node_type_without_a_decision_withholds(monkeypatch):
+    from backend.utilities.cbom_ai import node_types as NT
+    from backend.utilities.cbom_ai import syntax as SX
+
+    window = _R5_JS
+    code = _js5("\n  const s = data ? 1 : 2;")
+    assert _check("javascript", window, 5, code)["status"] == "ok"
+    monkeypatch.setitem(NT.GENERIC, "javascript", NT.GENERIC["javascript"] - {"ternary_expression"})
+    SX.known_types.cache_clear()
+    try:
+        out = _check("javascript", window, 5, code)
+    finally:
+        monkeypatch.undo()
+        SX.known_types.cache_clear()
+    assert out["status"] == "withheld" and "unchecked node type ternary_expression" in out["withheld_reason"]

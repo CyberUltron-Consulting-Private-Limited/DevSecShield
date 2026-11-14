@@ -21,6 +21,8 @@ import tokenize
 from dataclasses import dataclass, field
 from typing import Any
 
+from backend.utilities.cbom_ai import node_types as NT
+
 # grammar module and its language function, per language (TypeScript falls back to the TSX grammar)
 _TS_GRAMMARS = {
     "javascript": [("tree_sitter_javascript", "language")],
@@ -399,27 +401,26 @@ _COMMENTS = {"comment", "line_comment", "block_comment", "multiline_comment", "h
 _NAMES = {"identifier", "property_identifier", "private_property_identifier",
           "shorthand_property_identifier_pattern", "field_identifier", "package_identifier", "this", "super",
           "this_expression", "super_expression", "base", "base_expression"}
-_SKIP = {"type_annotation", "type_arguments", "type_parameters", "type_parameter", "type_identifier",
-         "predefined_type", "integral_type", "floating_point_type", "boolean_type", "void_type", "array_type",
-         "generic_type", "scoped_type_identifier", "annotation", "marker_annotation", "attribute_list",
-         "user_type", "nullable_type", "type_argument_list", "dimensions", "implicit_type", "package_clause",
-         "type_constraint", "type_parameter_constraints_clause", "modifiers", "modifier", "accessibility_modifier",
-         "file_annotation", "type_alias_declaration", "interface_declaration", "abstract_class_declaration",
-         "function_signature", "ambient_declaration", "pointer_type", "slice_type", "map_type", "channel_type",
-         "qualified_type", "function_type", "struct_type", "interface_type", "throws", "array_rank_specifier",
-         "type_projection", "function_type_parameters", "parameter_modifiers", "variance_modifier",
-         "type_modifiers", "label", "statement_label"}
 # node types whose semantics the checks do not follow: a rewrite that adds one is withheld
 _FORBIDDEN = {
     "javascript": {"with_statement", "jsx_element", "jsx_self_closing_element", "jsx_expression", "jsx_opening_element",
+                   "jsx_closing_element", "jsx_attribute", "jsx_namespace_name", "jsx_text", "html_character_reference",
                    "html_comment", "debugger_statement"},
-    "java": {"template_expression", "string_interpolation"},
+    # pattern matching that binds names (``instanceof T x`` alone is followed, see ``_instanceof_expression``)
+    "java": {"template_expression", "string_interpolation", "record_pattern", "record_pattern_body",
+             "record_pattern_component", "type_pattern", "pattern", "underscore_pattern"},
     "kotlin": set(),
-    "go": set(),
+    # a channel send: the value leaves through a channel the checks cannot follow
+    "go": {"send_statement"},
+    # binding patterns outside ``x is T y`` (see ``_is_pattern_expression``), undocumented reference operators
     "csharp": {"query_expression", "unsafe_statement", "fixed_statement", "pointer_type", "function_pointer_type",
                "extern_alias_directive", "preproc_if", "preproc_elif", "preproc_else", "preproc_define",
                "preproc_undef", "preproc_line", "preproc_error", "preproc_warning", "preproc_arg",
-               "preproc_if_in_attribute_list", "shebang_directive", "global_statement"},
+               "preproc_if_in_attribute_list", "shebang_directive", "global_statement", "from_clause", "group_clause",
+               "join_clause", "join_into_clause", "let_clause", "order_by_clause", "select_clause", "where_clause",
+               "declaration_pattern", "var_pattern", "recursive_pattern", "list_pattern", "positional_pattern_clause",
+               "property_pattern_clause", "subpattern", "makeref_expression", "reftype_expression",
+               "refvalue_expression", "calling_convention", "function_pointer_parameter"},
 }
 _FORBIDDEN["typescript"] = _FORBIDDEN["javascript"]
 _CTL = {"if_statement", "while_statement", "do_statement", "for_statement", "try_statement", "switch_statement",
@@ -438,7 +439,8 @@ _FUNCS = {"function_declaration", "function_expression", "arrow_function", "gene
           "property_declaration_cs"}
 _CLASSES = {"class_declaration", "class", "class_body", "object_literal", "object_declaration", "record_declaration",
             "struct_declaration", "enum_declaration", "companion_object", "class_expression",
-            "anonymous_object_creation_expression"}
+            "anonymous_object_creation_expression", "abstract_class_declaration", "interface_declaration",
+            "annotation_type_declaration"}
 _STRINGS = {"string", "string_literal", "interpreted_string_literal", "raw_string_literal", "verbatim_string_literal",
             "text_block", "character_literal", "rune_literal", "multiline_string_literal", "template_string",
             "interpolated_string_expression"}
@@ -446,6 +448,10 @@ _NUMS = {"number", "decimal_integer_literal", "hex_integer_literal", "octal_inte
          "decimal_floating_point_literal", "hex_floating_point_literal", "int_literal", "float_literal",
          "imaginary_literal", "integer_literal", "real_literal", "number_literal", "bin_literal", "hex_literal",
          "long_literal", "unsigned_literal"}
+# node types build() decides inline (literals, wrappers)
+_LITERAL_TYPES = {"true", "false", "boolean_literal", "null", "undefined", "null_literal", "nil", "regex",
+                  "parenthesized_expression", "expression_statement", "literal_element", "value_argument_list",
+                  "as_expression", "non_null_expression", "satisfies_expression", "argument"}
 _ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "b": "\b", "f": "\f", "v": "\v", "'": "'", '"': '"',
             "\\": "\\", "`": "`", "$": "$", "/": "/"}
 
@@ -488,13 +494,20 @@ def _unescape(raw: str) -> str | None:
 
 class _TsBuilder:
     def __init__(self, lang: str, src: str) -> None:
+        self.full = lang
         self.lang = "javascript" if lang == "typescript" else lang
         self.src = src.encode("utf-8")
         self.stack: list[str] = []
         self.forbidden = _FORBIDDEN.get(lang, set())
+        self.known = known_types(lang)
+        self.drop = NT.TYPE_ONLY.get(lang, frozenset())
 
     def text(self, node: Any) -> str:
         return self.src[node.start_byte:node.end_byte].decode("utf-8", "replace")
+
+    def ident(self, node: Any) -> str:
+        """An identifier as the language reads it (C# ``@k`` and Kotlin k in backticks are ``k``)."""
+        return norm_ident(self.lang, self.text(node))
 
     def n(self, kind: str, node: Any, name: str = "", kids: list[N | None] | None = None, value: Any = None) -> N:
         return N(kind, self.text(node), name, [k for k in (kids or []) if k is not None], value, tuple(self.stack))
@@ -525,17 +538,20 @@ class _TsBuilder:
         t = node.type
         if t in _COMMENTS:
             return None
+        if t not in self.known:  # coverage guard: a node type nobody decided about is not followed, so not allowed
+            return self.n("forbidden", node, f"unchecked node type {t}", self.kids_of(node))
         if t in self.forbidden or t.startswith("jsx_") and self.lang == "javascript":
             return self.n("forbidden", node, t, self.kids_of(node))
         if t in _NAMES:
             txt = self.text(node)
-            return self.n("name", node, "this" if txt in ("this", "base") else txt)
+            return self.n("name", node, "this" if txt in ("this", "base") else norm_ident(self.lang, txt))
         if t == "identifier":
             return self._ident(node)
         if t in ("simple_identifier", "type_identifier") and self.lang == "kotlin":
             return self._ident(node)
-        if t in _SKIP or t.endswith("_type") and t not in ("cast_type",):
-            return None
+        if t in self.drop:  # types, annotations, modifiers: no run-time code (C# array sizes are kept, below)
+            return self._type_exprs(node) if t in ("array_type", "array_rank_specifier") and self.lang == "csharp" \
+                else None
         if t in _STRINGS:
             return self._string(node)
         if t in _NUMS:
@@ -582,7 +598,21 @@ class _TsBuilder:
             return self.n("bool", node, value=txt == "true")
         if self.lang == "go" and txt == "nil":
             return self.n("null", node)
-        return self.n("name", node, txt)
+        return self.n("name", node, norm_ident(self.lang, txt))
+
+    def _type_exprs(self, node: Any) -> N | None:
+        """The expressions inside a type (C# ``new byte[k.Length]``, ``stackalloc byte[n]``): built, the rest
+        dropped."""
+        out: list[N | None] = []
+        stack = list(reversed(self.named(node)))
+        while stack:
+            cur = stack.pop()
+            if cur.type in self.drop or cur.type in NT.TYPE_LEAVES:
+                stack.extend(reversed(self.named(cur)))
+            else:
+                out.append(self.build(cur))
+        kids = [k for k in out if k is not None]
+        return self.n("other", node, "type", kids) if kids else None
 
     # ----------------------------------------------------------------------------------------------- strings
     def _string(self, node: Any) -> N:
@@ -628,7 +658,7 @@ class _TsBuilder:
     # ------------------------------------------------------------------------------------------ expressions
     def _member_expression(self, node: Any) -> N:
         prop = self.f(node, "property")
-        return self.n("member", node, self.text(prop) if prop is not None else "?", [self.build(self.f(node, "object"))])
+        return self.n("member", node, self.ident(prop) if prop is not None else "?", [self.build(self.f(node, "object"))])
 
     def _subscript_expression(self, node: Any) -> N:
         idx = self.f(node, "index")
@@ -768,12 +798,26 @@ class _TsBuilder:
     # ------------------------------------------------------------------------------------------------ Java
     def _method_invocation(self, node: Any) -> N:
         obj, name, args = self.f(node, "object"), self.f(node, "name"), self.f(node, "arguments")
-        callee = self.n("member", node, self.text(name), [self.build(obj)]) if obj is not None else \
-            self.n("name", name, self.text(name))
+        callee = self.n("member", node, self.ident(name), [self.build(obj)]) if obj is not None else \
+            self.n("name", name, self.ident(name))
         return self.n("call", node, "", [callee] + (self.many(self.named(args)) if args is not None else []))
 
     def _field_access(self, node: Any) -> N:
-        return self.n("member", node, self.text(self.f(node, "field")), [self.build(self.f(node, "object"))])
+        return self.n("member", node, self.ident(self.f(node, "field")), [self.build(self.f(node, "object"))])
+
+    def _instanceof_expression(self, node: Any) -> N:
+        """``o instanceof byte[] b``: ``b`` holds ``o``."""
+        left, name = self.f(node, "left"), self.f(node, "name")
+        if name is None:
+            return self.n("other", node, "instanceof", self.kids_of(node))
+        return self.n("assign", node, "instanceof", [self.n("name", name, self.ident(name)), self.build(left)])
+
+    def _resource(self, node: Any) -> N:
+        """``try (var x = open(k))``: ``x`` holds the value."""
+        name, value = self.f(node, "name"), self.f(node, "value")
+        if name is None or value is None:
+            return self.n("other", node, "resource", self.kids_of(node))
+        return self.n("assign", node, "=", [self.n("name", name, self.ident(name)), self.build(value)])
 
     def _object_creation_expression(self, node: Any) -> N:
         typ, args = self.f(node, "type"), self.f(node, "arguments")
@@ -921,10 +965,10 @@ class _TsBuilder:
 
     def _member_access_expression(self, node: Any) -> N:
         expr, name = self.f(node, "expression"), self.f(node, "name")
-        nm = self.text(name) if name is not None else "?"
+        nm = self.ident(name) if name is not None else "?"
         if name is not None and name.type == "generic_name":
             ident = next((c for c in name.named_children if c.type == "identifier"), None)
-            nm = self.text(ident) if ident is not None else nm
+            nm = self.ident(ident) if ident is not None else nm
         if expr is None:
             first = node.children[0] if node.children else None
             obj = self.n("name", first, "this") if first is not None and self.text(first) in ("this", "base") else None
@@ -939,7 +983,7 @@ class _TsBuilder:
         name = self.f(binding, "name") if binding is not None else None
         if binding is not None and binding.type == "element_binding_expression":
             return self.n("index", node, "", [self.build(cond)] + self.kids_of(binding))
-        return self.n("member", node, self.text(name) if name is not None else "?", [self.build(cond)])
+        return self.n("member", node, self.ident(name) if name is not None else "?", [self.build(cond)])
 
     def _element_access_expression(self, node: Any) -> N:
         return self.n("index", node, "", [self.build(self.f(node, "expression"))] +
@@ -947,11 +991,75 @@ class _TsBuilder:
 
     def _generic_name(self, node: Any) -> N:
         ident = next((c for c in node.named_children if c.type == "identifier"), None)
-        return self.n("name", node, self.text(ident) if ident is not None else self.text(node))
+        return self.n("name", node, self.ident(ident) if ident is not None else self.text(node))
 
     def _declaration_expression(self, node: Any) -> N:
         name = self.f(node, "name")
-        return self.build(name) if name is not None else self.n("other", node)
+        if name is not None:
+            return self.build(name)
+        ids = [c for c in walk_ts(node) if c.type == "identifier" and c.parent is not None and
+               c.parent.type in ("parenthesized_variable_designation", "declaration_expression")]
+        return self.n("seq", node, "", [self.n("name", i, self.ident(i)) for i in ids])
+
+    def _is_pattern_expression(self, node: Any) -> N:
+        """``o is byte[] b`` / ``o is { } b`` / ``o is var (x, y)``: the names the pattern declares hold ``o``
+        (patterns elsewhere - switch arms - are not followed, see ``_FORBIDDEN``)."""
+        expr, pattern = self.f(node, "expression"), self.f(node, "pattern")
+        ids = []
+        for c in walk_ts(pattern) if pattern is not None else []:
+            if c.type != "identifier" or c.parent is None:
+                continue
+            par = c.parent
+            fname = next((par.field_name_for_child(i) for i, ch in enumerate(par.children) if ch == c), None)
+            if par.type in ("var_pattern", "parenthesized_variable_designation") or (
+                    fname in ("name", "designation") and par.type in ("declaration_pattern", "recursive_pattern",
+                                                                       "list_pattern")):
+                ids.append(c)
+        if not ids:
+            return self.n("other", node, "is", [self.build(expr)])
+        target = self.n("name", ids[0], self.ident(ids[0])) if len(ids) == 1 else \
+            self.n("seq", pattern, "", [self.n("name", i, self.ident(i)) for i in ids])
+        return self.n("assign", node, "is", [target, self.build(expr)])
+
+    def _property_declaration_cs(self, node: Any) -> N:
+        """C# ``static byte[] P { get; } = k;`` / ``byte[] P => k;``: ``P`` holds the value; accessors are code."""
+        name, value = self.f(node, "name"), self.f(node, "value")
+        kids: list[N | None] = []
+        if name is not None and value is not None:
+            built = self.build(value)
+            kids.append(self.n("assign", node, "=", [self.n("name", name, self.ident(name)), built]))
+        kids += [self.build(c) for c in self.named(node) if c not in (name, value)]
+        return self.n("other", node, "property", kids)
+
+    def _arrow_expression_clause(self, node: Any) -> N:  # C# ``=> expr``: the value of a member / local function
+        return self.n("other", node, "arrow_return", self.kids_of(node))
+
+    def _function_body(self, node: Any) -> N:  # Kotlin ``fun f() = expr``: an expression body is a return
+        kids = self.kids_of(node)
+        if self.text(node).lstrip().startswith("="):
+            return self.n("other", node, "return_expression", kids)
+        return kids[0] if len(kids) == 1 and kids[0] is not None else self.n("other", node, "function_body", kids)
+
+    def _when_subject(self, node: Any) -> N:  # Kotlin ``when (val y = k)``: ``y`` holds ``k``
+        named = self.named(node)
+        decl = next((c for c in named if c.type in ("variable_declaration", "multi_variable_declaration")), None)
+        rest = [c for c in named if c != decl]
+        if decl is None or not rest:
+            return self.n("other", node, "when_subject", self.kids_of(node))
+        return self.n("assign", node, "=", [self._kt_targets(decl), self.build(rest[-1])])
+
+    def _field_definition(self, node: Any) -> N:
+        """JS / TS class fields ``static k = v``: the field (read as ``this.k`` / ``Z.k``) holds the value."""
+        prop = self.f(node, "property") or self.f(node, "name")
+        value = self.f(node, "value")
+        decos = [self.build(c) for c in self.named(node) if c.type == "decorator"]
+        if prop is None or value is None:
+            return self.n("other", node, "field", [d for d in decos] + [self.build(value)] if value is not None
+                          else decos)
+        key = [self.build(prop)] if prop.type == "computed_property_name" else []
+        return self.n("assign", node, "=", [self.n("name", prop, self.ident(prop)), self.build(value)] + decos + key)
+
+    _public_field_definition = _field_definition
 
     def _foreach_statement(self, node: Any) -> N:
         left, right, body = self.f(node, "left"), self.f(node, "right"), self.f(node, "body")
@@ -1030,10 +1138,10 @@ class _TsBuilder:
 
     def _property_declaration(self, node: Any) -> N:
         if self.lang == "csharp":
-            return self.n("other", node, "property", self.kids_of(node))
+            return self._property_declaration_cs(node)
         named = self.named(node)
         decl = next((c for c in named if c.type in ("variable_declaration", "multi_variable_declaration")), None)
-        rest = [c for c in named if c != decl and c.type not in _SKIP and c.type != "modifiers"]
+        rest = [c for c in named if c != decl and c.type not in self.drop and c.type != "modifiers"]
         targets = self._kt_targets(decl)
         value = rest[-1] if rest else None
         return self.n("assign", node, "=", [targets, self.build(value) if value is not None else N("null", "", "")])
@@ -1045,8 +1153,8 @@ class _TsBuilder:
         if decl.type == "multi_variable_declaration":
             ids = [i for v in decl.named_children if v.type == "variable_declaration"
                    for i in v.named_children if i.type in ("identifier", "simple_identifier")]
-            return self.n("seq", decl, "", [self.n("name", i, self.text(i)) for i in ids])
-        return self.n("name", ids[0], self.text(ids[0])) if ids else None
+            return self.n("seq", decl, "", [self.n("name", i, self.ident(i)) for i in ids])
+        return self.n("name", ids[0], self.ident(ids[0])) if ids else None
 
     def _for_statement(self, node: Any) -> N:
         if self.lang != "kotlin":
@@ -1088,20 +1196,22 @@ class _TsBuilder:
 
     def _func(self, node: Any) -> N:
         name_node = self.f(node, "name")
-        name = self.text(name_node) if name_node is not None else ""
+        name = self.ident(name_node) if name_node is not None else ""
         head = self.src[node.start_byte:name_node.start_byte].decode("utf-8", "replace") if name_node is not None else ""
         if re.search(r"\b(?:extern|native|external)\b|\[\s*(?:DllImport|LibraryImport)", head):
             node_kind = "native method"  # P/Invoke, JNI, Kotlin external: code the checks cannot see
             return self.n("forbidden", node, node_kind)
         params = self._params(node)
+        if node.type == "lambda_literal" and not params and \
+                not any(c.type == "lambda_parameters" for c in node.named_children):
+            params = ["it"]  # Kotlin: a lambda without parameters has the implicit ``it``
         label = f"func:{name}"
-        kids = self.scoped(label, lambda: [self.build(c) for c in self.named(node)
-                                           if c != name_node and c.type not in ("formal_parameters", "parameters",
-                                                                                     "parameter_list", "inferred_parameters",
-                                                                                     "function_value_parameters",
-                                                                                     "lambda_parameters")])
-        defaults = [self.build(c) for c in self._param_defaults(node)]
-        return self.n("func", node, name, defaults + kids, params)
+        holders = ("formal_parameters", "parameters", "parameter_list", "inferred_parameters",
+                   "function_value_parameters", "lambda_parameters", "bracketed_parameter_list")
+        # parameter lists are built too (default values are code); their names are not reads (``params``)
+        kids = self.scoped(label, lambda: [self.n("other", c, "params", self.kids_of(c)) if c.type in holders
+                                           else self.build(c) for c in self.named(node) if c != name_node])
+        return self.n("func", node, name, kids, params)
 
     def _params(self, node: Any) -> list[str]:
         out: list[str] = []
@@ -1124,27 +1234,17 @@ class _TsBuilder:
                         if ch == cur:
                             field_name = par.field_name_for_child(i)
                 if field_name not in ("type", "value", "default"):
-                    out.append(self.text(cur))
+                    out.append(self.ident(cur))
                 continue
-            if cur.type in _SKIP or cur.type.endswith("_type"):
+            if cur.type in self.drop or cur.type in NT.TYPE_LEAVES and cur.type not in ("identifier",
+                                                                                      "simple_identifier"):
                 continue
             stack.extend(cur.named_children)
         return out
 
-    def _param_defaults(self, node: Any) -> list[Any]:
-        out = []
-        holder = self.f(node, "parameters")
-        if holder is None:
-            return out
-        for p in holder.named_children:
-            v = p.child_by_field_name("value") or p.child_by_field_name("default_value")
-            if v is not None:
-                out.append(v)
-        return out
-
     def _class(self, node: Any) -> N:
         name_node = self.f(node, "name")
-        name = self.text(name_node) if name_node is not None else ""
+        name = self.ident(name_node) if name_node is not None else ""
         kids = self.scoped(f"class:{name}", lambda: [self.build(c) for c in self.named(node) if c != name_node])
         return self.n("class", node, name, kids)
 
@@ -1152,16 +1252,49 @@ class _TsBuilder:
         head_fields = ("condition", "initializer", "left", "right", "value", "update", "subject", "resources")
         head = " ".join(self.text(h) for h in (self.f(node, x) for x in head_fields) if h is not None)
         kids: list[N | None] = []
+        alias = self.f(node, "alias") if node.type == "type_switch_statement" else None
         for i, c in enumerate(node.children):
             if not c.is_named or c.type in _COMMENTS:
                 continue
             fname = node.field_name_for_child(i) or ""
-            if fname in head_fields:
+            if fname == "alias":
+                continue
+            if fname == "value" and alias is not None:  # Go ``switch x := y.(type)``: ``x`` holds ``y``
+                kids.append(self.n("assign", node, ":=", [self.build(alias), self.build(c)]))
+            elif fname in head_fields:
                 kids.append(self.build(c))
             else:
                 kids.append(self.scoped(f"{node.type}:{head}:{fname}:{i if fname == '' else ''}",
                                         lambda c=c: self.build(c)))
         return self.n("ctl", node, node.type, kids)
+
+
+def walk_ts(node: Any):
+    """Every named node of a tree-sitter subtree."""
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        yield cur
+        stack.extend(reversed(cur.named_children))
+
+
+def norm_ident(lang: str, txt: str) -> str:
+    """C# verbatim identifiers (``@k``) and Kotlin quoted identifiers (k in backticks) name the variable ``k``."""
+    if lang == "csharp" and txt.startswith("@"):
+        return txt[1:]
+    if lang == "kotlin" and len(txt) >= 2 and txt.startswith("`") and txt.endswith("`"):
+        return txt[1:-1]
+    return txt
+
+
+@functools.cache
+def known_types(lang: str) -> frozenset[str]:
+    """Every node type the builder has a decision for: handled, dropped (no run-time code), forbidden, or built
+    generically (every named child built, the value flows to the parent). Anything else is ``forbidden``."""
+    handlers = {name[1:] for name in dir(_TsBuilder) if name.startswith("_") and not name.startswith("__")}
+    base = (_COMMENTS | _NAMES | _STRINGS | _NUMS | _FUNCS | _CLASSES | _CTL | _FORBIDDEN.get(lang, set())
+            | _LITERAL_TYPES | handlers)
+    return frozenset(base | NT.TYPE_ONLY.get(lang, frozenset()) | NT.GENERIC.get(lang, frozenset()))
 
 
 def _kotlin_dollar_names(raw: str) -> list[str]:

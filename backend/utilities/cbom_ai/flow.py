@@ -18,6 +18,23 @@ _JS_FORBIDDEN = {"constructor", "prototype", "__proto__", "__defineGetter__", "_
 _CAPS = re.compile(r"[A-Z][A-Z0-9_]+")
 
 
+def _constant(seg: Seg) -> bool:
+    """``X.SOME_CONSTANT`` read (not called): a constant of a class / package."""
+    return not seg.called and bool(_CAPS.fullmatch(seg.name))
+
+
+# lower-case roots of fully qualified names (packages, not locals)
+_NS_ROOTS = {"java", "javax", "kotlin", "kotlinx", "jdk", "sun", "android"}
+# namespaces a fully qualified class name may be written with (the class and member are still judged)
+_NAMESPACES = {
+    "java": {"java.util", "java.security", "java.security.spec", "javax.crypto", "javax.crypto.spec", "java.nio",
+             "javax.net.ssl", "java.lang"},
+    "csharp": {"System", "System.Security.Cryptography", "System.Text", "System.Security.Authentication",
+               "System.Net.Security"},
+}
+_NAMESPACES["kotlin"] = _NAMESPACES["java"] | {"kotlin", "kotlin.random"}
+
+
 class Api:
     """One language's allow-list: ``pairs`` Qualifier.member, ``ctors`` constructors / free functions, ``methods``
     on allow-listed locals and results, ``safe`` members harmless on any receiver, ``packages`` lower-case names
@@ -70,7 +87,8 @@ JAVA_API = Api(
     safe="""length size isEmpty equals toString hashCode getBytes toCharArray toByteArray encodeToByteArray
     decodeToString copyOf copyOfRange contentEquals""")
 KT_API = Api(" ".join(sorted(JAVA_API.pairs)), " ".join(sorted(JAVA_API.ctors)), " ".join(sorted(JAVA_API.methods)),
-             " ".join(sorted(JAVA_API.safe)) + " to or and xor shl shr ushr inv plus minus until downTo step size",
+             " ".join(sorted(JAVA_API.safe)) + " to or and xor shl shr ushr inv plus minus until downTo step size"
+             " also apply let run use takeIf",
              "")
 CS_API = Api(
     pairs="""Aes.Create RandomNumberGenerator.Create RandomNumberGenerator.Fill RandomNumberGenerator.GetBytes
@@ -83,7 +101,8 @@ CS_API = Api(
     RSASignaturePadding.Pss RSASignaturePadding.Pkcs1 SslProtocols.Tls12 SslProtocols.Tls13 Array.Copy Array.Clear
     Buffer.BlockCopy AesGcm.IsSupported AesGcm.TagByteSizes AesGcm.NonceByteSizes ChaCha20Poly1305.IsSupported""",
     ctors="""AesGcm AesCcm ChaCha20Poly1305 HMACSHA256 HMACSHA384 HMACSHA512 Rfc2898DeriveBytes ArgumentException
-    InvalidOperationException CryptographicException HashAlgorithmName""",
+    InvalidOperationException CryptographicException HashAlgorithmName SslClientAuthenticationOptions
+    SslServerAuthenticationOptions""",
     methods="""Encrypt Decrypt CreateEncryptor CreateDecryptor TransformFinalBlock TransformBlock GenerateKey
     GenerateIV ComputeHash GetBytes GetString EncryptCbc DecryptCbc SignData VerifyData SignHash VerifyHash
     ImportSubjectPublicKeyInfo ExportSubjectPublicKeyInfo ImportPkcs8PrivateKey ExportPkcs8PrivateKey Key IV Mode
@@ -120,12 +139,18 @@ getenv getenvb Getenv LookupEnv GetEnvironmentVariable GetBytes getEncoded Gener
 derive_key Key MarshalPKCS8PrivateKey getIV""".split())
 # calls that fill their arguments with random bytes (the arguments become key material)
 FILLS = set("nextBytes randomFillSync randomFill getRandomValues Fill Read ReadFull".split())
-# results that are NOT key material whatever goes in: digests, MACs, signatures, verdicts, sizes, public keys
-DIGESTS = set("""digest hexdigest Sum Sum256 Sum512 HashData ComputeHash sign Sign SignData SignHash SignASN1 SignPSS
-SignPKCS1v15 verify Verify VerifyData VerifyHash VerifyASN1 VerifyPSS timingSafeEqual compare_digest Equal
-ConstantTimeCompare FixedTimeEquals isEqual getAuthTag public_key public_bytes getPublic Public
-ExportSubjectPublicKeyInfo NonceSize Overhead BlockSize Size getBlockSize getOutputSize hash verify_password
-check_needs_rehash len cap isinstance""".split())
+# hashes, MACs, signatures and tags: KEY-DERIVED when key material goes in as DATA (a hash of the key, of one key
+# byte, Go's ``h.Sum(k)`` which appends to ``k``); clean when the key is only in a key position (HMAC key, signer)
+HASHES = set("""digest hexdigest Sum Sum256 Sum512 HashData ComputeHash sign Sign SignData SignHash SignASN1 SignPSS
+SignPKCS1v15 getAuthTag hash""".split())
+# verdicts, sizes, public keys: never key material
+VERDICTS = set("""verify Verify VerifyData VerifyHash VerifyASN1 VerifyPSS timingSafeEqual compare_digest Equal
+ConstantTimeCompare FixedTimeEquals isEqual public_key public_bytes getPublic Public ExportSubjectPublicKeyInfo
+NonceSize Overhead BlockSize Size getBlockSize getOutputSize verify_password check_needs_rehash len cap
+isinstance""".split())
+DIGESTS = HASHES | VERDICTS
+# signers: the receiver is the private key (a key position); the arguments are data except the positions below
+SIGNERS = set("sign Sign SignData SignHash SignASN1 SignPSS SignPKCS1v15".split())
 # cipher outputs: ciphertext of what goes in as DATA. Clean when the data is not key material and the cipher object
 # never took key material in as data (encrypting the key under a key the author knows is not a sanitiser)
 CIPHER_OUT = set("""encrypt Encrypt encrypt_and_digest Seal update final doFinal finalize finalize_with_tag
@@ -136,7 +161,13 @@ SANITIZERS = DIGESTS | CIPHER_OUT
 RANDOM_SOURCES = set("""urandom token_bytes token_hex token_urlsafe get_random_bytes getrandom randbits randomBytes
 randomUUID randomInt GenerateIV getIV""".split())
 _ENV_PATHS = ("process.env", "os." + "environ", "environ")  # the process environment, read: key material
-IV, KEY, ABSORBED = 1, 2, 4  # taint labels: random / IV material, key material, a cipher that took key material in
+# taint labels: random / IV material, key material, a cipher / hash that took key material in as data, a hash /
+# MAC / encoding of key material (key-derived: a check value, 256 guesses per byte), an object holding a key in its key
+# position (a cipher / MAC / key spec: not key bytes, but not to be sent or logged either)
+IV, KEY, ABSORBED, KEY_DERIVED, HOLDER = 1, 2, 4, 8, 16
+KEYISH = KEY | ABSORBED | KEY_DERIVED  # key material or derived from it (not IV, not a key holder)
+# AEAD constructions: the ciphertext of one may be framed with its public nonce (nonce || ciphertext || tag)
+AEAD_RX = re.compile(r"gcm|ccm|chacha20|poly1305|(?<![a-z])siv(?![a-z])|ocb3?(?![a-z])", re.I)
 _IV_WORDS = {"iv", "nonce", "salt", "seed"}
 # allowed by name but the arguments end up in a message, a log or an error: a key there leaks
 EXCEPTIONS = set("""Error TypeError RangeError ValueError TypeError RuntimeError KeyError Exception NotImplementedError
@@ -160,14 +191,27 @@ KEY_TAKERS: dict[str, tuple[int, ...] | None] = {
     "pbkdf2": (0, 1), "scrypt": (0, 1), "scryptSync": (0, 1), "PBKDF2HMAC": None, "Scrypt": None, "HKDF": None,
     "Pbkdf2": (0, 1), "IDKey": (0, 1), "new": (0, 2), "New": (0, 1), "hkdfSync": (1, 2), "hkdf": (1, 2), "AES": (0,), "TripleDES": (0,),
     "ChaCha20": (0, 1), "Camellia": (0,), "Blowfish": (0,), "Rfc2898DeriveBytes": (0, 1)}
+# positions of KEY_TAKERS that take the IV / nonce (random, public), not the key
+IV_TAKERS: dict[str, tuple[int, ...]] = {
+    "createCipheriv": (2,), "createDecipheriv": (2,), "IvParameterSpec": (0,), "GCMParameterSpec": (1,), "new": (2,),
+    "ChaCha20": (1,),
+    # KDF salts (public, stored next to the hash)
+    "pbkdf2_hmac": (2,), "pbkdf2Sync": (1,), "pbkdf2": (1,), "scrypt": (1,), "scryptSync": (1,), "hkdf": (2,),
+    "hkdfSync": (2,), "Pbkdf2": (1,), "IDKey": (1,), "PBEKeySpec": (1,), "Rfc2898DeriveBytes": (1,)}
 _KEY_WORDS = {"key", "secret", "password", "passwd", "pwd", "passphrase", "token", "iv", "nonce", "salt", "private",
-              "priv", "credential", "credentials", "cred", "creds", "apikey", "psk", "seed", "pin", "privkey"}
+              "priv", "credential", "credentials", "cred", "creds", "apikey", "psk", "seed", "pin", "privkey", "k",
+              "sk"}
 # words that make a key-like name a size / label / factory, not key material (KEY_LEN, nonceSize, KeyGenerator)
 _NOT_KEY_WORDS = {"len", "length", "size", "sz", "bits", "count", "name", "names", "id", "ids", "type", "alg",
                   "algorithm", "algorithms", "format", "path", "file", "mode", "usage", "version", "label", "provider",
                   "manager", "managers", "generator", "factory", "store", "selector", "header", "env", "var", "field"}
 # members that are a number about the value, not the value (key.length, iv.size, k.Length)
 _SIZE_MEMBERS = {"length", "Length", "size", "Count", "byteLength", "LongLength"}
+# TLS options whose every value is checked by ``downgrades`` (a version floor / ceiling, a cipher list,
+# verification on): a fix may change them inline in a call outside the allow-list (``tls.connect({.., minVersion})``)
+TLS_RAISE = {"ciphers", "ciphersuites", "minversion", "maxversion", "minimumversion", "maximumversion",
+             "rejectunauthorized", "checkhostname", "verifymode", "certreqs", "insecureskipverify", "secureprotocol",
+             "sslprotocols", "enabledsslprotocols", "minprotocolversion", "maxprotocolversion"}
 # options of a TLS call that a fix may change (their values are checked by the downgrade rules)
 TLS_KEYS = {"ciphers", "ciphersuites", "minversion", "maxversion", "minimumversion", "maximumversion", "secureoptions",
             "ecdhcurve", "sigalgs", "honorcipherorder", "curvepreferences", "preferserverciphersuites", "verify",
@@ -332,6 +376,7 @@ class Scope:
         self.funcs: dict[str, list[str]] = {}
         self.func_nodes: dict[str, list[N]] = {}
         self.locals: dict[str, list[N | None]] = {}
+        self.classes: set[str] = set()
         self.py_modules: set[str] = set(py_modules or ())
         for r in [root] + list(extra or []):
             for n in walk(r):
@@ -348,6 +393,8 @@ class Scope:
                 elif n.kind == "func" and n.name:
                     self.funcs[n.name] = list(n.value or [])
                     self.func_nodes.setdefault(n.name, []).append(n)
+                elif n.kind == "class" and n.name:
+                    self.classes.add(n.name)
         for t, v, _op, _n in binds(root):
             if t is not None and t.kind == "name":
                 self.locals.setdefault(t.name, []).append(v)
@@ -407,7 +454,7 @@ class Scope:
         if self.lang == "python":
             return name in self.py_modules
         if self.lang in ("java", "kotlin", "csharp"):
-            return name[:1].isupper() and name not in self.locals
+            return (name[:1].isupper() or name in _NS_ROOTS) and name not in self.locals
         return name in self.aliases or (self.api is not None and name in self.api.packages and name not in self.locals)
 
     def is_local_path(self, p: str) -> bool:
@@ -424,6 +471,7 @@ class Scope:
         if api is None:
             return [("<no allow-list>", ch.node)]
         bad: list[tuple[str, N]] = []
+        ch = self._collapse(ch)
         rest = ch.segs
         if ch.ctor:
             if len(ch.ctor_path) > 1:
@@ -450,13 +498,13 @@ class Scope:
                     bad.append((f"{head}[...]", first.node))
             elif self.is_package(head) or head in self.imported:
                 q = self.imported.get(head, self.canon(head))
-                if f"{q}.{first.name}" not in api.pairs and not _CAPS.fullmatch(first.name):
+                if f"{q}.{first.name}" not in api.pairs and not _constant(first):
                     bad.append((f"{q}.{first.name}", first.node))
             elif head in self.tracked:
                 if first.name in _JS_FORBIDDEN or not (first.name in api.methods or first.name in api.safe
-                                                       or _CAPS.fullmatch(first.name)):
+                                                       or _constant(first)):
                     bad.append((f"{head}.{first.name}", first.node))
-            elif strict or first.name in _JS_FORBIDDEN or not (first.name in api.safe or _CAPS.fullmatch(first.name)):
+            elif strict or first.name in _JS_FORBIDDEN or not (first.name in api.safe or _constant(first)):
                 bad.append((f"{head}.{first.name}", first.node))
         for seg in rest:
             if seg.name == "[]":
@@ -467,9 +515,25 @@ class Scope:
                 bad.append(("<expression>()", seg.node))
                 continue
             if seg.name in _JS_FORBIDDEN or not (seg.name in api.methods or seg.name in api.safe
-                                                 or _CAPS.fullmatch(seg.name)):
+                                                 or _constant(seg)):
                 bad.append((f".{seg.name}", seg.node))
         return bad
+
+    def _collapse(self, ch: Chain) -> Chain:
+        """A fully qualified class (``java.util.Arrays.copyOf``, ``System.Security.Cryptography.Aes.Create``) is
+        judged as ``Arrays.copyOf`` / ``Aes.Create``, when the namespace is the language's own crypto / base one."""
+        if self.lang not in _NAMESPACES or ch.ctor or ch.head_called or ch.head is None or ch.head in self.locals:
+            return ch
+        parts = [ch.head]
+        for seg in ch.segs:
+            if seg.called or seg.name in ("[]", "<call>"):
+                break
+            parts.append(seg.name)
+        for i in range(len(parts) - 1, 0, -1):
+            if ".".join(parts[:i]) in _NAMESPACES[self.lang] and i < len(ch.segs) + 1 and i < len(parts):
+                head_seg = ch.segs[i - 1]
+                return Chain(head_seg.name, False, False, [], ch.segs[i:], ch.node, head_seg.node)
+        return ch
 
     def call_allowed(self, n: N, strict: bool = False) -> bool:
         """The call / constructor / member chain ending at ``n`` is on the language's allow-list."""
@@ -531,7 +595,7 @@ def unlisted(after: N, before: N, lang: str) -> list[str]:
         what: dict[Any, str] = {}
         for top in chains(root):
             for name, node in scope.judge(unwind(top)):
-                k = (norm(node.text), top.ctx)
+                k = (_blank_tls(node, TLS_RAISE), top.ctx)
                 counts[k] += 1
                 what.setdefault(k, name)
         return counts, what
@@ -550,8 +614,11 @@ class Flow:
     keys), ``ABSORBED`` (a cipher object that took key material in as data). Any label reaching a call outside the
     allow-list, an exception message or a member of a non-local is a leak."""
 
-    def __init__(self, root: N, scope: Scope) -> None:
-        self.root, self.scope = root, scope
+    def __init__(self, root: N, scope: Scope, incoming: bool = False) -> None:
+        """``incoming``: only key material that comes INTO the code (parameters, fields, key positions, what is
+        derived from them by hashing / encoding / copying) - keys the code derives or generates itself (a KDF, a
+        key generator, randomness) and the environment are not counted (``key_returns``)."""
+        self.root, self.scope, self.incoming = root, scope, incoming
         self.calls = [n for n in walk(root) if n.kind in ("call", "new")]
         self.binds = binds(root)
         self.tainted: dict[str, int] = {}
@@ -612,15 +679,81 @@ class Flow:
         _name, recv, args = self.callee(n)
         return ([recv] if recv is not None else []) + args
 
+    def key_positions(self, n: N) -> tuple[set[int], bool]:
+        """(indexes into ``callee()``'s arguments that take a key / IV - positional by position, keyword arguments
+        by a key-like name -, whether the receiver is the key) of a call: what goes there makes the result a key
+        HOLDER, not key material; everything else is data."""
+        name, recv, _args = self.callee(n)
+        raw = n.kids[1:]
+        args = [a for a in raw if a.kind != "kwarg"]
+        rp = (path(recv) or "").split(".")[-1] if recv is not None else ""
+        if name == "init":  # Cipher.init(mode, key, params); Mac.init(key[, params])
+            first = norm(args[0].text) if args else ""
+            pos: tuple[int, ...] | None = (1, 2) if "MODE" in first.upper() else (0, 1)
+        elif name == "digest" and rp == "hmac" or name == "HashData" and rp.upper().startswith("HMAC"):
+            pos = (0,)  # hmac.digest(key, msg, d); HMACSHA256.HashData(key, data)
+        elif name in ("SignPSS", "SignPKCS1v15", "SignASN1"):
+            pos = (1,)  # (rand, priv, ...)
+        elif name == "Sign" and rp == "ed25519":
+            pos = (0,)
+        elif rp == "subtle" and name in ("encrypt", "decrypt", "sign", "verify", "wrapKey", "unwrapKey", "deriveKey",
+                                         "deriveBits", "exportKey"):
+            pos = (1,) if name not in ("wrapKey", "exportKey") else (1, 2)  # WebCrypto (alg, key, data)
+        elif name in KEY_TAKERS:
+            pos = KEY_TAKERS[name]
+        else:
+            pos = ()
+        keyed_pos = set(range(len(args))) if pos is None else set(pos)
+        keyed, i_pos = set(), 0
+        for i, a in enumerate(raw):  # map positional indexes to argument indexes; key-named keywords are keys
+            if a.kind == "kwarg":
+                if secret_name(a.name):
+                    keyed.add(i)
+                continue
+            if i_pos in keyed_pos:
+                keyed.add(i)
+            i_pos += 1
+        return keyed, name in SIGNERS
+
+    def iv_positions(self, n: N) -> set[int]:
+        """Argument indexes (as ``key_positions``) that take an IV / nonce, not a key."""
+        name, _recv, _args = self.callee(n)
+        raw = n.kids[1:]
+        if name == "init":
+            pos: tuple[int, ...] = (2,) if raw and "MODE" in norm(raw[0].text).upper() else (1,)
+        else:
+            pos = IV_TAKERS.get(name, ())
+        out, i_pos = set(), 0
+        for i, a in enumerate(raw):
+            if a.kind == "kwarg":
+                if secret_name(a.name) and self._word_label(a.name) == IV:
+                    out.add(i)
+                continue
+            if i_pos in pos:
+                out.add(i)
+            i_pos += 1
+        return out
+
+    def split_inputs(self, n: N) -> tuple[list[N], list[N]]:
+        """(data inputs, key-position inputs) of a call / constructor."""
+        _name, recv, args = self.callee(n)
+        keyed, recv_key = self.key_positions(n)
+        data = [a for i, a in enumerate(args) if i not in keyed]
+        key = [a for i, a in enumerate(args) if i in keyed]
+        if recv is not None:
+            (key if recv_key else data).insert(0, recv)
+        return data, key
+
     # ------------------------------------------------------------------------------------------------ taint
     def _seed(self) -> None:
         for n in self.calls:
             name, _recv, args = self.callee(n)
             if name in KEY_TAKERS:
-                pos = KEY_TAKERS[name]
+                keyed, _ = self.key_positions(n)
+                ivs = self.iv_positions(n)
                 for i, a in enumerate(args):
-                    if pos is None or i in pos:
-                        self._mark(a, KEY)
+                    if i in keyed:
+                        self._mark(a, IV if i in ivs else KEY)
             for a in n.kids[1:]:  # keyword arguments named like key material: AES.new(k, mode, nonce=n)
                 if a.kind == "kwarg" and secret_name(a.name) and a.kids:
                     self._mark(a.kids[0], self._word_label(a.name))
@@ -634,22 +767,32 @@ class Flow:
         return IV if ws and all(w in _IV_WORDS or w not in _KEY_WORDS for w in ws) and \
             any(w in _IV_WORDS for w in ws) else KEY
 
+    def canon(self, p: str) -> str:
+        """A member of ``this`` / ``self`` / a class declared here is the field: ``this.k``, ``Z.k`` -> ``k``."""
+        root, _, rest = p.partition(".")
+        if rest and (root in ("this", "self", "super", "base") or root in self.scope.classes):
+            return rest
+        return p
+
     def _mark(self, n: N | None, label: int) -> bool:
         if n is None or not label:
             return False
         p = path(unwrap(n))
-        if p and self.scope.is_local_path(p) and (self.tainted.get(p, 0) | label) != self.tainted.get(p, 0):
-            self.tainted[p] = self.tainted.get(p, 0) | label
-            return True
+        if p and (self.scope.is_local_path(p) or self.canon(p) != p):
+            p = self.canon(p)
+            if (self.tainted.get(p, 0) | label) != self.tainted.get(p, 0):
+                self.tainted[p] = self.tainted.get(p, 0) | label
+                return True
         return False
 
     def path_label(self, p: str) -> int:
         if p.startswith(_ENV_PATHS) or ".process.env" in p:
-            return KEY
+            return 0 if self.incoming else KEY
         out = 0
         for seg in p.split("."):
             if secret_name(seg):
                 out |= self._word_label(seg)
+        p = self.canon(p)
         for t, m in self.tainted.items():
             if p == t or p.startswith(t + ".") or t.startswith(p + "."):
                 out |= m
@@ -675,6 +818,12 @@ class Flow:
             out |= self.label(x)
         return out
 
+    def _call_label(self, n: N) -> int:
+        """What a call that is not a source / hash / cipher returns: its data inputs' labels, and HOLDER when key
+        material went into a key position (``AESGCM(k)``, ``hmac.new(k, ...)``, ``SecretKeySpec(k)``)."""
+        data, key = self.split_inputs(n)
+        return self._any(data) | (HOLDER if self._any(key) else 0)
+
     def _label(self, n: N) -> int:  # noqa: C901 - one rule per node kind
         k = n.kind
         if k == "member" and n.name in _SIZE_MEMBERS:
@@ -694,20 +843,31 @@ class Flow:
             cls = self.classify(n)
             name, recv, args = self.callee(n)
             if cls == "source":
-                return IV if name in RANDOM_SOURCES else KEY
+                return 0 if self.incoming else IV if name in RANDOM_SOURCES else KEY
             if cls == "digest":
-                return 0
+                if name in VERDICTS:
+                    return 0
+                data, _key = self.split_inputs(n)
+                args_l = self._any(a for a in data if a is not recv)
+                recv_l = self.label(recv) if recv is not None and any(a is recv for a in data) else 0
+                # key material hashed as data (or the hash object fed it): key-derived; a MAC / signer object that
+                # holds its key in the key position is not
+                bad = args_l & (KEYISH | HOLDER) or recv_l & KEYISH
+                return (KEY_DERIVED | ABSORBED if bad else 0) | ((args_l | recv_l) & IV)
             if cls == "cipher":
-                data = self._any(args) & (KEY | ABSORBED)
-                return KEY if data or self.label(recv) & ABSORBED else 0
+                data, _key = self.split_inputs(n)
+                data_l = self._any(a for a in data if a is not recv) & KEYISH
+                return KEY | ABSORBED if data_l or self.label(recv) & ABSORBED else 0
             if cls == "local":
                 return self.local_ret.get(name, 0) | self._any(self.inputs(n))
             f = n.kids[0] if n.kids else None
-            out = self._any(self.inputs(n))
+            out = self._call_label(n) if cls == "propagate" else self._any(self.inputs(n))
             if n.kind == "call" and f is not None and f.kind == "name":
                 out |= self.label(f)  # a local holding a function that returns key material: f = () => key; f()
             return out
         if k in ("num", "bool", "null", "regex", "import"):
+            return 0
+        if k == "other" and n.name == "params":  # parameter names are not reads (defaults are checked as calls)
             return 0
         if k == "assign":
             return self.label(n.kids[1] if len(n.kids) > 1 else None)
@@ -721,7 +881,8 @@ class Flow:
                 m = self.label(v) if v is not None else 0
                 if m:
                     for p in target_paths(t):
-                        if self.scope.is_local_path(p):
+                        if self.scope.is_local_path(p) or self.canon(p) != p:
+                            p = self.canon(p)
                             self.tainted[p] = self.tainted.get(p, 0) | m
             for n in self.calls:
                 cls = self.classify(n)
@@ -729,15 +890,20 @@ class Flow:
                 if cls == "fill":
                     for x in ins:
                         self._mark(x, IV)
-                elif cls == "propagate":
-                    m = self._any(ins)
-                    for x in ins:
+                elif cls == "propagate":  # copy(dst, k), System.arraycopy(k, .., out, ..), h.Write(k), buf.extend(k)
+                    data, _key = self.split_inputs(n)
+                    _nm, recv, _a = self.callee(n)
+                    m_all = self._call_label(n)  # the receiver may now hold the key (c.init(mode, spec))
+                    m_data = self._any(data) & ~HOLDER  # arguments take each other's data, not the HOLDER bit
+                    for x in data:
+                        m = m_all if x is recv else m_data
                         if m and x.kind in ("name", "member", "index"):
                             self._mark(x, m)
-                elif cls == "cipher":
-                    _name, recv, args = self.callee(n)
-                    if self._any(args) & (KEY | ABSORBED):  # key material went in as data
-                        for x in ins:
+                elif cls in ("cipher", "digest"):
+                    name, recv, _args = self.callee(n)
+                    data, _key = self.split_inputs(n)
+                    if name not in VERDICTS and self._any(a for a in data if a is not recv) & KEYISH:
+                        for x in data:  # key material went in as data: the cipher / hash object took it in
                             if x.kind in ("name", "member", "index"):
                                 self._mark(x, ABSORBED)
                 elif cls == "local":
@@ -751,8 +917,7 @@ class Flow:
             for name, nodes in self.scope.func_nodes.items():
                 for fn in nodes:
                     for r in walk(fn):
-                        if r.kind == "other" and r.name in ("return_statement", "return", "return_expression",
-                                                            "jump_expression"):
+                        if r.kind == "other" and r.name in RETURNS and _owner(r) is fn:
                             m = self._any(r.kids)
                             if m:
                                 self.local_ret[name] = self.local_ret.get(name, 0) | m
@@ -760,26 +925,219 @@ class Flow:
                 break
         self._memo.clear()
 
-    def leaks(self) -> list[str]:
+    # ------------------------------------------------------------------------------------- framed nonce
+    def aead(self, n: N) -> bool:
+        """A cipher call on an AEAD construction (GCM / CCM / ChaCha20-Poly1305 / SIV / OCB), from its own text or
+        the values its receiver was built from (two hops)."""
+        texts = [n.text]
+        _name, recv, _args = self.callee(n)
+        roots = [path(unwrap(recv)) or ""] if recv is not None else []
+        for _ in range(2):
+            nxt = []
+            for r in roots:
+                for v in self.scope.locals.get(r.split(".")[0], []):
+                    if v is not None:
+                        texts.append(v.text)
+                        inner = unwind(v).head
+                        if inner:
+                            nxt.append(inner)
+            roots = nxt
+        return any(AEAD_RX.search(t) for t in texts)
+
+    def envelope(self, v: N | None, seen: frozenset[int] = frozenset()) -> bool:
+        """``nonce || ciphertext || tag``: a concatenation (``+``, ``Buffer.concat([...])``, ``append``) of AEAD
+        cipher results / tags, IV material and locals that only ever hold such envelopes, with at least one AEAD
+        ciphertext; or one crypto result."""
+        return self._envelope(v, seen)[0]
+
+    def _envelope(self, v: N | None, seen: frozenset[int]) -> tuple[bool, bool]:
+        """(is an envelope, holds AEAD ciphertext)."""
+        v = unwrap(v)
+        if v is None or id(v) in seen or self.label(v) & ~IV:
+            return False, False
+        seen = seen | {id(v)}
+        parts = _concat_parts(v)
+        if parts is None:
+            return False, False
+        aead = False
+        for part in parts:
+            part = unwrap(part)
+            if part is None:
+                return False, False
+            if part.kind in ("call", "new") and self.classify(part) in ("cipher", "digest"):
+                if self.label(part) & ~IV:
+                    return False, False
+                aead |= self.classify(part) == "cipher" and self.aead(part)
+                continue
+            p = path(part) if part.kind == "name" else None
+            others = [x for x in self.scope.locals.get(p, []) if id(x) not in seen] if p else []
+            if others and all(x is not None for x in others):  # ct = AEAD(...); ct = nonce + ct
+                got = [self._envelope(x, seen) for x in others]
+                if all(ok for ok, _a in got):
+                    aead |= any(a for _ok, a in got)
+                    continue
+            if self.label(part) == IV and part.kind in ("name", "member", "call"):
+                continue
+            return False, False
+        return aead or (len(parts) == 1 and not self.label(v)), aead
+
+    def out_buffer(self, name: str, v: N | None) -> bool:
+        """``var ct = new byte[d.Length]; aead.Encrypt(n, d, ct, tag)``: a fresh buffer that an AEAD call writes
+        its ciphertext / tag into (C# output parameters)."""
+        if not _allocation(unwrap(v)):
+            return False
+        for n in self.calls:
+            if self.classify(n) != "cipher" or not self.aead(n):
+                continue
+            _nm, _recv, args = self.callee(n)
+            if any(i >= 2 and path(unwrap(a)) == name for i, a in enumerate(args)):
+                return True
+        return False
+
+    def framed(self, n: N, before: "Flow | None") -> bool:
+        """A call of the window outside the allow-list, at the same place, given the nonce only inside an AEAD
+        envelope (``sock.sendall(nonce + AESGCM.encrypt(...))``): the nonce is public."""
+        if before is None:
+            return False
+        here = (norm(n.text), n.ctx)
+        if not any(before.classify(b) == "sink" and (norm(b.text), b.ctx) == here for b in before.calls):
+            return False
+        for x in self.inputs(n):
+            lab = self.label(x)
+            if not lab:
+                continue
+            if lab & ~IV:
+                return False
+            p = path(unwrap(x))
+            vals = self.scope.locals.get(p, []) if p and "." not in p else []
+            if self.envelope(x):
+                continue
+            if not vals or not all(v is not None and (self.envelope(v) or not self.label(v)) for v in vals):
+                return False
+            if not any(v is not None and self.envelope(v) and self.label(v) for v in vals):
+                return False
+        return True
+
+    def leaks(self, before: "Flow | None" = None) -> list[str]:
         """Calls that are not on the crypto allow-list (or build an error message) and can receive key material,
-        and key material stored into a member of something that is not a local."""
+        and key material stored into a member of something that is not a local. The nonce may reach a call the
+        window already makes, at the same place, only framed with AEAD ciphertext (``framed``)."""
         out = []
         for n in self.calls:
             if self.classify(n) in ("sink", "error") and self._any(self.inputs(n)):
+                if self.classify(n) == "sink" and self.framed(n, before):
+                    continue
                 out.append(norm(n.text)[:80])
         for t, v, _op, _n in self.binds:
             p = path(t)
             if t is not None and t.kind in ("member", "index") and p and not self.scope.is_local_path(p) and \
-                    v is not None and self.label(v):
+                    self.canon(p) == p and v is not None and self.label(v):
                 out.append(norm(t.text)[:80] + " = ...")
         for n in walk(self.root):  # throw key / raise / assert ..., key: the value ends up in a log
             if n.kind == "other" and (n.name in ("throw_statement", "throw_expression", "raise") or
                                       n.name == "jump_expression" and n.text.lstrip().startswith("throw")):
                 if self._any(n.kids):
                     out.append(norm(n.text)[:80])
-            elif n.kind == "other" and n.name == "assert" and self._any(n.kids[1:]):
+            elif n.kind == "other" and n.name in ("assert", "assert_statement") and self._any(n.kids[1:]):
                 out.append(norm(n.text)[:80])
         return sorted(set(out))
+
+    def nonce_keys(self) -> list[str]:
+        """Cipher / MAC constructions whose KEY is built from a value used as an IV / nonce somewhere (the nonce
+        travels in clear: a key made of it protects nothing, and what it encrypts is as good as sent)."""
+        ivs: set[str] = set()
+        for n in self.calls:
+            _nm, _recv, args = self.callee(n)
+            for i in self.iv_positions(n):
+                p = path(unwrap(args[i])) if i < len(args) else None
+                if p:
+                    ivs.add(self.canon(p))
+        out = []
+        for n in self.calls:
+            name, _recv, args = self.callee(n)
+            if name not in KEY_TAKERS:
+                continue
+            keyed, _ = self.key_positions(n)
+            for i in keyed - self.iv_positions(n):
+                if i < len(args) and self._reads_any(args[i], ivs, 3):
+                    out.append(norm(n.text)[:80])
+        return sorted(set(out))
+
+    def _reads_any(self, v: N | None, names: set[str], depth: int) -> bool:
+        if v is None or depth < 0:
+            return False
+        for x in walk(v):
+            if x.kind in ("name", "member") and (p := path(x)):
+                p = self.canon(p)
+                if p in names:
+                    return True
+                if x.kind == "name" and any(self._reads_any(val, names, depth - 1)
+                                            for val in self.scope.locals.get(p, [])):
+                    return True
+        return False
+
+    def key_returns(self) -> dict[str, list[str]]:
+        """Functions that return / yield key material or key-derived values (not IV, not key holders), by name.
+        Meant for an ``incoming`` flow: a KDF / key generator returning its own output is its job."""
+        out: dict[str, list[str]] = {}
+        for r in walk(self.root):
+            if r.kind == "other" and r.name in RETURNS and self._any(r.kids) & KEYISH:
+                fn = _owner(r)
+                out.setdefault(fn.name if fn is not None else "", []).append(norm(r.text)[:80])
+        return out
+
+
+# return / yield forms (Python ast, tree-sitter grammars, expression bodies)
+RETURNS = {"return_statement", "return", "return_expression", "jump_expression", "yield", "yieldfrom",
+           "yield_expression", "arrow_return"}
+
+
+def _owner(n: N) -> N | None:
+    cur = n.parent
+    while cur is not None and cur.kind != "func":
+        cur = cur.parent
+    return cur
+
+
+def _concat_parts(v: N) -> list[N] | None:
+    """The pieces of a byte concatenation, or [v] for a plain value; None for anything else."""
+    if v.kind == "binary" and v.name == "+":
+        out: list[N] = []
+        for k in v.kids:
+            got = _concat_parts(unwrap(k) or k)
+            if got is None:
+                return None
+            out += got
+        return out
+    if v.kind == "call" and v.kids:
+        f = v.kids[0]
+        args = [unwrap(a) for a in v.kids[1:]]
+        if f.kind == "member" and f.name == "concat" and len(args) == 1 and args[0] is not None and \
+                args[0].kind == "seq":  # Buffer.concat([...])
+            return [x for x in args[0].kids]
+        if f.kind == "name" and f.name == "append" and args:  # Go append(a, b...)
+            return [_spread(a) for a in args if a is not None]
+    if v.kind in ("call", "new", "name", "member"):
+        return [v]
+    return None
+
+
+def _spread(a: N) -> N:
+    return a.kids[0] if a.kind == "other" and a.name == "variadic_argument" and a.kids else a
+
+
+def _allocation(v: N | None) -> bool:
+    """A fresh zeroed buffer: ``new byte[n]``, ``make([]byte, n)``, ``ByteArray(n)``, ``Buffer.alloc(n)``."""
+    if v is None:
+        return False
+    if v.kind == "other" and v.name in ("array_creation_expression", "stackalloc_expression"):
+        return not any(x.kind == "seq" for x in v.kids)
+    if v.kind == "call" and v.kids:
+        f = v.kids[0]
+        name = f.name if f.kind in ("name", "member") else ""
+        return name in ("make", "ByteArray", "alloc", "bytearray") and len(v.kids) >= 2 and \
+            all(x.kind not in ("seq", "str") for x in v.kids[1:])
+    return False
 
 
 def module_writes(root: N, scope: Scope) -> Counter[str]:
@@ -798,13 +1156,15 @@ def module_writes(root: N, scope: Scope) -> Counter[str]:
 
 # --------------------------------------------------------------------------------------- sinks that move / change
 def sink_places(flow: Flow, drop_kw: set[str]) -> Counter[tuple[str, tuple[str, ...]]]:
-    """Every call that is not on the allow-list, as (its text without TLS keyword arguments, where it is)."""
+    """Every call that is not on the allow-list, as (its text without TLS keyword arguments and without the
+    inline TLS options a fix may raise, where it is)."""
     out: Counter[tuple[str, tuple[str, ...]]] = Counter()
     for n in flow.calls:
         if flow.classify(n) != "sink":
             continue
         parts = [norm(n.kids[0].text) if n.kids else ""]
-        parts += [norm(a.text) for a in n.kids[1:] if not (a.kind == "kwarg" and key_norm(a.name) in drop_kw)]
+        parts += [_blank_tls(a, TLS_RAISE) for a in n.kids[1:]
+                  if not (a.kind == "kwarg" and key_norm(a.name) in drop_kw)]
         out[("|".join(parts), n.ctx)] += 1
     return out
 
@@ -815,15 +1175,16 @@ def moved_sinks(after: Flow, before: Flow) -> list[str]:
     return sorted({k[0].split("|")[0] + "(...)" for k, n in a.items() if n > b[k]})
 
 
-def _blank_tls(v: N | None) -> str:
+def _blank_tls(v: N | None, keys: set[str] | None = None) -> str:
     """A value's text without its TLS options (``{ host, ciphers: '...' }`` -> ``{host}``): those may be added,
     changed or removed by a fix, and their values are checked by ``downgrades``."""
     if v is None:
         return ""
+    keys = TLS_KEYS if keys is None else keys
     text = v.text
     spans = []
     for x in walk(v):
-        if x.kind in ("pair", "kwarg") and key_norm(x.name) in TLS_KEYS:
+        if x.kind in ("pair", "kwarg") and key_norm(x.name) in keys:
             i = text.find(x.text)
             if i >= 0:
                 spans.append((i, i + len(x.text)))
@@ -840,20 +1201,55 @@ def _blank_tls(v: N | None) -> str:
 def changed_sink_inputs(after: Flow, before: Flow) -> list[str]:
     """Names that a call of the window outside the allow-list reads (its receiver, its arguments, and one hop
     through what those names are set to - an options object): the rewrite may not change what they are set to,
-    except to the result of a crypto operation (``ct = AES-GCM(...).encrypt(data)``) or in a TLS option."""
+    except to the result of a crypto operation (``ct = AES-GCM(...).encrypt(data)``), an AEAD envelope (``nonce +
+    ciphertext + tag``), a fresh buffer an AEAD call writes its output into, or in a TLS option. A name read only
+    through a value the rewrite replaced by such a crypto result is no longer an input."""
     kept = {norm(n.text) for n in after.calls if after.classify(n) == "sink"}
-    watched: set[str] = set()
+    direct: set[str] = set()
     for n in before.calls:  # the window's calls outside the allow-list that the rewrite keeps
         if before.classify(n) != "sink" or norm(n.text) not in kept:
             continue
         for x in before.inputs(n):
             for nm in _reads(before, x):
-                watched.add(nm.name)
+                direct.add(nm.name)
+
+    def values(flow: Flow, names: set[str]) -> dict[str, list[N | None]]:
+        out: dict[str, list[N | None]] = {}
+        for t, v, op, _n in flow.binds:
+            for p in target_paths(t):
+                root = p.split(".")[0]
+                if root in names:
+                    out.setdefault(root, []).append(v if op in ("=", ":=", "for") else
+                                                    N("other", f"{op}{v.text if v else ''}"))
+        return out
+
+    def judge(names: set[str]) -> tuple[list[str], set[str]]:
+        names = {w for w in names if before.scope.is_local_path(w) and w not in before.scope.funcs}
+        va, vb = values(after, names), values(before, names)
+        bad, same = [], set()
+        for name in sorted(names):
+            ca = Counter(_blank_tls(v) for v in va.get(name, []))
+            cb = Counter(_blank_tls(v) for v in vb.get(name, []))
+            if ca == cb:
+                same.add(name)
+                continue
+            new_texts = ca - cb
+            new_nodes = [v for v in va.get(name, []) if _blank_tls(v) in new_texts]
+            if cb - ca and not new_nodes:
+                bad.append(name)
+                continue
+            if not all(_crypto_result(after, unwrap(v)) or after.envelope(v) or after.out_buffer(name, v)
+                       for v in new_nodes):
+                bad.append(name)
+        return bad, same
+
+    bad, same = judge(direct)
+    hops: set[str] = set()
     by_name_before: dict[str, list[N | None]] = {}
     for t, v, _op, _n in before.binds:
         for p in target_paths(t):
             by_name_before.setdefault(p.split(".")[0], []).append(v)
-    for name in list(watched):
+    for name in same:  # one hop through a value the rewrite kept (an options object)
         for v in by_name_before.get(name, []):
             for nm in _reads(before, v):
                 parent = nm.parent
@@ -861,33 +1257,9 @@ def changed_sink_inputs(after: Flow, before: Flow) -> list[str]:
                     parent = parent.parent
                 if parent is not None and parent.kind == "pair" and key_norm(parent.name) in TLS_KEYS:
                     continue
-                watched.add(nm.name)
-    watched = {w for w in watched if before.scope.is_local_path(w) and w not in before.scope.funcs}
-
-    def values(flow: Flow) -> dict[str, list[N | None]]:
-        out: dict[str, list[N | None]] = {}
-        for t, v, op, _n in flow.binds:
-            for p in target_paths(t):
-                root = p.split(".")[0]
-                if root in watched:
-                    out.setdefault(root, []).append(v if op in ("=", ":=", "for") else N("other", f"{op}{v.text if v else ''}"))
-        return out
-
-    va, vb = values(after), values(before)
-    bad = []
-    for name in sorted(watched):
-        ca = Counter(_blank_tls(v) for v in va.get(name, []))
-        cb = Counter(_blank_tls(v) for v in vb.get(name, []))
-        if ca == cb:
-            continue
-        new_texts = ca - cb
-        new_nodes = [v for v in va.get(name, []) if _blank_tls(v) in new_texts]
-        if cb - ca and not new_nodes:
-            bad.append(name)
-            continue
-        if not all(_crypto_result(after, unwrap(v)) for v in new_nodes):
-            bad.append(name)
-    return bad
+                hops.add(nm.name)
+    more, _same = judge(hops - direct)
+    return sorted(set(bad + more))
 
 
 def _reads(flow: Flow, n: N | None) -> list[N]:

