@@ -690,6 +690,8 @@ def test_a_throttled_slice_is_requeued_with_backoff_not_reported_as_auth_failed(
     assert len(waits) == 4 and waits[0] <= waits[1] and waits[2] <= waits[3]  # exponential in the attempt
     p = _jobs(engine, kind="collect")[0]
     assert {t["status"] for t in p.result["targets"]} == {"error"} and p.outcome == "failed" and p.refunded
+    # #238 (C2) over the whole source: 0 of N account-regions read is a failure, never "success"
+    assert p.status == "failure" and p.error.startswith("No target could be read (0 of 2)")
 
 
 def test_read_target_reports_a_throttle_as_error_or_raises_for_a_slice():

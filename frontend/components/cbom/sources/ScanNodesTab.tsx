@@ -32,6 +32,7 @@ import { NodeDownloads } from "./NodeDownloads";
 import {
   DEFAULT_PROXY_CA_FILE,
   DEPLOY_SUPPORT,
+  NETWORK_REQUIREMENTS,
   ago,
   insecureApiWarning,
   nodeApiPort,
@@ -633,9 +634,12 @@ export default function ScanNodesTab({
           <li>Reads with read-only accounts and the published command list shown on the Servers tab.</li>
           <li>Sends metadata only: algorithms, key sizes, versions and locations. For private keys, only the public half is read.</li>
         </ul>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-4">
-          Fully air-gapped network? Use the on-prem edition: the whole platform runs inside your data centre.
-        </p>
+        <div className="mt-4" data-testid="node-network-requirements">
+          <p className="text-sm font-medium text-zinc-900 dark:text-white">Network requirements</p>
+          <ul className="list-disc pl-5 space-y-1 mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            {NETWORK_REQUIREMENTS.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        </div>
       </SectionCard>
 
       {editing && (

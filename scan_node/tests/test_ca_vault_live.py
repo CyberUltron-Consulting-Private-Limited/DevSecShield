@@ -100,7 +100,7 @@ def test_vault_pki_and_transit_with_the_read_only_policy(reader_token):
     assert {"CA_ALLOWS_ANY_NAME", "CA_LONG_VALIDITY"} <= codes(roles["pki/any-name"])
     assert not codes(roles["pki/web"]) - {"QUANTUM_VULNERABLE"}
     assert "KEY_PLAINTEXT_EXPORT" in codes(keys["legacy-export"]) and "QUANTUM_VULNERABLE" in codes(keys["legacy-export"])
-    assert codes(keys["no-rotation"]) == {"KEY_NO_ROTATION"}
+    assert codes(keys["no-rotation"]) == {"KMS_NO_ROTATION"}  # one code for every store (C9)
     assert codes(keys["app-aes"]) == set()
 
 

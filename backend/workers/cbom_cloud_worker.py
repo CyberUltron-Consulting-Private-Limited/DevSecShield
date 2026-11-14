@@ -126,6 +126,7 @@ class _Job:
         self.released = False  # gave the lease back (shutdown) instead of finishing
         self.fanned_out = 0  # slices queued (an AWS parent): the slices finish it
         self.requeue: str | None = None  # a slice AWS kept throttling: back to the queue after a backoff
+        self.read = 0  # emitted rows that are assets, not coverage gaps
         self.store_failed: str | None = None  # an asset batch was lost to an error that is not the API's refusal
         self.lab_mode: str | None = None  # "same_account": an AWS source collected in lab mode (lab_mode.py)
 
@@ -149,6 +150,8 @@ class _Job:
             return
         self.buffer.append(asset)
         self.emitted += 1
+        if asset.get("type") != "coverage":
+            self.read += 1
         if len(self.buffer) >= BATCH:
             self.flush()
 
@@ -286,6 +289,11 @@ class _Job:
                 result = self._ssm()
             else:
                 status, error = "failure", f"The cloud worker cannot collect {kind}"
+            # a slice's unread account-region stays its own target row: the parent applies this rule over every slice
+            # when it ends (slices.finalize)
+            unread = None if self.kind == "slice" else _nothing_read(result, self.read)
+            if unread:  # a job that read 0 of N targets is a failure (refunded), never "success" (C2)
+                raise _Refused(unread)
         except _Refused as exc:
             status, error = "failure", str(exc)
         except Exception as exc:
@@ -438,6 +446,24 @@ class _Job:
 
 class _Refused(Exception):
     """A reason that is safe to show the customer."""
+
+
+def _nothing_read(result: dict[str, Any], read: int) -> str | None:
+    """The failure reason when a collector read none of its targets and stored no asset (only coverage rows: denied,
+    API not enabled, unreachable), else None.  Such a job fails, so it is refunded like any failed job and the source's
+    last good collection stays the current one; its coverage rows stay on the run and say what was refused.  A stop
+    (any target skipped: cancelled, the deadline) is not "unread", even after a target failed: the job ends cancelled
+    instead, refunded the same way."""
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    total = counts.get("total")
+    if read or not isinstance(total, int) or total <= 0 or counts.get("ok") or counts.get("partial"):
+        return None
+    targets = [t for t in result.get("targets") or [] if isinstance(t, dict)]
+    if any(str(t.get("status") or "").startswith("skipped") for t in targets):
+        return None
+    first = next((t for t in targets if t.get("error") and not str(t.get("status") or "").startswith("skipped")), None)
+    reason = f"{first.get('target')}: {first.get('error')}" if first else "every target failed"
+    return f"No target could be read (0 of {total}): {reason}"[:500]
 
 
 def run_once(engine, worker: str) -> bool:

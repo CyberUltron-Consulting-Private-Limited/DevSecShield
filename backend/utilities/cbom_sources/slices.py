@@ -31,7 +31,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, insert, update
 from sqlmodel import Session, select
 
-from backend.new_models import CbomCollectionJob, CbomCollectionSource
+from backend.new_models import CbomCollectedAsset, CbomCollectionJob, CbomCollectionSource
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources.common import log
 from backend.utilities.cbom_sources.crypto import decrypt_secrets, scrub
@@ -268,6 +268,17 @@ def finalize(session: Session, parent: CbomCollectionJob, now: _dt.datetime, *, 
     if status is None:
         status = "cancelled" if parent.cancel_requested_at is not None else "success"
         error = (parent.cancel_reason or "Cancelled") if status == "cancelled" else None
+    if status == "success":
+        # #238 (C2), over the whole source: 0 of N account-regions read and no asset stored (only coverage rows)
+        # is a failure, refunded, never "success"; a stop (a skipped slice) stays a cancel, decided by finish_job
+        from backend.workers.cbom_cloud_worker import _nothing_read
+
+        read = session.exec(select(func.count()).select_from(CbomCollectedAsset).where(
+            CbomCollectedAsset.job_id == parent.id, CbomCollectedAsset.attempt == parent.attempts,
+            CbomCollectedAsset.asset_type != "coverage")).one()
+        unread = _nothing_read(result, int(read))
+        if unread:
+            status, error = "failure", unread
     try:  # finish_job writes nothing before its guarded UPDATE, so a refusal leaves the transaction clean
         job = J.finish_job(session, None, parent.id, parent.lease_id or "", status, result, error, now,
                            team_id=parent.team_id)
