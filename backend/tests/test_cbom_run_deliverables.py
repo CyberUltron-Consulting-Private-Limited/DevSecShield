@@ -55,14 +55,6 @@ def _assign(api, run_id: int, key: str, status: str) -> None:
     assert r.status_code == 200, r.text
 
 
-def _by_code_and_asset(vex: dict) -> dict[tuple[str, int], dict]:
-    out = {}
-    for v in vex["vulnerabilities"]:
-        for a in v["affects"]:
-            out[(v["id"], int(a["ref"].rsplit("zs-asset-", 1)[1]))] = v["analysis"]
-    return out
-
-
 def _finish(engine, run_id: int) -> None:
     with Session(engine) as s:
         run = s.get(CbomCollectionRun, run_id)
@@ -90,86 +82,73 @@ def _pdf_text(raw: bytes, tmp_path: Path) -> str:
     return pdf_text(raw)
 
 
-# ----------------------------------------------------------------------------- VEX mapping (pure)
-@pytest.mark.parametrize("code,basis", [
-    ("WEAK_CIPHER", "observed"), ("PROTO_TLS10", "observed"), ("RSA_LT_2048", "observed"), ("SIG_MD5", "observed"),
-    ("KMS_NO_ROTATION", "observed"), ("NO_PQ_KEX", "quantum_only"), ("SSH_NO_PQ_KEX", "quantum_only"),
-    ("QUANTUM_VULNERABLE", "quantum_only"), ("IKE_NO_PQ", "quantum_only"), ("DISK_XTS_128", "quantum_only"),
-    ("LIB_KNOWN_CVE", "inferred"), ("LIB_EOL", "inferred"), ("DB_EOL_VERSION", "inferred"),
-])
-def test_code_basis(code, basis):
-    assert RD.code_basis(code) == basis
+# ----------------------------------------------------------------------------- VEX endpoint (CB-22 semantics + plan)
+def _keyed(entries) -> dict[tuple[str, int], dict]:
+    """(finding id, asset id) -> analysis, BOM-Links compared by their asset."""
+    out = {}
+    for v in entries:
+        for a in v.get("affects") or []:
+            out[(v["id"], int(str(a["ref"]).rsplit("zs-asset-", 1)[1]))] = v["analysis"]
+    return out
 
 
-@pytest.mark.parametrize("basis,status,hndl,state,response,detail", [
-    ("observed", None, False, "exploitable", None, RD.DETAIL_OBSERVED),
-    ("observed", "open", True, "exploitable", None, RD.DETAIL_OBSERVED),
-    ("quantum_only", None, True, "in_triage", None, RD.DETAIL_HNDL),
-    ("quantum_only", None, False, "in_triage", None, RD.DETAIL_QUANTUM),
-    ("inferred", None, False, "in_triage", None, RD.DETAIL_INFERRED),
-    ("cve", None, False, "in_triage", None, "Matched on: x"),
-    ("observed", "done", False, "resolved", None, RD.DETAIL_DONE),
-    ("quantum_only", "done", True, "resolved", None, RD.DETAIL_DONE),
-    ("observed", "accepted_risk", False, "exploitable", ["will_not_fix"], RD.DETAIL_ACCEPTED),
-    ("quantum_only", "accepted_risk", True, "in_triage", ["will_not_fix"], RD.DETAIL_ACCEPTED),
-    ("observed", "in_progress", False, "exploitable", ["update"], RD.DETAIL_IN_PROGRESS),
-])
-def test_analysis_mapping(basis, status, hndl, state, response, detail):
-    out = RD.analysis_for(basis, status=status, hndl=hndl, cve_detail="Matched on: x")
-    assert out["state"] == state and out.get("response") == response and out["detail"].startswith(detail)
-    assert out["state"] != "not_affected"  # nothing a run observed is ever "not affected"
+def test_run_vex_is_the_export_with_the_remediation_plan_overlaid(api, world):
+    """CB-22 (#134) owns which analysis a finding gets; the run VEX takes the export's entries as they are and only
+    overlays each asset's plan status (vex_semantics.apply_plan_status). Without a plan it equals the export."""
+    from backend.utilities.cbom_sources import vex_semantics as VEX
 
-
-# ----------------------------------------------------------------------------- VEX endpoint
-def test_run_vex_states_follow_evidence_and_remediation_status(api, world):
     engine, _ = world
     _src, run = _store(api, engine, ASSETS)
     rid = run["id"]
+    plain = api("GET", f"/1/cbom/sources/runs/{rid}/vex").json()
+    bom = api("GET", f"/1/cbom/sources/runs/{rid}/cbom").json()
+    export = _keyed(bom["vulnerabilities"])
+    assert _keyed(plain["vulnerabilities"]) == export  # no plan: the export's analysis for every (finding, asset)
+    assert [v["properties"] for v in plain["vulnerabilities"]] == [v["properties"] for v in bom["vulnerabilities"]]
+
     items = _assets(api, rid)
-    cert, tls, lib = items["/etc/ssl/pay.pem"], items["10.20.0.1:443"], items["package:openssl"]
+    cert, tls = items["/etc/ssl/pay.pem"], items["10.20.0.1:443"]
     win, kms = items["os"], items["arn:aws:kms:ap-south-1:111122223333:key/abc"]
-    _assign(api, rid, cert["asset_key"], "done")
+    with Session(engine) as s:  # collected an hour before the plan says done (vex_semantics compares the two)
+        row = s.get(CbomCollectedAsset, cert["asset_id"])
+        row.created_at = dt.datetime.utcnow() - dt.timedelta(hours=1)
+        s.add(row)
+        s.commit()
+    _assign(api, rid, cert["asset_key"], "done")  # marked done after this run collected it
     _assign(api, rid, win["asset_key"], "accepted_risk")
     _assign(api, rid, kms["asset_key"], "in_progress")
-
     r = api("GET", f"/1/cbom/sources/runs/{rid}/vex")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("application/vnd.cyclonedx+json")
     assert r.headers["content-disposition"].endswith(f'cbom-sources-run-{rid}.vex.json"')
     vex = r.json()
     assert _schema_errors(vex) == []
-    got = _by_code_and_asset(vex)
-    # observed classical weakness on an open asset: exploitable
-    assert got[("ZS-CBOM-PROTO_TLS10", tls["asset_id"])] == {"state": "exploitable", "detail": RD.DETAIL_OBSERVED}
-    assert got[("ZS-CBOM-WEAK_CIPHER", tls["asset_id"])]["state"] == "exploitable"
-    # quantum-only on an endpoint in transit: in triage, harvest now / decrypt later
-    assert got[("ZS-CBOM-NO_PQ_KEX", tls["asset_id"])] == {"state": "in_triage", "detail": RD.DETAIL_HNDL}
-    # version-inferred: in triage; CVE matches: in triage
-    assert got[("ZS-CBOM-LIB_EOL", lib["asset_id"])]["state"] == "in_triage"
-    assert got[("ZS-CBOM-LIB_KNOWN_CVE", lib["asset_id"])]["detail"] == RD.DETAIL_INFERRED
-    assert got[("CVE-2022-3602", lib["asset_id"])]["state"] == "in_triage"
-    # done: resolved, every code on the asset (classical and quantum-only)
-    for code in ("SIG_MD5", "CERT_EXPIRED", "RSA_LT_2048", "QUANTUM_VULNERABLE"):
-        assert got[(f"ZS-CBOM-{code}", cert["asset_id"])]["state"] == "resolved"
-    # accepted risk: still affected, the response says the team will not fix it
-    win_tls10 = got[("ZS-CBOM-PROTO_TLS10", win["asset_id"])]
-    assert win_tls10["state"] == "exploitable" and win_tls10["response"] == ["will_not_fix"]
-    assert got[("ZS-CBOM-KMS_NO_ROTATION", kms["asset_id"])]["response"] == ["update"]
+    got = _keyed(vex["vulnerabilities"])
+    assert set(got) == set(export)  # the same (finding, asset) pairs
+    for (vid, aid), analysis in got.items():
+        status = {cert["asset_id"]: "done", win["asset_id"]: "accepted_risk", kms["asset_id"]: "in_progress"}.get(aid)
+        if status is None:
+            assert analysis == export[(vid, aid)], (vid, aid)  # untouched
+        elif status == "done":
+            assert analysis["state"] == "resolved" and analysis["detail"].startswith(VEX.DETAIL_DONE)
+        else:
+            assert analysis["state"] == export[(vid, aid)]["state"]  # the evidence state is kept
+            assert analysis["response"] == (["will_not_fix"] if status == "accepted_risk" else ["update"])
+    assert got[("ZS-CBOM-PROTO_TLS10", tls["asset_id"])] == export[("ZS-CBOM-PROTO_TLS10", tls["asset_id"])]
     assert not any(v["analysis"]["state"] == "not_affected" for v in vex["vulnerabilities"])
-    # one finding code splits by analysis: PROTO_TLS10 on the open TLS endpoint and the accepted Windows host
+    # an entry whose assets get different analyses is split, one entry per analysis, each with one zs:vex_basis
     tls10 = [v for v in vex["vulnerabilities"] if v["id"] == "ZS-CBOM-PROTO_TLS10"]
     assert len(tls10) == 2 and len({v["bom-ref"] for v in vex["vulnerabilities"]}) == len(vex["vulnerabilities"])
+    assert all(len(VEX.props_of(v).get("zs:vex_basis") or []) == 1 for v in vex["vulnerabilities"])
     # affects are BOM-Links into the run CBOM
-    bom = api("GET", f"/1/cbom/sources/runs/{rid}/cbom").json()
     refs = {c["bom-ref"] for c in bom["components"]}
     prefix = f"urn:cdx:{bom['serialNumber'].removeprefix('urn:uuid:')}/1#"
     assert all(a["ref"].startswith(prefix) and a["ref"][len(prefix):] in refs
                for v in vex["vulnerabilities"] for a in v["affects"])
     props = {p["name"]: p["value"] for p in vex["metadata"]["properties"]}
-    assert props["zs:vex_rules"] == RD.VEX_RULES and props["zs:bom_serial"] == bom["serialNumber"]
+    assert props["zs:vex_rules"] == f"{VEX.VEX_RULES}+{RD.PLAN_OVERLAY}" and props["zs:bom_serial"] == bom["serialNumber"]
     assert "zs:as_of" in props and "still" in props["zs:as_of"]  # the run is still collecting
-    # the run export itself is unchanged (PR #103 owns it): still "exploitable" for every finding code
-    assert {v["analysis"]["state"] for v in bom["vulnerabilities"] if v["id"].startswith("ZS-CBOM-")} == {"exploitable"}
+    assert sum(int(v) for k, v in props.items() if k.startswith("zs:pairs_")) == len(got)
 
 
 def test_vex_of_a_finished_run_has_no_as_of_note(api, world):
@@ -451,7 +430,7 @@ def test_report_and_pack_of_a_run_with_40_realistic_findings(api, world, tmp_pat
 
 def test_a_20k_asset_run_builds_its_pdf_and_states_cut_vex_entries(api, world, monkeypatch):
     """The 20k-run path (R-qa run #6): the PDF builds at the 500-row cap, and a finding on more assets than the
-    export lists per entry (5,000) says so in the VEX with its true total."""
+    export lists per entry (5,000) says so in the run VEX with its true total (the export's CB-22 properties)."""
     from backend.routers import cbom_run_deliverables as ROUTE
     from backend.utilities.cbom_sources.classify import classify
 
@@ -486,7 +465,6 @@ def test_a_20k_asset_run_builds_its_pdf_and_states_cut_vex_entries(api, world, m
     vex = json.loads(ROUTE._vex_doc(engine, 1, run["id"]))
     entry = next(v for v in vex["vulnerabilities"] if v["id"] == "ZS-CBOM-NO_PQ_KEX")
     props = {p["name"]: p["value"] for p in entry["properties"]}
-    assert len(entry["affects"]) == RD.AFFECTS_CAP and props["zs:affected_truncated"] == "true"
+    # the export's cut (CB-22: zs:affected_truncated with the true count) travels into the run VEX unchanged
+    assert len(entry["affects"]) == 5_000 and props["zs:affected_truncated"] == "true"
     assert props["zs:affected_total"] == "6000"
-    meta = {p["name"]: p["value"] for p in vex["metadata"]["properties"]}
-    assert "list only the first 5,000 affected assets" in meta["zs:affected_truncated_findings"]
