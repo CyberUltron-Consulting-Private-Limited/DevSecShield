@@ -46,6 +46,7 @@ from backend.utilities.cbom_sources import agility as AGILITY
 from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import source_cap as SOURCE_CAP
 from backend.utilities.cbom_sources import targets as T
 from backend.utilities.cbom_sources.aws_validate import validate_aws_role
 from backend.utilities.cbom_sources.common import audit, iso_z, log, new_ref, new_token, sha256_hex, utcnow
@@ -85,8 +86,8 @@ from backend.utilities.cbom_sources import schedules as SCHED
 from backend.utilities.cbom_sources.classify import ASSET_TYPES
 from backend.utilities.cbom_sources.kinds import (KINDS, METADATA_FIELDS, credential_target_problem, ct_discovery_enabled,
                                                 validate_secret_value)
-from backend.utilities.cbom_sources.planning import RATES_C, credits, network_sweep_totals, node_status, plan_run, \
-    source_targets
+from backend.utilities.cbom_sources.planning import RATES_C, RangeContext, credits, network_sweep_totals, node_status, \
+    plan_run, source_targets
 from backend.utilities.cbom_sources.schemas import (
     AreaUpdate,
     EstimateBody,
@@ -123,7 +124,7 @@ WRITE = [Depends(write_limiter)]
 BASE = "/{team_id}/cbom/sources"
 REGISTRATION_TTL = _dt.timedelta(hours=24)
 MAX_NODES = 50
-MAX_SOURCES = 500
+# the team's source cap: utilities/cbom_sources/source_cap.py (CBOM_MAX_SOURCES, per-team CBOM_MAX_SOURCES_TEAMS; #224)
 MAX_VENDORS = 100
 
 warn_if_key_is_weak()
@@ -164,12 +165,14 @@ def _team_node(session: Session, team_id: int, node_id: int | None) -> CbomScanN
 
 def _node_counts(session: Session, team_id: int, settings: CbomCollectionSettings) -> dict[int, dict[str, int]]:
     counts: dict[int, dict[str, int]] = {}
-    for source in session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all():
+    sources = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()
+    ctx = RangeContext.of_sources(list(sources), settings)  # once for every range (review of #273)
+    for source in sources:
         if source.node_id is None:
             continue
         c = counts.setdefault(source.node_id, {"targets": 0, "sources": 0})
         c["sources"] += 1
-        info = source_targets(source, settings)
+        info = source_targets(source, settings, ctx)
         if KINDS.get(source.kind) and KINDS[source.kind].group in ("servers", "network"):
             c["targets"] += int(info["units"])
         else:
@@ -186,6 +189,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
         nodes = session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()
         statuses = [node_status(n, now) for n in nodes]
         sources = session.exec(select(CbomCollectionSource).where(CbomCollectionSource.team_id == team_id)).all()
+        ctx = RangeContext.of_sources(list(sources), settings)  # once for every range (review of #273)
         groups: dict[str, dict[str, Any]] = {}
         for source in sources:
             spec = KINDS.get(source.kind)
@@ -193,7 +197,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                 continue
             g = groups.setdefault(spec.group, {"sources": 0, "units": 0, "by_kind": {}, "failed_tests": 0})
             g["sources"] += 1
-            g["units"] += int(source_targets(source, settings)["units"])
+            g["units"] += int(source_targets(source, settings, ctx)["units"])
             g["by_kind"][source.kind] = g["by_kind"].get(source.kind, 0) + 1
             if source.last_test_status == "failed":
                 g["failed_tests"] += 1
@@ -234,6 +238,7 @@ def _overview(engine, team_id: int, user_id: int) -> dict:
                          "by_confidence": state["by_confidence"], "vendors": len(state["vendors"]),
                          "q0_gap_count": state["q0_gap_count"]},
             "code": {"cbom_scans": int(code_scans or 0)},
+            "limits": {"sources": SOURCE_CAP.usage(session, team_id)},
             "settings": {k: v for k, v in public_settings(settings, now).items()
                          if k in ("stop_all_network", "next_window_start", "in_window_now", "window_timezone",
                                   "aws_external_id", "aws_collection_configured", "ct_discovery_enabled")} | {
@@ -547,10 +552,9 @@ def _create_source(engine, team_id: int, user_id: int, body: SourceCreate) -> di
     cfg = _validate_config(body.kind, body.config)
     with Session(engine) as session:
         settings = get_or_create_settings(session, team_id)
-        total = session.exec(select(func.count()).select_from(CbomCollectionSource)
-                             .where(CbomCollectionSource.team_id == team_id)).one()
-        if total >= MAX_SOURCES:
-            raise HTTPException(status_code=400, detail=f"A team can have at most {MAX_SOURCES} sources")
+        cap = SOURCE_CAP.usage(session, team_id)
+        if cap["remaining"] < 1:
+            raise HTTPException(status_code=400, detail=SOURCE_CAP.refusal(cap))
         needs_node = spec.needs_node(cfg)
         if needs_node and body.node_id is None:
             raise HTTPException(status_code=400, detail="node_id: choose the scan node that reaches these targets")
@@ -622,12 +626,16 @@ def _list_sources(engine, team_id: int, kind: str | None, group: str | None) -> 
             rows = [r for r in rows if KINDS.get(r.kind) and KINDS[r.kind].group == group]
         nodes = {n.id: n for n in session.exec(select(CbomScanNode).where(CbomScanNode.team_id == team_id)).all()}
         collects = last_collects(session, team_id, [r.id for r in rows])
+        # the team's network ranges, once: every range of the list is counted with the same skip map and never-scan
+        # list (one query, one pass over the ranges, whatever the number of ranges; review of #273)
+        ranges = session.exec(select(CbomCollectionSource).where(
+            CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
+        ctx = RangeContext.of_sources(list(ranges), settings)
         out = {"server_time": iso_z(now),
-               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id)) for r in rows]}
+               "sources": [public_source(r, settings, nodes.get(r.node_id), now, collects.get(r.id), ctx) for r in rows],
+               "limits": {"sources": SOURCE_CAP.usage(session, team_id)}}
         if group in (None, "network") and kind in (None, "network_range"):
-            ranges = session.exec(select(CbomCollectionSource).where(
-                CbomCollectionSource.team_id == team_id, CbomCollectionSource.kind == "network_range")).all()
-            out["network_totals"] = network_sweep_totals(list(ranges), settings)  # N7: unique, enabled ranges only
+            out["network_totals"] = network_sweep_totals(list(ranges), settings, ctx)  # N7: unique, enabled ranges
         return out
 
 
