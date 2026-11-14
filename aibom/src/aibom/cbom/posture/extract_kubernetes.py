@@ -124,6 +124,48 @@ def _resource(
             found.append(peer)
     elif kind == "Secret" and group == "":
         found.append(_secret(doc, path))
+    elif kind == "ConfigMap" and group == "":
+        found.extend(_nginx_configmap(doc, path))
+    return found
+
+
+# ingress-nginx reads its global TLS settings from the controller's ConfigMap
+# (``data.ssl-protocols``, ``data.ssl-ciphers``), the same values the per-Ingress
+# annotations override.
+_NGINX_CONFIGMAP_KEYS = {
+    "ssl-protocols": "nginx.ingress.kubernetes.io/ssl-protocols",
+    "ssl-ciphers": "nginx.ingress.kubernetes.io/ssl-ciphers",
+}
+
+
+def _nginx_configmap(doc: Mapping[str, object], path: str) -> list[EncryptionFact]:
+    """CB-28: one TLS fact per ingress-nginx key, on the key's own line, so the
+    protocol floor and the cipher list are two findings where each is written."""
+    data = doc.get("data")
+    if not isinstance(data, Mapping):
+        return []
+    lines = getattr(data, "key_lines", {}) or {}
+    found: list[EncryptionFact] = []
+    for key, note in _NGINX_CONFIGMAP_KEYS.items():
+        line = int(lines.get(key) or _line(doc))
+        if not isinstance(data.get(key), str):
+            continue
+        notes = {note: data[key]}
+        if key == "ssl-protocols":
+            basis = _protocol_basis(notes)
+        else:
+            basis = _cipher_basis(notes)
+        if not basis:
+            continue
+        found.append(_make(
+            kind="tls_endpoint",
+            native_type="ConfigMap",
+            address=f"{_address(doc)}#{key}",
+            path=path,
+            line=line,
+            layers={"transport": "ENCRYPTED_DECLARED"},
+            basis=(*basis, BasisEntry("asset_line", str(line))),
+        ))
     return found
 
 

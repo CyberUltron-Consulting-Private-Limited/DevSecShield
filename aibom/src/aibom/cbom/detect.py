@@ -662,6 +662,14 @@ _WEBCRYPTO_PADDING = (("RSA-OAEP", "oaep"), ("RSA_PKCS1_OAEP_PADDING", "oaep"), 
                       ("RSASSA-PKCS1", "pkcs1v15"))
 
 
+_C_CIPHER_LIST_ARG = re.compile(
+    r"(\bSSL(?:_CTX)?_set_cipher_list\s*\(\s*[^,()]+,\s*\")([^\"\\]*)")
+
+
+def _blank_list(m: re.Match[str]) -> str:
+    return m.group(1) + " " * len(m.group(2))
+
+
 def _lang_padding(line: str, lang: str, key: str) -> str | None:
     if lang != _JS or key != "rsa":
         return None
@@ -2145,6 +2153,11 @@ def detect_crypto(text: str, lang: str, external: Mapping[str, Any] | None = Non
         # algorithm without using it: blank it for this lane only (API strings such as "AES/GCM/NoPadding" have
         # no spaces and stay).
         lit_line = blank_prose(line, lang)
+        if lang == _C and "_set_cipher_list" in lit_line:
+            # CB-28: an OpenSSL cipher-list string is a TLS suite policy (the
+            # protocol lane reads it, with ``!RC4`` / ``-3DES`` as removals), not a
+            # use of each algorithm it names
+            lit_line = _C_CIPHER_LIST_ARG.sub(_blank_list, lit_line)
 
         if jwt_file:
             for det in _jwt_lane(lit_line, line_no):
