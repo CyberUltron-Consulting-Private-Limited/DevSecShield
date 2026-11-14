@@ -21,7 +21,7 @@ from typing import Any
 from zs_scan_node import tls_registry as R
 from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
-from zs_scan_node.certparse import cert_facts, load_certs
+from zs_scan_node.certparse import cert_facts, chain_links, load_certs
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node import netutil
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext
@@ -128,12 +128,12 @@ def _server_tls(ctx: JobContext, target: Target, port: int, engine: str, scope: 
                              "negotiated_cipher_code": R.code_hex(code) if code is not None else None,
                              "negotiated_group": E.iana_group(fh.group), "peer_signature_type": fh.peer_sig_type}
     n = 0
-    for i, der in enumerate(fh.certs_der[:5]):
-        for cert in load_certs(der):
-            f = cert_facts(cert, "tls")
-            ctx.emit("certificate", target.label, f"{_where(target)}:{port}#chain[{i}]", name=f.get("subject", ""),
-                     algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i, "role": engine})
-            n += 1
+    served = [(i, cert_facts(cert, "tls")) for i, der in enumerate(fh.certs_der[:5]) for cert in load_certs(der)]
+    chain_links([f for _i, f in served])  # CB-17
+    for i, f in served:
+        ctx.emit("certificate", target.label, f"{_where(target)}:{port}#chain[{i}]", name=f.get("subject", ""),
+                 algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i, "role": engine})
+        n += 1
     if enumerate_now:
         facts.update(_accepted_tls(ctx, target, port, proto, fh.version if fh.ok else None, code, scope))
     return facts, n

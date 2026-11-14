@@ -719,6 +719,30 @@ def _inspect_file(ctx: JobContext, sess: Session, loc: str, real_path: str) -> i
         first = entries[0] if entries else {}
         ctx.emit("keystore", loc, path, name=path.rsplit("/", 1)[-1], algorithm=first.get("key_alg"),
                  key_size=first.get("key_size"), facts=facts)
+        n += 1 + _keystore_entries(ctx, loc, path, facts, entries)
+    return n
+
+
+def _keystore_entries(ctx: JobContext, loc: str, path: str, facts: dict[str, Any], entries: list[dict]) -> int:
+    """CB-17: every listed keystore entry's certificate is judged as a certificate of its own (expiry, key size,
+    signature); a store whose entries could not be read is a coverage row, never a store that looks empty."""
+    if facts.get("password_protected"):
+        ctx.coverage(loc, f"keystore {path}", "incomplete", "the store's entries are encrypted with its password; "
+                     "the file is listed, its certificates are not judged", scope=[path], incomplete=True)
+    elif facts.get("listed") is False and "keytool" in str(facts.get("reason") or ""):
+        ctx.coverage(loc, "keystores (keytool)", "not_installed", "keytool is not installed on this server: JKS and "
+                     "PKCS#12 files are listed, their certificates are not judged")
+    n = 0
+    for e in entries:
+        alias = str(e.get("alias") or "")
+        if not alias or not (e.get("not_after") or e.get("key_alg") or e.get("sig_alg")):
+            continue  # an entry without a certificate (a secret-key entry) has nothing to judge
+        cert = {k: e[k] for k in ("subject", "issuer", "serial", "not_before", "not_after", "sig_alg", "key_alg",
+                                  "key_size", "self_signed", "fingerprint_sha256") if e.get(k) is not None}
+        ctx.emit("certificate", loc, f"{path}#{alias}", name=e.get("subject") or alias, algorithm=e.get("key_alg"),
+                 key_size=e.get("key_size"), facts={**cert, "source": "keystore", "keystore": path, "alias": alias,
+                                                    "entry_type": e.get("entry_type"),
+                                                    "store_type": facts.get("store_type")})
         n += 1
     return n
 
