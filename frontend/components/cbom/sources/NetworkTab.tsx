@@ -80,6 +80,11 @@ const PROTOCOLS: { value: string; label: string }[] = [
   { value: "starttls-ldap", label: "LDAP StartTLS" },
   { value: "starttls-smtp", label: "SMTP StartTLS" },
   { value: "starttls-imap", label: "IMAP StartTLS" },
+  { value: "starttls-pop3", label: "POP3 STLS" },
+  { value: "starttls-ftp", label: "FTP AUTH TLS" },
+  // XMPP needs the server's XMPP domain: the node uses the first SNI host name that resolves to the address
+  { value: "starttls-xmpp", label: "XMPP StartTLS (client, 5222)" },
+  { value: "starttls-xmpp-server", label: "XMPP StartTLS (server-to-server, 5269)" },
   { value: "starttls-postgres", label: "PostgreSQL TLS" },
   { value: "starttls-mysql", label: "MySQL TLS" },
   { value: "tds", label: "SQL Server (TDS)" },
@@ -495,16 +500,27 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                 />
               ) : (
                 ranges.length > 0 && (
+                  // Staging QA B6-3: the table used to be min-w-max (695 px) inside a 496/576 px card at 1440/1920 px, so
+                  // the last-test badge was cut and Actions sat off-screen. It now fits the card: fixed column shares,
+                  // the mode under the range (no column of its own), node names and the badge wrap, and Actions stays
+                  // pinned on the right when a phone-width card still has to scroll.
                   <ScrollArea className="w-full border rounded-lg">
-                    <div className="min-w-max">
-                      <Table data-testid="network-ranges-table">
+                    <div className="min-w-[420px]">
+                      <Table className="table-fixed" data-testid="network-ranges-table">
+                        <colgroup>
+                          <col className="w-[31%]" />
+                          <col className="w-[23%]" />
+                          <col />
+                          <col className="w-[84px]" />
+                        </colgroup>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Range <InfoTip id="cbsrc.net.col.range" /></TableHead>
-                            <TableHead>Scan node <InfoTip id="cbsrc.col.node" /></TableHead>
-                            <TableHead>Mode <InfoTip id="cbsrc.net.col.mode" /></TableHead>
-                            <TableHead>Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
-                            <TableHead className="w-24">
+                            <TableHead className="whitespace-normal">
+                              Range <InfoTip id="cbsrc.net.col.range" /> · Mode <InfoTip id="cbsrc.net.col.mode" />
+                            </TableHead>
+                            <TableHead className="whitespace-normal">Scan node <InfoTip id="cbsrc.col.node" /></TableHead>
+                            <TableHead className="whitespace-normal">Last test <InfoTip id="cbsrc.col.last_test" /></TableHead>
+                            <TableHead className="sticky right-0 bg-white dark:bg-zinc-900">
                               <span className="sr-only">Actions</span>
                             </TableHead>
                           </TableRow>
@@ -520,8 +536,8 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                                 data-testid="network-range-row"
                                 data-disabled={r.enabled ? undefined : "true"}
                               >
-                                <TableCell>
-                                  <span className={cn("font-mono text-xs", r.enabled ? "text-zinc-900 dark:text-white" : "text-zinc-500 line-through")}>{cidr}</span>
+                                <TableCell className="whitespace-normal align-top">
+                                  <span className={cn("font-mono text-xs break-all", r.enabled ? "text-zinc-900 dark:text-white" : "text-zinc-500 line-through")}>{cidr}</span>
                                   {!r.enabled && (
                                     <span className="ml-2 align-middle">
                                       <StatusBadge tone="zinc" title="Disabled ranges are not swept and not counted in Before the first run">Disabled</StatusBadge>
@@ -531,18 +547,24 @@ export default function NetworkTab({ teamId, onNavigate }: { teamId: number; onN
                                     {pluralize(r.target_count, "address", "addresses")}
                                     {!r.enabled && " · not swept"}
                                   </span>
+                                  <span className="block text-xs text-zinc-600 dark:text-zinc-400" data-testid="network-range-mode">
+                                    {r.config?.mode === "fragile" ? (
+                                      <StatusBadge tone="amber" className="whitespace-normal text-left h-auto">Fragile: version check only</StatusBadge>
+                                    ) : (
+                                      "Full mode"
+                                    )}
+                                  </span>
                                 </TableCell>
-                                <TableCell className="max-w-[180px]">
-                                  <Truncate className="text-zinc-700 dark:text-zinc-300" text={r.node_name ?? "No node"} />
+                                <TableCell className="whitespace-normal align-top">
+                                  <span className="block text-zinc-700 dark:text-zinc-300 [overflow-wrap:anywhere]" title={r.node_name ?? undefined}>
+                                    {r.node_name ?? "No node"}
+                                  </span>
                                   {r.node_status && r.node_status !== "online" && <NodeStatusBadge status={r.node_status} />}
                                 </TableCell>
-                                <TableCell className="text-zinc-600 dark:text-zinc-400">
-                                  {r.config?.mode === "fragile" ? <StatusBadge tone="amber">Fragile: version check only</StatusBadge> : "Full"}
-                                </TableCell>
-                                <TableCell className="whitespace-normal max-w-[220px]">
+                                <TableCell className="whitespace-normal align-top [overflow-wrap:anywhere]">
                                   <RangeTestCell teamId={teamId} source={r} serverNow={serverNow} />
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="sticky right-0 bg-white dark:bg-zinc-900 align-top">
                                   <div className="flex items-center justify-end gap-1">
                                     <Button
                                       variant="ghost"
@@ -1083,6 +1105,7 @@ function RangeTestCell({ teamId, source, serverNow }: { teamId: number; source: 
           status={source.last_test_status}
           title={source.last_test_summary}
           detail={sampleDetail(source.last_test_status, source.last_test_result)}
+          className="whitespace-normal text-left h-auto"
         />
       )}
       {detail && <span className="block text-xs text-zinc-500">{detail}</span>}

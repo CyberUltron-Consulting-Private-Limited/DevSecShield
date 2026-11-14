@@ -72,7 +72,7 @@ short-lived link per file; `backend/routers/cbom_node_artifacts.py`):
 | `scan-node-<version>.tar.gz` + `.sha256` | `scripts/release/scan_node_image.sh build <version>`: `docker save` of `localhost/zeroshield/cbom-scan-node:<version>`, the name the wizard's `docker run --pull never` uses |
 | `cbom-scan-node-<version>.tgz` + `.sha256` | `scripts/release/node_artifacts.py`: `deploy/helm/cbom-scan-node`, version and appVersion = `<version>` |
 | `cbom-scan-node-ova-kit-<version>.zip`, `cbom-scan-node-ami-kit-<version>.zip` + `.sha256` | `node_artifacts.py`: the Packer kit from `deploy/node-images` with a customer README (`deploy/node-images/kit/`), building from the image file |
-| `manifest.json` | `node_artifacts.py`: version, `image_ref`, the file names; the API lists only what it names |
+| `manifest.json` | `node_artifacts.py`: version, `build` (the commit the image was built from: `staging.sh node-artifacts` reads the image's `org.opencontainers.image.revision` label and passes `--build`), `image_ref`, the file names; the API lists only what it names |
 
 `<version>` is `scan_node/zs_scan_node/__init__.py` `VERSION` (or `CBOM_NODE_VERSION`). `staging.sh node-artifacts`
 (the workflow's "Scan node downloads" step) builds them into `deploy/staging/images/node-artifacts/` (the chart and
@@ -86,6 +86,50 @@ directory: the wizard then says each download is "not available on this server y
 **What the host must provide:** nothing new beyond disk space (the downloads count in the disk check) and `sha256sum`
 (coreutils). `CBOM_NODE_IMAGE_REF` / `CBOM_NODE_CHART_REF` in `.env` (a registry customers can pull from) are set by
 the deploy: see "Public registry".
+
+### Which nodes are out of date ("Update available")
+
+A node reports `<version>+<12-character commit>` (`scan_node/zs_scan_node/__init__.py` `reported_version`), or only
+`<version>` when its image was built without a commit (by hand, or before build ids existed). The API compares it
+with the node build this deployment ships (`manifest.json` `version` + `build`; `backend/utilities/cbom_sources/node_release.py`)
+and every node in `GET /{team}/cbom/sources/nodes` carries `update`: `current`, `update_available` (older version,
+another commit, or no build id), `newer`, or `unknown` (no downloads on this server, or the node never reported).
+**Scan nodes** shows "Update available" under the version, what is missing, a banner counting the nodes behind, and
+how to update. Nothing is enforced: a node without a build id still enrols, heartbeats and collects.
+
+The release tag `devsecshield-scan-node:<version>` in GHCR is written once ("Public registry"), so while `VERSION`
+stays `1.0.0` a `docker pull` of it gets the first `1.0.0` build, not this deploy's. To bring a node to this server's
+build, use this deploy's image file (Add scan node > Download scan node image) or the commit's own
+`ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:staging-<sha12>` tag, or bump `VERSION` to
+release a new one.
+
+### The staging lab nodes are not part of the deploy
+
+`staging-lab-node`, `staging-hsm-node` (Docker) and the `cbom-lab-2-*` host agents (Helm, kind) run the scan node
+image they were started with. They are not services of `deploy/staging/docker-compose.yml`, and the deploy never
+touches containers it did not create (their names, networks, lab mounts and state volumes are not in this repository),
+so **a deploy does not update them**: their node-side fixes stay invisible until someone recreates them. After a
+deploy, Scan nodes says which ones are behind. To update a Docker lab node on its host, keeping its registration (the
+node token and keys live in its state volume):
+
+```sh
+# 1. this deploy's node image (either one)
+docker pull ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:staging-<sha12>
+#    or: sha256sum -c scan-node-1.0.0.tar.gz.sha256 && docker load -i scan-node-1.0.0.tar.gz   (from Add scan node)
+# 2. note how the container runs now: name, restart policy, state volume, networks (printed without its environment)
+docker inspect staging-lab-node --format '{{.Name}} restart={{.HostConfig.RestartPolicy.Name}} {{range .Mounts}}{{.Type}}:{{if .Name}}{{.Name}}{{else}}{{.Source}}{{end}}->{{.Destination}} {{end}}{{range $net, $_ := .NetworkSettings.Networks}}network:{{$net}} {{end}}'
+#    Its env file stays where the node was set up; read it there and never paste the env (docker inspect's .Config.Env,
+#    `docker exec env`) into tickets, chat or logs: it holds the node's settings and the registration token it enrolled with.
+# 3. recreate it from the new image with the same name, env, state volume and networks
+docker rm -f staging-lab-node
+docker run -d --name staging-lab-node --restart unless-stopped --env-file <its env, no registration token> \
+  -v <its state volume>:/var/lib/zs-node --network <its lab network> <the image from step 1>
+#    (docker network connect <each further network> staging-lab-node, as step 2 listed)
+```
+
+Within a minute Scan nodes shows the node's version as `1.0.0+<sha12>` with no "Update available". Helm host agents:
+`kind load docker-image <the new image> --name cbom-lab-2`, then `helm upgrade <release> <the new chart> --reuse-values
+--set image.repository=<repo> --set image.tag=<tag>`.
 
 ### Terminal-only hosts: the one-paste install
 

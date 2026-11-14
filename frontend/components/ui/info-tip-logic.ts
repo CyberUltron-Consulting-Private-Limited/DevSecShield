@@ -31,3 +31,12 @@ export function pressPointer(pointerType: string | undefined | null): PressPoint
 export function acceptRadixClose(keyboardFocused: boolean, byEscape: boolean): boolean {
   return !keyboardFocused || byEscape;
 }
+
+/**
+ * Whether a focus of the (i) button opens its tip. Only a focus reached with Tab does: a dialog that focuses its first
+ * button when it opens (Radix FocusScope), or focus given back to a button when a menu closes, must not pop a tip open
+ * (it would also take the first Esc that was meant for the dialog). Hover, tap, Enter and Space still open it.
+ */
+export function focusOpensTip(lastKeyWasTab: boolean): boolean {
+  return lastKeyWasTab;
+}

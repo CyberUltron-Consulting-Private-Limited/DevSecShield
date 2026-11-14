@@ -719,6 +719,30 @@ def _inspect_file(ctx: JobContext, sess: Session, loc: str, real_path: str) -> i
         first = entries[0] if entries else {}
         ctx.emit("keystore", loc, path, name=path.rsplit("/", 1)[-1], algorithm=first.get("key_alg"),
                  key_size=first.get("key_size"), facts=facts)
+        n += 1 + _keystore_entries(ctx, loc, path, facts, entries)
+    return n
+
+
+def _keystore_entries(ctx: JobContext, loc: str, path: str, facts: dict[str, Any], entries: list[dict]) -> int:
+    """CB-17: every listed keystore entry's certificate is judged as a certificate of its own (expiry, key size,
+    signature); a store whose entries could not be read is a coverage row, never a store that looks empty."""
+    if facts.get("password_protected"):
+        ctx.coverage(loc, f"keystore {path}", "incomplete", "the store's entries are encrypted with its password; "
+                     "the file is listed, its certificates are not judged", scope=[path], incomplete=True)
+    elif facts.get("listed") is False and "keytool" in str(facts.get("reason") or ""):
+        ctx.coverage(loc, "keystores (keytool)", "not_installed", "keytool is not installed on this server: JKS and "
+                     "PKCS#12 files are listed, their certificates are not judged")
+    n = 0
+    for e in entries:
+        alias = str(e.get("alias") or "")
+        if not alias or not (e.get("not_after") or e.get("key_alg") or e.get("sig_alg")):
+            continue  # an entry without a certificate (a secret-key entry) has nothing to judge
+        cert = {k: e[k] for k in ("subject", "issuer", "serial", "not_before", "not_after", "sig_alg", "key_alg",
+                                  "key_size", "self_signed", "fingerprint_sha256") if e.get(k) is not None}
+        ctx.emit("certificate", loc, f"{path}#{alias}", name=e.get("subject") or alias, algorithm=e.get("key_alg"),
+                 key_size=e.get("key_size"), facts={**cert, "source": "keystore", "keystore": path, "alias": alias,
+                                                    "entry_type": e.get("entry_type"),
+                                                    "store_type": facts.get("store_type")})
         n += 1
     return n
 
@@ -862,6 +886,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     creds = _credentials(ctx, config, secrets)
     targets = _targets(ctx, scope)
     parallel = max(1, min(int(config.get("parallel") or 8), 64))
+    guarded = "password" in creds  # CB-10: a password counts toward the account's lockout; a refused key does not
 
     def one(target: Target):
         started = time.monotonic()
@@ -872,16 +897,25 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
         if target.ip is None:
             ctx.outcome(target.label, "unreachable", target.error, started=started)
             return
+        skip = ctx.login_gate() if guarded else None
+        if skip:
+            ctx.outcome(target.label, skip, ctx.credential_skip_note(skip), started=started)
+            return
+        status = "error"
         try:
             status, err, n = collect_target(ctx, target, config, creds)
             ctx.outcome(target.label, status, err, started=started, assets=n)
             ctx.log("target done", target=target.label, status=status, assets=n)
         except TargetFail as fail:
+            status = fail.status
             ctx.outcome(target.label, fail.status, fail.error, started=started)
             ctx.log("target failed", target=target.label, status=fail.status)
         except Exception as exc:  # never let one host kill the job
             ctx.outcome(target.label, "error", exc.__class__.__name__, started=started)
             ctx.log("target error", target=target.label, error=exc.__class__.__name__)
+        finally:
+            if guarded:
+                ctx.login_done(status)
 
     with cf.ThreadPoolExecutor(max_workers=parallel) as pool:
         list(pool.map(one, targets))
@@ -918,13 +952,22 @@ def _test_target(ctx: JobContext, target: Target, config: dict, creds: dict, tie
     if target.ip is None:
         sample.update(status="unreachable", note=target.error or "could not resolve")
         return
+    guarded = "password" in creds  # CB-10: a password counts toward the account's lockout; a refused key does not
+    skip = ctx.login_gate() if guarded else None
+    if skip:
+        sample.update(status=skip, reachable=None, note=ctx.credential_skip_note(skip) or skip)
+        return
     try:
         sess = open_session(ctx, target, config, creds)
     except TargetFail as fail:
+        if guarded:
+            ctx.login_done(fail.status)
         sample["reachable"] = None if fail.status.startswith("skipped_") else \
             fail.status not in ("unreachable", "refused", "timeout", "no_route")
         sample.update(status=fail.status, note=fail.error)
         return
+    if guarded:
+        ctx.login_done("ok")
     sample.update(reachable=True, login=True)
     missing = ""
     try:
