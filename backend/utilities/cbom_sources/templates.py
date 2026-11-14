@@ -480,9 +480,9 @@ def zeroshield_account_id() -> str | None:
     return match.group(1) if match else None
 
 
-AWS_NOT_CONFIGURED = (
-    "This ZeroShield deployment is not set up for AWS collection; contact your administrator"
-)
+# #223: a SaaS customer has no administrator to contact; only ZeroShield can turn AWS collection on, so the sentence
+# names ZeroShield support (the frontend's awsPrivateCaStatus.AWS_NOT_CONFIGURED is the same sentence, with a link).
+AWS_NOT_CONFIGURED = "AWS collection isn't enabled on this ZeroShield deployment. Contact ZeroShield support at support@zeroshield.ai to have it turned on."
 
 
 def aws_collection_configured() -> bool:
