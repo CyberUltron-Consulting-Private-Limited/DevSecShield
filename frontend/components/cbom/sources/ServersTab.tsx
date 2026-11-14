@@ -91,6 +91,7 @@ import {
   usePolledJob,
   type Tone,
 } from "./shared";
+import { SOURCE_NEVER_SCAN_HINT } from "./teamNeverScan";
 
 // ---------------------------------------------------------------------------- constants (mirror backend kinds.py / templates.py)
 type ServerKind = "linux_servers" | "windows_servers" | "active_directory";
@@ -1036,7 +1037,7 @@ function ServerForm({
               label="Never scan"
               htmlFor="servers-exclusions"
               error={errors.exclusions ?? (countErrorOnExclusions ? countError : null)}
-              hint="IP addresses, ranges or hostnames, one per line or separated by commas. Never-scan always wins."
+              hint={SOURCE_NEVER_SCAN_HINT}
             >
               <Textarea
                 id="servers-exclusions"
