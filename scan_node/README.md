@@ -297,6 +297,45 @@ proposals, key sizes; nothing else (pre-shared keys, passwords) leaves it. Only 
 vendor defaults that the configuration does not print are not assumed. `tests/sim_appliance.py` is a SIMULATED
 appliance (paramiko) used by the tests and the lab proof; no real device was available.
 
+## zs-collect (agentless through the customer's AWX/AAP, Salt or SSM)
+
+`zs-collect` (`zs_scan_node/zscollect.py`) runs the Linux collector above on the host itself, for a customer's own
+automation to launch. It runs the same command lines through `LocalSession` (the SSH `Session.run` contract), so the
+assets are those of the SSH path on the same host (`bench/f1_transports/parity.py`: 20 hosts, empty normalised diff).
+It checks every command line against an allow-list built from `commands.py` before running it, opens no socket,
+writes only inside its temp dir, drops from root to `--run-as` (default `zs-cbom`, with its groups) so the same sudoers
+file decides Tier 2, and prints one `zs-collect/1` document (`schemas/zs-collect-1.schema.json`) that echoes the run
+nonce; `--output chunks` gzips it into lines of at most 512 KB for AWX job events.
+
+Releases are a PyInstaller one-file binary per architecture (`zs_collect/build.sh`, Debian bullseye builder, so
+glibc 2.31 or newer on the host), a manifest with each binary's sha256, and an Ed25519 signature of the manifest
+(`zs_collect/release.py`; public key `zs_collect/zs-release-ed25519.pub`). The launcher every transport runs
+(`release.py wrapper`) copies the binary into a private `mktemp -d` under `$TMPDIR` (point `TMPDIR` at a directory
+that allows exec on hosts that mount /tmp `noexec`), refuses it unless its sha256 is the manifest's, verifies the
+mirrored manifest with `openssl pkeyutl -verify -rawin` when OpenSSL 3 is present, runs it and removes the temp dir.
+
+```sh
+zs-collect --nonce run-0123456789abcdef --tier 2 --label 10.0.0.5      # as root: collects as zs-cbom
+```
+
+Every transport passes the source's per-host timeout as `--timeout-s` (10-3600 s; AWX extra var `zs_timeout_s`, Salt
+pillar `zs_timeout_s` or the `cmd.script` arguments, SSM document parameter `timeout`). A fleet source holds at most
+200 hosts, so one run's assets fit the per-job cap of 50,000.
+
+Salt sizing. With the salt-api `ssh` client (salt-ssh), the master runs up to `ssh_max_procs` salt-ssh processes at
+once, about 80 MB each: 50 of them OOM-killed a 768 MB master in the lab, so give the master about
+512 MB + 80 MB x `ssh_max_procs`. Each batch is one synchronous salt-api request, so keep
+`batch_size / ssh_max_procs x` the per-host time within the transport's `timeout_s`. ZeroShield accepts a salt-ssh
+`batch_size` of at most 100; the default of 50 took about 240 s per batch on a loaded 4-vCPU master. The minion
+clients (`local`, `local_async`) do not load the master this way; `local_async` polls the runner's
+`jobs.exit_success` and fetches the returns once, so the account needs the `runner` client and `@jobs`. The same
+guidance is in the header of the `salt-state` artifact (`zeroshield/zs_collect.sls`).
+
+Retries. If a scan node's lease on an AWX or Salt job expires (the node died or lost the network), ZeroShield re-queues
+the job and another node launches the same batch again, possibly while the first AWX job or salt-ssh run is still going
+on the customer's side (salt-ssh cannot be cancelled). The run nonce keeps the two attempts' results apart, but those
+hosts run zs-collect twice; cancel the orphaned AWX job from AWX if that matters.
+
 ## Develop and test
 
 ```sh
