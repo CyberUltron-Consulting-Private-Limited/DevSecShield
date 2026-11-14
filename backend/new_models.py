@@ -441,6 +441,11 @@ class CbomCollectionRun(SQLModel, table=True):
 class CbomCollectionJob(SQLModel, table=True):
     """A unit of work for one scan node: test a connection, collect a source, or run a discovery sweep."""
     __tablename__ = "cbomcollectionjob"
+    # CB-14: at most one open collection per source; a Start that races another for the same source gets 409
+    # (runs.queue_run) and is charged nothing (migration cb14credit001)
+    __table_args__ = (_SaIndex("uq_cbomcollectionjob_open_collect", "source_id", unique=True,
+                               postgresql_where=_sa_text("kind = 'collect' AND status IN ('pending', 'claimed')"),
+                               sqlite_where=_sa_text("kind = 'collect' AND status IN ('pending', 'claimed')")),)
     id: int | None = Field(default=None, primary_key=True)
     team_id: int = Field(foreign_key="team.id", index=True)
     run_id: int | None = Field(default=None, foreign_key="cbomcollectionrun.id", index=True)
@@ -452,6 +457,9 @@ class CbomCollectionJob(SQLModel, table=True):
     source_version: int | None = Field(default=None)
     weight_c: int = Field(default=0)
     refunded: bool = Field(default=False)
+    # centi-credits given back (CB-14): weight_c for a failed / cancelled / nothing-read job, the runtime-skip share of
+    # it for a partly read one; its ledger row is cbomcreditentry "job:<id>:refund" (billing.py)
+    refunded_c: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     attempts: int = Field(default=0)
     lease_id: str | None = Field(default=None, max_length=32)
     lease_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)

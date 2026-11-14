@@ -613,7 +613,9 @@ def test_the_source_asset_cap_is_summed_over_slices_and_the_rest_become_cap_gaps
     assert stored == 5 == p.asset_count and p.result.get("truncated") is True
     statuses = [t["status"] for t in p.result["targets"]]
     assert statuses.count("skipped_cap") == 5 and p.result["counts"]["skipped"] == 5
-    assert p.status == "success" and p.outcome == "partial" and not p.refunded and run.status == "partial"
+    assert p.status == "success" and p.outcome == "partial" and run.status == "partial"
+    # CB-14 (OA-10b): the 5 of 8 account-regions the asset cap left unread are not charged
+    assert p.refunded and p.refunded_c == p.weight_c * 5 // 8
     skipped = [j for j in _jobs(engine, kind="slice") if j.status == "cancelled"]
     assert len(skipped) == 5 and all(j.attempts == 0 for j in skipped)  # never run
 
