@@ -10,12 +10,16 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import {
   GRADE_KEYS,
+  RegisterHeatmap,
   RegisterSummaryCard,
   RegisterTable,
+  cellCountsText,
   closureTrend,
   csvFileName,
+  heatmapCell,
   filterParams,
   registerRows,
+  type RegisterHeatmapData as HeatmapData,
   type RegisterPage,
   type RegisterRow,
   type RegisterSummary,
@@ -65,5 +69,28 @@ assert.match(table, /linux \(\+3 more\)/);
 assert.match(table, /data-testid="register-row-obs:2" data-q="none"/);
 assert.match(table, /not read in the latest collection/);
 assert.match(render(h(RegisterTable, { rows: [] })), /data-testid="register-empty"/);
+
+// heat-map: counts text in grade order, cell lookup (folded "more" keyed by null), rendered hooks
+assert.equal(cellCountsText({ [G3]: 1, [G0]: 4, [G1]: 2, none: 1 }), `${G1}:2 ${G3}:1 ${G0}:4 —:1`);
+const hm: HeatmapData = {
+  rows: [{ family: "RSA", total: 3, other: false }, { family: null, label: "2 more families", total: 2, other: true }],
+  columns: [{ source_ref: "s1", source_name: "linux", total: 4, other: false }],
+  cells: [
+    { family: "RSA", source_ref: "s1", counts: { [G1]: 1, [G0]: 2 }, total: 3, worst: G1, q0: 2, other: false,
+      filter: { family: "RSA", source: "s1" } },
+    { family: null, source_ref: "s1", counts: { [G0]: 2 }, total: 2, worst: null, q0: 2, other: true, filter: null },
+  ],
+  total: 5,
+};
+assert.equal(heatmapCell(hm, "RSA", "s1")?.total, 3);
+assert.equal(heatmapCell(hm, null, "s1")?.other, true);
+const grid = render(h(RegisterHeatmap, { heatmap: hm, onDrill: () => undefined }));
+assert.ok(grid.includes(`data-testid="heatmap-cell-RSA-s1" data-worst="${G1}" data-total="3"`));
+assert.match(grid, /<button[^>]*data-testid="heatmap-cell-RSA-s1"/); // a real cell drills down
+assert.match(grid, /<span data-testid="heatmap-cell-other-s1" data-worst="none"/); // the folded row does not
+assert.match(grid, /Q0 Unknown only/);
+assert.match(grid, /2 more families/);
+assert.match(render(h(RegisterHeatmap, { heatmap: { rows: [], columns: [], cells: [], total: 0 } })),
+  /data-testid="register-heatmap-empty"/);
 
 console.log("register.test.ts: ok");

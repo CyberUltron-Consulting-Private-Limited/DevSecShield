@@ -41,15 +41,15 @@ from zs_scan_node import sshprobe as S
 from zs_scan_node import tls_registry as R
 from zs_scan_node import tlsenum as E
 from zs_scan_node import tlsprobe as T
-from zs_scan_node.certparse import cert_facts, load_certs
+from zs_scan_node.certparse import cert_facts, chain_links, load_certs
 from zs_scan_node.jobctx import MAX_FACTS_BYTES, JobContext, LeaseLost, register_asset_types
 from zs_scan_node import netutil
 from zs_scan_node.netutil import Blocked, Unresolved, checked_ip, iter_line_ips, node_limiter
 
-TCP_PROTOCOLS = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql",
-                 "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
-TLS_LIKE = {"tls", "starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "rdp",
-            "modbus-tls"}
+STARTTLS = {"starttls-ldap", "starttls-smtp", "starttls-imap", "starttls-postgres", "starttls-mysql", "starttls-pop3",
+            "starttls-ftp", "starttls-xmpp", "starttls-xmpp-server"}
+TCP_PROTOCOLS = {"tls", *STARTTLS, "tds", "ssh", "rdp", "opcua", "modbus", "modbus-tls"}
+TLS_LIKE = {"tls", *STARTTLS, "rdp", "modbus-tls"}
 OT_PROTOCOLS = {"opcua", "modbus", "modbus-tls"}
 MAX_OPEN_ENDPOINTS = 5000
 CONNECT_TIMEOUT = 2.0  # the sweep's TCP connect: a silent (filtered or absent) address costs this per port
@@ -92,13 +92,17 @@ class Budget:
         return True
 
 
-def _scope_ranges(scope: dict) -> list[tuple[str, str]]:
+def _scope_ranges(scope: dict) -> list[tuple[str, str, frozenset[str] | None]]:
+    """(cidr, mode, addresses to leave out as network/broadcast) per range.  ZeroShield sends ``skip_addresses`` per
+    range (computed over every range of the team, N3); a job from an older ZeroShield has none: the range alone."""
     out = []
     for item in scope.get("ranges") or []:
         if isinstance(item, dict) and item.get("cidr"):
-            out.append((str(item["cidr"]), str(item.get("mode") or "full")))
+            skip = item.get("skip_addresses")
+            out.append((str(item["cidr"]), str(item.get("mode") or "full"),
+                        frozenset(str(a) for a in skip) if isinstance(skip, list) else None))
         elif isinstance(item, str):
-            out.append((item, "full"))
+            out.append((item, "full", None))
     return out
 
 
@@ -157,6 +161,13 @@ def _sni_for(scope: dict, ip: str, cache: dict, never) -> list[str]:
         if ip in cache[name] and not never.blocks_host(name) and not any(never.blocks_ip(a) for a in cache[name]):
             out.append(name)
     return out
+
+
+def _refused_name(attempt: dict[str, str] | None) -> bool:
+    """A name the endpoint already refused: no TLS answer with it, or its hello got alert unrecognized_name."""
+    if not attempt:
+        return False
+    return attempt.get("result") == "not_tls" or "unrecognized_name" in str(attempt.get("detail") or "")
 
 
 def _attempt_list(names: list[str], attempts: dict[str, dict[str, str]]) -> list[dict[str, str]]:
@@ -304,9 +315,14 @@ class NetworkScan:
             _ = started
 
     def _tls(self, ep: Endpoint, mode: str) -> tuple[str, str | None, int]:
+        names = [] if ep.protocol == "rdp" else self.sni_names_for(ep.ip)
+        # XMPP names its domain in the stream header before TLS: the endpoint's first SNI name, else its address
+        with T.starttls_name(names[0] if names and ep.protocol.startswith("starttls-xmpp") else None):
+            return self._tls_endpoint(ep, mode, names)
+
+    def _tls_endpoint(self, ep: Endpoint, mode: str, names: list[str]) -> tuple[str, str | None, int]:
         ctx = self.ctx
         limit = self.per_endpoint if mode != "fragile" else min(self.per_endpoint, 6)
-        names = [] if ep.protocol == "rdp" else self.sni_names_for(ep.ip)
         # SNI names other than the one the endpoint is read with get their own share of the endpoint's budget, so the
         # enumeration cannot starve them nor they the enumeration (the total stays the customer's cap)
         reserve = min(max(len(names) - 1, 0), limit // 4) if limit > 1 else 0
@@ -408,7 +424,10 @@ class NetworkScan:
                 # 1c. it rejects a client without a server name: read it with each name the team configured that
                 # resolves here (openssl s_client; Python ssl when the binary is missing), the first one it serves
                 full = T.s_client if T.have_openssl() else T.python_handshake
-                for name in names:  # a name whose bare hello got an alert is tried again: a full handshake decides
+                # the name that answered the bare hello first; a name already refused (no TLS answer with it, or
+                # alert unrecognized_name) is not handshaked again (review of #250: it spent the endpoint's budget)
+                order = ([sni] if sni else []) + [n for n in names if n != sni and not _refused_name(attempts.get(n))]
+                for name in order:
                     sfh = self.handshake(ep, budget, full, ep.ip, ep.port, ep.protocol, name,
                                          15.0 if full is T.s_client else 10.0)
                     if sfh == "budget":
@@ -432,6 +451,7 @@ class NetworkScan:
         for der in fh.certs_der[:50]:
             for cert in load_certs(der):
                 chain.append(cert_facts(cert, "tls"))
+        chain_links(chain)  # CB-17: how each issuer is reached, the top, extra cross-signs
         facts["chain_length"] = len(chain)
         if chain:
             facts["leaf"] = {k: chain[0].get(k) for k in ("subject", "issuer", "not_after", "key_alg", "key_size",
@@ -724,7 +744,8 @@ class NetworkScan:
         attempts = attempts if attempts is not None else {}
         assets, untried = 0, []
         # a name already refused while the endpoint was being read is not sent again
-        others = [n for n in names if n != used and attempts.get(n, {}).get("result") != "rejected"]
+        others = [n for n in names if n != used and attempts.get(n, {}).get("result") != "rejected"
+                  and not _refused_name(attempts.get(n))]
         if ep.protocol == "rdp":
             return 0
         full = T.s_client if T.have_openssl() else T.python_handshake
@@ -975,10 +996,10 @@ class _Skip(Exception):
         self.status = status
 
 
-def _addresses(ctx: JobContext, ranges: list[tuple[str, str]]):
+def _addresses(ctx: JobContext, ranges: list[tuple[str, str, frozenset[str] | None]]):
     seen: set[str] = set()
-    for cidr, mode in ranges:
-        ips = iter_line_ips(cidr)
+    for cidr, mode, skip in ranges:
+        ips = iter_line_ips(cidr, skip)
         if ips is None:
             continue
         for ip in ips:

@@ -11,7 +11,7 @@ Keys (the budget a request is charged to):
   falls back to the client address, so it can never mint a fresh budget of its own.
 * ``ip_key``: the client address, IPv6 grouped by /64 and IPv4-mapped IPv6 unwrapped.
 * Callers add verified keys of their own (CI/CD integration id, scan-node id) the same way: verify first,
-  fall back to ``ip_key``.
+  fall back to ``ip_key``.  ``user_key`` charges a live CBOM API key (``zsk_``) to its key id.
 
 Client address = ``request.client.host`` only.  uvicorn's proxy-headers middleware has already replaced the
 TCP peer with the ``X-Forwarded-For`` client when, and only when, the peer is listed in
@@ -99,6 +99,13 @@ async def ip_key(request: Request) -> Key:
 
 async def user_key(request: Request) -> Key:
     token = bearer_token(request)
+    if token and token.startswith("zsk_"):
+        # a CBOM API key (utilities/cbom_sources/api_keys.py): its own budget once VERIFIED live, else the address
+        from fastapi.concurrency import run_in_threadpool
+
+        from backend.utilities.cbom_sources.api_keys import verified_key_id
+        key_id = await run_in_threadpool(verified_key_id, token)
+        return ("apikey", str(key_id)) if key_id is not None else await ip_key(request)
     if token:
         # imported here: auth_utils reads the JWT secrets at import time, this module must stay importable alone
         from backend.utilities.auth.auth_utils import access_token_subject

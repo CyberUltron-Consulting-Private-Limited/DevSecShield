@@ -79,13 +79,14 @@ export const ASSET_TYPE_LABEL: Record<string, string> = {
 const IMPACTS: CbomImpact[] = ["Critical", "High", "Medium", "Low"];
 const IMPACT_TONE: Record<CbomImpact, Tone> = { Critical: "red", High: "red", Medium: "amber", Low: "blue" };
 const TARGET_TONE: Record<string, Tone> = { ok: "green", partial: "amber", skipped_never_scan: "zinc", skipped_window: "amber", skipped_stop: "amber",
-  skipped_deadline: "amber", skipped_cancelled: "zinc", not_supported: "zinc" };
+  skipped_deadline: "amber", skipped_cancelled: "zinc", not_supported: "zinc", skipped_credential_refused: "amber" };
 const TARGET_LABEL: Record<string, string> = {
   ok: "Read", partial: "Partly read", unreachable: "Unreachable", refused: "Connection refused", timeout: "Timed out", no_route: "No route",
   auth_failed: "Login failed", mfa_required: "MFA required", host_key_changed: "Host key changed", identity_unverified: "Server not verified", kex_unsupported: "Key exchange not supported", sudoers_missing: "Sudoers missing", rbac_denied: "Kubernetes RBAC denied",
   sudo_denied: "Sudo refused", winrm_denied: "WinRM shell refused", tls_unavailable: "No TLS", not_supported: "Not supported", error: "Error",
   skipped_never_scan: "Skipped: never-scan list", skipped_window: "Skipped: scan window closed", skipped_stop: "Skipped: scanning stopped",
   skipped_deadline: "Skipped: time limit", skipped_cancelled: "Skipped: cancelled",
+  skipped_credential_refused: "Skipped: credential refused",
 };
 
 export function ImpactBadge({ impact }: { impact: CbomImpact | null }) {

@@ -149,7 +149,12 @@ shell-quoted, and are read with commands that print **public** material only (`o
 use per (address, port, key type); a changed key stops the target before any credential is sent.
 
 **Windows (WinRM HTTPS 5986).** Read-only PowerShell: certificate stores, SCHANNEL protocol keys, TLS cipher
-suite order, BitLocker, RDP security layer.
+suite order, BitLocker, RDP security layer. For a certificate with a private key, the key's provider comes from the
+certificate's KEY_PROV_INFO property in the store's registry value (`HKLM\SOFTWARE\Microsoft\SystemCertificates\
+<store>\Certificates\<thumbprint>`, `Blob`): `key_provider`, `key_provider_type` (CNG or CAPI) and
+`key_provider_class` (`software`, `tpm`, `smartcard`, `hsm`, or `other` for a provider outside the reviewed list).
+No key is ever opened, so exportability is known only from a hardware provider (`key_exportable: false`, basis
+`provider`); for a software key it stays not read.
 
 **Kubernetes.** Static token or client-certificate kubeconfig only (exec plugins and
 `insecure-skip-tls-verify` are refused). Tier 1: version, nodes, ingress TLS, cert-manager Certificates, Istio

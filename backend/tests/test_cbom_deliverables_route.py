@@ -75,6 +75,7 @@ MANIFEST_PATH = "/{team_id}/cbom/deliverables"
 PDF_PATH = "/{team_id}/cbom/deliverables/{slug}"
 SLUGS = [
     "scope-baseline-register",
+    "quantum-risk-register",
     "methodology-evidence-plan",
     "infrastructure-cloud-encryption-posture",
     "network-tls-protocol-assessment",
@@ -84,7 +85,7 @@ SLUGS = [
     "pqc-migration-roadmap",
     "board-executive-report",
 ]
-NUMBERS = dict(zip(SLUGS, [1, 3, 5, 6, 7, 9, 10, 15, 16], strict=True))
+NUMBERS = dict(zip(SLUGS, [1, 2, 3, 5, 6, 7, 9, 10, 15, 16], strict=True))
 GENERIC_500 = {"detail": "Error generating deliverable, please try again later"}
 
 # Strings that exist ONLY in scans a team-1 document must never read (plan Appendix B).

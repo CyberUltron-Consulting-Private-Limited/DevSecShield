@@ -288,7 +288,7 @@ def test_floors_file_is_valid_and_every_target_has_an_owner():
     doc = floors.load(D1 / "floors.json")
     assert doc["version"] >= 1
     targets = [f for f in doc["floors"] if f["kind"] == "target"]
-    assert targets and {f["owner"] for f in targets} == {"CB-27", "CB-28", "CB-29"}
+    assert targets and {f["owner"] for f in targets} == {"CB-27", "CB-28"}  # CB-29 met: a floor now
     assert {f["bench"] for f in doc["floors"]} <= {"cryptoapi-bench", "owasp-benchmark", "corpus", "libraries"}
 
 
@@ -354,15 +354,15 @@ def corpus_floors() -> dict:
 
 
 def test_corpus_targets_fail_on_todays_product_and_floors_hold():
-    """Failing-first (CB-07): on dev's code-lane output (baseline/observed-corpus.json, dev 3df26fd) every CB-28 and
-    CB-29 target fails and every non-regression floor holds."""
+    """Failing-first (CB-07): on dev's code-lane output (baseline/observed-corpus.json, dev 3df26fd plus the CB-29
+    library rows) every CB-28 target fails and every non-regression floor holds (CB-29's became one)."""
     rows = observed.load(D1 / "baseline" / "observed-corpus.json", "corpus")["rows"]
     res, extras = corpus_results(rows, OSV_TODAY)
     ev = {e["id"]: e for e in floors.evaluate(corpus_floors(), res, extras)}
     targets = [e for e in ev.values() if e["kind"] == "target"]
-    assert len(targets) == 5 and all(e["status"] == "expected-fail" for e in targets)
+    assert len(targets) == 4 and all(e["status"] == "expected-fail" for e in targets)
     assert all(e["status"] == "pass" for e in ev.values() if e["kind"] == "non-regression")
-    assert ev["T28-dotnet-trustall-fp"]["observed"] == 0.0 and ev["T29-libraries"]["observed"] == 0.0
+    assert ev["T28-dotnet-trustall-fp"]["observed"] == 0.0 and ev["T29-libraries"]["observed"] == 1.0
 
 
 def test_a_met_target_fails_the_lane_until_it_becomes_a_floor():

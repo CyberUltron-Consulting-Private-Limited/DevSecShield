@@ -375,8 +375,9 @@ def test_version_ordering_and_clean_pins(tmp_path: Path) -> None:
     assert compare_versions("1.0.0-beta.2", "1.0.0-beta.10") == -1  # numeric identifiers compare as numbers
     assert compare_versions("0.1.0", fix) == 1
     _write(tmp_path, {
-        "requirements.txt": "cryptography==49.0.0\npycryptodome==3.20.0\n",
-        "go.mod": "module x\n\nrequire golang.org/x/crypto v0.56.0\n",
+        # OSV: cryptography 49.0.0 GHSA-g6cj-pr64-35w5, x/crypto v0.56.0 GO-2026-5932
+        "requirements.txt": "cryptography==50.0.0\npycryptodome==3.20.0\n",
+        "go.mod": "module x\n\nrequire golang.org/x/crypto v0.60.0\n",
     })
     assert find_vulnerable(tmp_path) == ()
 

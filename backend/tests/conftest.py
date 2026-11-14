@@ -18,6 +18,15 @@ def _fresh_rate_limits():
     ratelimit.reset_all()
 
 
+@pytest.fixture(autouse=True)
+def _legacy_unsigned_node_fixtures(monkeypatch):
+    """CB-15: new teams require signed scan nodes, but most CBOM tests enroll through ``test_cbom_sources_api.enroll_node``,
+    a 1.0-style (unsigned) node. They run with the operator's switch off (CBOM_NEW_TEAMS_REQUIRE_SIGNED_NODES=0); the
+    CB-15 tests set it back on (``test_cbom_cb15_signed_default.py``)."""
+    monkeypatch.setenv("CBOM_NEW_TEAMS_REQUIRE_SIGNED_NODES", "0")
+    yield
+
+
 def _mongo_singletons():
     """The modules that hold the process-wide Mongo client (``get_db._mongo_db``), under either import name."""
     return [m for m in (sys.modules.get("backend.get_db"), sys.modules.get("get_db")) if m is not None]
