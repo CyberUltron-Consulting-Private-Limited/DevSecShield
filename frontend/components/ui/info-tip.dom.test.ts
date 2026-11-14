@@ -100,6 +100,13 @@ async function main() {
   await settle();
   assert.equal(doc.activeElement, t, "the (i) button takes keyboard focus");
   assert.equal(isOpen(), true, "keyboard focus opens the tip");
+  // the page scrolls to bring a Tab-focused button into view (review of #135, QA M1): Radix closes a tooltip on a scroll
+  // that contains its trigger, but a keyboard-focused tip stays open until Esc or blur
+  await act(async () => {
+    doc.dispatchEvent(new dom.window.Event("scroll", { bubbles: false }));
+  });
+  await settle();
+  assert.equal(isOpen(), true, "a scroll after keyboard focus does not close the tip");
   const describedBy = t.getAttribute("aria-describedby");
   assert.ok(describedBy, "while open the button is described by the tip");
   const described = doc.getElementById(describedBy!);
@@ -132,8 +139,8 @@ async function main() {
   await key("Escape");
   assert.equal(isOpen(), false);
 
-  // a tip with "why": what, then "Why it matters: …", then the example; a tip without one has no such line
-  assert.equal(described!.textContent!.includes("Why it matters"), false, "no why line for a tip without one");
+  // every tip: what, then "Why it matters: …", then the example
+  assert.ok(described!.textContent!.includes(`Why it matters: ${tip.why}`), "every tip has its why line");
   const withWhy = doc.querySelector('[data-infotip="cbsrc.meta.lifetime"]') as HTMLButtonElement;
   const whyTip = INFO_TIPS["cbsrc.meta.lifetime"];
   await act(async () => withWhy.focus());

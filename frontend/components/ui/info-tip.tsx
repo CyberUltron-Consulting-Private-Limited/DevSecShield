@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { INFO_TIPS, type InfoTipEntry, type InfoTipId } from "@/content/infotips";
 import { cn } from "@/lib/utils";
 
-import { openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
+import { acceptRadixClose, openAfterClick, pressPointer, type PressPointer } from "./info-tip-logic";
 
 /** One tip open at a time: each shadcn Tooltip has its own provider, so focusing one tip and hovering another would
  * otherwise show both. Opening a tip closes the one that was open. */
@@ -33,8 +33,17 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
     else if (closeOpenTip === closeThis.current) closeOpenTip = null;
     setOpenState(next);
   };
+  // keyboard focus: set on a focus that no pointer press started, cleared on blur (see acceptRadixClose)
+  const keyboardFocus = useRef(false);
+  const pointerPressing = useRef(false);
+  const byEscape = useRef(false);
+  const onRadixOpenChange = (next: boolean) => {
+    if (!next && !acceptRadixClose(keyboardFocus.current, byEscape.current)) return;
+    byEscape.current = false;
+    setOpen(next);
+  };
   return (
-    <Tooltip open={open} onOpenChange={setOpen} delayDuration={150}>
+    <Tooltip open={open} onOpenChange={onRadixOpenChange} delayDuration={150}>
       <TooltipTrigger asChild>
         <button
           type="button"
@@ -47,7 +56,16 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
             className,
           )}
           onPointerDown={(e) => {
+            pointerPressing.current = true;
             press.current = { wasOpen: open, pointer: pressPointer(e.pointerType) };
+          }}
+          onFocus={() => {
+            keyboardFocus.current = !pointerPressing.current;
+            pointerPressing.current = false;
+          }}
+          onBlur={() => {
+            keyboardFocus.current = false;
+            pointerPressing.current = false;
           }}
           onClick={(e) => {
             // Radix closes the tooltip on click; preventDefault skips that, and the press decides instead.
@@ -55,6 +73,7 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
             e.stopPropagation();
             const p = press.current ?? { wasOpen: open, pointer: "keyboard" as const };
             press.current = null;
+            pointerPressing.current = false;
             setOpen(openAfterClick(p.wasOpen, p.pointer));
           }}
         >
@@ -65,6 +84,9 @@ export function InfoTip({ id, side = "top", className }: { id: InfoTipId; side?:
         side={side}
         sideOffset={4}
         collisionPadding={12}
+        onEscapeKeyDown={() => {
+          byEscape.current = true;
+        }}
         className="w-auto max-w-[min(20rem,calc(100vw-2rem))] text-left text-pretty px-3 py-2 leading-relaxed"
       >
         <InfoTipBody id={id} />

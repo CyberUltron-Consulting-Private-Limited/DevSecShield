@@ -22,3 +22,12 @@ export function pressPointer(pointerType: string | undefined | null): PressPoint
   if (pointerType === "mouse" || pointerType === "pen" || pointerType === "touch") return pointerType;
   return "touch";
 }
+
+/**
+ * Whether <InfoTip> accepts a close request from Radix. While the (i) button has keyboard focus, only Esc (or the
+ * blur that ends the focus) closes it: Radix also closes a tooltip when a scroll contains its trigger, and the browser
+ * scrolls the page to bring a button reached by Tab into view right after focus opened its tip (review of #135, QA M1).
+ */
+export function acceptRadixClose(keyboardFocused: boolean, byEscape: boolean): boolean {
+  return !keyboardFocused || byEscape;
+}

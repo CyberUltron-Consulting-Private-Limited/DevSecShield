@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 
-import { openAfterClick, pressPointer } from "./info-tip-logic";
+import { openAfterClick, pressPointer, acceptRadixClose } from "./info-tip-logic";
 
 // touch: Radix never opens on touch, so a tap toggles
 assert.equal(openAfterClick(false, "touch"), true, "a tap opens a closed tip");
@@ -24,4 +24,8 @@ assert.equal(pressPointer("pen"), "pen");
 assert.equal(pressPointer(""), "touch", "an unknown pointer has no hover: treat as touch");
 assert.equal(pressPointer(undefined), "touch");
 
+// keyboard focus: only Esc (or blur) closes; a scroll or pointer-leave close request is ignored (review of #135, QA M1)
+assert.equal(acceptRadixClose(true, false), false, "keyboard-focused: a scroll does not close it");
+assert.equal(acceptRadixClose(true, true), true, "keyboard-focused: Esc closes it");
+assert.equal(acceptRadixClose(false, false), true, "not keyboard-focused: Radix closes it as usual");
 console.log("info-tip logic: tests passed");

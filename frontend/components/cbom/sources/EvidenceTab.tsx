@@ -648,7 +648,7 @@ export default function EvidenceTab({ teamId, onNavigate }: { teamId: number; on
 // ---------------------------------------------------------------------------- read-only preview
 function QuestionnairePreview({ area }: { area: CbomEvidenceArea }) {
   return (
-    <fieldset disabled className="space-y-5" aria-label={`Preview of ${area.title}`}>
+    <fieldset className="space-y-5" aria-label={`Preview of ${area.title}`} data-preview="read-only">
       {area.questions.map((q) => (
         <div key={q.id} className="space-y-2">
           <FieldLabel infoId="cbsrc.ev.question" htmlFor={`preview-${area.area_key}-${q.id}`} labelClassName="leading-snug">

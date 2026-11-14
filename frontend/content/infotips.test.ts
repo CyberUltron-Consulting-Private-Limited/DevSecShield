@@ -1,6 +1,6 @@
 /**
  * F2 (i) info tips: the registry and its coverage.
- *  1. Registry integrity: every entry has a label, a "what it is", an optional "why it matters" and an example of
+ *  1. Registry integrity: every entry has a label, a "what it is", a "why it matters" and an example of
  *     sensible length, and a
  *     `// src: <file>:<line>` note above it naming the backend (or frontend) code the text was checked against;
  *     each named file exists and has that line.
@@ -115,8 +115,8 @@ for (const id of ids) {
   if (!tip.label || tip.label.length > 60) problems.push(`${id}: label must be 1-60 characters`);
   if (!tip.what || tip.what.length < 20 || tip.what.length > 420) problems.push(`${id}: "what" must be 20-420 characters (${tip.what?.length})`);
   if (!tip.example || tip.example.length < 5 || tip.example.length > 300) problems.push(`${id}: example must be 5-300 characters (${tip.example?.length})`);
-  if (tip.why !== undefined && (tip.why.length < 20 || tip.why.length > 300)) problems.push(`${id}: "why" must be 20-300 characters (${tip.why.length})`);
-  for (const [k, v] of Object.entries({ what: tip.what, example: tip.example, ...(tip.why !== undefined ? { why: tip.why } : {}) })) {
+  if (!tip.why || tip.why.length < 20 || tip.why.length > 300) problems.push(`${id}: "why" (why it matters) must be 20-300 characters (${tip.why?.length})`);
+  for (const [k, v] of Object.entries({ what: tip.what, why: tip.why, example: tip.example })) {
     if (!/[.!?)]$/.test(v ?? "")) problems.push(`${id}: ${k} must end with a full stop`);
     if (/\b(TODO|TBD|FIXME|lorem)\b/i.test(v ?? "")) problems.push(`${id}: ${k} has a placeholder`);
   }
