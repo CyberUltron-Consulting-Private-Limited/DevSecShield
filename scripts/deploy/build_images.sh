@@ -169,7 +169,7 @@ if wanted backend; then
   build backend backend/Dockerfile backend \
     --build-context migrations=prod_database_migrations --build-context aibom=aibom "${base_args[@]}" \
     --build-arg "DSS_BUILD_SHA=${BUILD_SHA}" --build-arg "DSS_BUILD_VERSION=${BUILD_VERSION}"
-  assert_no_secrets backend /backend /prod_database_migrations
+  assert_no_secrets backend /backend /prod_database_migrations /opt/aibom
   docker run --rm --network none --entrypoint test "$(image_name backend)" -f /prod_database_migrations/alembic.ini ||
     die "backend image has no Alembic bundle"
 fi

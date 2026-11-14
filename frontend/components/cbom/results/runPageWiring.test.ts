@@ -78,8 +78,8 @@ for (const prop of ["teamId: string;", "scanType:", "scanId: number;", "findingI
 assert.match(sections, /export function RunDiffBlock[\s\S]*getCbomRunDiff\(teamId, runId\)[\s\S]*<DiffView diff=\{q\.data\} \/>/);
 assert.match(sections, /<RunDiffBlock teamId=\{teamId\} runId=\{run\.id\} \/>\n\s*<RunChanges/);
 
-// the dialog's chips come from findingChips (item fields, else the KB entries of GET /assets/{id})
-assert.match(rd, /const chips = findingChips\(item, detailQ\.data\?\.details\);/);
+// the dialog's chips come from findingChips (item fields, else the same fields of GET /assets/{id}, else its KB entries)
+assert.match(rd, /const chips = findingChips\(item, detailQ\.data\?\.details, detailQ\.data\);/);
 // /parity notes: graph / compliance readiness under the charts, RBI CSF and CERT-In next to their roll-ups
 assert.match(template, /const runParityNotes = run \? parityNotes\(run\.parityState, run\.parity\) : null;/);
 for (const id of ["run-graph-note", "run-compliance-readiness-note", "run-rbi-note", "run-certin-note"]) assert.ok(template.includes(`testId="${id}"`), id);

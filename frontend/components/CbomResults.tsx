@@ -76,6 +76,7 @@ import { CertInLanePosture } from "@/components/certin/CertInLanePosture";
 import { CbomDashboardCharts } from "@/components/cbom/results/CbomDashboardCharts";
 import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, getStrengthBadgeClass } from "@/components/cbom/results/badgeClasses";
 import { type CertInRollupData } from "@/components/certin/certinShared";
+import { InfoTip } from "@/components/ui/info-tip";
 import { CompareDialog, RunInsights } from "@/components/cbom/sources/ChangesPanel";
 import { RunPostureCard } from "@/components/cbom/sources/RunPosture";
 import { applyPostureToDistributions, endpointsProbed, parityNotes, resolveMigrationRows, RUN_TICKETING_TAB_AVAILABLE, runDurationSeconds, runTitle } from "@/components/cbom/results/model";
@@ -695,6 +696,7 @@ export default function CbomResults({
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2 text-amber-800 dark:text-amber-300">
               <AlertTriangle className="h-4 w-4 shrink-0" /> About the uploaded CBOM file
+            <InfoTip id="cbom.res.import_notes" />
             </CardTitle>
             <CardDescription className="text-amber-900/80 dark:text-amber-200/80">
               {importReport.imported ?? 0} of {importReport.crypto_assets ?? 0} cryptographic assets imported
@@ -719,6 +721,7 @@ export default function CbomResults({
           <CardHeader className="pb-2">
             <CardTitle className={`text-sm flex items-center gap-2 ${coverageReport.skipped > 0 ? "text-amber-800 dark:text-amber-300" : "text-zinc-800 dark:text-zinc-200"}`}>
               <AlertTriangle className="h-4 w-4 shrink-0" /> What this scan covered
+            <InfoTip id="cbom.res.coverage" />
             </CardTitle>
             <CardDescription className={coverageReport.skipped > 0 ? "text-amber-900/80 dark:text-amber-200/80" : undefined}>
               {coverageReport.skipped > 0
@@ -811,7 +814,7 @@ export default function CbomResults({
                       <GitBranch className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Branch <InfoTip id="results.meta.branch" /></p>
                       <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{String(meta.branch)}</p>
                     </div>
                   </CardContent>
@@ -824,7 +827,7 @@ export default function CbomResults({
                       <Archive className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Source <InfoTip id="results.meta.source" /></p>
                       <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{meta.zip_file_used ? "ZIP upload" : "Repository"}</p>
                     </div>
                   </CardContent>
@@ -837,7 +840,7 @@ export default function CbomResults({
                       <Lock className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Input</p>
+                      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Input <InfoTip id="cbom.res.input" /></p>
                       <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">CBOM file</p>
                     </div>
                   </CardContent>
@@ -934,7 +937,7 @@ export default function CbomResults({
           ) : (
           <Card id="bom-findings">
             <CardHeader>
-              <CardTitle>Cryptographic findings</CardTitle>
+              <CardTitle>Cryptographic findings <InfoTip id="cbom.res.findings" /></CardTitle>
               <CardDescription>
                 {filteredFindings.length} of {(findingsList ?? []).length} findings. Select rows to create Jira tickets; use Action to change finding state.
                 {informationalRows > 0 && (
@@ -962,6 +965,7 @@ export default function CbomResults({
                       aria-label="Search findings table"
                     />
                   </div>
+                  <InfoTip id="cbom.res.search" className="-ml-2" />
                   <Select value={filterImpact} onValueChange={setFilterImpact}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Impact" />
@@ -974,6 +978,7 @@ export default function CbomResults({
                       <SelectItem value="low">Low</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="results.filter.impact" className="-ml-2" />
                   <Select value={filterRiskScore} onValueChange={(v) => setFilterRiskScore(v as RiskScoreFilter)}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Risk score" />
@@ -986,6 +991,7 @@ export default function CbomResults({
                       <SelectItem value="low">Low (&lt;5)</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.risk" className="-ml-2" />
                   <Select value={strengthFilter} onValueChange={setStrengthFilter}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Strength" />
@@ -998,6 +1004,7 @@ export default function CbomResults({
                       <SelectItem value="quantum_safe">Quantum-Safe</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.strength" className="-ml-2" />
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
                     <SelectTrigger className="h-9 min-w-[150px] cursor-pointer">
                       <SelectValue placeholder="Type" />
@@ -1009,6 +1016,7 @@ export default function CbomResults({
                       ))}
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.type" className="-ml-2" />
                   <Select value={quantumFilter} onValueChange={setQuantumFilter}>
                     <SelectTrigger className="h-9 min-w-[140px] cursor-pointer">
                       <SelectValue placeholder="Quantum" />
@@ -1020,6 +1028,7 @@ export default function CbomResults({
                       <SelectItem value="vulnerable">Vulnerable</SelectItem>
                     </SelectContent>
                   </Select>
+                  <InfoTip id="cbom.res.filter.quantum" className="-ml-2" />
                 </div>
               )}
               {hasActiveFindingsFilters && (
@@ -1040,27 +1049,32 @@ export default function CbomResults({
                 <Table className="min-w-max">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[48px]">
-                        <Checkbox
-                          checked={filteredFindings.length > 0 && selectedFindings.size === filteredFindings.length}
-                          onCheckedChange={() => {
-                            if (selectedFindings.size === filteredFindings.length) setSelectedFindings(new Set());
-                            else setSelectedFindings(new Set(filteredFindings.map((f) => f.id)));
-                          }}
-                          aria-label="Select all rows"
-                          className="cursor-pointer"
-                        />
+                      <TableHead className="w-[72px]">
+                        <div className="flex items-center gap-0.5">
+                          <Checkbox
+                            checked={filteredFindings.length > 0 && selectedFindings.size === filteredFindings.length}
+                            onCheckedChange={() => {
+                              if (selectedFindings.size === filteredFindings.length) setSelectedFindings(new Set());
+                              else setSelectedFindings(new Set(filteredFindings.map((f) => f.id)));
+                            }}
+                            aria-label="Select all rows"
+                            className="cursor-pointer"
+                          />
+                          <InfoTip id="cbom.res.select_all" />
+                        </div>
                       </TableHead>
-                      <TableHead className="min-w-[160px]">Algorithm</TableHead>
-                      <TableHead className="min-w-[120px]">Type</TableHead>
-                      <TableHead className="min-w-[90px]">Impact</TableHead>
-                      <TableHead className="min-w-[110px]">Strength</TableHead>
-                      <TableHead className="min-w-[100px]">Quantum</TableHead>
-                      <TableHead className="min-w-[110px]">Fix class</TableHead>
-                      <TableHead className="min-w-[90px] text-center">Risk score</TableHead>
-                      <TableHead className="min-w-[140px]">Location</TableHead>
-                      <TableHead className="min-w-[100px]">Status</TableHead>
-                      <TableHead className="min-w-[100px] text-right">Actions</TableHead>
+                      <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                      <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
+                      <TableHead className="min-w-[90px]">Impact <InfoTip id="results.table.impact" /></TableHead>
+                      <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
+                      <TableHead className="min-w-[100px]">Quantum <InfoTip id="cbom.res.col.quantum" /></TableHead>
+                      <TableHead className="min-w-[110px]">Fix class <InfoTip id="cbom.res.col.fix_class" /></TableHead>
+                      <TableHead className="min-w-[90px] text-center">Risk score <InfoTip id="cbom.res.col.risk" /></TableHead>
+                      <TableHead className="min-w-[140px]">Location <InfoTip id="cbom.res.col.location" /></TableHead>
+                      <TableHead className="min-w-[100px]">Status <InfoTip id="results.table.status" /></TableHead>
+                      <TableHead className="min-w-[100px] text-right">
+                        <span className="inline-flex items-center gap-1">Actions <InfoTip id="results.finding.action" /></span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1080,7 +1094,8 @@ export default function CbomResults({
                             key={finding.id}
                             className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${selectedFindings.has(finding.id) ? "bg-zinc-100 dark:bg-zinc-800/70" : ""}`}
                           >
-                            <TableCell onClick={(e) => e.stopPropagation()} className="w-[48px]">
+                            <TableCell onClick={(e) => e.stopPropagation()} className="w-[72px]">
+                              {/* infotip-shared: one row of the selection; the Select all tip in the header explains it */}
                               <Checkbox
                                 checked={selectedFindings.has(finding.id)}
                                 onCheckedChange={() => {
@@ -1138,6 +1153,7 @@ export default function CbomResults({
                             </TableCell>
                             <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                               <DropdownMenu>
+                                {/* infotip-shared: explained by the (i) on the Actions column header */}
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="outline" size="sm" className="cursor-pointer gap-1.5 h-8 shrink-0" aria-label="Finding actions">
                                     <Pencil className="h-3.5 w-3.5 opacity-70" />
@@ -1176,7 +1192,7 @@ export default function CbomResults({
           {dashboard?.top_risks && dashboard.top_risks.length > 0 && (
             <Card className="border-zinc-200 dark:border-zinc-800">
               <CardHeader>
-                <CardTitle className="text-base">Top cryptographic risks</CardTitle>
+                <CardTitle className="text-base">Top cryptographic risks <InfoTip id="cbom.res.top" /></CardTitle>
                 <CardDescription>Highest-risk cryptographic assets</CardDescription>
               </CardHeader>
               <CardContent>
@@ -1184,11 +1200,11 @@ export default function CbomResults({
                   <Table className="min-w-max">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[160px]">Algorithm</TableHead>
-                        <TableHead className="min-w-[120px]">Type</TableHead>
-                        <TableHead className="min-w-[110px]">Strength</TableHead>
-                        <TableHead className="min-w-[110px]">Quantum safe</TableHead>
-                        <TableHead className="min-w-[120px]">Impact</TableHead>
+                        <TableHead className="min-w-[160px]">Algorithm <InfoTip id="cbom.res.col.algorithm" /></TableHead>
+                        <TableHead className="min-w-[120px]">Type <InfoTip id="cbom.res.col.type" /></TableHead>
+                        <TableHead className="min-w-[110px]">Strength <InfoTip id="cbom.res.col.strength" /></TableHead>
+                        <TableHead className="min-w-[110px]">Quantum safe <InfoTip id="cbom.res.col.quantum_safe" /></TableHead>
+                        <TableHead className="min-w-[120px]">Impact <InfoTip id="results.table.impact" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

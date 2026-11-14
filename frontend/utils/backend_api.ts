@@ -4614,6 +4614,11 @@ export interface CbomRunPosture {
 
 export interface CbomAssetDetail {
     id: number
+    /** the code page's finding dialog fields, as on the run's /assets items (CB-38 W2b) */
+    bom_ref?: string
+    owasp_top_10?: Record<string, string>
+    compliance_controls?: Record<string, string>
+    suggested_fix?: string | null
     type: string
     name: string | null
     location: string

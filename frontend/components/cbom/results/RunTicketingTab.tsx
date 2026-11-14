@@ -14,7 +14,6 @@ import { JiraIcon } from "@/components/icons/arcticons-jira";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cbomSourcesKeys } from "@/components/cbom/sources/keys";
@@ -44,6 +43,7 @@ import {
   ticketingState,
   type TicketOutcome,
 } from "./runTicketing";
+import { FieldLabel, InfoTip } from "@/components/ui/info-tip";
 
 const PAGE_SIZE = 100;
 const IMPACT_TONE: Record<CbomImpact, Tone> = { Critical: "red", High: "red", Medium: "amber", Low: "blue" };
@@ -98,13 +98,13 @@ function ProjectSettings({ teamId, ticketing }: { teamId: number; ticketing: Cbo
       onSubmit={(e) => { e.preventDefault(); if (!checked.error) save.mutate(); }}
     >
       <div className="space-y-1">
-        <Label htmlFor="run-ticketing-project">Jira project for CBOM Sources</Label>
+        <FieldLabel infoId="cbom.run.tickets.project" htmlFor="run-ticketing-project">Jira project for CBOM Sources</FieldLabel>
         <Input id="run-ticketing-project" value={project} onChange={(e) => setProject(e.target.value)}
                placeholder="e.g. SEC or 10000" className="w-48" aria-invalid={checked.error ? true : undefined}
                aria-describedby="run-ticketing-project-help" />
       </div>
       <div className="space-y-1">
-        <Label htmlFor="run-ticketing-issue-type">Issue type</Label>
+        <FieldLabel infoId="cbom.run.tickets.issue_type" htmlFor="run-ticketing-issue-type">Issue type</FieldLabel>
         <Input id="run-ticketing-issue-type" value={issueType} onChange={(e) => setIssueType(e.target.value)}
                placeholder={ticketing.issue_type_default} className="w-40" maxLength={64} />
       </div>
@@ -188,6 +188,7 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
               <JiraIcon size={18} className="text-white" />
             </span>
             Jira tickets for this run
+            <InfoTip id="cbom.run.tickets" />
           </CardTitle>
           <CardDescription>
             One Jira issue per finding. An asset that already has an issue (from this run or an earlier run of the same
@@ -254,23 +255,27 @@ export default function RunTicketingTab({ teamId, runId }: { teamId: number; run
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-6">
-                    <input type="checkbox" className="cursor-pointer" aria-label="Select every finding without a ticket on this page"
-                           disabled={!canCreate || selectable.length === 0} checked={allOnPage}
-                           onChange={() => setSelected(allOnPage ? new Set() : new Set(selectable))} />
+                  <TableHead>
+                    <div className="flex items-center gap-1">
+                      <input type="checkbox" className="cursor-pointer" aria-label="Select every finding without a ticket on this page"
+                             disabled={!canCreate || selectable.length === 0} checked={allOnPage}
+                             onChange={() => setSelected(allOnPage ? new Set() : new Set(selectable))} />
+                      <InfoTip id="cbom.run.tickets.select" />
+                    </div>
                   </TableHead>
-                  <TableHead>Impact</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Where</TableHead>
-                  <TableHead>Finding</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Jira</TableHead>
+                  <TableHead>Impact <InfoTip id="results.table.impact" /></TableHead>
+                  <TableHead>Type <InfoTip id="cbom.run.f.type" /></TableHead>
+                  <TableHead>Where <InfoTip id="cbom.run.col.where" /></TableHead>
+                  <TableHead>Finding <InfoTip id="cbom.run.col.finding" /></TableHead>
+                  <TableHead>Source <InfoTip id="cbom.run.col.source" /></TableHead>
+                  <TableHead>Jira <InfoTip id="cbom.run.f.ticket" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((a) => (
                   <TableRow key={a.id} data-testid={`run-ticket-asset-${a.id}`} data-ticket={a.ticket_key ?? ""}>
                     <TableCell>
+                      {/* infotip-shared: one row of the selection; the column header's tip explains it */}
                       {!hasTicket(a) && (
                         <input type="checkbox" className="cursor-pointer" disabled={!canCreate}
                                aria-label={`Select ${a.location} for a Jira ticket`} checked={selected.has(a.id)}
