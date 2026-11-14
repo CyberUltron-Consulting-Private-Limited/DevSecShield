@@ -30,6 +30,10 @@ export { Tip } from "./Tip";
 //                           hooks q0-gap-<id> (data-reason, data-status), q0-gap-group-<reason> (data-count)
 export { Q0GapList, Q0GapRegister } from "./Q0Gaps";
 export * from "./q0gaps";
+//                        -> <RiskRegister teamId={t} />  (Quantum risk -> Register, CB-23 PR-B; GET /{team}/cbom/register…)
+//                           hooks register-row-<key> (data-q), register-total (data-total), register-csv
+export { RegisterSummaryCard, RegisterTable, RiskRegister } from "./RiskRegister";
+export * from "./register";
 export { GRADE_TIPS, fixClassTipId, type GradeTipId, type TipEntry } from "./tips";
 export { gradeKeys, getCbomAgilityBaseline, getCbomAgilityModel, getCbomAgilitySubjects, getCbomGradeModel, useAgilityModel, useGradeModel } from "./api";
 export * from "./model";
