@@ -222,9 +222,10 @@ INDEX_MAX_OBSERVATIONS = 2_000_000  # observations kept in this process's indexe
 @dataclass
 class _TeamIndex:
     """One team's correlation as of the last run this process wrote: CB-21's incremental ``CorrelationIndex`` over
-    that run's observations (id = (source_ref, row key)), what decided each one's keys, and its observation key."""
+    that run's observations (id = (source_ref, row key)), what decided each one's keys (``_token``), and its
+    observation key."""
     index: Any = field(default_factory=lambda: AK.CorrelationIndex())
-    analysed: dict[tuple[str, str], Any] = field(default_factory=dict)
+    tokens: dict[tuple[str, str], tuple] = field(default_factory=dict)
     okeys: dict[tuple[str, str], str] = field(default_factory=dict)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -245,10 +246,10 @@ def _team_index(team_id: int) -> _TeamIndex:
     with _INDEXES_LOCK:
         entry = _INDEXES.pop(team_id, None) or _TeamIndex()
         _INDEXES[team_id] = entry
-        total = sum(len(e.analysed) for e in _INDEXES.values())
+        total = sum(len(e.tokens) for e in _INDEXES.values())
         while len(_INDEXES) > 1 and total > INDEX_MAX_OBSERVATIONS:
             _team, old = _INDEXES.popitem(last=False)
-            total -= len(old.analysed)
+            total -= len(old.tokens)
         return entry
 
 
@@ -257,10 +258,22 @@ def _drop_index(team_id: int) -> None:
         _INDEXES.pop(team_id, None)
 
 
+def _token(row: Any) -> tuple:
+    """What decides a stored row's asset keys: exactly the inputs ``asset_keys._analyse`` reads (a certificate's
+    ``_CERT_FIELDS``; otherwise kind, location, target, port, identity, cloud_resource; the scope is the source, part
+    of the row's id). Comparing it costs far less than reading the row (DN parsing), and needs no memo hit."""
+    facts = row.facts if isinstance(row.facts, dict) else {}
+    kind = row.asset_type or ""
+    if kind in AK.CERT_TYPES or row.cdx_type == "certificate":
+        return (0, *map(facts.get, AK._CERT_FIELDS))
+    return (1, kind, row.location or "", row.target or "", facts.get("port"), facts.get("identity"),
+            bool(facts.get("cloud_resource")))
+
+
 def _keys_for_run(team_id: int, seen_rows: Sequence[tuple[Any, str]]) -> _Keyed:
     """The asset key and observation key of each row of the run, equal to ``correlate_detail`` over the run's
     observations (``CorrelationIndex`` guarantees it), but re-correlating only what changed since the team's previous
-    run in this process: a row whose key-deciding facts are unchanged costs one memoised read and one compare, and its
+    run in this process: a row whose key-deciding facts are unchanged costs one tuple compare (``_token``), and its
     observation key is reused (``observation_keys`` runs once, for new or changed rows only). A cold process (or an
     evicted team) starts from an empty index: the full correlation, once."""
     entry = _team_index(team_id)
@@ -269,23 +282,21 @@ def _keys_for_run(team_id: int, seen_rows: Sequence[tuple[Any, str]]) -> _Keyed:
             ids: list[tuple[str, str]] = []
             changes: dict[tuple[str, str], Any] = {}
             fresh: dict[str, list[tuple[tuple[str, str], Any]]] = {}
-            analysed, okeys = entry.analysed, entry.okeys
+            tokens, okeys = entry.tokens, entry.okeys
             for row, ref in seen_rows:
                 oid = (ref, row.asset_key)
                 ids.append(oid)
-                obs = _observation(row, ref)
-                an = AK._analyse(obs)  # memoised on the facts that decide the keys (what the index itself reads)
-                old = analysed.get(oid)
-                if old is None or (old is not an and old != an):
-                    changes[oid] = obs
-                    analysed[oid] = an
+                token = _token(row)
+                if tokens.get(oid) != token:
+                    changes[oid] = _observation(row, ref)
+                    tokens[oid] = token
                     fresh.setdefault(ref, []).append((oid, row))
                 elif oid not in okeys:
                     fresh.setdefault(ref, []).append((oid, row))
             current = set(ids)
-            for oid in [o for o in analysed if o not in current]:
+            for oid in [o for o in tokens if o not in current]:
                 changes[oid] = None
-                del analysed[oid]
+                del tokens[oid]
                 okeys.pop(oid, None)
             changed = entry.index.update(changes) if changes else set()
             for ref, items in fresh.items():

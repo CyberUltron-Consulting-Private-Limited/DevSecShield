@@ -300,6 +300,27 @@ def test_incremental_keys_equal_a_full_correlation_every_run(tmp_path):
     assert len({o.asset_key for o in warm.observations()}) >= 6
 
 
+def test_the_change_token_covers_every_input_of_the_keys():
+    """``estate._token`` must change whenever ``asset_keys`` could key a row differently (the incremental index
+    re-reads only rows whose token changed): every certificate field it reads, and an endpoint's place and port."""
+    from types import SimpleNamespace
+
+    def row(kind, facts, location="10.0.0.5:443", cdx="cryptographic-asset"):
+        return SimpleNamespace(asset_type=kind, cdx_type=cdx, facts=facts, location=location, target="10.0.0.5")
+
+    full = {f: f"v-{f}" for f in E.AK._CERT_FIELDS}
+    base = E._token(row("certificate", full))
+    for f in E.AK._CERT_FIELDS:
+        assert E._token(row("certificate", {**full, f: "other"})) != base, f
+    assert E._token(row("certificate", {**full, "protocols": ["TLSv1.3"]})) == base  # not a key input
+    assert E._token(row("x", full, cdx="certificate")) != E._token(row("x", full))
+    ep = E._token(row("tls_endpoint", {"port": 443}))
+    assert E._token(row("tls_endpoint", {"port": 8443})) != ep
+    assert E._token(row("tls_endpoint", {"port": 443}, location="10.0.0.6:443")) != ep
+    assert E._token(row("kms_key", {"identity": "arn:aws:kms:eu-west-1:1:key/a"})) != E._token(
+        row("kms_key", {"identity": "arn:aws:kms:eu-west-1:1:key/b"}))
+
+
 def test_an_unchanged_rerun_reuses_keys_and_observation_keys(world, monkeypatch):
     E._INDEXES.clear()
     net = world.source("network", "lab")
