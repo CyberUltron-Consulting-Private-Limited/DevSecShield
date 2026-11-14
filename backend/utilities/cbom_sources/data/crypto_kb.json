@@ -1,248 +1,208 @@
 {
+ "clauses": {
+  "certin-bom-8.4.1.6": {
+   "framework": "CERT-In",
+   "id": "BOM Guidelines v2.0, 8.4.1.6",
+   "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
+   "text": "VEX with status Not Affected / Affected / Fixed / Under Investigation"
+  },
+  "certin-bom-8.4.2.2": {
+   "framework": "CERT-In",
+   "id": "BOM Guidelines v2.0, 8.4.2.2",
+   "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
+   "text": "Enforce strict TLS configurations by specifying approved cipher suites, certificate chains, and session parameters, and prohibit the use of weak or deprecated algorithms."
+  },
+  "certin-bom-8.5.1": {
+   "framework": "CERT-In",
+   "id": "BOM Guidelines v2.0, 8.5.1",
+   "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
+   "text": "Public key systems using RSA, ECC, Diffie-Hellman, and DSA algorithms are vulnerable to Shor's algorithm"
+  },
+  "certin-gov-4.5.7": {
+   "framework": "CERT-In",
+   "id": "Guidelines for Government Entities (2023), 4.5.7",
+   "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
+   "text": "use secure protocols such as SSH, SSL, or IP Security (IPSec) encryption for all remote connections to the router/switch/server."
+  },
+  "certin-gov-6.1.7": {
+   "framework": "CERT-In",
+   "id": "Guidelines for Government Entities (2023), 6.1.7",
+   "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
+   "text": "Ensure that all Websites and Applications are \"https\" enabled with a valid SSL/TLS Certificate."
+  },
+  "certin-gov-6.2.7": {
+   "framework": "CERT-In",
+   "id": "Guidelines for Government Entities (2023), 6.2.7",
+   "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
+   "text": "Sensitive data should be shared over secure SSL/TLS connection only."
+  },
+  "certin-gov-7.1": {
+   "framework": "CERT-In",
+   "id": "Guidelines for Government Entities (2023), 7.1",
+   "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
+   "text": "Identify and classify sensitive/personal data and apply measures for encrypting such data in transit and at rest."
+  },
+  "cnsa-2.0": {
+   "framework": "NSA CNSA 2.0",
+   "id": "CNSA 2.0 FAQ (April 2024)",
+   "source": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/1/CSI_CNSA_2.0_FAQ_.PDF",
+   "text": "NSA intends that all NSS will be quantum-resistant by 2035. Algorithms: AES-256, ML-KEM-1024, ML-DSA-87, SHA-384/512, LMS/XMSS."
+  },
+  "nist-800-131a-below-112-bit": {
+   "framework": "NIST",
+   "id": "SP 800-131A Rev. 2, Tables 2, 4, 5 (below 112-bit security)",
+   "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+   "text": "Signature generation and key agreement below 112 bits of security strength are disallowed (Disallowed for < 112 bits (RSA len(n) < 2048; ECDSA len(n) < 224; DSA (L,N) not (2048,224),(2048,256),(3072,256)))."
+  },
+  "nist-800-131a-pkcs1-v1_5": {
+   "framework": "NIST",
+   "id": "SP 800-131A Rev. 2, Sec. 6 Table 5",
+   "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+   "text": "After December 31, 2023, the use of PKCS1-v 1_5 padding scheme is disallowed."
+  },
+  "nist-800-131a-sha1-signatures": {
+   "framework": "NIST",
+   "id": "SP 800-131A Rev. 2, Sec. 9 Table 8 (SHA-1)",
+   "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+   "text": "Digital signature generation: Disallowed, except where specifically allowed by NIST protocol-specific guidance; verification: Legacy use."
+  },
+  "nist-800-131a-tdea": {
+   "framework": "NIST",
+   "id": "SP 800-131A Rev. 2, Sec. 2 Table 1 (TDEA)",
+   "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+   "text": "After December 31, 2023, three-key TDEA is disallowed for encryption unless specifically allowed by other NIST guidance."
+  },
+  "nist-ir-8547": {
+   "framework": "NIST",
+   "id": "IR 8547 (final, 2026)",
+   "source": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf",
+   "text": "NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035."
+  },
+  "rbi-cb-2026-para-106": {
+   "framework": "RBI",
+   "id": "Commercial Banks Cybersecurity Directions 2026, para 106",
+   "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
+   "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
+  },
+  "rbi-cb-2026-para-140": {
+   "framework": "RBI",
+   "id": "Commercial Banks Cybersecurity Directions 2026, para 140",
+   "note": "Commercial banks (from 31 July 2026).",
+   "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
+   "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
+  },
+  "rbi-md-2023-para-16": {
+   "framework": "RBI",
+   "id": "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
+   "note": "Applies to REs other than commercial banks; repealed for commercial banks by the 2026 Directions.",
+   "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
+   "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
+  },
+  "sebi-annexure-h-5": {
+   "framework": "SEBI CSCRF",
+   "id": "Annexure-H item 5",
+   "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+   "text": "Use industry standard, strong encryption algorithms (eg: RSA, AES etc.) wherever encryption is implemented. ... the right methodologies for storing the encryption keys"
+  },
+  "sebi-annexure-i": {
+   "framework": "SEBI CSCRF",
+   "id": "Annexure-I Data Transport Security",
+   "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+   "text": "Strong transport encryption mechanism such as TLS (Transport Layer Security, also referred to as SSL) should be used."
+  },
+  "sebi-box-item-7": {
+   "framework": "SEBI CSCRF",
+   "id": "Box Item 7: Cybersecurity and Quantum Computing",
+   "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+   "text": "REs shall maintain an inventory of cryptographic assets, prioritizing critical assets for Post Quantum Cryptography (PQC) migration, and assess their IT infrastructure capabilities. ... REs shall enhance their crypto-agility to ensure a seamless transition to quantum-resistant solutions without disrupting their current IT systems."
+  },
+  "sebi-gv-sc-s5": {
+   "framework": "SEBI CSCRF",
+   "id": "GV.SC.S5 SBOM contents",
+   "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+   "text": "d. Encryption used  e. Cryptographic hash of the components"
+  },
+  "sebi-id-ra-standard-2": {
+   "framework": "SEBI CSCRF",
+   "id": "ID.RA Standard 2",
+   "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+   "text": "Risk assessment (including post-quantum risks) of REs' IT environment shall be done on a periodic basis."
+  },
+  "sebi-pr-ds-s1-s3-1a": {
+   "framework": "SEBI CSCRF",
+   "id": "PR.DS.S1-S3 guideline 1.a",
+   "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+   "text": "Data shall be encrypted in motion, at rest and in-use by using strong encryption methods. ... REs shall use industry standard, strong encryption algorithms (e.g., RSA, AES, etc.) wherever encryption is implemented."
+  },
+  "sebi-pr-ds-s4-item-5": {
+   "framework": "SEBI CSCRF",
+   "id": "PR.DS.S4 item 5",
+   "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+   "text": "REs shall renew their digital certificates used in IT systems well in time."
+  },
+  "sebi-pr-ds-standard-1": {
+   "framework": "SEBI CSCRF",
+   "id": "PR.DS Standard 1",
+   "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
+   "text": "Data-at-rest and Data-in-transit shall be protected. Strong data protection measures (for both at-rest and in-transit data), with industry standard encryption algorithms, shall be put in place by all REs."
+  }
+ },
  "compliance": {
   "algorithms": [
-   {
-    "framework": "NIST",
-    "id": "SP 800-131A Rev. 2, Sec. 9 Table 8 (SHA-1)",
-    "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
-    "text": "Digital signature generation: Disallowed, except where specifically allowed by NIST protocol-specific guidance; verification: Legacy use."
-   },
-   {
-    "framework": "NIST",
-    "id": "SP 800-131A Rev. 2, Sec. 2 Table 1 (TDEA)",
-    "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
-    "text": "After December 31, 2023, three-key TDEA is disallowed for encryption unless specifically allowed by other NIST guidance."
-   },
-   {
-    "framework": "NIST",
-    "id": "SP 800-131A Rev. 2, Sec. 6 Table 5",
-    "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
-    "text": "After December 31, 2023, the use of PKCS1-v 1_5 padding scheme is disallowed."
-   },
-   {
-    "framework": "CERT-In",
-    "id": "BOM Guidelines v2.0, 8.4.2.2",
-    "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
-    "text": "Enforce strict TLS configurations by specifying approved cipher suites, certificate chains, and session parameters, and prohibit the use of weak or deprecated algorithms."
-   },
-   {
-    "framework": "RBI",
-    "id": "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
-    "note": "Applies to REs other than commercial banks; repealed for commercial banks by the 2026 Directions.",
-    "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
-    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
-   },
-   {
-    "framework": "RBI",
-    "id": "Commercial Banks Cybersecurity Directions 2026, para 140",
-    "note": "Commercial banks (from 31 July 2026).",
-    "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
-    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
-   },
-   {
-    "framework": "SEBI CSCRF",
-    "id": "Annexure-H item 5",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "Use industry standard, strong encryption algorithms (eg: RSA, AES etc.) wherever encryption is implemented. ... the right methodologies for storing the encryption keys"
-   }
+   "nist-800-131a-sha1-signatures",
+   "nist-800-131a-tdea",
+   "nist-800-131a-pkcs1-v1_5",
+   "certin-bom-8.4.2.2",
+   "rbi-md-2023-para-16",
+   "rbi-cb-2026-para-140",
+   "sebi-annexure-h-5"
   ],
   "at_rest": [
-   {
-    "framework": "SEBI CSCRF",
-    "id": "PR.DS Standard 1",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "Data-at-rest and Data-in-transit shall be protected. Strong data protection measures (for both at-rest and in-transit data), with industry standard encryption algorithms, shall be put in place by all REs."
-   },
-   {
-    "framework": "SEBI CSCRF",
-    "id": "PR.DS.S1-S3 guideline 1.a",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "Data shall be encrypted in motion, at rest and in-use by using strong encryption methods. ... REs shall use industry standard, strong encryption algorithms (e.g., RSA, AES, etc.) wherever encryption is implemented."
-   },
-   {
-    "framework": "RBI",
-    "id": "Commercial Banks Cybersecurity Directions 2026, para 106",
-    "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
-    "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
-   },
-   {
-    "framework": "CERT-In",
-    "id": "Guidelines for Government Entities (2023), 7.1",
-    "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
-    "text": "Identify and classify sensitive/personal data and apply measures for encrypting such data in transit and at rest."
-   }
+   "sebi-pr-ds-standard-1",
+   "sebi-pr-ds-s1-s3-1a",
+   "rbi-cb-2026-para-106",
+   "certin-gov-7.1"
   ],
   "auth": [
-   {
-    "framework": "RBI",
-    "id": "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
-    "note": "Applies to REs other than commercial banks; repealed for commercial banks by the 2026 Directions.",
-    "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
-    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
-   },
-   {
-    "framework": "RBI",
-    "id": "Commercial Banks Cybersecurity Directions 2026, para 140",
-    "note": "Commercial banks (from 31 July 2026).",
-    "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
-    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
-   }
+   "rbi-md-2023-para-16",
+   "rbi-cb-2026-para-140"
   ],
   "certificates": [
-   {
-    "framework": "SEBI CSCRF",
-    "id": "PR.DS.S4 item 5",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "REs shall renew their digital certificates used in IT systems well in time."
-   },
-   {
-    "framework": "CERT-In",
-    "id": "Guidelines for Government Entities (2023), 6.1.7",
-    "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
-    "text": "Ensure that all Websites and Applications are \"https\" enabled with a valid SSL/TLS Certificate."
-   }
+   "sebi-pr-ds-s4-item-5",
+   "certin-gov-6.1.7"
   ],
   "components": [
-   {
-    "framework": "CERT-In",
-    "id": "BOM Guidelines v2.0, 8.4.1.6",
-    "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
-    "text": "VEX with status Not Affected / Affected / Fixed / Under Investigation"
-   },
-   {
-    "framework": "SEBI CSCRF",
-    "id": "GV.SC.S5 SBOM contents",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "d. Encryption used  e. Cryptographic hash of the components"
-   }
+   "certin-bom-8.4.1.6",
+   "sebi-gv-sc-s5"
   ],
   "in_transit": [
-   {
-    "framework": "SEBI CSCRF",
-    "id": "PR.DS Standard 1",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "Data-at-rest and Data-in-transit shall be protected. Strong data protection measures (for both at-rest and in-transit data), with industry standard encryption algorithms, shall be put in place by all REs."
-   },
-   {
-    "framework": "SEBI CSCRF",
-    "id": "Annexure-I Data Transport Security",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "Strong transport encryption mechanism such as TLS (Transport Layer Security, also referred to as SSL) should be used."
-   },
-   {
-    "framework": "RBI",
-    "id": "Commercial Banks Cybersecurity Directions 2026, para 106",
-    "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
-    "text": "protecting data / information at rest (e.g., using encryption, if supported by the device) and in-transit (e.g., using technologies such as Virtual Private Network (VPN) or other secure protocols)"
-   },
-   {
-    "framework": "CERT-In",
-    "id": "Guidelines for Government Entities (2023), 6.2.7",
-    "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
-    "text": "Sensitive data should be shared over secure SSL/TLS connection only."
-   },
-   {
-    "framework": "CERT-In",
-    "id": "Guidelines for Government Entities (2023), 4.5.7",
-    "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
-    "text": "use secure protocols such as SSH, SSL, or IP Security (IPSec) encryption for all remote connections to the router/switch/server."
-   }
+   "sebi-pr-ds-standard-1",
+   "sebi-annexure-i",
+   "rbi-cb-2026-para-106",
+   "certin-gov-6.2.7",
+   "certin-gov-4.5.7"
   ],
   "key_mgmt": [
-   {
-    "framework": "SEBI CSCRF",
-    "id": "Annexure-H item 5",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "Use industry standard, strong encryption algorithms (eg: RSA, AES etc.) wherever encryption is implemented. ... the right methodologies for storing the encryption keys"
-   }
+   "sebi-annexure-h-5"
   ],
   "keysize": [
-   {
-    "framework": "NIST",
-    "id": "SP 800-131A Rev. 2, Tables 2, 4, 5 (below 112-bit security)",
-    "source": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
-    "text": "Signature generation and key agreement below 112 bits of security strength are disallowed (Disallowed for < 112 bits (RSA len(n) < 2048; ECDSA len(n) < 224; DSA (L,N) not (2048,224),(2048,256),(3072,256)))."
-   },
-   {
-    "framework": "RBI",
-    "id": "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
-    "note": "Applies to REs other than commercial banks; repealed for commercial banks by the 2026 Directions.",
-    "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
-    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
-   },
-   {
-    "framework": "RBI",
-    "id": "Commercial Banks Cybersecurity Directions 2026, para 140",
-    "note": "Commercial banks (from 31 July 2026).",
-    "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
-    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
-   }
+   "nist-800-131a-below-112-bit",
+   "rbi-md-2023-para-16",
+   "rbi-cb-2026-para-140"
   ],
   "pqc": [
-   {
-    "framework": "NIST",
-    "id": "IR 8547 (final, 2026)",
-    "source": "https://nvlpubs.nist.gov/nistpubs/ir/2026/NIST.IR.8547.pdf",
-    "text": "NIST will deprecate quantum-vulnerable public-key cryptography after 2030 and disallow its use under NIST standards and guidelines after 2035."
-   },
-   {
-    "framework": "NSA CNSA 2.0",
-    "id": "CNSA 2.0 FAQ (April 2024)",
-    "source": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/1/CSI_CNSA_2.0_FAQ_.PDF",
-    "text": "NSA intends that all NSS will be quantum-resistant by 2035. Algorithms: AES-256, ML-KEM-1024, ML-DSA-87, SHA-384/512, LMS/XMSS."
-   },
-   {
-    "framework": "SEBI CSCRF",
-    "id": "Box Item 7: Cybersecurity and Quantum Computing",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "REs shall maintain an inventory of cryptographic assets, prioritizing critical assets for Post Quantum Cryptography (PQC) migration, and assess their IT infrastructure capabilities. ... REs shall enhance their crypto-agility to ensure a seamless transition to quantum-resistant solutions without disrupting their current IT systems."
-   },
-   {
-    "framework": "SEBI CSCRF",
-    "id": "ID.RA Standard 2",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "Risk assessment (including post-quantum risks) of REs' IT environment shall be done on a periodic basis."
-   },
-   {
-    "framework": "CERT-In",
-    "id": "BOM Guidelines v2.0, 8.5.1",
-    "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
-    "text": "Public key systems using RSA, ECC, Diffie-Hellman, and DSA algorithms are vulnerable to Shor's algorithm"
-   }
+   "nist-ir-8547",
+   "cnsa-2.0",
+   "sebi-box-item-7",
+   "sebi-id-ra-standard-2",
+   "certin-bom-8.5.1"
   ],
   "tls_min": [
-   {
-    "framework": "CERT-In",
-    "id": "BOM Guidelines v2.0, 8.4.2.2",
-    "source": "https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf",
-    "text": "Enforce strict TLS configurations by specifying approved cipher suites, certificate chains, and session parameters, and prohibit the use of weak or deprecated algorithms."
-   },
-   {
-    "framework": "SEBI CSCRF",
-    "id": "Annexure-I Data Transport Security",
-    "source": "https://www.sebi.gov.in/sebi_data/attachdocs/aug-2024/1724326790365.pdf",
-    "text": "Strong transport encryption mechanism such as TLS (Transport Layer Security, also referred to as SSL) should be used."
-   },
-   {
-    "framework": "RBI",
-    "id": "Master Direction on IT Governance (2023), para 16 Cryptographic controls",
-    "note": "Applies to REs other than commercial banks; repealed for commercial banks by the 2026 Directions.",
-    "source": "https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12562",
-    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. REs shall adopt internationally accepted and published standards that are not deprecated/ demonstrated to be insecure/ vulnerable and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
-   },
-   {
-    "framework": "RBI",
-    "id": "Commercial Banks Cybersecurity Directions 2026, para 140",
-    "note": "Commercial banks (from 31 July 2026).",
-    "source": "https://www.rbi.org.in/scripts/NotificationUser.aspx?Id=13643",
-    "text": "The key length, algorithms, cipher suites and applicable protocols used in transmission channels, processing of data and authentication purpose shall be strong. The bank shall adopt internationally accepted and published standards that are not deprecated / demonstrated to be insecure / vulnerable, and the configurations involved in implementing such controls shall be compliant with extant laws and regulatory instructions."
-   },
-   {
-    "framework": "CERT-In",
-    "id": "Guidelines for Government Entities (2023), 6.1.7",
-    "source": "https://www.cert-in.org.in/PDF/guidelinesgovtentities.pdf",
-    "text": "Ensure that all Websites and Applications are \"https\" enabled with a valid SSL/TLS Certificate."
-   }
+   "certin-bom-8.4.2.2",
+   "sebi-annexure-i",
+   "rbi-md-2023-para-16",
+   "rbi-cb-2026-para-140",
+   "certin-gov-6.1.7"
   ]
  },
  "cves": {
@@ -1033,6 +993,11 @@
    "AT_REST_ENCRYPTION_WEAK": {
     "attack": "Weak or legacy at-rest encryption gives less protection to copied data and keys.",
     "category": "config",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a"
+    ],
     "compliance": [
      "at_rest"
     ],
@@ -1091,6 +1056,10 @@
    "CERT_NEAR_EXPIRY": {
     "attack": "An unplanned expiry causes an outage or pushes teams to disable certificate validation in a hurry.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-s4-item-5"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -1164,6 +1133,10 @@
    "CERT_SELF_SIGNED": {
     "attack": "Clients must either pin it or skip validation; skipped validation allows man-in-the-middle impersonation.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -1247,6 +1220,12 @@
    "CUSTOM_CRYPTO": {
     "attack": "Home-made primitives are almost always breakable with basic cryptanalysis.",
     "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -1303,6 +1282,10 @@
    "DOWNGRADE_PROTECTION_MISSING": {
     "attack": "Clients that retry at a lower version after an injected failure can be walked down to the oldest version the server allows (POODLE-style downgrade).",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -1401,6 +1384,8 @@
    "EOL_BASE_IMAGE": {
     "attack": "Every TLS and crypto library vulnerability published after the end-of-life date stays exploitable in the container: an attacker uses the public advisory against the unpatched library the image ships.",
     "category": "library",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "components"
     ],
@@ -1465,6 +1450,8 @@
    "EOL_CRYPTO_LIBRARY": {
     "attack": "New OpenSSL / GnuTLS advisories after the end of life stay exploitable in the shipped library unless a vendor back-ports them (paid extended support), and the build gets no further fixes.",
     "category": "library",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "components"
     ],
@@ -1537,6 +1524,11 @@
    "EXPIRED_CERTIFICATE": {
     "attack": "Clients either fail closed (an outage) or are configured to ignore validation errors, which removes protection against impersonation.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-s4-item-5",
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -1621,6 +1613,10 @@
    "HARDCODED_KEY": {
     "attack": "Anyone with the code (repository, image, decompiled binary) has the key and can decrypt or forge everything it protects.",
     "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -1689,6 +1685,8 @@
    "KMS_KEY_DELETION_UNPROTECTED": {
     "attack": "Without purge protection a deleted vault or key can be permanently purged during the retention period, so an insider or compromised principal can destroy keys and make the data they protect unrecoverable.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -1764,6 +1762,10 @@
    "KMS_KEY_POLICY_PUBLIC": {
     "attack": "Any AWS principal (in any account) allowed by the policy can use or manage the key, and so decrypt data protected by it.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -1831,6 +1833,8 @@
    "KMS_KEY_ROTATION_DISABLED": {
     "attack": "A key that never rotates protects more data for longer, so any compromise exposes more.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -1894,6 +1898,13 @@
    "KNOWN_TLS_VULNERABILITY": {
     "attack": "Depends on the vulnerability: Heartbleed leaks server memory including private keys; POODLE and BEAST recover plaintext; ROBOT decrypts RSA key exchange; CRIME and BREACH recover secrets through compression; insecure renegotiation lets an attacker inject requests.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.1.6",
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "components",
      "tls_min"
@@ -2050,6 +2061,10 @@
    "LIBRARY_CVE_RANGE": {
     "attack": "If the fix is not in the build, the published exploit for the CVE works against every service in the image or device that loads the library (memory corruption, side channels, certificate parsing flaws).",
     "category": "library",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.1.6"
+    ],
     "compliance": [
      "components"
     ],
@@ -2129,6 +2144,13 @@
    "PLAINTEXT_LISTENER": {
     "attack": "Users or clients that land on the plaintext port send cookies and credentials in clear text; SSL-stripping attacks rely on this.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -2204,6 +2226,8 @@
    "PROVIDER_MANAGED_KEY": {
     "attack": "Anyone the provider's own access path allows can read the data without a key decision by you, and a compromised or over-privileged role is not stopped by a key policy. Regulators and frameworks for regulated data (RBI's cyber security framework for banks, CERT-In's guidance, NIST SP 800-57 key management) expect keys whose custody, rotation and access the organisation controls.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt",
      "at_rest"
@@ -2289,6 +2313,14 @@
    "QUANTUM_VULNERABLE": {
     "attack": "Data encrypted with these keys can be recorded now and decrypted later (harvest now, decrypt later); signatures can be forged once such a computer exists.",
     "category": "pqc",
+    "clause_rules": [],
+    "clauses": [
+     "nist-ir-8547",
+     "cnsa-2.0",
+     "sebi-box-item-7",
+     "sebi-id-ra-standard-2",
+     "certin-bom-8.5.1"
+    ],
     "compliance": [
      "pqc"
     ],
@@ -2362,6 +2394,11 @@
    "REUSED_NONCE": {
     "attack": "For AES-GCM or ChaCha20-Poly1305, nonce reuse reveals the XOR of the plaintexts and lets an attacker forge messages.",
     "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -2419,6 +2456,10 @@
    "SELF_SIGNED_LEAF": {
     "attack": "Clients must pin the certificate or skip validation; code that skips validation accepts any certificate, which allows man-in-the-middle impersonation.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -2498,6 +2539,11 @@
    "STATIC_IV": {
     "attack": "With CBC, a predictable IV enables chosen-plaintext attacks; with GCM/CTR, a repeated nonce leaks the XOR of plaintexts and the authentication key.",
     "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -2556,6 +2602,11 @@
    "TLS_VERIFICATION_DISABLED": {
     "attack": "An on-path attacker presents any certificate and the client accepts it, so the attacker can read and change the encrypted traffic (man-in-the-middle).",
     "category": "config",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit",
      "certificates"
@@ -2640,6 +2691,13 @@
    "UNENCRYPTED_AT_REST": {
     "attack": "Copies of the data (snapshots, backups, replicas, decommissioned disks) are readable by whoever obtains them.",
     "category": "config",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a",
+     "rbi-cb-2026-para-106",
+     "certin-gov-7.1"
+    ],
     "compliance": [
      "at_rest"
     ],
@@ -2715,6 +2773,13 @@
    "UNENCRYPTED_IN_TRANSIT": {
     "attack": "Anyone on the network path can read or change the traffic, including credentials.",
     "category": "config",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -2801,6 +2866,10 @@
    "VULNERABLE_CRYPTO_LIBRARY": {
     "attack": "Attackers use the published advisory for the version in use against any code path that calls the affected function; each CVE below names the function and the fixed version.",
     "category": "library",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.1.6"
+    ],
     "compliance": [
      "components"
     ],
@@ -2856,6 +2925,37 @@
    "WEAK_ALGORITHM": {
     "attack": "Depending on the algorithm: hash collisions forge signatures or integrity checks; weak ciphers let recorded data be decrypted.",
     "category": "code",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-tdea",
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede"
+     },
+     {
+      "clauses": [
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des(?![a-z])|des-cbc|desx|des40|rc4|arcfour|(?<![a-z])null(?![a-z])|export|(?<![a-z])exp-|rc2|skipjack|blowfish|(?<![a-z])idea(?![a-z])|cast-?(5|128)"
+     },
+     {
+      "clauses": [
+       "nist-800-131a-sha1-signatures"
+      ],
+      "match": "sha-?1[-_ ]?with[-_ ]?(rsa|ecdsa|dsa)|(rsa|ecdsa|dsa)[-_ ]?(with[-_ ]?)?sha-?1(?![0-9])|ssh-rsa(?![a-z0-9-])"
+     },
+     {
+      "clauses": [
+       "nist-800-131a-below-112-bit"
+      ],
+      "match": "(?<![a-z])(rsa|dsa|dh|diffie-hellman)\\W{0,3}(384|512|768|1024|1536)(?![0-9])|(?<![a-z])(ecdsa|ecdh|ec)\\W{0,3}(112|128|160|192)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])"
+     }
+    ],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -3027,6 +3127,12 @@
    "WEAK_CERTIFICATE_KEY": {
     "attack": "RSA keys under 2048 bits are within reach of well-funded attackers and are disallowed for new use; a recovered private key lets an attacker impersonate the service or decrypt traffic it protected.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "nist-800-131a-below-112-bit",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "keysize",
      "certificates"
@@ -3098,6 +3204,19 @@
    "WEAK_CERTIFICATE_SIGNATURE": {
     "attack": "MD5 and SHA-1 chosen-prefix collisions are practical (a rogue CA certificate was forged with MD5; SHA-1 is a Shambles, 2020), so a signature made with them can be forged to vouch for an attacker's key.",
     "category": "certificate",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-sha1-signatures"
+      ],
+      "match": "sha-?1(?![0-9])|ssh-rsa(?![a-z0-9-])"
+     }
+    ],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -3181,6 +3300,11 @@
    "WEAK_CIPHER_MODE": {
     "attack": "ECB encrypts equal blocks to equal ciphertext, leaking patterns and allowing block cut-and-paste.",
     "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -3238,6 +3362,26 @@
    "WEAK_CIPHER_SUITE": {
     "attack": "Wherever this configuration is deployed: RC4 biases leak plaintext; 64-bit block ciphers (3DES) allow SWEET32 birthday attacks on long sessions; EXPORT suites can be broken in real time (FREAK, Logjam); anonymous suites give no server authentication.",
     "category": "code",
+    "clause_rules": [
+     {
+      "clauses": [
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des(?![a-z])|des-cbc|desx|des40|rc4|arcfour|(?<![a-z])null(?![a-z])|export|(?<![a-z])exp-|rc2|skipjack|blowfish|(?<![a-z])idea(?![a-z])|cast-?(5|128)"
+     },
+     {
+      "clauses": [
+       "nist-800-131a-tdea",
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -3347,6 +3491,18 @@
    "WEAK_KEY_SIZE": {
     "attack": "Small keys can be brute-forced or factored.",
     "category": "code",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-below-112-bit"
+      ],
+      "match": "(?<![a-z])(rsa|dsa|dh|diffie-hellman)\\W{0,3}(384|512|768|1024|1536)(?![0-9])|(?<![a-z])(ecdsa|ecdh|ec)\\W{0,3}(112|128|160|192)(?![0-9])|secp(112|128|160|192)|prime192|p-?192(?![0-9])"
+     }
+    ],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "keysize"
     ],
@@ -3404,6 +3560,12 @@
    "WEAK_PADDING": {
     "attack": "PKCS#1 v1.5 encryption is open to Bleichenbacher-style padding oracles (ROBOT).",
     "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "nist-800-131a-pkcs1-v1_5"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -3463,6 +3625,19 @@
    "WEAK_PROTOCOL": {
     "attack": "Wherever this configuration is deployed, an attacker in the network path can force or exploit the old protocol: SSLv3 falls to POODLE, TLS 1.0 to BEAST-style CBC attacks, SSH-1 to known insertion and hijacking attacks, and IKEv1 aggressive mode exposes a pre-shared-key hash that can be cracked offline.",
     "category": "code",
+    "clause_rules": [
+     {
+      "clauses": [
+       "sebi-annexure-i"
+      ],
+      "match": "ssl|tls"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -3588,6 +3763,11 @@
    "WEAK_RNG": {
     "attack": "These generators are predictable; an attacker who sees some outputs can reconstruct the key or token.",
     "category": "code",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -3648,6 +3828,8 @@
    "CA_ALLOWS_ANY_NAME": {
     "attack": "Anyone allowed to request from it can obtain a certificate for another server or user and impersonate it; in AD CS this is the ESC1 privilege-escalation path to domain administrator (ESC6 when the CA adds the SID extension: services that map certificates by name, such as VPN or 802.1X, still accept them).",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "certificates",
      "auth"
@@ -3746,6 +3928,12 @@
    "CA_ALLOWS_WEAK_KEY": {
     "attack": "Certificates for factorable keys let an attacker derive the private key from the public certificate and impersonate the holder.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "nist-800-131a-below-112-bit",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "keysize",
      "certificates"
@@ -3814,6 +4002,8 @@
    "CA_LONG_VALIDITY": {
     "attack": "A leaked key stays usable for longer, certificates outlive the algorithms and owners they were made for, and Apple clients reject the certificates outright.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "certificates"
     ],
@@ -3879,6 +4069,8 @@
    "CA_TEMPLATE_WRITABLE": {
     "attack": "Any domain account can rewrite the template (let the enrollee supply the subject, add client authentication, grant itself Enroll), request a certificate for a domain administrator and sign in as them: the AD CS ESC4 path to domain compromise.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "certificates",
      "auth"
@@ -3958,6 +4150,19 @@
    "CA_WEAK_SIGNING": {
     "attack": "Chosen-prefix collisions let an attacker get a harmless request signed and reuse the signature on a forged certificate (SHA-1: SHAmbles 2020; MD5: the 2008 rogue CA).",
     "category": "certificate",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-sha1-signatures"
+      ],
+      "match": "sha-?1(?![0-9])|ssh-rsa(?![a-z0-9-])"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms",
      "certificates"
@@ -4032,6 +4237,12 @@
    "CBC_ACCEPTED": {
     "attack": "A client limited to CBC suites falls back to MAC-then-encrypt constructions with known timing side channels.",
     "category": "cipher",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -4114,6 +4325,12 @@
    "CBC_ONLY": {
     "attack": "MAC-then-encrypt CBC suites have a long history of padding-oracle and timing attacks (Lucky Thirteen and successors).",
     "category": "cipher",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -4198,6 +4415,8 @@
    "CERT_CHAIN_EXTRA_EXPIRED": {
     "attack": "Modern clients ignore it. Old clients that relied on the cross-sign, and some TLS libraries that do not look for an alternative path (OpenSSL 1.0.x), fail the connection.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "certificates"
     ],
@@ -4295,6 +4514,11 @@
    "CERT_EXPIRED": {
     "attack": "Clients either fail closed (an outage) or are configured to ignore validation errors, which removes protection against impersonation.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-s4-item-5",
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -4384,6 +4608,10 @@
    "CERT_EXPIRES_30D": {
     "attack": "An unplanned expiry causes an outage or pushes teams to disable validation.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-s4-item-5"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -4461,6 +4689,10 @@
    "CERT_NOT_YET_VALID": {
     "attack": "A server that presents it fails every client that checks dates, and teams under pressure respond by turning validation off. A certificate staged on disk ahead of a planned switch is expected: check that nothing serves it before its start date.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -4542,6 +4774,10 @@
    "CERT_REVOKED": {
     "attack": "Revocation is usually the right outcome (a replaced or compromised key). It becomes a problem if a server still presents the certificate: clients that check revocation refuse the connection, and clients that do not are exposed if the key was compromised.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -4632,6 +4868,8 @@
    "CERT_SELF_SHA1": {
     "attack": "None through the self-signature itself. Policy engines and scanners that flag every SHA-1 signature will keep reporting it, and some clients refuse SHA-1 anywhere in a chain.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "certificates"
     ],
@@ -4701,6 +4939,10 @@
    "CERT_SELF_SIGNED": {
     "attack": "Clients must either pin it or skip validation; skipped validation allows man-in-the-middle impersonation.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -4784,6 +5026,8 @@
    "CERT_UNEXPECTED_CA": {
     "attack": "A certificate from an unexpected CA is either shadow IT (a team or vendor buying certificates outside the process, often unmanaged and left to expire) or mis-issuance: someone who could pass that CA's domain validation can impersonate the name to every browser.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "certificates"
     ],
@@ -4897,6 +5141,8 @@
    "CERT_UNUSED": {
     "attack": "Orphaned certificates with live private keys are unmanaged credentials: if the key leaks, the certificate can still be used to impersonate the name.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -4959,6 +5205,8 @@
    "CERT_WILDCARD_SPRAWL": {
     "attack": "A wildcard key copied to many servers, vendors or CDNs is only as safe as the weakest of them; one leak allows impersonating every subdomain, including ones that never used the certificate.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -5051,6 +5299,10 @@
    "CHAIN_INCOMPLETE": {
     "attack": "Browsers that cache or download intermediates connect; other clients (curl, Java, Go, mobile apps, IoT, API consumers) fail, and the usual reaction is to switch certificate validation off, which allows impersonation.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2"
+    ],
     "compliance": [
      "certificates"
     ],
@@ -5154,6 +5406,11 @@
    "DB_10G_VERIFIER": {
     "attack": "The 10G verifier is cracked quickly from a stolen hash, and its presence lets old clients use the weak logon protocol.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "auth"
     ],
@@ -5224,6 +5481,13 @@
    "DB_CLEARTEXT_PW": {
     "attack": "On a non-TLS connection anyone on the path reads the password.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "auth",
      "in_transit"
@@ -5307,6 +5571,8 @@
    "DB_EOL_VERSION": {
     "attack": "Known vulnerabilities, including in authentication and network encryption, stay unpatched.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "components"
     ],
@@ -5364,6 +5630,10 @@
    "DB_LEGACY_NNE": {
     "attack": "Without certificate verification a client cannot tell the real database from an impostor on the path; NNE also needed the July 2021 CPU fixes (CVE-2021-2351) and still allows SHA-1 integrity for old clients.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -5435,6 +5705,11 @@
    "DB_LEGACY_PW_HASH": {
     "attack": "Salted SHA-1 is fast to brute-force once the hashes leak (a backup, a replica, a privileged account).",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "auth"
     ],
@@ -5513,6 +5788,8 @@
    "DB_LOGIN_NO_POLICY": {
     "attack": "Short or common passwords and unlimited guessing against those logins.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "auth"
     ],
@@ -5570,6 +5847,11 @@
    "DB_MD5_ACCEPTED": {
     "attack": "An md5 hash (salted only with the role name) taken from a backup or pg_authid can be replayed as the password, and md5 challenge-response captures are cheap to brute-force.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "auth"
     ],
@@ -5646,6 +5928,11 @@
    "DB_MD5_DEFAULT": {
     "attack": "An MD5 password hash (salted only with the user name) can be replayed as the password itself and is cheap to brute-force once read from the database or a backup.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "auth"
     ],
@@ -5715,6 +6002,11 @@
    "DB_NATIVE_PW": {
     "attack": "The stored double-SHA-1 hash is fast to brute-force if the mysql.user table leaks.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "auth"
     ],
@@ -5782,6 +6074,8 @@
    "DB_NO_AUTH": {
     "attack": "Anyone who can reach the port can read or change data.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "auth"
     ],
@@ -5848,6 +6142,8 @@
    "DB_NO_TDE": {
     "attack": "Data files, backups and replicas expose table contents to anyone who copies them.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "at_rest"
     ],
@@ -5913,6 +6209,13 @@
    "DB_NO_TLS": {
     "attack": "Queries, results and (for some auth methods) passwords cross the network in clear text.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -5985,6 +6288,11 @@
    "DB_OLD_PASSWORD": {
     "attack": "The hash can be cracked instantly.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "auth"
     ],
@@ -6052,6 +6360,13 @@
    "DB_PLAINTEXT_PW": {
     "attack": "Anyone who can read pg_authid, a backup or a replica reads the password itself and can sign in as that role here and wherever the password is reused.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a",
+     "rbi-cb-2026-para-106",
+     "certin-gov-7.1"
+    ],
     "compliance": [
      "auth"
     ],
@@ -6137,6 +6452,8 @@
    "DB_TDE_OFF": {
     "attack": "Without TDE, data files copied off the server, backups, snapshots and replicas expose the data to anyone who copies them, unless the storage under them or the backups themselves are encrypted.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "at_rest"
     ],
@@ -6217,6 +6534,13 @@
    "DB_TLS_MODE": {
     "attack": "Clients can connect without TLS.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -6300,6 +6624,13 @@
    "DB_TLS_OPTIONAL": {
     "attack": "Clients that do not ask for TLS (or are downgraded) send data and credentials in clear text.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -6384,6 +6715,8 @@
    "DB_TRUST": {
     "attack": "Anyone who can reach the port from a matching address logs in as any role the rule allows.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "auth"
     ],
@@ -6456,6 +6789,11 @@
    "DB_WEAK_HASH": {
     "attack": "An MD5 hash (salted only with the user name) can be replayed as the password itself and is cheap to brute-force.",
     "category": "database",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "auth"
     ],
@@ -6525,6 +6863,12 @@
    "DH_LT_2048": {
     "attack": "Common 1024-bit and export-grade groups can be broken by precomputation (Logjam); recorded sessions can then be decrypted.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "nist-800-131a-below-112-bit",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "keysize"
     ],
@@ -6612,6 +6956,8 @@
    "DISK_CBC": {
     "attack": "CBC with predictable IVs allows watermarking and malleability attacks on disk blocks.",
     "category": "disk",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "at_rest"
     ],
@@ -6670,6 +7016,13 @@
    "DISK_PROTECTION_OFF": {
     "attack": "Anyone with the disk can read the data, because the key that decrypts it is stored in the clear while protection is suspended.",
     "category": "disk",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a",
+     "rbi-cb-2026-para-106",
+     "certin-gov-7.1"
+    ],
     "compliance": [
      "at_rest"
     ],
@@ -6736,6 +7089,13 @@
    "DISK_UNENCRYPTED": {
     "attack": "A stolen disk, snapshot or decommissioned drive exposes all data on it.",
     "category": "disk",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a",
+     "rbi-cb-2026-para-106",
+     "certin-gov-7.1"
+    ],
     "compliance": [
      "at_rest"
     ],
@@ -6801,6 +7161,10 @@
    "DISK_XTS_128": {
     "attack": "AES-128 is still secure today; under Grover's algorithm its margin drops, so long-lived data prefers AES-256.",
     "category": "disk",
+    "clause_rules": [],
+    "clauses": [
+     "cnsa-2.0"
+    ],
     "compliance": [
      "at_rest",
      "pqc"
@@ -6859,6 +7223,13 @@
    "DOTNET_WEAK_TLS": {
     "attack": "A man-in-the-middle can downgrade connections made by .NET applications (web service clients, LOB apps) to TLS 1.0 or SSL 3.0 and attack the weaker protocol (POODLE, BEAST, RC4 biases).",
     "category": "host",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -6941,6 +7312,10 @@
    "DOWNGRADE": {
     "attack": "An on-path attacker interferes with the handshake so both sides settle on the weakest common version, then uses that version's weaknesses.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -7042,6 +7417,11 @@
    "DSA": {
     "attack": "DSA is fragile (a biased or repeated nonce leaks the private key) and is being removed from major stacks.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -7116,6 +7496,8 @@
    "EBS_DEFAULT_OFF": {
     "attack": "Unencrypted volumes and their snapshots expose data.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "at_rest"
     ],
@@ -7193,6 +7575,12 @@
    "EC_LT_224": {
     "attack": "Small curves fall below the 112-bit security floor.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "nist-800-131a-below-112-bit",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "keysize"
     ],
@@ -7271,6 +7659,13 @@
    "GLUE_CATALOG_UNENCRYPTED": {
     "attack": "Catalog metadata, including connection definitions, is readable to any principal with Glue read access and is not covered by a KMS key policy or by CloudTrail records of key use.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a",
+     "rbi-cb-2026-para-106",
+     "certin-gov-7.1"
+    ],
     "compliance": [
      "at_rest"
     ],
@@ -7354,6 +7749,13 @@
    "GLUE_JDBC_NO_TLS": {
     "attack": "On the network path between Glue and the database, credentials and query results can be read or changed.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -7435,6 +7837,13 @@
    "GLUE_PLAINTEXT_PASSWORD": {
     "attack": "Any principal allowed glue:GetConnection(s) (read-only auditors included) can read the database password and log in to the database directly.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a",
+     "rbi-cb-2026-para-106",
+     "certin-gov-7.1"
+    ],
     "compliance": [
      "key_mgmt",
      "at_rest"
@@ -7524,6 +7933,12 @@
    "IKEV1_ENABLED": {
     "attack": "IKEv1 keeps legacy algorithms and modes (Aggressive Mode, XAUTH) reachable; attacks on its PSK handling and re-used keys across IKEv1 and IKEv2 (Bleichenbacher-style, 2018) only need the gateway to answer it.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -7617,6 +8032,12 @@
    "IKE_AGGRESSIVE": {
     "attack": "An attacker sends one Aggressive Mode request, receives HASH_R and cracks the pre-shared key offline (psk-crack, hashcat mode 5300/5400); with the PSK (and a group name) they can impersonate the gateway or connect as a client.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "auth"
     ],
@@ -7722,6 +8143,14 @@
    "IKE_NO_PQ": {
     "attack": "IPsec traffic recorded today can be decrypted once a cryptographically relevant quantum computer can solve the recorded key exchanges (harvest now, decrypt later).",
     "category": "pqc",
+    "clause_rules": [],
+    "clauses": [
+     "nist-ir-8547",
+     "cnsa-2.0",
+     "sebi-box-item-7",
+     "sebi-id-ra-standard-2",
+     "certin-bom-8.5.1"
+    ],
     "compliance": [
      "pqc"
     ],
@@ -7789,6 +8218,19 @@
    "IKE_WEAK_DH": {
     "attack": "768 and 1024-bit discrete logarithms are within reach of well-resourced attackers (Logjam showed the precomputation for common 1024-bit primes); recorded IKE exchanges keyed with them can be decrypted, and so can the IPsec keys derived from them.",
     "category": "protocol",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-below-112-bit"
+      ],
+      "match": "modp-?(768|1024|1536)(?![0-9])|ecp-?192(?![0-9])"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "keysize"
     ],
@@ -7887,6 +8329,27 @@
    "IKE_WEAK_ENCR": {
     "attack": "A peer (or an on-path attacker steering the negotiation) can get the IKE SA keyed with a cipher whose block size allows birthday attacks on long-lived SAs (SWEET32) and, for single DES, brute force of the key.",
     "category": "protocol",
+    "clause_rules": [
+     {
+      "clauses": [
+       "sebi-annexure-h-5"
+      ],
+      "match": "^(DES|DES-IV64|3DES|BLOWFISH|IDEA|CAST|NULL)(-\\d+)?$",
+      "unless": "^null(-\\d+)?$"
+     },
+     {
+      "clauses": [
+       "nist-800-131a-tdea",
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -7993,6 +8456,17 @@
    "IKE_WEAK_INTEG": {
     "attack": "MD5 no longer meets current security margins; keeping it lets a downgraded negotiation key and authenticate the IKE SA with a primitive RFC 8247 forbids. HMAC-SHA-1 is not broken, but it is on its way out and auditors following NIST SP 800-131A ask for SHA-2.",
     "category": "protocol",
+    "clause_rules": [
+     {
+      "clauses": [
+       "certin-bom-8.4.2.2",
+       "rbi-md-2023-para-16",
+       "rbi-cb-2026-para-140"
+      ],
+      "match": "md5|des-mac"
+     }
+    ],
+    "clauses": [],
     "compliance": [
      "algorithms"
     ],
@@ -8090,6 +8564,53 @@
    "IPSEC_WEAK_TRANSFORM": {
     "attack": "The child SA protects the actual data: a weak cipher, MD5 MAC or small PFS group there exposes the tunnelled traffic even when the IKE SA itself is strong; HMAC-SHA-1 is not broken but is being retired.",
     "category": "protocol",
+    "clause_rules": [
+     {
+      "clauses": [
+       "certin-bom-8.4.2.2",
+       "rbi-md-2023-para-16",
+       "rbi-cb-2026-para-140"
+      ],
+      "match": "^(DES|DES-IV64|3DES|BLOWFISH|IDEA|CAST|NULL)(-\\d+)?$"
+     },
+     {
+      "clauses": [
+       "certin-bom-8.4.2.2",
+       "rbi-md-2023-para-16",
+       "rbi-cb-2026-para-140"
+      ],
+      "match": "md5|des-mac"
+     },
+     {
+      "clauses": [
+       "certin-bom-8.4.2.2",
+       "rbi-md-2023-para-16",
+       "rbi-cb-2026-para-140"
+      ],
+      "match": "^(?:ECP\\-192|MODP\\-1024|MODP\\-1024\\-S160|MODP\\-1536|MODP\\-2048\\-S224|MODP\\-2048\\-S256|MODP\\-768)$"
+     },
+     {
+      "clauses": [
+       "nist-800-131a-tdea",
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede"
+     },
+     {
+      "clauses": [
+       "sebi-annexure-h-5"
+      ],
+      "match": "^(DES|DES-IV64|3DES|BLOWFISH|IDEA|CAST|NULL)(-\\d+)?$",
+      "unless": "^null(-\\d+)?$"
+     },
+     {
+      "clauses": [
+       "nist-800-131a-below-112-bit"
+      ],
+      "match": "modp-?(768|1024|1536)(?![0-9])|ecp-?192(?![0-9])"
+     }
+    ],
+    "clauses": [],
     "compliance": [
      "algorithms"
     ],
@@ -8190,6 +8711,10 @@
    "KEYSTORE_JKS": {
     "attack": "JKS protects private keys with a weak proprietary scheme; a stolen keystore is easier to brute-force than PKCS#12.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -8250,6 +8775,8 @@
    "KEY_COMPROMISED": {
     "attack": "Data or signatures protected by the key may be read or forged; a compromised key that can still be used for processing keeps the exposure open.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -8311,6 +8838,10 @@
    "KEY_EXTRACTABLE": {
     "attack": "A user of the token can wrap the key under a key they control and unwrap it elsewhere; the HSM then no longer is the only place the key exists.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -8374,6 +8905,10 @@
    "KEY_IN_CONFIGMAP": {
     "attack": "Anyone who can read ConfigMaps in the namespace (often far more people and controllers than can read Secrets) gets the private key.",
     "category": "kubernetes",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -8458,6 +8993,10 @@
    "KEY_IN_DOCUMENT": {
     "attack": "Keys pasted into documents spread through backups, tickets and repositories and are rarely rotated.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -8526,6 +9065,8 @@
    "KEY_NO_ROTATION": {
     "attack": "A key version that never changes protects more data for longer; a leak of it exposes everything encrypted since it was created.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -8585,6 +9126,10 @@
    "KEY_PLAINTEXT_EXPORT": {
     "attack": "Anyone who can use the key (an application token, an HSM user, a Vault policy with export rights) can copy its value; the key then works outside the HSM or Vault, without audit and after revocation.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -8670,6 +9215,10 @@
    "KEY_READABLE": {
     "attack": "Any account with the same access can copy the key.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -8747,6 +9296,20 @@
    "KEY_WEAK_SYMMETRIC": {
     "attack": "Single DES keys are brute-forced in hours; Triple DES and the other 64-bit block ciphers leak plaintext on long-lived keys (Sweet32, CVE-2016-2183); RC4 output is biased.",
     "category": "key",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-tdea",
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede"
+     }
+    ],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "algorithms",
      "key_mgmt"
@@ -8829,6 +9392,10 @@
    "KEY_WORLD_READABLE": {
     "attack": "Any local user or compromised service account can copy the key and impersonate or decrypt for the service that owns it.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -8917,6 +9484,8 @@
    "KMS_KEY_MATERIAL_EXPIRES": {
     "attack": "Not an attack path: an outage. Every encrypt and decrypt call under the key fails once its material expires, and data encrypted under it cannot be read until the same material is re-imported.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -8979,6 +9548,8 @@
    "KMS_KEY_NO_MATERIAL": {
     "attack": "Not an attack path: an outage. Anything that encrypts or decrypts under the key fails, and data encrypted under it cannot be read until the same material is imported again.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -9039,6 +9610,8 @@
    "KMS_NO_ROTATION": {
     "attack": "A key that never rotates protects more data for longer, so any compromise exposes more.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -9131,6 +9704,8 @@
    "KMS_PENDING_DELETION": {
     "attack": "Data still encrypted under it becomes unrecoverable when the key is deleted.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -9186,6 +9761,8 @@
    "KV_NO_PURGE_PROTECTION": {
     "attack": "An insider or compromised principal can delete and then purge keys, permanently destroying the data they protect.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -9252,6 +9829,8 @@
    "KV_PUBLIC_NETWORK": {
     "attack": "Anyone who obtains a token for the vault can use it from any network; the vault firewall does not limit where keys and secrets are reached from.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -9317,6 +9896,8 @@
    "KV_SOFT_DELETE_OFF": {
     "attack": "One delete call (by a compromised or careless principal) destroys keys and makes the data they protect unrecoverable.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -9383,6 +9964,8 @@
    "LIB_DELETED_IN_USE": {
     "attack": "The patch is installed on disk but not running: the process is still exposed to the flaws the upgrade fixed.",
     "category": "library",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "components"
     ],
@@ -9443,6 +10026,8 @@
    "LIB_EOL": {
     "attack": "Unpatched library flaws (memory corruption, side channels) stay exploitable; check whether your OS vendor still backports fixes.",
     "category": "library",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "components"
     ],
@@ -9510,6 +10095,10 @@
    "LIB_KNOWN_CVE": {
     "attack": "See each CVE. A version match is not proof of exposure: Linux distributions back-port fixes without changing the upstream version number, so each CVE is reported as 'in triage' until you confirm it against your vendor's advisory.",
     "category": "library",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.1.6"
+    ],
     "compliance": [
      "components"
     ],
@@ -9578,6 +10167,8 @@
    "LIB_STATIC": {
     "attack": "OS library updates do not reach it; it must be rebuilt to get fixes.",
     "category": "library",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "components"
     ],
@@ -9628,6 +10219,13 @@
    "LINKERD_UNAUTHENTICATED_SERVER": {
     "attack": "Any pod (meshed or not) or address in the allowed networks reaches the workload without mTLS, so traffic can be plaintext and callers are not identified.",
     "category": "kubernetes",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "auth",
      "in_transit"
@@ -9715,6 +10313,8 @@
    "LUKS1": {
     "attack": "PBKDF2 key slots are cheaper to brute-force than LUKS2's Argon2id if the passphrase is weak.",
     "category": "disk",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "at_rest"
     ],
@@ -9770,6 +10370,13 @@
    "MESH_DR_TLS_DISABLED": {
     "attack": "Traffic to an in-mesh destination crosses the network unencrypted and unauthenticated; anyone on the path (a compromised node, a mirror port) reads and changes it. Toward an external host this happens only if the application itself connects without TLS.",
     "category": "kubernetes",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -9845,6 +10452,13 @@
    "MESH_MTLS_OFF": {
     "attack": "Pod-to-pod traffic is plaintext and unauthenticated inside the cluster.",
     "category": "kubernetes",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -9922,6 +10536,13 @@
    "MESH_MTLS_PERMISSIVE": {
     "attack": "Workloads outside the mesh (or a downgraded client) talk plaintext.",
     "category": "kubernetes",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -9988,6 +10609,13 @@
    "MIN_SSLv2": {
     "attack": "An attacker who records traffic can use the SSLv2 support to decrypt even TLS sessions that share the server's RSA key (DROWN).",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -10104,6 +10732,13 @@
    "MIN_SSLv3": {
     "attack": "An on-path attacker forces a fallback to SSLv3 and recovers secrets such as session cookies one byte at a time (POODLE).",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -10219,6 +10854,13 @@
    "MIN_TLS10": {
     "attack": "A client that can be downgraded to TLS 1.0 is exposed to BEAST-style CBC attacks and to weak handshake hashes; regulators treat TLS 1.0 as a failed control.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -10339,6 +10981,13 @@
    "MIN_TLS11": {
     "attack": "TLS 1.1 still uses MD5/SHA-1 in the handshake PRF and offers no AEAD ciphers; it keeps clients on a downgrade path.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -10456,6 +11105,13 @@
    "MODBUS_PLAINTEXT": {
     "attack": "Anyone who reaches the port reads registers and coils and can write them (function codes 5, 6, 15, 16), changing set points or switching outputs of the device.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit",
      "auth"
@@ -10534,6 +11190,10 @@
    "NO_FALLBACK_SCSV": {
     "attack": "Clients that retry at a lower version after an injected failure can be walked down to the oldest version the server allows (POODLE-style downgrade).",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -10632,6 +11292,14 @@
    "NO_PQ_KEX": {
     "attack": "Traffic recorded today can be decrypted once a cryptographically relevant quantum computer exists (harvest now, decrypt later). This matters for data that must stay confidential beyond that horizon.",
     "category": "pqc",
+    "clause_rules": [],
+    "clauses": [
+     "nist-ir-8547",
+     "cnsa-2.0",
+     "sebi-box-item-7",
+     "sebi-id-ra-standard-2",
+     "certin-bom-8.5.1"
+    ],
     "compliance": [
      "pqc"
     ],
@@ -10705,6 +11373,13 @@
    "NO_TLS": {
     "attack": "Anyone on the network path can read or modify the traffic, including passwords sent at login.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -10799,6 +11474,13 @@
    "NO_TLS12": {
     "attack": "Every session to this endpoint can be attacked with the weaknesses of the old protocol; modern clients will fail to connect.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -10912,6 +11594,8 @@
    "OPCUA_ANON": {
     "attack": "Anyone who can open a secure channel (and, on a None endpoint, anyone at all) browses and, depending on the server's permissions, reads or writes process data without a user name.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "auth"
     ],
@@ -10989,6 +11673,20 @@
    "OPCUA_DEPRECATED_POLICY": {
     "attack": "A client that can be steered to the deprecated policy gets SHA-1 signatures and, with Basic128Rsa15, an RSA padding-oracle surface (Bleichenbacher) on the secure channel.",
     "category": "protocol",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-pkcs1-v1_5"
+      ],
+      "match": "basic128rsa15"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "nist-800-131a-sha1-signatures"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -11065,6 +11763,13 @@
    "OPCUA_NONE_POLICY": {
     "attack": "Anyone on the OT network reads process values and, if the address space is writable, changes set points or calls methods; the messages can also be modified in transit.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -11157,6 +11862,13 @@
    "OPCUA_USERNAME_PLAINTEXT": {
     "attack": "A passive listener on the OT network collects user names and passwords at every login and reuses them on this and other systems.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "auth",
      "in_transit"
@@ -11244,6 +11956,11 @@
    "OPENSSL_ENC_WEAK_KDF": {
     "attack": "Take an encrypted backup and run a GPU password cracker against the passphrase; a weak cipher (DES/3DES/RC4) makes even a strong passphrase weaker.",
     "category": "host",
+    "clause_rules": [],
+    "clauses": [
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -11313,6 +12030,13 @@
    "PLAINTEXT_LISTENER": {
     "attack": "Users or clients that land on the plaintext port send cookies and credentials in clear text; SSL-stripping attacks rely on this.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -11388,6 +12112,13 @@
    "POLICY_LEGACY": {
     "attack": "Every service that follows the system policy (OpenSSL, GnuTLS, NSS, OpenSSH, Java) accepts legacy algorithms at once.",
     "category": "host",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "nist-800-131a-sha1-signatures"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -11462,6 +12193,13 @@
    "PROTO_SSLv2": {
     "attack": "An attacker who records traffic can use the SSLv2 support to decrypt even TLS sessions that share the server's RSA key (DROWN).",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -11578,6 +12316,13 @@
    "PROTO_SSLv3": {
     "attack": "An on-path attacker forces a fallback to SSLv3 and recovers secrets such as session cookies one byte at a time (POODLE).",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -11693,6 +12438,13 @@
    "PROTO_TLS10": {
     "attack": "A client that can be downgraded to TLS 1.0 is exposed to BEAST-style CBC attacks and to weak handshake hashes; regulators treat TLS 1.0 as a failed control.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -11813,6 +12565,13 @@
    "PROTO_TLS11": {
     "attack": "TLS 1.1 still uses MD5/SHA-1 in the handshake PRF and offers no AEAD ciphers; it keeps clients on a downgrade path.",
     "category": "protocol",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -11930,6 +12689,14 @@
    "QUANTUM_VULNERABLE": {
     "attack": "Data encrypted with these keys can be recorded now and decrypted later (harvest now, decrypt later); signatures can be forged once such a computer exists.",
     "category": "pqc",
+    "clause_rules": [],
+    "clauses": [
+     "nist-ir-8547",
+     "cnsa-2.0",
+     "sebi-box-item-7",
+     "sebi-id-ra-standard-2",
+     "certin-bom-8.5.1"
+    ],
     "compliance": [
      "pqc"
     ],
@@ -11998,6 +12765,8 @@
    "RDP_NO_NLA": {
     "attack": "Without NLA the server builds a full session before the user authenticates, which exposes the logon screen and pre-authentication code to anyone who can reach the port.",
     "category": "windows",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "auth"
     ],
@@ -12073,6 +12842,14 @@
    "RDP_NO_TLS": {
     "attack": "The legacy RDP security layer is open to man-in-the-middle attacks: an attacker on the path can impersonate the server and capture the credentials typed into the session.",
     "category": "windows",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7",
+     "certin-gov-4.5.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -12153,6 +12930,12 @@
    "RSA_LT_1024": {
     "attack": "Keys of this size can be factored with public tools on commodity hardware, which yields the private key.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "nist-800-131a-below-112-bit",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "keysize"
     ],
@@ -12231,6 +13014,12 @@
    "RSA_LT_2048": {
     "attack": "RSA-1024 is within reach of well-funded attackers and is disallowed for new use; a recovered key lets an attacker impersonate or decrypt.",
     "category": "key",
+    "clause_rules": [],
+    "clauses": [
+     "nist-800-131a-below-112-bit",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "keysize"
     ],
@@ -12309,6 +13098,8 @@
    "SAML_METADATA_UNSIGNED": {
     "attack": "A tampered metadata document (on an untrusted channel) could swap in an attacker's signing certificate.",
     "category": "identity",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "certificates"
     ],
@@ -12369,6 +13160,10 @@
    "SECRET_IN_CONFIG": {
     "attack": "Read the unit file, crontab or script (or `systemctl show`, which any local user may run) and use the key to decrypt the data it protects; it also travels with every backup and configuration-management copy.",
     "category": "host",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "key_mgmt"
     ],
@@ -12489,6 +13284,8 @@
    "SECRET_NO_ROTATION": {
     "attack": "A leaked secret stays valid indefinitely.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "key_mgmt"
     ],
@@ -12544,6 +13341,13 @@
    "SECRET_PLAINTEXT_PARAM": {
     "attack": "Anyone with ssm:GetParameter (or read access to CloudTrail data events, backups or logs that echo it) reads the secret in clear text; KMS key policies and audit of decryption do not apply.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a",
+     "rbi-cb-2026-para-106",
+     "certin-gov-7.1"
+    ],
     "compliance": [
      "key_mgmt",
      "at_rest"
@@ -12626,6 +13430,13 @@
    "SIG_MD5": {
     "attack": "Chosen-prefix MD5 collisions have been used to forge a rogue CA certificate; a forged certificate impersonates the service.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "certin-gov-6.1.7"
+    ],
     "compliance": [
      "algorithms",
      "certificates"
@@ -12706,6 +13517,14 @@
    "SIG_SHA1": {
     "attack": "SHA-1 chosen-prefix collisions are practical (SHA-1 is a Shambles, 2020), so a CA signing with SHA-1 can be tricked into vouching for an attacker's key.",
     "category": "certificate",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "certin-gov-6.1.7",
+     "nist-800-131a-sha1-signatures"
+    ],
     "compliance": [
      "algorithms",
      "certificates"
@@ -12786,6 +13605,20 @@
    "SSH_CBC_CIPHER": {
     "attack": "CBC mode in SSH allows plaintext-recovery attacks (CVE-2008-5161) and, with Encrypt-then-MAC, the Terrapin prefix-truncation attack.",
     "category": "ssh",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-tdea",
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -12861,6 +13694,17 @@
    "SSH_DH_GROUP1": {
     "attack": "1024-bit DH over a widely shared group is within reach of well-resourced attackers who precompute for that group (the Logjam research).",
     "category": "ssh",
+    "clause_notes": {
+     "nist-800-131a-sha1-signatures": "Cited because the host key signs the SSH exchange hash H, which this key exchange computes with SHA-1 (RFC 4253 sec. 8); the host-key algorithm may hash H again with SHA-2 (rsa-sha2-256). SP 800-131A keeps SHA-1 acceptable for non-signature applications such as the key derivation."
+    },
+    "clause_rules": [],
+    "clauses": [
+     "nist-800-131a-below-112-bit",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "certin-bom-8.4.2.2",
+     "nist-800-131a-sha1-signatures"
+    ],
     "compliance": [
      "algorithms",
      "keysize"
@@ -12935,6 +13779,16 @@
    "SSH_DH_SHA1": {
     "attack": "SHA-1 in the key exchange hash weakens the session's integrity guarantees; RFC 9142 recommends against these methods.",
     "category": "ssh",
+    "clause_notes": {
+     "nist-800-131a-sha1-signatures": "Cited because the host key signs the SSH exchange hash H, which this key exchange computes with SHA-1 (RFC 4253 sec. 8); the host-key algorithm may hash H again with SHA-2 (rsa-sha2-256). SP 800-131A keeps SHA-1 acceptable for non-signature applications such as the key derivation."
+    },
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "nist-800-131a-sha1-signatures"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -13005,6 +13859,13 @@
    "SSH_DSS": {
     "attack": "1024-bit DSA is below the 112-bit security floor; a forged host key lets an attacker impersonate the server.",
     "category": "ssh",
+    "clause_rules": [],
+    "clauses": [
+     "nist-800-131a-below-112-bit",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "certin-bom-8.4.2.2"
+    ],
     "compliance": [
      "algorithms",
      "keysize"
@@ -13077,6 +13938,8 @@
    "SSH_HMAC_SHA1": {
     "attack": "No practical attack today; it is a crypto-agility and compliance gap.",
     "category": "ssh",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "algorithms"
     ],
@@ -13147,6 +14010,14 @@
    "SSH_NO_PQ_KEX": {
     "attack": "Recorded SSH sessions (including file transfers and secrets typed into them) become readable once a large quantum computer exists.",
     "category": "pqc",
+    "clause_rules": [],
+    "clauses": [
+     "nist-ir-8547",
+     "cnsa-2.0",
+     "sebi-box-item-7",
+     "sebi-id-ra-standard-2",
+     "certin-bom-8.5.1"
+    ],
     "compliance": [
      "pqc"
     ],
@@ -13220,6 +14091,13 @@
    "SSH_RSA_SHA1": {
     "attack": "SHA-1 chosen-prefix collisions are practical, which undermines signatures made with it.",
     "category": "ssh",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "nist-800-131a-sha1-signatures"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -13295,6 +14173,8 @@
    "SSH_UMAC64": {
     "attack": "A short tag raises the chance of a successful forgery over very long sessions.",
     "category": "ssh",
+    "clause_rules": [],
+    "clauses": [],
     "compliance": [
      "algorithms"
     ],
@@ -13363,6 +14243,13 @@
    "SSH_V1_ENABLED": {
     "attack": "SSH-1 sessions can be hijacked and decrypted (CRC-32 compensation attack, weak integrity); a client that falls back to it exposes administrator credentials.",
     "category": "ssh",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "certin-gov-4.5.7"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -13439,6 +14326,21 @@
    "SSH_WEAK_CIPHER": {
     "attack": "RC4 keystream biases and 64-bit block ciphers (SWEET32) expose long-lived sessions; these ciphers exist only for compatibility with very old clients.",
     "category": "ssh",
+    "clause_rules": [
+     {
+      "clauses": [
+       "nist-800-131a-tdea",
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-h-5"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -13528,6 +14430,12 @@
    "SSH_WEAK_MAC": {
     "attack": "MD5 and 96-bit truncated tags weaken message integrity; they exist only for legacy clients.",
     "category": "ssh",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -13599,6 +14507,18 @@
    "STATIC_RSA_KEX": {
     "attack": "Anyone who records traffic today and later obtains the server key (theft, legal demand or a future quantum computer) can decrypt every recorded session. Static RSA is also the precondition for Bleichenbacher/ROBOT padding oracles.",
     "category": "cipher",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "nist-800-131a-pkcs1-v1_5",
+     "nist-ir-8547",
+     "cnsa-2.0",
+     "sebi-box-item-7",
+     "sebi-id-ra-standard-2",
+     "certin-bom-8.5.1"
+    ],
     "compliance": [
      "algorithms",
      "pqc"
@@ -13686,6 +14606,13 @@
    "STORAGE_NO_TLS_ONLY": {
     "attack": "Clients that use plain HTTP endpoints send data and signed requests in clear text.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-annexure-i",
+     "rbi-cb-2026-para-106",
+     "certin-gov-6.2.7"
+    ],
     "compliance": [
      "in_transit"
     ],
@@ -13752,6 +14679,13 @@
    "STORAGE_UNENCRYPTED": {
     "attack": "Snapshots, copies and misconfigured access expose the data unencrypted.",
     "category": "cloud",
+    "clause_rules": [],
+    "clauses": [
+     "sebi-pr-ds-standard-1",
+     "sebi-pr-ds-s1-s3-1a",
+     "rbi-cb-2026-para-106",
+     "certin-gov-7.1"
+    ],
     "compliance": [
      "at_rest"
     ],
@@ -13812,6 +14746,13 @@
    "TLS_POLICY_OVERRIDE": {
     "attack": "The service accepts SSL 3.0 / TLS 1.0, RC4, 3DES, export or anonymous suites and small keys again, so an on-path attacker can downgrade and attack its connections (POODLE, BEAST, Sweet32, Logjam).",
     "category": "host",
+    "clause_rules": [],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140",
+     "sebi-annexure-i"
+    ],
     "compliance": [
      "tls_min"
     ],
@@ -13904,6 +14845,26 @@
    "WEAK_CIPHER": {
     "attack": "Depending on the suite: RC4 biases leak plaintext; 64-bit block ciphers (3DES) allow SWEET32 birthday attacks on long sessions; EXPORT suites can be factored or broken in real time (FREAK, Logjam); anonymous suites give no server authentication at all.",
     "category": "cipher",
+    "clause_rules": [
+     {
+      "clauses": [
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des(?![a-z])|des-cbc|desx|des40|rc4|arcfour|(?<![a-z])null(?![a-z])|export|(?<![a-z])exp-|rc2|skipjack|blowfish|(?<![a-z])idea(?![a-z])|cast-?(5|128)"
+     },
+     {
+      "clauses": [
+       "nist-800-131a-tdea",
+       "sebi-annexure-h-5"
+      ],
+      "match": "3des|(?<![a-z])des[23](?![a-z0-9])|des[-_]?ede|des-cbc3|triple[-_ ]?des|tdea|desede"
+     }
+    ],
+    "clauses": [
+     "certin-bom-8.4.2.2",
+     "rbi-md-2023-para-16",
+     "rbi-cb-2026-para-140"
+    ],
     "compliance": [
      "algorithms"
     ],
@@ -14023,7 +14984,7 @@
    }
   }
  },
- "kb_version": "2026.11.14.7",
+ "kb_version": "2026.11.15.3",
  "legacy_controls": {
   "access": {
    "ISO27001_A9_ACCESS_CONTROL": "ISO 27001 - A.9 Access Control",

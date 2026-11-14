@@ -1,0 +1,4 @@
+{"query": "agility heal stale scan", "before": {"ms": 3796.8, "buffers": 89897, "statements": 1}, "after": {"ms": 0.0, "buffers": 109, "statements": 37}}
+{"query": "register summary (+ pending)", "before": {"ms": 12125.8, "buffers": 141559, "statements": 5}, "after": {"ms": 1946.2, "buffers": 2877, "statements": 6}}
+{"query": "register list, next page", "before": {"ms": 2540.4, "buffers": 58568, "statements": 2}, "after": {"ms": 0.1, "buffers": 17, "statements": 1}}
+{"query": "estate list, source filter", "before": {"ms": 1305.3, "buffers": 63585, "statements": 1}, "after": {"ms": 7.1, "buffers": 1810, "statements": 1}}

@@ -22,6 +22,7 @@ import { cbomOpsKeys, getCbomRunDiff } from "@/utils/api/cbom_ops";
 import { useQuery } from "@tanstack/react-query";
 import { TERMINAL_RUN } from "@/components/cbom/sources/keys";
 import { credits, formatDateTime, formatDay, pluralize } from "@/components/cbom/sources/logic";
+import { LabModeBanner } from "@/components/cbom/sources/LabModeBanner";
 import { TargetsBlock } from "@/components/cbom/sources/RunResults";
 import { EmptyState, RunStatusBadge, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
 
@@ -214,6 +215,10 @@ export function RunCoverageSection({ run, targets, provenance }: {
   return (
     <SectionShell infoId="cbom.run.covered" title="Collection jobs and targets" testId="run-section-coverage"
                   description="Every job of the run with where it ran and how it ended, the sources skipped at the start, and each target's outcome">
+      {/* lab mode (test deployments): the run-level note, the same component as the AWS form's; each job keeps its badge */}
+      {targets?.some((job) => job.lab_mode) && (
+        <LabModeBanner testId="run-lab-mode" detail="An AWS source in this run was read from the deployment's own AWS account." />
+      )}
       {jobs.length === 0 ? <EmptyState title="No jobs in this run" /> : <RunJobsTable jobs={jobs} testIdPrefix="run-job" />}
       <SkippedAtStart items={skipped} />
       {provenance && provenance.length > 0 && (

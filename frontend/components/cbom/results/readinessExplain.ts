@@ -128,8 +128,8 @@ export function readinessDrillFilters(action?: Pick<ReadinessAction, "assetType"
   return {
     view: "all", quantum: true, type: action?.assetType, pqc_group: action?.pqcGroup ?? "any",
     drill_label: action ? action.text : "every quantum-vulnerable asset",
-    impact: undefined, q: undefined, source_id: undefined, status: undefined, codes: undefined, asset_ids: undefined,
-    page: 1,
+    impact: undefined, q: undefined, source_id: undefined, status: undefined, clause: undefined, codes: undefined,
+    asset_ids: undefined, page: 1,
   };
 }
 

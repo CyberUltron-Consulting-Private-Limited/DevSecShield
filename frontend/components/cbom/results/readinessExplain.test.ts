@@ -165,7 +165,7 @@ test("show these N: the group's type and code, every other filter cleared", () =
     { asset_type: "private_key", type_label: "Private key", code: null, title: "Quantum-vulnerable algorithm", fix: null, assets: 1, readiness_after: 2 },
   ] };
   const [ecdhe, rsa, nocode] = readinessExplanation(two).actions;
-  const before: RunTableFilters = { view: "findings", impact: "High", q: "api", source_id: 3, status: "in_progress", codes: ["X"], page: 4, page_size: 50 };
+  const before: RunTableFilters = { view: "findings", impact: "High", q: "api", source_id: 3, status: "in_progress", clause: "RBI:4.1", codes: ["X"], page: 4, page_size: 50 };
   const apply = (a?: Parameters<typeof readinessDrillFilters>[0]) => filtersToParams({ ...before, ...readinessDrillFilters(a) } as RunTableFilters);
   assert.deepEqual(apply(ecdhe), { view: "all", page: 1, page_size: 50, type: "tls_endpoint", quantum: true, pqc_group: "NO_PQ_KEX" });
   assert.deepEqual(apply(rsa), { view: "all", page: 1, page_size: 50, type: "tls_endpoint", quantum: true, pqc_group: "STATIC_RSA_KEX" });

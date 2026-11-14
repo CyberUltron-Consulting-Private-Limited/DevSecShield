@@ -17,6 +17,9 @@ import { VERDICT_BADGE, VERDICT_COLOR, VERDICT_LABEL, VERDICT_ORDER } from "@/co
 import {
   FRAMEWORK_VERDICT_BADGE,
   FRAMEWORK_VERDICT_LABEL,
+  NEEDS_EVIDENCE_CLASS,
+  NEEDS_EVIDENCE_LABEL,
+  VERIFY_HINT,
   verdictSegments,
   type ClauseView,
   type DrillTarget,
@@ -43,7 +46,8 @@ export function AssetCount({ count, drill, onDrill, testId }: {
   if (!drill || !onDrill || count === 0) return <span className="tabular-nums" data-testid={testId}>{text}</span>;
   return (
     <button type="button" className="tabular-nums text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-            title={`Show these assets in the findings table (${drill.label})`} data-testid={testId}
+            title={`Show these assets in the findings table (${drill.label})`}
+            aria-label={`${text}: ${drill.label}, show in the findings table`} data-testid={testId}
             onClick={() => onDrill(drill)}>
       {text}
     </button>
@@ -69,12 +73,30 @@ export function VerdictBar({ fw }: { fw: FrameworkSummary }) {
   );
 }
 
+/** The visible "verify" badge (#289): assets behind a clause or framework only for review, because the algorithm the
+ * clause depends on was not recorded for them. Shown beside the verdict, never only inside the collapsed text. */
+export function VerifyBadge({ count, of, testId }: { count: number | null; of?: number; testId: string }) {
+  const text = count == null ? "Verify" : of != null && count < of ? `Verify ${count} of ${of}` : `Verify ${count}`;
+  return (
+    <Badge className={NEEDS_EVIDENCE_CLASS} title={VERIFY_HINT} aria-label={`${text}: ${VERIFY_HINT}`} data-testid={testId}>
+      {text}
+    </Badge>
+  );
+}
+
 function ClauseRow({ clause, onDrill }: { clause: ClauseView; onDrill?: (t: DrillTarget) => void }) {
   const tid = `compliance-clause-${slug(clause.key)}`;
+  const verdict = clause.verdict;
   return (
-    <li className="py-2.5 border-t border-zinc-100 dark:border-zinc-800 first:border-t-0 space-y-1 min-w-0" data-testid={tid}>
+    <li className="py-2.5 border-t border-zinc-100 dark:border-zinc-800 first:border-t-0 space-y-1 min-w-0" data-testid={tid}
+        data-verdict={clause.verdict}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <Badge className={VERDICT_BADGE[clause.verdict] ?? VERDICT_BADGE.na}>{VERDICT_LABEL[clause.verdict] ?? clause.verdict}</Badge>
+        {verdict === "needs_evidence" ? (
+          <Badge className={NEEDS_EVIDENCE_CLASS} title={VERIFY_HINT} data-testid={`${tid}-verdict`}>{NEEDS_EVIDENCE_LABEL}</Badge>
+        ) : (
+          <Badge className={VERDICT_BADGE[verdict] ?? VERDICT_BADGE.na} data-testid={`${tid}-verdict`}>{VERDICT_LABEL[verdict] ?? verdict}</Badge>
+        )}
+        {clause.unrecorded > 0 && <VerifyBadge count={clause.unrecorded} of={clause.assets} testId={`${tid}-verify`} />}
         {clause.source ? (
           <a href={clause.source} target="_blank" rel="noreferrer noopener"
              className="font-medium text-blue-600 dark:text-blue-400 inline-flex items-center gap-1 [overflow-wrap:anywhere]">
@@ -127,7 +149,7 @@ export function ComplianceMappingSection({ frameworks, onDrill, note, footnote, 
       <CardHeader>
         <CardTitle className="text-base">Compliance mapping <InfoTip id="cbom.run.compliance" /></CardTitle>
         <CardDescription>
-          {`Per framework: verdict, requirement results and the assets behind each failing clause or requirement. Click an asset count to filter the findings table; the regulation's text is behind "Show text". Advisory, from the knowledge base and the compliance checks of this ${scope} (no AI).`}
+          {`Per framework: verdict, requirement results and the assets behind each failing clause or requirement. Click an asset count to filter the findings table; the regulation's text is behind "Show text". "Needs evidence" and "Verify": the algorithm a clause depends on was not recorded for those assets, so they are listed for review and not counted as a violation. Advisory, from the knowledge base and the compliance checks of this ${scope} (no AI).`}
         </CardDescription>
       </CardHeader>
       <CardContent className="min-w-0 space-y-4">
@@ -157,7 +179,12 @@ export function ComplianceMappingSection({ frameworks, onDrill, note, footnote, 
                           )}
                         </td>
                         <td className="px-3 py-2 align-top">
-                          <Badge className={FRAMEWORK_VERDICT_BADGE[fw.verdict]} data-testid={`${tid}-verdict`}>{FRAMEWORK_VERDICT_LABEL[fw.verdict]}</Badge>
+                          <span className="inline-flex flex-wrap items-center gap-1">
+                            <Badge className={FRAMEWORK_VERDICT_BADGE[fw.verdict]} data-testid={`${tid}-verdict`}>{FRAMEWORK_VERDICT_LABEL[fw.verdict]}</Badge>
+                            {(fw.unrecorded == null ? fw.clauses.some((c) => c.unrecorded > 0) : fw.unrecorded > 0) && (
+                              <VerifyBadge count={fw.unrecorded} of={fw.assets ?? undefined} testId={`${tid}-verify`} />
+                            )}
+                          </span>
                         </td>
                         <td className="px-3 py-2 align-top"><VerdictBar fw={fw} /></td>
                         <td className="px-3 py-2 align-top text-right tabular-nums" data-testid={`${tid}-clauses`}>{fw.clausesTouched}</td>
@@ -179,7 +206,7 @@ export function ComplianceMappingSection({ frameworks, onDrill, note, footnote, 
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {frameworks.filter((fw) => fw.clauses.length > 0).map((fw) => (
-                <details key={fw.framework} id={`compliance-fw-${slug(fw.framework)}`} open={fw.verdict === "fail" || fw.verdict === "partial"}
+                <details key={fw.framework} id={`compliance-fw-${slug(fw.framework)}`} open={fw.verdict === "fail" || fw.verdict === "partial" || fw.verdict === "needs_evidence"}
                          className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 min-w-0" data-testid={`run-compliance-${slug(fw.framework)}`}>
                   <summary className="cursor-pointer text-sm font-semibold text-zinc-900 dark:text-white">
                     {fw.framework}{" "}
