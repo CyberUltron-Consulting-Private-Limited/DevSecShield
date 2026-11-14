@@ -4261,7 +4261,7 @@ export type CbomSourceKind =
     | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
-export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error"
+export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error" | "skipped"
 export type CbomJobStatus = "pending" | "claimed" | "success" | "failure" | "cancelled" | "expired"
 export type CbomRunStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
 /** Evidence confidence (CB-18): E0 Unknown, E1 Self-attested, E2 Documented, E3 Verified. Not the quantum risk grade. */
@@ -4614,6 +4614,11 @@ export interface CbomRunPosture {
 
 export interface CbomAssetDetail {
     id: number
+    /** the code page's finding dialog fields, as on the run's /assets items (CB-38 W2b) */
+    bom_ref?: string
+    owasp_top_10?: Record<string, string>
+    compliance_controls?: Record<string, string>
+    suggested_fix?: string | null
     type: string
     name: string | null
     location: string

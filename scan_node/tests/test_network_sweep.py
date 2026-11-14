@@ -70,16 +70,16 @@ def test_silent_range_is_swept_in_bounded_time_with_a_coverage_row_per_address(m
     started = time.monotonic()
     N.run_network(ctx, scope)
     elapsed = time.monotonic() - started
-    # 30 addresses x 16 silent ports: one port at a time and 16 addresses at once took 30*16*0.2/16 = 6 s;
-    # now each address sweeps 2 ports at a time and every address runs at once: 8 rounds of 0.2 s
+    # 32 addresses (a /27 is swept whole, N3) x 16 silent ports: one port at a time and 16 addresses at once took
+    # 32*16*0.2/16 = 6.4 s; now each address sweeps 2 ports at a time and every address runs at once: 8 rounds of 0.2 s
     assert elapsed < 3.5, elapsed
-    assert state["calls"] == 30 * 16
+    assert state["calls"] == 32 * 16
     assert state["peak"] > 16  # more connects in flight than the old 16 addresses x 1 port
     rows = _cov(ctx, "no answer")
-    assert sorted(a["target"] for a in rows) == sorted(f"192.0.2.{i}" for i in range(1, 31))
+    assert sorted(a["target"] for a in rows) == sorted(f"192.0.2.{i}" for i in range(0, 32))
     assert all(a["facts"]["status"] == "unreachable" and "scope" not in a["facts"] for a in rows)  # whole target
     outcomes = {o.target: o.status for o in ctx.outcomes}
-    assert len(outcomes) == 30 and set(outcomes.values()) == {"ok"}  # sparse ranges are normal: swept, not failed
+    assert len(outcomes) == 32 and set(outcomes.values()) == {"ok"}  # sparse ranges are normal: swept, not failed
 
 
 def test_sweep_keeps_the_per_server_cap(monkeypatch):
@@ -151,7 +151,7 @@ def test_discovery_assets_are_only_open_ports(monkeypatch):
                   discovery_only=True)
     ctx.flush()
     assert [a["location"] for a in ctx.collected] == ["192.0.2.1:443"]
-    assert {o.target: o.status for o in ctx.outcomes} == {"192.0.2.1": "ok", "192.0.2.2": "ok"}
+    assert {o.target: o.status for o in ctx.outcomes} == {f"192.0.2.{i}": "ok" for i in range(4)}  # a /30 whole (N3)
 
 
 def test_silent_rows_are_capped_with_one_job_wide_row(monkeypatch):

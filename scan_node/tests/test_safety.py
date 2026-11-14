@@ -84,7 +84,8 @@ def test_expand_dedupes_and_respects_never_scan(monkeypatch):
     never = NeverScan(["10.0.0.0/30", "skip.example", "10.0.1.5-10.0.1.6"])
     targets, skipped = expand_targets(["10.0.0.1", "10.0.0.0/29", "10.0.0.6", "10.0.1.4-10.0.1.7", "skip.example"], never)
     ips = [t.ip for t in targets]
-    assert ips == ["10.0.0.4", "10.0.0.5", "10.0.0.6", "10.0.1.4", "10.0.1.7"]
+    # a /29 is scanned whole (N3: only a /24 or larger leaves out its network and broadcast address)
+    assert ips == ["10.0.0.4", "10.0.0.5", "10.0.0.6", "10.0.0.7", "10.0.1.4", "10.0.1.7"]
     assert "skip.example" in skipped and "10.0.0.1" in skipped
 
 

@@ -207,7 +207,7 @@ assert.ok(text(ag).includes("key provider of a Windows certificate with a privat
 assert.ok(text(ag).includes("No fix class"));  // a reason the model did not name: its code, never a crash
 assert.ok(text(ag).includes("Show per system (1)"));
 for (const id of ["configurable", "code_fixed", "vendor_fixed", "hardware_fixed", "unknown", "inferred", "self_fixable", "excl_pq"]) {
-  assert.match(ag, new RegExp(`data-testid="tip-cbom.agility.${id}"`), id);
+  assert.match(ag, new RegExp(`data-infotip="cbom.agility.${id}"`), id);
 }
 assert.doesNotMatch(ag, /posture-fix-mismatch/);
 assert.match(render(h(AgilityPostureCard, { posture: { ...agility, assets: 151 }, model: AG_MODEL })), /posture-fix-mismatch/);
@@ -250,7 +250,7 @@ for (const html of [card, list, body, drawer, render(h(QGradeChip, { item: { q_g
 }
 // the (i) button is visible enough (>= 3:1): zinc-500 / dark zinc-400, never zinc-400 on white
 const tipButton = /<button[^>]*aria-label="About Self-fixable share"[^>]*>/.exec(ag)?.[0] ?? "";
-assert.match(tipButton, /class="[^"]*text-zinc-500 dark:text-zinc-400/);
+assert.match(tipButton, /class="[^"]*\btext-zinc-500\b[^"]*\bdark:text-zinc-400\b/);
 assert.doesNotMatch(tipButton, /title=/);
 
 // evidence items (GET …/sources/evidence): answered HSM firmware / third-party area and vendors carry a class; an
