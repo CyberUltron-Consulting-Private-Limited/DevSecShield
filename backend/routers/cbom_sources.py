@@ -41,7 +41,9 @@ from backend.new_models import (
     Scan,
     Team,
 )
+from backend.routers import cbom_node_artifacts as NODE_ARTIFACTS  # install links (one-paste node install)
 from backend.utilities.cbom_sources import agility as AGILITY
+from backend.utilities.cbom_sources import agility_rollup as AGILITY_ROLLUP
 from backend.utilities.cbom_sources import agents as AG
 from backend.utilities.cbom_sources import jobs as J
 from backend.utilities.cbom_sources import targets as T
@@ -71,7 +73,9 @@ from backend.utilities.cbom_sources import cdx_xml as CDX_XML
 from backend.utilities.cbom_sources import export_slots as EXPORT_SLOTS
 from backend.utilities.cbom_sources import inventory as INV
 from backend.utilities.cbom_sources import posture as POSTURE
+from backend.utilities.cbom_sources import q0register as Q0REG
 from backend.utilities.cbom_sources import qgrade as QGRADE
+from backend.utilities.cbom_sources import run_deliverables as RUN_DELIVERABLES
 from backend.utilities.cbom_sources import run_results as RUN_RESULTS
 from backend.utilities.cbom_sources import run_tickets as RUN_TICKETS
 from backend.utilities.cbom_sources import runs as RUNS
@@ -296,7 +300,8 @@ def _create_node(engine, team_id: int, user_id: int, body: NodeCreate) -> dict:
             raise
         session.refresh(node)
         log("node created", team=team_id, node=node.id, by=user_id)
-        return {"node": public_node(node, now), "registration_token": token}
+        return {"node": public_node(node, now), "registration_token": token,
+                "install_links": NODE_ARTIFACTS.install_links(team_id, node)}
 
 
 @router.post(BASE + "/nodes", dependencies=WRITE, summary="Add a scan node; returns a one-time registration token")
@@ -399,8 +404,9 @@ def _new_registration(engine, team_id: int, user_id: int, node_id: int, reset: b
         session.refresh(node)
         log("node reset" if reset else "node token regenerated", team=team_id, node=node.id, by=user_id,
             pool=node.pool_id)
-        # None for a pool node: nothing to copy, its pod enrolls again by itself
-        return {"node": public_node(node, now), "registration_token": token}
+        # None for a pool node: nothing to copy, its pod enrolls again by itself (and no install links)
+        return {"node": public_node(node, now), "registration_token": token,
+                "install_links": NODE_ARTIFACTS.install_links(team_id, node) if token else None}
 
 
 @router.post(BASE + "/nodes/{node_id}/registration-token", dependencies=WRITE,
@@ -762,6 +768,8 @@ def _delete_source(engine, team_id: int, user_id: int, source_id: int) -> dict:
         source = _get_owned(session, CbomCollectionSource, source_id, team_id, "Source")
         require_owner_or_admin(session, user_id, team_id, source.owner_user_id, "source")
         _remove_source(session, source, team_id, user_id, now)
+        session.flush()
+        Q0REG.close_removed_sources_safely(session, team_id, now)  # CB-23: its open Q0 items close as "removed"
         session.commit()
         log("source deleted", team=team_id, source=source_id, by=user_id)
         return {"deleted": source_id}
@@ -1070,6 +1078,8 @@ def _update_settings(engine, team_id: int, user_id: int, body: SettingsUpdate) -
             moved = SCHED.reschedule_team(session, team_id, row.window_timezone, now) if zone_changed else 0
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="settings.update",
                   object_type="settings", object_id=row.id, changed_fields=changes.keys())
+            if "risk_model" in changes:  # CB-23: Mosca set -> the register's inputs item closes (cause inputs)
+                Q0REG.close_mosca(session, team_id, row.risk_model, now)
             session.commit()
             session.refresh(row)
             log("settings updated", team=team_id, by=user_id, fields=len(changes), schedules_moved=moved or None)
@@ -1231,6 +1241,7 @@ def _update_area(engine, team_id: int, user_id: int, area_key: str, body: AreaUp
             session.add(row)
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="evidence.update",
                   object_type="evidence", object_id=row.id, changed_fields=changes.keys())
+            Q0REG.sync_evidence_safely(session, team_id, now)  # CB-23: gaps open / close with the write
             session.commit()
             session.refresh(row)
         vendors = session.exec(select(CbomEvidenceVendor).where(CbomEvidenceVendor.team_id == team_id)).all()
@@ -1261,6 +1272,7 @@ def _create_vendor(engine, team_id: int, user_id: int, body: VendorCreate) -> di
         session.flush()
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="vendor.create",
               object_type="vendor", object_id=row.id)
+        Q0REG.sync_evidence_safely(session, team_id, now)
         session.commit()
         session.refresh(row)
         log("vendor created", team=team_id, vendor=row.id, by=user_id)
@@ -1289,6 +1301,7 @@ def _update_vendor(engine, team_id: int, user_id: int, vendor_id: int, body: Ven
             session.add(row)
             audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="vendor.update",
                   object_type="vendor", object_id=row.id, changed_fields=changes.keys())
+            Q0REG.sync_evidence_safely(session, team_id, now)
             session.commit()
             session.refresh(row)
         out = public_vendor(row, now)
@@ -1310,6 +1323,8 @@ def _delete_vendor(engine, team_id: int, user_id: int, vendor_id: int) -> dict:
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="vendor.delete",
               object_type="vendor", object_id=row.id)
         session.delete(row)
+        session.flush()
+        Q0REG.sync_evidence_safely(session, team_id, utcnow())  # its open gap closes as "removed"
         session.commit()
         log("vendor deleted", team=team_id, vendor=vendor_id, by=user_id)
         return {"deleted": vendor_id}
@@ -1336,6 +1351,7 @@ def _vendor_link(engine, team_id: int, user_id: int, vendor_id: int) -> dict:
         session.add(row)
         audit(session, team_id=team_id, actor_type="user", actor_id=user_id, action="vendor.link",
               object_type="vendor", object_id=row.id)
+        Q0REG.sync_evidence_safely(session, team_id, now)
         session.commit()
         session.refresh(row)
         log("vendor link created", team=team_id, vendor=row.id, by=user_id, refresh=bool(row.answered_at))
@@ -1489,7 +1505,8 @@ def _run_cbom(engine, team_id: int, run_id: int, fmt: str = "json") -> IO[bytes]
             with EXPORT_SLOTS.slot() if EXPORT_SLOTS.is_large(rows) else contextlib.nullcontext():
                 out = tempfile.SpooledTemporaryFile(max_size=EXPORT_SPOOL_BYTES)
                 try:
-                    INV.write_cyclonedx(session, run, utcnow(), fmt, out)
+                    # inventory's document with a stable timestamp: the bytes GET .../signature signs (CB-38 PR-8)
+                    RUN_DELIVERABLES.write_run_cbom(session, run, utcnow(), fmt, out)
                     out.seek(0)
                 except BaseException:
                     out.close()
@@ -1519,7 +1536,7 @@ async def run_cbom(team_id: TeamId, run_id: ObjectId, format: str = Query(defaul
     out = await _run("run cbom", team_id, _run_cbom, engine, team_id, run_id, format)
     length = out.seek(0, 2)
     out.seek(0)
-    # A run's CBOM is not signed (only code-scan BOMs are, certin.py), so the XML response states no signature scope
+    # The JSON is signed on request (GET .../runs/{id}/signature, CB-38 PR-8); the XML is not covered
     media, ext = (CDX_XML.XML_MEDIA_TYPE, "xml") if format == "xml" else ("application/json", "json")
     return StreamingResponse(_chunks(out), media_type=media, headers={
         **PRIVATE, "Content-Length": str(length),
@@ -1607,6 +1624,54 @@ async def asset_detail(team_id: TeamId, asset_id: ObjectId, Authorization: AuthH
 async def agility_model(team_id: TeamId, Authorization: AuthHeader = None):
     await authorize(team_id, Authorization)
     return _ok(AGILITY.model())
+
+
+# ---------------------------------------------------------------------------------- agility baseline (CB-25 PR-A)
+FIX_VALUE = "^(configurable|code-fixed|vendor-fixed|hardware-fixed|unknown|none)$"
+
+
+def _agility_baseline(engine, team_id: int, what: str, params: dict) -> dict:
+    with Session(engine) as session:
+        rollup = AGILITY_ROLLUP.cached(session, team_id)
+        return rollup.summary(**params) if what == "summary" else rollup.subjects_page(**params)
+
+
+def _cursor_or_400(after: str | None) -> None:
+    try:
+        AGILITY_ROLLUP.decode_cursor(after)
+    except ValueError as exc:
+        raise bad_request(exc) from None
+
+
+@router.get("/{team_id}/cbom/agility", dependencies=READ,
+            summary="Crypto-agility baseline of the team's current estate: enterprise counts per fix class and the "
+                    "per-system table (CB-25)")
+async def agility_baseline(team_id: TeamId,
+                           after: str | None = Query(default=None, max_length=512),
+                           limit: int = Query(default=100, ge=1, le=AGILITY_ROLLUP.MAX_LIMIT),
+                           fix_class: str | None = Query(default=None, pattern=FIX_VALUE),
+                           kind: str | None = Query(default=None, pattern="^(application|source|repository|evidence)$"),
+                           Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    _cursor_or_400(after)
+    return _ok(await _run("agility baseline", team_id, _agility_baseline, engine, team_id, "summary",
+                          {"after": after, "limit": limit, "fix_class": fix_class, "kind": kind}))
+
+
+@router.get("/{team_id}/cbom/agility/subjects", dependencies=READ,
+            summary="Drill-down of the agility baseline: the assets of one fix class and/or one system, keyset-paged")
+async def agility_subjects(team_id: TeamId,
+                           fix_class: str | None = Query(default=None, pattern=FIX_VALUE),
+                           system: str | None = Query(default=None, max_length=512),
+                           view: str = Query(default="all", pattern="^(all|excl_pq)$"),
+                           after: str | None = Query(default=None, max_length=512),
+                           limit: int = Query(default=100, ge=1, le=AGILITY_ROLLUP.MAX_LIMIT),
+                           Authorization: AuthHeader = None):
+    engine, _user = await authorize(team_id, Authorization)
+    _cursor_or_400(after)
+    return _ok(await _run("agility subjects", team_id, _agility_baseline, engine, team_id, "subjects",
+                          {"fix_class": fix_class, "system": system, "excl_pq": view == "excl_pq", "after": after,
+                           "limit": limit}))
 
 
 def _job_assets(engine, team_id: int, job_id: int, params: dict) -> dict:

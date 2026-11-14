@@ -1,6 +1,6 @@
 import api from "@/utils/interceptors"
 import type { CbomResultOrigin, CbomSourcesRun } from "@/components/cbom/resultOrigin"
-import type { NodeArtifacts } from "@/components/cbom/sources/logic"
+import type { InstallLinks, NodeArtifacts } from "@/components/cbom/sources/logic"
 import { showErrorToast } from "./error-handler"
 import { toast } from "@/utils/toast";
 
@@ -4904,7 +4904,8 @@ const getCbomAudit = async (team_id: number, limit = 100): Promise<{ events: Cbo
 }
 
 // ---------- writes (toast on success; errors toast through showErrorToast and are rethrown)
-const createCbomScanNode = async (team_id: number, body: CbomNodeWrite): Promise<{ node: CbomScanNode; registration_token: string }> => {
+// install_links: the one-paste install command's download links (null: no files on this server)
+const createCbomScanNode = async (team_id: number, body: CbomNodeWrite): Promise<{ node: CbomScanNode; registration_token: string; install_links?: InstallLinks | null }> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/nodes`, body)
         toast.success("Scan node added")
@@ -4938,7 +4939,7 @@ const deleteCbomScanNode = async (team_id: number, node_id: number): Promise<voi
 
 /** reset=false: new token for a node that never registered; reset=true: revoke and register again.  An agent pool
  * node gets no token (null): its pod enrolls again by itself with the pool token. */
-const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string | null }> => {
+const newCbomNodeRegistration = async (team_id: number, node_id: number, reset: boolean): Promise<{ node: CbomScanNode; registration_token: string | null; install_links?: InstallLinks | null }> => {
     try {
         const path = reset ? "reset" : "registration-token"
         const response = await api.post(`${cbomSourcesBase(team_id)}/nodes/${node_id}/${path}`)
@@ -5338,6 +5339,134 @@ export const createCbomRunTickets = async (team_id: number, run_id: number, asse
     return response.data as CbomRunTicketsResult
 }
 
+/** The code page's remaining downloads for a Sources run (CB-38 PR-8): VEX, signature, PDF report, evidence pack. */
+export type CbomRunDeliverable = "vex" | "signature" | "report.pdf" | "evidence-pack"
+
+export type CbomVexState = "exploitable" | "in_triage" | "resolved" | "resolved_with_pedigree" | "false_positive" | "not_affected"
+
+/** One CycloneDX 1.6 VEX entry of a run: one finding code (or CVE) and the assets that share one analysis. */
+export interface CbomRunVexEntry {
+    "bom-ref": string
+    id: string
+    source?: { name?: string; url?: string }
+    ratings?: { severity?: string; score?: number; method?: string; vector?: string }[]
+    description?: string
+    recommendation?: string
+    analysis: { state: CbomVexState; detail: string; response?: ("will_not_fix" | "update")[] }
+    /** BOM-Links into the run CBOM: urn:cdx:<serial>/1#zs-asset-<id> */
+    affects: { ref: string }[]
+}
+
+export interface CbomRunVex {
+    bomFormat: "CycloneDX"
+    specVersion: "1.6"
+    serialNumber: string
+    metadata: { timestamp: string | null; properties: { name: string; value: string }[] }
+    vulnerabilities: CbomRunVexEntry[]
+}
+
+/** HMAC-SHA256 over the exact bytes of GET /runs/{id}/cbom (format=json), with the code lane's bom_signature key and
+ * fields. The key stays on the server: verify with verifyCbomRunSignature, or compare sha256(file) with ``digest``. */
+export interface CbomRunSignature {
+    alg: "HMAC-SHA256"
+    key_id: string
+    digest: string
+    signature_b64: string
+    signed_at: string
+    covers: string
+    scope: string
+    canonicalization: string
+    serialNumber: string
+    document_timestamp: string | null
+    bytes: number
+    run_id: number
+    run_status: string
+    /** present while the run is still collecting */
+    as_of?: string
+}
+
+const CBOM_RUN_DELIVERABLE_FILE: Record<CbomRunDeliverable, (run_id: number) => string> = {
+    vex: (id) => `cbom-sources-run-${id}.vex.json`,
+    signature: (id) => `cbom-sources-run-${id}-signature.json`,
+    "report.pdf": (id) => `cbom-sources-run-${id}-report.pdf`,
+    "evidence-pack": (id) => `cbom-sources-run-${id}-evidence-pack.zip`,
+}
+
+const cbomRunDeliverablePath = (team_id: number, run_id: number, kind: CbomRunDeliverable): string =>
+    `${cbomSourcesBase(team_id)}/runs/${run_id}/${kind}`
+
+const cbomRunDeliverableFilename = (run_id: number, kind: CbomRunDeliverable): string =>
+    CBOM_RUN_DELIVERABLE_FILE[kind](run_id)
+
+const getCbomRunVex = async (team_id: number, run_id: number): Promise<CbomRunVex> => {
+    const response = await api.get(cbomRunDeliverablePath(team_id, run_id, "vex"))
+    return response.data as CbomRunVex
+}
+
+const getCbomRunSignature = async (team_id: number, run_id: number): Promise<CbomRunSignature> => {
+    const response = await api.get(cbomRunDeliverablePath(team_id, run_id, "signature"))
+    return response.data as CbomRunSignature
+}
+
+/** Saves one run deliverable as served, byte for byte (never parsed and re-serialised), through the authenticated
+ * client. Toasts and rethrows on failure. */
+const downloadCbomRunDeliverable = async (team_id: number, run_id: number, kind: CbomRunDeliverable): Promise<void> => {
+    try {
+        const response = await api.get(cbomRunDeliverablePath(team_id, run_id, kind), { responseType: "blob" })
+        const url = URL.createObjectURL(response.data as Blob)
+        const link = document.createElement("a")
+        link.href = url
+        link.download = cbomRunDeliverableFilename(run_id, kind)
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (error) {
+        await readBlobErrorDetail(error)
+        showErrorToast(error, `Error downloading the run ${kind === "report.pdf" ? "PDF report" : kind.replace("-", " ")}`)
+        throw error
+    }
+}
+
+/** A blob request's error body arrives as a Blob, so the server's ``detail`` ("retry in 30 s") would be lost: read it
+ * back into ``error.response.data`` before the toast. */
+const readBlobErrorDetail = async (error: unknown): Promise<void> => {
+    const response = (error as { response?: { data?: unknown } } | null)?.response
+    const data = response?.data
+    if (!response || typeof Blob === "undefined" || !(data instanceof Blob)) return
+    try {
+        response.data = JSON.parse(await data.text())
+    } catch {
+        // not JSON: keep the generic message
+    }
+}
+
+/** The answer of POST /runs/{id}/signature/verify for a downloaded run CycloneDX JSON. */
+export interface CbomRunSignatureVerification {
+    valid: boolean
+    signature_match: boolean
+    /** the file equals the run's current CBOM JSON (null only when nothing was compared) */
+    digest_match: boolean | null
+    digest: string
+    current_digest: string
+    bytes: number
+    key_id: string
+    alg: "HMAC-SHA256"
+    compared_with: string
+    run_id: number
+    run_status: string
+}
+
+/** Sends a downloaded run CycloneDX JSON, as downloaded, for verification against the signature it came with
+ * (``signatureB64``), else against the run's current CBOM. The HMAC key stays on the server. */
+const verifyCbomRunSignature = async (team_id: number, run_id: number, file: Blob,
+                                      signatureB64?: string): Promise<CbomRunSignatureVerification> => {
+    const response = await api.post(`${cbomRunDeliverablePath(team_id, run_id, "signature")}/verify`, file, {
+        headers: { "Content-Type": "application/octet-stream", ...(signatureB64 ? { "X-ZS-Signature-B64": signatureB64 } : {}) },
+    })
+    return response.data as CbomRunSignatureVerification
+}
+
 const cancelCbomRun = async (team_id: number, run_id: number): Promise<{ run: CbomRun; refunded: number }> => {
     try {
         const response = await api.post(`${cbomSourcesBase(team_id)}/runs/${run_id}/cancel`)
@@ -5367,6 +5496,12 @@ export {
     getCbomAssetDetail,
     getCbomJobAssets,
     downloadCbomRunCbom,
+    cbomRunDeliverablePath,
+    cbomRunDeliverableFilename,
+    getCbomRunVex,
+    getCbomRunSignature,
+    verifyCbomRunSignature,
+    downloadCbomRunDeliverable,
     estimateCbomSources,
     countCbomTargets,
     getCbomTemplate,
