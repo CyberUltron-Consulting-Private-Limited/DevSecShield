@@ -6,6 +6,7 @@ import {
   askCbomAi,
   generateFindingRemediation,
   getCbomAiStatus,
+  getCbomRunAssetRemediation,
   type CbomAiAnswer,
   type RemediationData,
 } from "@/utils/backend_api";
@@ -44,6 +45,9 @@ interface RemediationPanelProps {
   /** CBOM: first line number of the stored code window and the reported line (for line numbers). */
   snippetStart?: number | null;
   line?: number | null;
+  /** CBOM Sources run asset (CB-38): load from GET /runs/{runId}/assets/{assetId}/remediation instead of the scan route.
+   * The panel then hides itself when the server has no such route (older backend). */
+  runAsset?: { runId: number; assetId: number } | null;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -138,21 +142,25 @@ function CodeWithLines({ code, start, highlight, tone }: { code: string; start?:
  * rebuild; a stored result is shown first only when it already has the current shape (engine stamp), and a failed
  * rebuild is reported even when an older result is on screen. Views without a scan (the CI page) show what they
  * were given. */
-function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line }: RemediationPanelProps) {
+function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, snippetStart, line, runAsset }: RemediationPanelProps) {
   const stored = existingRemediation?.source === "knowledge_base" && existingRemediation.status === "completed"
     && !!existingRemediation.engine;
-  const canLoad = Number.isInteger(scanId) && scanId > 0 && !!findingId;
+  const canLoad = runAsset ? runAsset.runId > 0 && runAsset.assetId > 0 : Number.isInteger(scanId) && scanId > 0 && !!findingId;
   const [data, setData] = useState<RemediationData | null>(stored ? existingRemediation! : null);
   const load = useMutation({
     mutationFn: () =>
-      generateFindingRemediation({ team_id: parseInt(teamId, 10), type: "cbom", scan_id: scanId, finding_id: findingId }),
+      runAsset
+        ? getCbomRunAssetRemediation(parseInt(teamId, 10), runAsset.runId, runAsset.assetId)
+        : generateFindingRemediation({ team_id: parseInt(teamId, 10), type: "cbom", scan_id: scanId, finding_id: findingId }),
     onSuccess: (d) => setData(d),
-    onError: (err) => showErrorToast(err, "Could not load the remediation"),
+    onError: (err) => {
+      if (!(runAsset && remediationRouteMissing(err))) showErrorToast(err, "Could not load the remediation");
+    },
   });
   useEffect(() => {
     if (canLoad) load.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [findingId, scanId]);
+  }, [findingId, scanId, runAsset?.runId, runAsset?.assetId]);
   useEffect(() => {
     if (!canLoad && existingRemediation?.source === "knowledge_base") setData(existingRemediation);
   }, [canLoad, existingRemediation]);
@@ -164,11 +172,12 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
   const aiStatus = useQuery({
     queryKey: ["cbom-ai-status", teamNumber],
     queryFn: () => getCbomAiStatus(teamNumber),
-    enabled: Number.isInteger(teamNumber) && teamNumber > 0 && canLoad,
+    // run dialogs carry their own AiRemediationPanel; this one is for code findings only
+    enabled: Number.isInteger(teamNumber) && teamNumber > 0 && canLoad && !runAsset,
     staleTime: 60_000,
     retry: false,
   });
-  const aiAvailable = aiPanelVisible(aiStatus.data) && canLoad;
+  const aiAvailable = !runAsset && aiPanelVisible(aiStatus.data) && canLoad;
   const [aiFix, setAiFix] = useState<CbomAiAnswer | null>(null);
   useEffect(() => { setAiFix(null); }, [findingId, scanId]);
   const askFix = useMutation({
@@ -179,6 +188,9 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
   const aiFixNote = outcomeNote(aiFix);
   const aiDiff = aiFix?.status === "ok" ? aiFix.fix?.diff ?? "" : "";
   const defaultTab = fix?.available || aiAvailable ? "fix" : demo ? "exploit" : "details";
+  // an older backend has no run-asset route: say nothing rather than an error (the dialog keeps its KB details);
+  // after every hook, so the hook count never changes between renders (rules of hooks)
+  if (runAsset && load.isError && remediationRouteMissing(load.error) && !data) return null;
   return (
     <div className="space-y-3 pt-2" data-testid="cbom-kb-panel">
       <div className="flex items-center gap-2">
@@ -258,7 +270,11 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
               </div>
             )}
             {!fix?.available && (
-              <p className="text-xs text-zinc-500">No automatic code change for this finding: follow the steps under Standards.</p>
+              <p className="text-xs text-zinc-500">
+                {runAsset
+                  ? "No automatic code change for this asset (a setting, certificate or key, not source code): follow the fix steps and verify commands under Standards."
+                  : "No automatic code change for this finding: follow the steps under Standards."}
+              </p>
             )}
             {aiAvailable && (
               <div className="space-y-2 rounded-md border border-violet-200 p-3 dark:border-violet-800" data-testid="cbom-ai-fix">
@@ -387,6 +403,12 @@ function CbomKnowledgePanel({ teamId, scanId, findingId, existingRemediation, sn
       )}
     </div>
   );
+}
+
+/** 404 / 405 from the run-asset remediation route: the server predates it. */
+function remediationRouteMissing(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status;
+  return status === 404 || status === 405;
 }
 
 export default function RemediationPanel(props: RemediationPanelProps) {
