@@ -770,6 +770,62 @@ class ContainerImagesConfig(_Source):
         return self
 
 
+# ----------------------------------------------------------------------------- certificate transparency
+CT_FLAG = "CBOM_CT_DISCOVERY"
+MAX_CT_ISSUERS = 50
+
+
+def ct_discovery_enabled() -> bool:
+    """Certificate Transparency discovery runs only when the server sets CBOM_CT_DISCOVERY (default off: a production
+    Cert Spotter key is needed first, see ct_providers)."""
+    import os
+
+    return os.environ.get(CT_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+class CtLogsConfig(_Source):
+    """The team's domains, searched in public Certificate Transparency logs by ZeroShield's cloud (one source per team).
+    ``domains`` are stored as A-labels; ``expected_issuers`` are the certificate authorities the team uses (each is the
+    issuer's name, organisation or CN, or the words they start with; ct_collect.issuer_matches); any other issuer is
+    flagged."""
+    domains: list[str] = Field(min_length=1)
+    include_subdomains: bool = True
+    expected_issuers: list[str] = Field(default_factory=list, max_length=MAX_CT_ISSUERS)
+
+    @field_validator("domains")
+    @classmethod
+    def _domains(cls, v: list[str]) -> list[str]:
+        from backend.utilities.cbom_sources.ct_domains import DomainError, normalise_list
+
+        try:
+            out = normalise_list(v)
+        except DomainError as exc:
+            raise ValueError(f"domains: {exc}") from None
+        if not out:
+            raise ValueError("domains: add at least one domain")
+        return out
+
+    @field_validator("expected_issuers")
+    @classmethod
+    def _issuers(cls, v: list[str]) -> list[str]:
+        out: list[str] = []
+        for raw in v:
+            text = _metadata_text(str(raw)) or ""
+            if not text:
+                continue
+            if len(text) > 128:
+                raise ValueError("expected_issuers: each name is at most 128 characters")
+            if len(text) < 3:  # "US", "R1": would match the start of unrelated issuer names
+                raise ValueError("expected_issuers: each name is at least 3 characters (a CA's name, e.g. Let's Encrypt)")
+            if text.casefold() not in {o.casefold() for o in out}:
+                out.append(text)
+        return out
+
+
+def _ct_collectable(_cfg: Any) -> bool:
+    return ct_discovery_enabled()
+
+
 # ----------------------------------------------------------------------------- registry
 @dataclass(frozen=True)
 class KindSpec:
@@ -849,6 +905,10 @@ KINDS["host_agent"] = KindSpec("host_agent", "servers", "Host agent", HostAgentC
 KINDS["container_images"] = KindSpec("container_images", "kubernetes", "Container images", ContainerImagesConfig,
                                      lambda c: set(), frozenset(), _always, _always,
                                      ("images", "credential_type", "vault", "ca_pem"))
+
+# Certificate Transparency: collected by the cloud worker from public CT search providers; no credential.
+KINDS["ct_logs"] = KindSpec("ct_logs", "identity", "Certificate Transparency", CtLogsConfig, lambda c: set(),
+                            frozenset(), _never, _ct_collectable, ("domains", "include_subdomains"), node_less=True)
 
 KIND_NAMES = tuple(KINDS)
 # Config fields that describe the source rather than how it is reached (declared on ``_Source``).

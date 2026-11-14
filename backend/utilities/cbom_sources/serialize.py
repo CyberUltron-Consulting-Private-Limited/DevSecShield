@@ -168,6 +168,18 @@ def _aws_configured() -> bool:
     return aws_collection_configured()
 
 
+def _ct_enabled() -> bool:
+    from backend.utilities.cbom_sources.kinds import ct_discovery_enabled
+
+    return ct_discovery_enabled()
+
+
+def _ct_providers() -> list[str]:
+    from backend.utilities.cbom_sources.ct_providers import provider_names
+
+    return provider_names()
+
+
 def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str, Any]:
     nxt = None
     try:
@@ -178,6 +190,9 @@ def public_settings(row: CbomCollectionSettings, now: _dt.datetime) -> dict[str,
         "aws_external_id": row.aws_external_id,
         "aws_collection_configured": _aws_configured(),
         "cert_domains": row.cert_domains or [],
+        # Certificate Transparency discovery: on only when the server sets CBOM_CT_DISCOVERY; the UI follows it
+        "ct_discovery_enabled": _ct_enabled(),
+        "ct_providers": _ct_providers(),
         "network_exclusions": row.network_exclusions or [],
         "sni_hostnames": row.sni_hostnames or [],
         "ports": row.ports or [],
