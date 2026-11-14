@@ -13,7 +13,7 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Ticket } from "lucide-react";
 import { toast } from "@/utils/toast";
 
 import {
@@ -42,6 +42,7 @@ import {
   filtersToParams,
   isActiveRunStatus,
   isNotFoundStatus,
+  RUN_TICKETING_TAB_AVAILABLE,
   needsRunRemediationList,
   resultsPollInterval,
   riskScoreRows,
@@ -56,6 +57,7 @@ import {
   type RunTableFilters,
 } from "./model";
 import { RunFindingDialog, type DialogSubject } from "./RunFindingDialog";
+import RunTicketingTab from "./RunTicketingTab";
 import { RunFindingsTable } from "./RunFindingsTable";
 import { RunHeader } from "./RunHeader";
 import {
@@ -101,6 +103,7 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
   const [selection, setSelection] = useState<Map<number, string>>(new Map());
   const [dialog, setDialog] = useState<DialogSubject | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [tab, setTab] = useState<"results" | "ticketing">("results");
   const [now, setNow] = useState(() => Date.now());
 
   // -- the run (jobs, status, credits); 404 = another team's or a deleted run
@@ -251,68 +254,81 @@ export default function RunResultsView({ teamId, runId, initialView = "findings"
       {/* S1 */}
       <RunCoverageSection run={run} targets={page?.targets ?? null} provenance={results?.provenance} />
 
-      {/* S2: Results / Ticketing tabs. Ticketing mount point (lane W6): when components/cbom/results/RunTicketingTab.tsx
-          exists, set RUN_TICKETING_TAB_AVAILABLE in model.ts and render <RunTicketingTab teamId={teamId} runId={runId} />
-          as the second tab, exactly like the code page's "Ticketing integrations" tab. Until then: Results only. */}
+      {/* S2: Results / Ticketing tabs, as the code page's (Ticketing = RunTicketingTab, CB-38 PR-4) */}
       <div className="flex gap-2 border-b border-zinc-200 dark:border-zinc-800" role="tablist" data-testid="run-results-tabs">
-        <button type="button" role="tab" aria-selected className="px-4 py-2 font-medium text-sm border-b-2 border-blue-600 text-blue-600 dark:text-blue-400">
-          <span className="flex items-center gap-2"><BarChart3 className="w-4 h-4" /> Results</span>
-        </button>
+        {([["results", "Results", BarChart3], ["ticketing", "Ticketing", Ticket]] as const).map(([key, label, Icon]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`run-results-tab-${key}`}
+                  onClick={() => setTab(key)}
+                  className={`px-4 py-2 font-medium text-sm transition-colors border-b-2 cursor-pointer ${
+                    tab === key
+                      ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                      : "border-transparent text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                  }`}>
+            <span className="flex items-center gap-2"><Icon className="w-4 h-4" /> {label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* S3 */}
-      <RunMetaCards sources={sources.length} nodes={nodes} endpoints={endpointsProbed(results)} duration={runDurationSeconds(run, now)} />
+      {tab === "ticketing" && RUN_TICKETING_TAB_AVAILABLE ? (
+        <RunTicketingTab teamId={teamId} runId={runId} />
+      ) : (
+        <>
+        {/* S3 */}
+        <RunMetaCards sources={sources.length} nodes={nodes} endpoints={endpointsProbed(results)} duration={runDurationSeconds(run, now)} />
 
-      {/* S4: posture card unchanged (ids run-posture, posture-*, mosca-*); it carries the CB-19 Q distribution and the
-          CB-24 agility card (#138) */}
-      <div className="space-y-3" data-testid="run-section-posture">
-        <RunPostureCard teamId={teamId} runId={runId} active={active} />
-      </div>
+        {/* S4: posture card unchanged (ids run-posture, posture-*, mosca-*); it carries the CB-19 Q distribution and the
+            CB-24 agility card (#138) */}
+        <div className="space-y-3" data-testid="run-section-posture">
+          <RunPostureCard teamId={teamId} runId={runId} active={active} />
+        </div>
 
-      {/* S5 (ids run-insights, run-heatmap, run-cert-calendar) */}
-      <RunInsights teamId={teamId} runId={runId} active={active} />
+        {/* S5 (ids run-insights, run-heatmap, run-cert-calendar) */}
+        <RunInsights teamId={teamId} runId={runId} active={active} />
 
-      {/* S6 */}
-      <RunCertificatesSection view={plan.certificates} results={results} onOpenAsset={(id) => openAsset(id)} />
+        {/* S6 */}
+        <RunCertificatesSection view={plan.certificates} results={results} onOpenAsset={(id) => openAsset(id)} />
 
-      {/* S7 */}
-      <RunCryptoChartsSection view={plan.cryptoCharts} results={results} posture={posture} />
+        {/* S7 */}
+        <RunCryptoChartsSection view={plan.cryptoCharts} results={results} posture={posture} />
 
-      {/* S8 */}
-      <RunChangesSection teamId={teamId} run={run} canCompare={canCompare} onCompare={() => setCompareOpen(true)} />
+        {/* S8 */}
+        <RunChangesSection teamId={teamId} run={run} canCompare={canCompare} onCompare={() => setCompareOpen(true)} />
 
-      {/* S9 */}
-      <RunWavesSection byWave={waves.query.data?.by_wave} labels={waves.query.data?.labels} loading={wantRemediation && waves.query.isLoading}
-                       deferred={!wantRemediation && active} selected={selection.size} />
+        {/* S9 */}
+        <RunWavesSection byWave={waves.query.data?.by_wave} labels={waves.query.data?.labels} loading={wantRemediation && waves.query.isLoading}
+                         deferred={!wantRemediation && active} selected={selection.size} />
 
-      {/* S10 */}
-      <RunComplianceSection view={plan.compliance} results={results} posture={posture} />
+        {/* S10 */}
+        <RunComplianceSection view={plan.compliance} results={results} posture={posture} />
 
-      {/* S11 */}
-      <RunDashboardSection view={plan.dashboard} model={dashboardModel} riskRows={riskRows} pageRows={page?.items.length ?? 0} results={results} />
+        {/* S11 */}
+        <RunDashboardSection view={plan.dashboard} model={dashboardModel} riskRows={riskRows} pageRows={page?.items.length ?? 0} results={results} />
 
-      {/* S12 */}
-      <RunFindingsTable
-        teamId={teamId}
-        runId={runId}
-        active={active}
-        page={page}
-        isLoading={assetsQ.isLoading}
-        error={assetsQ.error}
-        onRetry={() => assetsQ.refetch()}
-        filters={filters}
-        onFilters={onFilters}
-        sources={sources}
-        waveOf={waveOf}
-        selection={selection}
-        onSelection={setSelection}
-        onOpenDetails={(item) => setDialog({ item })}
-        onSetStatus={(keys, status) => statusMutation.mutate({ keys, status })}
-        statusPending={statusMutation.isPending}
-      />
+        {/* S12 */}
+        <RunFindingsTable
+          teamId={teamId}
+          runId={runId}
+          active={active}
+          page={page}
+          isLoading={assetsQ.isLoading}
+          error={assetsQ.error}
+          onRetry={() => assetsQ.refetch()}
+          filters={filters}
+          onFilters={onFilters}
+          sources={sources}
+          waveOf={waveOf}
+          selection={selection}
+          onSelection={setSelection}
+          onOpenDetails={(item) => setDialog({ item })}
+          onSetStatus={(keys, status) => statusMutation.mutate({ keys, status })}
+          statusPending={statusMutation.isPending}
+        />
 
-      {/* S13 */}
-      {plan.topRisks.show && posture && <RunTopRisks posture={posture} onOpenAsset={(id) => openAsset(id)} />}
+        {/* S13 */}
+        {plan.topRisks.show && posture && <RunTopRisks posture={posture} onOpenAsset={(id) => openAsset(id)} />}
+
+        </>
+      )}
 
       {/* S14 */}
       <RunFindingDialog teamId={teamId} subject={dialog} jobs={run.jobs ?? []} waveOf={waveOf} onClose={() => setDialog(null)} />

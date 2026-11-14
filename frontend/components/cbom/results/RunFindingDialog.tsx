@@ -17,6 +17,7 @@ import { AssetDetailPanel } from "@/components/cbom/sources/RunPosture";
 import { ASSET_TYPE_LABEL } from "@/components/cbom/sources/RunResults";
 
 import { getFindingStatusBadgeClass, getImpactBadgeClass, getRiskScoreBoxClass, getStrengthBadgeClass } from "./badgeClasses";
+import AiRemediationPanel from "./AiRemediationPanel";
 import { findingStatusOf } from "./model";
 import { assetName, AsOfRunNote, CollectedFacts } from "./RunFindingsTable";
 
@@ -126,11 +127,10 @@ export function RunFindingDialog({ teamId, subject, jobs, waveOf, onClose }: {
 
                 <AssetDetailPanel teamId={teamId} assetId={assetId} />
 
-                {item && <CollectedFacts item={item} />}
+                {/* AI remediation assistant (CB-38 PR-6), below the knowledge-base fix; renders nothing when it is off */}
+                <AiRemediationPanel teamId={teamId} subject={{ kind: "run_asset", assetId }} />
 
-                {/* AI remediation mount point (lane W5): components/cbom/results/AiRemediationPanel.tsx, default export,
-                    props {teamId, subject: {kind: "run_asset", assetId}}; renders nothing when the assistant is off.
-                    Mount it here, below the knowledge-base fix: <AiRemediationPanel teamId={teamId} subject={{ kind: "run_asset", assetId }} /> */}
+                {item && <CollectedFacts item={item} />}
               </div>
             </ScrollArea>
           </div>
