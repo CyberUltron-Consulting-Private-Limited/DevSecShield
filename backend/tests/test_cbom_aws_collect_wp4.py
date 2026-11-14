@@ -519,3 +519,33 @@ def test_an_alb_listener_on_a_post_quantum_policy_is_collected_and_judged_hybrid
     assert classify_pqc(row, v["finding_codes"])[0] == "hybrid"
     w = classify("load_balancer_tls", old.get("algorithm"), old.get("key_size"), old.get("protocol"), old["facts"])
     assert w["quantum_vulnerable"] is True and "QUANTUM_VULNERABLE" in w["finding_codes"]
+
+
+def test_api_gateway_domains_store_their_policy_protocols_and_get_a_quantum_verdict():
+    """#126: apigw() stored only min_version, so a domain on a classical policy got no quantum verdict (None,
+    not-applicable) and graded better than its post-quantum twin.  Each documented policy's TLS versions (API Gateway
+    "Supported security policies", Regional/private and edge-optimized tables, read 2026-11-14) are stored now."""
+    names = ["TLS_1_0", "TLS_1_2", "SecurityPolicy_TLS13_1_3_2025_09", "SecurityPolicy_TLS13_1_2_PQ_2025_09",
+             "SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09", "SecurityPolicy_Unknown_2099"]
+    plan = {"apigateway": [("get_domain_names", {"items": [
+        {"domainName": f"d{i}.bank.example", "securityPolicy": n, "endpointConfiguration": {"types": ["REGIONAL"]}}
+        for i, n in enumerate(names)]}, {})]}
+    _s, found = _run(plan)
+    facts = {a["facts"]["security_policy"]: a["facts"] for a in found if a["type"] == "api_tls"}
+    assert facts["TLS_1_0"]["protocols"] == ["TLSv1.0", "TLSv1.1", "TLSv1.2", "TLSv1.3"]
+    assert facts["TLS_1_2"]["protocols"] == ["TLSv1.2", "TLSv1.3"] and facts["TLS_1_2"]["min_version"] == "TLSv1.2"
+    tls13 = facts["SecurityPolicy_TLS13_1_3_2025_09"]
+    assert tls13["protocols"] == ["TLSv1.3"] and tls13["min_version"] == "TLSv1.3"
+    assert facts["SecurityPolicy_TLS13_1_2_PQ_2025_09"]["protocols"] == ["TLSv1.2", "TLSv1.3"]
+    # not on the documented list (the SDK enum only) or unknown: protocols unread, min_version as before
+    for name in ("SecurityPolicy_TLS13_1_2_FIPS_PQ_2025_09", "SecurityPolicy_Unknown_2099"):
+        assert "protocols" not in facts[name] and facts[name]["min_version"] == "TLSv1.2"
+
+    def judged(name):
+        return classify("api_tls", None, None, "TLS", facts[name])
+
+    for name in ("TLS_1_0", "TLS_1_2", "SecurityPolicy_TLS13_1_3_2025_09"):  # classical key exchange only
+        assert judged(name)["quantum_vulnerable"] is True and "QUANTUM_VULNERABLE" in judged(name)["finding_codes"]
+    assert {"PROTO_TLS10", "PROTO_TLS11", "MIN_TLS10"} <= set(judged("TLS_1_0")["finding_codes"])
+    assert judged("SecurityPolicy_TLS13_1_2_PQ_2025_09")["quantum_vulnerable"] is False
+    assert judged("SecurityPolicy_Unknown_2099")["quantum_vulnerable"] is None  # nothing read, no verdict
