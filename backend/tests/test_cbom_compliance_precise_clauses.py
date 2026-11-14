@@ -183,6 +183,10 @@ ALLOW: dict[str, dict[str, set[tuple[str, str]]]] = {
         "STORAGE_UNENCRYPTED": {CERTIN_71, RBI_106, SEBI_PRDS1, SEBI_PRDS_1A},
         "TLS_POLICY_OVERRIDE": {CERTIN_8422, RBI_140, RBI_16, SEBI_I},
         "WEAK_CIPHER": {CERTIN_8422, NIST_TDEA, RBI_140, RBI_16, SEBI_H5},
+        # CB-34: EXPORT and NULL suites are never strong encryption (SEBI H5); anonymous ones may use AES
+        "TLS_EXPORT_CIPHER": {CERTIN_8422, RBI_140, RBI_16, SEBI_H5},
+        "TLS_NULL_CIPHER": {CERTIN_8422, RBI_140, RBI_16, SEBI_H5},
+        "TLS_ANON_CIPHER": {CERTIN_8422, RBI_140, RBI_16},
     },
     "code": {
         "AT_REST_ENCRYPTION_WEAK": {SEBI_PRDS1, SEBI_PRDS_1A},
