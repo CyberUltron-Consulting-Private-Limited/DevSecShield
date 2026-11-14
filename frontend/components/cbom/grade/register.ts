@@ -5,6 +5,8 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import api from "@/utils/interceptors";
 
+import { GRADE_KEYS } from "./model";
+
 export interface RegisterRow {
   item_key: string;
   item_kind: string;
@@ -53,10 +55,56 @@ export interface RegisterFilters {
   source?: string;
 }
 
+export interface HeatmapCell {
+  family: string | null;
+  source_ref: string | null;
+  counts: Record<string, number>;
+  total: number;
+  /** worst KNOWN grade (Critical first); Unknown is counted apart and never hides a known grade */
+  worst: string | null;
+  q0: number;
+  other: boolean;
+  /** the register list filters of this cell's drill-down (null for the folded "more" row / column) */
+  filter: { family: string; source: string } | null;
+}
+
+export interface RegisterHeatmapData {
+  rows: { family: string | null; label?: string; total: number; other: boolean }[];
+  columns: { source_ref: string | null; source_name: string | null; total: number; other: boolean }[];
+  cells: HeatmapCell[];
+  total: number;
+}
+
 export const registerKeys = {
   list: (teamId: number, f: RegisterFilters) => ["cbom-sources", teamId, "register", "list", f] as const,
   summary: (teamId: number) => ["cbom-sources", teamId, "register", "summary"] as const,
+  heatmap: (teamId: number) => ["cbom-sources", teamId, "register", "heatmap"] as const,
 };
+
+export async function getRegisterHeatmap(teamId: number): Promise<RegisterHeatmapData> {
+  const response = await api.get(`/${teamId}/cbom/register/heatmap`);
+  return response.data as RegisterHeatmapData;
+}
+
+export function useRegisterHeatmap(teamId: number | undefined) {
+  return useQuery({
+    queryKey: registerKeys.heatmap(teamId ?? NaN),
+    queryFn: () => getRegisterHeatmap(teamId as number),
+    enabled: Number.isFinite(teamId),
+    retry: 1,
+  });
+}
+
+/** The cell of a (row, column) of the grid; the folded "more" row / column is keyed by null. */
+export function heatmapCell(h: RegisterHeatmapData, family: string | null, sourceRef: string | null): HeatmapCell | undefined {
+  return h.cells.find((c) => c.family === family && c.source_ref === sourceRef);
+}
+
+/** "<grade>:<count>" pairs, known grades worst first, then Unknown, then no grade; zero counts left out. */
+export function cellCountsText(counts: Record<string, number>): string {
+  const order: string[] = [...GRADE_KEYS.slice(1), GRADE_KEYS[0], "none"]; // known grades worst first, then Unknown
+  return order.filter((g) => counts[g]).map((g) => `${g === "none" ? "—" : g}:${counts[g]}`).join(" ");
+}
 
 /** The query parameters of a filter set: empty values dropped (the API treats a missing filter as "any"). */
 export function filterParams(f: RegisterFilters): Record<string, string> {

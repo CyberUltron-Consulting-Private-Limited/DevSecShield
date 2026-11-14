@@ -474,6 +474,17 @@ export default function TeamSettingsPage() {
           </Link>
         </section>
 
+        {/* CBOM API keys (#226): their own page */}
+        <section className="pb-6 mb-6 border-b border-border">
+          <h2 className="text-lg font-medium">API keys</h2>
+          <p className="text-sm text-muted-foreground mb-4 mt-1">
+            Team-scoped keys for scripts that add CBOM sources, start runs and download CBOMs without signing in.
+          </p>
+          <Link href={`/${team_id}/settings/api-keys`} className="inline-flex items-center rounded-md bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm text-white" data-testid="settings-api-keys-link">
+            Open API keys
+          </Link>
+        </section>
+
         {/* 4. Delete team (bottom, destructive) */}
         {is_team_admin && (
           <section className="w-full pb-6">
