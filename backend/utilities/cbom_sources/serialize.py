@@ -18,12 +18,14 @@ from backend.utilities.cbom_sources.common import iso_z
 from backend.utilities.cbom_sources.evidence import AREAS, CONFIDENCE_LABEL, area_level, level, vendor_level, vendor_status
 from backend.utilities.cbom_sources.jobs import job_waiting_reason, run_credit_summary
 from backend.utilities.cbom_sources.kinds import KINDS
+from backend.utilities.cbom_sources.node_release import node_update, parse_reported, server_release
 from backend.utilities.cbom_sources.planning import node_status, source_targets
 from backend.utilities.cbom_sources.settings import next_window_start
 
 
 def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int = 0, sources: int = 0) -> dict[str, Any]:
     status = node_status(node, now)
+    _version, build = parse_reported(node.node_version)
     return {
         "id": node.id,
         "team_id": node.team_id,
@@ -41,6 +43,11 @@ def public_node(node: CbomScanNode, now: _dt.datetime, *, assigned_targets: int 
         "enrolled_at": iso_z(node.enrolled_at),
         "hostname": node.hostname,
         "node_version": node.node_version,
+        # the commit the node's image was built from (12 characters), None when it reports none (staging QA B6-1)
+        "node_build": build,
+        # does it run this server's node build? {"state": current|update_available|newer|unknown, "reason", "message",
+        # "server_build"} (node_release.node_update)
+        "update": node_update(node.node_version, *server_release()),
         "source_ips": node.source_ips or [],
         "ssh_public_key": node.ssh_public_key,
         "capabilities": node.capabilities or {},

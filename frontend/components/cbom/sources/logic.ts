@@ -193,6 +193,9 @@ export interface NodeArtifact {
 }
 export interface NodeArtifacts {
   version: string | null
+  /** the 40-character commit the shipped node image was built from, and "<version>+<12 characters>" (staging QA B6-1) */
+  build?: string | null
+  node_build?: string | null
   image_ref: string | null
   pull_image_ref: string | null
   /** the Helm chart in the same registry (CBOM_NODE_CHART_REF): oci://... and its version; only with pull_image_ref */
