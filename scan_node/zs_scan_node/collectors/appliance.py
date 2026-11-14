@@ -151,11 +151,11 @@ def _api_outputs(ctx: JobContext, target: Target, vendor: str, config: dict, sec
             raise ConfigError("no password is stored for this source")
         ctx.scrubber.add(secrets["password"])
         headers, auth = {}, (str(config.get("login_user") or ""), secrets["password"])
-    try:
-        client = netutil.http_client(url, str(target.ip), ctx.never_scan, verify=verify, headers=headers, timeout=20.0,
-                                     auth=auth)
-    except Blocked:
-        raise TargetFail("skipped_never_scan", f"{target.ip} is on the never-scan list") from None
+    try:  # a name is re-checked by every address it resolved to; the client connects only to the checked one
+        client = netutil.http_client(url, netutil.checked_target(target, ctx.never_scan), ctx.never_scan,
+                                     verify=verify, headers=headers, timeout=20.0, auth=auth)
+    except Blocked as exc:
+        raise TargetFail("skipped_never_scan", str(exc)) from None
     out: dict[str, Any] = {}
     try:
         for key, path in API_PATHS[vendor].items():
@@ -164,6 +164,8 @@ def _api_outputs(ctx: JobContext, target: Target, vendor: str, config: dict, sec
                 raise TargetFail(stop)
             try:
                 r = client.get(path)
+            except Blocked as exc:  # the address was listed while the job ran
+                raise TargetFail("skipped_never_scan", str(exc)) from None
             except Exception as exc:
                 msg = str(exc)
                 if "CERTIFICATE_VERIFY_FAILED" in msg or "certificate" in msg.lower():
@@ -242,7 +244,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str | 
 
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     vendor = _vendor(config)
-    for target in _targets(ctx, scope)[:5]:
+    for target in _targets(ctx, scope, samples=True)[:5]:
         sample = {"target": target.label, "status": "ready", "reachable": False, "login": False, "privilege": None,
                   "note": ""}
         try:

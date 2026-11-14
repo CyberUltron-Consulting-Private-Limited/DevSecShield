@@ -73,8 +73,9 @@ def source_targets(source: CbomCollectionSource, settings: CbomCollectionSetting
         return {"units": count, "unit": "targets"}
     if group == "network":
         try:
-            kind, interval, _canonical = T.parse_line(cfg.get("cidr", ""))
-            intervals = T.subtract([interval], team_exclusions(settings).intervals) if kind == "net" else []
+            kind, interval, canonical = T.parse_line(cfg.get("cidr", ""))
+            scanned = T.scanned_interval(interval, canonical) if kind == "net" else None  # what the sweep visits
+            intervals = T.in_scope(T.ParsedTargets(intervals=[scanned]), team_exclusions(settings))[0] if scanned else []
         except T.TargetError:
             intervals = []
         return {"units": T.size(intervals), "unit": "addresses", "blocks": T.count_blocks(intervals),
