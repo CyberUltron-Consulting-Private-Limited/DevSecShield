@@ -17,6 +17,7 @@ from backend.new_models import CbomCollectionJob, CbomCollectionRun, CbomCollect
     CbomScanNode, Scan, Team
 from backend.utilities.cbom_sources import crypto_kb
 from backend.utilities.cbom_sources import jobs as J
+from backend.utilities.cbom_sources import qgrade as QG
 from backend.utilities.cbom_sources.classify import CLASSIFIER_VERSION
 from backend.utilities.cbom_sources.common import audit, engine_version
 from backend.utilities.cbom_sources.kinds import KINDS
@@ -68,6 +69,8 @@ def queue_run(session: Session, team_id: int, user_id: int, body: RunCreate, set
         # what judges this run's facts (classification happens here, on the API)
         kb_version=(crypto_kb.version() or None), classifier_version=CLASSIFIER_VERSION,
         engine_version=engine_version(),
+        # the grade inputs at Start (CB-19 PR-2): run views grade with these; later team edits are shown beside them
+        grade_model_version=QG.GRADE_MODEL_VERSION, grade_inputs=QG.snapshot_inputs(session, team_id, settings, now),
     )
     session.add(run)
     try:

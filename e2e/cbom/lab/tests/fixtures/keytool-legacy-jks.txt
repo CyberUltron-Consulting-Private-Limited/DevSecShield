@@ -1,0 +1,87 @@
+Keystore type: JKS
+Keystore provider: SUN
+
+Your keystore contains 2 entries
+
+Alias name: app
+Creation date: Nov 12, 2026
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: CN=app.lab
+Issuer: CN=app.lab
+Serial number: befb434c5e31f10b
+Valid from: Wed Nov 11 09:04:29 GMT 2026 until: Tue Dec 14 09:04:29 GMT 2027
+Certificate fingerprints:
+	 SHA1: 1B:49:D8:1A:FE:4F:57:73:53:BB:FB:47:87:F5:DF:22:2D:8D:A0:A3
+	 SHA256: 75:2B:73:40:13:1C:3A:58:7E:CF:F1:93:1E:2B:9E:98:8F:34:31:EE:59:69:DB:97:AA:20:7A:5F:C6:B0:99:63
+Signature algorithm name: SHA256withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 3
+
+Extensions: 
+
+#1: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: 2E E2 37 E7 9D 28 BA BE   B0 8F 2D DC 41 92 DA 6F  ..7..(....-.A..o
+0010: 8B 8F DA 6A                                        ...j
+]
+]
+
+
+
+*******************************************
+*******************************************
+
+
+Alias name: legacy-ca
+Creation date: Nov 12, 2026
+Entry type: trustedCertEntry
+
+Owner: CN=legacy-ca.lab
+Issuer: CN=legacy-ca.lab
+Serial number: 4f9a835b44ac8db471731ad977864805377cd9c4
+Valid from: Tue Oct 08 09:04:29 GMT 2024 until: Wed Oct 08 09:04:29 GMT 2025
+Certificate fingerprints:
+	 SHA1: F4:4D:D8:02:55:BC:2C:8F:16:56:5B:8F:09:4A:D0:0C:4B:D4:0E:2D
+	 SHA256: D5:19:43:07:4B:06:03:F1:0A:82:91:F2:8D:1B:7E:C7:94:DA:B1:23:36:D9:84:8A:9C:C4:3D:1A:98:4B:44:DB
+Signature algorithm name: SHA1withRSA
+Subject Public Key Algorithm: 1024-bit RSA key (weak)
+Version: 3
+
+Extensions: 
+
+#1: ObjectId: 2.5.29.35 Criticality=false
+AuthorityKeyIdentifier [
+KeyIdentifier [
+0000: 5E CE 47 8B 0D C0 80 B3   6C 3C AE 63 BC 3F 7C 01  ^.G.....l<.c.?..
+0010: AE 33 62 35                                        .3b5
+]
+]
+
+#2: ObjectId: 2.5.29.19 Criticality=true
+BasicConstraints:[
+  CA:false
+  PathLen: undefined
+]
+
+#3: ObjectId: 2.5.29.17 Criticality=false
+SubjectAlternativeName [
+  DNSName: legacy-ca.lab
+]
+
+#4: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: 5E CE 47 8B 0D C0 80 B3   6C 3C AE 63 BC 3F 7C 01  ^.G.....l<.c.?..
+0010: AE 33 62 35                                        .3b5
+]
+]
+
+
+
+*******************************************
+*******************************************
+
+

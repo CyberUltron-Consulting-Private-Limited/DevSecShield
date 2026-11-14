@@ -39,6 +39,18 @@ def _on_term(_signum, _frame) -> None:
     log("cloud worker stopping after the current job")
 
 
+def _aws_lab_mode(config: dict[str, Any]) -> str | None:
+    """"same_account" when this AWS source's role is in the deployment's own account and lab mode allows it (the
+    collector decides again and logs the use; this only labels the run, failed runs included)."""
+    from backend.utilities.cbom_sources.kinds import aws_account_id
+    from backend.utilities.cbom_sources.lab_mode import LAB_MODE, lab_same_account
+    from backend.utilities.cbom_sources.templates import zeroshield_account_id
+
+    own = zeroshield_account_id()
+    same = bool(own) and aws_account_id(str(config.get("role_arn") or "")) == own
+    return LAB_MODE if same and (config.get("scope") or "account") == "account" and lab_same_account() else None
+
+
 class _Job:
     def __init__(self, engine, payload: dict[str, Any]):
         self.engine = engine
@@ -50,6 +62,8 @@ class _Job:
         self.last_renew = time.monotonic()
         self.deadline = time.monotonic() + int(self.job.get("max_runtime_s") or 8 * 3600) - 120
         self.emitted = 0
+        self.store_failed: str | None = None  # an asset batch was lost to an error that is not the API's refusal
+        self.lab_mode: str | None = None  # "same_account": an AWS source collected in lab mode (lab_mode.py)
 
     # -- leases and batches
     def should_stop(self) -> str | None:
@@ -88,6 +102,15 @@ class _Job:
                 session.rollback()
                 self.stop_reason = str(exc.detail)
                 log("cloud job stopped", team=self.job["team_id"], job=self.job["id"], reason=self.stop_reason[:120])
+            except Exception as exc:
+                # Anything else (the database connection lost, a failover): this batch is gone.  The job fails even
+                # when the collector that called emit() or should_stop() swallows the exception, and it stops (no
+                # more reads of the customer's cloud, no next SSM command) since nothing more would be kept.
+                self.store_failed = type(exc).__name__
+                self.stop_reason = self.stop_reason or "Collection stopped: assets could not be stored"
+                log("cloud job asset batch NOT stored", team=self.job["team_id"], job=self.job["id"], assets=len(batch),
+                    error=self.store_failed)
+                raise
 
     # -- run
     def run(self) -> None:
@@ -99,6 +122,10 @@ class _Job:
         try:
             if kind == "aws_account":
                 result = self._aws()
+            elif kind in ("azure_subscription", "gcp_project") and self.source.get("last_test_status") != "passed":
+                from backend.utilities.cbom_sources.planning import CLOUD_NOT_CONNECTED
+
+                raise _Refused(CLOUD_NOT_CONNECTED[kind])
             elif kind == "azure_subscription":
                 from backend.utilities.cbom_sources.azure_collect import AzureCollectError, collect_azure
 
@@ -132,6 +159,8 @@ class _Job:
                 for asset in out.pop("assets"):
                     self.emit(asset)
                 result = out
+            elif kind == "ssm_hosts":  # F1.3: zs-collect through the customer's AWS Systems Manager
+                result = self._ssm()
             else:
                 status, error = "failure", f"The cloud worker cannot collect {kind}"
         except _Refused as exc:
@@ -141,9 +170,15 @@ class _Job:
             log("cloud job FAILED", ref=ref, team=team_id, job=self.job["id"], error=type(exc).__name__)
             status, error = "failure", f"Collection failed (ref {ref})"
         self.flush()
+        if self.store_failed and status != "failure":  # a collector swallowed the failed store: the job still fails
+            ref = new_ref()
+            log("cloud job FAILED", ref=ref, team=team_id, job=self.job["id"], error=self.store_failed)
+            status, error = "failure", f"Collection failed (ref {ref})"
         if self.stop_reason and status == "success":
             status, error = "cancelled", self.stop_reason
         targets = result.get("targets") or []
+        if self.lab_mode:  # every run of a lab-mode source says so, failed runs included
+            result = {**result, "lab_mode": self.lab_mode}
         result = {**result, "targets": targets[:1000], "asset_count": None, "node_version": "cloud-worker-1.0",
                   "summary": result.get("summary") or f"{sum(1 for t in targets if t.get('status') == 'ok')} of {len(targets)} targets read"}
         with Session(self.engine) as session:
@@ -152,6 +187,11 @@ class _Job:
                 job = J.finish_job(session, None, self.job["id"], self.job["lease_id"], status, result, error, utcnow(),
                                    team_id=team_id, known_secrets=self.secrets)
                 stored = job.asset_count
+                if self.lab_mode:
+                    from backend.utilities.cbom_sources.common import audit
+
+                    audit(session, team_id=team_id, actor_type="system", actor_id=None, action="job.lab_same_account",
+                          object_type="job", object_id=self.job["id"])
                 session.commit()
             except HTTPException as exc:
                 session.rollback()
@@ -181,10 +221,42 @@ class _Job:
             raise _Refused("Validate the AWS role first; only a role that passed validation is scanned")
         with Session(self.engine) as session:
             external_id = get_or_create_settings(session, self.job["team_id"]).aws_external_id
+        self.lab_mode = _aws_lab_mode(self.source.get("config") or {})
         try:
             return collect_aws(self.job["team_id"], self.source["config"], external_id, self.emit, self.should_stop)
         except AwsCollectError as exc:
             raise _Refused(str(exc)) from exc
+
+
+    def _ssm(self) -> dict[str, Any]:
+        from backend.new_models import CbomCollectionSource
+        from backend.utilities.cbom_sources.transports.claim import payload_for_cloud
+        from backend.utilities.cbom_sources.transports.cloud import SsmRefused, collect_ssm
+        from backend.utilities.cbom_sources.transports.ssm import SsmTransport, role_client_factory
+
+        team_id = self.job["team_id"]
+        with Session(self.engine) as session:
+            settings = get_or_create_settings(session, team_id)
+            external_id = settings.aws_external_id
+            exclusions = [str(i.get("cidr")) for i in (settings.network_exclusions or []) if isinstance(i, dict)]
+            row = session.get(CbomCollectionSource, self.source["id"])
+            if row is None or row.team_id != team_id:
+                raise _Refused("The source was deleted")
+            config = dict(self.source.get("config") or {})
+            if "transport" not in config:  # the claim did not apply the F1.3 plugin (secret_refs not present)
+                config, _secrets = payload_for_cloud(session, row)
+        exclusions += list(config.get("exclusions") or []) + list((self.job.get("params") or {}).get("exclusions") or [])
+        transport_cfg = config.get("transport") or {}
+        try:
+            factory = role_client_factory(team_id, str(transport_cfg.get("role_arn") or ""), external_id)
+            return collect_ssm(self.job, config, exclusions, SsmTransport(factory, log=lambda *a, **k: None), self.emit,
+                               self.should_stop, self.deadline)
+        except SsmRefused as exc:
+            raise _Refused(str(exc)) from exc
+        except Exception as exc:
+            if exc.__class__.__name__ == "NoZeroShieldCredentials":
+                raise _Refused("ZeroShield's AWS principal is not configured in this deployment") from exc
+            raise
 
 
 class _Refused(Exception):
@@ -228,6 +300,10 @@ def main() -> None:
     from backend.workers.integration_dispatcher import start_thread as start_dispatcher
 
     dispatcher_stop = start_dispatcher(engine)
+    # F1.2 fleet inventory: AWS inventory sources sync on their own thread (only while CBOM_FLEET_INVENTORY is on)
+    from backend.workers.cbom_inventory_sync import start_thread as start_inventory_sync
+
+    inventory_stop = start_inventory_sync(engine)
     last_reap = 0.0
     while not _stopping:
         if time.monotonic() - last_reap >= REAP_EVERY_S:
@@ -244,6 +320,8 @@ def main() -> None:
         scheduler_stop.set()
     if dispatcher_stop is not None:
         dispatcher_stop.set()
+    if inventory_stop is not None:
+        inventory_stop.set()
     log("cloud worker stopped", worker=worker)
 
 

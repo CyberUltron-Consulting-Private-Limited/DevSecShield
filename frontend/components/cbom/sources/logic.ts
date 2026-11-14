@@ -113,13 +113,15 @@ export function nodeInstallNames(nodeName: string): { container: string; volume:
  * It mirrors the node's own rule (scan_node/zs_scan_node/agent.py: the stripped ZS_API_URL must start with
  * "https://", exactly, lower case; claim answers carry decrypted credentials), so the wizard warns exactly when the
  * node would exit. Port 80 is the plain-HTTP port: the node accepts the URL but its TLS client cannot connect there.
+ * A lower-case http:// URL is the one case the node's lab switch ZS_ALLOW_INSECURE_HTTP=1 accepts (CB-08): the
+ * warning says so, and the wizard shows its commands with the switch inside a "Test lab only" block.
  * The commands the wizard shows use this deployment's own API URL, so the customer is told before running one. */
 export function insecureApiWarning(apiUrl: string): string | null {
   const value = (apiUrl || "").trim()
   if (!value) return null
   if (!value.startsWith("https://")) {
-    if (/^http:\/\//i.test(value)) {
-      return `This ZeroShield deployment serves its API over plain HTTP (${value}). The scan node refuses http:// (it would receive your server credentials unencrypted) and will exit with "ZS_API_URL must be the ZeroShield API URL over https://". Ask your ZeroShield administrator to serve the API over https:// before you install a node.`
+    if (value.startsWith("http://")) {
+      return `This ZeroShield deployment serves its API over plain HTTP (${value}). The scan node refuses http:// unless it is started with ZS_ALLOW_INSECURE_HTTP=1, a test-lab switch that sends your server credentials unencrypted (the commands below carry it inside a "Test lab only" block). Ask your ZeroShield administrator to serve the API over https:// for real use.`
     }
     return `This ZeroShield deployment's API address (${value}) does not start with https:// (lower case), so the scan node refuses it and exits. Ask your ZeroShield administrator for the https:// address of the API.`
   }
@@ -135,118 +137,235 @@ export function insecureApiWarning(apiUrl: string): string | null {
   return null
 }
 
+/** True when the node's lab switch makes it accept this API URL: agent.py accepts http:// (exact, lower case, after
+ * strip) only with ZS_ALLOW_INSECURE_HTTP=1. Then the wizard shows a test-lab command carrying the switch (CB-08). */
+export function labSwitchHelps(apiUrl: string): boolean {
+  return (apiUrl || "").trim().startsWith("http://")
+}
+
+/** zs-ovf-env maps only zs.api_url, zs.registration_token, zs.https_proxy and zs.mode (deploy/node-images). */
+export const OVA_NO_INSECURE_SWITCH =
+  "The OVA has no plain-HTTP switch, so it cannot reach this deployment: use Docker or Helm for a plain-HTTP test lab, or serve the API over HTTPS."
+
+/** The outbound port a scan node uses to reach this API, or null when a node cannot use the address as it is (never
+ * port 80: that is the plain-HTTP port). */
+export function nodeApiPort(apiUrl: string): string | null {
+  if (insecureApiWarning(apiUrl)) return null
+  try {
+    return new URL(apiUrl.trim()).port || "443"
+  } catch {
+    return null
+  }
+}
+
+/** The scan node image as the wizard offers it. Customers have no access to a ZeroShield registry or to the
+ * repository: the server serves the image file (GET /{team}/cbom/node-artifacts, backend/routers/cbom_node_artifacts.py)
+ * and the commands load it (`docker load`) and run the name it loads as, with `docker run --pull never`. Only when the
+ * server names a registry customers can pull from (CBOM_NODE_IMAGE_REF, or a build's NEXT_PUBLIC_CBOM_NODE_IMAGE) is a
+ * pull variant offered too. */
+export interface NodeImage {
+  /** the image the command runs: the name the image file loads as, or (pull) a registry image */
+  image: string
+  /** true: from a registry; false (default): from the downloaded image file */
+  pull?: boolean
+  /** the downloaded image file and Helm chart (the server's names; default scan-node-<tag>.tar.gz, cbom-scan-node-<tag>.tgz) */
+  archive?: string
+  chart?: string
+}
+
+/** The name scripts/release/scan_node_image.sh saves the image under (SCAN_NODE_IMAGE's default) for the scan node's
+ * VERSION: what the wizard runs until the server says what its image file holds. */
+export const DEFAULT_NODE_IMAGE = "localhost/zeroshield/cbom-scan-node:1.0.0"
+
+/** What the server offers (GET /{team}/cbom/node-artifacts). */
+export interface NodeArtifact {
+  kind: "image" | "helm-chart" | "ova-kit" | "ami-kit"
+  label: string
+  available: boolean
+  filename: string | null
+  size: number | null
+  sha256: string | null
+  message: string | null
+}
+export interface NodeArtifacts {
+  version: string | null
+  image_ref: string | null
+  pull_image_ref: string | null
+  artifacts: NodeArtifact[]
+}
+
+/** The image the commands load and run, and the registry image when one is configured. */
+export function nodeImages(data: NodeArtifacts | undefined | null, buildPullRef?: string | null): { loaded: NodeImage; pulled: NodeImage | null } {
+  const file = (kind: NodeArtifact["kind"]) => data?.artifacts.find((a) => a.kind === kind && a.available)?.filename ?? undefined
+  const loaded: NodeImage = { image: data?.image_ref || DEFAULT_NODE_IMAGE, pull: false, archive: file("image"), chart: file("helm-chart") }
+  const ref = (data?.pull_image_ref || buildPullRef || "").trim()
+  return { loaded, pulled: ref ? { image: ref, pull: true, chart: loaded.chart } : null }
+}
+
+function splitImage(image: string): [string, string] {
+  const cut = image.lastIndexOf(":")
+  return cut > image.lastIndexOf("/") ? [image.slice(0, cut), image.slice(cut + 1)] : [image, "latest"]
+}
+
+/** The files a loaded-image command names. */
+export function nodeFiles(img: NodeImage): { archive: string; chart: string; tag: string } {
+  const [, tag] = splitImage(img.image)
+  return { archive: img.archive || `scan-node-${tag}.tar.gz`, chart: img.chart || `cbom-scan-node-${tag}.tgz`, tag }
+}
+
+/** Where the Helm chart comes from and which image it runs: the downloaded chart always; the image either pushed by
+ * the customer to their own registry ($REGISTRY, set in the first line) or the configured registry image. */
+function helmSource(img: NodeImage): { steps: string[]; chart: string; repoArg: string; tag: string } {
+  const { archive, chart, tag } = nodeFiles(img)
+  if (img.pull) {
+    const [repo, ptag] = splitImage(img.image)
+    return { steps: [], chart: `./${chart}`, repoArg: shQuote(repo), tag: ptag }
+  }
+  const base = splitImage(img.image)[0].split("/").pop() || "cbom-scan-node"
+  return {
+    steps: [
+      "# 1. The image, from the file you downloaded (Download scan node image), pushed to a registry your cluster pulls from:",
+      "REGISTRY=registry.example.internal/zeroshield   # change to your registry",
+      `sha256sum -c ${archive}.sha256`,
+      `docker load -i ${archive}`,
+      `docker tag ${img.image} "$REGISTRY/${base}:${tag}"`,
+      `docker push "$REGISTRY/${base}:${tag}"`,
+      "# 2. The chart you downloaded (Download Helm chart):",
+    ],
+    chart: `./${chart}`,
+    repoArg: `"$REGISTRY/${base}"`,
+    tag,
+  }
+}
+
 export function installCommand(
   method: DeployMethod,
-  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string },
+  opts: { token: string; apiUrl: string; proxyUrl?: string | null; image: string; name: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string },
 ): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
   const names = nodeInstallNames(opts.name)
+  const img: NodeImage = { image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart }
   if (method === "docker") {
+    const { archive } = nodeFiles(img)
     return [
-      `docker run -d --name ${names.container} --restart unless-stopped \\`,
+      ...(opts.pull ? [] : [
+        "# 1. Check and load the image file you downloaded (Download scan node image):",
+        `sha256sum -c ${archive}.sha256`,
+        `docker load -i ${archive}`,
+        "# 2. Run the node (--pull never: the image just loaded, never one from a registry):",
+      ]),
+      `docker run -d${opts.pull ? "" : " --pull never"} --name ${names.container} --restart unless-stopped \\`,
       `  -e ZS_API_URL=${shQuote(opts.apiUrl)} \\`,
       `  -e ZS_REGISTRATION_TOKEN=${shQuote(opts.token)} \\`,
+      ...(opts.insecureHttp ? ["  -e ZS_ALLOW_INSECURE_HTTP=1 \\"] : []),
       ...(proxy ? [`  -e HTTPS_PROXY=${shQuote(proxy)} \\`] : []),
       `  -v ${names.volume}:/var/lib/zs-node \\`,
       `  ${opts.image}`,
     ].join("\n")
   }
   if (method === "helm") {
-    const [repo, tag] = opts.image.includes(":") ? [opts.image.slice(0, opts.image.lastIndexOf(":")), opts.image.slice(opts.image.lastIndexOf(":") + 1)] : [opts.image, "latest"]
+    const src = helmSource(img)
     return [
-      `helm upgrade --install ${names.release} oci://registry.zeroshield.ai/charts/cbom-scan-node \\`,
+      ...src.steps,
+      `helm upgrade --install ${names.release} ${src.chart} \\`,
       "  --namespace zs-cbom --create-namespace \\",
-      `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
+      `  --set image.repository=${src.repoArg} --set image.tag=${shQuote(src.tag)} \\`,
       `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+      ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
       `  --set registrationToken=${shQuote(opts.token)}${proxy ? " \\" : ""}`,
       ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
     ].join("\n")
   }
   if (method === "ami") {
     return [
-      "#cloud-config  (paste as EC2 user data when you launch the ZeroShield scan node AMI)",
+      "#cloud-config  (paste as EC2 user data when you launch the scan node AMI you built with the AMI build kit)",
       "write_files:",
       "  - path: /etc/zs-node/env",
       "    permissions: '0600'",
       "    content: |",
       `      ZS_API_URL=${opts.apiUrl}`,
       `      ZS_REGISTRATION_TOKEN=${opts.token}`,
+      ...(opts.insecureHttp ? ["      ZS_ALLOW_INSECURE_HTTP=1"] : []),
       ...(proxy ? [`      HTTPS_PROXY=${proxy}`] : []),
     ].join("\n")
   }
   return [
-    "# OVA (VMware / Hyper-V): set these vApp properties when you deploy the appliance",
+    "# OVA (VMware): set these vApp properties when you deploy the OVA you built with the OVA build kit",
     `zs.api_url = ${opts.apiUrl}`,
     `zs.registration_token = ${opts.token}`,
     ...(proxy ? [`zs.https_proxy = ${proxy}`] : []),
   ].join("\n")
 }
 
-/** The published node image's name (scripts/release/scan_node_image.sh builds and saves it under this name). */
-export const PUBLISHED_NODE_IMAGE = "registry.zeroshield.ai/cbom/scan-node"
-
-/** The versions `make node-image` builds: scripts/release/scan_node_image.sh's NODE_VERSION_RE (the versions the
- * node reports; logic.test.ts reads the script to keep the two equal). */
-const NODE_VERSION_RE = /^[0-9][0-9A-Za-z.-]{0,18}$/
-
-/** For a site that cannot pull the node image: the image file from `make node-image` (or the release workflow),
- * checked with its .sha256 and loaded with `docker load` (scan_node/README.md, "Without registry access"). A tag that
- * `make node-image` refuses (e.g. GHCR's dev-<commit>, or latest) gets the file from ZeroShield instead. Helm also
- * needs the image in a registry the cluster can pull from, and the chart from the repository. Null for the AMI and
- * the OVA, which carry the image inside. */
-export function offlineImageSteps(method: DeployMethod, image: string): string | null {
-  if (method !== "docker" && method !== "helm") return null
-  const cut = image.lastIndexOf(":")
-  const version = cut > image.lastIndexOf("/") ? image.slice(cut + 1) : "latest"
-  const archive = `scan-node-${version}.tar.gz`
-  const lines = [
-    ...(NODE_VERSION_RE.test(version)
-      ? [
-        `# 1. Get the image file: in the DevSecShield repository run  make node-image VERSION=${version}`,
-        `#    (it writes dist/scan-node/${archive} and ${archive}.sha256), or ask ZeroShield for both files.`,
-      ]
-      : [
-        `# 1. Get the image file: ask ZeroShield for ${archive} and ${archive}.sha256`,
-        "#    (make node-image builds only release versions that start with a digit, such as 1.1.0).",
-      ]),
-    "# 2. Copy both files to the host, check the file, then load it:",
-    `sha256sum -c ${archive}.sha256`,
-    `docker load -i ${archive}`,
-  ]
-  const loaded = `${PUBLISHED_NODE_IMAGE}:${version}`
-  if (loaded !== image) lines.push(`docker tag ${loaded} ${image}`)
-  if (method === "docker") {
-    lines.push("# 3. Run the command above: Docker uses the loaded image and does not pull it.")
-  } else {
-    lines.push(
-      "# 3. Push it to a registry your cluster can pull from, and use that name in image.repository:",
-      `docker tag ${image} <your-registry>/cbom/scan-node:${version}`,
-      `docker push <your-registry>/cbom/scan-node:${version}`,
-      "#    The chart is in the repository too: use ./deploy/helm/cbom-scan-node instead of the oci:// address.",
-    )
-  }
-  return lines.join("\n")
-}
-
 /** How far each way of running a node has been proven. Docker and the Helm chart (Deployment and the agent
- * DaemonSet) ran end to end on k3s; the AMI and OVA are Packer templates in deploy/node-images/ to build yourself. */
+ * DaemonSet) ran end to end on k3s; the AMI and OVA are Packer build kits the customer downloads and builds. */
 export const DEPLOY_SUPPORT: Record<DeployMethod, { proven: boolean; note: string }> = {
   docker: { proven: true, note: "Proven" },
   helm: { proven: true, note: "Proven on Kubernetes (k3s): Deployment and agent DaemonSet" },
-  ami: { proven: false, note: "Build it yourself: Packer template provided (deploy/node-images/)" },
-  ova: { proven: false, note: "Build it yourself: Packer template provided (deploy/node-images/)" },
+  ami: { proven: false, note: "Packer build kit: download it below and build the AMI in your AWS account" },
+  ova: { proven: false, note: "Packer build kit: download it below and build the OVA on your build machine" },
+}
+
+/** The three steps under a build kit's download button (Add scan node, OVA and AMI). */
+export const KIT_STEPS: Record<"ova" | "ami", string[]> = {
+  ova: [
+    "Download the OVA build kit and the scan node image file, unzip the kit and put the image file (and its .sha256) in its folder.",
+    "On a Linux machine with KVM, qemu-img and Packer: packer init ova.pkr.hcl, then packer build -var build_password=<random> ova.pkr.hcl (the kit's README.md has the details).",
+    "Deploy the OVA in vSphere and set the vApp properties shown after you create the node.",
+  ],
+  ami: [
+    "Download the AMI build kit and the scan node image file, unzip the kit and put the image file (and its .sha256) in its folder.",
+    "With Packer and AWS credentials: packer init ami.pkr.hcl, then packer build -var region=<your region> ami.pkr.hcl (the kit's README.md has the details).",
+    "Launch the AMI in the VPC that reaches your targets, with the cloud-config shown after you create the node as user data.",
+  ],
+}
+
+/** The downloads Add scan node offers for each way of running a node, main one first. */
+export function downloadKinds(method: DeployMethod): NodeArtifact["kind"][] {
+  if (method === "helm") return ["helm-chart", "image"]
+  if (method === "ova") return ["ova-kit", "image"]
+  if (method === "ami") return ["ami-kit", "image"]
+  return ["image"]
+}
+
+const DOWNLOAD_LABEL: Record<NodeArtifact["kind"], string> = {
+  image: "Download scan node image",
+  "helm-chart": "Download Helm chart",
+  "ova-kit": "Download OVA build kit",
+  "ami-kit": "Download AMI build kit",
+}
+
+export function formatMB(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** "Download scan node image (63.2 MB, sha256 3f9a1c2b7d4e…)"; without its size and hash while the server does
+ * not hold the file. */
+export function downloadLabel(kind: NodeArtifact["kind"], artifact?: NodeArtifact | null): string {
+  const base = DOWNLOAD_LABEL[kind]
+  if (!artifact?.available || artifact.size == null) return base
+  return artifact.sha256 ? `${base} (${formatMB(artifact.size)}, sha256 ${artifact.sha256.slice(0, 12)}…)` : `${base} (${formatMB(artifact.size)})`
+}
+
+/** What the wizard says for a file the server does not hold (the server's own sentence when it sent one). */
+export function notAvailable(kind: NodeArtifact["kind"], artifact?: NodeArtifact | null): string {
+  if (artifact?.message) return artifact.message
+  const label = { image: "Scan node image", "helm-chart": "Helm chart", "ova-kit": "OVA build kit", "ami-kit": "AMI build kit" }[kind]
+  return `${label} is not available on this server yet. Contact your administrator.`
 }
 
 /** The Helm command for agent mode: a DaemonSet whose pods each enroll with the agent pool token as their own node
  * (named after the Kubernetes node) and read only that node, from a read-only mount of its file system. */
-export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string }): string {
+export function helmAgentCommand(opts: { poolToken: string; apiUrl: string; proxyUrl?: string | null; image: string; insecureHttp?: boolean; pull?: boolean; archive?: string; chart?: string }): string {
   const proxy = opts.proxyUrl ? opts.proxyUrl : ""
-  const [repo, tag] = opts.image.includes(":") ? [opts.image.slice(0, opts.image.lastIndexOf(":")), opts.image.slice(opts.image.lastIndexOf(":") + 1)] : [opts.image, "latest"]
+  const src = helmSource({ image: opts.image, pull: opts.pull, archive: opts.archive, chart: opts.chart })
   return [
-    "helm upgrade --install zs-host-agents oci://registry.zeroshield.ai/charts/cbom-scan-node \\",
+    ...src.steps,
+    `helm upgrade --install zs-host-agents ${src.chart} \\`,
     "  --namespace zs-cbom --create-namespace \\",
-    `  --set image.repository=${shQuote(repo)} --set image.tag=${shQuote(tag)} \\`,
+    `  --set image.repository=${src.repoArg} --set image.tag=${shQuote(src.tag)} \\`,
     `  --set apiUrl=${shQuote(opts.apiUrl)} \\`,
+    ...(opts.insecureHttp ? ["  --set allowInsecureHttp=true \\"] : []),
     "  --set deployment.enabled=false --set agent.enabled=true \\",
     `  --set agent.poolToken=${shQuote(opts.poolToken)}${proxy ? " \\" : ""}`,
     ...(proxy ? [`  --set httpsProxy=${shQuote(proxy)}`] : []),
@@ -268,6 +387,19 @@ export function refusalReason(error: unknown): string | null {
 /** "Not read in this run" (lab UI r1 F2): assets of a compared source that the later run did not read because of a
  * coverage gap (a stopped target, a denied check). They are neither removed nor resolved, so they are listed apart,
  * grouped by why they were not read (the coverage row's detail, from the server) and by source. */
+/** What to do about a target the node could not reach. An IPv6 target with no route: the wizard's `docker run` puts the
+ * node on Docker's default bridge, which has no IPv6 (scan_node tlsprobe.connect_error: "IPv6 is not available on this
+ * scan node"). */
+export const IPV6_NO_ROUTE_GUIDANCE =
+  "Give the scan node an IPv6 route: run its container on a Docker network created with --ipv6 (or with --network host on a host that has IPv6), or run it in a dual-stack Kubernetes cluster, then run the scan again."
+
+export function targetGuidance(status: string, error: string | null | undefined, target: string): string | null {
+  if (status !== "no_route") return null
+  const host = target.replace(/^\[([^\]]+)\](:\d+)?$/, "$1")
+  const ipv6 = /IPv6/.test(error ?? "") || (host.includes(":") && /^[0-9a-fA-F:.]+(:\d+)?$/.test(host) && (host.match(/:/g) ?? []).length >= 2)
+  return ipv6 ? IPV6_NO_ROUTE_GUIDANCE : null
+}
+
 export const NOT_READ_NO_REASON = "The scan node reported a coverage gap here"
 export function groupNotRead<T extends { reason?: string | null; source_name?: string | null }>(
   items: T[],
