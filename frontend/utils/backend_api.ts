@@ -4433,6 +4433,9 @@ export interface CbomJobTargets {
     duration_s: number | null
     /** "same_account": an AWS source read from the deployment's own account in lab mode (test deployments only) */
     lab_mode?: string | null
+    /** assets this job read (coverage rows excluded) and places not fully read (C4: the status label) */
+    assets_read?: number | null
+    gaps?: number | null
 }
 
 export interface CbomAssetPage {

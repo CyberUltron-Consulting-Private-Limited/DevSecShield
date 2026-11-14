@@ -171,6 +171,7 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
             for r in rows}  # the class the list shows is the one the grade reads (CB-18 OB-1)
     grades = {r.id: grading.grade_row(r, views[r.id]["finding_codes"], explain=False, cls=pqcs[r.id][0]).fields()
               for r in rows}
+    reads = job_reads(session, list(jobs))
     return {
         "total": total, "all_total": all_total, "page": page, "page_size": page_size,
         "items": AGILITY.annotate_assets(session, team_id, jobs,  # CB-24: fix class per asset
@@ -178,13 +179,47 @@ def list_assets(session: Session, *, team_id: int, run_id: int | None = None, jo
                                           for r in rows]),
         "grade_model_version": QG.GRADE_MODEL_VERSION, "grade_inputs": grading.inputs(),
         "facets": {"type": by_type, "impact": by_impact, "quantum_vulnerable": quantum_count},
-        "targets": [_job_targets(job, names) for job in jobs],
+        "targets": [_job_targets(job, names, reads) for job in jobs],
     }
 
 
-def _job_targets(job: CbomCollectionJob, names: dict[int, str]) -> dict[str, Any]:
+def job_reads(session: Session, jobs: list[CbomCollectionJob]) -> dict[int, tuple[int, int]]:
+    """{job id: (assets read, gaps)} over each job's current attempt.  Assets read = stored rows that are not coverage
+    rows; gaps = the places not fully read: coverage rows that are real gaps (drift's rule: not ``not_supported`` /
+    ``not_installed`` and not ``by_choice``), counted once per (target, location before "#"), so the three refused
+    parts (keys, certificates, secrets) of one Azure vault are one gap of that vault.  What the status label says (C4)
+    comes from here, never from the target counts alone."""
+    from backend.utilities.cbom_sources.drift import NOT_GAPS
+
+    attempts = {j.id: j.attempts for j in jobs if j.id is not None}
+    if not attempts:
+        return {}
+    read: dict[int, int] = {}
+    for job_id, attempt, count in session.exec(
+            select(CbomCollectedAsset.job_id, CbomCollectedAsset.attempt, func.count())
+            .where(CbomCollectedAsset.job_id.in_(list(attempts)),  # type: ignore[attr-defined]
+                   CbomCollectedAsset.asset_type != "coverage")
+            .group_by(CbomCollectedAsset.job_id, CbomCollectedAsset.attempt)).all():
+        if attempts.get(job_id) == attempt:
+            read[job_id] = read.get(job_id, 0) + int(count)
+    places: dict[int, set[tuple[str, str]]] = {}
+    for job_id, attempt, target, location, facts in session.exec(
+            select(CbomCollectedAsset.job_id, CbomCollectedAsset.attempt, CbomCollectedAsset.target,
+                   CbomCollectedAsset.location, CbomCollectedAsset.facts)
+            .where(CbomCollectedAsset.job_id.in_(list(attempts)),  # type: ignore[attr-defined]
+                   CbomCollectedAsset.asset_type == "coverage")).all():
+        facts = facts if isinstance(facts, dict) else {}
+        if attempts.get(job_id) != attempt or str(facts.get("status") or "") in NOT_GAPS or facts.get("by_choice"):
+            continue
+        places.setdefault(job_id, set()).add((str(target or ""), str(location or "").split("#", 1)[0]))
+    return {job_id: (read.get(job_id, 0), len(places.get(job_id, ()))) for job_id in attempts}
+
+
+def _job_targets(job: CbomCollectionJob, names: dict[int, str],
+                 reads: dict[int, tuple[int, int]] | None = None) -> dict[str, Any]:
     result = job.result if isinstance(job.result, dict) else {}
     targets = result.get("targets") if isinstance(result.get("targets"), list) else []
+    assets_read, gaps = (reads or {}).get(job.id or 0, (None, None))
     return {
         "job_id": job.id, "source_id": job.source_id, "source_name": names.get(job.source_id or 0) or (job.params or {}).get("source_name"),
         "status": job.status, "outcome": job.outcome, "attempt": job.attempts, "asset_count": job.asset_count,
@@ -194,6 +229,9 @@ def _job_targets(job: CbomCollectionJob, names: dict[int, str]) -> dict[str, Any
         "targets": [t for t in targets[:1000] if isinstance(t, dict)],
         "duration_s": result.get("duration_s"),
         "lab_mode": result.get("lab_mode") if isinstance(result.get("lab_mode"), str) else None,
+        # C4: assets read (coverage rows excluded) and places not fully read, for the "Partly read · 11 read, 2 gaps"
+        # label; None when not counted (the export path)
+        "assets_read": assets_read, "gaps": gaps,
     }
 
 

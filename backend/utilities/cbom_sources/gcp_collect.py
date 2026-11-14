@@ -380,8 +380,62 @@ def collect_gcp(team_id: int, cfg: dict[str, Any], secrets: dict[str, str], emit
             "duration_s": int(time.monotonic() - started)}
 
 
+# What the collector needs on every project (roles/cloudkms.viewer, roles/privateca.auditor, roles/secretmanager.viewer
+# hold them): Save and validate proves the account holds them on each project, then reads one Cloud KMS list that needs
+# them.  Listing Cloud KMS locations alone proves nothing: Google answers it for any project, readable or not (C1).
+READ_PERMISSIONS = ("cloudkms.keyRings.list", "cloudkms.cryptoKeys.list", "cloudkms.cryptoKeyVersions.list",
+                    "privateca.caPools.list", "privateca.certificateAuthorities.list", "secretmanager.secrets.list")
+VALIDATE_PROJECT_CAP = 25  # projects checked one by one at Save and validate (each is two small calls)
+
+
+def _project_access(http: CloudHttp, access: str, project: str) -> list[dict[str, str]]:
+    """Two checks for one project: the collector's permissions (Resource Manager ``projects.testIamPermissions``, which
+    answers with the subset the caller holds) and one real read (Cloud KMS key rings in ``global``, page size 1)."""
+    out: list[dict[str, str]] = []
+    try:
+        answer = http.request("POST", f"{CRM}/projects/{project}:testIamPermissions", token=access,
+                              json_body={"permissions": list(READ_PERMISSIONS)})
+        held = {str(p) for p in answer.get("permissions") or [] if isinstance(p, str)}
+        missing = [p for p in READ_PERMISSIONS if p not in held]
+        if not held:
+            out.append({"check": f"Read project {project}", "status": "fail", "detail": (
+                f"The service account holds none of the read permissions on project {project}: the project does not "
+                "exist or the account has no role on it. Run the ZeroShield reader script for this project, or remove "
+                "it from the source")[:240]})
+        elif missing:
+            out.append({"check": f"Read project {project}", "status": "fail", "detail": (
+                f"Missing on project {project}: {', '.join(missing)}. Re-run the ZeroShield reader script")[:240]})
+        else:
+            out.append({"check": f"Read project {project}", "status": "pass",
+                        "detail": f"All {len(READ_PERMISSIONS)} read permissions held on project {project}"})
+    except CloudHttpError as exc:
+        status = _status(exc)
+        if status == "not_enabled":  # Resource Manager API off in the account's own project: the read below decides
+            out.append({"check": f"Read project {project}", "status": "warning", "detail": (
+                f"Permissions not checked (Cloud Resource Manager API not enabled): {exc}")[:240]})
+        else:
+            out.append({"check": f"Read project {project}", "status": "fail", "detail": (
+                f"The service account cannot read project {project} ({exc}): run the ZeroShield reader script for "
+                "this project, or remove it from the source" if status in ("denied", "not_found") else
+                f"Could not check project {project}: {exc}")[:240]})
+    try:
+        rings, _t = http.google_pages(f"{KMS}/projects/{project}/locations/global/keyRings", access, "keyRings", cap=1,
+                                      params={"pageSize": 1})
+        out.append({"check": f"List Cloud KMS key rings in {project}", "status": "pass",
+                    "detail": f"Cloud KMS readable in project {project} ({len(rings)} key ring(s) on the first page in global)"})
+    except CloudHttpError as exc:
+        status = _status(exc)
+        out.append({"check": f"List Cloud KMS key rings in {project}", "status": "fail", "detail": (
+            f"Cloud KMS API is not enabled in project {project}: {exc}" if status == "not_enabled" else
+            f"cloudkms.keyRings.list refused on project {project}: {exc}" if status in ("denied", "not_found") else
+            f"Cloud KMS in project {project} could not be read: {exc}")[:240]})
+    return out
+
+
 def test_gcp(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any = None) -> dict[str, Any]:
-    """Validation: sign in and make one list call (Cloud KMS locations of the first project).  Never raises."""
+    """Validation: sign in, then prove the account can read EVERY configured project (up to VALIDATE_PROJECT_CAP): the
+    collector's permissions on the project and one real Cloud KMS read.  A project the account cannot read fails the
+    validation with the reason.  Never raises."""
     checks: list[dict[str, str]] = []
     try:
         key = service_account(cfg, secrets)
@@ -395,21 +449,28 @@ def test_gcp(cfg: dict[str, Any], secrets: dict[str, str], *, transport: Any = N
             return {"status": "failed", "message": str(exc), "checks": [{"check": "Signed in to Google Cloud", "status": "fail", "detail": str(exc)[:240]}]}
         try:
             projects = _projects(http, access, cfg)
-            if not projects:
-                checks.append({"check": "List Cloud KMS locations", "status": "fail", "detail": "No project is visible to this service account"})
-            else:
-                locations, _t = http.google_pages(f"{KMS}/projects/{projects[0]}/locations", access, "locations", cap=LOCATION_CAP)
-                checks.append({"check": "List Cloud KMS locations", "status": "pass",
-                               "detail": f"{len(locations)} location(s) in project {projects[0]}"})
         except CloudHttpError as exc:
-            checks.append({"check": "List Cloud KMS locations", "status": "fail",
-                           "detail": ("Cloud KMS API is not enabled: " if _status(exc) == "not_enabled" else "") + str(exc)[:220]})
+            checks.append({"check": "List projects", "status": "fail",
+                           "detail": f"Could not list the organization's projects: {exc}"[:240]})
             projects = []
+        else:
+            if not projects:
+                checks.append({"check": "List projects", "status": "fail", "detail": "No project is visible to this service account"})
+        for project in projects[:VALIDATE_PROJECT_CAP]:
+            checks += _project_access(http, access, project)
+        if len(projects) > VALIDATE_PROJECT_CAP:
+            checks.append({"check": "Projects checked", "status": "warning", "detail": (
+                f"The first {VALIDATE_PROJECT_CAP} of {len(projects)} projects were checked; a project the account "
+                "cannot read is reported as a failed target on the run")[:240]})
         if projects:
             checks += _probe_optional(http, access, projects[0])
     from backend.utilities.cbom_sources.azure_collect import _verdict
 
-    return _verdict(checks)
+    out = _verdict(checks)
+    if out["status"] == "passed" and not any(c["status"] == "warning" for c in checks):
+        read = projects[:VALIDATE_PROJECT_CAP]
+        out["message"] = f"Read access proven on {len(read)} project(s): {', '.join(read)}"[:512]
+    return out
 
 
 def _probe_optional(http: CloudHttp, access: str, project: str) -> list[dict[str, str]]:
