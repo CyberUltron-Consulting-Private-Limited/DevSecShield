@@ -54,8 +54,8 @@ class CbomInventoryTarget(SQLModel, table=True):
 
     ``decision`` is the policy engine's Decision, kept current by imports, syncs and the team's evaluation
     (``fleet/evaluate.py``); ``decision_action`` / ``decision_policy_id`` repeat its two fields that lists filter and
-    count on, indexed.  ``deleted_at``: a person removed it from the inventory (never collected, unlike a target a
-    sync merely missed); ``pending_since``: its managed-source change waits for a busy source.
+    count on, indexed.  ``deleted_at``: a person removed it from the inventory (not collected, with no 7-day
+    grace, until its inventory source lists it again; a never-scan policy excludes a host for good); ``pending_since``: its managed-source change waits for a busy source.
     ``managed_source_id`` is the managed collection source (sticky batch) it is assigned to."""
     __tablename__ = "cbominventorytarget"
     __table_args__ = (

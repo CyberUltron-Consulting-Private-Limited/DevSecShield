@@ -83,6 +83,7 @@ def run_sync(engine, source_id: int, *, now_fn: Callable[[], _dt.datetime] = utc
              discover: Callable[[AwsInventorySource], Discovery] | None = None) -> dict[str, Any]:
     """Claim and sync one AWS inventory source.  Returns the summary (also stored on the source)."""
     now = now_fn()
+    lease = now + LEASE  # what claim() writes: the save checks the source is still ours
     with Session(engine) as session:
         if not claim(session, source_id, now):
             return {"status": "busy"}
@@ -119,12 +120,31 @@ def run_sync(engine, source_id: int, *, now_fn: Callable[[], _dt.datetime] = utc
         log("inventory sync FAILED", ref=ref, team=team_id, source=source_id, error=type(exc).__name__)
         return _finish(engine, source_id, now_fn(), "failed",
                        {"sync_id": sync_id, "error": f"Something went wrong while listing the account (ref {ref})"}, {})
-    return save_discovery(engine, source_id, result, now_fn(), sync_id=sync_id)
+    return save_discovery(engine, source_id, result, now_fn(), sync_id=sync_id, lease=lease)
 
 
-def save_discovery(engine, source_id: int, result: Discovery, now: _dt.datetime, *, sync_id: str) -> dict[str, Any]:
-    """Upsert what a discovery found (snapshot: what disappeared from a completely read scope is marked missing)."""
+def _hold(session: Session, source_id: int, now: _dt.datetime, lease: _dt.datetime | None) -> bool:
+    """Lock the source row for the save's transaction, if it still exists and (``lease`` given) is still ours.  A
+    delete committed while the sync listed makes this miss; a delete that comes later waits for the save's commit and
+    then removes what it saved (PostgreSQL row lock; SQLite has one writer)."""
+    s = CbomInventorySource
+    where = [s.id == source_id, s.deleted_at.is_(None)]  # type: ignore[union-attr]
+    if lease is not None:
+        where.append(s.lease_until == lease)  # type: ignore[arg-type]
+    return session.exec(update(s).where(*where).values(last_updated=now)).rowcount == 1  # type: ignore[call-overload]
+
+
+def save_discovery(engine, source_id: int, result: Discovery, now: _dt.datetime, *, sync_id: str,
+                   lease: _dt.datetime | None = None) -> dict[str, Any]:
+    """Upsert what a discovery found (snapshot: what disappeared from a completely read scope is marked missing).
+    Nothing is saved if the source was deleted while it synced, or (``lease``: the claim's) another worker holds it."""
     with Session(engine) as session:
+        if not _hold(session, source_id, now, lease):
+            session.rollback()
+            log("inventory sync dropped", source=source_id, sync_id=sync_id, reason="deleted or no longer ours")
+            return {"status": "cancelled", "sync_id": sync_id,
+                    "error": "The inventory source was deleted (or another sync took it over) while it synced; "
+                             "nothing was saved"}
         src = session.get(CbomInventorySource, source_id)
         team_id = src.team_id
         engine_ = EVAL.inputs(session, team_id, now).engine
@@ -148,6 +168,12 @@ def _finish(engine, source_id: int, now: _dt.datetime, status: str, summary: dic
             coverage: dict[str, Any]) -> dict[str, Any]:
     with Session(engine) as session:
         src = session.get(CbomInventorySource, source_id)
+        if src.deleted_at is not None:  # deleted while it synced: nothing is written onto it
+            src.lease_until = None
+            session.add(src)
+            session.commit()
+            return {"status": "cancelled", "sync_id": summary.get("sync_id"),
+                    "error": "The inventory source was deleted while it synced"}
         src.last_sync_status, src.last_sync_at, src.lease_until = status, now, None
         src.last_sync_summary = {**summary, "finished_at": iso_z(now)}
         src.coverage = coverage

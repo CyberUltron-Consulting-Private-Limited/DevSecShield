@@ -4,7 +4,8 @@
 * A target with a ``collect`` decision becomes a target line of a managed source: kind ``linux_servers`` for SSH (the
   F1.3 kinds ``awx_hosts`` / ``salt_hosts`` / ``ssm_hosts`` once they exist), config built through the kind's model with
   the credential's non-secret fields and checked with ``credential_target_problem``, node or segment from the decision.
-* Targets are batched (at most the policy's ``batch_size``) per key (policy, transport, transport or credential, node
+* Targets are batched (at most the policy's ``batch_size``; for the F1.3 fleet kinds at most
+  ``MAX_FLEET_TARGETS_PER_SOURCE`` too, which their config enforces) per key (policy, transport, transport or credential, node
   or segment, kind).  **Assignment is sticky**: a target keeps its managed source while its key is unchanged.
 * **Taking targets out is never deferred**: when a target leaves a managed source (never scan, deleted, another
   policy, unmanaged), the source is edited at once, and an open job on it is cancelled (it was created for the old
@@ -37,6 +38,7 @@ from backend.utilities.cbom_sources.fleet.policy import Decision
 from backend.utilities.cbom_sources.kinds import KINDS, credential_target_problem
 from backend.utilities.cbom_sources.removal import remove_source
 from backend.utilities.cbom_sources.settings import get_or_create_settings
+from backend.utilities.cbom_sources.transports.limits import MAX_FLEET_TARGETS_PER_SOURCE  # imports nothing
 
 KIND_FOR_TRANSPORT = {"ssh": "linux_servers", "awx": "awx_hosts", "salt": "salt_hosts", "ssm": "ssm_hosts"}
 OPEN = ("pending", "claimed")
@@ -134,8 +136,9 @@ def _free_name(taken: set[str], policy_id: int) -> str:
 
 def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: int | None) -> ReconcileResult:
     """Evaluate every target and bring managed sources, assignments and managed schedules in line (not committed)."""
-    from backend.utilities.cbom_sources.fleet.evaluate import evaluate_team, inputs, state
+    from backend.utilities.cbom_sources.fleet.evaluate import RETRY_DEFERRED, evaluate_team, inputs, settle, state
 
+    seen = state(session, team_id, now).reconcile_requested_at  # the request this reconcile answers
     out = ReconcileResult()
     settings = get_or_create_settings(session, team_id)
     current = inputs(session, team_id, now)
@@ -166,13 +169,13 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
     placeholder = 0
     for key, group in sorted(groups.items()):
         d: Decision = group["decision"]
-        size = d.batch_size
+        size = d.batch_size if group["kind"] == "linux_servers" else min(d.batch_size, MAX_FLEET_TARGETS_PER_SOURCE)
         existing = sorted(sid for sid, s in managed.items() if s.batch_key == key)
         members: dict[int, list[Any]] = {sid: [] for sid in existing}
         rest = []
         for view in sorted(group["views"], key=lambda v: v.id):
-            if view.managed_source_id in members:
-                members[view.managed_source_id].append(view)  # sticky
+            if view.managed_source_id in members and len(members[view.managed_source_id]) < size:
+                members[view.managed_source_id].append(view)  # sticky (a smaller batch size moves only the overflow)
             else:
                 rest.append(view)
         for view in rest:
@@ -232,7 +235,18 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
                     pending.update(v.id for v in waiting)
                     continue
                 # a target leaves: never wait. Apply the removal now and cancel the job made for the old list;
-                # what is to be added waits for the next reconcile
+                # what is to be added waits for the next reconcile.  The kept lines' config (only their handles and
+                # addresses) is built and checked first, so a refused edit never cancels the job
+                if kept:
+                    kept_lines = {_line(v) for v in kept}
+                    try:
+                        config = _config(kind, d, sorted(kept_lines), {k: h for k, h in handles.items() if k in kept_lines},
+                                         cred, {k: a for k, a in addresses.items() if k in kept_lines}
+                                         ).model_dump(mode="json")
+                    except ValueError as exc:
+                        out.problems.append(f"policy #{d.policy_id}: {exc}")
+                        _unplan(waiting, assignment)  # the source is unchanged: it does not list them
+                        continue
                 J.cancel_open_jobs(session, source, now, reason="A fleet policy took targets out of this source")
                 busy.discard(sid)
                 if waiting:
@@ -244,12 +258,6 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
                     _drop_source(session, source, team_id, actor_id, now)
                     del managed[sid]
                     out.sources_removed += 1
-                    continue
-                try:
-                    config = _config(kind, d, sorted({_line(v) for v in kept}), handles, cred, addresses
-                                     ).model_dump(mode="json")
-                except ValueError as exc:
-                    out.problems.append(f"policy #{d.policy_id}: {exc}")
                     continue
             source.config, source.node_id, source.credential_id = config, d.node_id, d.credential_id
             if segment_column:
@@ -314,13 +322,12 @@ def reconcile(session: Session, team_id: int, now: _dt.datetime, *, actor_id: in
     _schedules(session, team_id, now, by_policy, managed, settings.window_timezone, out, actor_id)
     row = state(session, team_id, now)
     row.last_reconcile = {**out.public(), "at": now.isoformat(timespec="seconds") + "Z"}
-    if out.deferred:  # the fleet worker retries until every deferred change is applied
-        from backend.utilities.cbom_sources.fleet.evaluate import RETRY_DEFERRED
-
-        row.reconcile_requested_at = now + RETRY_DEFERRED
-    elif row.reconcile_requested_at is not None and row.reconcile_requested_at <= now:
-        row.reconcile_requested_at = None
     session.add(row)
+    # the request this reconcile saw is answered; after a deferral the fleet worker retries until every deferred
+    # change is applied.  Compare-and-set: a write made during this reconcile keeps its own (sooner) request
+    retry = now + RETRY_DEFERRED if out.deferred else None
+    if seen is not None or retry is not None:
+        settle(session, row, "reconcile_requested_at", seen, retry)
     log("fleet reconciled", team=team_id, **{k: v for k, v in out.public().items() if k != "problems" and v})
     return out
 

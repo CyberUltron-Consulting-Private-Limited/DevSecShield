@@ -74,9 +74,11 @@ class PolicyCreate(_Strict):
 
     @model_validator(mode="after")
     def _check(self) -> "PolicyCreate":
+        given = set(self.model_fields_set)
         _name(self.name)
         self.selector = validate_selector(self.selector)
         self.action = validate_action(self.action)
+        self.__pydantic_fields_set__ = given  # normalising is not setting: an edit preview fills what the body left out
         return self
 
 

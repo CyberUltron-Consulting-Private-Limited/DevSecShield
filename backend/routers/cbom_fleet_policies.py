@@ -252,17 +252,19 @@ def _preview(engine, team_id: int, body: PreviewBody) -> dict:
             draft = _owned_policy(session, team_id, body.policy_id)  # type: ignore[arg-type]
             others = policies
         else:
-            _check_refs(session, team_id, body.policy.action)
+            fields = ("name", "enabled", "priority", "selector", "action")
             if body.policy_id is not None:  # an edit: it replaces the saved policy and keeps its id
                 saved = _owned_policy(session, team_id, body.policy_id)
                 draft_id = saved.id
-                enabled = saved.enabled if "enabled" not in body.policy.model_fields_set else body.policy.enabled
+                given = body.policy.model_fields_set  # a field the body leaves out keeps its saved value, as PATCH
+                name, enabled, priority, selector, action = (getattr(body.policy if f in given else saved, f)
+                                                             for f in fields)
             else:  # a new policy is the newest: it loses priority ties, exactly as it will once saved
                 draft_id = DRAFT_ID
-                enabled = body.policy.enabled
-            draft = CbomFleetPolicy(id=draft_id, team_id=team_id, name=body.policy.name, enabled=enabled,
-                                    priority=body.policy.priority, selector=body.policy.selector,
-                                    action=body.policy.action)
+                name, enabled, priority, selector, action = (getattr(body.policy, f) for f in fields)
+            _check_refs(session, team_id, action)
+            draft = CbomFleetPolicy(id=draft_id, team_id=team_id, name=name, enabled=enabled, priority=priority,
+                                    selector=selector, action=action)
             others = [*(p for p in policies if p.id != draft_id), draft]
         policy_engine = _engine(session, team_id, others, now)
         probe = PolicyEngine([CbomFleetPolicy(id=draft.id, team_id=team_id, name=draft.name, enabled=True,
