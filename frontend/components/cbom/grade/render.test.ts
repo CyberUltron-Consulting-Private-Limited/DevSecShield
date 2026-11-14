@@ -265,8 +265,9 @@ assert.equal(ev({}), "");
 
 // mounted where CB-24 PLAN §10 PR-1u says: run results (both columns), code-scan results, Evidence tab
 const src = (p: string) => readFileSync(path.join(__dirname, "..", "..", p), "utf8");
-assert.match(src("cbom/sources/RunResults.tsx"), /<QGradeChip item=\{asset as QGradeFields\} assetId=\{asset.id\} \/>/);
-assert.match(src("cbom/sources/RunResults.tsx"), /<FixClassChip item=\{asset as FixClassFields\} assetId=\{asset.id\} \/>/);
+// run results: the shared template's findings table (the older sources/RunResults page component was removed)
+assert.match(src("cbom/results/RunFindingsTable.tsx"), /<QGradeChip item=\{item as QGradeFields\} assetId=\{item.id\} \/>/);
+assert.match(src("cbom/results/RunFindingsTable.tsx"), /<FixClassChip item=\{item as FixClassFields\} assetId=\{item.id\} \/>/);
 assert.match(src("CbomResults.tsx"), /<FixClassChip item=\{finding as FixClassFields\} testId=\{`cbom-finding-fixclass-\$\{finding.id\}`\} \/>/);
 assert.match(src("cbom/sources/EvidenceTab.tsx"), /<EvidenceFixClass item=\{area as [^\n]*testId=\{`evidence-fixclass-\$\{area.area_key\}`\} \/>/);
 assert.match(src("cbom/sources/EvidenceTab.tsx"), /<EvidenceFixClass item=\{vendor as [^\n]*testId=\{`vendor-fixclass-\$\{vendor.id\}`\} \/>/);

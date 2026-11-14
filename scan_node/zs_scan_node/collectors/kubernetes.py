@@ -26,7 +26,7 @@ from zs_scan_node import tlsprobe as T
 from zs_scan_node.certparse import cert_facts, key_facts, load_certs
 from zs_scan_node.collectors import ConfigError
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, http_client, is_ip, resolve_checked
+from zs_scan_node.netutil import Blocked, host_port, http_client, is_ip, resolve_checked
 
 PAGE = 200
 MAX_ITEMS = 5000
@@ -545,7 +545,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
                 except (T.ProbeError, T.StarttlsUnavailable):
                     versions[T.VERSION_NAMES[v]] = None
             versions[fh.version or "?"] = True
-            ctx.emit("tls_endpoint", loc, f"{ip}:{api.port}", name="Kubernetes API server", algorithm=fh.cipher,
+            ctx.emit("tls_endpoint", loc, host_port(ip, api.port), name="Kubernetes API server", algorithm=fh.cipher,
                      protocol=fh.version, facts={"service": "kubernetes-api", "negotiated_version": fh.version,
                                                  "negotiated_cipher": fh.cipher, "negotiated_group": fh.group,
                                                  "peer_signature_type": fh.peer_sig_type, "versions": versions})
@@ -553,7 +553,7 @@ def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
             for i, der in enumerate(fh.certs_der[:10]):
                 for cert in load_certs(der):
                     f = cert_facts(cert, "tls")
-                    ctx.emit("certificate", loc, f"{ip}:{api.port}#chain[{i}]", name=f.get("subject", ""),
+                    ctx.emit("certificate", loc, f"{host_port(ip, api.port)}#chain[{i}]", name=f.get("subject", ""),
                              algorithm=f.get("key_alg"), key_size=f.get("key_size"), facts={**f, "chain_index": i,
                                                                                           "role": "kubernetes-api"})
                     n += 1
