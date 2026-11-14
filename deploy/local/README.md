@@ -99,19 +99,21 @@ To move to a newer build of the same tag: `pull`, then `up -d --wait` again (onl
 ## 6. Scan nodes: connect real servers
 
 A scan node is a small container that runs where it can reach your servers and calls out to the API. In the UI:
-**CBOM > Sources > Scan nodes > Add scan node**, choose **Docker container**, name it, and copy the command it shows:
+**CBOM > Sources > Scan nodes > Add scan node**, choose **Docker container**, name it, and copy the command it shows.
+Because this stack speaks plain HTTP, the wizard shows it inside a **Test lab only** block that already carries the
+node's lab switch `ZS_ALLOW_INSECURE_HTTP=1` (without it the node refuses an `http://` API):
 
 ```sh
 docker run -d --name zs-scan-node-<name> --restart unless-stopped \
   -e ZS_API_URL='http://localhost:8000' \
   -e ZS_REGISTRATION_TOKEN='zsr_...' \
+  -e ZS_ALLOW_INSECURE_HTTP=1 \
   -v zs-node-<name>:/var/lib/zs-node \
   ghcr.io/cyberultron-consulting-private-limited/devsecshield-scan-node:<the same build's tag>
 ```
 
-The image is the scan node of the same build. Two changes are needed because this stack speaks plain HTTP on your
-machine: the node must be told to accept `http://` (`ZS_ALLOW_INSECURE_HTTP=1`), and `localhost` inside a container
-is the container itself.
+The image is the scan node of the same build. One change is still needed: `localhost` inside a container is the
+container itself.
 
 **Node on another machine** (a Linux VM or server with Docker that can reach the servers to scan):
 1. Here: set `API_BIND=0.0.0.0` in `deploy/local/.env`, then
@@ -130,8 +132,8 @@ is the container itself.
 3. `curl http://<this machine LAN address>:8000/health` from the node machine must answer `{"status":"healthy",...}`.
 
 **Node on this machine** (for a first try, or servers reachable from here): run the command with
-`--network devsecshield-local-nodes` added right after `docker run`, `ZS_API_URL='http://devsecshield-api:8080'` and
-`-e ZS_ALLOW_INSECURE_HTTP=1`. That network reaches only the API, not the databases.
+`--network devsecshield-local-nodes` added right after `docker run` and `ZS_API_URL='http://devsecshield-api:8080'`
+(keep the command's `-e ZS_ALLOW_INSECURE_HTTP=1`). That network reaches only the API, not the databases.
 
 Within a minute the node shows **Online** in Scan nodes, with its SSH public key. `docker logs zs-scan-node-<name>`
 shows the enrolment. The registration token is single-use; to enrol again use **Reset** on the node.

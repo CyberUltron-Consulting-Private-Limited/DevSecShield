@@ -240,7 +240,8 @@ DB_GRANTS = {
 DB_READS = {
     "postgres": ["TLS on or off, minimum TLS version and ciphers", "Password hashing setting and the method of each HBA rule",
                  "Password hash type of each login role (md5 or SCRAM; never the hash itself)",
-                 "TLS used by live client connections", "pgcrypto use"],
+                 "TLS used by live client connections",
+                 "Installed extensions and their versions (for example pgcrypto); not where they are used"],
     "mysql": ["require_secure_transport and TLS versions", "Authentication plugin per user",
               "TLS used by live client connections", "Table encryption (InnoDB) and keyring"],
     "mssql": ["Force encryption, TLS versions and the server certificate (read before logging in)",

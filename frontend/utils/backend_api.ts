@@ -4513,7 +4513,8 @@ export interface CbomPlanItem {
     units?: number
     unit?: string
     credits?: number
-    status: "queued" | "skipped" | "waiting" | "gap"
+    /** covered: read by another source of the plan (an AWS Private CA connector, by its AWS account) */
+    status: "queued" | "skipped" | "covered" | "waiting" | "gap"
     reason: string | null
     waiting_for_node?: boolean
     /** a scan-node job waits for its scan window (team or server's own) */
