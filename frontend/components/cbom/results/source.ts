@@ -4,8 +4,10 @@
 // and a CBOM Sources run use the SAME results page; only the adapter that feeds it differs.
 //
 //   codeScanSource(props)          today's code page data (GET /{t}/cbom/scan/{id}: data, dashboard, findings, metadata)
-//   useSourcesRunSource(team, run) a run, from GET /runs/{id}, /results, /assets (paged), /posture, /heatmap,
-//                                  /changes, /diff, /remediation, /tickets (Ticketing tab) and the run downloads
+//   useSourcesRunSource(team, run) a run, from GET /runs/{id}, /results, /parity (the code page's scan_metadata keys:
+//                                  compliance readiness, RBI / CERT-In roll-ups, dependency graph, coverage notes),
+//                                  /assets (paged), /posture, /heatmap, /changes, /diff, /remediation, /tickets and the
+//                                  run downloads
 //
 // Each section of the template reads what it needs from the source; a section a source has no data for is hidden or
 // says so in one line. Rule P (PLAN §2.5): every readiness, PQC-class and severity total of a run comes from /posture
@@ -18,6 +20,7 @@ import { toast } from "@/utils/toast";
 import {
   getCbomRun,
   getCbomRunAssetPage,
+  getCbomRunParity,
   getCbomRunPosture,
   getCbomRunResults,
   listCbomRuns,
@@ -26,6 +29,7 @@ import {
   type CbomRun,
   type CbomRunAssetItem,
   type CbomRunAssetPage,
+  type CbomRunParity,
   type CbomRunResults,
   type CbomScanDashboardData,
   type CbomScanMetadata,
@@ -66,6 +70,7 @@ function httpStatus(err: unknown): number | undefined {
 
 /** Query key of /runs/{id}/results: under the run's key, so invalidating ["cbom-sources", team] refreshes it. */
 export const runResultsKey = (teamId: number, runId: number) => [...cbomSourcesKeys.run(teamId, runId), "results"] as const;
+export const runParityKey = (teamId: number, runId: number) => [...cbomSourcesKeys.run(teamId, runId), "parity"] as const;
 
 // ---------------------------------------------------------------------------- code scan
 
@@ -101,8 +106,10 @@ export interface SourcesRunSource {
   canCompare: boolean;
   sources: { id: number | null; name: string }[];
   nodes: string[];
-  /** /results (W2): dashboard, distributions, compliance, certificates, provenance (+ parity: graph, roll-ups) */
+  /** /results (W2): dashboard, distributions, compliance, certificates, provenance */
   results: CbomRunResults | null;
+  /** /parity (W2b): the code page's scan_metadata for this run; null on an older backend (404) or while loading */
+  parity: CbomRunParity | null;
   resultsState: ResultsState;
   posture: CbomPostureWithExposure | null;
   plan: Record<RunSectionId, SectionView>;
@@ -204,6 +211,17 @@ export function useSourcesRunSource(teamId: number, runId: number, { initialView
       : { kind: "loading" };
   const results = resultsQ.data ?? null;
 
+  // /parity: the code scan's scan_metadata keys for this run; an older backend answers 404 and those sections hide.
+  // Cached by the server like /results; read again with /results while the run is active.
+  const parityQ = useQuery({
+    queryKey: runParityKey(teamId, runId),
+    queryFn: () => getCbomRunParity(teamId, runId),
+    enabled: !!run,
+    retry: (count, err) => (httpStatus(err) ?? 500) >= 500 && count < 1,
+    refetchInterval: (query) => (query.state.error ? false : resultsPollInterval(active, page?.all_total)),
+    refetchIntervalInBackground: false,
+  });
+
   // /posture: the same query (key and fetcher) RunPostureCard uses, so both read one cache entry
   const postureQ = useQuery({
     queryKey: cbomSourcesKeys.runPosture(teamId, runId),
@@ -274,6 +292,7 @@ export function useSourcesRunSource(teamId: number, runId: number, { initialView
     sources: run ? runSources(run, results?.provenance) : [],
     nodes: run ? runNodes(run, results?.provenance) : [],
     results,
+    parity: parityQ.data ?? null,
     resultsState,
     posture,
     plan,

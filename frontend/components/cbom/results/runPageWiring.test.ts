@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { RUN_CAPABILITIES, RUN_TICKETING_TAB_AVAILABLE } from "./model";
+import { RUN_CAPABILITIES, RUN_TICKETING_TAB_AVAILABLE, verifyResultText } from "./model";
 
 const read = (...p: string[]) => readFileSync(join(__dirname, ...p), "utf8");
 const dialog = read("RunFindingDialog.tsx");
@@ -44,7 +44,27 @@ const at = order.map((tag) => template.indexOf(tag));
 assert.ok(at.every((i, n) => i > 0 && (n === 0 || i > at[n - 1])), `sections in order: ${JSON.stringify(order.map((t, n) => [t, at[n]]))}`);
 assert.ok(template.indexOf('activeTab === "ticketing" && hasTicketingTab && run') < at[0], "after the tabs");
 
+// header: the code page's download row for a run: CycloneDX JSON / XML / OSCAL, then VEX / Signature / Evidence pack /
+// PDF Report (RunDeliverablesMenu, PR-8) and a signature check
+const sections = read("RunSections.tsx");
+const hdr = sections.slice(sections.indexOf("export function RunHeaderActions"), sections.indexOf("export function RunVerifyButton"));
+const order2 = ['id: "run-results-download"', 'id: "run-results-download-xml"', 'id: "run-results-download-oscal"', "<RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} />",
+  "<RunVerifyButton teamId={teamId} runId={run.id} />", 'data-testid="run-results-open-sources"'];
+const pos = order2.map((s) => hdr.indexOf(s));
+assert.ok(pos.every((p, n) => p > 0 && (n === 0 || p > pos[n - 1])), `header buttons in the code page's order: ${JSON.stringify(pos)}`);
+assert.match(sections, /verifyCbomRunSignature\(teamId, runId, file\)/);
+
+// /parity (W2b): a run's scan_metadata (compliance readiness, RBI / CERT-In roll-ups, graph, coverage banner) is read by
+// the template exactly where a code scan's is
+assert.match(template, /const scanMetadata = run \? run\.parity\?\.scan_metadata \?\? null : scanMetadataProp;/);
+const adapter = read("source.ts");
+assert.match(adapter, /queryFn: \(\) => getCbomRunParity\(teamId, runId\)/);
+
 // the Ticketing tab is on exactly when lane W6's component is in the tree
 assert.equal(RUN_TICKETING_TAB_AVAILABLE, existsSync(join(__dirname, "RunTicketingTab.tsx")), "Ticketing tab <=> RunTicketingTab.tsx");
+
+assert.equal(verifyResultText({ valid: true, signature_match: true, digest_match: true }), "Verified: this file is the run's signed CycloneDX JSON, unchanged.");
+assert.match(verifyResultText({ valid: false, signature_match: true, digest_match: false }), /differs from the run's CycloneDX JSON/);
+assert.match(verifyResultText({ valid: false, signature_match: false, digest_match: true }), /signature does not match/);
 
 console.log("run page wiring tests passed");

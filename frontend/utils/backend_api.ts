@@ -5136,6 +5136,12 @@ export interface CbomRunAssetItem extends CbomAsset {
     fix_class_floor?: string | null
     ticket_key?: string | null
     ticket_url?: string | null
+    /** W2b (PARITY.md S13): the code page's finding fields for a run asset */
+    bom_ref?: string | null
+    title?: string | null
+    owasp_top_10?: Record<string, string> | null
+    compliance_controls?: Record<string, string> | null
+    suggested_fix?: string | null
 }
 
 export interface CbomRunAssetPage extends Omit<CbomAssetPage, "items"> {
@@ -5207,14 +5213,6 @@ export interface CbomRunResults {
     certificates_labels?: { orphaned?: string; unmanaged?: string }
     certificates_scope?: string
     kb_version?: string
-    /** Parity with the code page (lane W2 run-parity): the same shapes as a code scan's scan_metadata keys. Each is
-     * rendered by the code page's own component when present, and left out when absent. */
-    cbom_graph?: CbomGraph | null
-    cbom_graph_compact?: CbomGraph | null
-    cbom_graph_expanded?: CbomGraph | null
-    cbom_compliance?: Record<string, unknown> | null
-    rbi_csf_rollup?: Record<string, unknown> | null
-    certin_posture?: Record<string, unknown> | null
     provenance?: CbomRunProvenance[] | null
     top_risks?: CbomRunPosture["top_risks"] | null
     judged_on?: string
@@ -5222,6 +5220,29 @@ export interface CbomRunResults {
     inputs_digest?: string
     state?: "ready" | "live" | "computing"
     stale?: boolean
+}
+
+/** GET /{team}/cbom/sources/runs/{run}/parity (W2b, PARITY.md): a run's code-page data in the code scan's own
+ * ``scan_metadata`` keys (compliance readiness, RBI CSF and CERT-In roll-ups, dependency graph, coverage notes), so the
+ * one results template reads it exactly as it reads a code scan's metadata. 404 from an older backend. */
+export interface CbomRunParity {
+    run_id: number
+    scan_metadata: CbomScanMetadata & {
+        cbom_coverage?: Record<string, unknown> | null
+        cbom_input?: null
+    }
+    engine?: { compliance: "available" | "unavailable"; reason?: string }
+    kb_version?: string
+    judged_on?: string
+    computed_at?: string | null
+    inputs_digest?: string
+    state?: "ready" | "live"
+    stale?: boolean
+}
+
+export async function getCbomRunParity(team_id: number, run_id: number): Promise<CbomRunParity> {
+    const response = await api.get(`${cbomSourcesBase(team_id)}/runs/${run_id}/parity`)
+    return response.data as CbomRunParity
 }
 
 /** GET /{team}/cbom/sources/runs/{run}/results (W2). 404 from an older backend is the caller's to handle. */

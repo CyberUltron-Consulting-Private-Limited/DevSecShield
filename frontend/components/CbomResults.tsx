@@ -173,7 +173,7 @@ export default function CbomResults({
   teamId,
   dashboard,
   findings: findingsList = [],
-  scanMetadata,
+  scanMetadata: scanMetadataProp,
   integrationSettings,
   onIntegrationSettingsUpdated,
   onFindingsUpdated,
@@ -182,6 +182,9 @@ export default function CbomResults({
 }: CbomResultsProps) {
   // A Sources run fills the same sections from the run APIs; a code scan (no source, or kind "scan") renders as before.
   const run = source?.kind === "run" && source.run ? source : null;
+  // A run's scan_metadata is /runs/{id}/parity's (the code scan's own keys: compliance readiness, RBI / CERT-In roll-ups,
+  // dependency graph, coverage notes); null on an older backend, which hides those sections as on a legacy scan.
+  const scanMetadata = run ? run.parity?.scan_metadata ?? null : scanMetadataProp;
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -513,23 +516,23 @@ export default function CbomResults({
   const cryptoGraph = useMemo<CbomGraph | null>(() => {
     const fromData = (data as Record<string, unknown> | null)?.cbom_graph;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph;
-    const g = (run ? run.results?.cbom_graph : fromData ?? fromMeta) as CbomGraph | undefined;
+    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
     return g && Array.isArray(g.nodes) ? g : null;
-  }, [data, scanMetadata, run]);
+  }, [data, scanMetadata]);
 
   const cryptoGraphCompact = useMemo<CbomGraph | null>(() => {
     const fromData = (data as Record<string, unknown> | null)?.cbom_graph_compact;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph_compact;
-    const g = (run ? run.results?.cbom_graph_compact : fromData ?? fromMeta) as CbomGraph | undefined;
+    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
     return g && Array.isArray(g.nodes) ? g : null;
-  }, [data, scanMetadata, run]);
+  }, [data, scanMetadata]);
 
   const cryptoGraphExpanded = useMemo<CbomGraph | null>(() => {
     const fromData = (data as Record<string, unknown> | null)?.cbom_graph_expanded;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_graph_expanded;
-    const g = (run ? run.results?.cbom_graph_expanded : fromData ?? fromMeta) as CbomGraph | undefined;
+    const g = (fromData ?? fromMeta) as CbomGraph | undefined;
     return g && Array.isArray(g.nodes) ? g : null;
-  }, [data, scanMetadata, run]);
+  }, [data, scanMetadata]);
 
   // Tri-state compliance matrix (F3). Same source precedence as the
   // distributions/graph — present only on reconciled aibom-lane scans; the
@@ -537,9 +540,9 @@ export default function CbomResults({
   const cryptoCompliance = useMemo<CbomCompliance | null>(() => {
     const fromData = (data as Record<string, unknown> | null)?.cbom_compliance;
     const fromMeta = (scanMetadata as Record<string, unknown> | null)?.cbom_compliance;
-    const c = (run ? run.results?.cbom_compliance : fromData ?? fromMeta) as CbomCompliance | undefined;
+    const c = (fromData ?? fromMeta) as CbomCompliance | undefined;
     return c && typeof c === "object" ? c : null;
-  }, [data, scanMetadata, run]);
+  }, [data, scanMetadata]);
 
   const showTabs = team_id && scan_id != null;
   const hasTicketingTab = run ? RUN_TICKETING_TAB_AVAILABLE : showTabs && onIntegrationSettingsUpdated != null;
@@ -878,7 +881,7 @@ export default function CbomResults({
             </>
           )}
           <RbiCsfRollup
-            rollup={(run ? run.results?.rbi_csf_rollup ?? undefined : meta?.rbi_csf_rollup) as RbiCsfRollupData | undefined}
+            rollup={meta?.rbi_csf_rollup as RbiCsfRollupData | undefined}
             onAttest={run ? undefined : handleCertInAttest}
             onViewFindings={handleViewRelatedFindings}
             findings={findingsList ?? []}
@@ -886,7 +889,7 @@ export default function CbomResults({
           />
           <CertInLanePosture
             lane="cbom"
-            rollup={(run ? run.results?.certin_posture ?? undefined : meta?.certin_posture) as CertInRollupData | undefined}
+            rollup={meta?.certin_posture as CertInRollupData | undefined}
             onAttest={run ? undefined : handleCertInAttest}
             onViewFindings={handleViewRelatedFindings}
             findings={findingsList ?? []}

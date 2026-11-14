@@ -8,6 +8,7 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { COMPLIANCE_KEY_TO_LABEL, OWASP_KEY_TO_LABEL } from "@/lib/owasp-compliance-labels";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { CbomJob, CbomRunAssetItem } from "@/utils/backend_api";
@@ -113,6 +114,31 @@ export function RunFindingDialog({ teamId, subject, jobs, waveOf, onClose }: {
                   <Field label="Description"><p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{item.description}</p></Field>
                 )}
                 {item && <AsOfRunNote item={item} />}
+
+                {/* the code page's OWASP / compliance / suggested-fix blocks, when the run API sends them (W2b) */}
+                {item && Object.keys(item.owasp_top_10 ?? {}).length > 0 && (
+                  <Field label="OWASP Top 10">
+                    <div className="flex flex-wrap gap-1" data-testid="run-finding-owasp">
+                      {Object.entries(item.owasp_top_10 ?? {}).map(([key, value]) => (
+                        <Badge key={key} variant="secondary" className="text-xs whitespace-normal max-w-full text-left bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200">
+                          {OWASP_KEY_TO_LABEL[key] ?? value}
+                        </Badge>
+                      ))}
+                    </div>
+                  </Field>
+                )}
+                {item && Object.keys(item.compliance_controls ?? {}).length > 0 && (
+                  <Field label="Compliance controls">
+                    <div className="flex flex-wrap gap-1" data-testid="run-finding-controls">
+                      {Object.entries(item.compliance_controls ?? {}).map(([key, value]) => (
+                        <Badge key={key} variant="outline" className="text-xs whitespace-normal max-w-full text-left">{COMPLIANCE_KEY_TO_LABEL[key] ?? value}</Badge>
+                      ))}
+                    </div>
+                  </Field>
+                )}
+                {item?.suggested_fix && (
+                  <Field label="Suggested fix"><p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{item.suggested_fix}</p></Field>
+                )}
 
                 {item && (
                   <Field label="Where it came from">

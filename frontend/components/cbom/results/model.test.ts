@@ -130,10 +130,10 @@ const certResults = { ...fullResults, certificates_orphaned: [{ asset_id: 3, sub
 assert.equal(runSectionPlan({ results: { kind: "ok", data: certResults }, posture }).certificates.note, undefined);
 
 // capabilities: code-only downloads stay hidden on a run (PLAN §4.4)
-assert.equal(RUN_CAPABILITIES.vex, false);
-assert.equal(RUN_CAPABILITIES.signature, false);
-assert.equal(RUN_CAPABILITIES.evidencePack, false);
-assert.equal(RUN_CAPABILITIES.pdf, false);
+assert.equal(RUN_CAPABILITIES.vex, true, "run deliverables (PR-8)");
+assert.equal(RUN_CAPABILITIES.signature, true);
+assert.equal(RUN_CAPABILITIES.evidencePack, true);
+assert.equal(RUN_CAPABILITIES.pdf, true);
 assert.equal(RUN_CAPABILITIES.oscal, true);
 
 // the Ticketing tab is on exactly when lane W6's component is in the tree

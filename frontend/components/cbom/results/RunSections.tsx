@@ -6,14 +6,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
-import { Download, ExternalLink, GitCompare, Info, Loader2, Network, Server, SlidersHorizontal, Timer, Waypoints } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
+import { BadgeCheck, Download, ExternalLink, GitCompare, Info, Loader2, Network, Server, SlidersHorizontal, Timer, Waypoints } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { downloadCbomRunCbom, type CbomCertRef, type CbomJobTargets, type CbomRun, type CbomRunResults } from "@/utils/backend_api";
+import { downloadCbomRunCbom, verifyCbomRunSignature, type CbomCertRef, type CbomJobTargets, type CbomRun, type CbomRunResults } from "@/utils/backend_api";
 import { downloadCbomRunBom, EXPOSURE_LABEL, type CbomPostureWithExposure } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
 
@@ -31,11 +31,15 @@ import {
   complianceRows,
   formatDuration,
   isActiveRunStatus,
+  verifyResultText,
   waveChips,
   type RunDashboardModel,
   type SectionView,
 } from "./model";
+import RunDeliverablesMenu from "./RunDeliverablesMenu";
 import { RunJobsTable, SkippedAtStart } from "./RunJobsTable";
+import { toast } from "@/utils/toast";
+import { showErrorToast } from "@/utils/error-handler";
 import { Badge } from "@/components/ui/badge";
 
 /** Bounds the Radix viewport (not the root, which grows with its content). Read by results/scrollBounds.test.ts. */
@@ -132,6 +136,9 @@ export function RunHeaderActions({ teamId, run, assetTotal, canCompare, onCompar
           {d.label}
         </Button>
       ))}
+      {/* VEX, Signature, Evidence pack, PDF Report (CB-38 PR-8), as on the code page's header */}
+      <RunDeliverablesMenu teamId={teamId} runId={run.id} active={active} />
+      <RunVerifyButton teamId={teamId} runId={run.id} />
       {children}
       {canCompare && (
         <Button variant="outline" className="cursor-pointer" onClick={onCompare} data-testid="run-results-compare">
@@ -143,6 +150,38 @@ export function RunHeaderActions({ teamId, run, assetTotal, canCompare, onCompar
         <SlidersHorizontal className="h-4 w-4 mr-2" /> Open in CBOM Sources
       </Button>
     </div>
+  );
+}
+
+/** "Verify file…": checks a downloaded CycloneDX JSON of this run against its signature (the key stays on the server). */
+export function RunVerifyButton({ teamId, runId }: { teamId: number; runId: number }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const verify = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const out = await verifyCbomRunSignature(teamId, runId, file);
+      if (out.valid) toast.success(verifyResultText(out));
+      else toast.error(verifyResultText(out));
+    } catch (err) {
+      showErrorToast(err, "Could not verify the file");
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  };
+  return (
+    <>
+      <input ref={input} type="file" accept=".json,application/json" className="hidden" data-testid="run-verify-signature-file"
+             onChange={(e) => void verify(e.target.files?.[0])} />
+      <Button variant="outline" className="cursor-pointer" disabled={busy} data-testid="run-verify-signature"
+              title="Check a downloaded CycloneDX JSON of this run against its signature (the key stays on the server)"
+              onClick={() => input.current?.click()}>
+        {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BadgeCheck className="h-4 w-4 mr-2" />}
+        Verify file…
+      </Button>
+    </>
   );
 }
 
@@ -165,7 +204,7 @@ export function RunCoverageSection({ run, targets, provenance }: {
   const jobs = run.jobs ?? [];
   const skipped = run.breakdown?.skipped ?? [];
   return (
-    <SectionShell title="What this run covered" testId="run-section-coverage"
+    <SectionShell title="Collection jobs and targets" testId="run-section-coverage"
                   description="Every job of the run with where it ran and how it ended, the sources skipped at the start, and each target's outcome">
       {jobs.length === 0 ? <EmptyState title="No jobs in this run" /> : <RunJobsTable jobs={jobs} testIdPrefix="run-job" />}
       <SkippedAtStart items={skipped} />
