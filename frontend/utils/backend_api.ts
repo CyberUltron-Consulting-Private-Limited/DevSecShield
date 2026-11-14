@@ -4620,6 +4620,25 @@ export interface CbomReadinessBasis {
     status: "ok" | "not_enough_identified" | "nothing_judged"
 }
 
+/** One group of quantum-vulnerable assets and the readiness the run would have with it fixed (posture's own
+ * readiness function: the page never computes a readiness). */
+export interface CbomReadinessAction {
+    asset_type: string
+    type_label: string
+    code: string | null
+    title: string
+    fix: string | null
+    assets: number
+    readiness_after: number | null
+}
+
+export interface CbomReadinessExcluded {
+    class: "unknown" | "not-applicable"
+    basis: string
+    assets: number
+    text: string
+}
+
 export interface CbomRunPosture {
     assets: number
     pqc_classes: Record<CbomPqcClass, number>
@@ -4628,6 +4647,12 @@ export interface CbomRunPosture {
     pqc_class_model?: string
     pqc_readiness_pct: number | null
     readiness_basis?: CbomReadinessBasis
+    /** issue #271: the quantum-vulnerable assets per (asset type, quantum finding), largest first; top 3 */
+    readiness_actions?: CbomReadinessAction[]
+    /** every such group (each quantum-vulnerable asset is in exactly one) */
+    readiness_actions_all?: CbomReadinessAction[]
+    /** the assets outside the readiness denominator (classes unknown and not-applicable), per reason */
+    readiness_excluded?: CbomReadinessExcluded[]
     hndl_assets: number
     impacts: Record<CbomImpact, number>
     top_codes: { code: string; count: number; title: string }[]
