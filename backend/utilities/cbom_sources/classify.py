@@ -243,8 +243,15 @@ class _Out:
         self.by_code: dict[str, str] = {}
         self.impacts: dict[str, str | None] = {}
         self.impact: str | None = None
+        # the algorithms behind a code, as the rule flagged them (offered ciphers, transforms, hashes): the evidence
+        # the compliance clause rules read (crypto_kb.clauses_for), never the asset's name or the sentence (#289)
+        self.algorithms: dict[str, list[str]] = {}
 
-    def add(self, code: str, impact: str | None, text: str) -> None:
+    def add(self, code: str, impact: str | None, text: str, algs: Any = None) -> None:
+        if algs:
+            names = [str(a) for a in (algs if isinstance(algs, (list, tuple, set, frozenset)) else [algs]) if a]
+            kept = self.algorithms.setdefault(code, [])
+            kept += [n for n in names if n not in kept]
         if code in self.codes:
             return
         self.codes.append(code)
@@ -491,7 +498,7 @@ def _tls_rules(out: _Out, facts: dict[str, Any], what: str) -> None:
     weak = [c for c in fact_list(facts.get("weak_ciphers")) if isinstance(c, str)]
     weak += [c for c in fact_list(facts.get("ciphers")) if isinstance(c, str) and _WEAK_CIPHER_RE.search(c)]
     if weak:
-        out.add("WEAK_CIPHER", "High", f"{what} accepts weak ciphers ({', '.join(sorted(set(weak))[:4])})")
+        out.add("WEAK_CIPHER", "High", f"{what} accepts weak ciphers ({', '.join(sorted(set(weak))[:4])})", weak)
     if facts.get("static_rsa_kex"):
         out.add("STATIC_RSA_KEX", "Medium", f"{what} accepts RSA key exchange without forward secrecy")
     if facts.get("cbc_only"):
@@ -552,7 +559,7 @@ def _ssh_rules(out: _Out, facts: dict[str, Any], what: str) -> bool | None:
         names = by_list[only] if only else [n for names in by_list.values() for n in names]
         hits = sorted({n for n in names if pattern.search(n)})
         if hits:
-            out.add(code, impact, f"{what} offers {label} ({', '.join(hits[:3])})")
+            out.add(code, impact, f"{what} offers {label} ({', '.join(hits[:3])})", hits)
     kex = ssh_names(facts.get("kex")) or ssh_names(facts.get("kexalgorithms"))  # a malformed list is unread
     if not kex:
         return None
@@ -658,7 +665,8 @@ def _windows_rules(out: _Out, facts: dict[str, Any]) -> None:
     suites = [str(c) for c in raw_suites if isinstance(c, str)] if isinstance(raw_suites, list) else []
     weak = [c for c in suites if _WEAK_CIPHER_RE.search(c)]
     if weak:
-        out.add("WEAK_CIPHER", "High", f"Windows enables weak cipher suites ({', '.join(sorted(set(weak))[:4])})")
+        out.add("WEAK_CIPHER", "High", f"Windows enables weak cipher suites ({', '.join(sorted(set(weak))[:4])})",
+                weak)
     if any(c.upper().startswith("TLS_RSA_WITH_") for c in suites):
         out.add("STATIC_RSA_KEX", "Medium", "Windows enables RSA key exchange suites without forward secrecy")
     aead = any(("_GCM_" in c.upper() or "CHACHA20" in c.upper() or "_CCM" in c.upper()) for c in suites)
@@ -673,9 +681,10 @@ def _windows_rules(out: _Out, facts: dict[str, Any]) -> None:
         weak_ciphers = sorted({str(v.get("name")) for v in on if v.get("kind") == "Ciphers"
                                and re.search(r"\b(RC4|RC2|DES|NULL)\b", str(v.get("name")), re.I)})
         if weak_ciphers:
-            out.add("WEAK_CIPHER", "High", f"SCHANNEL explicitly enables {', '.join(weak_ciphers[:4])} (registry)")
+            out.add("WEAK_CIPHER", "High", f"SCHANNEL explicitly enables {', '.join(weak_ciphers[:4])} (registry)",
+                    weak_ciphers)
         if any(v.get("kind") == "Hashes" and str(v.get("name")).upper() == "MD5" for v in on):
-            out.add("WEAK_CIPHER", "High", "SCHANNEL explicitly enables the MD5 hash for TLS (registry)")
+            out.add("WEAK_CIPHER", "High", "SCHANNEL explicitly enables the MD5 hash for TLS (registry)", "MD5")
         for v in (v for v in algos.values() if isinstance(v, dict)):
             bits = v.get("server_min_key_bits")
             if v.get("kind") == "KeyExchangeAlgorithms" and isinstance(bits, int) and 0 < bits < 2048 \
@@ -749,11 +758,12 @@ def _config_rules(out: _Out, facts: dict[str, Any]) -> None:
             out.add(code, "High", text)
         ciphers = str(facts.get("ciphers") or "")
         if ciphers and _WEAK_CIPHER_STRING.search(ciphers):
-            out.add("WEAK_CIPHER", "High", f"{kind} cipher list allows weak suites ({ciphers[:60]})")
+            out.add("WEAK_CIPHER", "High", f"{kind} cipher list allows weak suites ({ciphers[:60]})",
+                    [t for t in re.split(r"[\s:,]+", ciphers) if _WEAK_CIPHER_STRING.search(t)])
     elif kind == "openssl_cli":
         cipher = str(facts.get("cipher") or "")
         if cipher and _BAD_ENC.search(cipher):
-            out.add("WEAK_CIPHER", "High", f"openssl {cipher} in {facts.get('file')}:{facts.get('line')}")
+            out.add("WEAK_CIPHER", "High", f"openssl {cipher} in {facts.get('file')}:{facts.get('line')}", cipher)
         if not facts.get("pbkdf2") and facts.get("decrypt") is not True:
             md = facts.get("md") if isinstance(facts.get("md"), str) else None
             out.add("OPENSSL_ENC_WEAK_KDF", "Medium", "openssl enc derives the key with EVP_BytesToKey"
@@ -1046,6 +1056,7 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
         out.add("QUANTUM_VULNERABLE", None, "Uses public-key cryptography that a quantum computer can break")
     return {"impact": out.impact, "quantum_vulnerable": qv, "finding_codes": out.codes, "finding": out.finding(),
             "cdx_type": CDX_TYPE.get(asset_type, "other"), "texts": out.by_code, "impacts": out.impacts,
+            "algorithms": {c: list(out.algorithms[c]) for c in out.codes if out.algorithms.get(c)},
             "standards": standards_of(asset_type, algorithm, key_size, facts)}
 
 

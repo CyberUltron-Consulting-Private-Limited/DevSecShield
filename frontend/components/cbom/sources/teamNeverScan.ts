@@ -120,3 +120,18 @@ export function exclusionSaveError(error: unknown): string | null {
  */
 export const RANGE_HINT =
   "A /16 or smaller, one IP, or a-b. Network and broadcast addresses are skipped only at the edges of the network your ranges form together, disabled ranges included: a /24 split into two /25s still scans .127 and .128; a subnet on its own skips its own.";
+
+/**
+ * What a held never-scan host name means for one scan node (Minor 2 of the #250 review): the node could not resolve
+ * the name in its latest job that checked an address, so it cannot tell which address is that host and scans no
+ * address for this team until the name resolves there or is removed from the list. ``since`` is already formatted.
+ */
+export function heldNote(nodeName: string, since: string): string {
+  return `${nodeName} cannot resolve this name (since ${since}), so it scans no network address for this team: every job of the team on ${nodeName} that connects to an address (servers, appliances, databases, registries, range sweeps) holds all its targets until the name resolves there or is removed from this list. Jobs that reach no address, such as a PKCS#11 token on the node, still run.`;
+}
+
+/** The held entries for one stored entry (same name, case and a trailing dot aside). */
+export function heldFor<T extends { name: string }>(entry: string, held: readonly T[] | null | undefined): T[] {
+  const name = entry.trim().toLowerCase().replace(/\.$/, "");
+  return (held ?? []).filter((h) => h.name === name);
+}

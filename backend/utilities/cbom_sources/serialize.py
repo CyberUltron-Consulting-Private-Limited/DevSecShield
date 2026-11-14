@@ -182,6 +182,8 @@ def public_job(job: CbomCollectionJob, node: CbomScanNode | None, settings: Cbom
         "attempts": job.attempts,
         "credits": round(job.weight_c / 100, 2),
         "refunded": job.refunded,
+        # what was given back (CB-14): all of "credits" for a failed or cancelled job, the runtime-skip share otherwise
+        "credits_refunded": round((job.refunded_c or 0) / 100, 2),
         "created_at": iso_z(job.created_at),
         "claimed_at": iso_z(job.claimed_at),
         "finished_at": iso_z(job.finished_at),

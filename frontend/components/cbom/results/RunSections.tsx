@@ -22,11 +22,13 @@ import { cbomOpsKeys, getCbomRunDiff } from "@/utils/api/cbom_ops";
 import { useQuery } from "@tanstack/react-query";
 import { TERMINAL_RUN } from "@/components/cbom/sources/keys";
 import { credits, formatDateTime, formatDay, pluralize } from "@/components/cbom/sources/logic";
+import { LabModeBanner } from "@/components/cbom/sources/LabModeBanner";
 import { TargetsBlock } from "@/components/cbom/sources/RunResults";
 import { EmptyState, RunStatusBadge, StatusBadge, Truncate, type Tone } from "@/components/cbom/sources/shared";
 
 import { CbomDashboardCharts } from "./CbomDashboardCharts";
 import { getImpactBadgeClass } from "./badgeClasses";
+import { waveLegend } from "./readinessExplain";
 import {
   certCountText,
   certListView,
@@ -213,6 +215,10 @@ export function RunCoverageSection({ run, targets, provenance }: {
   return (
     <SectionShell infoId="cbom.run.covered" title="Collection jobs and targets" testId="run-section-coverage"
                   description="Every job of the run with where it ran and how it ended, the sources skipped at the start, and each target's outcome">
+      {/* lab mode (test deployments): the run-level note, the same component as the AWS form's; each job keeps its badge */}
+      {targets?.some((job) => job.lab_mode) && (
+        <LabModeBanner testId="run-lab-mode" detail="An AWS source in this run was read from the deployment's own AWS account." />
+      )}
       {jobs.length === 0 ? <EmptyState title="No jobs in this run" /> : <RunJobsTable jobs={jobs} testIdPrefix="run-job" />}
       <SkippedAtStart items={skipped} />
       {provenance && provenance.length > 0 && (
@@ -408,8 +414,10 @@ export function RunDiffBlock({ teamId, runId }: { teamId: number; runId: number 
 // ---------------------------------------------------------------------------- S9 remediation waves
 const WAVE_TONE: Record<number, Tone> = { 1: "red", 2: "amber", 3: "blue", 4: "zinc" };
 
-export function RunWavesSection({ byWave, labels, loading, deferred, selected }: {
+export function RunWavesSection({ byWave, labels, rules, loading, deferred, selected }: {
   byWave: Record<string, number> | null | undefined; labels?: Record<string, string>; loading: boolean;
+  /** what puts an asset in each wave (the backend's suggested_wave rules; issue #271) */
+  rules?: Record<string, string>;
   /** an active run on a newer backend: the whole-run plan is not polled; each row shows its own wave */
   deferred: boolean;
   selected: number;
@@ -430,12 +438,34 @@ export function RunWavesSection({ byWave, labels, loading, deferred, selected }:
           ))}
         </div>
       )}
+      <WaveLegend byWave={deferred || loading ? null : byWave} rules={rules} />
       <p className="text-xs text-zinc-500">
         {selected > 0
           ? `${pluralize(selected, "finding")} selected in the table below: set wave, owner, target date or status there.`
           : "Select findings in the table below to assign a wave, owner, target date or status."}
       </p>
     </SectionShell>
+  );
+}
+
+/** What each wave holds and why one can be empty (issue #271). Counts are the wave plan's (by_wave), never recounted;
+ * while the plan is not loaded the legend gives the rules only. */
+export function WaveLegend({ byWave, rules }: { byWave: Record<string, number> | null | undefined; rules?: Record<string, string> }) {
+  const rows = waveLegend(byWave, rules);
+  return (
+    <details className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="run-wave-legend" open>
+      <summary className="cursor-pointer text-zinc-700 dark:text-zinc-300">What goes in each wave</summary>
+      <ul className="mt-1.5 space-y-1">
+        {rows.map((r) => (
+          <li key={r.key} data-testid={`run-wave-legend-${r.key}`} data-count={byWave ? r.count : undefined}>
+            <span className="font-semibold text-zinc-800 dark:text-zinc-200">{r.label}</span>
+            {byWave ? <span className="text-zinc-500"> ({r.count})</span> : null}: {r.rule}.
+            {byWave && r.empty ? <span className="text-zinc-500"> {r.empty}</span> : null}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1">An asset gets the first wave whose rule it meets; you can move it to another wave in the table below.</p>
+    </details>
   );
 }
 

@@ -9,6 +9,7 @@ import path from "node:path";
 
 import type { CbomRunAssetItem, CbomRunPosture, CbomRunResults } from "@/utils/backend_api";
 import {
+  dialogItem,
   findingChips,
   parityNotes,
   ASSIGNMENT_TO_FINDING,
@@ -355,6 +356,39 @@ if (fs.existsSync(runResultsPy)) {
     owasp: [["A02:2021", "A02:2021 Cryptographic Failures"]], controls: [], suggestedFix: "Disable TLS 1.0 and 1.1", basis: "kb" });
   assert.ok(!findingChips({}, kb).owasp.some(([k]) => k.endsWith(":2025")));
   assert.deepEqual(findingChips(null, []), { owasp: [], controls: [], suggestedFix: null, basis: "none" });
+}
+
+// ---- staging QA B7 bug 1: a dialog opened from the Certificates table or Top risks (an asset not on the findings page)
+// renders the findings table's row, from GET /sources/assets/{id} (which carries every /assets item field)
+{
+  const row = {
+    id: 3527, type: "certificate", cdx_type: "cryptographic-asset", job_id: 41, source_id: null, source_name: "dmz-web",
+    target: "10.0.0.5", location: "/etc/ssl/api.pem", name: "CN=api.bank.local", algorithm: "RSA", key_size: 2048,
+    protocol: null, quantum_vulnerable: true, impact: "High", finding: "RSA 2048 certificate", finding_codes: ["CERT_RSA"],
+    facts: {}, type_label: "Certificate", crypto_strength: "Moderate", risk_score: 6.5, status: "not_started",
+    q_grade: "Q0", fix_class: "configurable", bom_ref: "zs-asset-3527",
+  } as unknown as CbomRunAssetItem;
+  // opened from the table: the table's row wins (no wait for the detail)
+  assert.equal(dialogItem({ item: row }, undefined), row);
+  assert.equal(dialogItem({ item: row }, { ...row, risk_score: 1 }), row);
+  // opened by id: the detail's copy of the row once it is there, the same fields the table row has
+  const detail = { ...row, pqc_class: "vulnerable", details: [], agility: {}, q_explain: {} };
+  const fromDetail = dialogItem({ assetId: 3527 }, detail);
+  assert.ok(fromDetail, "an asset opened by id gets its row from the detail");
+  for (const key of ["type_label", "crypto_strength", "key_size", "impact", "risk_score", "status", "q_grade", "fix_class",
+    "location", "finding", "job_id", "source_name", "finding_codes"] as const) {
+    assert.deepEqual(fromDetail![key], row[key], key);
+  }
+  // while the detail loads, after an error, for another asset, or from an older backend (no row fields): no row
+  assert.equal(dialogItem({ assetId: 3527 }, undefined), null);
+  assert.equal(dialogItem({ assetId: 3527 }, { ...detail, id: 9 }), null);
+  assert.equal(dialogItem({ assetId: 3527 }, { ...detail, job_id: undefined }), null);
+  assert.equal(dialogItem({ assetId: 3527 }, { ...detail, finding_codes: undefined }), null);
+  assert.equal(dialogItem(null, detail), null);
+  // the dialog renders every row block from the resolved row, not only from a table subject
+  const dialogSrc = fs.readFileSync(path.join(__dirname, "RunFindingDialog.tsx"), "utf8");
+  assert.match(dialogSrc, /const item = dialogItem\(subject, detailQ\.data\)/);
+  assert.doesNotMatch(dialogSrc, /subject && "item" in subject \? subject\.item/);
 }
 
 console.log("run results model tests passed");

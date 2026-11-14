@@ -81,13 +81,17 @@ import { quantumCounts, type QuantumFields } from "@/components/cbom/quantumFilt
 import { ComplianceMatrix, type AttestHandler, type Compliance } from "@/components/compliance/ComplianceMatrix";
 import { FRAMEWORK_GROUPS_CBOM_WITH_INDIA } from "@/components/compliance/frameworkLabels";
 import {
+  distinctPqcFixes,
   enrichPqcMigrationFromFindings,
+  fixIndexByGroup,
   groupPqcMigrationRows,
   migrationDescriptor,
   pqcAccordionDefaultCollapsed,
   pqcDescription,
   pqcHowToFix,
+  pqcRoadmapGroups,
 } from "@/components/cbom/pqcMigrationGroup";
+import { nistLevelInfo } from "@/components/cbom/results/readinessExplain";
 import { InfoTip } from "@/components/ui/info-tip";
 
 export type {
@@ -185,6 +189,13 @@ export interface PqcMigrationRow {
   description?: string | null;
   suggested_fix?: string | null;
   finding_codes?: string[] | null;
+  /** CBOM Sources run rows only (one per asset): what the list groups them by (issue #271) */
+  asset_type?: string | null;
+  type_label?: string | null;
+  algorithm?: string | null;
+  migration_code?: string | null;
+  fix_code?: string | null;
+  finding_title?: string | null;
 }
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -461,8 +472,9 @@ function PqcInstanceHover({
   const description = pqcDescription(row);
   const fix = pqcHowToFix(row);
   const codes = (row.finding_codes ?? []).filter(Boolean);
+  const level = nistLevelInfo(row.nist_quantum_security_level);
   const why = [
-    `Quantum-vulnerable (NIST level ${row.nist_quantum_security_level ?? 0})`,
+    `Quantum-vulnerable (NIST ${level.name})`,
     row.impact ? String(row.impact) : "",
     codes.length ? codes.join(", ") : "",
   ]
@@ -483,8 +495,9 @@ function PqcInstanceHover({
               <p className="mt-0.5 text-[11px] text-zinc-500">{row.impact}</p>
             ) : null}
           </div>
-          <Badge variant="outline" className={`shrink-0 text-[10px] ${impactBadgeClass(row.impact)}`}>
-            Level {row.nist_quantum_security_level ?? 0}
+          <Badge variant="outline" className={`shrink-0 text-[10px] ${impactBadgeClass(row.impact)}`}
+                 title={`${level.name}. ${level.meaning} ${level.next}`}>
+            NIST {level.name}
           </Badge>
         </li>
       </HoverCardTrigger>
@@ -576,6 +589,10 @@ function QuantumVulnerableList({
   onOpenFinding?: (finding: CbomFinding) => void;
 }) {
   const groups = useMemo(() => groupPqcMigrationRows(migration), [migration]);
+  // each distinct fix once (issue #271): the cards say "Fix N", the list below the cards gives the text
+  const fixes = useMemo(() => distinctPqcFixes(groups), [groups]);
+  const fixOf = useMemo(() => fixIndexByGroup(fixes), [fixes]);
+  const levels = useMemo(() => [...new Set(groups.map((g) => g.nistLevel))].sort().map(nistLevelInfo), [groups]);
   const collapseDefault = pqcAccordionDefaultCollapsed(groups, migration.length);
   // Remount when the group set changes (fixture ↔ legacy scan) so default
   // expanded/collapsed state resets. Uncontrolled Accordion — controlled
@@ -600,9 +617,19 @@ function QuantumVulnerableList({
           )}
         </CardTitle>
         <CardDescription>
-          Public-key assets broken by a cryptographically-relevant quantum computer
-          (NIST level 0)
+          Public-key assets broken by a cryptographically-relevant quantum computer. Near-identical assets (same
+          algorithm, finding and fix) share one card; open it for the list.
         </CardDescription>
+        {levels.length > 0 && (
+          <ul className="space-y-0.5 text-xs text-zinc-600 dark:text-zinc-400" data-testid="pqc-level-legend">
+            {levels.map((l) => (
+              <li key={l.name}>
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">NIST {l.name}.</span> {l.meaning}{" "}
+                {l.next && <span className="text-zinc-500">Next: {l.next}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
       </CardHeader>
       <CardContent>
         {migration.length === 0 ? (
@@ -648,11 +675,17 @@ function QuantumVulnerableList({
                         >
                           {g.instances.length}
                         </Badge>
+                        {fixOf.has(g.key) && (
+                          <Badge variant="outline" className="tabular-nums" data-testid="pqc-group-fix">
+                            Fix {fixOf.get(g.key)}
+                          </Badge>
+                        )}
                         <Badge
                           variant="outline"
                           className="border-orange-500/50 text-orange-600 dark:text-orange-400"
+                          title={`${nistLevelInfo(g.nistLevel).name}. ${nistLevelInfo(g.nistLevel).meaning}`}
                         >
-                          Level {g.nistLevel}
+                          NIST Level {g.nistLevel}
                         </Badge>
                         <Badge variant="outline" className={impactBadgeClass(g.maxImpact)}>
                           {g.maxImpact ?? "—"}
@@ -676,6 +709,23 @@ function QuantumVulnerableList({
             </Accordion>
           </div>
         )}
+        {fixes.length > 0 && (
+          <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800" data-testid="pqc-fix-list">
+            <p className="mb-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              How to fix ({fixes.length} distinct fix{fixes.length === 1 ? "" : "es"})
+              <InfoTip id="cbom.chart.qv_fixes" />
+            </p>
+            <ol className="space-y-2">
+              {fixes.map((f) => (
+                <li key={f.index} className="text-xs text-zinc-700 dark:text-zinc-300" data-testid="pqc-fix-item">
+                  <span className="font-semibold">Fix {f.index}</span>
+                  <span className="text-zinc-500"> · {f.instances.length} asset{f.instances.length === 1 ? "" : "s"} · {f.names.join(", ")}</span>
+                  <span className="mt-0.5 block whitespace-pre-wrap break-words">{f.fix}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -689,7 +739,8 @@ function MigrationRoadmap({
   migration: PqcMigrationRow[];
   onOpenFinding?: (finding: CbomFinding) => void;
 }) {
-  const groups = useMemo(() => groupPqcMigrationRows(migration), [migration]);
+  // a run's roadmap lists each distinct fix once (issue #271); a code scan's, one target per algorithm and size
+  const groups = useMemo(() => pqcRoadmapGroups(migration), [migration]);
   const collapseDefault = pqcAccordionDefaultCollapsed(groups, migration.length);
   const accordionKey = `roadmap:${groups.map((g) => g.key).join("\n")}`;
   const defaultOpen = collapseDefault
@@ -763,7 +814,8 @@ function MigrationRoadmap({
                       <div className="flex min-w-0 flex-1 items-center gap-2 pr-2">
                         <Badge
                           variant="outline"
-                          className="shrink-0 border-orange-500/50 text-orange-600 dark:text-orange-400"
+                          className="max-w-[45%] shrink-0 truncate border-orange-500/50 text-orange-600 dark:text-orange-400"
+                          title={g.name}
                         >
                           {g.name}
                         </Badge>

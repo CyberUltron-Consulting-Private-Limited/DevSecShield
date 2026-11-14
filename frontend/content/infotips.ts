@@ -5079,7 +5079,98 @@ export const INFO_TIPS = {
     why: "Sensitive data under weak crypto is migrated first.",
     example: "u_data_classification.",
   },
-  // src: frontend/components/integrations/IntegrationsPage.tsx:105 — syslog collector
+  // src: frontend/components/integrations/IntegrationsPage.tsx:104, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_segment": {
+    label: "CMDB segment field",
+    what: "The CMDB field holding each CI's network segment or site. A row goes to the scan node whose segment matches (or the one chosen for it in the import).",
+    why: "Hosts in two data centres each reach the scan node that can see them.",
+    example: "location.name for dc-mumbai and dc-chennai.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:105, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_scan_node": {
+    label: "CMDB scan node field",
+    what: "The CMDB field naming the scan node (by its name in ZeroShield) that reaches the CI. It wins over the segment.",
+    why: "Pins CIs that only one node can reach.",
+    example: "u_scan_node = mum-01.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:106, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_kind": {
+    label: "CMDB source kind field",
+    what: "The CMDB field saying what a CI is for the import: linux, windows, database (or an engine name), kubernetes, hsm or kmip. Without it the CI class decides (cmdb_ci_db_*, *kubernetes*, Windows or Linux).",
+    why: "A CI read as the wrong kind is imported as the wrong source, or skipped.",
+    example: "u_cbom_kind = hsm.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:107, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_engine": {
+    label: "CMDB database engine field",
+    what: "The CMDB field with a database CI's engine: postgres, mysql, mssql, oracle, mongodb or redis (PostgreSQL and SQL Server spellings are understood).",
+    why: "A database row without its engine is skipped with the reason.",
+    example: "u_db_engine = PostgreSQL.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:108, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_port": {
+    label: "CMDB port field",
+    what: "The CMDB field with a database CI's port. Blank: the engine's default port.",
+    why: "A wrong port makes the source fail its connection test.",
+    example: "tcp_port = 5433.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:109, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_login": {
+    label: "CMDB login field",
+    what: "The CMDB field with the read-only login of a database, or the WinRM login of a Windows server. The password is read from the vault, never from ServiceNow.",
+    why: "Database rows with a login need it to collect.",
+    example: "u_db_login = cbom_ro.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:110, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_database_name": {
+    label: "CMDB database name field",
+    what: "The CMDB field with a database name; required for Oracle (the service name).",
+    why: "An Oracle row without its service name is skipped.",
+    example: "u_db_name = ORCLPDB1.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:111, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_vault_path": {
+    label: "CMDB vault path field",
+    what: "The CMDB field with the vault secret path of the CI's login: a database password, a cluster kubeconfig, an HSM PIN or a Windows login. Read from the vault chosen in the import.",
+    why: "Credentials stay in your vault; rows that need one and have none are skipped.",
+    example: "u_vault_path = secret/data/db/pg1.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:112, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_vault_provider": {
+    label: "CMDB vault provider field",
+    what: "The CMDB field naming the vault of a CI's vault path when it is not the one chosen in the import: hashicorp, cyberark, aws_secrets_manager or azure_key_vault.",
+    why: "Lets one import read logins from more than one vault.",
+    example: "u_vault_provider = cyberark.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:113, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_api_url": {
+    label: "CMDB API URL field",
+    what: "The CMDB field with a Kubernetes cluster's API server URL (https://...).",
+    why: "A cluster row without its API URL is skipped with the reason.",
+    example: "u_api_url = https://k8s-prod.bank.local:6443.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:114, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_context": {
+    label: "CMDB kube context field",
+    what: "The CMDB field with the kubeconfig context to use for a cluster. Blank: the kubeconfig's current context.",
+    why: "The wrong context reads the wrong cluster.",
+    example: "u_kube_context = prod.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:115, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_module": {
+    label: "CMDB PKCS#11 module field",
+    what: "The CMDB field with an HSM's PKCS#11 module name, as the scan node lists it in ZS_PKCS11_MODULES.",
+    why: "An HSM row without its module is skipped.",
+    example: "u_pkcs11_module = luna.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:116, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_token_label": {
+    label: "CMDB token label field",
+    what: "The CMDB field with the HSM token (slot) label to read. Blank: the module's first token.",
+    why: "Each token is its own source.",
+    example: "u_token_label = payments-01.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:120 — syslog collector
   "int.sys.host": {
     label: "Collector host",
     what: "The hostname or address of your syslog collector.",
@@ -5532,11 +5623,18 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/CbomCryptoCharts.tsx:590-603 — NIST level 0 public-key assets
   "cbom.chart.qv": {
     label: "Quantum-vulnerable algorithms",
-    what: "Public-key algorithms a cryptographically relevant quantum computer breaks (NIST level 0), each with where it is used.",
+    what: "Public-key algorithms a cryptographically relevant quantum computer breaks (NIST level 0: no quantum resistance), each with where it is used. Near-identical assets (same algorithm, finding and fix) share one card with a count; open it for the asset list.",
     why: "Data protected by them can be harvested now and decrypted later.",
     example: "RSA-2048 key exchange on api.bank.in:443: a future quantum computer could recover the key; harvest-now-decrypt-later applies.",
   },
-  // src: frontend/components/cbom/CbomCryptoCharts.tsx:606-615 — no NIST level 0 assets
+  // src: frontend/components/cbom/pqcMigrationGroup.ts:202-220 — each distinct fix text once, with the assets it covers (#271)
+  "cbom.chart.qv_fixes": {
+    label: "How to fix",
+    what: "Each distinct fix once, numbered by how many assets it covers; every card above shows the number of its fix. The text comes from the offline knowledge base.",
+    why: "One configuration change often fixes dozens of endpoints: reading it once makes the plan clear.",
+    example: "Fix 1 · 28 assets · X25519 on TLS endpoint: offer a hybrid key-exchange group first.",
+  },
+  // src: frontend/components/cbom/CbomCryptoCharts.tsx:632-643 — no NIST level 0 assets
   "cbom.chart.qv_none": {
     label: "No quantum-vulnerable algorithms",
     what: "No algorithm in this inventory is broken by a quantum computer at its parameter size.",
@@ -5857,10 +5955,24 @@ export const INFO_TIPS = {
     why: "Drift shows new weak crypto, and fixes that landed, as soon as they happen.",
     example: "+3 certificates, -1 SSH host key, 2 changed.",
   },
-  // src: frontend/components/cbom/results/RunSections.tsx:416-435, backend/utilities/cbom_sources/waves.py:44-60 — wave counts of the run's assets
+  // src: backend/utilities/cbom_sources/posture.py:314-329,368-372, backend/utilities/cbom_sources/cbom_metrics.py:29-46 — ready judged / judged; unknown and not-applicable left out (#271)
+  "cbom.run.readiness": {
+    label: "PQC readiness explained",
+    what: "Ready judged assets divided by judged assets. Judged: the scan identified the cryptography and gave it a quantum verdict. Hybrid, post-quantum and symmetric (AES-256; AES-128 as Grover-weakened) count as ready. Unidentified assets and settings with no algorithm to judge (e.g. a password-hash setting) are left out of both numbers; the percentage is withheld when more assets are unidentified than judged.",
+    why: "0% means every judged asset is breakable by a future quantum computer, not that the scan failed; the list below says which assets and what moves the score.",
+    example: "46 judged, 0 ready: 0%. Moving 38 TLS endpoints to a hybrid key exchange makes it 82.6%.",
+  },
+  // src: backend/utilities/cbom_sources/posture.py:342-358, backend/utilities/cbom_sources/run_assets.py:120-148 — quantum-vulnerable assets per asset type and quantum finding, top 3, readiness after the fix; Show these lists the group (pqc_group) (#271)
+  "cbom.run.readiness_actions": {
+    label: "What would raise PQC readiness",
+    what: "The largest groups of quantum-vulnerable assets (same asset type and same quantum finding), with the knowledge-base fix and the readiness this run would have if that group alone were fixed. Show these filters the findings table to the group.",
+    why: "Tells you which change moves the score most, so the first migration step is the biggest one.",
+    example: "Fix 38 TLS endpoints: No post-quantum key exchange · Readiness 0% → 82.6%.",
+  },
+  // src: backend/utilities/cbom_sources/waves.py:58-81,86-98 — wave counts of the run's assets; the rule per wave, the legend text built from it (#271)
   "cbom.run.waves": {
     label: "Remediation waves",
-    what: "This run's assets per remediation wave (1 most urgent to 4 post-quantum migration). Select findings in the table below to assign a wave, owner, target date or status; plans follow the asset to later runs.",
+    what: "This run's assets per remediation wave; first matching rule wins. Wave 1: Critical or High weakness on an internet-facing or in-transit asset, or any quantum-vulnerable key exchange in transit (HNDL). Wave 2: other Critical or High. Wave 3: any other weakness, whatever its impact. Wave 4: quantum-vulnerable, no other weakness. Select findings below to set wave, owner, date or status.",
     why: "Turns the findings into an ordered plan with owners and dates.",
     example: "Wave 1: 4 · Wave 2: 11 · Wave 3: 30 · Wave 4: 52.",
   },
@@ -6110,26 +6222,12 @@ export const INFO_TIPS = {
     example: "dc-mumbai-linux · job #4410 · node-dc1 · 13 Nov 23:10.",
   },
   // ────────────────────────────────────────────────────────────── CBOM Sources: in-tab run results and posture (components/cbom/sources/RunResults.tsx, RunPosture.tsx)
-  // src: frontend/components/cbom/sources/RunResults.tsx:127-132 — each target's outcome
+  // src: frontend/components/cbom/sources/RunResults.tsx:103-108 — each target's outcome
   "cbom.run.targets": {
     label: "Targets",
     what: "Each target the run's jobs tried, with its outcome: read, unreachable, login failed and so on.",
     why: "Targets that could not be read are blind spots in this run.",
     example: "10.20.0.17 · unreachable (port 22 filtered).",
-  },
-  // src: frontend/components/cbom/sources/RunResults.tsx:386-399,355 — assets with a wave can be selected
-  "cbom.run.col.select_wave": {
-    label: "Select for wave assignment",
-    what: "Select assets that have a remediation wave, to assign a wave, owner, target date or status together.",
-    why: "Plans a group of similar assets in one step.",
-    example: "Tick the 12 certificates of api.bank.in, set Wave 2.",
-  },
-  // src: backend/utilities/cbom_sources/posture.py:3-5 — quantum-vulnerable class
-  "cbom.run.col.qv": {
-    label: "Quantum-vulnerable",
-    what: "Whether the asset was judged quantum-vulnerable when it was collected: public-key cryptography a quantum computer breaks (RSA, DH, elliptic curves).",
-    why: "These assets need a post-quantum replacement.",
-    example: "Yes for ECDHE P-256 key exchange.",
   },
   // src: backend/utilities/cbom_sources/posture.py:1-15 — HNDL, Mosca, risk score, compliance, from the knowledge base
   "cbom.run.posture": {

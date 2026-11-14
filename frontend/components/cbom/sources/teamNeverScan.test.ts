@@ -9,6 +9,8 @@ import assert from "node:assert/strict"
 
 import {
   ADDRESS_TYPO,
+  heldFor,
+  heldNote,
   exclusionSaveError,
   isLoopbackName,
   LOOPBACK_NAMES,
@@ -63,6 +65,13 @@ assert.equal(exclusionSaveError(refused(409, detail)), null)
 assert.equal(exclusionSaveError(refused(422, [{ loc: ["body"], msg: "x" }])), null)
 assert.equal(exclusionSaveError(new Error("network down")), null)
 assert.equal(exclusionSaveError(null), null)
+
+// Minor 2: a held name, per node, matched to its stored entry (case and a trailing dot aside)
+const held = [{ name: "shop.lab", node_id: 1, node_name: "dc-1" }, { name: "shop.lab", node_id: 2, node_name: "dc-2" }, { name: "pay.lab", node_id: 1, node_name: "dc-1" }]
+assert.deepEqual(heldFor("Shop.Lab.", held).map((h) => h.node_name), ["dc-1", "dc-2"])
+assert.deepEqual(heldFor("10.0.0.0/24", held), [])
+assert.deepEqual(heldFor("shop.lab", undefined), [])
+assert.equal(heldNote("dc-1", "14 Nov, 08:30"), "dc-1 cannot resolve this name (since 14 Nov, 08:30), so it scans no network address for this team: every job of the team on dc-1 that connects to an address (servers, appliances, databases, registries, range sweeps) holds all its targets until the name resolves there or is removed from this list. Jobs that reach no address, such as a PKCS#11 token on the node, still run.")
 
 // N3: the range form says which addresses a range scans (the node and the backend count the same)
 assert.ok(RANGE_HINT.includes("skipped only at the edges of the network your ranges form together, disabled ranges included"))

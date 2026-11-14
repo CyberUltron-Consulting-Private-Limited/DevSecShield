@@ -19,7 +19,7 @@ from typing import Any
 
 from zs_scan_node import drivergate
 from zs_scan_node.jobctx import JobContext, register_asset_types
-from zs_scan_node.netutil import Blocked, Target, checked_target
+from zs_scan_node.netutil import Blocked, Target, checked_target, host_port
 
 register_asset_types("db_encryption", "db_login_policy", "db_crypto_policy", "key_store")
 
@@ -130,7 +130,7 @@ def connect(ctx: JobContext, target: Target, port: int, config: dict, password: 
 
 
 def _classify(ctx: JobContext, target: Target, port: int, config: dict, code: str | None, message: str) -> OracleFail:
-    loc = f"{target.label}:{port}"
+    loc = host_port(target.label, port)
     if code == "DPY-3001" and "network encryption" in message.lower():  # DPY-3001 is "<feature> needs thick mode"
         ctx.emit("db_crypto_policy", target.label, f"{loc}#native-encryption", name="Oracle network encryption",
                  facts={"engine": "oracle", "native_encryption_required": True, "detail": message})

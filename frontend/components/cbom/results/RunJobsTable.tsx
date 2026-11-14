@@ -4,6 +4,7 @@
 // error) and the sources skipped when the run started. Moved out of ReviewRunTab's run dialog (CB-38) so the dialog
 // and the run results page render the same table.
 
+import { refundLabel } from "@/components/cbom/results/refundLabel";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { CbomJob, CbomPlanItem } from "@/utils/backend_api";
@@ -56,7 +57,11 @@ export function RunJobsTable({ jobs, testIdPrefix = "review-job" }: { jobs: Cbom
                 <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.asset_count ?? 0}</TableCell>
                 <TableCell className="text-right text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
                   {credits(job.credits)}
-                  {job.refunded && <span className="ml-1 text-xs text-green-600 dark:text-green-400">refunded</span>}
+                  {refundLabel(job) && (
+                    <span className="ml-1 text-xs text-green-600 dark:text-green-400" data-testid={`${testIdPrefix}-refund-${job.id}`}>
+                      {refundLabel(job)}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="text-right text-zinc-600 dark:text-zinc-400">{job.attempts}</TableCell>
                 <TableCell className="max-w-[260px] text-zinc-600 dark:text-zinc-400">

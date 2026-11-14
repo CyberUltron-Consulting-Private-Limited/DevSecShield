@@ -613,18 +613,37 @@ def test_the_source_asset_cap_is_summed_over_slices_and_the_rest_become_cap_gaps
     assert stored == 5 == p.asset_count and p.result.get("truncated") is True
     statuses = [t["status"] for t in p.result["targets"]]
     assert statuses.count("skipped_cap") == 5 and p.result["counts"]["skipped"] == 5
-    assert p.status == "success" and p.outcome == "partial" and not p.refunded and run.status == "partial"
+    assert p.status == "success" and p.outcome == "partial" and run.status == "partial"
+    # CB-14 (OA-10b): the 5 of 8 account-regions the asset cap left unread are not charged
+    assert p.refunded and p.refunded_c == p.weight_c * 5 // 8
     skipped = [j for j in _jobs(engine, kind="slice") if j.status == "cancelled"]
     assert len(skipped) == 5 and all(j.attempts == 0 for j in skipped)  # never run
 
 
-def _pool_peaks(engine, monkeypatch, teams: dict[int, int], workers: int, cap: int) -> dict:
+def _pool_peaks(engine, monkeypatch, teams: dict[int, int], workers: int, cap: int, *, fanned_out: bool = False) -> dict:
     """Run ``workers`` loops over the given {team: accounts} (1 region each) and return each team's peak running
-    count, overall and while another team still had queued work."""
+    count, overall and while another team still had queued work, and every claim as the claiming transaction saw it
+    right after its UPDATE: (team, the team's running count with this claim, other teams' pending jobs).
+
+    ``fanned_out``: every team's collection is fanned out into its slices before the workers start, so no team's
+    pending work grows again while they run (each team only drains). Both measurements are then exact: a team seen
+    with queued work at any moment had it at every earlier claim, which the cap had to respect."""
     monkeypatch.setenv("CBOM_CLOUD_TEAM_MAX_CONCURRENCY", str(cap))
     lock = threading.Lock()
-    peaks = {t: {"any": 0, "contended": 0} for t in teams}
+    peaks: dict = {t: {"any": 0, "contended": 0} for t in teams}
+    peaks["claims"] = []
     base = _collector(0.03)
+    real_claim = J.claim_cloud_job
+
+    def claim(session, now, worker, **kw):
+        payload = real_claim(session, now, worker, **kw)
+        if payload is not None:  # inside the claim's transaction: this claim counted, not yet committed
+            team = int(payload["job"]["team_id"])
+            others = session.exec(select(func.count()).select_from(CbomCollectionJob).where(
+                *J._cloud_queue(), CbomCollectionJob.status == "pending", CbomCollectionJob.team_id != team)).one()
+            with lock:
+                peaks["claims"].append((team, J._cloud_running(session, team).get(team, 0), int(others)))
+        return payload
 
     def collect(team_id, *a, **kw):
         with Session(engine) as s:
@@ -643,6 +662,11 @@ def _pool_peaks(engine, monkeypatch, teams: dict[int, int], workers: int, cap: i
         user = _team(engine, team)
         _source(engine, team, accounts=accounts)
         _queue(engine, team, user, f"peak-run-{team:04d}")
+    if fanned_out:  # each collection's parent is the oldest pending job of its team: one run_once fans each out
+        for _team_id in teams:
+            assert W.run_once(engine, "fan-out")
+        assert len(_jobs(engine, kind="slice", status="pending")) == sum(2 * a for a in teams.values())
+    monkeypatch.setattr(J, "claim_cloud_job", claim)
     threads = [threading.Thread(target=W.worker_loop, args=(engine, f"p{i}")) for i in range(workers)]
     for t in threads:
         t.start()
@@ -663,9 +687,52 @@ def test_a_lone_tenant_may_use_the_whole_pool(engine, monkeypatch):
 
 
 def test_the_team_cap_holds_while_another_team_is_waiting(engine, monkeypatch):
-    peaks = _pool_peaks(engine, monkeypatch, {1: 30, 2: 30}, workers=4, cap=2)
+    """No claim takes a team past the cap while another team has pending work, checked inside every claiming
+    transaction, and the slice-start sample agrees. Both teams are fanned out before the workers start: with a
+    work-conserving cap that never preempts, a team legitimately above the cap while alone stays there until its jobs
+    finish when another team's work appears later, which a sample taken then would count as a breach (the flake of
+    #277 / #280); the race on that path (work appearing during a claim) is test_a_claim_decided_alone_...)."""
+    peaks = _pool_peaks(engine, monkeypatch, {1: 30, 2: 30}, workers=4, cap=2, fanned_out=True)
+    breaches = [c for c in peaks["claims"] if c[2] > 0 and c[1] > 2]
+    assert breaches == [], breaches[:5]
     assert peaks[1]["contended"] <= 2 and peaks[2]["contended"] <= 2, peaks
-    assert max(peaks[1]["contended"], peaks[2]["contended"]) >= 2, peaks  # and the pool was used
+    contended = [c[1] for c in peaks["claims"] if c[2] > 0]
+    assert contended and max(contended) == 2, peaks["claims"][:10]  # and the pool was used up to the cap
+
+
+def test_a_claim_decided_alone_is_refused_when_another_team_starts_waiting_before_its_update(engine, monkeypatch):
+    """The real race behind the flake: the claimer reads the queue (only team 1 waiting, so no cap), another team's
+    work appears (its collection fans out), then the claiming UPDATE runs. Before the fix that claim took team 1 past
+    its cap while team 2 waited; the UPDATE's guard now re-decides the cap at that moment, on SQLite and PostgreSQL."""
+    monkeypatch.setenv("CBOM_CLOUD_TEAM_MAX_CONCURRENCY", "2")
+    _run, _parent = _fanned_out(engine, monkeypatch, accounts=5)  # team 1: 10 slices
+    for _ in range(2):  # team 1 at its cap
+        with Session(engine) as s:
+            assert J.claim_cloud_job(s, utcnow(), "w") is not None
+            s.commit()
+    user2 = _team(engine, 2)
+    _source(engine, 2)
+    real_check = S.slice_invalid_reason
+    fired: list[int] = []
+
+    def team2_arrives(session, job, source):  # called by the claimer after its queue read, before its UPDATE
+        if not fired:
+            fired.append(_queue(engine, 2, user2, "late-run-0002"))  # committed on its own connection
+        return real_check(session, job, source)
+
+    monkeypatch.setattr(S, "slice_invalid_reason", team2_arrives)
+    with Session(engine) as s:
+        payload = J.claim_cloud_job(s, utcnow(), "w")
+        s.commit()
+    assert fired, "the claimer never reached its UPDATE"
+    assert payload is None  # before the fix: a third team-1 slice while team 2 waited
+    with Session(engine) as s:
+        assert J._cloud_running(s) == {1: 2}
+    # team 2 is served next, and team 1 again once it is back under its cap
+    with Session(engine) as s:
+        nxt = J.claim_cloud_job(s, utcnow(), "w")
+        s.commit()
+    assert nxt is not None and nxt["job"]["team_id"] == 2
 
 
 def test_a_throttled_slice_is_requeued_with_backoff_not_reported_as_auth_failed(engine, monkeypatch):

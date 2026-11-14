@@ -1,0 +1,195 @@
+# CBOM verification waves (DEVILS-ADVOCATE.md §4.5, run nightly by CB-35).
+#
+# A PR runs the waves its changed paths trigger (`python3 -m harness.waves select --base origin/dev`); the nightly runs
+# every wave (`run-waves.sh`), split over two stack.lock holds so other sessions can use the stack in between.
+#
+# Each step is one command run from the repository root with bash. `needs` names what the step must find on the
+# machine (harness/waves.py NEEDS); a step whose needs are missing is NOT-RUN with the reason, never a pass.
+# `live: true` steps use the shared Tier-L stack or lab and run inside that wave's lock hold (with
+# CBOM_STACK_LOCK_HELD=1, so run-gate.sh restacks to the SHA inside the hold instead of taking the lock again); the
+# others are hermetic (their own SQLite / temp dirs) and run before the holds. Placeholders: {repo} {run} {sha} {step_dir}
+# {backend_pytest} {node_pytest} (harness/waves.py PLACEHOLDERS; both pytest commands can be overridden with the
+# CBOM_WAVES_BACKEND_PYTEST / CBOM_WAVES_NODE_PYTEST environment variables on the Tier-L host).
+#
+# `paths` are the §4.5 triggers as written in the plan, plus the paths they mean in this repository where the plan's
+# glob matches nothing here (`alembic` lives in prod_database_migrations/migrations; Azure/GCP collectors by name).
+version: 1
+hold_budget_min: 90  # each stack.lock hold (§4.5 / CB-35: a nightly full run split over two holds)
+holds:
+  A: [W-STATE, W-UPGRADE, W-SKEW, W-INT, W-OUT]
+  B: [W-NET, W-HOST, W-KEY, W-SCALE, W-D1, W-CLOUD]
+
+waves:
+  W-NET:
+    title: network probers, full zoo, IPv6, IDN zone
+    paths:
+      - "scan_node/**/{network,tlsprobe,ikeprobe,otprobe,netutil}.py"
+    steps:
+      - id: node-network-suites
+        run: "{node_pytest} tests/test_tlsprobe.py tests/test_tls_fidelity.py tests/test_network_sweep.py tests/test_network_gate.py tests/test_network_progress.py tests/test_never_scan_names.py tests/test_never_scan_resolver.py tests/test_never_scan_sockets.py tests/test_safety.py tests/test_wp7_ike.py tests/test_wp7_ot_mesh.py"
+        needs: [node-py]
+        budget_min: 10
+      - id: tls-fidelity-live
+        run: "{node_pytest} tests/test_tls_fidelity_live.py"
+        needs: [node-py, openssl]
+        budget_min: 10
+      - id: lab-zoo
+        title: "full zoo (z05c, z05e, z09 with 250 names, z10-z15, sshd B), hostile endpoints, --ipv6, IDN zone"
+        run: "python3 {repo}/e2e/cbom/lab/gen.py up --run-dir {step_dir} --wave W-NET"
+        needs: [stack, lab, lab-wave:W-NET]
+        live: true
+        budget_min: 25
+
+  W-HOST:
+    title: host, database and cluster collectors; lockout canaries
+    paths:
+      - "**/collectors/{linux_ssh,windows_winrm,database*,mssql,oracle,kubernetes}.py"
+    steps:
+      - id: node-host-suites
+        run: "{node_pytest} tests/test_parsers.py tests/test_windows_cert_keys.py tests/test_windows_least_privilege.py tests/test_k8s_mesh_facts.py tests/test_tier2_missing_program.py tests/test_ssh_session_drain.py tests/test_sshprobe.py tests/test_host_services_configs.py tests/test_trust_store_leaf_certs.py"
+        needs: [node-py]
+        budget_min: 10
+      - id: database-live
+        run: "{node_pytest} tests/test_postgres_roles_live.py tests/test_cb08_postgres_reads.py tests/test_mssql_live.py tests/test_oracle_live.py"
+        needs: [node-py, docker]
+        live: true
+        budget_min: 15
+      - id: lockout-canaries
+        title: "rocky, each negative in its own source, kind tier 1 then 2, MySQL/Redis/Mongo, require_tls, pam_faillock on 10 hosts"
+        run: "python3 {repo}/e2e/cbom/lab/gen.py up --run-dir {step_dir} --wave W-HOST"
+        needs: [stack, lab, lab-wave:W-HOST]
+        live: true
+        budget_min: 25
+
+  W-KEY:
+    title: HSM (two SoftHSM tokens), KMIP, Vault PKI and transit
+    paths:
+      - "**/collectors/{hsm_pkcs11,kmip,ca}.py"
+    steps:
+      - id: softhsm-two-tokens
+        run: "{node_pytest} tests/test_hsm_softhsm_live.py tests/test_keys_and_cas.py"
+        needs: [node-py, softhsm]
+        budget_min: 5
+      - id: kmip-vault-live
+        run: "{node_pytest} tests/test_kmip_live.py tests/test_ca_vault_live.py"
+        needs: [node-py, docker]
+        live: true
+        budget_min: 15
+
+  W-STATE:
+    title: drift, jobs, runs, planning, schedules; restart semantics
+    paths:
+      - "**/cbom_sources/{drift,jobs,runs,planning,schedules}.py"
+    steps:
+      - id: restart-semantics
+        title: "R3 S11: node orphan release at 120 s, 15-min lease expiry, cloud worker --once with a seeded lease"
+        run: "{backend_pytest} tests/test_cbom_cb35_restart_semantics.py"
+        needs: [backend-py]
+        budget_min: 5
+      - id: state-suites
+        run: "{backend_pytest} tests/test_cbom_review5_jobs_schedules.py tests/test_cbom_wp10_schedules.py tests/test_cbom_schedule_edit.py tests/test_cbom_drift_last_known.py tests/test_cbom_network_coverage_drift.py tests/test_cbom_r5_coverage_drift.py"
+        needs: [backend-py]
+        budget_min: 15
+      - id: gate-state-flow
+        title: "scope edit between runs, delete/re-create, two tabs Start, schedule third run, restart timings on the stack"
+        run: "bash {repo}/e2e/cbom/run-gate.sh {sha} --no-return --runs-root {step_dir}"
+        needs: [stack, lab, chromium]
+        live: true
+        budget_min: 45
+
+  W-OUT:
+    title: exports, posture, classification, compliance
+    paths:
+      - "**/cbom_sources/{inventory,cdx_xml,posture,classify*}.py"
+      - "**/crypto_kb.json"
+    steps:
+      - id: output-suites
+        run: "{backend_pytest} tests/test_cbom_cb06_export.py tests/test_cbom_cb19_24_export.py tests/test_cbom_cb26_estate_export.py tests/test_cbom_posture.py tests/test_cbom_compliance_traceability.py tests/test_cbom_run_deliverables.py tests/test_crypto_kb.py"
+        needs: [backend-py]
+        budget_min: 15
+
+  W-INT:
+    title: integrations (syslog TLS CEF, Splunk HEC, ServiceNow, webhook outage and retry)
+    paths:
+      - "backend/utilities/integrations/**"
+    steps:
+      - id: integration-suites
+        run: "{backend_pytest} tests/test_integrations_api.py tests/test_integrations_connectors.py tests/test_integrations_outbound.py tests/test_integrations_lab.py tests/test_siem_followups.py"
+        needs: [backend-py]
+        budget_min: 10
+      - id: integrations-live-local
+        run: "{backend_pytest} tests/test_integrations_live_local.py"
+        needs: [backend-py]
+        budget_min: 10
+
+  W-D1:
+    title: code lane (zip and CI upload agree), CB-07 benchmark floors
+    paths:
+      - "aibom/src/aibom/cbom/**"
+      - "RabbitMQ/worker/**"
+    steps:
+      - id: d1-lane
+        run: "cd aibom && D1_FLOORS_BASE=origin/dev bash ../bench/cbom/d1/ci.sh"
+        needs: [aibom-venv]
+        budget_min: 15
+
+  W-CLOUD:
+    title: cloud collectors (Stubber shapes; Tier A live once OA-4 exists)
+    paths:
+      - "**/aws_collect.py"
+      - "**/{azure,gcp}_collect.py"
+    steps:
+      - id: cloud-stubber-suites
+        run: "{backend_pytest} tests/test_cbom_aws_collect.py tests/test_cbom_aws_collect_wp4.py tests/test_cbom_aws_cb33.py tests/test_cbom_azure_gcp_collect.py tests/test_cbom_cloud_pool_f1.py"
+        needs: [backend-py]
+        budget_min: 15
+      - id: tier-a-live
+        run: "false"
+        needs: [oa-4]
+        budget_min: 1
+
+  W-UPGRADE:
+    title: the previous release's database dump upgraded, then the gate
+    paths:
+      - "**/alembic/**"
+      - "prod_database_migrations/**"
+    steps:
+      - id: single-head
+        run: "{backend_pytest} tests/test_alembic_single_head.py"
+        needs: [backend-py]
+        budget_min: 3
+      - id: upgrade-release-dump
+        run: "bash {repo}/e2e/cbom/waves/upgrade-dump.sh {step_dir}"
+        needs: [stack, release-dump]
+        live: true
+        budget_min: 20
+
+  W-SKEW:
+    title: the previous release's node image against the new backend, and the reverse
+    paths:
+      - "scan_node/**/{agent,api,jobctx}.py"
+    steps:
+      - id: node-contract-suites
+        run: "{node_pytest} tests/test_agent.py tests/test_node_signing.py tests/test_build_identity.py"
+        needs: [node-py]
+        budget_min: 5
+      - id: old-node-new-backend
+        title: "the gate's node steps (pre-flight, scan node from the UI command, network sources) with the old node"
+        run: "bash {repo}/e2e/cbom/run-gate.sh {sha} --no-return --runs-root {step_dir} --steps G0,G1,G2,G3,G5 --node-image \"$CBOM_WAVES_RELEASE_NODE_IMAGE\""
+        needs: [stack, lab, chromium, release-node-image]
+        live: true
+        budget_min: 25
+
+  W-SCALE:
+    title: 10k Kubernetes secrets, asset and export caps
+    paths: []  # nightly only
+    steps:
+      - id: caps
+        run: "{backend_pytest} tests/test_cbom_transports.py tests/test_cbom_source_cap_224.py tests/test_cbom_run_deliverables.py"
+        needs: [backend-py]
+        budget_min: 15
+      - id: k8s-10k-secrets
+        title: "10k secrets: 5,000 and a truncated coverage row; run 2 does not report the rest as removed (CB-32)"
+        run: "{node_pytest} tests/test_k8s_scale.py"
+        needs: [node-py, file:scan_node/tests/test_k8s_scale.py]
+        budget_min: 10

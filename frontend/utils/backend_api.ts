@@ -4263,6 +4263,17 @@ export type CbomSourceKind =
     | "appliance" | "key_manager" | "host_agent" | "container_images" | "ct_logs"
 export type CbomSourceGroup = "servers" | "kubernetes" | "databases" | "cloud" | "identity" | "network"
 export type CbomNodeStatus = "pending_registration" | "registration_expired" | "online" | "offline"
+/** A team never-scan host name that a scan node's latest job could not resolve (backend held.never_scan_held). */
+export interface CbomNeverScanHeld {
+    name: string
+    node_id: number
+    node_name: string
+    /** when the node first reported it in this unbroken run of jobs (ISO, UTC) */
+    since: string | null
+    last_seen: string | null
+    job_id: number
+}
+
 export type CbomTestStatus = "never" | "pending" | "passed" | "partial" | "failed" | "not_available" | "error" | "skipped"
 export type CbomJobStatus = "pending" | "claimed" | "success" | "failure" | "cancelled" | "expired"
 export type CbomRunStatus = "queued" | "running" | "done" | "partial" | "failed" | "cancelled"
@@ -4423,6 +4434,9 @@ export interface CbomJob {
     attempts: number
     credits: number
     refunded: boolean
+    /** credits given back (CB-14): all of ``credits`` for a failed or cancelled job, the share of targets skipped at
+     * runtime for a partly read one */
+    credits_refunded?: number
     created_at: string | null
     claimed_at: string | null
     finished_at: string | null
@@ -4565,6 +4579,8 @@ export interface CbomSourcesSettings {
     /** CT providers in the order they are asked, e.g. ["certspotter", "crtsh"] */
     ct_providers?: string[]
     network_exclusions: CbomExclusionItem[]
+    /** Never-scan host names a scan node cannot resolve: that node holds every job of the team (from job results) */
+    never_scan_held?: CbomNeverScanHeld[]
     sni_hostnames: string[]
     ports: CbomPortItem[]
     zeek_span: boolean
@@ -4604,6 +4620,25 @@ export interface CbomReadinessBasis {
     status: "ok" | "not_enough_identified" | "nothing_judged"
 }
 
+/** One group of quantum-vulnerable assets and the readiness the run would have with it fixed (posture's own
+ * readiness function: the page never computes a readiness). */
+export interface CbomReadinessAction {
+    asset_type: string
+    type_label: string
+    code: string | null
+    title: string
+    fix: string | null
+    assets: number
+    readiness_after: number | null
+}
+
+export interface CbomReadinessExcluded {
+    class: "unknown" | "not-applicable"
+    basis: string
+    assets: number
+    text: string
+}
+
 export interface CbomRunPosture {
     assets: number
     pqc_classes: Record<CbomPqcClass, number>
@@ -4612,6 +4647,12 @@ export interface CbomRunPosture {
     pqc_class_model?: string
     pqc_readiness_pct: number | null
     readiness_basis?: CbomReadinessBasis
+    /** issue #271: the quantum-vulnerable assets per (asset type, quantum finding), largest first; top 3 */
+    readiness_actions?: CbomReadinessAction[]
+    /** every such group (each quantum-vulnerable asset is in exactly one) */
+    readiness_actions_all?: CbomReadinessAction[]
+    /** the assets outside the readiness denominator (classes unknown and not-applicable), per reason */
+    readiness_excluded?: CbomReadinessExcluded[]
     hndl_assets: number
     impacts: Record<CbomImpact, number>
     top_codes: { code: string; count: number; title: string }[]
@@ -4619,7 +4660,8 @@ export interface CbomRunPosture {
     // CB-19 PR-2: the team's Mosca now, when it differs from what the run recorded at Start (null otherwise)
     mosca_now?: { configured: boolean; x: number | null; y: number | null; z: number | null; at_risk?: boolean; years_over?: number } | null
     top_risks: { id: number; type: string; name: string; location: string; impact: CbomImpact; criticality: string; source_name: string | null; score: number; hndl: boolean; finding: string | null }[]
-    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[] }[]; assets?: number }[]
+    // #289: unrecorded = assets cited for review only (the algorithm was not recorded); verdict fail | needs_evidence
+    compliance: { framework: string; clauses: { id: string; text: string; source: string; note?: string | null; assets: number; codes: string[]; unrecorded?: number; verdict?: "fail" | "needs_evidence" }[]; assets?: number; unrecorded?: number; verdict?: "fail" | "needs_evidence" | null }[]
     kb_version: string
     pqc_context: {
         mosca?: { inequality: string; definitions: Record<string, string>; source: string; paper: string }
@@ -5245,9 +5287,13 @@ export interface CbomClauseFinding { code: string; title: string; fix: string | 
 
 export interface CbomRunComplianceFramework {
     framework: string
-    clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[] }[]
+    /** unrecorded: assets cited for review only, the algorithm the clause depends on was not recorded (#289) */
+    clauses: { clause: string; title: string; assets: number; codes: string[]; source?: string | null; note?: string | null; findings?: CbomClauseFinding[]; unrecorded?: number; verdict?: "fail" | "needs_evidence" }[]
     /** distinct assets behind any clause (#270; the clause counts overlap); null when it cannot be known */
     assets?: number | null
+    /** distinct assets behind its clauses only for review (#289); null when it cannot be known */
+    unrecorded?: number | null
+    verdict?: "fail" | "needs_evidence" | null
 }
 
 /** The run's dashboard: the code page's CbomScanDashboardData; `metrics_available: false` until assignments carry done_at. */
