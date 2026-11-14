@@ -194,6 +194,18 @@ export function DiffView({ diff }: { diff: CbomDiff }) {
             </ul>
           </div>
         )}
+        {!!diff.collector_changes?.length && (
+          <div data-testid="diff-collector-changes">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1">
+              <StatusBadge tone="amber">{diff.collector_changes.length}</StatusBadge> collector changes (not drift)
+            </p>
+            <ul className="space-y-0.5 text-xs text-zinc-700 dark:text-zinc-300 max-h-48 overflow-y-auto">
+              {diff.collector_changes.map((x, i) => (
+                <li key={i} className="break-all"><span className="font-mono mr-1.5">{x.code}</span>{x.direction} · {x.label}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
       <NotReadList items={diff.not_read} total={diff.counts?.not_read} testId="diff-not-read" />
       {diff.truncated && <p className="text-xs text-zinc-500">Lists are cut at 500 entries each.</p>}
