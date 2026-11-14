@@ -54,7 +54,7 @@ def test_every_kb_code_has_a_fix_class_and_the_table_justifies_every_row():
 def test_reviewed_counts_and_capability_codes_match_the_plan():
     table = json.loads(TABLE.read_text())
     count = {ns: {c: sum(1 for r in table[ns].values() if r["class"] == c) for c in AG.CLASSES} for ns in ("node", "code")}
-    assert count["node"] == {"configurable": 112, "code-fixed": 0, "vendor-fixed": 9, "hardware-fixed": 1}
+    assert count["node"] == {"configurable": 115, "code-fixed": 0, "vendor-fixed": 9, "hardware-fixed": 1}  # +3 CT (#112)
     # review B (PR #113): code WEAK_PROTOCOL / WEAK_CIPHER_SUITE -> code-fixed (CL-3 for config files),
     # KNOWN_TLS_VULNERABILITY -> configurable capability (CL-4 for Heartbleed)
     assert count["code"] == {"configurable": 16, "code-fixed": 17, "vendor-fixed": 0, "hardware-fixed": 0}
