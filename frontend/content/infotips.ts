@@ -5058,6 +5058,97 @@ export const INFO_TIPS = {
     why: "Sensitive data under weak crypto is migrated first.",
     example: "u_data_classification.",
   },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:104, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_segment": {
+    label: "CMDB segment field",
+    what: "The CMDB field holding each CI's network segment or site. A row goes to the scan node whose segment matches (or the one chosen for it in the import).",
+    why: "Hosts in two data centres each reach the scan node that can see them.",
+    example: "location.name for dc-mumbai and dc-chennai.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:105, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_scan_node": {
+    label: "CMDB scan node field",
+    what: "The CMDB field naming the scan node (by its name in ZeroShield) that reaches the CI. It wins over the segment.",
+    why: "Pins CIs that only one node can reach.",
+    example: "u_scan_node = mum-01.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:106, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_kind": {
+    label: "CMDB source kind field",
+    what: "The CMDB field saying what a CI is for the import: linux, windows, database (or an engine name), kubernetes, hsm or kmip. Without it the CI class decides (cmdb_ci_db_*, *kubernetes*, Windows or Linux).",
+    why: "A CI read as the wrong kind is imported as the wrong source, or skipped.",
+    example: "u_cbom_kind = hsm.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:107, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_engine": {
+    label: "CMDB database engine field",
+    what: "The CMDB field with a database CI's engine: postgres, mysql, mssql, oracle, mongodb or redis (PostgreSQL and SQL Server spellings are understood).",
+    why: "A database row without its engine is skipped with the reason.",
+    example: "u_db_engine = PostgreSQL.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:108, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_port": {
+    label: "CMDB port field",
+    what: "The CMDB field with a database CI's port. Blank: the engine's default port.",
+    why: "A wrong port makes the source fail its connection test.",
+    example: "tcp_port = 5433.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:109, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_login": {
+    label: "CMDB login field",
+    what: "The CMDB field with the read-only login of a database, or the WinRM login of a Windows server. The password is read from the vault, never from ServiceNow.",
+    why: "Database rows with a login need it to collect.",
+    example: "u_db_login = cbom_ro.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:110, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_database_name": {
+    label: "CMDB database name field",
+    what: "The CMDB field with a database name; required for Oracle (the service name).",
+    why: "An Oracle row without its service name is skipped.",
+    example: "u_db_name = ORCLPDB1.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:111, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_vault_path": {
+    label: "CMDB vault path field",
+    what: "The CMDB field with the vault secret path of the CI's login: a database password, a cluster kubeconfig, an HSM PIN or a Windows login. Read from the vault chosen in the import.",
+    why: "Credentials stay in your vault; rows that need one and have none are skipped.",
+    example: "u_vault_path = secret/data/db/pg1.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:112, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_vault_provider": {
+    label: "CMDB vault provider field",
+    what: "The CMDB field naming the vault of a CI's vault path when it is not the one chosen in the import: hashicorp, cyberark, aws_secrets_manager or azure_key_vault.",
+    why: "Lets one import read logins from more than one vault.",
+    example: "u_vault_provider = cyberark.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:113, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_api_url": {
+    label: "CMDB API URL field",
+    what: "The CMDB field with a Kubernetes cluster's API server URL (https://...).",
+    why: "A cluster row without its API URL is skipped with the reason.",
+    example: "u_api_url = https://k8s-prod.bank.local:6443.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:114, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_context": {
+    label: "CMDB kube context field",
+    what: "The CMDB field with the kubeconfig context to use for a cluster. Blank: the kubeconfig's current context.",
+    why: "The wrong context reads the wrong cluster.",
+    example: "u_kube_context = prod.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:115, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_module": {
+    label: "CMDB PKCS#11 module field",
+    what: "The CMDB field with an HSM's PKCS#11 module name, as the scan node lists it in ZS_PKCS11_MODULES.",
+    why: "An HSM row without its module is skipped.",
+    example: "u_pkcs11_module = luna.",
+  },
+  // src: frontend/components/integrations/IntegrationsPage.tsx:116, backend/utilities/integrations/servicenow.py:56-60 — #225: optional import column
+  "int.sn.cmdb_token_label": {
+    label: "CMDB token label field",
+    what: "The CMDB field with the HSM token (slot) label to read. Blank: the module's first token.",
+    why: "Each token is its own source.",
+    example: "u_token_label = payments-01.",
+  },
   // src: frontend/components/integrations/IntegrationsPage.tsx:83 — syslog collector
   "int.sys.host": {
     label: "Collector host",
