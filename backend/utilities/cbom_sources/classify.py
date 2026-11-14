@@ -179,6 +179,13 @@ def aws_pq_policy(facts: dict[str, Any]) -> bool:
     return any(algid.aws_tls_policy(service, facts.get(key)) is not None for key, service in _AWS_POLICY_FACTS)
 
 
+
+def aws_pq_policy_groups(facts: dict[str, Any]) -> list[str]:
+    """The post-quantum hybrid groups AWS documents for the facts' TLS policy (algid's table), [] when the policy is
+    not post-quantum, the load balancer is classic, or AWS names no groups for it (the API Gateway PQ policies)."""
+    if facts.get("classic"):
+        return []
+    return [g for key, service in _AWS_POLICY_FACTS for g in (algid.aws_tls_policy(service, facts.get(key)) or ())]
 def pq_kex_evidence(facts: dict[str, Any]) -> bool | None:
     """Whether a TLS endpoint's facts show a post-quantum key exchange: True, False, or None when they say nothing.
 
@@ -271,6 +278,77 @@ def _key_rules(out: _Out, algorithm: Any, size: Any, what: str) -> None:
         out.add("DH_LT_2048", "High", f"{what} uses {bits}-bit Diffie-Hellman")
 
 
+def _kms_no_rotation_text(facts: dict[str, Any]) -> str:
+    """KMS_NO_ROTATION's text. Automatic rotation exists only for keys whose material AWS KMS generated (origin
+    AWS_KMS; imported material and custom key stores cannot rotate automatically, CB-33 B1). A multi-Region replica
+    takes its rotation from its primary key, so the text names the primary; a Disabled key must be enabled first."""
+    text = "Customer-managed KMS key has automatic rotation off"
+    primary = facts.get("primary_key_arn")
+    if facts.get("multi_region_type") == "REPLICA" and primary:
+        text += (f"; this is a multi-Region replica, whose rotation is set on its primary key {str(primary)[:200]}: "
+                 f"run aws kms enable-key-rotation --key-id {str(primary)[:200]} in the primary's Region")
+    if facts.get("key_state") == "Disabled":
+        text += ("; the key is disabled: enable the key first (aws kms enable-key), then turn rotation on, or "
+                 "schedule its deletion if it is unused")
+    return text
+
+
+KMS_MATERIAL_WINDOW = _dt.timedelta(days=30)  # owner decision (CB-33 OQ-2): Medium, 30 days ahead
+
+
+def _kms_materials(facts: dict[str, Any]) -> list[dict[str, Any]]:
+    """The key's imported materials (``key_materials``), else the key-level expiry facts as one material."""
+    materials = [m for m in facts.get("key_materials") or [] if isinstance(m, dict)]
+    if materials:
+        return materials
+    if facts.get("expiration_model") or facts.get("valid_to"):
+        return [{"id": facts.get("current_key_material_id"), "expiration_model": facts.get("expiration_model"),
+                 "valid_to": facts.get("valid_to"), "import_state": None}]
+    return []
+
+
+def _kms_material_rules(out: _Out, facts: dict[str, Any], now: _dt.datetime) -> None:
+    """Imported key material (origin EXTERNAL, CB-33 B3 / OQ-2).  A key in PendingImport has no usable material
+    (KMS_KEY_NO_MATERIAL); otherwise any material that expires within the window is KMS_KEY_MATERIAL_EXPIRES (not
+    while PendingImport: the key is already unusable, and expired material is why)."""
+    if facts.get("origin") != "EXTERNAL":
+        return
+    materials = _kms_materials(facts)
+    if facts.get("key_state") == "PendingImport":
+        pending = [str(m.get("id")) for m in materials if m.get("id") and m.get("import_state") == "PENDING_IMPORT"]
+        text = "KMS key with imported material has no usable key material (PendingImport): it cannot encrypt or decrypt"
+        if pending:
+            text += (f"; material pending import: {', '.join(p[:16] for p in pending[:3])}"
+                     f" (aws kms import-key-material --key-material-id {pending[0][:64]})")
+        out.add("KMS_KEY_NO_MATERIAL", "Medium", text)
+        return
+    expiring = []
+    for material in materials:
+        when = _parse_time(material.get("valid_to"))
+        if material.get("expiration_model") == "KEY_MATERIAL_EXPIRES" and when is not None \
+                and when - now <= KMS_MATERIAL_WINDOW:
+            expiring.append((when, str(material.get("id") or "current material")))
+    if expiring:
+        when, first = min(expiring)
+        verb = "expired on" if when < now else "expires on"
+        ids = ", ".join(i[:16] for _w, i in sorted(expiring)[:3])
+        out.add("KMS_KEY_MATERIAL_EXPIRES", "Medium",
+                f"Imported KMS key material {ids} {verb} {when.date().isoformat()}; re-import it before then or the "
+                "key stops working")
+
+
+# ACM statuses in which no certificate was ever issued: nothing to judge (no key, no expiry, no attachment).
+_ACM_NEVER_ISSUED = frozenset({"PENDING_VALIDATION", "FAILED", "VALIDATION_TIMED_OUT"})
+
+
+def _cert_unused_applies(facts: dict[str, Any]) -> bool:
+    """Whether "not attached to any resource" means orphaned (CB-33 B7). Not for a certificate that was never issued,
+    a PRIVATE (AWS Private CA) certificate, whose key is meant to be exported and used outside AWS, a certificate
+    whose key was exported (it is in use where AWS cannot see), or an ACME certificate, managed by its ACME client."""
+    return (str(facts.get("status") or "ISSUED") not in _ACM_NEVER_ISSUED and facts.get("aws_type") != "PRIVATE"
+            and facts.get("exported") is not True and facts.get("key_pair_origin") != "ACME")
+
+
 def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now: _dt.datetime) -> None:
     not_after = _parse_time(facts.get("not_after"))
     if not_after is not None:
@@ -297,7 +375,7 @@ def _cert_rules(out: _Out, facts: dict[str, Any], algorithm: Any, size: Any, now
         # a self-signed CA root or IdP signing certificate: informational only (no impact)
         what = "identity-provider signing certificate" if facts.get("source") == "idp" else "CA certificate"
         out.add("CERT_SELF_SHA1", None, f"Self-signed {what}: {sha1_note}")
-    if facts.get("in_use") is False:
+    if facts.get("in_use") is False and _cert_unused_applies(facts):
         out.add("CERT_UNUSED", "Low", "Certificate is not attached to any resource (orphaned)")
     # Certificate Transparency facts (ct_collect): the team's expected issuers, revocation, wildcard sprawl
     if facts.get("issuer_expected") is False:
@@ -624,9 +702,14 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
     elif asset_type in ("certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca"):
         _cert_rules(out, facts, algorithm, key_size, now)
         identity = cert_identity_input(algorithm, facts)
-        qv = quantum_vulnerable(identity)
-        if qv is None:
-            note_unknown(asset_type, identity)
+        status = facts.get("status")
+        if asset_type == "certificate" and facts.get("source") == "aws" and isinstance(status, str) and \
+                status in _ACM_NEVER_ISSUED:  # a malformed status (a list, a dict) is unread, never a TypeError
+            qv = None  # an ACM request that was never issued holds no certificate and no key
+        else:
+            qv = quantum_vulnerable(identity)
+            if qv is None:
+                note_unknown(asset_type, identity)
     elif asset_type in ("private_key", "public_key", "ssh_host_key", "signing_key", "kms_key", "k8s_certificate"):
         _key_rules(out, algorithm, key_size, {"private_key": "Private key", "public_key": "Public key",
                                               "ssh_host_key": "SSH host key", "signing_key": "Signing key",
@@ -645,13 +728,17 @@ def classify(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, fact
             note_unknown(asset_type, algorithm)
         if asset_type == "kms_key":
             if facts.get("rotation_enabled") is False and facts.get("key_spec") == "SYMMETRIC_DEFAULT" \
-                    and facts.get("key_manager") == "CUSTOMER":
-                out.add("KMS_NO_ROTATION", "Medium", "Customer-managed KMS key has automatic rotation off")
+                    and facts.get("key_manager") == "CUSTOMER" and facts.get("origin") in (None, "AWS_KMS"):
+                out.add("KMS_NO_ROTATION", "Medium", _kms_no_rotation_text(facts))
             if facts.get("key_state") == "PendingDeletion":
                 out.add("KMS_PENDING_DELETION", "Low", "KMS key is pending deletion")
+            _kms_material_rules(out, facts, now)
             if facts.get("key_spec") and facts.get("key_spec") != "SYMMETRIC_DEFAULT":
                 spec = algid.aws("kms", "KeySpec", facts.get("key_spec"))
-                qv = quantum_vulnerable(spec.name) if spec is not None else quantum_vulnerable(facts.get("key_spec"))
+                if spec is not None and spec.primitive == "mac":
+                    qv = False  # an HMAC key is symmetric: no public-key verdict applies (B9; as node keys, Vault)
+                else:
+                    qv = quantum_vulnerable(spec.name) if spec is not None else quantum_vulnerable(facts.get("key_spec"))
                 if spec is None and qv is None:
                     note_unknown(asset_type, facts.get("key_spec"))
             elif facts.get("key_spec") == "SYMMETRIC_DEFAULT":
@@ -928,7 +1015,8 @@ CLASSIFIER_VERSION = _rules_version()
 # is a finding everywhere at once, not only in the panel, and not only after the next run.
 CERT_DATED_TYPES = frozenset({"certificate", "k8s_tls_secret", "iam_certificate", "cloud_ca", "k8s_certificate"})
 LIBRARY_DATED_TYPES = frozenset({"crypto_library", "process_library"})
-DATED_TYPES = CERT_DATED_TYPES | LIBRARY_DATED_TYPES
+KEY_DATED_TYPES = frozenset({"kms_key"})  # imported key material expiry (KMS_KEY_MATERIAL_EXPIRES, CB-33)
+DATED_TYPES = CERT_DATED_TYPES | LIBRARY_DATED_TYPES | KEY_DATED_TYPES
 _EXPIRY_WINDOW = _dt.timedelta(days=31)  # CERT_EXPIRES_30D looks 30 days ahead
 
 
@@ -945,11 +1033,15 @@ def _date_may_matter(asset_type: str, facts: dict[str, Any], then: _dt.datetime,
     if asset_type in CERT_DATED_TYPES:
         not_after = _parse_time(facts.get("not_after"))
         return not_after is not None and (not_after - then <= _EXPIRY_WINDOW or not_after - now <= _EXPIRY_WINDOW)
+    if asset_type in KEY_DATED_TYPES and facts.get("origin") == "EXTERNAL":
+        dates = [_parse_time(m.get("valid_to")) for m in _kms_materials(facts)]
+        return any(d is not None and (d - then <= KMS_MATERIAL_WINDOW or d - now <= KMS_MATERIAL_WINDOW)
+                   for d in dates)
     return False
 
 
 # The codes a date-based rule adds or removes; everything else in a stored verdict is the run's.
-DATE_CODES = frozenset({"CERT_EXPIRED", "CERT_EXPIRES_30D", "LIB_EOL"})
+DATE_CODES = frozenset({"CERT_EXPIRED", "CERT_EXPIRES_30D", "LIB_EOL", "KMS_KEY_MATERIAL_EXPIRES"})
 
 
 def _then_and_now(asset_type: str, algorithm: Any, key_size: Any, protocol: Any, facts: dict[str, Any] | None,

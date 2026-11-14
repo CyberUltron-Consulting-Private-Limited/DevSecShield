@@ -32,6 +32,7 @@ import {
   type QGradeFields,
   type QPosture,
 } from "./model";
+import { distributionText, gradeNowText, inputsChangedText, inputsSourceText, type QGradeNow } from "./inputs";
 import { Tip } from "./Tip";
 
 /** `model` given (also null): use it and fetch nothing; undefined: fetch the grade model with `teamId`. */
@@ -252,6 +253,7 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
         </button>
       </div>
       <QDistributionBar posture={posture} />
+      <GradeInputsBanner posture={posture} />
       {q0.length > 0 && (
         <div className="space-y-1" data-testid="posture-q0-reasons">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Q0 Unknown: why</p>
@@ -286,17 +288,37 @@ export function QDistributionCard({ teamId, posture, onOpenAsset, model }: {
       <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all" data-testid="posture-q-inputs">
         Graded with model {posture.grade_model_version ?? posture.grade_model ?? "—"}
         {inputs ? ` · Mosca X ${inputs.mosca.x ?? "not set"}, Y ${inputs.mosca.y ?? "not set"}, Z ${inputs.mosca.z ?? "not set"}` : ""}
-        {inputs?.source === "current" ? " (the team's settings now, not when the run started)" : ""}
+        {inputsSourceText(inputs?.source)}
       </p>
       <QGradeModelDialog teamId={teamId} open={dialog} onOpenChange={setDialog} model={m ?? undefined} />
     </div>
   );
 }
 
-/** The asset drawer's grade: chip, the reason sentence and the inputs table (from `q_explain`). */
+/** CB-19 PR-2: the run grades with the inputs it recorded at Start; when the team's differ now, say so and show the
+ * distribution with the current inputs beside the record (the list, filters and export stay on the record). */
+export function GradeInputsBanner({ posture }: { posture: QPosture }) {
+  const text = inputsChangedText(posture);
+  if (!text) return null;
+  return (
+    <div className="rounded-md border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/40 p-2 space-y-1"
+         role="status" data-testid="grade-inputs-banner" data-changed={posture.q_changed_now ?? 0}>
+      <p className="text-xs text-zinc-800 dark:text-zinc-200">{text}</p>
+      <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="grade-inputs-record">
+        Recorded at Start: {distributionText(posture.q_grades)}
+      </p>
+      <p className="text-xs text-zinc-600 dark:text-zinc-400" data-testid="grade-inputs-now">
+        With current inputs: {distributionText(posture.q_grades_now)}
+      </p>
+    </div>
+  );
+}
+
+/** The asset drawer's grade: chip, the reason sentence, the grade with current inputs when they differ from the
+ * run's (PR-2 `q_now`) and the inputs table (from `q_explain`). */
 export function QGradeDrawerSection({ teamId, asset, model }: {
   teamId?: number;
-  asset: QGradeFields & { q_explain?: QExplain | null };
+  asset: QGradeFields & { q_explain?: QExplain | null; q_now?: QGradeNow | null };
   model?: GradeModel | null;
 }) {
   const m = useModel(teamId, model);
@@ -316,6 +338,11 @@ export function QGradeDrawerSection({ teamId, asset, model }: {
       {reason && (
         <p className="text-xs text-zinc-700 dark:text-zinc-300" data-testid="asset-q-reason">
           {reason}{e?.inequality ? ` (X + Y vs Z: ${e.inequality})` : ""}.
+        </p>
+      )}
+      {gradeNowText(asset.q_grade, asset.q_now) && (
+        <p className="text-xs text-zinc-700 dark:text-zinc-300" data-testid="asset-q-now" data-q-now={asset.q_now?.q_grade ?? "none"}>
+          {gradeNowText(asset.q_grade, asset.q_now)}
         </p>
       )}
       {rows.length > 0 && (

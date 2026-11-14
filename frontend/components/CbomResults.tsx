@@ -52,7 +52,7 @@ import { getCBOMExportResults, updateScan, toggleFindingState, createTicket, pos
 import { showErrorToast } from "@/utils/error-handler";
 import { downloadCbomScanBom, INFORMATIONAL_LABEL, type CbomCoverageReport, type CbomImportReport } from "@/utils/api/cbom_outputs";
 import { downloadOscal } from "@/utils/api/integrations";
-import { inventoryRows, isBrokenToday, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
+import { inventoryRows, isBrokenToday, isUnidentified, matchesQuantumFilter } from "@/components/cbom/quantumFilter";
 import { importNoteLines, importReportHasNews } from "@/components/cbom/importNotes";
 import {
   buildRefAliasMap,
@@ -131,6 +131,9 @@ function QuantumBadge({ quantumSafe, strength, yesNo = false }: { quantumSafe?: 
         Broken today
       </Badge>
     );
+  }
+  if (isUnidentified({ quantum_safe: quantumSafe, crypto_strength: strength })) {
+    return <span className="text-zinc-500 dark:text-zinc-400 text-xs" title="Not identified by the rule base: not judged, never counted as safe">Unknown</span>;
   }
   if (quantumSafe === true) {
     return <Badge variant="outline" className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400">{yesNo ? "Yes" : "Safe"}</Badge>;

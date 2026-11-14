@@ -39,6 +39,18 @@ def _on_term(_signum, _frame) -> None:
     log("cloud worker stopping after the current job")
 
 
+def _aws_lab_mode(config: dict[str, Any]) -> str | None:
+    """"same_account" when this AWS source's role is in the deployment's own account and lab mode allows it (the
+    collector decides again and logs the use; this only labels the run, failed runs included)."""
+    from backend.utilities.cbom_sources.kinds import aws_account_id
+    from backend.utilities.cbom_sources.lab_mode import LAB_MODE, lab_same_account
+    from backend.utilities.cbom_sources.templates import zeroshield_account_id
+
+    own = zeroshield_account_id()
+    same = bool(own) and aws_account_id(str(config.get("role_arn") or "")) == own
+    return LAB_MODE if same and (config.get("scope") or "account") == "account" and lab_same_account() else None
+
+
 class _Job:
     def __init__(self, engine, payload: dict[str, Any]):
         self.engine = engine
@@ -51,6 +63,7 @@ class _Job:
         self.deadline = time.monotonic() + int(self.job.get("max_runtime_s") or 8 * 3600) - 120
         self.emitted = 0
         self.store_failed: str | None = None  # an asset batch was lost to an error that is not the API's refusal
+        self.lab_mode: str | None = None  # "same_account": an AWS source collected in lab mode (lab_mode.py)
 
     # -- leases and batches
     def should_stop(self) -> str | None:
@@ -164,6 +177,8 @@ class _Job:
         if self.stop_reason and status == "success":
             status, error = "cancelled", self.stop_reason
         targets = result.get("targets") or []
+        if self.lab_mode:  # every run of a lab-mode source says so, failed runs included
+            result = {**result, "lab_mode": self.lab_mode}
         result = {**result, "targets": targets[:1000], "asset_count": None, "node_version": "cloud-worker-1.0",
                   "summary": result.get("summary") or f"{sum(1 for t in targets if t.get('status') == 'ok')} of {len(targets)} targets read"}
         with Session(self.engine) as session:
@@ -172,6 +187,11 @@ class _Job:
                 job = J.finish_job(session, None, self.job["id"], self.job["lease_id"], status, result, error, utcnow(),
                                    team_id=team_id, known_secrets=self.secrets)
                 stored = job.asset_count
+                if self.lab_mode:
+                    from backend.utilities.cbom_sources.common import audit
+
+                    audit(session, team_id=team_id, actor_type="system", actor_id=None, action="job.lab_same_account",
+                          object_type="job", object_id=self.job["id"])
                 session.commit()
             except HTTPException as exc:
                 session.rollback()
@@ -201,6 +221,7 @@ class _Job:
             raise _Refused("Validate the AWS role first; only a role that passed validation is scanned")
         with Session(self.engine) as session:
             external_id = get_or_create_settings(session, self.job["team_id"]).aws_external_id
+        self.lab_mode = _aws_lab_mode(self.source.get("config") or {})
         try:
             return collect_aws(self.job["team_id"], self.source["config"], external_id, self.emit, self.should_stop)
         except AwsCollectError as exc:
@@ -279,6 +300,10 @@ def main() -> None:
     from backend.workers.integration_dispatcher import start_thread as start_dispatcher
 
     dispatcher_stop = start_dispatcher(engine)
+    # F1.2 fleet inventory: AWS inventory sources sync on their own thread (only while CBOM_FLEET_INVENTORY is on)
+    from backend.workers.cbom_inventory_sync import start_thread as start_inventory_sync
+
+    inventory_stop = start_inventory_sync(engine)
     last_reap = 0.0
     while not _stopping:
         if time.monotonic() - last_reap >= REAP_EVERY_S:
@@ -295,6 +320,8 @@ def main() -> None:
         scheduler_stop.set()
     if dispatcher_stop is not None:
         dispatcher_stop.set()
+    if inventory_stop is not None:
+        inventory_stop.set()
     log("cloud worker stopped", worker=worker)
 
 

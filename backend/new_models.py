@@ -398,6 +398,11 @@ class CbomCollectionSource(SQLModel, table=True):
     # stable identity that survives deletion: snapshotted on every collect job, so diffs, drift events and remediation
     # assignments keep pointing at "the same source" after a rename, and a re-created source is a new one
     source_uid: str | None = Field(default_factory=lambda: uuid.uuid4().hex, max_length=32, index=True)
+    # F1.2 fleet: the policy whose materializer manages this source (None: made by hand), the typed credential it uses,
+    # and its sticky batch key (policy, transport, credential, node or segment, kind); plain ints, no foreign keys
+    managed_by_policy_id: int | None = Field(default=None, index=True)
+    credential_id: int | None = Field(default=None)
+    batch_key: str | None = Field(default=None, max_length=64)
 
 
 class CbomCollectionRun(SQLModel, table=True):
@@ -418,6 +423,10 @@ class CbomCollectionRun(SQLModel, table=True):
     kb_version: str | None = Field(default=None, max_length=32)
     classifier_version: str | None = Field(default=None, max_length=32)
     engine_version: str | None = Field(default=None, max_length=32)
+    # CB-19 PR-2: the grade model and the grade inputs (team Mosca X/Y/Z, evidence levels and Q0 gaps) at Start; run
+    # views grade with these (the record), never with the team's later edits (null on runs from before cb19grade001)
+    grade_model_version: str | None = Field(default=None, max_length=32)
+    grade_inputs: Dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     soc_ack_by: int | None = Field(default=None)
     soc_ack_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     cancelled_by: int | None = Field(default=None)
@@ -525,7 +534,7 @@ class CbomEvidenceArea(SQLModel, table=True):
     team_id: int = Field(foreign_key="team.id", index=True)
     area_key: str = Field(max_length=32)
     owner: str | None = Field(default=None, max_length=128)
-    confidence: str = Field(default="Q0", max_length=2)
+    confidence: str = Field(default="E0", max_length=2)
     confidence_set_by: int | None = Field(default=None)
     answers: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
     evidence_title: str | None = Field(default=None, max_length=200)
@@ -551,7 +560,7 @@ class CbomEvidenceVendor(SQLModel, table=True):
     link_expires_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     answered_at: datetime.datetime | None = Field(default=None, sa_type=DateTime)
     answers: Dict | None = Field(default_factory=dict, sa_column=Column(JSON))
-    confidence: str = Field(default="Q0", max_length=2)
+    confidence: str = Field(default="E0", max_length=2)
     evidence_url: str | None = Field(default=None, max_length=1000)
     created_by_user_id: int | None = Field(default=None)
     row_version: int = Field(default=1)
@@ -600,6 +609,7 @@ class CbomCollectionSchedule(SQLModel, table=True):
     row_version: int = Field(default=1)
     created_at: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
     last_updated: datetime.datetime | None = Field(default_factory=_cbom_utcnow, sa_type=DateTime)
+    policy_id: int | None = Field(default=None, index=True)  # F1.2: the fleet policy that manages this schedule
 
 
 class CbomDriftEvent(SQLModel, table=True):

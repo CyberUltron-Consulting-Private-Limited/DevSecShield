@@ -94,7 +94,9 @@ def test_verdict_corpus_diff():
     for name in ("GOST R 34.11", "GOSTR3411", "gostr3411"):
         for shape in ("cert", "managed", "tls", "ssh"):
             key = f"{shape}|{name}"
-            assert key in recorded and key not in intended and corpus.judge(rows[key]) == recorded[key], key
+            assert key in recorded and corpus.judge(rows[key])[:3] == recorded[key][:3], key
+            # CB-18: a certificate whose key algorithm names a hash is a key the scan did not identify (unknown)
+            assert key not in intended or intended[key][2].startswith("cb18-"), key
     assert "NO_PQ_KEX" in intended["tls|brainpoolP256r1"][1][1]
     for code in ("DSA", "QUANTUM_VULNERABLE"):
         assert code in intended["cert|FN-DSA-512"][0][1] and code not in intended["cert|FN-DSA-512"][1][1]
@@ -470,9 +472,10 @@ def test_pq_kex_evidence(facts, expected):
 
 
 @pytest.mark.parametrize("group,pq_hybrid,qv,codes,cls", [
-    ("ML-DSA-65", None, None, [], "not-applicable"),  # as an unknown group: no verdict, never PQ credit
-    ("PQ_SIGN_ML_DSA_87", None, None, [], "not-applicable"),
-    ("ML-DSA-65", False, None, ["NO_PQ_KEX"], "not-applicable"),
+    # as an unknown group: no verdict, never PQ credit; CB-18: the key exchange was not read, so "unknown" (not N/A)
+    ("ML-DSA-65", None, None, [], "unknown"),
+    ("PQ_SIGN_ML_DSA_87", None, None, [], "unknown"),
+    ("ML-DSA-65", False, None, ["NO_PQ_KEX"], "unknown"),
     ("X25519MLKEM768", None, False, [], "hybrid"),
     ("X25519MLKEM768", False, False, [], "hybrid"),
     ("MLKEM1024", None, False, [], "hybrid"),
@@ -485,7 +488,8 @@ def test_tls_group_slot_needs_a_key_exchange(group, pq_hybrid, qv, codes, cls):
         facts["pq_hybrid"] = pq_hybrid
     v = C.classify("tls_endpoint", "TLS_AES_256_GCM_SHA384", None, "TLSv1.3", facts, NOW)
     assert (v["quantum_vulnerable"], v["finding_codes"]) == (qv, codes)
-    assert P.pqc_class("tls_endpoint", v["quantum_vulnerable"], v["finding_codes"], facts) == cls
+    assert P.classify_pqc({"asset_type": "tls_endpoint", "quantum_vulnerable": v["quantum_vulnerable"],
+                           "facts": facts}, v["finding_codes"])[0] == cls
 
 
 @pytest.mark.parametrize("kex,qv,codes", [
