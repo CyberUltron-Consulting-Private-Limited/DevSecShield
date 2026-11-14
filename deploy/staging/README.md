@@ -43,8 +43,9 @@ scripts/deploy/staging.sh release deploy@staging-host /opt/devsecshield-staging
 ```
 = `build` (all images, tag = short commit; the frontend gets `NEXT_PUBLIC_BACKEND_URL=https://<API_HOST>`),
 `save` (`deploy/staging/images/dss-staging-<tag>.tar.gz` + `.sha256` + `.need`, what loading it needs), `push` (scp
-of the bundle, `staging.sh disk-check <tag>` on the host, scp of the archive, then `staging.sh deploy <tag>` on the
-host over ssh). On the host,
+of the bundle, `staging.sh disk-check <tag>` on the host, scp of the archive and of the scan node downloads when
+`staging.sh node-artifacts` made them (see "Scan node downloads"), then `staging.sh deploy <tag>` on the host over
+ssh). On the host,
 `deploy` verifies the checksum, checks the disk (below), `docker load`s the archive, writes `DSS_TAG` into `.env`,
 runs `docker compose up -d --wait`, then the checks below; a failed `compose up` fails the deploy (recorded as
 `FAILED` in `deploy-history`). After a successful deploy the images of the new tag, the previous tag (recorded in
@@ -59,6 +60,32 @@ worker), `NODE_BASE_IMAGE` (frontend) and `GO_BASE_IMAGE` (the scan worker's cbo
 that trust the proxy CA: the system bundle (`/etc/ssl/certs/ca-certificates.crt`, which apt, apk, curl, git and
 Python read) must contain it, and `SSL_CERT_FILE` / `UV_NATIVE_TLS=1` / `NODE_EXTRA_CA_CERTS` set so uv and npm do. Plain-HTTP staging (no certificates): build with
 `NEXT_PUBLIC_BACKEND_URL=http://<API_HOST>` and set `CORS_ORIGINS=http://<FRONTEND_HOST>`.
+
+## Scan node downloads
+
+Customers have no repository access and no ZeroShield registry, so **CBOM > Sources > Scan nodes > Add scan node**
+offers the scan node as downloads served by the API to members of the team (`GET /{team}/cbom/node-artifacts`, and a
+short-lived link per file; `backend/routers/cbom_node_artifacts.py`):
+
+| File | Made by |
+|---|---|
+| `scan-node-<version>.tar.gz` + `.sha256` | `scripts/release/scan_node_image.sh build <version>`: `docker save` of `localhost/zeroshield/cbom-scan-node:<version>`, the name the wizard's `docker run --pull never` uses |
+| `cbom-scan-node-<version>.tgz` + `.sha256` | `scripts/release/node_artifacts.py`: `deploy/helm/cbom-scan-node`, version and appVersion = `<version>` |
+| `cbom-scan-node-ova-kit-<version>.zip`, `cbom-scan-node-ami-kit-<version>.zip` + `.sha256` | `node_artifacts.py`: the Packer kit from `deploy/node-images` with a customer README (`deploy/node-images/kit/`), building from the image file |
+| `manifest.json` | `node_artifacts.py`: version, `image_ref`, the file names; the API lists only what it names |
+
+`<version>` is `scan_node/zs_scan_node/__init__.py` `VERSION` (or `CBOM_NODE_VERSION`). `staging.sh node-artifacts`
+(the workflow's "Scan node downloads" step) builds them into `deploy/staging/images/node-artifacts/` (the chart and
+the kits are about 25 KB together; the size is the image file's, which the deploy log prints); `push` counts their size in the host's disk check (`--node-artifacts-bytes`) and
+copies them to `deploy/staging/node-artifacts/<tag>.part/`; `deploy` checks every file against its `.sha256` and
+moves them to `deploy/staging/node-artifacts/<tag>/`, which `docker-compose.yml` mounts read-only into the backend at
+`/node-artifacts` (`CBOM_NODE_ARTIFACT_DIR`). They are kept and removed with their tag's images (retention, the disk
+preflight), so a rollback serves the downloads of the tag it went back to. A tag deployed without them gets an empty
+directory: the wizard then says each download is "not available on this server yet. Contact your administrator."
+
+**What the host must provide:** nothing new beyond disk space (the downloads count in the disk check) and `sha256sum`
+(coreutils). Optional, in `.env`: `CBOM_NODE_IMAGE_REF`, a tagged node image in a registry customers can pull from;
+only then does the wizard also show a `docker pull`-style command (unset by default: the image file only).
 
 ## Disk space
 
@@ -188,7 +215,8 @@ and Application Gateway do); the backend side (`FORWARDED_ALLOW_IPS` = nginx) is
 `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, `RABBITMQ_HOST`, `RABBITMQ_PORT`,
 `RABBIT_ADMIN_USERNAME`, `RABBIT_ADMIN_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 `AWS_DEFAULT_REGION`, `AWS_ENDPOINT_URL_S3`, `GIT_ALLOWED_HOSTS`, optional `MINIO_IMAGE`; read only by
-`staging.sh` (optional, see "Disk space"): `STAGING_DISK_FACTOR`, `STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`.
+`staging.sh` (optional, see "Disk space"): `STAGING_DISK_FACTOR`, `STAGING_DISK_RESERVE_MB`, `STAGING_CONTAINERD_ROOT`;
+optional for the backend: `CBOM_NODE_IMAGE_REF` (see "Scan node downloads").
 
 `backend.env` (backend-image containers only): `JWT_SECRET_KEY`, `JWT_REFRESH_SECRET_KEY`, `ENCRYPTION_KEY`,
 `CERTIN_HMAC_SECRET`, `CORS_ORIGINS`, `CBOM_PUBLIC_APP_URL`, mail (`SMTP_*`, `MAIL_FROM` or `TENANT_ID`,

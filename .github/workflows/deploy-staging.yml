@@ -109,6 +109,11 @@ jobs:
           DSS_TAG: ${{ steps.tag.outputs.tag }}
         run: scripts/deploy/staging.sh save
 
+      # The scan-node downloads the API serves on Add scan node (image file, Helm chart, OVA/AMI build kits): shipped
+      # with the release and mounted into the backend (CBOM_NODE_ARTIFACT_DIR; deploy/staging/README.md).
+      - name: Scan node downloads
+        run: scripts/deploy/staging.sh node-artifacts
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dss-staging-${{ steps.tag.outputs.tag }}
@@ -116,6 +121,7 @@ jobs:
             deploy/staging/images/*.tar.gz
             deploy/staging/images/*.sha256
             deploy/staging/images/*.need
+            deploy/staging/images/node-artifacts/*
           retention-days: 7
           compression-level: 0
           if-no-files-found: error
