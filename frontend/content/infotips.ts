@@ -3006,8 +3006,8 @@ export const INFO_TIPS = {
   // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1810-1811 — up to 32 characters; blank reads every initialised token
   "cbsrc.km.token": {
     label: "Token label",
-    what: "The label of the token or partition to read, up to 32 characters. Blank reads every initialised token the module shows.",
-    why: "Limits the read to the partition you mean when an HSM is shared.",
+    what: "The label of the token or partition to read, up to 32 characters. Required when the module shows more than one token; blank works for a module with one token.",
+    why: "The PIN is only ever tried on this token, so a wrong PIN cannot count toward locking other partitions of a shared HSM.",
     example: "payments-partition.",
   },
   // src: frontend/components/cbom/sources/ClustersDatabasesTab.tsx:1816-1822 — PIN, PIN from vault; optional

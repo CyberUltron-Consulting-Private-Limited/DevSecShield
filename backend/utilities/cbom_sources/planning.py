@@ -318,6 +318,8 @@ def plan_run(
             item.reason = kind_problem(node, source.kind)
         elif source.kind == "aws_account" and source.last_test_status != "passed":
             item.reason = "Validate the AWS role first; only a role that passed validation is scanned"
+        elif source.last_test_status == "failed" and (source.last_test_result or {}).get("credential_refused"):
+            item.reason = source.last_test_summary or "Credential refused; edit the credential"  # CB-10
         elif source.last_test_status == "failed":
             item.reason = "Last connection test failed; fix it and test again"
         elif source.kind in CLOUD_NOT_CONNECTED and source.last_test_status != "passed":

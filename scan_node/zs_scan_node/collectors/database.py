@@ -842,19 +842,28 @@ def _login_and_read(ctx: JobContext, target: Target, config: dict, secrets: dict
 
 def collect(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     started = time.monotonic()
-    target, status, error, n = _one(ctx, config, secrets, scope)
+    ctx.login_gate()  # CB-10: one login per job; a refusal marks the credential refused (the server pauses the source)
+    status = "error"
+    try:
+        target, status, error, n = _one(ctx, config, secrets, scope)
+    finally:
+        ctx.login_done(status)
     ctx.outcome(target.label, status, error, started=started, assets=n)
     return f"{config.get('engine')} {target.label}: {status}"
 
 
 def test(ctx: JobContext, config: dict, secrets: dict, scope: dict) -> str:
     started = time.monotonic()
+    ctx.login_gate()  # CB-10
+    status = "error"
     try:
         target, status, error, n = _one(ctx, config, secrets, scope)
     except ConfigError as exc:
+        ctx.login_done(status)
         ctx.samples.append({"target": str(config.get("host")), "status": "error", "reachable": None, "login": False,
                             "privilege": None, "note": str(exc)})
         return str(exc)
+    ctx.login_done(status)
     reachable = status not in ("unreachable", "refused", "timeout", "no_route")
     ctx.samples.append({"target": target.label, "status": "ready" if status == "ok" else status, "reachable": reachable,
                         "login": status == "ok", "privilege": None,
