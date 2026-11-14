@@ -1,7 +1,7 @@
 """cbom evidence confidence: Q0..Q3 -> E0..E3 (CB-18)
 
 Revision ID: cb18evconf001
-Revises: r6f14sshca002
+Revises: r6f13trn001
 Create Date: 2026-11-14 12:00:00.000000
 
 Evidence confidence used the symbols of the quantum risk grade (Q0..Q4). The levels are now E0 Unknown, E1
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'cb18evconf001'
-down_revision: Union[str, Sequence[str], None] = 'r6f14sshca002'
+down_revision: Union[str, Sequence[str], None] = 'r6f13trn001'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -223,7 +223,7 @@ def _migration():
 
 def test_migration_is_the_one_head():
     mod = _migration()
-    assert (mod.revision, mod.down_revision) == ("cb18evconf001", "r6f14sshca002")
+    assert (mod.revision, mod.down_revision) == ("cb18evconf001", "r6f13trn001")
     revisions, parents = set(), set()
     for path in VERSIONS.glob("*.py"):
         text = path.read_text()
